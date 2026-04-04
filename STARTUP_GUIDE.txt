@@ -1,0 +1,17 @@
+### HR PLATFORM STARTUP GUIDE ###
+
+Follow these steps in order every time you start your development environment:
+
+1. Start the Web Server (Next.js)
+   npm run dev
+
+2. Start the Background Worker (New Terminal Tab)
+   npm run worker
+
+3. Start the AI Interview Agent (New Terminal Tab)
+   python agent.py dev
+
+--------------------------------------------------
+Redis Cloud: redis-13015.crce179.ap-south-1-1.ec2.cloud.redislabs.com:13015
+Your Web Dashboard is running on: http://localhost:3000
+--------------------------------------------------

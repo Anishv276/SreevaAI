@@ -1,0 +1,126 @@
+import { NextResponse } from "next/server";
+import { writeFile, unlink } from "fs/promises";
+import { join } from "path";
+import { spawn } from "child_process";
+import { v4 as uuidv4 } from "uuid";
+import os from "os";
+import { extractJDFromText } from "@/lib/openai";
+import { z } from "zod";
+
+const extractQuerySchema = z.object({
+    type: z.enum(["JD", "RESUME"]),
+    url: z.string().url().optional(),
+});
+
+export async function POST(request: Request) {
+    try {
+        const formData = await request.formData();
+        const file = formData.get("file") as File | null;
+        const url = formData.get("url") as string | null;
+        const typeRaw = formData.get("type") as string | null;
+
+        if (!file && !url) {
+            return NextResponse.json({ error: "Missing file or URL" }, { status: 400 });
+        }
+
+        if (!typeRaw || !["JD", "RESUME"].includes(typeRaw)) {
+            return NextResponse.json({ error: "Invalid type. Must be JD or RESUME" }, { status: 400 });
+        }
+
+        const type = typeRaw as "JD" | "RESUME";
+
+        if (url) {
+            if (type !== "JD") {
+                return NextResponse.json({ error: "URL extraction only supported for JD type" }, { status: 400 });
+            }
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    return NextResponse.json({ error: "Failed to fetch URL" }, { status: 400 });
+                }
+                const html = await response.text();
+                const text = html
+                    .replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "")
+                    .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "")
+                    .replace(/<[^>]+>/g, " ")
+                    .replace(/\s+/g, " ")
+                    .trim()
+                    .slice(0, 10000);
+
+                const data = await extractJDFromText(text);
+                return NextResponse.json({ data, text });
+            } catch (err) {
+                console.error("URL Extraction Error:", err);
+                return NextResponse.json({ error: "Failed to scrape JD from URL" }, { status: 500 });
+            }
+        }
+
+        if (!file) return NextResponse.json({ error: "File required" }, { status: 400 });
+
+        const bytes = await file.arrayBuffer();
+        const buffer = Buffer.from(bytes);
+        const tempDir = os.tmpdir();
+        const tempFilePath = join(tempDir, `${uuidv4()}-${file.name}`);
+        await writeFile(tempFilePath, buffer);
+
+        let outputData = "";
+        let errorData = "";
+
+        const [exitCode, resumeUrl] = await Promise.all([
+            (async () => {
+                const pythonCommand = process.platform === "win32" ? "python" : "python3";
+                const pythonProcess = spawn(pythonCommand, ["scripts/extract_pdf.py", tempFilePath, type]);
+
+                let outputDataStr = "";
+                let errorDataStr = "";
+
+                pythonProcess.stdout.on("data", (data) => { outputDataStr += data.toString(); });
+                pythonProcess.stderr.on("data", (data) => { errorDataStr += data.toString(); });
+
+                const code = await new Promise((resolve) => {
+                    pythonProcess.on("close", (code) => resolve(code));
+                });
+
+                outputData = outputDataStr;
+                errorData = errorDataStr;
+                return code;
+            })(),
+
+            (async () => {
+                if (type !== "RESUME") return null;
+                try {
+                    const { putObject } = await import("@/lib/s3");
+                    const fileName = `${uuidv4()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+                    await putObject("resumes", fileName, buffer, file.type);
+                    
+                    const r2PubUrl = process.env.NEXT_PUBLIC_R2_URL || "";
+                    // Ensure proper URL formatting
+                    return `${r2PubUrl.replace(/\/$/, '')}/${fileName}`;
+                } catch (err) { 
+                    console.error("R2 Upload Error:", err);
+                    return null; 
+                }
+            })()
+        ]);
+
+        await unlink(tempFilePath).catch(() => { });
+
+        if (exitCode !== 0) {
+            return NextResponse.json({ error: "Extraction failed" }, { status: 500 });
+        }
+
+        try {
+            const result = JSON.parse(outputData);
+            return NextResponse.json({
+                ...result,
+                url: resumeUrl
+            });
+        } catch (e) {
+            return NextResponse.json({ error: "Invalid response" }, { status: 500 });
+        }
+
+    } catch (error) {
+        return NextResponse.json({ error: "Failed to process" }, { status: 500 });
+    }
+}

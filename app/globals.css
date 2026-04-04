@@ -1,0 +1,159 @@
+@import "tailwindcss";
+
+@theme {
+  --color-border: #E5E7EB;
+  --color-input: #E5E7EB;
+  --color-ring: #F97316;
+  --color-background: #F7F6F3;
+  --color-foreground: #111827;
+
+  --color-primary: #F97316;
+  --color-primary-foreground: #ffffff;
+
+  --color-secondary: #F3F4F6;
+  --color-secondary-foreground: #111827;
+
+  --color-destructive: #DC2626;
+  --color-destructive-foreground: #FFFFFF;
+
+  --color-muted: #F3F4F6;
+  --color-muted-foreground: #6B7280;
+
+  --color-accent: #F3F4F6;
+  --color-accent-foreground: #111827;
+
+  --color-popover: #FFFFFF;
+  --color-popover-foreground: #111827;
+
+  --color-card: #FFFFFF;
+  --color-card-foreground: #111827;
+
+  --radius-lg: 12px;
+  --radius-md: 8px;
+  --radius-sm: 6px;
+}
+
+@utility container {
+  margin-inline: auto;
+  padding-inline: 2rem;
+  @media (width >= 1400px) { max-width: 1400px; }
+}
+
+@layer base {
+  :root {
+    --background: #F7F6F3;
+    --foreground: #111827;
+    --border: #E5E7EB;
+    --radius: 12px;
+  }
+
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: #E5E7EB;
+  }
+
+  html {
+    color-scheme: light;
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    background-color: #F7F6F3;
+    color: #111827;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  input, textarea, select {
+    background-color: #FFFFFF;
+    color: #111827;
+    border-color: #E5E7EB;
+  }
+
+  input::placeholder, textarea::placeholder {
+    color: #9CA3AF;
+  }
+
+  button, a, [role="button"], select, label[for] {
+    cursor: pointer;
+  }
+
+  * {
+    transition-timing-function: ease;
+  }
+}
+
+/* ── Animations ─────────────────────────────────────── */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseOrange {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(249,115,22,0.5); }
+  50%       { opacity: 0.7; box-shadow: 0 0 0 4px rgba(249,115,22,0); }
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.85); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+@keyframes greenPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* ── Utilities ──────────────────────────────────────── */
+@utility animate-fade-slide {
+  animation: fadeSlideIn 0.3s ease forwards;
+}
+
+@utility btn-glow-orange {
+  box-shadow: 0 0 0 0 rgba(249,115,22,0);
+  transition: box-shadow 150ms ease, background-color 150ms ease;
+
+  &:hover {
+    box-shadow: 0 0 12px rgba(249,115,22,0.25), 0 2px 6px rgba(249,115,22,0.15);
+  }
+}
+
+/* Shimmer button */
+.btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.btn-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.4) 50%, transparent 60%);
+  background-size: 200% 100%;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  pointer-events: none;
+}
+.btn-shimmer:hover::after {
+  opacity: 1;
+  animation: shimmer 0.6s ease forwards;
+}
+
+/* Active nav row pulse */
+.nav-active-dot {
+  animation: pulseDot 2s ease infinite;
+}
+
+/* Green pulsing dot on active drives */
+.drive-active-dot {
+  animation: greenPulse 2s ease infinite;
+}

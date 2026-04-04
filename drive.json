@@ -1,0 +1,94 @@
+{
+    "job_title": "DevOps Engineer",
+    "company_name": null,
+    "department": null,
+    "location": {
+        "city": null,
+        "state": null,
+        "country": null,
+        "remote": true
+    },
+    "employment_type": "full-time",
+    "experience": {
+        "min_years": 2,
+        "max_years": 5
+    },
+    "skills": {
+        "must_have": [
+            "Linux/Unix",
+            "AWS",
+            "Azure",
+            "GCP",
+            "Python",
+            "Bash",
+            "Shell",
+            "Docker",
+            "Kubernetes",
+            "Jenkins",
+            "GitHub Actions",
+            "GitLab CI",
+            "Ansible",
+            "Puppet",
+            "Chef",
+            "Terraform",
+            "CloudFormation"
+        ],
+        "good_to_have": [
+            "microservices architecture"
+        ],
+        "soft_skills": [
+            "problem-solving",
+            "communication",
+            "team collaboration",
+            "ability to work in fast-paced environments"
+        ]
+    },
+    "education": {
+        "required": "Bachelor\u2019s degree in Computer Science or related field",
+        "preferred": null
+    },
+    "responsibilities": [
+        "Design, implement, and maintain CI/CD pipelines",
+        "Automate infrastructure provisioning using IaC tools (Terraform, CloudFormation)",
+        "Manage cloud platforms such as AWS, Azure, or GCP",
+        "Deploy and manage containerized applications using Docker and Kubernetes",
+        "Monitor system performance using tools like Prometheus, Grafana, or ELK Stack",
+        "Ensure system security, scalability, and high availability",
+        "Collaborate with development teams for smooth deployments",
+        "Troubleshoot production issues and perform root cause analysis"
+    ],
+    "requirements": [
+        "Strong knowledge of Linux/Unix systems",
+        "Experience with cloud platforms (AWS/Azure/GCP)",
+        "Proficiency in scripting (Python, Bash, Shell)",
+        "Hands-on experience with Docker and Kubernetes",
+        "Familiarity with CI/CD tools (Jenkins, GitHub Actions, GitLab CI)",
+        "Knowledge of configuration management tools (Ansible, Puppet, Chef)",
+        "Understanding of networking and security principles",
+        "Certifications (AWS DevOps, Kubernetes CKA, etc.)"
+    ],
+    "salary": {
+        "min": null,
+        "max": null,
+        "currency": null,
+        "period": null
+    },
+    "keywords": [
+        "DevOps",
+        "Engineer",
+        "CI/CD",
+        "pipelines",
+        "automation",
+        "infrastructure",
+        "cloud",
+        "Docker",
+        "Kubernetes",
+        "monitoring",
+        "Terraform",
+        "AWS",
+        "Azure",
+        "GCP",
+        "scripting"
+    ],
+    "summary": "We are seeking a skilled DevOps Engineer to build, manage, and optimize scalable infrastructure and deployment pipelines."
+}
