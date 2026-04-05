@@ -15,9 +15,13 @@ function detectIntent(message: string): string {
         return 'count_query';
     }
 
-    // Handle "show candidates", "show active candidates", "list candidates" etc.
-    if (lower.includes('show') || lower.includes('list') || lower.includes('get') || lower.includes('find') || lower.includes('search')) {
-        if (lower.includes('candidate') || lower.includes('application') || lower.includes('applicant') || lower.includes('hire') || lower.includes('everyone') || lower.includes('somebody')) {
+    // Handle "show candidates", "any n8n developers", "who is react dev" etc.
+    if (
+        lower.includes('show') || lower.includes('list') || lower.includes('get') || lower.includes('find') || 
+        lower.includes('search') || lower.includes('any') || lower.includes('who') || lower.includes('have') || 
+        lower.includes('has') || lower.includes('look for')
+    ) {
+        if (lower.includes('candidate') || lower.includes('application') || lower.includes('applicant') || lower.includes('hire') || lower.includes('everyone') || lower.includes('somebody') || lower.includes('developer') || lower.includes('engineer') || lower.includes('expert')) {
             return 'search_candidates';
         }
         if (lower.includes('drive') || lower.includes('job') || lower.includes('position')) {
@@ -53,7 +57,7 @@ function detectIntent(message: string): string {
     }
     
     // Default to search candidates for common queries
-    if (lower.includes('candidate') || lower.includes('applicant') || lower.includes('everyone') || lower.includes('all')) {
+    if (lower.includes('candidate') || lower.includes('applicant') || lower.includes('everyone') || lower.includes('all') || lower.includes('developer') || lower.includes('engineer')) {
         return 'search_candidates';
     }
     
@@ -147,10 +151,11 @@ function extractDriveName(message: string): string | null {
         }
     }
     
-    const roleMatch = message.match(/(?:show|list|find|get)\s+(?:me\s+)?(?:all\s+)?(\w+)\s+(?:candidates|developers|engineers)/i);
+    // Match "X developer", "X expert", "any X", "who has X"
+    const roleMatch = message.match(/(?:show|list|find|get|any|have|has|has|who\s+is|who\s+has|search|look\s+for)\s+(?:me\s+)?(?:all\s+)?(?:in\s+)?([\w\-\.]+)(?:\s+(?:candidates?|developers?|engineers?|experts?|specialists?))?/i);
     if (roleMatch && roleMatch[1]) {
         const val = roleMatch[1].trim().toLowerCase();
-        if (['active', 'all', 'recent', 'new', 'some'].includes(val)) return null;
+        if (['active', 'all', 'recent', 'new', 'some', 'me', 'the', 'my', 'any'].includes(val)) return null;
         return val;
     }
     
@@ -254,21 +259,24 @@ async function searchCandidates(message: string, orgId: string) {
         
         // Filter candidates who have the skill in their resume
         const filtered = allCandidates.filter(c => {
-            const resume = c.structuredResume as any;
+            const resume = c.structuredResume ? (typeof c.structuredResume === 'string' ? JSON.parse(c.structuredResume) : c.structuredResume) : null;
             if (!resume) return false;
             
             // Check skills array
             const skills = resume.skills || [];
-            if (skills.some((s: string) => s.toLowerCase().includes(searchTerm))) return true;
+            if (skills.some((s: string) => s.toLowerCase().includes(searchTerm) || searchTerm.includes(s.toLowerCase()))) return true;
             
             // Check summary
-            const summary = resume.summary || '';
-            if (summary.toLowerCase().includes(searchTerm)) return true;
+            const summary = (resume.summary || '').toLowerCase();
+            if (summary.includes(searchTerm)) return true;
             
             // Check work experience
             const workExp = resume.workExperience || [];
             if (workExp.some((w: any) => (w.title || '').toLowerCase().includes(searchTerm) || (w.description || '').toLowerCase().includes(searchTerm))) return true;
             
+            // Check drive title too
+            if (c.drive.title.toLowerCase().includes(searchTerm)) return true;
+
             return false;
         });
         
@@ -307,9 +315,10 @@ async function searchCandidates(message: string, orgId: string) {
         return { type: 'list', message: "No candidates found matching your query." };
     }
     
-    const list = candidates.map(c => 
-        `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - Status: ${c.status} - Drive: ${c.drive.title}`
-    ).join('\n');
+    const list = candidates.map(c => {
+        const time = new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - ${c.status} - ${c.drive.title} (${time})`;
+    }).join('\n');
     
     return {
         type: 'list',
@@ -428,9 +437,10 @@ async function filterByDate(message: string, orgId: string) {
                        message.toLowerCase().includes('yesterday') ? 'yesterday' : 
                        message.toLowerCase().includes('week') ? 'this week' : 'this period';
     
-    const list = candidates.slice(0, 10).map(c => 
-        `• **${c.fullName}** - ${c.drive.title}`
-    ).join('\n');
+    const list = candidates.slice(0, 10).map(c => {
+        const time = new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return `• **${c.fullName}** - ${c.drive.title} (at ${time})`;
+    }).join('\n');
     
     return {
         type: 'count',
@@ -573,6 +583,7 @@ async function summarizeCandidate(message: string, orgId: string, history: any[]
     summary += `💼 Applied for: ${candidate.drive.title}\n`;
     summary += `📊 AI Score: ${candidate.aiScore || 'N/A'}/100\n`;
     summary += `📌 Status: ${candidate.status}\n`;
+    summary += `📅 Applied: ${new Date(candidate.createdAt).toLocaleDateString()} at ${new Date(candidate.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}\n`;
     
     if (skills.length > 0) {
         summary += `\n🛠️ **Technical Skills:** ${skills.slice(0, 10).join(', ')}`;
@@ -823,7 +834,7 @@ Keep responses concise and use bold for important info. Always sign off as Lumo.
                 where: { drive: { orgId } },
                 take: 5,
                 orderBy: { createdAt: 'desc' },
-                select: { fullName: true, aiScore: true, status: true, drive: { select: { title: true } } }
+                select: { fullName: true, aiScore: true, status: true, createdAt: true, drive: { select: { title: true } } }
             })
         ]);
 
@@ -837,9 +848,9 @@ CURRENT PLATFORM STATUS:
 - Hired This Month: ${hiredThisMonth}
 
 RECENT APPLICATIONS:
-${recentApps.map(a => `- ${a.fullName}: Score ${a.aiScore || 'N/A'}, Status: ${a.status}, Drive: ${a.drive.title}`).join('\n')}
+${recentApps.map(a => `- ${a.fullName}: Score ${a.aiScore || 'N/A'}, Status: ${a.status}, Applied: ${new Date(a.createdAt).toLocaleString()}, Drive: ${a.drive.title}`).join('\n')}
 
-Be concise and helpful. Use bold for names and scores.
+Be concise and helpful. Use bold for names and scores. Always provide exact times if available in context.
         `;
 
         const gptResponse = await openai.chat.completions.create({

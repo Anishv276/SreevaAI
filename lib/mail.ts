@@ -14,11 +14,11 @@ export async function sendApplicationStatusEmail({
     email: string;
     fullName: string;
     jobTitle: string;
-    status: 'SHORTLISTED' | 'REJECTED';
+    status: 'SHORTLISTED' | 'REJECTED' | 'ACCEPTED' | 'INTERVIEW' | 'Hired';
     score: number;
     interviewLink?: string;
 }) {
-    const isAccepted = status === 'SHORTLISTED';
+    const isAccepted = status === 'SHORTLISTED' || status === 'ACCEPTED' || status === 'INTERVIEW' || status === 'Hired';
     
     const subject = isAccepted 
         ? `Congratulations! You've been shortlisted for the ${jobTitle} AI Interview`
