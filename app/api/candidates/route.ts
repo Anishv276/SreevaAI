@@ -2,61 +2,74 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resumeQueue, gradingQueue } from "@/lib/queue";
 import { createCandidateSchema, bulkDeleteCandidatesSchema, candidateQuerySchema } from "@/lib/validation";
+import { getSession } from "@/lib/auth";
 
 export async function GET(request: Request) {
     try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
         const { searchParams } = new URL(request.url);
-        const driveId = searchParams.get("driveId");
+        const driveIdStr = searchParams.get("driveId");
+        const driveId = driveIdStr ? parseInt(driveIdStr) : null;
 
-        const queryResult = candidateQuerySchema.safeParse({ driveId });
-        if (!queryResult.success) {
-            return NextResponse.json({ error: "Invalid query parameters" }, { status: 400 });
-        }
+        const assessmentTableResult = await prisma.$queryRawUnsafe<Array<{ exists: boolean }>>(
+            `
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'Assessment'
+            ) AS "exists"
+            `
+        );
 
-        const candidates = queryResult.data.driveId
+        const interviewTableResult = await prisma.$queryRawUnsafe<Array<{ exists: boolean }>>(
+            `
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'Interview'
+            ) AS "exists"
+            `
+        );
+
+        const hasAssessmentTable = Boolean(assessmentTableResult?.[0]?.exists);
+        const hasInterviewTable = Boolean(interviewTableResult?.[0]?.exists);
+
+        const assessmentSelect = hasAssessmentTable
+            ? `s.status AS "assessmentStatus"`
+            : `NULL::TEXT AS "assessmentStatus"`;
+        const interviewSelect = hasInterviewTable
+            ? `i.status AS "interviewStatusRaw"`
+            : `NULL::TEXT AS "interviewStatusRaw"`;
+
+        const assessmentJoin = hasAssessmentTable
+            ? `LEFT JOIN "Assessment" s ON s."applicationId" = a.id`
+            : ``;
+        const interviewJoin = hasInterviewTable
+            ? `LEFT JOIN "Interview" i ON i."applicationId" = a.id`
+            : ``;
+
+        const baseSelect = `
+            SELECT a.*, d.title AS "driveTitle", ${assessmentSelect}, ${interviewSelect}
+            FROM "Application" a
+            JOIN "Drive" d ON d.id = a."driveId"
+            ${assessmentJoin}
+            ${interviewJoin}
+        `;
+
+        const candidates = driveId
             ? await prisma.$queryRawUnsafe(
-                `
-                SELECT
-                  a.id,
-                  a."fullName",
-                  a.email,
-                  a.status,
-                  a."aiScore",
-                  a."createdAt",
-                  a."experienceYears",
-                  a."relevantYears",
-                  d.title AS "driveTitle",
-                  s.status AS "assessmentStatus",
-                  i.status AS "interviewStatusRaw"
-                FROM "Application" a
-                LEFT JOIN "Drive" d ON d.id = a."driveId"
-                LEFT JOIN "Assessment" s ON s."applicationId" = a.id
-                LEFT JOIN "Interview" i ON i."applicationId" = a.id
-                WHERE a."driveId" = $1
-                ORDER BY a."createdAt" DESC
-                `,
-                queryResult.data.driveId
+                `${baseSelect}
+                WHERE a."driveId" = $1 AND d."orgId" = $2
+                ORDER BY a."createdAt" DESC`,
+                driveId, session.orgId
             )
             : await prisma.$queryRawUnsafe(
-                `
-                SELECT
-                  a.id,
-                  a."fullName",
-                  a.email,
-                  a.status,
-                  a."aiScore",
-                  a."createdAt",
-                  a."experienceYears",
-                  a."relevantYears",
-                  d.title AS "driveTitle",
-                  s.status AS "assessmentStatus",
-                  i.status AS "interviewStatusRaw"
-                FROM "Application" a
-                LEFT JOIN "Drive" d ON d.id = a."driveId"
-                LEFT JOIN "Assessment" s ON s."applicationId" = a.id
-                LEFT JOIN "Interview" i ON i."applicationId" = a.id
-                ORDER BY a."createdAt" DESC
-                `
+                `${baseSelect}
+                WHERE d."orgId" = $1
+                ORDER BY a."createdAt" DESC`,
+                session.orgId
             );
 
         const formattedCandidates = (candidates as any[]).map((app: any) => {
@@ -206,6 +219,9 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
     try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
         const body = await request.json();
 
         const result = bulkDeleteCandidatesSchema.safeParse(body);
@@ -218,16 +234,25 @@ export async function DELETE(request: Request) {
 
         const { ids } = result.data;
 
+        // ── SECURITY: Ensure candidates belong to the Org ──────
+        const belongsToOrg = await prisma.application.findMany({
+            where: { id: { in: ids }, drive: { orgId: session.orgId } },
+            select: { id: true }
+        });
+
+        const validIds = belongsToOrg.map(a => a.id);
+        if (validIds.length === 0) return NextResponse.json({ message: "No matching candidates found" });
+
         try {
             const waitingResume = await resumeQueue.getJobs(['waiting', 'delayed', 'active']);
             for (const job of waitingResume) {
-                if (ids.includes(job.data.applicationId)) {
+                if (validIds.includes(job.data.applicationId)) {
                     await job.remove();
                 }
             }
             const waitingGrading = await gradingQueue.getJobs(['waiting', 'delayed', 'active']);
             for (const job of waitingGrading) {
-                if (ids.includes(job.data.applicationId)) {
+                if (validIds.includes(job.data.applicationId)) {
                     await job.remove();
                 }
             }
@@ -236,10 +261,10 @@ export async function DELETE(request: Request) {
         }
 
         await prisma.application.deleteMany({
-            where: { id: { in: ids } }
+            where: { id: { in: validIds } }
         });
 
-        return NextResponse.json({ message: `${ids.length} candidates deleted successfully` });
+        return NextResponse.json({ message: `${validIds.length} candidates deleted successfully` });
     } catch (error) {
         console.error("Error bulk deleting candidates:", error);
         return NextResponse.json({ error: "Failed to delete candidates" }, { status: 500 });

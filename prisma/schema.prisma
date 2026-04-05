@@ -8,14 +8,38 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  logoUrl   String?
+  plan      String   @default("STARTER")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+  drives    Drive[]
+}
+
+model SuperAdmin {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model User {
   id           String        @id @default(cuid())
   email        String        @unique
   name         String?
-  role         String        @default("CANDIDATE")
+  role         String        @default("CANDIDATE") // SUPER_ADMIN | ORG_ADMIN | CANDIDATE
+  orgId        String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   password     String?
+  organization Organization? @relation(fields: [orgId], references: [id])
   applications Application[]
   drives       Drive[]       @relation("CreatedDrives")
 }
@@ -23,35 +47,42 @@ model User {
 model Drive {
   id                   Int           @id @default(autoincrement())
   title                String
+  role                 String?
   description          String
   department           String
-  location             String
+  location             String        @default("Remote")
   type                 String        @default("Full-time")
-  status               String        @default("DRAFT")
-  aiScreeningEnabled   Boolean       @default(true)
+  status               String        @default("ACTIVE")
   screeningThreshold   Int           @default(60)
+  aiScreeningEnabled   Boolean       @default(true)
   creatorId            String
+  orgId                String?
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
-  aiScreeningWeights   String?       @default("{}")
   deadline             DateTime?
   positions            Int?          @default(1)
   registrationFields   String?       @default("[]")
   workMode             String?       @default("Remote")
-  assessmentCount      Int           @default(5)
-  assessmentDifficulty String        @default("Medium")
-  assessmentTypes      String        @default("MIXED")
-  proctoringEnabled    Boolean       @default(true)
-  webcamMonitoring     Boolean       @default(true)
-  assessmentTime       Int           @default(15)
-  assessmentMode       String        @default("TEST")
+  // Legacy interview fields
+  interviewEnabled     Boolean       @default(true)
+  interviewLanguage    String?       @default("English")
+  interviewTime        Int?          @default(10)
+  proctoringLevel      String?       @default("Medium")
+  aiFollowUpDepth      Int?          @default(3)
+  interviewQuestions   String?       @default("[]")
+  // JD fields
+  jdFileName           String?
+  jdPreviewUrl         String?
+  // Content
   experience           String?
   responsibilities     String?
+  requirements         String?
   salary               String?
   skills               String?
   extractedDetails     String?       @default("{}")
   applications         Application[]
   creator              User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
+  organization         Organization? @relation(fields: [orgId], references: [id])
 }
 
 model Application {
@@ -72,10 +103,8 @@ model Application {
   relevantYears    Float?
   structuredResume String?     @default("{}")
   submissionData   Json?       @default("{}")
-  location         String?
   drive            Drive       @relation(fields: [driveId], references: [id], onDelete: Cascade)
   user             User?       @relation(fields: [userId], references: [id])
-  assessment       Assessment?
   interview        Interview?
 }
 
@@ -95,65 +124,4 @@ model Interview {
   interviewDuration     Int?
   aiSummary             String?
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-}
-
-model Assessment {
-  id                    String               @id @default(cuid())
-  applicationId         String               @unique
-  startedAt             DateTime?
-  completedAt           DateTime?
-  score                 Int?
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
-  suspiciousFlags       String?              @default("[]")
-  tabSwitchCount        Int                  @default(0)
-  aiReport              String?
-  accessToken           String               @unique @default(uuid())
-  expiresAt             DateTime?
-  status                String               @default("PENDING")
-  interviewRecordingUrl String?
-  interviewTranscript   String?
-  interviewRecordedAt   DateTime?
-  interviewDuration     Int?
-  application           Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  questions             AssessmentQuestion[]
-  responses             AssessmentResponse[]
-  events                ProctoringEvent[]
-}
-
-model ProctoringEvent {
-  id              String     @id @default(cuid())
-  assessmentId    String
-  eventType       String
-  severity        String     @default("MEDIUM")
-  reason          String?
-  timestamp       DateTime   @default(now())
-  durationSeconds Int?
-  metadata        String?    @default("{}")
-  assessment      Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-}
-
-model AssessmentQuestion {
-  id            String     @id @default(cuid())
-  assessmentId  String
-  text          String
-  type          String
-  options       String?
-  correctAnswer String?
-  order         Int        @default(0)
-  starterCode   String?
-  testCases     String?
-  intent        String?
-  assessment    Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-}
-
-model AssessmentResponse {
-  id           String     @id @default(cuid())
-  assessmentId String
-  questionId   String
-  answer       String
-  isCorrect    Boolean?
-  aiFeedback   String?
-  createdAt    DateTime   @default(now())
-  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
 }

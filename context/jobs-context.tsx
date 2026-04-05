@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 // import { activeDrivesData } from "@/lib/mock-data"; 
 
 // Define the Job type
@@ -33,6 +34,7 @@ const JobsContext = createContext<JobsContextType | undefined>(undefined);
 
 export function JobsProvider({ children }: { children: React.ReactNode }) {
     const [jobs, setJobs] = useState<Job[]>([]);
+    const pathname = usePathname();
 
     const fetchJobs = async () => {
         try {
@@ -40,19 +42,27 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             if (res.ok) {
                 const data = await res.json();
                 setJobs(data);
+                return;
+            }
+
+            if (res.status === 401 || res.status === 403) {
+                setJobs([]);
+                return;
             } else {
-                throw new Error("Failed to fetch jobs");
+                console.error("Failed to fetch jobs:", res.status, res.statusText);
+                setJobs([]);
             }
         } catch (error) {
             console.error("Failed to fetch jobs:", error);
-            throw error;
+            setJobs([]);
         }
     };
 
     // Load initial data
     useEffect(() => {
-        fetchJobs();
-    }, []);
+        if (!pathname.startsWith("/admin")) return;
+        fetchJobs().catch(() => undefined);
+    }, [pathname]);
 
     const addJob = async (newJobData: Omit<Job, "id" | "applicants" | "status" | "daysLeft" | "createdAt">): Promise<Job> => {
         try {

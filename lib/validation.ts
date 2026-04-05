@@ -8,7 +8,6 @@ export const createDriveSchema = z.object({
   title: z.string().min(1, "Title is required").max(200),
   description: z.string().max(5000).optional().default(""),
   department: z.string().min(1, "Department is required"),
-  location: z.string().optional().default("Remote"),
   employmentType: z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance"]).optional(),
   type: z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance"]).optional(),
   status: z.enum(["DRAFT", "ACTIVE", "PAUSED", "CLOSED"]).optional(),
@@ -20,13 +19,8 @@ export const createDriveSchema = z.object({
   skills: z.string().optional(),
   responsibilities: z.string().optional(),
   aiScreening: z.object({
-    enabled: z.boolean().optional(),
-    weights: z.record(z.string(), z.number()).optional(),
+    enabled: z.boolean().optional()
   }).optional(),
-  assessmentCount: z.coerce.number().int().min(1).max(100).optional(),
-  assessmentDifficulty: z.enum(["Easy", "Medium", "Hard", "Entry", "Expert"]).optional(),
-  assessmentTime: z.coerce.number().int().min(5).max(180).optional(),
-  assessmentMode: z.enum(["TEST", "CODING", "BOTH"]).optional(),
   registrationFields: z.array(z.any()).optional(),
   extractedDetails: z.record(z.string(), z.any()).optional(),
 });
@@ -49,7 +43,6 @@ export const createCandidateSchema = z.object({
   resumeUrl: z.string().optional(), // Relaxed for mocks/internal paths
   resumeText: z.string().optional(),
   structuredResume: z.any().optional(),
-  location: z.string().optional(),
   portfolio: z.string().optional(), // Relaxed
   currentCompany: z.string().optional(),
   experience: z.string().optional(), // Added alias for frontend compatibility
@@ -65,43 +58,9 @@ export const bulkDeleteCandidatesSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, "At least one ID required"),
 });
 
-export const assessmentSubmitSchema = z.object({
-  responses: z.array(z.object({
-    questionId: z.string().min(1),
-    answer: z.string(),
-  })).min(1, "At least one response required"),
-  proctoringData: z.object({
-    tabSwitchCount: z.number().int().min(0).optional(),
-    flags: z.array(z.any()).optional(),
-  }).optional(),
-});
-
-export const proctoringEventsSchema = z.object({
-  events: z.array(z.object({
-    eventType: z.string().min(1),
-    severity: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
-    reason: z.string().optional(),
-    durationSeconds: z.number().int().optional(),
-    metadata: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
-    timestamp: z.string().datetime().optional(),
-  })).min(1, "At least one event required"),
-});
-
 export const interviewTokenSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),
   participantName: z.string().min(1, "Participant name required").max(100),
-});
-
-export const interviewFinalizeSchema = z.object({
-  applicationId: z.string().min(1, "Application ID required"),
-  recordingUrl: z.string().url().optional(),
-  transcript: z.string().optional(),
-  fullTranscript: z.string().optional(),
-  interviewTranscript: z.string().optional(),
-  transcription: z.string().optional(),
-  interviewStatus: z.enum(["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]).optional(),
-  appStatus: z.string().optional(),
-  duration: z.union([z.number(), z.string()]).optional(),
 });
 
 export const presignedUrlSchema = z.object({

@@ -25,6 +25,10 @@ export function Sidebar() {
     const [menuOpen, setMenuOpen] = useState(false);
     const { logout } = useAuth();
 
+    const handleLogout = async () => {
+        await logout();
+    };
+
     return (
         <aside
             className="hidden md:flex h-screen w-[220px] flex-col fixed left-0 top-0 z-50 bg-white border-r border-gray-100 shadow-[4px_0_24px_rgba(0,0,0,0.02)]"
@@ -119,7 +123,7 @@ export function Sidebar() {
                         </button>
                         <div className="h-px bg-gray-50 my-1 mx-2" />
                         <button 
-                            onClick={logout}
+                            onClick={handleLogout}
                             className="flex items-center gap-3 w-full px-4 py-3 text-[13px] font-black text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
                         >
                             <LogOut className="h-4 w-4" /> Sign Out

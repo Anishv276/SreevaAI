@@ -2,10 +2,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createDriveSchema, bulkDeleteSchema, driveQuerySchema } from "@/lib/validation";
-import { z } from "zod";
+import { getSession } from "@/lib/auth";
 
 export async function GET(request: Request) {
     try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
         const { searchParams } = new URL(request.url);
         const status = searchParams.get("status");
 
@@ -14,7 +17,9 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Invalid query parameters" }, { status: 400 });
         }
 
-        const where = queryResult.data.status ? { status: queryResult.data.status } : {};
+        // ── SECURITY: Filter by Org ─────────────────────────
+        const where: any = { orgId: session.orgId };
+        if (queryResult.data.status) where.status = queryResult.data.status;
 
         const drives = await prisma.drive.findMany({
             where,
@@ -31,8 +36,7 @@ export async function GET(request: Request) {
             applicants: drive._count.applications,
             daysLeft: Math.max(0, Math.ceil((new Date(drive.createdAt).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24))),
             aiScreening: {
-                enabled: (drive as any).aiScreeningEnabled,
-                weights: (drive as any).aiScreeningWeights ? JSON.parse((drive as any).aiScreeningWeights) : {}
+                enabled: (drive as any).aiScreeningEnabled
             },
             registrationFields: (drive as any).registrationFields ? JSON.parse((drive as any).registrationFields) : [],
             extractedDetails: (drive as any).extractedDetails ? JSON.parse((drive as any).extractedDetails) : {}
@@ -47,6 +51,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
     try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
         const body = await request.json();
 
         const result = createDriveSchema.safeParse(body);
@@ -65,37 +72,20 @@ export async function POST(request: Request) {
                 title: data.title,
                 description: data.description || "",
                 department: data.department,
-                location: data.location || "Remote",
                 type: data.employmentType || data.type || "Full-time",
                 status: data.status || "ACTIVE",
                 workMode: data.workMode || "Remote",
                 positions: data.positions || 1,
                 deadline: deadline,
                 aiScreeningEnabled: data.aiScreening?.enabled ?? true,
-                aiScreeningWeights: JSON.stringify(data.aiScreening?.weights || {}),
                 salary: data.salary || null,
                 experience: data.experience || null,
                 skills: data.skills || null,
                 responsibilities: data.responsibilities || null,
                 extractedDetails: JSON.stringify(data.extractedDetails || {}),
-                assessmentCount: data.assessmentCount ?? 5,
-                assessmentDifficulty: data.assessmentDifficulty ?? "Medium",
-                assessmentTypes: "MIXED",
-                assessmentTime: data.assessmentTime ?? 15,
-                assessmentMode: data.assessmentMode ?? "TEST",
-                proctoringEnabled: true,
-                webcamMonitoring: true,
                 registrationFields: JSON.stringify(data.registrationFields || []),
-                creator: {
-                    connectOrCreate: {
-                        where: { email: "admin@lumoscale" },
-                        create: {
-                            email: "admin@lumoscale",
-                            name: "Vamsi Admin",
-                            role: "HR_ADMIN",
-                        },
-                    },
-                },
+                orgId: session.orgId,
+                creatorId: session.userId,
             } as any,
         });
 
@@ -112,6 +102,9 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
     try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
         const body = await request.json();
 
         const result = bulkDeleteSchema.safeParse(body);
@@ -124,25 +117,25 @@ export async function DELETE(request: Request) {
 
         const { ids } = result.data;
 
+        // ── SECURITY: Ensure IDs belong to the Org ───────────
+        const belongsToOrg = await prisma.drive.findMany({
+            where: { id: { in: ids }, orgId: session.orgId } as any,
+            select: { id: true },
+        });
+
+        const validIds = belongsToOrg.map(d => d.id);
+        if (validIds.length === 0) return NextResponse.json({ message: "No matching drives found" });
+
         await prisma.$transaction([
-            prisma.assessmentQuestion.deleteMany({
-                where: { assessment: { application: { driveId: { in: ids } } } }
-            }),
-            prisma.assessmentResponse.deleteMany({
-                where: { assessment: { application: { driveId: { in: ids } } } }
-            }),
-            prisma.assessment.deleteMany({
-                where: { application: { driveId: { in: ids } } }
-            }),
             prisma.application.deleteMany({
-                where: { driveId: { in: ids } }
+                where: { driveId: { in: validIds } }
             }),
             prisma.drive.deleteMany({
-                where: { id: { in: ids } }
+                where: { id: { in: validIds } }
             })
         ]);
 
-        return NextResponse.json({ message: `${ids.length} drives deleted successfully` });
+        return NextResponse.json({ message: `${validIds.length} drives deleted successfully` });
     } catch (error) {
         console.error("Error bulk deleting drives:", error);
         return NextResponse.json({ error: "Failed to delete drives" }, { status: 500 });
