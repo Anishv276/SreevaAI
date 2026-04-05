@@ -68,7 +68,6 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
     const [activeTab, setActiveTab] = useState<"analysis" | "interview" | "assessment">("analysis");
     const [expandedSection, setExpandedSection] = useState<string | null>("assessment");
     const [isIncidentLogExpanded, setIsIncidentLogExpanded] = useState(false);
-    const [scanning, setScanning] = useState(false);
     const [resendingInterview, setResendingInterview] = useState(false);
     const [mounted, setMounted] = useState(false);
     const [recordingDurationSec, setRecordingDurationSec] = useState<number | null>(null);
@@ -99,25 +98,6 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
         setRecordingDurationSec(null);
     }, [candidate?.interview?.interviewRecordingUrl, candidate?.assessment?.interviewRecordingUrl]);
 
-    const handleRescan = async () => {
-        setScanning(true);
-        try {
-            const res = await fetch(`/api/candidates/${id}/scan`, { method: "POST" });
-            if (res.ok) {
-                const updated = await res.json();
-                setCandidate(updated);
-                alert("AI Analysis completed successfully!");
-            } else {
-                const err = await res.json();
-                alert(`Scan failed: ${err.error || "Unknown error"}`);
-            }
-        } catch (error) {
-            console.error("Scan error:", error);
-            alert("Failed to trigger scan.");
-        } finally {
-            setScanning(false);
-        }
-    };
 
     const handleResendInterview = async () => {
         setResendingInterview(true);
@@ -294,16 +274,6 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                             </Button>
                         )}
                         
-                        {(!candidate.aiScore || candidate.aiScore === 0) && (
-                            <Button
-                                onClick={handleRescan}
-                                disabled={scanning}
-                                className="h-11 px-6 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black shadow-[0_4px_20px_rgba(79,70,229,0.3)] transition-all"
-                            >
-                                {scanning ? <Zap className="h-4 w-4 mr-2 animate-pulse" /> : <Sparkles className="h-4 w-4 mr-2" />}
-                                {scanning ? "Scanning..." : "Scan Resume"}
-                            </Button>
-                        )}
 
 
                     </div>
