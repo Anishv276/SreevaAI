@@ -14,6 +14,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         const drive = await prisma.drive.findUnique({
             where: { id: driveId },
             include: {
+                organization: {
+                    select: { isActive: true }
+                },
                 _count: {
                     select: { applications: true },
                 },
@@ -22,6 +25,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
         if (!drive) {
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        }
+
+        if (drive.organization && !drive.organization.isActive) {
+            return NextResponse.json({ error: "This organization is currently suspended. Access is restricted." }, { status: 403 });
         }
 
         return NextResponse.json({
@@ -86,18 +93,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.extractedDetails !== undefined) updateData.extractedDetails = JSON.stringify(data.extractedDetails);
         
         if (data.aiScreening?.enabled !== undefined) updateData.aiScreeningEnabled = data.aiScreening.enabled;
-        if (data.aiScreening?.weights !== undefined) updateData.aiScreeningWeights = JSON.stringify(data.aiScreening.weights);
-        
-        if (data.assessmentCount !== undefined) updateData.assessmentCount = data.assessmentCount;
-        if (data.assessmentDifficulty !== undefined) updateData.assessmentDifficulty = data.assessmentDifficulty;
-        if (data.assessmentTime !== undefined) updateData.assessmentTime = data.assessmentTime;
-        if (data.assessmentMode !== undefined) updateData.assessmentMode = data.assessmentMode;
         
         if (data.registrationFields !== undefined) updateData.registrationFields = JSON.stringify(data.registrationFields);
         if (data.status !== undefined) updateData.status = data.status;
-
-        updateData.proctoringEnabled = true;
-        updateData.webcamMonitoring = true;
 
         const updated = await prisma.drive.update({
             where: { id: driveId },
@@ -130,15 +128,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         }
 
         await prisma.$transaction([
-            prisma.assessmentQuestion.deleteMany({
-                where: { assessment: { application: { driveId } } }
-            }),
-            prisma.assessmentResponse.deleteMany({
-                where: { assessment: { application: { driveId } } }
-            }),
-            prisma.assessment.deleteMany({
-                where: { application: { driveId } }
-            }),
             prisma.application.deleteMany({
                 where: { driveId },
             }),

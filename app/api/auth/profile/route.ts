@@ -8,19 +8,40 @@ export async function PATCH(request: Request) {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
-        const { newPassword, currentPassword } = await request.json();
+        const { newPassword, currentPassword, otp } = await request.json();
 
         if (!newPassword || newPassword.length < 6) {
             return NextResponse.json({ error: "New password must be at least 6 characters" }, { status: 400 });
         }
 
+        // ── 0. OTP VERIFICATION (Mandatory for SuperAdmin) ────
+        if (session.role === "SUPER_ADMIN" || otp) {
+            if (!otp) return NextResponse.json({ error: "Security code (OTP) required" }, { status: 400 });
+
+            const vtTable = (prisma as any).verificationToken;
+            const validToken = await vtTable.findFirst({
+                where: { 
+                    token: otp, 
+                    superAdminId: session.userId,
+                    expires: { gt: new Date() }
+                }
+            });
+
+            if (!validToken) {
+                return NextResponse.json({ error: "Invalid or expired security code" }, { status: 400 });
+            }
+
+            // Cleanup OTP after verification
+            await vtTable.delete({ where: { id: validToken.id } });
+        }
+
         // ── 1. Check SuperAdmin first ───────────────────────
-        let user = await (prisma as any).superAdmin.findUnique({ where: { id: session.userId } });
+        let user: any = await prisma.superAdmin.findUnique({ where: { id: session.userId } });
         let table = "superAdmin";
 
         // ── 2. Check regular User second ──────────────────
         if (!user) {
-            user = await prisma.user.findUnique({ where: { id: session.userId } }) as any;
+            user = await prisma.user.findUnique({ where: { id: session.userId } });
             table = "user";
         }
 
@@ -35,7 +56,7 @@ export async function PATCH(request: Request) {
         const hashedPassword = await bcrypt.hash(newPassword, 10);
         
         if (table === "superAdmin") {
-            await (prisma as any).superAdmin.update({
+            await prisma.superAdmin.update({
                 where: { id: session.userId },
                 data: { password: hashedPassword },
             });

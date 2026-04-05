@@ -63,13 +63,13 @@ export async function GET(request: Request) {
                 `${baseSelect}
                 WHERE a."driveId" = $1 AND d."orgId" = $2
                 ORDER BY a."createdAt" DESC`,
-                driveId, session.orgId
+                driveId,  (new URL(request.url).searchParams.get("orgId") || session?.orgId)
             )
             : await prisma.$queryRawUnsafe(
                 `${baseSelect}
                 WHERE d."orgId" = $1
                 ORDER BY a."createdAt" DESC`,
-                session.orgId
+                 (new URL(request.url).searchParams.get("orgId") || session?.orgId)
             );
 
         const formattedCandidates = (candidates as any[]).map((app: any) => {
@@ -140,11 +140,15 @@ export async function POST(request: Request) {
         const data = result.data;
 
         const drive = await prisma.drive.findUnique({
-            where: { id: data.driveId },
+            where: { id: data.driveId }, include: { organization: { select: { isActive: true } } },
         });
 
         if (!drive) {
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        }
+
+        if (drive.organization && !drive.organization.isActive) {
+            return NextResponse.json({ error: "Access Denied: This organization's recruitment portal is currently suspended." }, { status: 403 });
         }
 
         const existingApplication = await prisma.application.findFirst({
@@ -236,7 +240,7 @@ export async function DELETE(request: Request) {
 
         // ── SECURITY: Ensure candidates belong to the Org ──────
         const belongsToOrg = await prisma.application.findMany({
-            where: { id: { in: ids }, drive: { orgId: session.orgId } },
+            where: { id: { in: ids }, drive: { orgId:  (new URL(request.url).searchParams.get("orgId") || session?.orgId) } },
             select: { id: true }
         });
 

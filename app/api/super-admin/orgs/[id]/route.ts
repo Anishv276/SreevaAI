@@ -1,6 +1,34 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+// GET /api/super-admin/orgs/[id] — fetch org for editing
+export async function GET(
+    _request: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const { id } = await params;
+        const org = await prisma.organization.findUnique({
+            where: { id },
+            include: {
+                users: {
+                    where: { role: "ORG_ADMIN" },
+                    select: { id: true, name: true, email: true }
+                }
+            }
+        });
+
+        if (!org) {
+            return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+        }
+
+        return NextResponse.json(org);
+    } catch (error) {
+        console.error("Error fetching org:", error);
+        return NextResponse.json({ error: "Failed to fetch organization" }, { status: 500 });
+    }
+}
+
 // PATCH /api/super-admin/orgs/[id] — update org (suspend, change plan, etc.)
 export async function PATCH(
     request: Request,
@@ -9,7 +37,7 @@ export async function PATCH(
     try {
         const { id } = await params;
         const body = await request.json();
-        const { name, plan, isActive, logoUrl } = body;
+        const { name, plan, isActive, logoUrl, slug } = body;
 
         const updated = await prisma.organization.update({
             where: { id },
@@ -18,6 +46,7 @@ export async function PATCH(
                 ...(plan !== undefined && { plan }),
                 ...(isActive !== undefined && { isActive }),
                 ...(logoUrl !== undefined && { logoUrl }),
+                ...(slug !== undefined && { slug }),
             },
         });
 

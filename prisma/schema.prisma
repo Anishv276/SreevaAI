@@ -13,6 +13,9 @@ model Organization {
   name      String
   slug      String   @unique
   logoUrl   String?
+  industry  String?
+  size      String?
+  website   String?
   plan      String   @default("STARTER")
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -22,12 +25,13 @@ model Organization {
 }
 
 model SuperAdmin {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String              @id @default(cuid())
+  email              String              @unique
+  password           String
+  name               String
+  verificationTokens VerificationToken[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 }
 
 model User {
@@ -124,4 +128,12 @@ model Interview {
   interviewDuration     Int?
   aiSummary             String?
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+model VerificationToken {
+  id           String      @id @default(cuid())
+  superAdminId String?
+  superAdmin   SuperAdmin? @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
+  token        String      @unique
+  expires      DateTime
+  createdAt    DateTime    @default(now())
 }

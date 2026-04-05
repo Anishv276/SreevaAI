@@ -2,6 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe } from "lucide-react";
+
+const PLANS = [
+    { id: "STARTER", label: "Starter", desc: "For small teams", color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
+    { id: "PRO", label: "Professional", desc: "Best for scaling", color: "text-[#F97316]", bg: "bg-orange-50", border: "border-orange-100" },
+    { id: "ENTERPRISE", label: "Enterprise", desc: "Maximum power", color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" }
+];
 
 export default function NewOrgPage() {
     const router = useRouter();
@@ -13,7 +20,6 @@ export default function NewOrgPage() {
         orgName: "",
         slug: "",
         plan: "STARTER",
-        logoUrl: "",
         adminName: "",
         adminEmail: "",
         adminPassword: "",
@@ -23,7 +29,9 @@ export default function NewOrgPage() {
         setForm(prev => ({
             ...prev,
             orgName: name,
-            slug: prev.slug || name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+            slug: prev.slug === "" || prev.slug === prev.orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") 
+                   ? name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") 
+                   : prev.slug,
         }));
     };
 
@@ -57,39 +65,44 @@ export default function NewOrgPage() {
     if (success) {
         return (
             <div className="p-8 flex items-center justify-center min-h-[80vh]">
-                <div className="w-full max-w-md bg-white/[0.03] border border-white/[0.06] rounded-3xl p-10 text-center space-y-6">
-                    <div className="w-16 h-16 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center mx-auto text-3xl">
-                        ✓
+                <div className="w-full max-w-lg bg-white border border-gray-100 rounded-[3rem] p-12 text-center space-y-8 shadow-[0_20px_50px_rgba(0,0,0,0.04)] animate-fade-slide">
+                    <div className="w-20 h-20 rounded-3xl bg-green-50 border border-green-100 flex items-center justify-center mx-auto text-green-500 shadow-sm">
+                        <CheckCircle2 className="h-10 w-10" />
                     </div>
-                    <div>
-                        <h2 className="text-white font-black text-2xl">{success.orgName} is Live!</h2>
-                        <p className="text-gray-500 text-sm mt-2 font-medium">Organization and HR Admin account created.</p>
+                    <div className="space-y-2">
+                        <h2 className="text-gray-900 font-black text-3xl tracking-tight">{success.orgName} is Live!</h2>
+                        <p className="text-gray-500 font-medium">Organization and HR Admin account created successfully.</p>
                     </div>
-                    <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5 text-left space-y-3">
-                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">HR Admin Login Details</p>
-                        <div className="space-y-2">
-                            <div className="flex justify-between">
-                                <span className="text-gray-500 text-sm">Email</span>
-                                <span className="text-white font-bold text-sm">{success.adminEmail}</span>
+                    
+                    <div className="bg-gray-50 border border-gray-100 rounded-2xl p-6 text-left space-y-4">
+                        <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-6 bg-green-500 rounded-full" />
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">HR Admin Credentials</p>
+                        </div>
+                        <div className="space-y-3">
+                            <div className="flex justify-between items-center py-2 border-b border-gray-100/50">
+                                <span className="text-gray-400 text-xs font-bold uppercase tracking-widest">Email</span>
+                                <span className="text-gray-900 font-black text-sm">{success.adminEmail}</span>
                             </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-500 text-sm">Login URL</span>
-                                <span className="text-[#F97316] font-bold text-sm">/login</span>
+                            <div className="flex justify-between items-center py-2">
+                                <span className="text-gray-400 text-xs font-bold uppercase tracking-widest">Portal</span>
+                                <span className="text-[#F97316] font-black text-sm">/login</span>
                             </div>
                         </div>
                     </div>
-                    <div className="flex gap-3">
+
+                    <div className="flex flex-col sm:flex-row gap-4 pt-4">
                         <button
-                            onClick={() => { setSuccess(null); setForm({ orgName: "", slug: "", plan: "STARTER", logoUrl: "", adminName: "", adminEmail: "", adminPassword: "" }); }}
-                            className="flex-1 py-3 rounded-xl border border-white/10 text-gray-400 font-bold text-sm hover:bg-white/[0.04] transition-colors"
+                            onClick={() => { setSuccess(null); setForm({ orgName: "", slug: "", plan: "STARTER", adminName: "", adminEmail: "", adminPassword: "" }); }}
+                            className="flex-1 h-14 rounded-2xl border border-gray-100 text-gray-400 font-black text-xs uppercase tracking-widest hover:bg-gray-50 transition-all"
                         >
                             Add Another
                         </button>
                         <button
                             onClick={() => router.push("/super-admin/orgs")}
-                            className="flex-1 py-3 rounded-xl bg-gradient-to-r from-[#F97316] to-orange-600 text-white font-bold text-sm shadow-lg shadow-orange-500/25"
+                            className="flex-1 h-14 rounded-2xl bg-gray-900 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-gray-200 hover:bg-black transition-all active:scale-95"
                         >
-                            View All Orgs
+                            View All Orgs →
                         </button>
                     </div>
                 </div>
@@ -97,133 +110,170 @@ export default function NewOrgPage() {
         );
     }
 
-    const inputClass = "w-full h-11 px-4 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white placeholder-gray-600 text-sm font-medium outline-none focus:border-[#F97316]/50 transition-all";
-    const labelClass = "block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1.5";
-
     return (
-        <div className="p-8 max-w-2xl">
+        <div className="p-8 lg:p-12 max-w-4xl animate-fade-slide">
             {/* Header */}
-            <div className="mb-8">
-                <button onClick={() => router.back()} className="text-gray-500 hover:text-gray-300 text-sm font-bold mb-4 flex items-center gap-2 transition-colors">
-                    ← Back
+            <div className="mb-12">
+                <button 
+                    onClick={() => router.back()} 
+                    className="group flex items-center gap-2 text-gray-400 hover:text-gray-900 text-xs font-black uppercase tracking-[0.2em] mb-6 transition-all"
+                >
+                    <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+                    Back to List
                 </button>
-                <h1 className="text-3xl font-black text-white tracking-tight">Add New Client</h1>
-                <p className="text-gray-500 font-medium mt-1">Create an organization and its HR Admin account.</p>
+                <div className="flex items-center gap-6">
+                    <div className="h-16 w-16 rounded-[1.5rem] bg-orange-50 border border-orange-100 flex items-center justify-center text-[#F97316] shadow-sm">
+                        <Building2 className="h-8 w-8" />
+                    </div>
+                    <div>
+                        <h1 className="text-4xl font-black text-gray-900 tracking-tighter leading-none">Add New Client</h1>
+                        <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2">Create an elite organization on the Lumoscale platform.</p>
+                    </div>
+                </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-8">
+            <form onSubmit={handleSubmit} className="space-y-10">
                 {/* Organization Details */}
-                <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-5">
-                    <h2 className="text-white font-black text-sm uppercase tracking-wider">Organization Details</h2>
-
-                    <div>
-                        <label className={labelClass}>Company Name *</label>
-                        <input
-                            id="org-name"
-                            value={form.orgName}
-                            onChange={e => handleOrgNameChange(e.target.value)}
-                            placeholder="e.g. Zomato"
-                            required
-                            className={inputClass}
-                        />
+                <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                        <span className="w-1.5 h-8 bg-[#F97316] rounded-full shadow-[0_0_15px_rgba(249,115,22,0.3)]" />
+                        <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-gray-400">Section 1: Organization Blueprint</h3>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className={labelClass}>URL Slug *</label>
-                            <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 text-sm font-bold">/org/</span>
+                    <div className="grid md:grid-cols-2 gap-8 bg-white border border-gray-100 rounded-[2.5rem] p-10 shadow-[0_10px_40px_rgba(0,0,0,0.02)] transition-shadow hover:shadow-[0_20px_60px_rgba(0,0,0,0.04)] group">
+                        <div className="space-y-6">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                    <Building2 className="h-3 w-3" /> Company Name
+                                </label>
                                 <input
-                                    id="slug"
-                                    value={form.slug}
-                                    onChange={e => setForm(prev => ({ ...prev, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") }))}
-                                    placeholder="zomato"
+                                    value={form.orgName}
+                                    onChange={e => handleOrgNameChange(e.target.value)}
+                                    placeholder="e.g. Zomato"
                                     required
-                                    className={`${inputClass} pl-12`}
+                                    className="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-[1.25rem] text-sm font-black text-gray-900 placeholder:text-gray-300 outline-none focus:bg-white focus:border-blue-100 focus:ring-4 focus:ring-blue-50 transition-all shadow-inner"
                                 />
                             </div>
-                        </div>
-                        <div>
-                            <label className={labelClass}>Plan</label>
-                            <select
-                                value={form.plan}
-                                onChange={e => setForm(prev => ({ ...prev, plan: e.target.value }))}
-                                className={inputClass}
-                            >
-                                <option value="STARTER">Starter</option>
-                                <option value="PRO">Pro</option>
-                                <option value="ENTERPRISE">Enterprise</option>
-                            </select>
-                        </div>
-                    </div>
 
-                    <div>
-                        <label className={labelClass}>Logo URL (optional)</label>
-                        <input
-                            value={form.logoUrl}
-                            onChange={e => setForm(prev => ({ ...prev, logoUrl: e.target.value }))}
-                            placeholder="https://company.com/logo.png"
-                            className={inputClass}
-                        />
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                    <Globe className="h-3 w-3" /> URL Slug
+                                </label>
+                                <div className="relative group">
+                                    <span className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300 text-sm font-bold">/</span>
+                                    <input
+                                        value={form.slug}
+                                        onChange={e => setForm(prev => ({ ...prev, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") }))}
+                                        placeholder="zomato"
+                                        required
+                                        className="w-full h-14 pl-10 pr-6 bg-gray-50 border border-transparent rounded-[1.25rem] text-sm font-black text-gray-900 placeholder:text-gray-300 outline-none focus:bg-white focus:border-blue-100 focus:ring-4 focus:ring-blue-50 transition-all shadow-inner"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 block">Select Enterprise Plan</label>
+                            <div className="grid gap-3">
+                                {PLANS.map(plan => (
+                                    <button
+                                        key={plan.id}
+                                        type="button"
+                                        onClick={() => setForm(prev => ({ ...prev, plan: plan.id }))}
+                                        className={`flex items-center justify-between p-4 rounded-2xl border transition-all text-left group/btn ${
+                                            form.plan === plan.id 
+                                                ? `${plan.border} ${plan.bg} shadow-md` 
+                                                : "border-gray-50 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-100 opacity-60 hover:opacity-100"
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-2 h-2 rounded-full ${form.plan === plan.id ? "bg-[#F97316] animate-pulse" : "bg-gray-300"}`} />
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-900">{plan.label}</p>
+                                                <p className="text-[10px] font-bold text-gray-400 mt-0.5">{plan.desc}</p>
+                                            </div>
+                                        </div>
+                                        {form.plan === plan.id && <ShieldCheck className="h-4 w-4 text-[#F97316]" />}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 {/* HR Admin Account */}
-                <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-6 space-y-5">
-                    <h2 className="text-white font-black text-sm uppercase tracking-wider">HR Admin Account</h2>
-
-                    <div>
-                        <label className={labelClass}>Admin Name</label>
-                        <input
-                            value={form.adminName}
-                            onChange={e => setForm(prev => ({ ...prev, adminName: e.target.value }))}
-                            placeholder="Amit Sharma"
-                            className={inputClass}
-                        />
+                <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                        <span className="w-1.5 h-8 bg-blue-500 rounded-full shadow-[0_0_15px_rgba(59,130,246,0.3)]" />
+                        <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-gray-400">Section 2: Primary HR Controller</h3>
                     </div>
 
-                    <div>
-                        <label className={labelClass}>Admin Email *</label>
-                        <input
-                            id="admin-email"
-                            type="email"
-                            value={form.adminEmail}
-                            onChange={e => setForm(prev => ({ ...prev, adminEmail: e.target.value }))}
-                            placeholder="amit@zomato.com"
-                            required
-                            className={inputClass}
-                        />
-                    </div>
+                    <div className="grid md:grid-cols-2 gap-8 bg-white border border-gray-100 rounded-[2.5rem] p-10 shadow-[0_10px_40px_rgba(0,0,0,0.02)] transition-shadow hover:shadow-[0_20px_60px_rgba(0,0,0,0.04)]">
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                <User className="h-3 w-3" /> Full Name
+                            </label>
+                            <input
+                                value={form.adminName}
+                                onChange={e => setForm(prev => ({ ...prev, adminName: e.target.value }))}
+                                placeholder="Amit Sharma"
+                                className="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-[1.25rem] text-sm font-black text-gray-900 placeholder:text-gray-300 outline-none focus:bg-white focus:border-blue-100 focus:ring-4 focus:ring-blue-50 transition-all shadow-inner"
+                            />
+                        </div>
 
-                    <div>
-                        <label className={labelClass}>Temp Password *</label>
-                        <input
-                            id="admin-password"
-                            type="text"
-                            value={form.adminPassword}
-                            onChange={e => setForm(prev => ({ ...prev, adminPassword: e.target.value }))}
-                            placeholder="Set a temporary password for the HR admin"
-                            required
-                            className={inputClass}
-                        />
-                        <p className="text-gray-600 text-[11px] mt-1.5">Share this with the admin so they can log in at /login</p>
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                <Mail className="h-3 w-3" /> Business Email
+                            </label>
+                            <input
+                                type="email"
+                                value={form.adminEmail}
+                                onChange={e => setForm(prev => ({ ...prev, adminEmail: e.target.value }))}
+                                placeholder="amit@zomato.com"
+                                required
+                                className="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-[1.25rem] text-sm font-black text-gray-900 placeholder:text-gray-300 outline-none focus:bg-white focus:border-blue-100 focus:ring-4 focus:ring-blue-50 transition-all shadow-inner"
+                            />
+                        </div>
+
+                        <div className="md:col-span-2 space-y-2">
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                <Lock className="h-3 w-3" /> Temporary Password
+                            </label>
+                            <input
+                                type="text"
+                                value={form.adminPassword}
+                                onChange={e => setForm(prev => ({ ...prev, adminPassword: e.target.value }))}
+                                placeholder="Set secure initial access key"
+                                required
+                                className="w-full h-14 px-6 bg-gray-50 border border-transparent rounded-[1.25rem] text-sm font-black text-gray-900 placeholder:text-gray-300 outline-none focus:bg-white focus:border-blue-100 focus:ring-4 focus:ring-blue-50 transition-all shadow-inner"
+                            />
+                            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-3 flex items-center gap-1.5 px-2">
+                                <span className="w-1 h-1 bg-blue-400 rounded-full" />
+                                Share this securely. Admin will log in via the main HR portal.
+                            </p>
+                        </div>
                     </div>
                 </div>
 
                 {error && (
-                    <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium">
+                    <div className="p-6 rounded-2xl bg-red-50 border border-red-100 text-red-500 text-xs font-black uppercase tracking-widest flex items-center gap-4 animate-in-up">
+                        <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
                         {error}
                     </div>
                 )}
 
-                <button
-                    id="create-org-btn"
-                    type="submit"
-                    disabled={loading}
-                    className="w-full h-12 rounded-xl bg-gradient-to-r from-[#F97316] to-orange-600 text-white font-black text-[14px] shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40 transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                >
-                    {loading ? "Creating..." : "Create Organization & Admin →"}
-                </button>
+                <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-6">
+                    <p className="text-gray-400 text-[10px] font-bold uppercase tracking-[0.2em] max-w-xs">
+                        By clicking create, you provision a new tenant on the Lumoscale Network.
+                    </p>
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full sm:w-auto h-16 px-12 rounded-2xl bg-gray-900 text-white font-black text-xs uppercase tracking-widest shadow-[0_15px_30px_rgba(0,0,0,0.1)] hover:bg-black transition-all hover:-translate-y-1 active:scale-95 disabled:opacity-50 group"
+                    >
+                        {loading ? "Allocating Resources..." : "PROVISION ORGANIZATION →"}
+                    </button>
+                </div>
             </form>
         </div>
     );

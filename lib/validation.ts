@@ -23,6 +23,7 @@ export const createDriveSchema = z.object({
   }).optional(),
   registrationFields: z.array(z.any()).optional(),
   extractedDetails: z.record(z.string(), z.any()).optional(),
+  location: z.string().optional(),
 });
 
 export const updateDriveSchema = createDriveSchema.partial();

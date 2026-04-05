@@ -18,7 +18,7 @@ export async function GET(request: Request) {
         }
 
         // ── SECURITY: Filter by Org ─────────────────────────
-        const where: any = { orgId: session.orgId };
+        const targetOrgId = new URL(request.url).searchParams.get("orgId"); let where: any = {}; if (session.role === "SUPER_ADMIN") { if (targetOrgId) where.orgId = targetOrgId; } else { where.orgId = session.orgId; }
         if (queryResult.data.status) where.status = queryResult.data.status;
 
         const drives = await prisma.drive.findMany({
