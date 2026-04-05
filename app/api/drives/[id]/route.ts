@@ -14,6 +14,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         const drive = await prisma.drive.findUnique({
             where: { id: driveId },
             include: {
+                organization: {
+                    select: { isActive: true }
+                },
                 _count: {
                     select: { applications: true },
                 },
@@ -22,6 +25,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
         if (!drive) {
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        }
+
+        if (drive.organization && !drive.organization.isActive) {
+            return NextResponse.json({ error: "This organization is currently suspended. Access is restricted." }, { status: 403 });
         }
 
         return NextResponse.json({
@@ -99,6 +106,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.interviewFollowUp !== undefined) updateData.aiFollowUpDepth = data.interviewFollowUp;
         if (data.interviewQuestions !== undefined) updateData.interviewQuestions = JSON.stringify(data.interviewQuestions);
         if (data.requirements !== undefined) updateData.requirements = data.requirements;
+        
+        if (data.aiScreening?.enabled !== undefined) updateData.aiScreeningEnabled = data.aiScreening.enabled;
+        
+        if (data.registrationFields !== undefined) updateData.registrationFields = JSON.stringify(data.registrationFields);
+        if (data.status !== undefined) updateData.status = data.status;
 
         const updated = await prisma.drive.update({
             where: { id: driveId },
@@ -131,15 +143,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         }
 
         await prisma.$transaction([
-            prisma.assessmentQuestion.deleteMany({
-                where: { assessment: { application: { driveId } } }
-            }),
-            prisma.assessmentResponse.deleteMany({
-                where: { assessment: { application: { driveId } } }
-            }),
-            prisma.assessment.deleteMany({
-                where: { application: { driveId } }
-            }),
             prisma.application.deleteMany({
                 where: { driveId },
             }),

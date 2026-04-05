@@ -2,14 +2,25 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createDriveSchema, bulkDeleteSchema, driveQuerySchema } from "@/lib/validation";
-import { z } from "zod";
+import { getSession } from "@/lib/auth";
 
 export async function GET(request: Request) {
     try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
         const { searchParams } = new URL(request.url);
         const status = searchParams.get("status");
 
         const where = {}; // No status filtering since status column was removed
+        const queryResult = driveQuerySchema.safeParse({ status });
+        if (!queryResult.success) {
+            return NextResponse.json({ error: "Invalid query parameters" }, { status: 400 });
+        }
+
+        // ── SECURITY: Filter by Org ─────────────────────────
+        const targetOrgId = new URL(request.url).searchParams.get("orgId"); let where: any = {}; if (session.role === "SUPER_ADMIN") { if (targetOrgId) where.orgId = targetOrgId; } else { where.orgId = session.orgId; }
+        if (queryResult.data.status) where.status = queryResult.data.status;
 
         const drives = await prisma.drive.findMany({
             where,
@@ -26,8 +37,7 @@ export async function GET(request: Request) {
             applicants: drive._count?.applications || 0,
             daysLeft: Math.max(0, Math.ceil((new Date(drive.createdAt).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24))),
             aiScreening: {
-                enabled: drive.interviewEnabled,
-                weights: { threshold: drive.screeningThreshold || 60 }
+                enabled: (drive as any).aiScreeningEnabled
             },
             registrationFields: drive.registrationFields ? JSON.parse(drive.registrationFields) : [],
             extractedDetails: drive.extractedDetails ? JSON.parse(drive.extractedDetails) : {}
@@ -42,6 +52,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
     try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
         const body = await request.json();
 
         const result = createDriveSchema.safeParse(body);
@@ -65,12 +78,7 @@ export async function POST(request: Request) {
                 workMode: data.workMode || "Remote",
                 positions: data.positions || 1,
                 deadline: deadline,
-                interviewEnabled: data.interviewEnabled ?? true,
-                interviewLanguage: data.interviewLanguage || "English",
-                interviewTime: data.interviewTime || 10,
-                proctoringLevel: data.interviewAntiCheat || "Medium",
-                aiFollowUpDepth: data.interviewFollowUp || 3,
-                interviewQuestions: JSON.stringify(data.interviewQuestions || []),
+                aiScreeningEnabled: data.aiScreening?.enabled ?? true,
                 salary: data.salary || null,
                 experience: data.experience || null,
                 skills: data.skills || null,
@@ -91,6 +99,9 @@ export async function POST(request: Request) {
                         },
                     },
                 },
+                registrationFields: JSON.stringify(data.registrationFields || []),
+                orgId: session.orgId,
+                creatorId: session.userId,
             } as any,
         });
 
@@ -107,6 +118,9 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
     try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
         const body = await request.json();
 
         const result = bulkDeleteSchema.safeParse(body);
@@ -119,25 +133,25 @@ export async function DELETE(request: Request) {
 
         const { ids } = result.data;
 
+        // ── SECURITY: Ensure IDs belong to the Org ───────────
+        const belongsToOrg = await prisma.drive.findMany({
+            where: { id: { in: ids }, orgId: session.orgId } as any,
+            select: { id: true },
+        });
+
+        const validIds = belongsToOrg.map(d => d.id);
+        if (validIds.length === 0) return NextResponse.json({ message: "No matching drives found" });
+
         await prisma.$transaction([
-            prisma.assessmentQuestion.deleteMany({
-                where: { assessment: { application: { driveId: { in: ids } } } }
-            }),
-            prisma.assessmentResponse.deleteMany({
-                where: { assessment: { application: { driveId: { in: ids } } } }
-            }),
-            prisma.assessment.deleteMany({
-                where: { application: { driveId: { in: ids } } }
-            }),
             prisma.application.deleteMany({
-                where: { driveId: { in: ids } }
+                where: { driveId: { in: validIds } }
             }),
             prisma.drive.deleteMany({
-                where: { id: { in: ids } }
+                where: { id: { in: validIds } }
             })
         ]);
 
-        return NextResponse.json({ message: `${ids.length} drives deleted successfully` });
+        return NextResponse.json({ message: `${validIds.length} drives deleted successfully` });
     } catch (error) {
         console.error("Error bulk deleting drives:", error);
         return NextResponse.json({ error: "Failed to delete drives" }, { status: 500 });

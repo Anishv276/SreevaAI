@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 // Define User type
-export type UserRole = "candidate" | "hr";
+export type UserRole = "candidate" | "hr" | "SUPER_ADMIN" | "ADMIN";
 
 export interface User {
     id: string;
@@ -19,7 +19,7 @@ interface AuthContextType {
     isAuthenticated: boolean;
     login: (email: string, role: UserRole) => void;
     signup: (name: string, email: string) => void;
-    logout: () => void;
+    logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -60,10 +60,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem("auth_user", JSON.stringify(newUser));
     };
 
-    const logout = () => {
+    const logout = async () => {
+        // Clear local state first for instant UI response
         setUser(null);
         localStorage.removeItem("auth_user");
+        
+        try {
+            await fetch("/api/auth/logout", { method: "POST" });
+        } catch {
+            // Ignore network logout errors
+        }
+        
+        // Clean URL redirect
         router.push("/");
+        router.refresh();
     };
 
     return (

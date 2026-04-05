@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 export type Candidate = {
     id: string;
@@ -50,6 +51,7 @@ const CandidatesContext = createContext<CandidatesContextType | undefined>(undef
 
 export function CandidatesProvider({ children }: { children: React.ReactNode }) {
     const [candidates, setCandidates] = useState<Candidate[]>([]);
+    const pathname = usePathname();
 
     const fetchCandidates = async () => {
         try {
@@ -81,6 +83,8 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     };
 
     useEffect(() => {
+        if (!pathname.startsWith("/admin")) return;
+
         fetchCandidates();
 
         // SSE connection for real-time updates
@@ -104,7 +108,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         return () => {
             eventSource.close();
         };
-    }, []);
+    }, [pathname]);
 
     const addCandidate = async (newCandidateData: Omit<Candidate, "id" | "date" | "status" | "score">) => {
         try {

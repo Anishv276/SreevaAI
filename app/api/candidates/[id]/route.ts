@@ -1,12 +1,16 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
         const id = (await params).id;
 
         const candidateRows = await prisma.$queryRawUnsafe(
@@ -35,10 +39,11 @@ export async function GET(
               d.type AS "driveType"
             FROM "Application" a
             LEFT JOIN "Drive" d ON d.id = a."driveId"
-            WHERE a.id = $1
+            WHERE a.id = $1 AND d."orgId" = $2
             LIMIT 1
             `,
-            id
+            id,
+            session.orgId
         );
 
         const candidate = Array.isArray(candidateRows) && candidateRows.length > 0 ? candidateRows[0] as any : null;
@@ -47,16 +52,29 @@ export async function GET(
             return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
         }
 
-        const assessment = await (prisma as any).assessment.findUnique({
-            where: { applicationId: id },
-            include: {
-                questions: true,
-                responses: true,
-                events: {
-                    orderBy: { timestamp: 'asc' }
-                }
+        let assessment: any = null;
+        try {
+            const prismaWithAssessment = prisma as unknown as {
+                assessment?: {
+                    findUnique: (args: unknown) => Promise<unknown>;
+                };
+            };
+
+            if (prismaWithAssessment.assessment) {
+                assessment = await prismaWithAssessment.assessment.findUnique({
+                    where: { applicationId: id },
+                    include: {
+                        questions: true,
+                        responses: true,
+                        events: {
+                            orderBy: { timestamp: "asc" },
+                        },
+                    },
+                });
             }
-        });
+        } catch {
+            assessment = null;
+        }
 
         // Parse AI Report if it exists
         let aiData = {};
