@@ -42,8 +42,8 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                 ]);
                 
                 setOrg(orgData);
-                setDrives(drivesData);
-                setCandidates(candidatesData);
+                setDrives(drivesData.drives || []);
+                setCandidates(candidatesData.candidates || []);
             } catch (err) {
                 console.error(err);
             } finally {
@@ -185,10 +185,10 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         <div key={can.id} className="grid grid-cols-[3fr_2fr_1fr_1fr_1.5fr_1.5fr_auto] gap-4 px-12 py-10 items-center hover:bg-gray-50/50 transition-all group">
                                             <div className="flex items-center gap-6">
                                                 <div className="h-14 w-14 rounded-full bg-gray-900 text-white flex flex-shrink-0 items-center justify-center font-black text-lg shadow-lg group-hover:scale-105 transition-transform">
-                                                    {can.name[0].toUpperCase()}
+                                                    {can.name ? can.name[0].toUpperCase() : 'C'}
                                                 </div>
                                                 <div className="flex flex-col gap-1.5 truncate">
-                                                    <p className="text-gray-900 font-black text-base tracking-tight leading-none truncate uppercase">{can.name}</p>
+                                                    <p className="text-gray-900 font-black text-base tracking-tight leading-none truncate uppercase">{can.name || "N/A"}</p>
                                                     <p className="text-gray-400 text-[10px] font-black truncate lowercase tracking-widest opacity-60 leading-none">{can.email}</p>
                                                 </div>
                                             </div>

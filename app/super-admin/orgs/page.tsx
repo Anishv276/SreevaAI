@@ -44,9 +44,10 @@ export default function OrgsPage() {
         try {
             const res = await fetch("/api/super-admin/orgs");
             const data = await res.json();
-            setOrgs(data);
+            setOrgs(Array.isArray(data) ? data : []);
         } catch (error) {
             console.error("Error fetching orgs:", error);
+            setOrgs([]);
         } finally {
             setLoading(false);
         }

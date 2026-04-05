@@ -5,32 +5,42 @@ import bcrypt from "bcryptjs";
 // GET /api/super-admin/orgs — list all organizations with stats
 export async function GET() {
     try {
+        // Fetch orgs with immediate counts for users and drives
+        // For candidates, we can't do a direct _count on Application via Org easily in Prisma without deep nesting
+        // so we fetch orgs and then do a single optimized count query
         const orgs = await prisma.organization.findMany({
             orderBy: { createdAt: "desc" },
             include: {
-                _count: { select: { users: true, drives: true } },
+                _count: { 
+                    select: { 
+                        users: true, 
+                        drives: true 
+                    } 
+                },
+                drives: {
+                    select: {
+                        _count: {
+                            select: { applications: true }
+                        }
+                    }
+                }
             },
         });
 
-        const result = await Promise.all(
-            orgs.map(async (org) => {
-                const driveIds = await prisma.drive.findMany({
-                    where: { orgId: org.id },
-                    select: { id: true },
-                });
-                const candidateCount = await prisma.application.count({
-                    where: { driveId: { in: driveIds.map(d => d.id) } },
-                });
-                return {
-                    ...org,
-                    adminCount: org._count.users,
-                    driveCount: org._count.drives,
-                    candidateCount,
-                };
-            })
-        );
+        const formatted = orgs.map(org => {
+            // Sum up candidates across all drives for this org
+            const candidateCount = org.drives.reduce((sum, drive) => sum + drive._count.applications, 0);
+            
+            return {
+                ...org,
+                adminCount: org._count.users,
+                driveCount: org._count.drives,
+                candidateCount,
+                drives: undefined // Hide the relation from the response
+            };
+        });
 
-        return NextResponse.json(result);
+        return NextResponse.json(formatted);
     } catch (error) {
         console.error("Error fetching orgs:", error);
         return NextResponse.json({ error: "Failed to fetch organizations" }, { status: 500 });
