@@ -43,7 +43,7 @@ export function FinalPreview({ formData, aiEnabled, weights, regFieldCount }: Fi
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-gray-500">Employment Type</span>
-                                <span className="font-semibold text-gray-800">{formData.employmentType || "1"}</span>
+                                <span className="font-semibold text-gray-800">{formData.employmentType || "Full-time"}</span>
                             </div>
                         </div>
                     </div>
@@ -140,8 +140,9 @@ export function FinalPreview({ formData, aiEnabled, weights, regFieldCount }: Fi
                                                 })()} Custom
                                             </p>
                                         </div>
-                                        <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-black text-[11px]">
-                                            {formData.interviewFollowUp || 3}
+                                        <div className="flex flex-col items-end">
+                                            <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest text-right">AI Depth</p>
+                                            <p className="font-bold text-[#F97316] text-[13px]">{formData.interviewFollowUp || 3}</p>
                                         </div>
                                     </div>
                                 </div>

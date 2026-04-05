@@ -16,6 +16,7 @@ import {
     Trash2
 } from "lucide-react";
 import { JobCard } from "@/components/careers/job-card";
+import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 
 export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
@@ -25,6 +26,8 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
     const [drives, setDrives] = useState<any[]>([]);
     const [candidates, setCandidates] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     useEffect(() => {
         const load = async () => {
@@ -52,6 +55,26 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
         };
         load();
     }, [id]);
+
+    const handleDeleteCandidates = () => {
+        if (candidates.length === 0) return;
+        setIsDeleteModalOpen(true);
+    };
+
+    const confirmDeleteCandidates = async () => {
+        setIsDeleting(true);
+        try {
+            const res = await fetch(`/api/candidates?orgId=${id}`, { method: "DELETE" });
+            if (res.ok) {
+                setCandidates([]);
+                setIsDeleteModalOpen(false);
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsDeleting(false);
+        }
+    };
 
     if (loading) {
         return (
@@ -87,7 +110,11 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                         {/* Control Buttons from Pic 2 */}
                         <div className="flex items-center gap-4 mt-8 md:mt-0">
-                            <button className="flex items-center gap-2 px-6 py-3 bg-red-50 text-red-600 font-black text-[10px] uppercase tracking-widest rounded-xl shadow-sm border border-red-100 hover:bg-red-100 transition-all">
+                            <button 
+                                onClick={handleDeleteCandidates}
+                                className="flex items-center gap-2 px-6 py-3 bg-red-50 text-red-600 font-black text-[10px] uppercase tracking-widest rounded-xl shadow-sm border border-red-100 hover:bg-red-100 transition-all disabled:opacity-50"
+                                disabled={candidates.length === 0}
+                            >
                                 <Trash2 className="h-4 w-4" />
                                 Delete Candidates
                             </button>
@@ -231,6 +258,16 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                     </div>
                 )}
             </main>
+
+            <ActionConfirmModal 
+                isOpen={isDeleteModalOpen}
+                onClose={() => setIsDeleteModalOpen(false)}
+                onConfirm={confirmDeleteCandidates}
+                title="Purge Candidates"
+                description={`Are you sure you want to delete all ${candidates.length} candidates for ${org?.name}? This will permanently remove their entire application history and interview data. This action is irreversible.`}
+                confirmText={`Confirm Purge (${candidates.length})`}
+                isLoading={isDeleting}
+            />
         </div>
     );
 }

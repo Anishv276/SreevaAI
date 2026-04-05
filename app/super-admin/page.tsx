@@ -19,17 +19,25 @@ async function getStats() {
         prisma.interview.count(),
     ]);
 
-    const activeDrives = await prisma.drive.findMany({
-        where: { status: "ACTIVE" },
-        take: 2,
-        include: { _count: { select: { applications: true } } }
+    const activeOrgs = await prisma.organization.findMany({
+        where: { isActive: true },
+        orderBy: { createdAt: "desc" },
+        take: 3,
+        include: { 
+            _count: { 
+                select: { 
+                    users: true,
+                    drives: true 
+                } 
+            } 
+        }
     });
 
-    return { orgCount, driveCount, candidateCount, totalInterviews, activeDrives };
+    return { orgCount, driveCount, candidateCount, totalInterviews, activeOrgs };
 }
 
 export default async function SuperAdminDashboard() {
-    const { orgCount, driveCount, candidateCount, totalInterviews, activeDrives } = await getStats();
+    const { orgCount, driveCount, candidateCount, totalInterviews, activeOrgs } = await getStats();
 
     const stats = [
         { label: "ACTIVE ORGANIZATIONS", value: orgCount, sub: `${orgCount} portals live and active`, icon: Building2 },
@@ -39,114 +47,145 @@ export default async function SuperAdminDashboard() {
     ];
 
     return (
-        <div className="min-h-screen bg-white p-6 lg:p-10 space-y-12 animate-fade-slide text-gray-900 font-medium">
-            
-            {/* Header section from Pic 1 */}
-            <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
-                <div className="space-y-1">
-                    <div className="flex items-center gap-4">
-                        <div className="h-8 w-1 bg-[#F97316] rounded-full" />
-                        <h1 className="text-4xl font-black text-gray-900 tracking-tight leading-none">Dashboard</h1>
+        <div className="space-y-8 pb-12 animate-fade-slide">
+            {/* Header */}
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div className="flex items-center gap-4 group">
+                    <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
+                    <div>
+                        <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">
+                            Dashboard
+                        </h1>
+                        <p className="text-gray-500 font-medium mt-1 text-base">
+                            Hiring Pulse · {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}
+                        </p>
                     </div>
-                    <p className="text-gray-400 font-bold ml-5 text-sm">Hiring Pulse · {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}</p>
                 </div>
                 <Link
                     href="/super-admin/orgs/new"
-                    className="flex items-center gap-2 px-6 py-3 bg-[#F97316] text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg shadow-orange-100 hover:bg-orange-600 transition-all active:scale-95"
+                    className="flex items-center gap-2 bg-[#F97316] hover:bg-orange-600 text-white text-[13.5px] font-medium px-4 py-2 rounded-lg transition-all duration-150 shadow-sm hover:shadow-md"
                 >
                     <Plus className="h-4 w-4" />
                     Create New Organization
                 </Link>
             </div>
 
-            {/* KPI Grid from Pic 1 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* KPI Grid - smaller cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {stats.map((s) => (
-                    <div key={s.label} className="bg-white border border-gray-100 rounded-3xl p-8 space-y-6 shadow-[0_10px_40px_rgba(0,0,0,0.02)]">
+                    <div key={s.label} className="bg-white border border-gray-100 rounded-xl p-6 space-y-4 shadow-sm">
                         <div className="flex items-center justify-between">
-                            <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">{s.label}</p>
+                            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">{s.label}</p>
                             <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg">
                                 <TrendingUp className="h-3 w-3" />
-                                <span className="text-[9px] font-black tracking-tight">Active</span>
+                                <span className="text-[9px] font-bold">Active</span>
                             </div>
                         </div>
-                        <div className="space-y-4">
-                            <p className="text-5xl font-black text-gray-900 tracking-tighter tabular-nums">{s.value}</p>
+                        <div className="space-y-2">
+                            <p className="text-4xl font-extrabold text-gray-900 tracking-tight tabular-nums">{s.value}</p>
                             <div className="flex items-center gap-2">
                                 <div className="h-1.5 w-1.5 rounded-full bg-orange-200" />
-                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{s.sub}</p>
+                                <p className="text-[10px] font-medium text-gray-400 uppercase tracking-widest">{s.sub}</p>
                             </div>
                         </div>
                     </div>
                 ))}
             </div>
-
-            {/* Active Drives Section from Pic 1 */}
-            <div className="space-y-8">
+            {/* Organizations Section - High Fidelity */}
+            <div className="space-y-6">
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className="h-6 w-1 bg-[#F97316] rounded-full" />
-                        <h2 className="text-2xl font-black text-gray-900 tracking-tight">Active Partners</h2>
+                    <div className="flex items-center gap-3 group">
+                        <div className="h-8 w-1 bg-[#F97316] rounded-full" />
+                        <h2 className="text-xl font-bold text-gray-900 tracking-tight">Active Organizations</h2>
                     </div>
-                    <Link href="/super-admin/orgs" className="text-[11px] font-black text-[#F97316] uppercase tracking-widest flex items-center gap-1 hover:gap-2 transition-all">
-                        View All <ArrowRight className="h-3 w-3" />
+                    <Link href="/super-admin/orgs" className="flex items-center gap-1 text-sm font-bold text-[#F97316] hover:text-orange-700 transition-all hover:gap-2">
+                        View All <ArrowRight className="h-4 w-4" />
                     </Link>
                 </div>
-
-                <div className="grid gap-6 md:grid-cols-2">
-                    {activeDrives.map((drive) => (
-                        <div key={drive.id} className="bg-white border border-gray-100 rounded-3xl p-8 space-y-8 group hover:shadow-xl hover:shadow-gray-100 transition-all">
-                            <div className="flex items-start justify-between">
-                                <div className="space-y-2">
-                                    <h3 className="text-xl font-black text-gray-900 tracking-tight uppercase tracking-tight">{drive.title}</h3>
-                                    <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">{drive.department}</p>
-                                </div>
-                                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-500 rounded-full font-black text-[9px] uppercase tracking-widest shadow-sm">
-                                    <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                                    Active
-                                </div>
-                            </div>
-                            
-                            <div className="flex items-center gap-6 pb-6 border-b border-dashed border-gray-100">
-                                <div className="flex items-center gap-2 text-gray-400">
-                                    <Briefcase className="h-4 w-4" />
-                                    <span className="text-[10px] font-bold uppercase tracking-widest">Posted {new Date(drive.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-                                </div>
-                                <div className="flex items-center gap-2 text-[#F97316]">
-                                    <Users className="h-4 w-4" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest">{drive._count.applications} Applicants</span>
-                                </div>
-                            </div>
-
-                            <Link 
-                                href={`/super-admin/orgs/${drive.orgId}/view`}
-                                className="w-full py-4 bg-gray-950 text-white rounded-2xl flex items-center justify-center gap-2 text-xs font-black uppercase tracking-widest shadow-xl shadow-gray-200 hover:bg-[#F97316] transition-all"
-                            >
-                                View Candidates <ArrowRight className="h-4 w-4" />
-                            </Link>
+                {activeOrgs.length === 0 ? (
+                    <div className="bg-white rounded-2xl border-dashed border-2 border-gray-100 p-12 flex flex-col items-center text-center gap-4 group">
+                        <div className="h-16 w-16 rounded-2xl bg-orange-50 flex items-center justify-center text-[#F97316]">
+                            <Building2 className="h-8 w-8" />
                         </div>
-                    ))}
-                </div>
+                        <div>
+                            <p className="text-lg font-bold text-gray-900">No organizations found</p>
+                            <p className="text-sm text-gray-400 mt-1">Ready to onboard your first organization.</p>
+                        </div>
+                        <Link href="/super-admin/orgs/new">
+                            <button className="bg-[#F97316] hover:bg-orange-600 text-white font-bold rounded-xl px-6 py-2.5 shadow-lg transition-all">
+                                <Plus className="h-4 w-4 mr-2 inline" /> Add Organization
+                            </button>
+                        </Link>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                        {activeOrgs.map((org) => (
+                            <div
+                                key={org.id}
+                                className="bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_12px_30px_rgba(0,0,0,0.06)] hover:border-orange-100 transition-all duration-300 group flex flex-col justify-between h-full cursor-pointer relative overflow-hidden"
+                            >
+                                <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-orange-400 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                                
+                                <div>
+                                    <div className="flex justify-between items-start gap-4 mb-3">
+                                        <h3 className="text-lg font-extrabold text-gray-900 group-hover:text-[#F97316] transition-colors leading-tight line-clamp-2">
+                                            {org.name}
+                                        </h3>
+                                        <div className="flex-shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-full bg-orange-50 border border-orange-100 text-[#F97316]">
+                                            <span className="relative flex h-2 w-2">
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#F97316]"></span>
+                                            </span>
+                                            <span className="text-[9px] font-bold text-[#F97316] uppercase tracking-wider">{org.plan}</span>
+                                        </div>
+                                    </div>
+                                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-6 truncate">
+                                        {org.industry || "Corporate Partner"}
+                                    </p>
+                                </div>
+                                <div className="mt-auto space-y-5">
+                                    <div className="flex items-center justify-between border-t border-dashed border-gray-100 pt-4">
+                                        <div className="flex items-center gap-2 text-[11px] font-bold text-gray-400">
+                                            <Users className="h-3.5 w-3.5" />
+                                            <span>{org._count.users} Users</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-50 border border-orange-100 text-[#F97316]">
+                                            <Briefcase className="h-3.5 w-3.5" />
+                                            <span className="text-xs font-bold">{org._count.drives} Active Drives</span>
+                                        </div>
+                                    </div>
+                                    <Link 
+                                        href={`/super-admin/orgs/${org.id}/view`}
+                                        className="w-full rounded-xl bg-gray-900 hover:bg-[#F97316] text-white font-bold h-10 shadow-sm transition-all group-hover:shadow-md flex items-center justify-center gap-2"
+                                    >
+                                        View Portal Profile <ArrowRight className="h-3.5 w-3.5" />
+                                    </Link>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
-            {/* Bottom Section Layout from Pic 1 */}
-            <div className="space-y-8 pt-8">
-                <div className="flex items-center gap-4">
-                    <div className="h-6 w-1 bg-[#F97316] rounded-full" />
-                    <h2 className="text-2xl font-black text-gray-900 tracking-tight italic uppercase">Recent Activity</h2>
+
+            {/* Recent Activity */}
+            <div className="space-y-6">
+                <div className="flex items-center gap-3 group">
+                    <div className="h-8 w-1 bg-[#F97316] rounded-full" />
+                    <h2 className="text-xl font-bold text-gray-900 tracking-tight">Recent Activity</h2>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div className="bg-gray-50/50 border border-gray-100 rounded-3xl p-10 flex flex-col items-center justify-center text-center space-y-4">
-                         <Activity className="h-10 w-10 text-orange-200" />
-                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Activity Module Synchronized</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-gray-50 border border-gray-100 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-3">
+                        <Activity className="h-8 w-8 text-orange-200" />
+                        <p className="text-[10px] font-medium text-gray-400 uppercase tracking-widest">Activity Module Synchronized</p>
                     </div>
-                    <div className="bg-gray-50/50 border border-gray-100 rounded-3xl p-10 flex flex-col items-center justify-center text-center space-y-4">
-                         <Zap className="h-10 w-10 text-orange-200" />
-                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">AI Insights Ready</p>
+                    <div className="bg-gray-50 border border-gray-100 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-3">
+                        <Zap className="h-8 w-8 text-orange-200" />
+                        <p className="text-[10px] font-medium text-gray-400 uppercase tracking-widest">AI Insights Ready</p>
                     </div>
-                    <div className="bg-gray-50/50 border border-gray-100 rounded-3xl p-10 flex flex-col items-center justify-center text-center space-y-4">
-                         <Activity className="h-10 w-10 text-orange-200" />
-                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Active Alerts: 0</p>
+                    <div className="bg-gray-50 border border-gray-100 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-3">
+                        <Activity className="h-8 w-8 text-orange-200" />
+                        <p className="text-[10px] font-medium text-gray-400 uppercase tracking-widest">Active Alerts: 0</p>
                     </div>
                 </div>
             </div>

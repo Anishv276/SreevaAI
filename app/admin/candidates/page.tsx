@@ -6,9 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, Filter, MoreHorizontal, Eye, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, RefreshCw } from "lucide-react";
+import { Search, Filter, MoreHorizontal, Eye, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, RefreshCw, Briefcase, Calendar } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useCandidates } from "@/context/candidates-context";
 import { useJobs } from "@/context/jobs-context";
+import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import {
     Select,
     SelectContent,
@@ -39,7 +40,12 @@ export default function CandidatesPage() {
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [resendingId, setResendingId] = useState<string | null>(null);
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [dateFilter, setDateFilter] = useState("all");
+    const [customRange, setCustomRange] = useState({ start: "", end: "" });
     const searchParams = useSearchParams();
+    const router = useRouter();
     const driveIdParam = searchParams.get("driveId");
 
     // Initialize role filter from URL if present
@@ -51,8 +57,27 @@ export default function CandidatesPage() {
 
     // Refetch when filters change
     useEffect(() => {
-        fetchCandidates(1, pagination.limit, roleFilter, statusFilter);
-    }, [statusFilter, roleFilter]);
+        let startDate: string | undefined;
+        let endDate: string | undefined;
+
+        if (dateFilter === "today") {
+            startDate = new Date().toISOString().split("T")[0];
+            endDate = startDate;
+        } else if (dateFilter === "week") {
+            const date = new Date();
+            date.setDate(date.getDate() - 7);
+            startDate = date.toISOString().split("T")[0];
+        } else if (dateFilter === "month") {
+            const date = new Date();
+            date.setMonth(date.getMonth() - 1);
+            startDate = date.toISOString().split("T")[0];
+        } else if (dateFilter === "custom") {
+            startDate = customRange.start || undefined;
+            endDate = customRange.end || undefined;
+        }
+
+        fetchCandidates(1, pagination.limit, roleFilter, statusFilter, startDate, endDate);
+    }, [statusFilter, roleFilter, dateFilter, customRange]);
 
     const handlePageChange = (newPage: number) => {
         if (newPage >= 1 && newPage <= pagination.totalPages) {
@@ -80,9 +105,15 @@ export default function CandidatesPage() {
     };
 
     const filteredCandidates = candidates.filter(candidate => {
-        return candidate.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            candidate.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            candidate.email.toLowerCase().includes(searchTerm.toLowerCase());
+        // First filter by drive/role
+        const matchesRole = roleFilter === "all" || candidate.driveId === roleFilter;
+        if (!matchesRole) return false;
+
+        // Then filter by search term
+        const search = searchTerm.toLowerCase();
+        return candidate.name.toLowerCase().includes(search) ||
+            candidate.role.toLowerCase().includes(search) ||
+            candidate.email.toLowerCase().includes(search);
     });
 
     const toggleSelection = (id: string) => {
@@ -114,14 +145,20 @@ export default function CandidatesPage() {
             return;
         }
 
-        if (confirm(`Are you sure you want to delete ${selectedIds.size} candidates?`)) {
-            try {
-                await bulkDeleteCandidates(Array.from(selectedIds));
-                setSelectedIds(new Set());
-                setIsSelectionMode(false);
-            } catch (error) {
-                alert("Failed to delete candidates");
-            }
+        setIsDeleteModalOpen(true);
+    };
+
+    const confirmDelete = async () => {
+        setIsDeleting(true);
+        try {
+            await bulkDeleteCandidates(Array.from(selectedIds));
+            setSelectedIds(new Set());
+            setIsSelectionMode(false);
+            setIsDeleteModalOpen(false);
+        } catch (error) {
+            alert("Failed to delete candidates");
+        } finally {
+            setIsDeleting(false);
         }
     };
 
@@ -134,9 +171,26 @@ export default function CandidatesPage() {
                         <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">
                             Candidates
                         </h1>
-                        <p className="text-gray-500 font-medium mt-1 text-base">
-                            Talent pool · {candidates.length} applicants
-                        </p>
+                        <div className="flex items-center gap-3 mt-1.5">
+                            <p className="text-gray-500 font-medium text-base">
+                                Talent pool • {pagination.total} applicants
+                            </p>
+                            {driveIdParam && jobs.find(j => j.id.toString() === driveIdParam) && (
+                                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 border border-orange-100 text-[#F97316] text-[10px] font-black uppercase tracking-widest animate-in-fade">
+                                    <span className="h-1 w-1 rounded-full bg-[#F97316]" />
+                                    Drive: {jobs.find(j => j.id.toString() === driveIdParam)?.title}
+                                    <button 
+                                        onClick={() => {
+                                            router.push("/admin/candidates");
+                                            setRoleFilter("all");
+                                        }}
+                                        className="ml-1 hover:text-orange-700 p-0.5 hover:bg-orange-100 rounded-full transition-all"
+                                    >
+                                        <X className="h-3 w-3" />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -207,13 +261,27 @@ export default function CandidatesPage() {
                             </SelectContent>
                         </Select>
 
-                        <Select value={roleFilter} onValueChange={setRoleFilter}>
-                            <SelectTrigger className="h-10 px-4 border-dashed rounded-lg border-gray-200 text-gray-400 font-bold hover:text-[#F97316] hover:border-orange-200 transition-all bg-transparent w-[180px]">
-                                <SlidersHorizontal className="h-3.5 w-3.5 mr-2" />
-                                <SelectValue placeholder="Role" />
+                        <Select value={dateFilter} onValueChange={setDateFilter}>
+                            <SelectTrigger className="h-10 px-4 border-dashed rounded-lg border-gray-200 text-gray-400 font-bold hover:text-[#F97316] hover:border-orange-200 transition-all bg-transparent w-[140px]">
+                                <Calendar className="h-3.5 w-3.5 mr-2" />
+                                <SelectValue placeholder="Date" />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="all">All Roles</SelectItem>
+                                <SelectItem value="all">All Time</SelectItem>
+                                <SelectItem value="today">Today</SelectItem>
+                                <SelectItem value="week">This Week</SelectItem>
+                                <SelectItem value="month">This Month</SelectItem>
+                                <SelectItem value="custom">Custom Range</SelectItem>
+                            </SelectContent>
+                        </Select>
+
+                        <Select value={roleFilter} onValueChange={setRoleFilter}>
+                            <SelectTrigger className="h-10 px-4 border-dashed rounded-lg border-gray-200 text-gray-400 font-bold hover:text-[#F97316] hover:border-orange-200 transition-all bg-transparent w-[180px]">
+                                <Briefcase className="h-3.5 w-3.5 mr-2" />
+                                <SelectValue placeholder="All Drives" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Drives</SelectItem>
                                 {jobs.map(job => (
                                     <SelectItem key={job.id} value={job.id.toString()}>{job.title}</SelectItem>
                                 ))}
@@ -221,6 +289,39 @@ export default function CandidatesPage() {
                         </Select>
                     </div>
                 </div>
+
+                {dateFilter === "custom" && (
+                    <div className="px-6 py-4 border-b border-gray-50 bg-orange-50/20 animate-in-slide-down">
+                        <div className="flex items-center gap-4">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-orange-600">Select Range:</span>
+                            <div className="flex items-center gap-2">
+                                <input 
+                                    type="date" 
+                                    value={customRange.start}
+                                    onChange={(e) => setCustomRange(prev => ({ ...prev, start: e.target.value }))}
+                                    className="bg-white border border-orange-100 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-200 transition-all"
+                                />
+                                <span className="text-gray-400 text-[10px] font-black">TO</span>
+                                <input 
+                                    type="date" 
+                                    value={customRange.end}
+                                    onChange={(e) => setCustomRange(prev => ({ ...prev, end: e.target.value }))}
+                                    className="bg-white border border-orange-100 rounded-lg px-3 py-1.5 text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-200 transition-all"
+                                />
+                                {customRange.start && customRange.end && (
+                                    <Button 
+                                        variant="ghost" 
+                                        size="sm" 
+                                        onClick={() => setCustomRange({ start: "", end: "" })}
+                                        className="h-8 px-2 text-gray-400 hover:text-red-500"
+                                    >
+                                        <X className="h-3 w-3 mr-1" /> Clear
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 <div className="relative w-full overflow-auto">
                     <Table>
@@ -403,6 +504,16 @@ export default function CandidatesPage() {
                     </Button>
                 </div>
             </div>
+
+            <ActionConfirmModal 
+                isOpen={isDeleteModalOpen}
+                onClose={() => setIsDeleteModalOpen(false)}
+                onConfirm={confirmDelete}
+                title="Delete Candidates"
+                description={`Are you sure you want to delete ${selectedIds.size} selected candidates? This will permanently remove their application data and history.`}
+                confirmText={`Confirm Delete (${selectedIds.size})`}
+                isLoading={isDeleting}
+            />
         </div>
     );
 }

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/auth-context";
+import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 
 /* ── Section nav ──────────────────────────────────── */
 const sections = [
@@ -50,12 +51,12 @@ type TeamResponse = {
 /* ── Reusable card wrapper ────────────────────────── */
 function SettingsCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
     return (
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] overflow-hidden">
-            <div className="px-8 py-7 border-b border-gray-50">
-                <h2 className="text-base font-black text-gray-900 uppercase italic tracking-tight">{title}</h2>
-                {description && <p className="text-[11px] text-gray-400 font-bold uppercase tracking-widest mt-1 italic opacity-70">{description}</p>}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-5 border-b border-gray-100">
+                <h2 className="text-lg font-bold text-gray-900">{title}</h2>
+                {description && <p className="text-sm text-gray-500 font-medium mt-1">{description}</p>}
             </div>
-            <div className="px-8 py-7">{children}</div>
+            <div className="px-6 py-5">{children}</div>
         </div>
     );
 }
@@ -63,8 +64,8 @@ function SettingsCard({ title, description, children }: { title: string; descrip
 /* ── Field wrapper ────────────────────────────────── */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
-        <div className="space-y-2">
-            <Label className="text-[11px] font-black uppercase tracking-widest text-gray-400">{label}</Label>
+        <div className="space-y-1.5">
+            <Label className="text-sm font-semibold text-gray-700">{label}</Label>
             {children}
         </div>
     );
@@ -121,6 +122,14 @@ export default function SettingsPage() {
     const [isInviting, setIsInviting] = useState(false);
     const [inviteMessage, setInviteMessage] = useState("");
     const [inviteError, setInviteError] = useState("");
+
+    // Modal States
+    const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
+    const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
+    const [memberToRemoveId, setMemberToRemoveId] = useState<string | null>(null);
+    const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+    const [inviteToCancelId, setInviteToCancelId] = useState<string | null>(null);
+    const [isProcessingAction, setIsProcessingAction] = useState(false);
 
     /* Password */
     const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
@@ -212,8 +221,10 @@ export default function SettingsPage() {
         }
     };
 
-    const handleLogoDelete = async () => {
-        if (!confirm("Remove company logo?")) return;
+    const handleLogoDelete = () => setIsLogoModalOpen(true);
+
+    const confirmLogoDelete = async () => {
+        setIsProcessingAction(true);
         try {
             setCompany(prev => ({ ...prev, logoUrl: null as any }));
             await fetch("/api/admin/organization", {
@@ -221,8 +232,11 @@ export default function SettingsPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ ...company, logoUrl: null })
             });
+            setIsLogoModalOpen(false);
         } catch (err) {
             console.error("Delete Error:", err);
+        } finally {
+            setIsProcessingAction(false);
         }
     };
 
@@ -296,26 +310,48 @@ export default function SettingsPage() {
         finally { setIsInviting(false); }
     };
 
-    const cancelInvite = async (id: string) => {
-        if (!confirm("Cancel this pending invitation?")) return;
+    const cancelInvite = (id: string) => {
+        setInviteToCancelId(id);
+        setIsInviteModalOpen(true);
+    };
+
+    const confirmCancelInvite = async () => {
+        if (!inviteToCancelId) return;
+        setIsProcessingAction(true);
         try {
-            const res = await fetch(`/api/admin/team/invites/${id}`, { method: "DELETE" });
+            const res = await fetch(`/api/admin/team/invites/${inviteToCancelId}`, { method: "DELETE" });
             if (res.ok) {
-                setPendingInvites((current) => current.filter((invite) => invite.id !== id));
+                setPendingInvites((current) => current.filter((invite) => invite.id !== inviteToCancelId));
+                setIsInviteModalOpen(false);
+                setInviteToCancelId(null);
             }
         } catch (error) {
             console.error(error);
+        } finally {
+            setIsProcessingAction(false);
         }
     };
 
-    const removeMember = async (id: string) => {
-        if (!confirm("Remove this member?")) return;
+    const removeMember = (id: string) => {
+        setMemberToRemoveId(id);
+        setIsMemberModalOpen(true);
+    };
+
+    const confirmRemoveMember = async () => {
+        if (!memberToRemoveId) return;
+        setIsProcessingAction(true);
         try {
-            const res = await fetch(`/api/admin/team/${id}`, { method: "DELETE" });
+            const res = await fetch(`/api/admin/team/${memberToRemoveId}`, { method: "DELETE" });
             if (res.ok) {
-                setTeam(t => t.filter(m => m.id !== id));
+                setTeam(t => t.filter(m => m.id !== memberToRemoveId));
+                setMemberToRemoveId(null);
+                setIsMemberModalOpen(false);
             }
-        } catch (error) { console.error(error); }
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setIsProcessingAction(false);
+        }
     };
 
     const roleBadge = (role: string) => ({
@@ -334,7 +370,8 @@ export default function SettingsPage() {
     }
 
     return (
-        <div className="space-y-8 pb-16">
+        <>
+            <div className="space-y-8 pb-16">
             {/* ── Page Header ── */}
             <div className="flex items-center gap-4 group">
                 <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
@@ -348,22 +385,21 @@ export default function SettingsPage() {
 
             <div className="flex gap-8 items-start">
                 {/* ── Left Nav ── */}
-                <aside className="w-52 flex-shrink-0 sticky top-8">
-                    <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-2 space-y-1">
+                <aside className="w-56 flex-shrink-0 sticky top-8">
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-2 space-y-0.5">
                         {sections.map((s) => (
                             <button
                                 key={s.id}
                                 onClick={() => setActiveSection(s.id)}
                                 className={cn(
-                                    "flex items-center gap-3 w-full px-4 py-3 rounded-xl text-[13px] font-bold transition-all duration-200",
+                                    "flex items-center gap-3 w-full px-4 py-2.5 rounded-lg text-[13px] font-bold transition-all duration-200",
                                     activeSection === s.id
-                                        ? "text-[#F97316] bg-orange-50 shadow-[0_2px_8px_rgba(249,115,22,0.1)]"
+                                        ? "text-[#F97316] bg-orange-50"
                                         : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
                                 )}
                             >
-                                <s.icon className={cn("h-4 w-4", activeSection === s.id ? "text-[#F97316]" : "text-gray-400")} />
+                                <s.icon className={cn("h-4 w-4 transition-colors", activeSection === s.id ? "text-[#F97316]" : "text-gray-400")} />
                                 {s.label}
-                                {activeSection === s.id && <ChevronRight className="ml-auto h-3.5 w-3.5 text-[#F97316]" />}
                             </button>
                         ))}
                     </div>
@@ -375,32 +411,13 @@ export default function SettingsPage() {
                     {/* ═══ PROFILE ═══ */}
                     {activeSection === "profile" && (
                         <div className="space-y-6">
-                            <SettingsCard title="Profile Photo" description="This will be displayed on your profile across the platform.">
-                                <div className="flex items-center gap-6">
-                                    <div className="relative group cursor-pointer">
-                                        <div className="h-20 w-20 rounded-2xl bg-gray-900 flex items-center justify-center text-white text-2xl font-black shadow-lg">
-                                            {profile.name[0]?.toUpperCase() || "SA"}
-                                        </div>
-                                        <div className="absolute inset-0 rounded-2xl bg-black/40 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
-                                            <Camera className="h-6 w-6 text-white" />
-                                        </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Button className="h-10 px-5 rounded-xl bg-[#F97316] hover:bg-orange-600 text-white font-bold shadow-[0_4px_12px_rgba(249,115,22,0.2)]">
-                                            <Upload className="h-4 w-4 mr-2" /> Upload Photo
-                                        </Button>
-                                        <p className="text-[11px] text-gray-400 font-bold">JPG, PNG, or GIF. Max 2MB.</p>
-                                    </div>
-                                </div>
-                            </SettingsCard>
-
                             <SettingsCard title="Personal Information" description="Update your name and contact details.">
                                 <div className="grid grid-cols-1 gap-5">
                                     <Field label="Full Name">
                                         <div className="relative">
-                                            <User className="absolute left-3.5 top-3 h-4 w-4 text-gray-300" />
+                                            <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                             <Input
-                                                className="pl-10 h-11 rounded-xl border-gray-100 bg-gray-50/50 font-bold focus:bg-white focus:border-orange-100 focus:ring-2 focus:ring-orange-50 transition-all"
+                                                className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
                                                 value={profile.name}
                                                 onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
                                             />
@@ -408,21 +425,21 @@ export default function SettingsPage() {
                                     </Field>
                                     <Field label="Email Address">
                                         <div className="relative">
-                                            <Mail className="absolute left-3.5 top-3 h-4 w-4 text-gray-300" />
+                                            <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                             <Input
                                                 disabled
                                                 type="email"
-                                                className="pl-10 h-11 rounded-xl border-gray-100 bg-gray-100 font-bold opacity-60 italic"
+                                                className="pl-10 h-10 rounded-lg border-gray-200 bg-gray-50 font-medium opacity-60"
                                                 value={profile.email}
                                             />
                                         </div>
                                     </Field>
                                     <Field label="Phone Number">
                                         <div className="relative">
-                                            <Phone className="absolute left-3.5 top-3 h-4 w-4 text-gray-300" />
+                                            <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                             <Input
                                                 type="tel"
-                                                className="pl-10 h-11 rounded-xl border-gray-100 bg-gray-50/50 font-bold focus:bg-white focus:border-orange-100 focus:ring-2 focus:ring-orange-50 transition-all"
+                                                className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
                                                 value={profile.phone}
                                                 onChange={e => setProfile(p => ({ ...p, phone: e.target.value }))}
                                             />
@@ -509,8 +526,8 @@ export default function SettingsPage() {
                                 <div className="grid grid-cols-1 gap-5">
                                     <Field label="Company Name">
                                         <div className="relative">
-                                            <Building2 className="absolute left-3.5 top-3 h-4 w-4 text-gray-300" />
-                                            <Input className="pl-10 h-11 rounded-xl border-gray-100 bg-gray-50/50 font-bold focus:bg-white focus:border-orange-100 focus:ring-2 focus:ring-orange-50 transition-all"
+                                            <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                            <Input className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
                                                 value={company.name} onChange={e => setCompany(c => ({ ...c, name: e.target.value }))} />
                                         </div>
                                     </Field>
@@ -519,7 +536,7 @@ export default function SettingsPage() {
                                             <select
                                                 value={company.industry}
                                                 onChange={e => setCompany(c => ({ ...c, industry: e.target.value }))}
-                                                className="w-full h-11 px-4 rounded-xl border border-gray-100 bg-gray-50/50 font-bold text-sm text-gray-700 focus:outline-none focus:border-orange-100 focus:ring-2 focus:ring-orange-50 transition-all"
+                                                className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white font-medium text-sm text-gray-900 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
                                             >
                                                 {["Technology","Finance","Healthcare","Education","Retail","Other"].map(i => <option key={i}>{i}</option>)}
                                             </select>
@@ -528,7 +545,7 @@ export default function SettingsPage() {
                                             <select
                                                 value={company.size}
                                                 onChange={e => setCompany(c => ({ ...c, size: e.target.value }))}
-                                                className="w-full h-11 px-4 rounded-xl border border-gray-100 bg-gray-50/50 font-bold text-sm text-gray-700 focus:outline-none focus:border-orange-100 focus:ring-2 focus:ring-orange-50 transition-all"
+                                                className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white font-medium text-sm text-gray-900 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
                                             >
                                                 {["1–10","11–50","50–200","200–500","500+"].map(s => <option key={s}>{s}</option>)}
                                             </select>
@@ -536,8 +553,8 @@ export default function SettingsPage() {
                                     </div>
                                     <Field label="Website URL">
                                         <div className="relative">
-                                            <Globe className="absolute left-3.5 top-3 h-4 w-4 text-gray-300" />
-                                            <Input className="pl-10 h-11 rounded-xl border-gray-100 bg-gray-50/50 font-bold focus:bg-white focus:border-orange-100 focus:ring-2 focus:ring-orange-50 transition-all"
+                                            <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                            <Input className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
                                                 value={company.website} onChange={e => setCompany(c => ({ ...c, website: e.target.value }))} />
                                         </div>
                                     </Field>
@@ -549,23 +566,23 @@ export default function SettingsPage() {
                     {/* ═══ NOTIFICATIONS ═══ */}
                     {activeSection === "notifications" && (
                         <SettingsCard title="Email Notifications" description="Choose which events trigger email alerts.">
-                            <div className="space-y-0 divide-y divide-gray-50">
+                            <div className="space-y-0 divide-y divide-gray-100">
                                 {[
-                                    { key: "newApplications",       icon: Mail,         label: "New Applications",          desc: "Get notified when a candidate applies to a drive." },
-                                    { key: "aiScreeningCompleted",  icon: Zap,          label: "AI Screening Completed",     desc: "Alert when AI finishes scoring applicants." },
+                                    { key: "newApplications",       icon: Mail,         label: "New Applications",          desc: "Get notified when a candidate applies." },
+                                    { key: "aiScreeningCompleted",  icon: Zap,          label: "AI Screening Completed",     desc: "Alert when AI finishes scoring." },
                                     { key: "candidateShortlisted",  icon: Check,        label: "Candidate Shortlisted",      desc: "Notify when a candidate moves to shortlist." },
-                                    { key: "driveExpiringSoon",     icon: AlertCircle,  label: "Drive Expiring Soon",        desc: "Remind 48 hours before a drive closes." },
+                                    { key: "driveExpiringSoon",     icon: AlertCircle,  label: "Drive Expiring Soon",        desc: "Remind 48 hours before close." },
                                 ].map(({ key, icon: Icon, label, desc }) => (
-                                    <div key={key} className="flex items-center justify-between py-5 first:pt-0 last:pb-0 group">
+                                    <div key={key} className="flex items-center justify-between py-4 first:pt-0 last:pb-0 group">
                                         <div className="flex items-center gap-4">
-                                            <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center transition-all",
+                                            <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center transition-all",
                                                 notifs[key as keyof typeof notifs] ? "bg-orange-50 text-[#F97316]" : "bg-gray-50 text-gray-400"
                                             )}>
                                                 <Icon className="h-4 w-4" />
                                             </div>
                                             <div>
-                                                <p className="text-sm font-black text-gray-900 uppercase italic tracking-tight">{label}</p>
-                                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5 italic opacity-60">{desc}</p>
+                                                <p className="text-sm font-bold text-gray-900">{label}</p>
+                                                <p className="text-xs text-gray-500 font-medium tracking-tight">{desc}</p>
                                             </div>
                                         </div>
                                         <Toggle
@@ -586,8 +603,8 @@ export default function SettingsPage() {
                                     <div className="flex-1">
                                         <Field label="Email Address">
                                             <div className="relative">
-                                                <Mail className="absolute left-3.5 top-3 h-4 w-4 text-gray-300" />
-                                                <Input className="pl-10 h-11 rounded-xl border-gray-100 bg-gray-50/50 font-bold focus:bg-white focus:border-orange-100 focus:ring-2 focus:ring-orange-50 transition-all"
+                                                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                                <Input className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
                                                     placeholder="colleague@company.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} />
                                             </div>
                                         </Field>
@@ -595,7 +612,7 @@ export default function SettingsPage() {
                                     <div className="w-36">
                                         <Field label="Role">
                                             <select value={inviteRole} onChange={e => setInviteRole(e.target.value)}
-                                                className="w-full h-11 px-4 rounded-xl border border-gray-100 bg-gray-50/50 font-bold text-sm text-gray-700 focus:outline-none focus:border-orange-100 focus:ring-2 focus:ring-orange-50 transition-all">
+                                                className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white font-medium text-sm text-gray-900 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all">
                                                 {["ADMIN","HR","TEAM"].map(r => <option key={r}>{r}</option>)}
                                             </select>
                                         </Field>
@@ -603,42 +620,42 @@ export default function SettingsPage() {
                                     <Button 
                                         disabled={isInviting || !inviteEmail}
                                         onClick={handleInviteSubmit}
-                                        className="h-11 px-6 rounded-xl bg-[#F97316] hover:bg-orange-600 text-white font-bold shadow-[0_4px_12px_rgba(249,115,22,0.2)]"
+                                        className="h-10 px-6 rounded-lg bg-[#F97316] hover:bg-orange-600 text-white font-bold transition-all shadow-sm"
                                     >
                                         {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Plus className="h-4 w-4 mr-1.5" /> Invite</>}
                                     </Button>
                                 </div>
                                 {inviteMessage && (
-                                    <p className="mt-4 text-[11px] font-bold text-green-600 uppercase tracking-widest">{inviteMessage}</p>
+                                    <p className="mt-4 text-xs font-bold text-emerald-600">{inviteMessage}</p>
                                 )}
                                 {inviteError && (
-                                    <p className="mt-4 text-[11px] font-bold text-red-500 uppercase tracking-widest">{inviteError}</p>
+                                    <p className="mt-4 text-xs font-bold text-red-500">{inviteError}</p>
                                 )}
                             </SettingsCard>
 
                             <SettingsCard title="Pending Invitations" description={`${pendingInvites.length} pending invitation(s)`}>
                                 {pendingInvites.length === 0 ? (
-                                    <p className="text-[11px] text-gray-400 font-bold uppercase tracking-widest">No pending invitations.</p>
+                                    <p className="text-sm text-gray-400 font-medium tracking-tight">No pending invitations.</p>
                                 ) : (
                                     <div className="space-y-3">
                                         {pendingInvites.map((invite) => (
-                                            <div key={invite.id} className="flex items-center gap-4 p-4 rounded-xl bg-gray-50/50 border border-gray-50">
-                                                <div className="h-10 w-10 rounded-xl bg-orange-50 text-[#F97316] font-black text-xs flex items-center justify-center flex-shrink-0">
+                                            <div key={invite.id} className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 border border-gray-100">
+                                                <div className="h-10 w-10 rounded-lg bg-orange-100 text-[#F97316] font-bold text-xs flex items-center justify-center flex-shrink-0">
                                                     {invite.email[0].toUpperCase()}
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="font-black text-gray-900 text-sm truncate uppercase italic tracking-tight">{invite.email}</p>
-                                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5 italic opacity-60 truncate">
-                                                        Expires {new Date(invite.expiresAt).toLocaleString()}
+                                                    <p className="font-bold text-gray-900 text-sm truncate tracking-tight">{invite.email}</p>
+                                                    <p className="text-xs text-gray-500 font-medium mt-0.5 truncate">
+                                                        Expires {new Date(invite.expiresAt).toLocaleDateString()}
                                                     </p>
                                                 </div>
                                                 <div className="flex items-center gap-3">
-                                                    <Badge className={cn("text-[10px] font-black uppercase tracking-widest border-0 rounded-lg px-3 py-1.5 italic", roleBadge(invite.orgRole))}>
+                                                    <Badge className={cn("text-[10px] font-bold border-0 rounded-lg px-3 py-1.5", roleBadge(invite.orgRole))}>
                                                         {invite.orgRole}
                                                     </Badge>
                                                     <button
                                                         onClick={() => cancelInvite(invite.id)}
-                                                        className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                                                        className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all"
                                                     >
                                                         <Trash2 className="h-3.5 w-3.5" />
                                                     </button>
@@ -649,24 +666,24 @@ export default function SettingsPage() {
                                 )}
                             </SettingsCard>
 
-                            <SettingsCard title="Current Members" description={`${team.length} members on your workspace`}>
+                            <SettingsCard title="Current Members" description={`${team.length} members in your workspace`}>
                                 <div className="space-y-3">
                                     {team.map(member => (
-                                        <div key={member.id} className="flex items-center gap-4 p-4 rounded-xl bg-gray-50/50 border border-gray-50 hover:border-gray-100 transition-all group">
-                                            <div className="h-10 w-10 rounded-xl bg-gray-950 flex items-center justify-center text-white text-xs font-black flex-shrink-0">
+                                        <div key={member.id} className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 border border-gray-100 hover:bg-white hover:shadow-sm transition-all group">
+                                            <div className="h-10 w-10 rounded-lg bg-gray-900 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
                                                 {member.email[0].toUpperCase()}
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <p className="font-black text-gray-900 text-sm truncate uppercase italic tracking-tight">{member.name || member.email.split("@")[0]}</p>
-                                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5 italic opacity-60 truncate">{member.email}</p>
+                                                <p className="font-bold text-gray-900 text-sm truncate tracking-tight">{member.name || member.email.split("@")[0]}</p>
+                                                <p className="text-xs text-gray-500 font-medium mt-0.5 truncate">{member.email}</p>
                                             </div>
                                             <div className="flex items-center gap-3">
-                                                <Badge className={cn("text-[10px] font-black uppercase tracking-widest border-0 rounded-lg px-3 py-1.5 italic", roleBadge(member.role))}>
+                                                <Badge className={cn("text-[10px] font-bold border-0 rounded-lg px-3 py-1.5", roleBadge(member.role))}>
                                                     {member.role === "TEAM" ? "Team" : member.role === "ADMIN" ? "Admin" : member.role}
                                                 </Badge>
                                                 {member.role !== "ADMIN" && (
                                                     <button onClick={() => removeMember(member.id)}
-                                                        className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all">
+                                                        className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all">
                                                         <Trash2 className="h-3.5 w-3.5" />
                                                     </button>
                                                 )}
@@ -674,10 +691,10 @@ export default function SettingsPage() {
                                         </div>
                                     ))}
                                 </div>
-                                <div className="mt-4 p-4 rounded-xl bg-orange-50/50 border border-orange-100 flex items-start gap-3">
-                                    <Shield className="h-4 w-4 text-[#F97316] flex-shrink-0 mt-0.5" />
-                                    <p className="text-[10px] font-bold text-orange-700 uppercase tracking-widest italic leading-relaxed">
-                                        <span className="font-black">Security Protocol:</span> Admin can manage all systems · HR can manage metadata · Team has execution-level access.
+                                <div className="mt-4 p-4 rounded-xl bg-blue-50/50 border border-blue-100 flex items-start gap-3">
+                                    <Shield className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                                    <p className="text-xs font-medium text-blue-700 leading-relaxed">
+                                        <span className="font-bold">Access Protocol:</span> Admins manage platform settings, HR handles recruitment workflows, and Team members execute candidate reviews.
                                     </p>
                                 </div>
                             </SettingsCard>
@@ -689,92 +706,86 @@ export default function SettingsPage() {
                         <div className="space-y-6">
 
                             {/* Current Plan */}
-                            <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] overflow-hidden">
-                                <div className="px-8 py-6 border-b border-gray-50">
-                                    <h2 className="text-base font-black text-gray-900">Current Plan</h2>
-                                    <p className="text-sm text-gray-400 font-bold mt-1">Your active subscription and usage details.</p>
+                            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                <div className="px-6 py-5 border-b border-gray-100">
+                                    <h2 className="text-lg font-bold text-gray-900">Current Plan</h2>
+                                    <p className="text-sm text-gray-500 font-medium mt-1">Your active subscription and usage details.</p>
                                 </div>
-                                <div className="px-8 py-6">
+                                <div className="px-6 py-6">
                                     {/* Plan card — premium slate gradient */}
-                                    <div className="relative flex items-center justify-between p-6 rounded-2xl bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900 text-white overflow-hidden">
-                                        <div className="absolute -right-6 -top-6 h-36 w-36 rounded-full bg-white/[0.04] pointer-events-none" />
-                                        <div className="absolute right-8 bottom-0 h-16 w-16 rounded-full bg-white/[0.03] pointer-events-none" />
-                                        <div className="absolute left-0 bottom-0 w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-
+                                    <div className="relative flex items-center justify-between p-6 rounded-xl bg-gradient-to-br from-slate-800 to-slate-950 text-white overflow-hidden shadow-md">
+                                        <div className="absolute -right-6 -top-6 h-36 w-36 rounded-full bg-white/[0.03] pointer-events-none" />
+                                        
                                         <div className="flex items-center gap-4 relative z-10">
-                                            <div className="h-12 w-12 rounded-xl bg-white/10 border border-white/[0.12] flex items-center justify-center flex-shrink-0 shadow-inner">
-                                                <Crown className="h-5 w-5 text-amber-300" />
+                                            <div className="h-12 w-12 rounded-xl bg-white/10 border border-white/[0.08] flex items-center justify-center flex-shrink-0">
+                                                <Crown className="h-6 w-6 text-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.4)]" />
                                             </div>
                                             <div>
                                                 <div className="flex items-center gap-2">
-                                                    <p className="font-black text-xl leading-tight tracking-tighter uppercase italic">Pro Plan</p>
-                                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 bg-emerald-500/20 border border-emerald-400/20 rounded-full text-emerald-300 italic">Active</span>
+                                                    <p className="font-bold text-xl tracking-tight">Pro Plan</p>
+                                                    <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 bg-emerald-500/20 border border-emerald-400/20 rounded-lg text-emerald-400">Active</span>
                                                 </div>
-                                                <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1.5 italic opacity-60">Billed monthly · Renews Mar 20, 2026</p>
+                                                <p className="text-slate-400 text-xs font-medium mt-1">Billed monthly · Renews Mar 20, 2026</p>
                                             </div>
                                         </div>
 
                                         <div className="text-right relative z-10">
-                                            <p className="font-black text-3xl leading-none tracking-tighttabular-nums">$49</p>
-                                            <p className="text-slate-400 text-xs font-semibold mt-1">per month</p>
+                                            <p className="font-bold text-3xl tracking-tight tabular-nums">$49</p>
+                                            <p className="text-slate-400 text-xs font-medium mt-1">per month</p>
                                         </div>
                                     </div>
 
                                     {/* Billing details row */}
-                                    <div className="grid grid-cols-3 gap-3 mt-4">
+                                    <div className="grid grid-cols-3 gap-4 mt-4">
                                         {[
                                             { label: "Next Invoice",  value: "Mar 20, 2026" },
                                             { label: "Payment",       value: "•••• 4242" },
                                             { label: "Status",        value: "Paid" },
                                         ].map(({ label, value }) => (
-                                            <div key={label} className="p-4 rounded-xl bg-gray-50/50 border border-gray-100/50">
-                                                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">{label}</p>
-                                                <p className="text-[13px] font-black text-gray-950 mt-1.5 uppercase italic tracking-tight">{value}</p>
+                                            <div key={label} className="p-4 rounded-xl bg-gray-50 border border-gray-100">
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{label}</p>
+                                                <p className="text-sm font-bold text-gray-900 mt-1.5 tracking-tight">{value}</p>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Usage */}
-                            <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] overflow-hidden">
-                                <div className="px-8 py-7 border-b border-gray-50 flex items-center justify-between">
+                            {/* Usage Analytics */}
+                            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
                                     <div>
-                                        <h2 className="text-base font-black text-gray-900 uppercase italic tracking-tight">Usage Protocol</h2>
-                                        <p className="text-[11px] text-gray-400 font-bold uppercase tracking-widest mt-1 italic opacity-70">Infrastructure quota for the current cycle</p>
+                                        <h2 className="text-lg font-bold text-gray-900">Usage Analytics</h2>
+                                        <p className="text-sm text-gray-500 font-medium mt-1">Quota utilization for the current cycle</p>
                                     </div>
-                                    <span className="text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full bg-gray-50 border border-gray-100 text-gray-400 italic">Feb 2026 Cycle</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-100 text-gray-500">Feb 2026 Cycle</span>
                                 </div>
-                                <div className="px-8 py-6">
+                                <div className="px-6 py-6">
                                     <div className="grid grid-cols-3 gap-4">
                                         {[
-                                            { label: "Active Drives",  used: 4,   max: 10,  icon: BarChart3, accent: "#3B82F6", bg: "bg-blue-50",    text: "text-blue-600",   glow: "rgba(59,130,246,0.35)"   },
-                                            { label: "AI Screenings",  used: 230, max: 500, icon: Zap,       accent: "#8B5CF6", bg: "bg-violet-50",  text: "text-violet-600", glow: "rgba(139,92,246,0.35)"   },
-                                            { label: "Team Members",   used: 3,   max: 10,  icon: Users,     accent: "#10B981", bg: "bg-emerald-50", text: "text-emerald-600",glow: "rgba(16,185,129,0.35)"   },
-                                        ].map(({ label, used, max, icon: Icon, accent, bg, text, glow }) => {
+                                            { label: "Active Drives",  used: 4,   max: 10,  icon: BarChart3, accent: "#F97316", bg: "bg-orange-50",    text: "text-[#F97316]" },
+                                            { label: "AI Screenings",  used: 230, max: 500, icon: Zap,       accent: "#8B5CF6", bg: "bg-violet-50",  text: "text-violet-600" },
+                                            { label: "Team Members",   used: 3,   max: 10,  icon: Users,     accent: "#10B981", bg: "bg-emerald-50", text: "text-emerald-600" },
+                                        ].map(({ label, used, max, icon: Icon, accent, bg, text }) => {
                                             const pct = Math.round((used / max) * 100);
                                             return (
-                                                <div key={label} className="relative p-5 rounded-2xl border border-gray-100 bg-gray-50/40 hover:bg-white hover:shadow-[0_4px_20px_rgba(0,0,0,0.05)] transition-all duration-300 group overflow-hidden">
-                                                    <div className="absolute -right-4 -top-4 h-20 w-20 rounded-full opacity-[0.07] transition-opacity duration-300 group-hover:opacity-[0.12]"
-                                                        style={{ background: accent }} />
-
-                                                    <div className={`h-10 w-10 rounded-xl ${bg} flex items-center justify-center mb-4 shadow-sm`}>
-                                                        <Icon className={`h-4.5 w-4.5 ${text} h-5 w-5`} />
+                                                <div key={label} className="relative p-5 rounded-xl border border-gray-100 bg-white hover:border-[#F97316]/30 transition-all duration-300 group overflow-hidden shadow-sm">
+                                                    <div className={`h-10 w-10 rounded-lg ${bg} flex items-center justify-center mb-4 shadow-sm`}>
+                                                        <Icon className={`h-5 w-5 ${text}`} />
                                                     </div>
 
-                                                    <p className="text-3xl font-black text-gray-900 leading-none tracking-tight tabular-nums">{used}</p>
-                                                    <p className="text-xs font-bold text-gray-400 mt-1 uppercase tracking-widest">{label.split(" ")[0]} <span className="opacity-40">/ {max}</span></p>
+                                                    <p className="text-3xl font-bold text-gray-900 leading-none tracking-tight tabular-nums">{used}</p>
+                                                    <p className="text-xs font-semibold text-gray-400 mt-2 uppercase tracking-widest">{label.split(" ")[0]} <span className="opacity-40">/ {max}</span></p>
 
-                                                    <div className="mt-4 h-1.5 w-full rounded-full bg-gray-200/70 overflow-hidden">
+                                                    <div className="mt-4 h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
                                                         <div className="h-full rounded-full transition-all duration-700"
                                                             style={{
                                                                 width: `${pct}%`,
                                                                 background: accent,
-                                                                boxShadow: `0 0 8px ${glow}`,
                                                             }} />
                                                     </div>
 
-                                                    <p className={`text-[11px] font-black mt-2 ${text} italic uppercase tracking-widest`}>{pct}% used</p>
+                                                    <p className={`text-[10px] font-bold mt-2 ${text} uppercase tracking-widest`}>{pct}% utilized</p>
                                                 </div>
                                             );
                                         })}
@@ -783,16 +794,16 @@ export default function SettingsPage() {
                             </div>
 
                             {/* Enterprise Card */}
-                            <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] overflow-hidden">
-                                <div className="px-8 py-7 border-b border-gray-50 flex items-center justify-between">
+                            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
                                     <div>
-                                        <h2 className="text-base font-black text-gray-900 uppercase italic tracking-tight">Expand Infrastructure</h2>
-                                        <p className="text-[11px] text-gray-400 font-bold uppercase tracking-widest mt-1 italic opacity-70">Unlock unlimited hiring power and dedicated support.</p>
+                                        <h2 className="text-lg font-bold text-gray-900">Enterprise Solutions</h2>
+                                        <p className="text-sm text-gray-500 font-medium mt-1">Unlock global hiring infrastructure and dedicated support.</p>
                                     </div>
                                     <Crown className="h-5 w-5 text-gray-300" />
                                 </div>
-                                <div className="px-8 py-8">
-                                    <div className="grid grid-cols-2 gap-4 mb-8">
+                                <div className="px-6 py-6">
+                                    <div className="grid grid-cols-2 gap-y-4 gap-x-8 mb-8">
                                         {[
                                             "Unlimited recruitment drives",
                                             "Unlimited AI screenings",
@@ -802,51 +813,49 @@ export default function SettingsPage() {
                                             "Advanced analytics dashboard",
                                         ].map(feat => (
                                             <div key={feat} className="flex items-center gap-3">
-                                                <div className="h-6 w-6 rounded-lg bg-gray-950 flex items-center justify-center flex-shrink-0 animate-in-fade">
+                                                <div className="h-6 w-6 rounded-lg bg-gray-900 flex items-center justify-center flex-shrink-0">
                                                     <Check className="h-3.5 w-3.5 text-white" />
                                                 </div>
-                                                <span className="text-[11px] font-black text-gray-600 uppercase tracking-widest italic">{feat}</span>
+                                                <span className="text-sm font-medium text-gray-600">{feat}</span>
                                             </div>
                                         ))}
                                     </div>
-                                    <Button className="h-14 px-10 rounded-2xl bg-[#F97316] hover:bg-orange-600 text-white font-black uppercase tracking-widest italic shadow-xl shadow-orange-100 transition-all hover:-translate-y-1">
-                                        Elevate to Enterprise <ExternalLink className="h-4 w-4 ml-3" />
+                                    <Button className="h-11 px-8 rounded-lg bg-[#F97316] hover:bg-orange-600 text-white font-bold shadow-md transition-all">
+                                        Elevate to Enterprise <ExternalLink className="h-4 w-4 ml-2.5" />
                                     </Button>
                                 </div>
                             </div>
-
                         </div>
                     )}
 
-
                     {/* ═══ INTEGRATIONS ═══ */}
                     {activeSection === "integrations" && (
-                        <SettingsCard title="Available Integrations" description="Connect your tools and streamline your hiring workflow.">
-                            <div className="space-y-4">
+                        <SettingsCard title="Available Integrations" description="Connect your tools to streamline your hiring workflow.">
+                            <div className="space-y-3">
                                 {[
-                                    { icon: Globe,    name: "Job Boards",            desc: "Sync open drives to LinkedIn, Indeed &amp; Naukri.",      color: "bg-blue-50 text-blue-500",   connected: true  },
-                                    { icon: Calendar, name: "Google Calendar",        desc: "Auto-schedule interviews and sync availability.",         color: "bg-green-50 text-green-600", connected: true  },
+                                    { icon: Globe,    name: "Job Boards",            desc: "Sync open drives to LinkedIn, Indeed & Naukri.",      color: "bg-blue-50 text-blue-500",   connected: true  },
+                                    { icon: Calendar, name: "Google Calendar",        desc: "Auto-schedule interviews and sync availability.",         color: "bg-emerald-50 text-emerald-600", connected: true  },
                                     { icon: Slack,    name: "Slack",                  desc: "Get real-time hiring alerts in your Slack channels.",      color: "bg-purple-50 text-purple-600", connected: false },
-                                    { icon: Mail,     name: "Gmail / Outlook",        desc: "Send emails directly from your HR platform inbox.",       color: "bg-orange-50 text-[#F97316]", connected: false },
-                                    { icon: BarChart3, name: "ATS / HRMS",            desc: "Sync candidate data with your existing ATS system.",      color: "bg-gray-50 text-gray-600",   connected: false },
+                                    { icon: Mail,     name: "Gmail / Outlook",        desc: "Send emails directly from your platform inbox.",       color: "bg-orange-50 text-[#F97316]", connected: false },
+                                    { icon: BarChart3, name: "ATS / HRMS",            desc: "Sync candidate data with your existing system.",      color: "bg-gray-50 text-gray-500",   connected: false },
                                 ].map(({ icon: Icon, name, desc, color, connected }) => (
-                                    <div key={name} className="flex items-center gap-5 p-5 rounded-xl border border-gray-100 bg-gray-50/30 hover:border-gray-200 hover:bg-white transition-all group">
-                                        <div className={cn("h-12 w-12 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm transition-all group-hover:scale-105", color)}>
+                                    <div key={name} className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 bg-gray-50/30 hover:bg-white hover:border-gray-200 transition-all group">
+                                        <div className={cn("h-11 w-11 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm", color)}>
                                             <Icon className="h-5 w-5" />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="font-black text-gray-900 text-sm uppercase italic tracking-tight leading-none">{name}</p>
-                                            <p className="text-[10px] text-gray-400 font-bold mt-2 uppercase tracking-widest italic opacity-60 leading-none" dangerouslySetInnerHTML={{ __html: desc }} />
+                                            <p className="font-bold text-gray-900 text-sm tracking-tight">{name}</p>
+                                            <p className="text-xs text-gray-400 font-medium tracking-tight mt-0.5">{desc}</p>
                                         </div>
                                         {connected ? (
-                                            <div className="flex items-center gap-2 bg-emerald-50/50 px-4 py-1.5 rounded-full border border-emerald-100/50 italic animate-in-fade">
-                                                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10B981] animate-pulse" />
-                                                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Active</span>
+                                            <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100/50">
+                                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                                <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Active</span>
                                             </div>
                                         ) : (
                                             <Button variant="outline" size="sm"
-                                                className="h-9 px-4 rounded-xl border-gray-200 text-gray-400 font-black text-[10px] uppercase tracking-widest hover:border-orange-200 hover:text-[#F97316] hover:bg-orange-50 transition-all italic">
-                                                <Plus className="h-3.5 w-3.5 mr-1.5" /> Connect
+                                                className="h-9 px-4 rounded-lg border-gray-200 text-gray-500 font-bold text-[11px] hover:border-orange-200 hover:text-[#F97316] hover:bg-orange-50 transition-all">
+                                                Connect
                                             </Button>
                                         )}
                                     </div>
@@ -860,44 +869,41 @@ export default function SettingsPage() {
                         <div className="space-y-6">
                             <SettingsCard title="Change Password" description="Update your password to keep your account secure.">
                                 <div className="space-y-5">
-                                    {/* Current Password */}
                                     <Field label="Current Password">
                                         <div className="relative">
-                                            <Lock className="absolute left-3.5 top-3 h-4 w-4 text-gray-300" />
+                                            <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                             <Input
                                                 type={showPw.current ? "text" : "password"}
                                                 placeholder="Enter current password"
-                                                className="pl-10 pr-10 h-11 rounded-xl border-gray-100 bg-gray-50/50 font-bold focus:bg-white focus:border-orange-100 focus:ring-2 focus:ring-orange-50 transition-all"
+                                                className="pl-10 pr-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
                                                 value={passwords.current}
                                                 onChange={e => setPasswords(p => ({ ...p, current: e.target.value }))}
                                             />
                                             <button type="button" onClick={() => setShowPw(s => ({ ...s, current: !s.current }))}
-                                                className="absolute right-3.5 top-3 text-gray-300 hover:text-[#F97316] transition-colors">
+                                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316] transition-colors">
                                                 {showPw.current ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                             </button>
                                         </div>
                                     </Field>
 
-                                    {/* New Password */}
                                     <Field label="New Password">
                                         <div className="relative">
-                                            <Lock className="absolute left-3.5 top-3 h-4 w-4 text-gray-300" />
+                                            <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                             <Input
                                                 type={showPw.next ? "text" : "password"}
                                                 placeholder="Enter new password"
-                                                className="pl-10 pr-10 h-11 rounded-xl border-gray-100 bg-gray-50/50 font-bold focus:bg-white focus:border-orange-100 focus:ring-2 focus:ring-orange-50 transition-all"
+                                                className="pl-10 pr-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
                                                 value={passwords.next}
                                                 onChange={e => setPasswords(p => ({ ...p, next: e.target.value }))}
                                             />
                                             <button type="button" onClick={() => setShowPw(s => ({ ...s, next: !s.next }))}
-                                                className="absolute right-3.5 top-3 text-gray-300 hover:text-[#F97316] transition-colors">
+                                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316] transition-colors">
                                                 {showPw.next ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                             </button>
                                         </div>
-                                        {/* Strength bar */}
                                         {passwords.next.length > 0 && (
-                                            <div className="mt-2 space-y-1">
-                                                <div className="flex gap-1">
+                                            <div className="mt-3 space-y-1.5">
+                                                <div className="flex gap-1.5">
                                                     {[1,2,3,4].map(i => (
                                                         <div key={i} className={cn(
                                                             "h-1.5 flex-1 rounded-full transition-all duration-300",
@@ -905,71 +911,67 @@ export default function SettingsPage() {
                                                         )} />
                                                     ))}
                                                 </div>
-                                                <p className={cn("text-[11px] font-black",
-                                                    pwStrength(passwords.next) <= 1 ? "text-red-400" :
-                                                    pwStrength(passwords.next) === 2 ? "text-orange-400" :
-                                                    pwStrength(passwords.next) === 3 ? "text-yellow-500" : "text-green-600"
+                                                <p className={cn("text-[10px] font-bold uppercase tracking-widest",
+                                                    pwStrength(passwords.next) <= 1 ? "text-red-500" :
+                                                    pwStrength(passwords.next) === 2 ? "text-orange-500" :
+                                                    pwStrength(passwords.next) === 3 ? "text-yellow-600" : "text-emerald-600"
                                                 )}>
-                                                    {strengthLabel[pwStrength(passwords.next)]}
+                                                    Strength: {strengthLabel[pwStrength(passwords.next)]}
                                                 </p>
                                             </div>
                                         )}
                                     </Field>
 
-                                    {/* Confirm Password */}
                                     <Field label="Confirm New Password">
                                         <div className="relative">
-                                            <Lock className="absolute left-3.5 top-3 h-4 w-4 text-gray-300" />
+                                            <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                             <Input
                                                 type={showPw.confirm ? "text" : "password"}
                                                 placeholder="Re-enter new password"
                                                 className={cn(
-                                                    "pl-10 pr-10 h-11 rounded-xl border-gray-100 bg-gray-50/50 font-bold focus:bg-white focus:ring-2 transition-all",
+                                                    "pl-10 pr-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:ring-4 transition-all",
                                                     passwords.confirm && passwords.next !== passwords.confirm
                                                         ? "border-red-200 focus:border-red-200 focus:ring-red-50"
-                                                        : "focus:border-orange-100 focus:ring-orange-50"
+                                                        : "focus:border-[#F97316] focus:ring-orange-50"
                                                 )}
                                                 value={passwords.confirm}
                                                 onChange={e => setPasswords(p => ({ ...p, confirm: e.target.value }))}
                                             />
                                             <button type="button" onClick={() => setShowPw(s => ({ ...s, confirm: !s.confirm }))}
-                                                className="absolute right-3.5 top-3 text-gray-300 hover:text-[#F97316] transition-colors">
+                                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316] transition-colors">
                                                 {showPw.confirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                             </button>
                                         </div>
                                         {passwords.confirm && passwords.next !== passwords.confirm && (
-                                            <p className="text-[11px] font-black text-red-400 mt-1">Passwords do not match</p>
+                                            <p className="text-xs font-bold text-red-500 mt-1">Passwords do not match</p>
                                         )}
                                     </Field>
 
-                                    {/* Error */}
                                     {pwError && (
                                         <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-100">
-                                            <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0" />
-                                            <p className="text-xs font-black text-red-500">{pwError}</p>
+                                            <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+                                            <p className="text-xs font-bold text-red-600">{pwError}</p>
                                         </div>
                                     )}
 
-                                    {/* Hint */}
-                                    <div className="p-4 rounded-xl bg-orange-50/50 border border-orange-100 flex items-start gap-3">
+                                    <div className="p-4 rounded-xl bg-orange-50 border border-orange-100 flex items-start gap-3">
                                         <Shield className="h-4 w-4 text-[#F97316] flex-shrink-0 mt-0.5" />
-                                        <p className="text-[10px] font-bold text-orange-700 uppercase tracking-widest italic leading-relaxed">
-                                            Use at least <span className="font-black">8 characters</span> with a mix of uppercase, numbers, and symbols for a strong password.
+                                        <p className="text-xs font-medium text-orange-800 leading-relaxed">
+                                            <span className="font-bold">Security Rule:</span> Use 8+ characters with uppercase letters, numbers, and special symbols.
                                         </p>
                                     </div>
                                 </div>
                             </SettingsCard>
 
-                            {/* Save */}
                             <div className="flex justify-end">
                                 <Button onClick={handlePasswordSave}
                                     disabled={isSaving}
                                     className={cn(
-                                        "h-11 px-8 rounded-xl font-black shadow-[0_4px_16px_rgba(249,115,22,0.2)] transition-all uppercase tracking-widest italic",
-                                        pwSaved ? "bg-green-500 hover:bg-green-500 shadow-green-200" : "bg-[#F97316] hover:bg-orange-600"
+                                        "h-10 px-8 rounded-lg font-bold transition-all shadow-sm",
+                                        pwSaved ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-[#F97316] hover:bg-orange-600 text-white"
                                     )}>
                                     {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                                    {pwSaved ? <><Check className="h-4 w-4 mr-2" /> Updated!</> : "Update Password"}
+                                    {pwSaved ? "Password Updated" : "Update Password"}
                                 </Button>
                             </div>
                         </div>
@@ -982,17 +984,54 @@ export default function SettingsPage() {
                                 onClick={handleSave}
                                 disabled={isSaving}
                                 className={cn(
-                                    "h-14 px-12 rounded-[1.5rem] font-black text-[11px] uppercase tracking-[0.2em] shadow-2xl transition-all hover:-translate-y-1 active:scale-95 disabled:opacity-50 italic",
-                                    saved ? "bg-green-500 shadow-green-100" : "bg-[#F97316] hover:bg-orange-600 text-white"
+                                    "h-11 px-12 rounded-lg font-bold shadow-md transition-all hover:translate-y-[-2px] active:translate-y-[0px] disabled:opacity-50",
+                                    saved ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-[#F97316] hover:bg-orange-600 text-white"
                                 )}
                             >
-                                {isSaving ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
-                                {saved ? "Synchronized!" : "Save Changes"}
+                                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                                {saved ? "Changes Saved" : "Save Changes"}
                             </Button>
                         </div>
                     )}
                 </div>
             </div>
+
+            <ActionConfirmModal 
+                isOpen={isLogoModalOpen}
+                onClose={() => setIsLogoModalOpen(false)}
+                onConfirm={confirmLogoDelete}
+                title="Remove Company Logo"
+                description="Are you sure you want to remove your company logo? This will revert your portal header and branding."
+                confirmText="Confirm Remove"
+                isLoading={isProcessingAction}
+            />
+
+            <ActionConfirmModal 
+                isOpen={isMemberModalOpen}
+                onClose={() => {
+                    setIsMemberModalOpen(false);
+                    setMemberToRemoveId(null);
+                }}
+                onConfirm={confirmRemoveMember}
+                title="Remove Team Member"
+                description={`Are you sure you want to remove ${team.find(m => m.id === memberToRemoveId)?.name || 'this member'}? This will immediately terminate their access to the portal.`}
+                confirmText="Terminate Access"
+                isLoading={isProcessingAction}
+            />
+
+            <ActionConfirmModal 
+                isOpen={isInviteModalOpen}
+                onClose={() => {
+                    setIsInviteModalOpen(false);
+                    setInviteToCancelId(null);
+                }}
+                onConfirm={confirmCancelInvite}
+                title="Cancel Invitation"
+                description="Are you sure you want to cancel this pending invitation? The recipient will no longer be able to use the previous invite link."
+                confirmText="Cancel Invite"
+                isLoading={isProcessingAction}
+            />
         </div>
+    </>
     );
 }

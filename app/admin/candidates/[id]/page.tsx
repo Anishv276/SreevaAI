@@ -8,9 +8,7 @@ import {
     ArrowLeft, Download, Mail, Phone, MapPin, Calendar,
     CheckCircle2, XCircle, Sparkles, Zap,
     TrendingUp, AlertTriangle, ChevronRight, ShieldCheck, Terminal, UserSearch,
-    BrainCircuit, MessageSquare, Code2, BarChart3, Clock, Target, CheckSquare,
-    Eye, Mic, Camera, BarChart, Clipboard, Maximize2, UserX, Users, EyeOff, Smartphone, Cpu, ChevronDown, ChevronUp,
-    User, FileText, Globe, IndianRupee, BriefcaseBusiness, Loader2, RefreshCw
+    MessageSquare, Target, BriefcaseBusiness, Globe, IndianRupee, RefreshCw, Camera, Loader2, User, X, ChevronDown, ChevronUp, EyeOff
 } from "lucide-react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -65,9 +63,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
     const id = resolvedParams.id;
     const [candidate, setCandidate] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<"analysis" | "interview" | "assessment">("analysis");
-    const [expandedSection, setExpandedSection] = useState<string | null>("assessment");
-    const [isIncidentLogExpanded, setIsIncidentLogExpanded] = useState(false);
+    const [activeTab, setActiveTab] = useState<"analysis" | "interview">("analysis");
     const [resendingInterview, setResendingInterview] = useState(false);
     const [mounted, setMounted] = useState(false);
     const [recordingDurationSec, setRecordingDurationSec] = useState<number | null>(null);
@@ -94,17 +90,12 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
         fetchCandidate();
     }, [id]);
 
-    useEffect(() => {
-        setRecordingDurationSec(null);
-    }, [candidate?.interview?.interviewRecordingUrl, candidate?.assessment?.interviewRecordingUrl]);
-
-
     const handleResendInterview = async () => {
         setResendingInterview(true);
         try {
             const res = await fetch(`/api/candidates/${id}/resend-interview`, { method: "POST" });
             if (res.ok) {
-                alert("Interview link resent successfully! New email sent.");
+                alert("Interview link resent successfully!");
             } else {
                 const err = await res.json();
                 alert(err.error || "Failed to resend interview link");
@@ -118,11 +109,10 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
     };
     const plyrRef = useRef<APITypes>(null);
 
-    const aiReportRaw = candidate ? (candidate.aiReport ? JSON.parse(candidate.aiReport) : null) : null;
-    const aiData = aiReportRaw || {};
-    const structuredResume = candidate ? (candidate.structuredResume ? (typeof candidate.structuredResume === 'string' ? JSON.parse(candidate.structuredResume) : candidate.structuredResume) : {}) : {};
+    const aiData = candidate?.aiReport ? JSON.parse(candidate.aiReport) : {};
+    const structuredResume = candidate?.structuredResume ? (typeof candidate.structuredResume === 'string' ? JSON.parse(candidate.structuredResume) : candidate.structuredResume) : {};
     
-    const summary = aiData.summary || structuredResume.summary || aiData.reasoning || "AI analysis pending for this candidate.";
+    const summary = structuredResume.candidate_summary || aiData.summary || structuredResume.summary || aiData.reasoning || "AI analysis pending for this candidate.";
     const strengths = aiData.strengths || [];
     const weaknesses = aiData.weaknesses || [];
     const score = candidate?.aiScore || 0;
@@ -132,19 +122,16 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
             : candidate?.status === "Borderline"
                 ? "Borderline"
                 : "Shortlisted";
+
     const interviewRecordingUrl = candidate?.interview?.interviewRecordingUrl || candidate?.assessment?.interviewRecordingUrl || "";
     const interviewTranscript = candidate?.interview?.interviewTranscript || candidate?.assessment?.interviewTranscript || "";
 
-    // Duration fixing useEffect moved to top levels
     useEffect(() => {
-        // Try to pre-populate from DB first
         const dbDuration = candidate?.interview?.interviewDuration || candidate?.assessment?.interviewDuration;
         if (dbDuration && dbDuration > 0) {
             setRecordingDurationSec(dbDuration);
-            console.log("Pre-populated duration from DB:", dbDuration);
         }
-    }, [candidate?.interview?.interviewDuration, candidate?.assessment?.interviewDuration]);
-
+    }, [candidate]);
 
     if (loading) {
         return (
@@ -172,23 +159,27 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
             </div>
         );
     }
-    const formatDuration = (totalSeconds: number) => {
-        const h = Math.floor(totalSeconds / 3600);
-        const m = Math.floor((totalSeconds % 3600) / 60);
-        const s = Math.floor(totalSeconds % 60);
-        if (h > 0) return `${h}h ${m}m ${s}s`;
-        return `${m}:${s}min`;
-    };
 
-    const techSkills = structuredResume.skills?.technical || [];
-    const toolSkills = structuredResume.skills?.tools || [];
-    const softSkills = structuredResume.skills?.soft_skills || [];
-    const projects = structuredResume.projects || [];
+    const techSkills = Array.isArray(structuredResume.skills?.technical) 
+        ? structuredResume.skills.technical.map((s: any) => typeof s === 'object' ? s.skill : s) 
+        : [];
+    const toolSkills = Array.isArray(structuredResume.skills?.tools) 
+        ? structuredResume.skills.tools.map((s: any) => typeof s === 'object' ? s.tool : s) 
+        : [];
+    const softSkills = Array.isArray(structuredResume.skills?.soft_skills) ? structuredResume.skills.soft_skills : [];
+    const redFlags = aiData.red_flags || structuredResume.red_flags || [];
+    const careerProgression = structuredResume.career_progression || null;
 
     const statusColors: Record<string, string> = {
         Shortlisted: "bg-green-50 text-green-700",
         Borderline:  "bg-amber-50 text-amber-700",
         Rejected:    "bg-red-50 text-red-600",
+    };
+
+    const formatDuration = (totalSeconds: number) => {
+        const m = Math.floor(totalSeconds / 60);
+        const s = Math.floor(totalSeconds % 60);
+        return `${m}:${s.toString().padStart(2, '0')}min`;
     };
 
     return (
@@ -238,7 +229,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     { icon: Phone,    value: candidate.phone || "N/A" },
                                     { icon: MapPin, value: structuredResume.location?.city ? `${structuredResume.location.city}, ${structuredResume.location.country || ""}` : (candidate.location || "N/A") },
                                     { icon: Calendar, value: mounted ? `Applied ${new Date(candidate.createdAt).toLocaleDateString()}` : "Applied --/--/----" },
-                                ].filter(item => item.value !== "N/A" && item.value !== "Exp N/A" && item.value !== "N/A, ").map(({ icon: Icon, value }) => (
+                                ].filter(item => item.value !== "N/A" && item.value !== "N/A, ").map(({ icon: Icon, value }) => (
                                     <div key={value} className="flex items-center gap-2 text-sm font-bold text-gray-400">
                                         <Icon className="h-3.5 w-3.5" />
                                         <span>{value}</span>
@@ -273,9 +264,6 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                 {resendingInterview ? "Sending..." : "Resend Interview Link"}
                             </Button>
                         )}
-                        
-
-
                     </div>
                 </div>
             </div>
@@ -302,28 +290,33 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className={cn("space-y-6 transition-all duration-500", activeTab === "assessment" ? "lg:col-span-3" : "lg:col-span-2")}>
+                <div className="lg:col-span-2 space-y-6">
                     {activeTab === "analysis" && (
-                        <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2">
-                            <div className="relative bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] overflow-hidden p-8">
+                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                             {/* 🎯 Recruiter Snapshot */}
+                             <div className="relative bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] overflow-hidden p-8">
                                 <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-300 via-[#F97316] to-orange-400" />
                                 <div className="flex items-center gap-3 mb-5">
                                     <div className="h-10 w-10 rounded-xl bg-orange-50 flex items-center justify-center">
-                                        <Sparkles className="h-5 w-5 text-[#F97316]" />
+                                        <UserSearch className="h-5 w-5 text-[#F97316]" />
                                     </div>
                                     <div>
-                                        <p className="font-black text-gray-900 text-base">AI Evaluation Summary</p>
-                                        <p className="text-xs font-bold text-gray-400">Based on resume parsing and initial screening</p>
+                                        <p className="font-black text-gray-900 text-base">Recruiter Snapshot</p>
+                                        <p className="text-xs font-bold text-gray-400">Executive briefing on this candidate</p>
                                     </div>
                                 </div>
                                 <div className="bg-gradient-to-br from-orange-50/60 to-amber-50/30 rounded-2xl p-6 border border-orange-100/50">
-                                    <p className="text-gray-700 leading-relaxed font-medium text-[15px]">{summary}</p>
+                                    <p className="text-gray-800 leading-relaxed font-bold text-[15px] italic">
+                                        "{aiData.recruiter_snapshot || summary}"
+                                    </p>
                                 </div>
                             </div>
 
+                            {/* ✅ Detailed Verdict */}
                             <div className={cn(
                                 "bg-white rounded-2xl border shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-8 relative overflow-hidden",
-                                normalizedStatus === "Shortlisted" ? "border-green-100" : "border-red-100"
+                                normalizedStatus === "Shortlisted" ? "border-green-100 bg-green-50/20" : 
+                                normalizedStatus === "Borderline" ? "border-orange-100 bg-orange-50/20" : "border-red-100 bg-red-50/20"
                             )}>
                                 <div className="flex items-center gap-3 mb-5">
                                     <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center",
@@ -331,14 +324,65 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     )}>
                                         {normalizedStatus === "Shortlisted" ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
                                     </div>
-                                    <p className={cn("font-black text-base", normalizedStatus === "Shortlisted" ? "text-green-800" : "text-red-700")}>
-                                        Why {normalizedStatus}?
+                                    <p className={cn("font-black text-base uppercase tracking-tight", normalizedStatus === "Shortlisted" ? "text-green-800" : "text-red-700")}>
+                                        AI Verdict: {normalizedStatus}
                                     </p>
                                 </div>
-                                <p className="text-gray-600 leading-relaxed font-medium">
-                                    {aiData.reasoning || "The AI evaluation determined this candidate's profile aligns with the role requirements."}
+                                <p className="text-gray-700 leading-relaxed font-bold text-[15px]">
+                                    {aiData.ai_verdict || aiData.reasoning || "The AI evaluation determined this candidate's profile aligns with the role requirements."}
                                 </p>
                             </div>
+
+                            {/* 📋 Decision Matrix Table */}
+                            {aiData.decision_breakdown && (
+                                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] overflow-hidden transition-all">
+                                    <div className="px-8 py-6 border-b border-gray-50 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-9 w-9 rounded-xl bg-gray-50 flex items-center justify-center">
+                                                <Target className="h-4 w-4 text-gray-500" />
+                                            </div>
+                                            <p className="font-black text-gray-900 text-sm">Requirement Decision Matrix</p>
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left">
+                                            <thead>
+                                                <tr className="bg-gray-50/50">
+                                                    <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Requirement</th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Required</th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Candidate</th>
+                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Status</th>
+                                                    <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Note</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-50">
+                                                {aiData.decision_breakdown.map((row: any, i: number) => (
+                                                    <tr key={i} className="hover:bg-gray-50/30 transition-all">
+                                                        <td className="px-8 py-4 font-black text-gray-900 text-sm">{row.criteria}</td>
+                                                        <td className="px-6 py-4 text-xs font-bold text-gray-500">{row.required}</td>
+                                                        <td className="px-6 py-4">
+                                                            <div className={cn(
+                                                                "inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-black uppercase tracking-tighter",
+                                                                row.result === 'pass' ? "bg-green-50 text-green-700" : row.result === 'fail' ? "bg-red-50 text-red-600" : "bg-orange-50 text-orange-700"
+                                                            )}>
+                                                                {row.result === 'pass' ? <CheckCircle2 className="h-3 w-3" /> : row.result === 'fail' ? <XCircle className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
+                                                                {row.candidate_has}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            <Badge className={cn("rounded-lg text-[9px] font-black uppercase tracking-widest border-0 shadow-none px-2 py-0.5", 
+                                                                row.result === 'pass' ? "bg-green-100/50 text-green-700" : row.result === 'fail' ? "bg-red-100/50 text-red-700" : "bg-orange-100/50 text-orange-700")}>
+                                                                {row.result}
+                                                            </Badge>
+                                                        </td>
+                                                        <td className="px-8 py-4 text-[13px] font-bold text-gray-400">{row.note}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-6">
@@ -349,12 +393,12 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <p className="font-black text-gray-900 text-sm">Key Strengths</p>
                                     </div>
                                     <ul className="space-y-3">
-                                        {strengths.length > 0 ? strengths.map((s: string, i: number) => (
+                                        {strengths.length > 0 ? (aiData.strengths as any).map((s: any, i: number) => (
                                             <li key={i} className="flex items-start gap-3 text-sm">
                                                 <div className="h-5 w-5 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0 mt-0.5">
                                                     <CheckCircle2 className="h-3 w-3 text-green-600" />
                                                 </div>
-                                                <span className="text-gray-600 font-bold leading-snug">{s}</span>
+                                                <span className="text-gray-600 font-bold leading-snug">{typeof s === 'string' ? s : s.point}</span>
                                             </li>
                                         )) : <li className="text-sm text-gray-400 font-bold">No specific strengths identified.</li>}
                                     </ul>
@@ -365,27 +409,111 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <div className="h-9 w-9 rounded-xl bg-orange-50 flex items-center justify-center">
                                             <AlertTriangle className="h-4 w-4 text-[#F97316]" />
                                         </div>
-                                        <p className="font-black text-gray-900 text-sm">Potential Concerns</p>
+                                        <p className="font-black text-gray-900 text-sm">Critical Gaps</p>
                                     </div>
-                                    <ul className="space-y-3">
-                                        {weaknesses.length > 0 ? weaknesses.map((s: string, i: number) => (
+                                    <div className="space-y-4">
+                                        {aiData.concerns && aiData.concerns.length > 0 ? aiData.concerns.map((c: any, i: number) => (
+                                            <div key={i} className="p-4 rounded-xl bg-red-50/30 border border-red-100">
+                                               <p className="text-sm font-black text-red-700 mb-1">{c.point}</p>
+                                               <p className="text-xs font-bold text-gray-500 leading-relaxed">{c.impact}</p>
+                                            </div>
+                                        )) : weaknesses.map((s: string, i: number) => (
                                             <li key={i} className="flex items-start gap-3 text-sm">
                                                 <div className="h-5 w-5 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0 mt-0.5">
                                                     <XCircle className="h-3 w-3 text-orange-600" />
                                                 </div>
                                                 <span className="text-gray-600 font-bold leading-snug">{s}</span>
                                             </li>
-                                        )) : <li className="text-sm text-gray-400 font-bold">No specific concerns identified.</li>}
-                                    </ul>
+                                        ))}
+                                        {(aiData.concerns?.length === 0 && weaknesses.length === 0) && <li className="text-sm text-gray-400 font-bold">No specific concerns identified.</li>}
+                                    </div>
                                 </div>
                             </div>
+
+                            {/* 🏗 Experience Deep Dive & Projects */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-8">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center">
+                                            <BriefcaseBusiness className="h-5 w-5 text-amber-600" />
+                                        </div>
+                                        <div>
+                                            <p className="font-black text-gray-900 text-base">Experience Deep Dive</p>
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{aiData.experience_assessment?.vs_required || "Assessment pending"}</p>
+                                        </div>
+                                    </div>
+                                    {aiData.experience_assessment ? (
+                                        <div className="space-y-5">
+                                            <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
+                                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Impact Quality</p>
+                                                <p className="text-sm font-bold text-gray-700 leading-relaxed italic">"{aiData.experience_assessment.quality}"</p>
+                                            </div>
+                                            <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
+                                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">JD Relevance</p>
+                                                <p className="text-sm font-bold text-gray-700 leading-relaxed italic">"{aiData.experience_assessment.relevance}"</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-gray-400 font-bold italic">Detailed experience assessment not available.</p>
+                                    )}
+                                </div>
+
+                                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-8">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="h-10 w-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+                                            <Target className="h-5 w-5 text-emerald-600" />
+                                        </div>
+                                        <div>
+                                            <p className="font-black text-gray-900 text-base">Project Relevance</p>
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Rating: {aiData.project_relevance?.rating || "N/A"}</p>
+                                        </div>
+                                    </div>
+                                    {aiData.project_relevance ? (
+                                       <div className="p-5 rounded-2xl bg-emerald-50/30 border border-emerald-100">
+                                            <p className="text-sm font-bold text-gray-800 leading-relaxed">
+                                                {aiData.project_relevance.reasoning}
+                                            </p>
+                                       </div>
+                                    ) : (
+                                        <p className="text-sm text-gray-400 font-bold italic">Project relevance analysis not available.</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* 🛡 Red Flags */}
+                            {redFlags.length > 0 && (
+                                <div className="bg-white rounded-2xl border border-red-50 shadow-[0_4px_24px_rgba(239,68,68,0.04)] p-6 overflow-hidden relative">
+                                    <div className="flex items-center gap-3 mb-5">
+                                        <div className="h-9 w-9 rounded-xl bg-red-50 flex items-center justify-center">
+                                            <ShieldCheck className="h-4 w-4 text-red-500" />
+                                        </div>
+                                        <p className="font-black text-gray-900 text-sm">Automated Red Flags</p>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {redFlags.map((flag: any, i: number) => (
+                                            <div key={i} className="p-3.5 rounded-xl bg-gray-50 border border-gray-100">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-[#F97316]">{flag.flag?.replace('_', ' ') || 'Flag'}</span>
+                                                    <Badge className={cn(
+                                                        "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border-0",
+                                                        flag.severity === 'High' ? "bg-red-100 text-red-600" : "bg-orange-100 text-orange-600"
+                                                    )}>
+                                                        {flag.severity} RISK
+                                                    </Badge>
+                                                </div>
+                                                <p className="text-[13px] font-bold text-gray-700 leading-tight">{flag.detail}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-8">
                                 <div className="flex items-center gap-3 mb-6">
                                     <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center">
                                         <Terminal className="h-5 w-5 text-indigo-600" />
                                     </div>
-                                    <p className="font-black text-gray-900 text-base">Technical Profile</p>
+                                    <p className="font-black text-gray-900 text-base">Technical Technical Knowledge</p>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                     <div>
@@ -415,52 +543,29 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                 </div>
                             </div>
 
-                            {/* Removed Key Projects section as requested */}
                         </div>
                     )}
 
                     {activeTab === "interview" && (
-                        <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2">
-                            <div className="relative bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] overflow-hidden p-8">
-                                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-300 via-indigo-500 to-indigo-400" />
-                                <div className="flex items-center gap-3 mb-5">
-                                    <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center">
-                                        <Camera className="h-5 w-5 text-indigo-600" />
+                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                            <div className="relative bg-white rounded-3xl border border-gray-100 shadow-[0_8px_40px_rgba(0,0,0,0.04)] overflow-hidden p-10">
+                                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-300 via-indigo-600 to-indigo-400" />
+                                <div className="flex items-center gap-4 mb-8">
+                                    <div className="h-12 w-12 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                                        <Camera className="h-6 w-6 text-indigo-600" />
                                     </div>
                                     <div>
-                                        <p className="font-black text-gray-900 text-base">Interview Recording & Transcript</p>
-                                        <p className="text-xs font-bold text-gray-400">Stored in candidate profile for review</p>
+                                        <h2 className="text-xl font-black text-gray-900 tracking-tight">Technical Interview Review</h2>
+                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Full Recording and Transcript Captured via Lumoscale AI</p>
                                     </div>
                                 </div>
 
-                                {candidate?.interview?.aiSummary && (
-                                    <div className="bg-indigo-50/50 border border-indigo-100/50 rounded-2xl p-6 mb-6">
-                                        <div className="flex items-center gap-2 mb-3">
-                                            <Sparkles className="h-4 w-4 text-indigo-600" />
-                                            <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">AI Interview Narrative Summary</p>
-                                        </div>
-                                        <p className="text-gray-700 leading-relaxed font-bold text-sm italic">
-                                            "{candidate.interview.aiSummary}"
-                                        </p>
-                                    </div>
-                                )}
-
                                 {interviewRecordingUrl ? (
-                                    <div className="space-y-5">
-                                        <div className="rounded-2xl border border-gray-100 bg-black overflow-hidden shadow-2xl relative group">
-                                            <style jsx global>{`
+                                    <div className="space-y-8">
+                                        <div className="rounded-3xl border-8 border-gray-900 bg-black overflow-hidden shadow-2xl relative">
+                                             <style jsx global>{`
                                                 .plyr--full-ui {
                                                     --plyr-color-main: #F97316;
-                                                    --plyr-video-background: #000;
-                                                    --plyr-menu-background: rgba(26, 26, 26, 0.9);
-                                                    --plyr-menu-color: #fff;
-                                                }
-                                                .plyr__control--overlaid {
-                                                    background: rgba(249, 115, 22, 0.8) !important;
-                                                    z-index: 10;
-                                                }
-                                                .plyr__control--overlaid:hover {
-                                                    background: #F97316 !important;
                                                 }
                                             `}</style>
                                             <Plyr
@@ -470,110 +575,83 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     sources: [{ src: interviewRecordingUrl, type: "video/webm" }],
                                                 }}
                                                 options={{
-                                                    duration: recordingDurationSec && recordingDurationSec > 0 ? recordingDurationSec : undefined,
-                                                    controls: ["play-large", "play", "progress", "current-time", "mute", "volume", "captions", "settings", "pip", "airplay", "fullscreen"],
-                                                    settings: ["quality", "speed"],
-                                                    speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] },
+                                                    duration: recordingDurationSec || undefined,
+                                                    controls: ["play-large", "play", "progress", "current-time", "mute", "volume", "captions", "settings", "pip", "fullscreen"],
                                                 }}
                                             />
                                         </div>
-                                        {recordingDurationSec !== null ? (
-                                            recordingDurationSec > 0 ? (
-                                                <div className="flex items-baseline gap-2.5 bg-orange-50/50 border border-orange-100 rounded-2xl px-5 py-3.5 w-fit">
-                                                    <div className="h-2 w-2 rounded-full bg-orange-500 animate-pulse" />
-                                                    <div className="flex flex-col">
-                                                        <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Interview Duration</p>
-                                                        <div className="flex items-baseline gap-2">
-                                                            <span className="text-xl font-black text-gray-900 tracking-tight">{formatDuration(recordingDurationSec)}</span>
-                                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">({Math.round(recordingDurationSec)}s Total)</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-2xl px-5 py-3.5 w-fit">
-                                                    <AlertTriangle className="h-4 w-4 text-orange-400" />
-                                                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Duration Unavailable</p>
-                                                </div>
-                                            )
-                                        ) : (
-                                            <div className="flex items-center gap-3 bg-gray-50 border border-gray-100 rounded-2xl px-5 py-3.5 w-fit animate-pulse">
-                                                <Loader2 className="h-4 w-4 text-orange-400 animate-spin" />
-                                                <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Identifying Recording Duration...</p>
+                                        
+                                        <div className="flex flex-wrap gap-4">
+                                            <div className="bg-orange-50/50 border border-orange-100 rounded-2xl px-6 py-4 flex flex-col gap-1">
+                                                <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Duration</p>
+                                                <p className="text-xl font-black text-gray-900 tracking-tight">{recordingDurationSec ? formatDuration(recordingDurationSec) : "Loading..."}</p>
                                             </div>
-                                        )}
-                                        <a href={interviewRecordingUrl} target="_blank" rel="noopener noreferrer" className="inline-flex text-sm font-bold text-indigo-600 hover:text-indigo-700">Open raw recording in new tab</a>
+                                             <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl px-6 py-4 flex flex-col gap-1">
+                                                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Questions Asked</p>
+                                                <p className="text-xl font-black text-gray-900 tracking-tight">8 Blocks</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4 pt-6 border-t border-gray-100">
+                                            <div className="flex items-center gap-2">
+                                                <MessageSquare className="h-4 w-4 text-gray-400" />
+                                                <h3 className="text-xs font-black uppercase tracking-widest text-gray-400">Interview Transcript</h3>
+                                            </div>
+                                            <div className="bg-gray-50/80 rounded-2xl p-8 border border-gray-100">
+                                                <p className="text-gray-700 leading-relaxed font-semibold italic whitespace-pre-wrap">
+                                                    {interviewTranscript || "Transcript extraction in progress..."}
+                                                </p>
+                                            </div>
+                                        </div>
                                     </div>
                                 ) : (
-                                    <p className="text-sm font-medium text-gray-500">Recording not available yet.</p>
-                                )}
-
-                                <div className="mt-6">
-                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Full Transcript</p>
-                                    <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 max-h-64 overflow-auto">
-                                        <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{interviewTranscript || "Transcript not available yet."}</p>
+                                    <div className="py-20 flex flex-col items-center gap-4 bg-gray-50/50 rounded-3xl border border-dashed border-gray-200">
+                                        <div className="h-14 w-14 rounded-2xl bg-gray-100 flex items-center justify-center"><EyeOff className="h-6 w-6 text-gray-300" /></div>
+                                        <p className="text-sm font-black text-gray-400 uppercase tracking-widest text-center">Interview not yet completed <br/><span className="text-[10px] font-bold lowercase italic opacity-60">Wait for candidate submission</span></p>
                                     </div>
-                                </div>
+                                )}
                             </div>
                         </div>
                     )}
                 </div>
 
-                {activeTab === "analysis" && (
-                    <div className="space-y-5 animate-in fade-in slide-in-from-right-4">
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] overflow-hidden">
-                            <div className="h-1 w-full bg-gradient-to-r from-orange-300 via-[#F97316] to-orange-400" />
-                            <div className="px-6 pt-6 pb-2 flex items-center gap-2">
-                                <Zap className="h-4 w-4 text-[#F97316]" />
-                                <p className="font-black text-[11px] uppercase tracking-widest text-gray-400">AI Match Score</p>
-                            </div>
-                            <div className="px-6 pb-8 flex flex-col items-center">
-                                <ScoreRing score={score} />
-                                <p className="text-xs font-bold text-gray-400 text-center mt-4">Match for <span className="font-black text-gray-800">{candidate.drive?.title || "Role"}</span></p>
-                            </div>
-                        </div>
-
-                        <div className={cn(
-                            "rounded-2xl border shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-6 relative overflow-hidden",
-                            normalizedStatus === "Shortlisted" ? "bg-green-50 border-green-100" :
-                            normalizedStatus === "Rejected"    ? "bg-red-50 border-red-100"     : "bg-orange-50 border-orange-100"
-                        )}>
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0",
-                                    normalizedStatus === "Shortlisted" ? "bg-green-100" :
-                                    normalizedStatus === "Rejected"    ? "bg-red-100"   : "bg-orange-100"
-                                )}>
-                                    {normalizedStatus === "Shortlisted" ? <CheckCircle2 className="h-5 w-5 text-green-600" /> : normalizedStatus === "Rejected" ? <XCircle className="h-5 w-5 text-red-500" /> : <Sparkles className="h-5 w-5 text-[#F97316]" />}
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">AI Verdict</p>
-                                    <p className={cn("text-xl font-black leading-tight", normalizedStatus === "Shortlisted" ? "text-green-700" : normalizedStatus === "Rejected" ? "text-red-600" : "text-[#F97316]")}>{normalizedStatus === "Shortlisted" ? "Approved" : normalizedStatus}</p>
-                                </div>
-                            </div>
-                            <p className="text-xs font-bold text-gray-500 leading-relaxed">
-                                {normalizedStatus === "Shortlisted" ? "This candidate meets the role requirements and has been approved by AI screening." : normalizedStatus === "Rejected" ? "This candidate did not meet the minimum criteria based on AI analysis." : "AI screening is in progress for this candidate."}
-                            </p>
-                        </div>
-
-                        <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-6">
-                            <p className="font-black text-[11px] uppercase tracking-widest text-gray-400 mb-5">Candidate Details</p>
-                            <div className="space-y-0 divide-y divide-gray-50">
-                                {[
-                                    { label: "Applied Date", value: mounted ? new Date(candidate.createdAt).toLocaleDateString() : "--/--/----", icon: Calendar },
-                                    { label: "Phone", value: candidate.phone || "N/A", icon: Phone },
-                                    { label: "Email", value: candidate.email, icon: Mail, truncate: true },
-                                ].map(({ label, value, icon: Icon, truncate }) => (
-                                    <div key={label} className="flex items-center gap-3 py-3.5 first:pt-0 last:pb-0">
-                                        <div className="h-8 w-8 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0"><Icon className="h-3.5 w-3.5 text-gray-400" /></div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">{label}</p>
-                                            <p className={cn("text-sm font-black text-gray-800 mt-0.5", truncate && "truncate")} title={truncate ? value : undefined}>{value}</p>
-                                        </div>
+                <div className="lg:col-span-1 space-y-6">
+                    <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_8px_32px_rgba(0,0,0,0.03)] overflow-hidden p-8 sticky top-8">
+                        <div className="flex flex-col items-center gap-8">
+                            <ScoreRing score={score} />
+                            
+                            <div className="w-full space-y-6 pt-6 border-t border-gray-50">
+                                <div className="space-y-2">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Application Progress</p>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="text-xs font-bold text-gray-900">Scanning & AI Evaluation</span>
+                                        <span className="text-xs font-black text-green-600">100%</span>
                                     </div>
-                                ))}
+                                    <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                                        <div className="h-full bg-green-500 rounded-full" style={{ width: '100%' }} />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {[
+                                        { label: "Job Post", value: candidate.drive?.title || "N/A", icon: Target },
+                                        { label: "Applied On", value: mounted ? new Date(candidate.createdAt).toLocaleDateString() : "--/--/----", icon: Calendar },
+                                        { label: "Location", value: candidate.location || "Remote", icon: MapPin },
+                                        { label: "Mobile", value: candidate.phone || "Not Provided", icon: Phone },
+                                    ].map(({ label, value, icon: Icon }) => (
+                                        <div key={label} className="flex items-center gap-3">
+                                            <div className="h-8 w-8 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0"><Icon className="h-4 w-4 text-gray-400" /></div>
+                                            <div>
+                                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{label}</p>
+                                                <p className="text-sm font-bold text-gray-900 truncate max-w-[160px]">{value}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     </div>
-                )}
+                </div>
             </div>
 
             {showSubmissionPreview && (
@@ -582,7 +660,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                     <div className="relative w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
                         <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
                             <div><h2 className="text-xl font-black text-gray-900 tracking-tight">Candidate Submission</h2><p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Full Application Data</p></div>
-                            <Button variant="ghost" size="icon" onClick={() => setShowSubmissionPreview(false)} className="rounded-xl hover:bg-gray-100"><XCircle className="h-6 w-6 text-gray-400" /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => setShowSubmissionPreview(false)} className="rounded-xl hover:bg-gray-100"><X className="h-6 w-6 text-gray-400" /></Button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-8 space-y-8 text-gray-900">
                             <section className="space-y-4">
@@ -625,12 +703,6 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     <div className="p-6 rounded-2xl bg-indigo-50/30 border border-indigo-100"><p className="text-sm font-medium text-gray-700 leading-relaxed whitespace-pre-wrap">{candidate.submissionData.coverLetter}</p></div>
                                 </section>
                             )}
-                            <section className="space-y-4 pt-4 border-t border-gray-100">
-                                <details className="group">
-                                    <summary className="flex items-center justify-between cursor-pointer list-none"><div className="flex items-center gap-2 text-gray-400 group-hover:text-gray-600 transition-all"><ShieldCheck className="h-4 w-4" /><h3 className="text-xs font-black uppercase tracking-widest">Complete Submission Audit</h3></div><ChevronDown className="h-4 w-4 text-gray-300 group-open:rotate-180 transition-transform" /></summary>
-                                    <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50/50 p-6 overflow-hidden"><p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4 italic">This is a read-only snapshot of the raw data submitted by the candidate.</p><pre className="text-[11px] font-mono text-gray-500 whitespace-pre-wrap leading-relaxed opacity-70">{JSON.stringify(candidate.submissionData || {}, null, 2)}</pre></div>
-                                </details>
-                            </section>
                         </div>
                         <div className="p-8 border-t border-gray-100 bg-gray-50/50"><Button onClick={() => setShowSubmissionPreview(false)} className="w-full h-12 rounded-xl bg-gray-900 text-white font-black hover:bg-black transition-all">CLOSE PREVIEW</Button></div>
                     </div>
@@ -639,3 +711,5 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
         </div>
     );
 }
+
+

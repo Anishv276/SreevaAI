@@ -28,18 +28,7 @@ export function ResumeReview({
             <div className="space-y-6">
                 <div className="flex items-center gap-4">
                     <span className="h-2 w-2 rounded-full bg-[#F97316] shadow-[0_0_10px_rgba(249,115,22,0.4)]" />
-                    <p className="text-[11px] font-black text-gray-500 uppercase tracking-[0.2em]">Final Step: Profile Verification</p>
-                </div>
-                
-                <div className="bg-orange-50/30 rounded-[2.5rem] p-8 border border-orange-100/50">
-                    <Label className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1 mb-4 block">Your Resume / CV *</Label>
-                    <ResumeUpload 
-                        formData={formData}
-                        isAnalyzing={isAnalyzing}
-                        analysisError={analysisError}
-                        startAnalysis={startAnalysis}
-                        clearFile={clearResume}
-                    />
+                    <p className="text-[11px] font-black text-gray-500 uppercase tracking-[0.2em]">Profile Authentication</p>
                 </div>
             </div>
 
@@ -62,8 +51,8 @@ export function ResumeReview({
                     className="mt-1 border-gray-300 data-[state=checked]:bg-[#F97316] data-[state=checked]:border-[#F97316] shadow-sm transition-all" 
                 />
                 <div className="grid gap-1.5 leading-none">
-                    <Label htmlFor="terms" className="text-sm font-bold text-gray-900 cursor-pointer">
-                        I agree to the terms and data processing policy
+                    <Label htmlFor="terms" className="text-sm font-bold text-gray-900 cursor-pointer flex items-center gap-1.5">
+                        I agree to the terms and data processing policy <span className="text-[#F97316]">*</span>
                     </Label>
                     <p className="text-xs text-gray-500 font-medium">
                         By submitting, you allow us to process your profile using Lumoscale AI for this recruitment drive.

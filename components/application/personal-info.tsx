@@ -27,26 +27,32 @@ export function PersonalInfo({
     return (
         <div className="space-y-12 animate-in-fade">
             {/* Quick Resume Upload Section */}
-            {mode === "resume" && (
-                <div className="space-y-6">
-                    <div className="flex items-center gap-4">
-                        <span className="h-2 w-2 rounded-full bg-[#F97316] shadow-[0_0_10px_rgba(249,115,22,0.4)]" />
-                        <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Step 0: Smart Extraction</p>
-                    </div>
-                    <div className="bg-orange-50/30 rounded-[2rem] p-6 border border-orange-100/50">
-                        <p className="text-sm font-bold text-gray-900 mb-4">
-                            Upload your resume to let Lumoscale AI auto-fill your details.
-                        </p>
-                        <ResumeUpload 
-                            formData={formData}
-                            isAnalyzing={isAnalyzing}
-                            analysisError={analysisError}
-                            startAnalysis={startAnalysis}
-                            clearFile={clearResume}
-                        />
-                    </div>
+            <div className="space-y-6">
+                <div className="flex items-center gap-4">
+                    <span className="h-2 w-2 rounded-full bg-[#F97316] shadow-[0_0_10px_rgba(249,115,22,0.4)]" />
+                    <p className="text-[11px] font-black text-[#F97316] uppercase tracking-[0.2em]">
+                        {mode === "manual" ? "Resume Attachment" : "Smart Extraction"}
+                    </p>
                 </div>
-            )}
+                <div className={cn(
+                    "rounded-[2rem] p-6 border",
+                    mode === "manual" ? "bg-gray-50/50 border-gray-100" : "bg-orange-50/30 border-orange-100/50"
+                )}>
+                    <p className="text-sm font-bold text-gray-900 mb-4">
+                        {mode === "manual" 
+                            ? "Please attach your resume to complete your application." 
+                            : "Upload your resume to let Hirer.AI auto-fill your details."
+                        }
+                    </p>
+                    <ResumeUpload 
+                        formData={formData}
+                        isAnalyzing={isAnalyzing}
+                        analysisError={analysisError}
+                        startAnalysis={startAnalysis}
+                        clearFile={clearResume}
+                    />
+                </div>
+            </div>
 
             <div className="flex items-center gap-4">
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-100 to-transparent" />

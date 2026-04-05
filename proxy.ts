@@ -49,6 +49,18 @@ export async function proxy(req: NextRequest) {
         if (!session) return NextResponse.redirect(new URL("/login?from=admin", req.url));
         if (isSuperAdminRole(session.role)) return NextResponse.redirect(new URL("/super-admin", req.url));
         if (!isAdminRole(session.role)) return NextResponse.redirect(new URL("/login", req.url));
+
+        // ── ONBOARDING PROTECTION ──────────────────────────
+        const isSetupPage = pathname === "/admin/setup";
+        const needsOnboarding = (session as any).onboardingComplete === false;
+
+        if (needsOnboarding && !isSetupPage) {
+            return NextResponse.redirect(new URL("/admin/setup", req.url));
+        }
+        if (!needsOnboarding && isSetupPage) {
+            return NextResponse.redirect(new URL("/admin", req.url));
+        }
+
         let res = NextResponse.next({ request: { headers: requestHeaders } });
         return await refreshSessionCookie(req, res);
     }

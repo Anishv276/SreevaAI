@@ -51,7 +51,7 @@ interface CandidatesContextType {
     candidates: Candidate[];
     pagination: Pagination;
     addCandidate: (candidate: Omit<Candidate, "id" | "date" | "status" | "score">) => Promise<void>;
-    fetchCandidates: (page?: number, limit?: number, driveId?: string, status?: string) => Promise<void>;
+    fetchCandidates: (page?: number, limit?: number, driveId?: string, status?: string, startDate?: string, endDate?: string) => Promise<void>;
     bulkDeleteCandidates: (ids: string[]) => Promise<void>;
 }
 
@@ -67,11 +67,13 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     });
     const pathname = usePathname();
 
-    const fetchCandidates = async (page: number = 1, limit: number = 10, driveId?: string, status?: string) => {
+    const fetchCandidates = async (page: number = 1, limit: number = 10, driveId?: string, status?: string, startDate?: string, endDate?: string) => {
         try {
             let url = `/api/candidates?page=${page}&limit=${limit}`;
             if (driveId && driveId !== "all") url += `&driveId=${driveId}`;
             if (status && status !== "all") url += `&status=${encodeURIComponent(status)}`;
+            if (startDate) url += `&startDate=${startDate}`;
+            if (endDate) url += `&endDate=${endDate}`;
 
             const res = await fetch(url);
             if (res.ok) {

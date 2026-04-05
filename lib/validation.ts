@@ -9,9 +9,9 @@ export const createDriveSchema = z.object({
   description: z.string().max(5000).optional().default(""),
   role: z.string().optional(),
   department: z.string().min(1, "Department is required"),
-  employmentType: z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance"]).optional(),
-  type: z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance"]).optional(),
-  workMode: z.enum(["Remote", "Hybrid", "On-site"]).optional(),
+  employmentType: z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance", "full-time", "part-time", "contract", "internship", "freelance"]).transform(v => v.charAt(0).toUpperCase() + v.slice(1).replace("-t", "-T")).optional(),
+  type: z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance", "full-time", "part-time", "contract", "internship", "freelance"]).transform(v => v.charAt(0).toUpperCase() + v.slice(1).replace("-t", "-T")).optional(),
+  workMode: z.enum(["Remote", "Hybrid", "On-site", "Onsite", "on-site", "onsite"]).transform(v => v.toLowerCase().includes("site") ? "On-site" : v.charAt(0).toUpperCase() + v.slice(1)).optional(),
   positions: z.coerce.number().int().min(1).optional(),
   deadline: z.string().nullable().optional(),
   salary: z.string().optional(),
@@ -56,13 +56,13 @@ export const createCandidateSchema = z.object({
   structuredResume: z.any().optional(),
   portfolio: z.string().optional(), // Relaxed
   currentCompany: z.string().optional(),
-  experience: z.string().optional(), // Added alias for frontend compatibility
+  experience: z.coerce.string().optional(),
   experienceYears: z.coerce.number().optional(),
-  ctc: z.string().optional(),
-  currentCtc: z.string().optional(), // Added alias for frontend compatibility
-  expectedCtc: z.string().optional(),
-  noticePeriod: z.string().optional(),
-  coverLetter: z.string().optional(),
+  ctc: z.coerce.string().optional(),
+  currentCtc: z.coerce.string().optional(),
+  expectedCtc: z.coerce.string().optional(),
+  noticePeriod: z.coerce.string().optional(),
+  coverLetter: z.coerce.string().optional(),
 });
 
 export const bulkDeleteCandidatesSchema = z.object({
@@ -94,6 +94,35 @@ export const candidateQuerySchema = z.object({
     v => (v === null || v === "" || v === undefined ? undefined : v),
     z.coerce.number().int().positive().optional()
   ),
+});
+
+export const interviewFinalizeSchema = z.object({
+  applicationId: z.string().min(1, "Application ID required"),
+  status: z.enum(["COMPLETED", "FAILED", "NO_SHOW"]).optional(),
+  recordingUrl: z.string().optional(),
+  transcript: z.string().optional(),
+  duration: z.number().optional(),
+});
+
+export const proctoringEventsSchema = z.object({
+  events: z.array(z.object({
+    eventType: z.string(),
+    severity: z.string().optional(),
+    reason: z.string().optional(),
+    durationSeconds: z.number().optional(),
+    metadata: z.any().optional(),
+    timestamp: z.number().optional(),
+  })),
+});
+
+export const assessmentSubmitSchema = z.object({
+  responses: z.array(z.object({
+    questionId: z.string(),
+    answer: z.string(),
+    timeSpent: z.number().optional(),
+  })),
+  proctoringData: z.any().optional(),
+  duration: z.number().optional(),
 });
 
 export function withZod<T extends z.ZodTypeAny>(

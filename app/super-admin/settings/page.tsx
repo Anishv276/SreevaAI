@@ -103,36 +103,28 @@ export default function SuperAdminSettingsPage() {
     return (
         <div className="min-h-screen bg-[#FDFDFD] p-8 lg:p-12 animate-fade-slide text-gray-900 font-medium pb-24">
             
-            {/* Header Area exactly as Pic 3 */}
-            <div className="max-w-6xl mx-auto space-y-2 mb-12">
-                <div className="flex items-center gap-4">
-                    <div className="h-10 w-1.25 bg-[#F97316] rounded-full" />
-                    <h1 className="text-4xl font-black text-gray-950 tracking-tighter leading-none">Settings</h1>
+            {/* Header Area */}
+            <div className="max-w-6xl mx-auto space-y-2 mb-8">
+                <div className="flex items-center gap-3 group">
+                    <div className="h-10 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full" />
+                    <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Settings</h1>
                 </div>
-                <p className="text-gray-400 font-bold ml-6 text-[11px] uppercase tracking-[0.2em] opacity-60">Manage your account & root preferences</p>
+                <p className="text-gray-500 font-medium ml-5">Manage your account & root preferences</p>
             </div>
 
             <div className="max-w-6xl mx-auto grid md:grid-cols-[280px_1fr] gap-12 items-start">
-                {/* Sidebar Navigation matching Pic 3 Panel Style */}
-                <aside className="bg-white border border-gray-100 rounded-[2rem] p-3 shadow-sm space-y-2">
-                    <div className="px-6 py-4 border-b border-gray-50 mb-2">
-                        <p className="text-[9px] font-black text-gray-300 uppercase tracking-widest">Global Options</p>
-                    </div>
-                    <button className="w-full flex items-center justify-between px-6 py-5 rounded-2xl bg-orange-50 text-[#F97316] border border-orange-100 shadow-sm group">
-                        <div className="flex items-center gap-4">
-                            <Lock className="h-5 w-5" />
-                            <span className="text-[12px] font-black uppercase tracking-widest">Password</span>
-                        </div>
-                        <ChevronRight className="h-4 w-4" />
+                {/* Sidebar Navigation */}
+                <aside className="bg-white border border-gray-100 rounded-xl p-2 space-y-1">
+                    <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-orange-50 text-[#F97316] font-medium text-sm">
+                        <Lock className="h-4 w-4" />
+                        <span className="text-[13px] font-semibold">Password</span>
                     </button>
-                    <div className="px-6 py-6 text-gray-200 text-[9px] font-black uppercase tracking-[0.4em] text-center italic">
-                        Version 1.0.4
-                    </div>
+                    <div className="px-4 py-4 text-gray-300 text-[10px] font-medium text-center">Version 1.0.4</div>
                 </aside>
 
                 <div className="space-y-12">
-                    {/* Security Update Section matching Pic 3 Main Content Area */}
-                    <div className="bg-white border border-gray-100 rounded-[3rem] p-12 lg:p-16 shadow-[0_40px_100px_rgba(0,0,0,0.015)] relative pb-32">
+                    {/* Security Update Section */}
+                    <div className="bg-white border border-gray-100 rounded-xl p-8 shadow-sm relative pb-32">
                         <div className="space-y-2 mb-14">
                             <h2 className="text-2xl font-black text-gray-950 tracking-tight uppercase italic leading-none">Update Password</h2>
                             <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px] italic opacity-60">Security verification required for password changes</p>
@@ -149,7 +141,7 @@ export default function SuperAdminSettingsPage() {
                                         value={currentPassword}
                                         onChange={e => setCurrentPassword(e.target.value)}
                                         placeholder="Enter Current Password"
-                                        className="w-full h-14 pl-16 pr-14 bg-gray-50 border border-transparent rounded-[1.25rem] text-[13px] font-bold text-gray-950 outline-none focus:bg-white focus:border-gray-200 transition-all shadow-inner"
+                                        className="w-full h-10 pl-12 pr-12 rounded-xl border border-gray-200 bg-white text-[14px] font-medium shadow-sm hover:border-orange-300 focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] transition-all"
                                     />
                                     <button 
                                         type="button"
@@ -171,7 +163,7 @@ export default function SuperAdminSettingsPage() {
                                             value={newPassword}
                                             onChange={e => setNewPassword(e.target.value)}
                                             placeholder="Min. 6 Characters"
-                                            className="w-full h-14 pl-8 pr-14 bg-gray-50 border border-transparent rounded-[1.25rem] text-[13px] font-bold text-gray-950 outline-none focus:bg-white focus:border-gray-200 transition-all shadow-inner"
+                                            className="w-full h-10 pl-12 pr-12 rounded-xl border border-gray-200 bg-white text-[14px] font-medium shadow-sm hover:border-orange-300 focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] transition-all"
                                         />
                                         <button 
                                             type="button"
@@ -190,7 +182,7 @@ export default function SuperAdminSettingsPage() {
                                             value={confirmPassword}
                                             onChange={e => setConfirmPassword(e.target.value)}
                                             placeholder="Repeat New Password"
-                                            className="w-full h-14 pl-8 pr-14 bg-gray-50 border border-transparent rounded-[1.25rem] text-[13px] font-bold text-gray-950 outline-none focus:bg-white focus:border-gray-200 transition-all shadow-inner"
+                                            className="w-full h-10 pl-12 pr-12 rounded-xl border border-gray-200 bg-white text-[14px] font-medium shadow-sm hover:border-orange-300 focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] transition-all"
                                         />
                                         <button 
                                             type="button"
@@ -220,7 +212,7 @@ export default function SuperAdminSettingsPage() {
                                 <button
                                     type="submit"
                                     disabled={sendingOtp || !currentPassword || !newPassword}
-                                    className="px-14 h-15 rounded-full bg-[#F97316] text-white font-black text-[12px] uppercase tracking-[0.2em] shadow-2xl shadow-orange-200 hover:bg-orange-600 hover:-translate-y-1 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center italic"
+                                    className="h-10 px-6 rounded-xl font-bold text-[13px] shadow-md hover:shadow-lg transition-all bg-[#F97316] text-white disabled:opacity-50 flex items-center justify-center italic"
                                 >
                                     {sendingOtp ? <Loader2 className="h-5 w-5 animate-spin" /> : "Change Password"}
                                 </button>

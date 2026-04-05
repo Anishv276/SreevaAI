@@ -2,18 +2,16 @@
 
 import { useState, Suspense, useEffect } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
-import { Steps } from "@/components/create-drive/steps"; // Reusing Steps component
 import { Button } from "@/components/ui/button";
 import { PersonalInfo } from "@/components/application/personal-info";
 import { ProfessionalDetails } from "@/components/application/professional-details";
 import { ResumeReview } from "@/components/application/resume-review";
 import { PortalHeader } from "@/components/careers/portal-header";
-import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, AlertCircle, X } from "lucide-react";
 import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
 import { useCandidates } from "@/context/candidates-context";
 import { useJobs } from "@/context/jobs-context";
-
-const STEPS = ["Personal Info", "Professional Details", "Resume & Review"];
 
 export default function ApplicationPage() {
     const params = useParams();
@@ -23,18 +21,26 @@ export default function ApplicationPage() {
     const router = useRouter();
     const { addCandidate } = useCandidates();
     const { jobs } = useJobs();
-    const [currentStep, setCurrentStep] = useState(0);
     const [alreadyApplied, setAlreadyApplied] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
+    const [pageAlert, setPageAlert] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
+
+    const showAlert = (message: string, type: 'error' | 'success' = 'error') => {
+        setPageAlert({ message, type });
+        setTimeout(() => setPageAlert(null), 4000);
+    };
+    
+    // Fix: j.id is a number, id is a string
+    const job = jobs.find(j => j.id.toString() === id);
+    const jobTitle = job?.title || "this position";
+    
     const [formData, setFormData] = useState({
-        // Personal Info
         fullName: "",
         email: "",
         phone: "",
         location: "",
         portfolio: "",
-        // Professional Details
         experience: "",
         currentCompany: "",
         ctc: "",
@@ -47,12 +53,10 @@ export default function ApplicationPage() {
         structuredResume: {},
         agreedToTerms: false
     });
-
-    // AI Analysis State
+    
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysisError, setAnalysisError] = useState<string | null>(null);
-
-    // Check for previous application or pre-fill data on mount
+    
     useEffect(() => {
         if (id && typeof window !== "undefined") {
             const hasApplied = localStorage.getItem(`applied_${id}`);
@@ -60,7 +64,6 @@ export default function ApplicationPage() {
                 setAlreadyApplied(true);
                 return;
             }
-
             const prefill = localStorage.getItem(`prefill_${id}`);
             if (prefill) {
                 try {
@@ -70,7 +73,6 @@ export default function ApplicationPage() {
                         ...data,
                         resumeUploaded: !!data.resumeUrl
                     }));
-                    // Clean up after pre-filling
                     localStorage.removeItem(`prefill_${id}`);
                 } catch (e) {
                     console.error("Failed to parse pre-fill data:", e);
@@ -78,92 +80,109 @@ export default function ApplicationPage() {
             }
         }
     }, [id]);
-
+    
     const startAnalysis = async (file: File) => {
         setIsAnalyzing(true);
         setAnalysisError(null);
         updateFormData({ resumeUploaded: true });
-
+        
         const data = new FormData();
         data.append("file", file);
         data.append("type", "RESUME");
-
+        
         try {
-            const response = await fetch("/api/extract", {
-                method: "POST",
-                body: data,
-            });
-
+            const response = await fetch("/api/extract", { method: "POST", body: data });
             if (response.ok) {
                 const { data: extractedData, text, url: resumeUrl } = await response.json();
-
-                // Update form data with extracted info, but only if current fields are empty
-                const updates: any = {
-                    resumeUploaded: true,
-                    resumeText: text,
-                    resumeUrl: resumeUrl,
-                    structuredResume: extractedData
+                const isManual = mode === "manual";
+                
+                const resumeFields: any = {
+                    resumeText: text || "",
+                    resumeUrl: resumeUrl || "",
+                    structuredResume: extractedData || {},
+                    resumeUploaded: true
                 };
-
-                if (extractedData) {
-                    if (extractedData.full_name && !formData.fullName) updates.fullName = extractedData.full_name;
-                    if (extractedData.email && !formData.email) updates.email = extractedData.email;
-                    if (extractedData.phone && !formData.phone) updates.phone = extractedData.phone;
+                
+                setFormData(prev => {
+                    const newData = { ...prev, ...resumeFields };
                     
-                    // Map Location (City, State)
-                    if (extractedData.location && !formData.location) {
-                        const { city, state } = extractedData.location;
-                        if (city && state) updates.location = `${city}, ${state}`;
-                        else if (city) updates.location = city;
-                        else if (state) updates.location = state;
-                    }
+                    // Only auto-fill individual fields if NOT in manual mode
+                    if (!isManual) {
+                        const autoFillFields: any = {
+                            fullName: extractedData?.full_name || "",
+                            email: extractedData?.email || "",
+                            phone: extractedData?.phone || "",
+                            location: extractedData?.location?.city || (typeof extractedData?.location === 'string' ? extractedData?.location : ""),
+                            experience: extractedData?.experience?.total_years || "",
+                            currentCompany: extractedData?.current_company || "",
+                        };
 
-                    if (extractedData.experience) {
-                        const years = extractedData.experience.total_years || extractedData.experience.relevant_years;
-                        if (years !== undefined && years !== null && !formData.experience) {
-                            updates.experience = String(years);
-                        }
+                        Object.keys(autoFillFields).forEach(key => {
+                            if (prev[key as keyof typeof prev] === "" && autoFillFields[key]) {
+                                (newData as any)[key] = autoFillFields[key];
+                            }
+                        });
                     }
-                    if (extractedData.current_company && !formData.currentCompany) updates.currentCompany = extractedData.current_company;
-                }
-
-                updateFormData(updates);
+                    
+                    return newData;
+                });
             } else {
-                setAnalysisError("Failed to extract Resume. Please fill details manually.");
+                setAnalysisError("Failed to analyze resume. Please try again.");
             }
-        } catch (error) {
-            console.error("Error uploading Resume:", error);
-            setAnalysisError("An error occurred during resume analysis.");
+        } catch (err) {
+            setAnalysisError("Network error. Please check your connection.");
         } finally {
             setIsAnalyzing(false);
         }
     };
-
+    
     const clearResume = () => {
-        updateFormData({ resumeUploaded: false, resumeText: "" });
+        updateFormData({
+            resumeUploaded: false,
+            resumeText: "",
+            resumeUrl: "",
+            structuredResume: {}
+        });
     };
-
-    const currentJob = jobs.find(job => job.id.toString() === id);
-    const jobTitle = currentJob ? currentJob.title : "Unknown Role";
-
-    const updateFormData = (data: Partial<typeof formData>) => {
+    
+    const updateFormData = (data: any) => {
         setFormData(prev => ({ ...prev, ...data }));
     };
-
-    const nextStep = () => {
-        if (currentStep === STEPS.length - 1) {
-            handleSubmit();
-        } else {
-            setCurrentStep((prev) => Math.min(prev + 1, STEPS.length - 1));
-        }
-    };
-
-    const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 0));
-
+    
     const handleSubmit = async () => {
+        // Form Validation for Required Fields (*)
+        const requiredFields: any = {
+            fullName: "Full Name",
+            email: "Email Address",
+            phone: "Phone Number",
+            location: "Current Location",
+            experience: "Total Experience",
+            noticePeriod: "Notice Period",
+            expectedCtc: "Expected CTC"
+        };
+        
+        for (const [key, label] of Object.entries(requiredFields)) {
+            const value = (formData as any)[key];
+            if (!value || String(value).trim() === "") {
+                showAlert(`Please provide your ${label}.`, "error");
+                return;
+            }
+        }
+
+        if (!formData.resumeUploaded) {
+            showAlert("Please upload your Resume/CV to continue.", "error");
+            return;
+        }
+
+        if (!formData.agreedToTerms) {
+            showAlert("Please agree to the terms and policies to submit your application.", "error");
+            return;
+        }
+
         setIsSubmitting(true);
         try {
-            const response = await addCandidate({
+            // Using context method to maintain consistency and handle status codes properly
+            await addCandidate({
                 name: formData.fullName,
                 email: formData.email,
                 phone: formData.phone,
@@ -182,51 +201,48 @@ export default function ApplicationPage() {
                 structuredResume: formData.structuredResume
             });
 
-            // Set localStorage on success
             localStorage.setItem(`applied_${id}`, "true");
             setIsSuccess(true);
-            // router.push(`/careers/jobs/${id}`);
         } catch (error: any) {
             console.error("Failed to submit application:", error);
             if (error.status === 409 || error.message?.toLowerCase().includes("already applied")) {
                 setAlreadyApplied(true);
                 localStorage.setItem(`applied_${id}`, "true");
             } else {
-                alert(error.message || "Failed to submit application. Please try again.");
+                showAlert(error.message || "Failed to submit application. Please try again.", "error");
             }
         } finally {
             setIsSubmitting(false);
         }
     };
-
+    
     if (isSuccess || alreadyApplied) {
         return (
             <div className="min-h-screen bg-[#FDFCFB] flex flex-col items-center justify-center p-6">
-                <div className="max-w-md w-full bg-white rounded-[3rem] border border-orange-100 p-12 text-center space-y-8 shadow-[0_20px_60px_-15px_rgba(249,115,22,0.1)] transition-all duration-500 hover:scale-[1.02]">
-                    <div className="inline-flex h-24 w-24 items-center justify-center rounded-[2rem] bg-orange-50 text-[#F97316] mb-2 shadow-[0_10px_30px_rgba(249,115,22,0.15)] animate-pulse">
-                        <CheckCircle2 className="h-12 w-12" />
+                <div className="max-w-md w-full bg-white rounded-2xl border border-orange-100 p-8 text-center space-y-6 shadow-lg">
+                    <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-50 text-[#F97316]">
+                        <CheckCircle2 className="h-8 w-8" />
                     </div>
-                    <div className="space-y-3">
-                        <h2 className="text-3xl font-black text-gray-900 tracking-tight">
-                            {isSuccess ? "Thank You!" : "Application Logged!"}
+                    <div className="space-y-2">
+                        <h2 className="text-2xl font-bold text-gray-900">
+                            {isSuccess ? "Thank You!" : "Already Applied!"}
                         </h2>
-                        <div className="h-1.5 w-12 bg-[#F97316] rounded-full mx-auto" />
+                        <div className="h-1 w-10 bg-[#F97316] rounded-full mx-auto" />
                     </div>
-                    <p className="text-gray-500 font-medium leading-relaxed text-lg">
+                    <p className="text-gray-500 font-medium">
                         {isSuccess 
-                            ? "Your application has been received. Our recruitment team will review it and get in touch soon!"
-                            : `You have already submitted an application for the ${jobTitle} position.`
+                            ? "Your application has been received. Our team will review it soon!"
+                            : `You have already submitted an application for ${jobTitle}.`
                         }
                     </p>
-                    
-                    <div className="pt-6 space-y-4">
+                    <div className="pt-4 space-y-3">
                         <Link href={`/careers/jobs/${id}`}>
-                            <Button className="w-full h-14 rounded-2xl bg-gray-900 hover:bg-black text-white font-black text-lg shadow-xl transition-all hover:translate-y-[-2px]">
+                            <Button className="w-full h-12 rounded-xl bg-gray-900 hover:bg-black text-white font-bold shadow-lg transition-all">
                                 VIEW STATUS
                             </Button>
                         </Link>
                         <Link href="/careers">
-                            <Button variant="outline" className="w-full h-14 rounded-2xl border-2 border-orange-100 text-[#F97316] hover:bg-orange-50 font-black text-lg transition-all hover:translate-y-[-2px]">
+                            <Button variant="outline" className="w-full h-12 rounded-xl border-2 border-orange-100 text-[#F97316] hover:bg-orange-50 font-bold transition-all">
                                 EXPLORE MORE JOBS
                             </Button>
                         </Link>
@@ -235,107 +251,129 @@ export default function ApplicationPage() {
             </div>
         );
     }
-
+    
     return (
         <div className="min-h-screen bg-[#FDFCFB] selection:bg-orange-100 selection:text-orange-900">
             <PortalHeader />
 
+            <AnimatePresence>
+                {pageAlert && (
+                    <motion.div 
+                        initial={{ opacity: 0, y: -20, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                        className="fixed top-8 left-1/2 -translate-x-1/2 z-[100] w-full max-w-md px-4"
+                    >
+                        <div className={`p-4 rounded-2xl border shadow-2xl backdrop-blur-md flex items-center justify-between gap-4 ${
+                            pageAlert.type === 'error' 
+                                ? 'bg-red-50/90 border-red-100 text-red-800' 
+                                : 'bg-emerald-50/90 border-emerald-100 text-emerald-800'
+                        }`}>
+                            <div className="flex items-center gap-3">
+                                <div className={`h-8 w-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                                    pageAlert.type === 'error' ? 'bg-red-100' : 'bg-emerald-100'
+                                }`}>
+                                    {pageAlert.type === 'error' ? <AlertCircle className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}
+                                </div>
+                                <p className="text-sm font-black uppercase tracking-tight leading-tight">{pageAlert.message}</p>
+                            </div>
+                            <button onClick={() => setPageAlert(null)} className="p-1 hover:bg-black/5 rounded-full transition-colors">
+                                <X className="h-4 w-4 opacity-50" />
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             <main className="container mx-auto px-4 py-12 max-w-4xl animate-in-fade">
                 {/* Header Section */}
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12 px-2">
-                    <div className="space-y-3">
-                        <Link href={`/careers/jobs/${id}`} className="group inline-flex items-center text-[10px] font-black tracking-[0.2em] text-gray-400 hover:text-[#F97316] transition-all uppercase">
-                            <ArrowLeft className="h-3 w-3 mr-2 transition-transform group-hover:-translate-x-1" /> 
-                            Back to Job Details
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10 px-2">
+                    <div className="space-y-10">
+                        <Link href={`/careers/jobs/${id}`}>
+                            <Button variant="outline" className="h-10 px-4 rounded-xl border-gray-100 bg-white/50 text-gray-500 text-xs font-black uppercase tracking-widest hover:bg-white hover:text-[#F97316] hover:border-orange-100 transition-all shadow-sm group">
+                                <ArrowLeft className="h-4 w-4 mr-2 transition-transform group-hover:-translate-x-1" /> 
+                                Back to Job
+                            </Button>
                         </Link>
-                        <h1 className="text-3xl lg:text-4xl font-black text-gray-900 tracking-tight">
+                        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 tracking-tight">
                             Apply for <span className="text-[#F97316]">{jobTitle}</span>
                         </h1>
                     </div>
                 </div>
-
-                <div className="grid gap-10">
-                    {/* Stepper Card */}
-                    <div className="bg-white rounded-[2rem] border border-orange-100/50 shadow-[0_10px_40px_rgba(249,115,22,0.05)] p-8 lg:p-10 transition-all">
-                        <Steps steps={STEPS} currentStep={currentStep} />
-                    </div>
-
-                    {/* Form Card */}
-                    <div className="relative group">
-                        {/* Decorative Background Glow */}
-                        <div className="absolute -inset-1 bg-gradient-to-r from-orange-100 to-orange-50 rounded-[3rem] blur-2xl opacity-20 group-hover:opacity-30 transition-opacity" />
-                        
-                        <div className="relative bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.04)] overflow-hidden">
-                            <div className="p-8 lg:p-12">
-                                <Suspense fallback={<div className="h-96 flex items-center justify-center font-bold text-gray-400 animate-pulse uppercase tracking-widest">Loading step...</div>}>
-                                    {currentStep === 0 && (
-                                        <PersonalInfo 
-                                            formData={formData} 
-                                            updateFormData={updateFormData} 
-                                            isAnalyzing={isAnalyzing}
-                                            analysisError={analysisError}
-                                            startAnalysis={startAnalysis}
-                                            clearResume={clearResume}
-                                            mode={mode || "manual"}
-                                        />
-                                    )}
-                                    {currentStep === 1 && (
-                                        <ProfessionalDetails 
-                                            formData={formData} 
-                                            updateFormData={updateFormData} 
-                                            isAnalyzing={isAnalyzing}
-                                        />
-                                    )}
-                                    {currentStep === 2 && (
-                                        <ResumeReview 
-                                            formData={formData} 
-                                            updateFormData={updateFormData} 
-                                            isAnalyzing={isAnalyzing}
-                                            analysisError={analysisError}
-                                            startAnalysis={startAnalysis}
-                                            clearResume={clearResume}
-                                            agreedToTerms={formData.agreedToTerms}
-                                            onAgreedToTermsChange={(checked: any) => updateFormData({ agreedToTerms: !!checked })}
-                                        />
-                                    )}
-                                </Suspense>
-                            </div>
-
-                            {/* Footer Actions */}
-                            <div className="bg-gray-50/50 border-t border-gray-100 px-8 lg:px-12 py-8 flex items-center justify-between gap-4">
-                                <Button
-                                    variant="ghost"
-                                    onClick={prevStep}
-                                    disabled={currentStep === 0 || isSubmitting}
-                                    className="h-12 px-6 rounded-xl text-gray-500 font-bold hover:bg-white hover:text-[#F97316] disabled:opacity-30 transition-all"
-                                >
-                                    <ChevronLeft className="h-5 w-5 mr-2" /> Back
-                                </Button>
-
-                                <div className="flex items-center gap-3">
-                                    {currentStep < STEPS.length - 1 ? (
-                                        <Button
-                                            onClick={nextStep}
-                                            className="h-12 px-8 rounded-xl bg-[#F97316] hover:bg-orange-600 text-white font-black shadow-lg shadow-orange-200 transition-all hover:translate-y-[-2px]"
-                                        >
-                                            Next Step <ChevronRight className="h-5 w-5 ml-2" />
-                                        </Button>
-                                    ) : (
-                                        <Button
-                                            onClick={handleSubmit}
-                                            disabled={isSubmitting || !formData.agreedToTerms}
-                                            className="h-12 px-10 rounded-xl bg-gray-900 hover:bg-black text-white font-black shadow-xl transition-all hover:translate-y-[-2px] disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            {isSubmitting ? (
-                                                <><Loader2 className="h-5 w-5 mr-2 animate-spin" /> Submitting...</>
-                                            ) : (
-                                                "Submit Application"
-                                            )}
-                                        </Button>
-                                    )}
+                
+                {/* Single Page Form Card */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_10px_40px_rgba(0,0,0,0.04)] overflow-hidden">
+                    <div className="p-8 space-y-8">
+                        <Suspense fallback={<div className="h-40 flex items-center justify-center font-medium text-gray-400">Loading...</div>}>
+                            <div className="space-y-16">
+                                {/* Personal Info Section */}
+                                <div className="space-y-6">
+                                    <div className="flex items-center gap-3">
+                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
+                                        <h3 className="text-lg font-bold text-gray-900">Personal Information</h3>
+                                    </div>
+                                    <PersonalInfo 
+                                        formData={formData} 
+                                        updateFormData={updateFormData} 
+                                        isAnalyzing={isAnalyzing}
+                                        analysisError={analysisError}
+                                        startAnalysis={startAnalysis}
+                                        clearResume={clearResume}
+                                        mode={mode || "manual"}
+                                    />
+                                </div>
+                                
+                                <div className="border-t border-gray-100" />
+                                
+                                {/* Professional Details Section */}
+                                <div className="space-y-6">
+                                    <div className="flex items-center gap-3">
+                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
+                                        <h3 className="text-lg font-bold text-gray-900">Professional Details</h3>
+                                    </div>
+                                    <ProfessionalDetails 
+                                        formData={formData} 
+                                        updateFormData={updateFormData} 
+                                        isAnalyzing={isAnalyzing}
+                                    />
+                                </div>
+                                
+                                <div className="border-t border-gray-100" />
+                                
+                                {/* Resume & Review Section */}
+                                <div className="space-y-6">
+                                    <div className="flex items-center gap-3">
+                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
+                                        <h3 className="text-lg font-bold text-gray-900">Resume & Review</h3>
+                                    </div>
+                                    <ResumeReview 
+                                        formData={formData} 
+                                        updateFormData={updateFormData} 
+                                        isAnalyzing={isAnalyzing}
+                                        analysisError={analysisError}
+                                        startAnalysis={startAnalysis}
+                                        clearResume={clearResume}
+                                        agreedToTerms={formData.agreedToTerms}
+                                        onAgreedToTermsChange={(checked: any) => updateFormData({ agreedToTerms: !!checked })}
+                                    />
                                 </div>
                             </div>
-                        </div>
+                        </Suspense>
+                    </div>
+                    
+                    {/* Submit Button */}
+                    <div className="bg-gray-50 border-t border-gray-100 px-8 py-10 flex flex-col items-center">
+                        <Button
+                            onClick={handleSubmit}
+                            disabled={isSubmitting}
+                            className="w-full max-w-md h-14 rounded-2xl bg-gray-900 hover:bg-black text-white font-bold text-base shadow-lg transition-all hover:translate-y-[-2px] disabled:opacity-50 disabled:cursor-not-allowed group/btn"
+                        >
+                            {isSubmitting ? (
+                                <><Loader2 className="h-5 w-5 mr-2 animate-spin" /> Submitting...</>
+                            ) : (
+                                "Submit Application"
+                            )}
+                        </Button>
                     </div>
                 </div>
             </main>

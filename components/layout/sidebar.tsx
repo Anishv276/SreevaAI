@@ -43,47 +43,51 @@ export function Sidebar() {
         <>
             {/* LOGOUT CONFIRMATION MODAL */}
             {showLogoutConfirm && (
-                <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-white/40 backdrop-blur-xl animate-in-fade duration-300">
-                    <div className="w-full max-w-md bg-white border border-gray-100 rounded-[3rem] shadow-[0_50px_150px_rgba(0,0,0,0.15)] overflow-hidden animate-in-up">
-                        <div className="p-12 text-center space-y-12 relative">
-                             {!isLoggingOut && (
+                <div 
+                    className="fixed inset-0 z-[1000] backdrop-blur-md bg-white/50 flex items-center justify-center p-6 animate-in fade-in duration-200"
+                    onClick={() => !isLoggingOut && setShowLogoutConfirm(false)}
+                >
+                    <div 
+                        className="w-full max-w-md bg-white border border-gray-100 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.1)] overflow-hidden animate-in-up"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="p-8 text-center space-y-6 relative">
+                            {!isLoggingOut && (
                                 <button 
                                     onClick={() => setShowLogoutConfirm(false)}
-                                    className="absolute -top-4 -right-4 p-4 rounded-full hover:bg-gray-50 text-gray-300 hover:text-gray-950 transition-all shadow-sm"
+                                    className="absolute top-4 right-4 p-2 rounded-xl hover:bg-gray-50 text-gray-400 hover:text-gray-900 transition-all border border-transparent hover:border-gray-100"
                                 >
-                                    <X className="h-5 w-5" />
+                                    <X className="h-4 w-4" />
                                 </button>
-                             )}
-                             
-                             <div className="flex justify-center">
-                                <div className="h-24 w-24 rounded-[2.5rem] bg-red-50 text-red-500 flex items-center justify-center shadow-inner group transition-all">
-                                    <ShieldAlert className="h-10 w-10 group-hover:scale-110 transition-transform" />
+                            )}
+                            
+                            <div className="flex justify-center">
+                                <div className="h-16 w-16 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center">
+                                    <ShieldAlert className="h-8 w-8" />
                                 </div>
-                             </div>
-
-                             <div className="space-y-4">
-                                <h2 className="text-3xl font-black text-gray-950 tracking-tighter uppercase italic leading-none">Terminate Session?</h2>
-                                <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px] italic leading-none">Discard temporary access keys and sign out?</p>
-                             </div>
-
-                             <div className="space-y-4 pt-4">
+                            </div>
+                            <div className="space-y-2">
+                                <h2 className="text-2xl font-extrabold text-gray-900 tracking-tight">Terminate Session?</h2>
+                                <p className="text-sm font-medium text-gray-500">Are you sure you want to sign out?</p>
+                            </div>
+                            <div className="space-y-3 pt-2">
                                 <button
                                     onClick={handleLogout}
                                     disabled={isLoggingOut}
-                                    className="w-full h-18 bg-gray-950 text-white rounded-full font-black text-[11px] uppercase tracking-[0.2em] shadow-2xl hover:bg-red-600 transition-all hover:-translate-y-1 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 italic"
+                                    className="w-full h-11 bg-gray-900 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-red-600 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
                                 >
-                                    {isLoggingOut ? <Loader2 className="h-5 w-5 animate-spin text-red-400" /> : "Confirm Exit"}
+                                    {isLoggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm Sign Out"}
                                 </button>
                                 
                                 {!isLoggingOut && (
                                     <button
                                         onClick={() => setShowLogoutConfirm(false)}
-                                        className="w-full h-16 bg-gray-50 text-gray-400 rounded-full font-black text-[10px] uppercase tracking-[0.2em] hover:bg-gray-100 hover:text-gray-950 transition-all italic border border-gray-100 shadow-sm"
+                                        className="w-full h-11 bg-gray-50 text-gray-600 rounded-xl font-medium text-sm hover:bg-gray-100 hover:text-gray-900 transition-all border border-gray-100"
                                     >
-                                        Cancel Handshake
+                                        Cancel
                                     </button>
                                 )}
-                             </div>
+                            </div>
                         </div>
                     </div>
                 </div>

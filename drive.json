@@ -2,71 +2,177 @@
     "job_title": "Software Development Engineer in Test (SDET)",
     "company_name": null,
     "department": null,
+    "work_type": "Onsite",
+    "employment_type": "full-time",
+    "role_context": {
+        "seniority": "mid",
+        "team_size_hint": null,
+        "work_style": "unknown",
+        "ic_or_manager": "ic",
+        "pace": "fast-paced"
+    },
     "location": {
         "city": null,
         "state": null,
         "country": null,
-        "remote": false
+        "remote": false,
+        "hybrid": false
     },
-    "employment_type": null,
     "experience": {
         "min_years": 5,
-        "max_years": 8
+        "max_years": 8,
+        "preferred_background": "Experience in software testing, particularly in automation and API testing."
     },
     "skills": {
         "must_have": [
-            "Python",
-            "API testing",
-            "Postman",
-            "REST Assured",
-            "Jenkins",
-            "GitLab CI",
-            "Azure DevOps",
-            "Selenium",
-            "Pytest",
-            "SQL",
-            "JMeter",
-            "Locust"
+            {
+                "skill": "Python",
+                "why_needed": "Essential for building and maintaining automation frameworks.",
+                "weight": "critical"
+            },
+            {
+                "skill": "API testing",
+                "why_needed": "Required to validate APIs and backend systems effectively.",
+                "weight": "critical"
+            },
+            {
+                "skill": "CI/CD",
+                "why_needed": "Necessary for integrating automated tests into the development lifecycle.",
+                "weight": "high"
+            },
+            {
+                "skill": "Selenium",
+                "why_needed": "Important for functional and regression testing of applications.",
+                "weight": "high"
+            },
+            {
+                "skill": "SQL",
+                "why_needed": "Needed for database testing and validating data integrity.",
+                "weight": "medium"
+            }
         ],
         "good_to_have": [
-            "AWS",
-            "Azure",
-            "GCP",
-            "Docker",
-            "Kubernetes",
-            "Cucumber",
-            "Behave"
+            {
+                "skill": "AWS",
+                "context": "Experience with cloud platforms can enhance testing capabilities."
+            },
+            {
+                "skill": "Docker",
+                "context": "Familiarity with containerization can improve deployment and testing processes."
+            },
+            {
+                "skill": "Cucumber",
+                "context": "Exposure to BDD frameworks can facilitate better collaboration with stakeholders."
+            }
         ],
         "soft_skills": [
             "communication",
-            "leadership",
-            "teamwork"
+            "teamwork",
+            "mentoring"
         ]
     },
     "education": {
         "required": null,
         "preferred": null
     },
+    "responsibilities_flat": [
+        "Design, develop, and maintain automation frameworks using Python.",
+        "Develop and execute test plans, test cases, and automation scripts for APIs.",
+        "Perform functional, integration, and regression testing.",
+        "Collaborate with cross-functional teams.",
+        "Conduct performance and load testing for APIs.",
+        "Identify, analyze, and document bugs.",
+        "Implement and enhance CI/CD pipelines.",
+        "Continuously improve testing processes and tools.",
+        "Mentor and guide junior QA team members."
+    ],
     "responsibilities": [
-        "Design, develop, and maintain automation frameworks using Python to ensure scalable and reusable solutions.",
-        "Develop and execute test plans, test cases, and automation scripts to validate APIs, backend systems, and integrations.",
-        "Perform functional, integration, and regression testing for applications.",
-        "Collaborate with cross-functional teams to understand business and technical requirements.",
-        "Conduct performance and load testing for APIs to ensure optimal application performance.",
-        "Identify, analyze, and document bugs and track their resolution.",
-        "Implement and enhance CI/CD pipelines to integrate automated tests into the development lifecycle.",
-        "Continuously improve testing processes, tools, and practices to ensure high-quality releases.",
-        "Mentor and guide junior QA team members in testing practices and automation."
+        {
+            "task": "Design, develop, and maintain automation frameworks using Python.",
+            "skills_involved": [
+                "Python"
+            ],
+            "seniority_signal": "mid"
+        },
+        {
+            "task": "Develop and execute test plans, test cases, and automation scripts for APIs.",
+            "skills_involved": [
+                "API testing"
+            ],
+            "seniority_signal": "mid"
+        },
+        {
+            "task": "Perform functional, integration, and regression testing.",
+            "skills_involved": [
+                "Selenium"
+            ],
+            "seniority_signal": "mid"
+        },
+        {
+            "task": "Collaborate with cross-functional teams.",
+            "skills_involved": [],
+            "seniority_signal": "mid"
+        },
+        {
+            "task": "Conduct performance and load testing for APIs.",
+            "skills_involved": [
+                "performance testing"
+            ],
+            "seniority_signal": "mid"
+        },
+        {
+            "task": "Identify, analyze, and document bugs.",
+            "skills_involved": [],
+            "seniority_signal": "mid"
+        },
+        {
+            "task": "Implement and enhance CI/CD pipelines.",
+            "skills_involved": [
+                "CI/CD"
+            ],
+            "seniority_signal": "mid"
+        },
+        {
+            "task": "Continuously improve testing processes and tools.",
+            "skills_involved": [],
+            "seniority_signal": "mid"
+        },
+        {
+            "task": "Mentor and guide junior QA team members.",
+            "skills_involved": [
+                "mentoring"
+            ],
+            "seniority_signal": "mid"
+        }
     ],
     "requirements": [
-        "Strong programming skills in Python and experience in building test automation frameworks.",
-        "Proficiency in API testing using tools like Postman, REST Assured, or similar.",
-        "Deep understanding of RESTful APIs, their architecture, and common testing techniques.",
-        "Hands-on experience with CI/CD pipelines and tools like Jenkins, GitLab CI, or Azure DevOps.",
-        "Solid understanding of software QA methodologies, tools, and best practices.",
-        "Experience in testing tools like Selenium, Pytest, or similar.",
+        "5-8 years of experience in Python automation and API testing.",
+        "Strong programming skills in Python.",
+        "Proficiency in API testing using tools like Postman or REST Assured.",
+        "Deep understanding of RESTful APIs.",
+        "Hands-on experience with CI/CD pipelines.",
+        "Solid understanding of software QA methodologies.",
+        "Experience in testing tools like Selenium or Pytest.",
         "Familiarity with database testing and SQL queries.",
-        "Knowledge of performance testing tools such as JMeter or Locust."
+        "Knowledge of performance testing tools such as JMeter."
+    ],
+    "deal_breakers": [],
+    "interview_signals": [
+        {
+            "area": "Python programming skills",
+            "what_to_probe": "Ask about specific frameworks or projects they've worked on.",
+            "why_it_matters": "Critical for the role's automation framework development."
+        },
+        {
+            "area": "API testing experience",
+            "what_to_probe": "Inquire about tools used and types of APIs tested.",
+            "why_it_matters": "Essential for validating backend systems."
+        },
+        {
+            "area": "CI/CD knowledge",
+            "what_to_probe": "Explore their experience with integrating tests into CI/CD pipelines.",
+            "why_it_matters": "Important for ensuring efficient development cycles."
+        }
     ],
     "salary": {
         "min": null,
@@ -74,22 +180,33 @@
         "currency": null,
         "period": null
     },
+    "scoring_hints": {
+        "prioritize": "Strong Python and API testing skills.",
+        "red_flags_to_watch": [
+            "Lack of experience in automation frameworks.",
+            "No exposure to CI/CD processes."
+        ],
+        "green_flags_to_reward": [
+            "Experience with performance testing tools.",
+            "Mentoring experience in QA."
+        ]
+    },
+    "role_summary": "The Software Development Engineer in Test (SDET) role focuses on developing and maintaining automation frameworks primarily using Python. A successful candidate will have a strong background in API testing and CI/CD processes, along with the ability to mentor junior team members. The role requires a detail-oriented individual who is passionate about quality assurance and continuous improvement.",
     "keywords": [
         "SDET",
-        "Software Development Engineer in Test",
         "Python",
-        "automation",
         "API testing",
-        "functional testing",
-        "integration testing",
-        "regression testing",
-        "performance testing",
+        "automation frameworks",
         "CI/CD",
-        "Postman",
         "Selenium",
-        "Jenkins",
+        "performance testing",
         "SQL",
-        "cloud platforms"
-    ],
-    "summary": "We are seeking a skilled and detail-oriented Software Development Engineer in Test (SDET) with 5-8 years of experience in Python automation and API testing to ensure the highest quality of software through innovative testing strategies and automation."
+        "Postman",
+        "REST Assured",
+        "JMeter",
+        "mentoring",
+        "QA methodologies",
+        "integration testing",
+        "load testing"
+    ]
 }

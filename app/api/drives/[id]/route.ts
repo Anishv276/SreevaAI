@@ -15,7 +15,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             where: { id: driveId },
             include: {
                 organization: {
-                    select: { isActive: true }
+                    select: { 
+                        isActive: true,
+                        name: true,
+                        logoUrl: true,
+                        industry: true,
+                        size: true,
+                        website: true,
+                        location: true
+                    }
                 },
                 _count: {
                     select: { applications: true },

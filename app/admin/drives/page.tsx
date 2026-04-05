@@ -31,6 +31,13 @@ import {
     Share2
 } from "lucide-react";
 import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
@@ -40,6 +47,7 @@ import Link from "next/link";
 import { useJobs } from "@/context/jobs-context";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 
 export default function DrivesPage() {
     const router = useRouter();
@@ -49,9 +57,19 @@ export default function DrivesPage() {
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     
+    // Filters State
+    const [statusFilter, setStatusFilter] = useState("all");
+    const [typeFilter, setTypeFilter] = useState("all");
+    
     // Detailed View State
     const [previewDriveId, setPreviewDriveId] = useState<number | null>(null);
     const [copySuccess, setCopySuccess] = useState(false);
+    
+    // Modal State
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [driveToDelete, setDriveToDelete] = useState<number | null>(null);
+    const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     
     const selectedDrive = jobs.find(j => j.id === previewDriveId);
 
@@ -73,21 +91,38 @@ export default function DrivesPage() {
     }, []);
 
     const handleDelete = async (id: number) => {
-        if (!confirm("Are you sure you want to delete this drive?")) return;
+        setDriveToDelete(id);
+        setIsDeleteModalOpen(true);
+    };
 
+    const confirmDelete = async () => {
+        if (!driveToDelete) return;
+        setIsDeleting(true);
         try {
-            await deleteJob(id);
-            alert("Drive deleted successfully");
+            await deleteJob(driveToDelete);
+            setIsDeleteModalOpen(false);
+            setDriveToDelete(null);
         } catch (error) {
             console.error("Error deleting drive:", error);
             alert("Failed to delete drive");
+        } finally {
+            setIsDeleting(false);
         }
     };
 
-    const filteredDrives = jobs.filter(drive =>
-        drive.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        drive.department.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredDrives = jobs.filter(drive => {
+        const matchesSearch = drive.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            drive.department.toLowerCase().includes(searchQuery.toLowerCase());
+        
+        // Status logic
+        const matchesStatus = statusFilter === "all" || (statusFilter === "active"); 
+        
+        // Safety check for optional type field
+        const matchesType = typeFilter === "all" || 
+            (drive.type && drive.type.toLowerCase() === typeFilter.toLowerCase());
+        
+        return matchesSearch && matchesStatus && matchesType;
+    });
 
     const toggleSelection = (id: number) => {
         const newSelected = new Set(selectedIds);
@@ -110,15 +145,20 @@ export default function DrivesPage() {
             return;
         }
 
-        if (confirm(`Are you sure you want to delete ${selectedIds.size} drives and all their applications?`)) {
-            try {
-                await bulkDeleteJobs(Array.from(selectedIds));
-                setSelectedIds(new Set());
-                setIsSelectionMode(false);
-                alert("Drives deleted successfully");
-            } catch (error) {
-                alert("Failed to delete drives");
-            }
+        setIsBulkDeleteModalOpen(true);
+    };
+
+    const confirmBulkDelete = async () => {
+        setIsDeleting(true);
+        try {
+            await bulkDeleteJobs(Array.from(selectedIds));
+            setSelectedIds(new Set());
+            setIsSelectionMode(false);
+            setIsBulkDeleteModalOpen(false);
+        } catch (error) {
+            alert("Failed to delete drives");
+        } finally {
+            setIsDeleting(false);
         }
     };
 
@@ -179,10 +219,38 @@ export default function DrivesPage() {
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
                 </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <Button variant="outline" className="gap-2">
-                        <Filter className="h-4 w-4" /> Filter
-                    </Button>
+                <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                    {/* Status Select */}
+                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                        <SelectTrigger className="h-10 px-4 border-dashed rounded-xl border-gray-200 text-gray-400 font-bold hover:text-green-600 hover:border-green-200 transition-all bg-transparent w-[140px]">
+                            <div className="flex items-center gap-2">
+                                <Filter className="h-3.5 w-3.5" />
+                                <SelectValue placeholder="Status" />
+                            </div>
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl border-gray-100 shadow-xl p-1">
+                            <SelectItem value="all" className="rounded-lg py-2 font-bold text-[11px] uppercase tracking-widest">All Status</SelectItem>
+                            <SelectItem value="active" className="rounded-lg py-2 font-bold text-[11px] uppercase tracking-widest text-green-600">
+                                Active
+                            </SelectItem>
+                            <SelectItem value="inactive" className="rounded-lg py-2 font-bold text-[11px] uppercase tracking-widest text-gray-400">Inactive</SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    {/* Type Select */}
+                    <Select value={typeFilter} onValueChange={setTypeFilter}>
+                        <SelectTrigger className="h-10 px-4 border-dashed rounded-xl border-gray-200 text-gray-400 font-bold hover:text-[#F97316] hover:border-orange-200 transition-all bg-transparent w-[160px]">
+                            <div className="flex items-center gap-2">
+                                <Briefcase className="h-3.5 w-3.5" />
+                                <SelectValue placeholder="Job Type" />
+                            </div>
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl border-gray-100 shadow-xl p-1">
+                            <SelectItem value="all" className="rounded-lg py-2 font-bold text-[11px] uppercase tracking-widest">All Types</SelectItem>
+                            <SelectItem value="full-time" className="rounded-lg py-2 font-bold text-[11px] uppercase tracking-widest">Full-time</SelectItem>
+                            <SelectItem value="internship" className="rounded-lg py-2 font-bold text-[11px] uppercase tracking-widest">Internship</SelectItem>
+                        </SelectContent>
+                    </Select>
                 </div>
             </div>
 
@@ -286,7 +354,7 @@ export default function DrivesPage() {
                                         <div className="flex items-center gap-2.5">
                                             <div className="h-2.5 w-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse" />
                                             <span className="text-[11px] font-black uppercase tracking-wider text-green-600">
-                                                Published
+                                                Active
                                             </span>
                                         </div>
                                         <div className="flex flex-col items-end">
@@ -397,7 +465,7 @@ export default function DrivesPage() {
                                     <Badge variant="secondary" className="px-3 py-1 bg-gray-100 text-gray-600 border-0 font-bold uppercase text-[10px] tracking-widest">{selectedDrive.type}</Badge>
                                     <Badge variant="secondary" className="px-3 py-1 bg-green-50 text-green-600 border-0 font-bold uppercase text-[10px] tracking-widest flex items-center gap-1.5 leading-none h-6 px-2.5">
                                         <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                                        Published
+                                        Active
                                     </Badge>
                                 </div>
                             </div>
@@ -521,6 +589,27 @@ export default function DrivesPage() {
                     </div>
                 </>
             )}
+
+            {/* Confirmation Modals */}
+            <ActionConfirmModal 
+                isOpen={isDeleteModalOpen}
+                onClose={() => setIsDeleteModalOpen(false)}
+                onConfirm={confirmDelete}
+                title="Delete Drive"
+                description="Are you sure you want to delete this drive? This will permanently remove all candidates and data associated with it."
+                confirmText="Confirm Delete"
+                isLoading={isDeleting}
+            />
+
+            <ActionConfirmModal 
+                isOpen={isBulkDeleteModalOpen}
+                onClose={() => setIsBulkDeleteModalOpen(false)}
+                onConfirm={confirmBulkDelete}
+                title="Bulk Delete Drives"
+                description={`Are you sure you want to delete ${selectedIds.size} selected drives and all their associated data? This action cannot be undone.`}
+                confirmText={`Delete ${selectedIds.size} Drives`}
+                isLoading={isDeleting}
+            />
         </div>
     );
 }

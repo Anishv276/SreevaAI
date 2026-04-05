@@ -53,52 +53,65 @@ export function RegistrationForm({ customFields, setCustomFields }: Registration
                 </div>
 
                 <div className="space-y-3">
-                    {customFields.map((field) => (
-                        <div key={field.id} className="flex items-start gap-4 p-4 border rounded-xl bg-white">
-                            <div className="flex-1 grid gap-4 md:grid-cols-3">
-                                <div className="space-y-1">
-                                    <Label className="text-xs text-gray-500">Question Label</Label>
-                                    <Input
-                                        value={field.label}
-                                        onChange={e => updateField(field.id, "label", e.target.value)}
-                                        placeholder="Enter question…"
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <Label className="text-xs text-gray-500">Answer Type</Label>
-                                    <Select value={field.type} onValueChange={v => updateField(field.id, "type", v)}>
-                                        <SelectTrigger>
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="Text">Short Text</SelectItem>
-                                            <SelectItem value="Long Text">Long Text</SelectItem>
-                                            <SelectItem value="File">File Upload</SelectItem>
-                                            <SelectItem value="Yes/No">Yes/No</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="flex items-center gap-4 pt-6">
-                                    <div className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id={`req-${field.id}`}
-                                            checked={field.required}
-                                            onCheckedChange={v => updateField(field.id, "required", !!v)}
+                    {customFields.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center p-12 rounded-2xl border-2 border-dashed border-gray-100 bg-white group hover:border-orange-200 transition-all cursor-pointer"
+                             onClick={addField}>
+                            <div className="h-12 w-12 rounded-xl bg-orange-50 flex items-center justify-center text-[#F97316] mb-4 group-hover:scale-110 transition-transform">
+                                <Plus className="h-6 w-6" />
+                            </div>
+                            <p className="text-gray-500 font-bold text-sm tracking-tight">Click on "Add Question" to create your own questions</p>
+                            <p className="text-gray-400 text-xs mt-1">Add links, files, or open-ended questions for candidates</p>
+                        </div>
+                    ) : (
+                        customFields.map((field) => (
+                            <div key={field.id} className="flex items-start gap-4 p-4 border rounded-xl bg-white shadow-sm hover:shadow-md transition-all">
+                                <div className="flex-1 grid gap-4 md:grid-cols-3">
+                                    <div className="space-y-1">
+                                        <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Question Label</Label>
+                                        <Input
+                                            value={field.label}
+                                            onChange={e => updateField(field.id, "label", e.target.value)}
+                                            placeholder="e.g. GitHub Profile URL…"
+                                            className="h-10 rounded-lg border-gray-200"
                                         />
-                                        <Label htmlFor={`req-${field.id}`}>Required</Label>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Answer Type</Label>
+                                        <Select value={field.type} onValueChange={v => updateField(field.id, "type", v)}>
+                                            <SelectTrigger className="h-10 rounded-lg border-gray-200">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="Text">Short Text</SelectItem>
+                                                <SelectItem value="Long Text">Long Text</SelectItem>
+                                                <SelectItem value="File">File Upload</SelectItem>
+                                                <SelectItem value="Yes/No">Yes/No</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="flex items-center gap-4 pt-6">
+                                        <div className="flex items-center space-x-2">
+                                            <Checkbox
+                                                id={`req-${field.id}`}
+                                                checked={field.required}
+                                                onCheckedChange={v => updateField(field.id, "required", !!v)}
+                                                className="data-[state=checked]:bg-[#F97316] data-[state=checked]:border-[#F97316]"
+                                            />
+                                            <Label htmlFor={`req-${field.id}`} className="text-sm font-bold text-gray-700 cursor-pointer">Required</Label>
+                                        </div>
                                     </div>
                                 </div>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => removeField(field.id)}
+                                    className="text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
                             </div>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => removeField(field.id)}
-                                className="text-red-400 hover:text-red-600 hover:bg-red-50"
-                            >
-                                <Trash2 className="h-4 w-4" />
-                            </Button>
-                        </div>
-                    ))}
+                        ))
+                    )}
                 </div>
             </div>
         </div>

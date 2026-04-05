@@ -66,7 +66,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             jobTitle: application.drive?.title || "Unknown Role",
             status: "ACCEPTED",
             score: application.aiScore || 0,
-            assessmentLink: interviewLink
+            interviewLink
         });
 
         return NextResponse.json({ 

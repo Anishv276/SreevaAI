@@ -48,7 +48,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
 
         const jdText = application.drive.description;
-        const scoringInput = { resume: resumeText, jd: jdText };
+        const scoringInput = { 
+            resume: JSON.parse(application.structuredResume || "{}"), 
+            jd: JSON.parse(application.drive.extractedDetails || "{}"),
+            resume_raw_text: resumeText,
+            jd_raw_text: jdText
+        };
 
         const tempInputPath = join(tmpdir(), `rescan_${Date.now()}.json`);
         await writeFile(tempInputPath, JSON.stringify(scoringInput));
@@ -81,7 +86,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         // 3. Determine Selection & Send Email
         const score = aiResult.score || 0;
         const threshold = application.drive.screeningThreshold || 60;
-        const finalStatus = score >= threshold ? 'ACCEPTED' : 'REJECTED';
+        const finalStatus: 'SHORTLISTED' | 'REJECTED' = score >= threshold ? 'SHORTLISTED' : 'REJECTED';
 
         // Update Application with new score and final status
         const updated = await prisma.application.update({
@@ -96,50 +101,37 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         // Trigger Automated Email & Assessment Generation
         const { sendApplicationStatusEmail } = await import("@/lib/mail");
         
-        if (finalStatus === 'ACCEPTED') {
-            // Generate Personalized Assessment
-            const { generatePersonalizedAssessment } = await import("@/lib/ai-assessment");
-            const questions = await generatePersonalizedAssessment({
-                resumeData: application.resumeText || "",
-                jdData: { description: application.drive.description, skills: {} },
-                count: application.drive.assessmentCount,
-                difficulty: application.drive.assessmentDifficulty,
-                types: application.drive.assessmentTypes
-            });
-
-            // Create Assessment record and questions
-            const assessment = await prisma.assessment.create({
-                data: {
+        if (finalStatus === 'SHORTLISTED') {
+            // 3. Create or update Interview record
+            const interview = await (prisma as any).interview.upsert({
+                where: { applicationId: id },
+                update: {
+                    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+                    status: "PENDING",
+                },
+                create: {
                     applicationId: id,
-                    questions: {
-                        create: questions.map((q, index) => ({
-                            text: q.text,
-                            type: q.type,
-                            options: q.options ? JSON.stringify(q.options) : null,
-                            correctAnswer: q.correctAnswer,
-                            order: index
-                        }))
-                    }
-                }
+                    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+                    status: "PENDING",
+                },
             });
 
-            // Send email with assessment link
-            const assessmentLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/careers/assess/${assessment.id}`;
+            const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/careers/interview/${id}?token=${interview.accessToken}`;
             
-            sendApplicationStatusEmail({
+            await sendApplicationStatusEmail({
                 email: application.email,
                 fullName: application.fullName,
                 jobTitle: application.drive.title,
-                status: finalStatus,
+                status: finalStatus, 
                 score: score,
-                assessmentLink: assessmentLink
+                interviewLink: interviewLink
             }).catch(err => console.error("[SCAN API] Email trigger failed:", err));
         } else {
-            sendApplicationStatusEmail({
+            await sendApplicationStatusEmail({
                 email: application.email,
                 fullName: application.fullName,
                 jobTitle: application.drive.title,
-                status: finalStatus,
+                status: 'REJECTED',
                 score: score
             }).catch(err => console.error("[SCAN API] Email trigger failed:", err));
         }

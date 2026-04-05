@@ -12,6 +12,8 @@ export async function GET(request: Request) {
         const { searchParams } = new URL(request.url);
         const driveIdStr = searchParams.get("driveId");
         const driveId = driveIdStr ? parseInt(driveIdStr) : null;
+        const startDate = searchParams.get("startDate");
+        const endDate = searchParams.get("endDate");
         const page = parseInt(searchParams.get("page") || "1");
         const limit = parseInt(searchParams.get("limit") || "10");
         const offset = (page - 1) * limit;
@@ -63,31 +65,42 @@ export async function GET(request: Request) {
 
         const orgId = searchParams.get("orgId") || session?.orgId;
 
-        const candidates = driveId
-            ? await prisma.$queryRawUnsafe(
-                `${baseSelect}
-                WHERE a."driveId" = $1 AND d."orgId" = $2
-                ORDER BY a."createdAt" DESC
-                LIMIT $3 OFFSET $4`,
-                driveId, orgId, limit, offset
-            )
-            : await prisma.$queryRawUnsafe(
-                `${baseSelect}
-                WHERE d."orgId" = $1
-                ORDER BY a."createdAt" DESC
-                LIMIT $2 OFFSET $3`,
-                orgId, limit, offset
-            );
+        let dateClause = "";
+        let paramIndex = driveId ? 3 : 2;
+        const queryParams: any[] = driveId ? [driveId, orgId] : [orgId];
+
+        if (startDate) {
+            dateClause += ` AND a."createdAt" >= $${paramIndex++}`;
+            queryParams.push(new Date(startDate));
+        }
+        if (endDate) {
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+            dateClause += ` AND a."createdAt" <= $${paramIndex++}`;
+            queryParams.push(end);
+        }
+
+        const candidates = await prisma.$queryRawUnsafe(
+            `${baseSelect}
+            WHERE d."orgId" = ${driveId ? "$2" : "$1"}
+            ${driveId ? 'AND a."driveId" = $1' : ""}
+            ${dateClause}
+            ORDER BY a."createdAt" DESC
+            LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
+            ...queryParams, limit, offset
+        );
 
         // Get total count for pagination
-        const countQuery = driveId 
-            ? `SELECT COUNT(*)::INT FROM "Application" a JOIN "Drive" d ON d.id = a."driveId" WHERE a."driveId" = $1 AND d."orgId" = $2`
-            : `SELECT COUNT(*)::INT FROM "Application" a JOIN "Drive" d ON d.id = a."driveId" WHERE d."orgId" = $1`;
+        const countQuery = `
+            SELECT COUNT(*)::INT 
+            FROM "Application" a 
+            JOIN "Drive" d ON d.id = a."driveId" 
+            WHERE d."orgId" = ${driveId ? "$2" : "$1"}
+            ${driveId ? 'AND a."driveId" = $1' : ""}
+            ${dateClause}
+        `;
         
-        const countResult = driveId 
-            ? await prisma.$queryRawUnsafe<any[]>(countQuery, driveId, orgId)
-            : await prisma.$queryRawUnsafe<any[]>(countQuery, orgId);
-        
+        const countResult = await prisma.$queryRawUnsafe<any[]>(countQuery, ...queryParams);
         const total = countResult[0]?.count || 0;
 
         const formattedCandidates = (candidates as any[]).map((app: any) => {

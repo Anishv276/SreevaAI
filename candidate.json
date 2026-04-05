@@ -7,79 +7,202 @@
         "state": null,
         "country": "India"
     },
-    "experience": {
-        "total_years": 2,
-        "relevant_years": 1
-    },
     "current_company": "Niti AI",
-    "education": [
-        "B.Tech from SRM University",
-        "MPC from Narayana Junior College",
-        "SSC from Narayana School"
+    "current_role": "Growth Engineer Intern",
+    "experience": {
+        "total_years": 1.5,
+        "career_start_year": 2024,
+        "seniority_level": "mid"
+    },
+    "work_history": [
+        {
+            "company": "Niti AI",
+            "role": "Growth Engineer Intern",
+            "duration_months": 3,
+            "start_year": 2025,
+            "end_year": 2025,
+            "is_current": true,
+            "what_they_built": [
+                "GTM automation systems",
+                "growth dashboards"
+            ],
+            "technologies_used": [
+                "n8n",
+                "Apollo",
+                "CRM systems"
+            ],
+            "impact_signals": [],
+            "seniority_signal": "mid"
+        },
+        {
+            "company": "Seneca Global IT Services",
+            "role": "Python Developer - Sensex Project",
+            "duration_months": 4,
+            "start_year": 2024,
+            "end_year": 2025,
+            "is_current": false,
+            "what_they_built": [
+                "Sensex data analysis system"
+            ],
+            "technologies_used": [
+                "Python",
+                "DuckDB",
+                "Pandas",
+                "Power BI"
+            ],
+            "impact_signals": [],
+            "seniority_signal": "mid"
+        },
+        {
+            "company": "Social rises",
+            "role": "Personal Brand & Marketing Automation Strategist",
+            "duration_months": 12,
+            "start_year": 2024,
+            "end_year": 2025,
+            "is_current": false,
+            "what_they_built": [
+                "personal brand systems"
+            ],
+            "technologies_used": [
+                "Notion",
+                "CRM tools",
+                "AI content systems",
+                "landing page builders"
+            ],
+            "impact_signals": [],
+            "seniority_signal": "mid"
+        }
     ],
     "skills": {
         "technical": [
-            "Marketing automation",
-            "Workflow automation",
-            "Revops",
-            "Data analysis",
-            "Funnel tracking",
-            "Dashboards",
-            "Python",
-            "DuckDB",
-            "Pandas",
-            "Power BI"
+            {
+                "skill": "Python",
+                "evidence": "Seneca Global IT Services",
+                "years_of_use": 0.5
+            },
+            {
+                "skill": "DuckDB",
+                "evidence": "Seneca Global IT Services",
+                "years_of_use": 0.5
+            },
+            {
+                "skill": "Pandas",
+                "evidence": "Seneca Global IT Services",
+                "years_of_use": 0.5
+            }
         ],
         "tools": [
-            "n8n",
-            "AI tools",
-            "Google Sheets",
-            "CRM tools",
-            "Zapier",
-            "Bitscale",
-            "Apollo"
+            {
+                "tool": "n8n",
+                "evidence": "Niti AI"
+            },
+            {
+                "tool": "Apollo",
+                "evidence": "Niti AI"
+            },
+            {
+                "tool": "CRM tools",
+                "evidence": "Social rises, Niti AI"
+            },
+            {
+                "tool": "Power BI",
+                "evidence": "Seneca Global IT Services"
+            },
+            {
+                "tool": "Notion",
+                "evidence": "Social rises"
+            },
+            {
+                "tool": "AI tools",
+                "evidence": "Social rises"
+            },
+            {
+                "tool": "Zapier",
+                "evidence": "mentioned in resume"
+            },
+            {
+                "tool": "Bitscale",
+                "evidence": "mentioned in resume"
+            },
+            {
+                "tool": "Google Sheets",
+                "evidence": "mentioned in resume"
+            }
         ],
         "soft_skills": [
-            "Lead segmentation",
-            "Funnel optimization",
-            "Content strategy"
+            "data analysis",
+            "workflow automation",
+            "lead nurturing",
+            "competitor analysis"
         ]
     },
+    "education": [
+        {
+            "degree": "B.Tech",
+            "field": null,
+            "institution": "SRM University",
+            "year": 2024
+        },
+        {
+            "degree": null,
+            "field": "MPC",
+            "institution": "Narayana Junior College",
+            "year": 2020
+        },
+        {
+            "degree": null,
+            "field": "SSC",
+            "institution": "Narayana School",
+            "year": 2019
+        }
+    ],
     "projects": [
         {
             "name": "Multi Channel Lead Qualification System",
             "description": "Created automated lead capture across Instagram, Facebook, website, and email.",
-            "technologies": []
+            "technologies": [],
+            "impact": null,
+            "scale": null
         },
         {
             "name": "Sensex Analysis Project",
             "description": "Built a system to collect, clean, and analyze Sensex market data using Python and DuckDB.",
             "technologies": [
                 "Python",
-                "DuckDB",
-                "Power BI"
-            ]
+                "DuckDB"
+            ],
+            "impact": null,
+            "scale": null
         },
         {
             "name": "Campaign Metrics and Slack Reporting System",
-            "description": "Built automation to send live campaign data into Slack and improved visibility.",
-            "technologies": []
+            "description": "Built automation to send live campaign data like sends, replies, and active campaigns into Slack.",
+            "technologies": [],
+            "impact": null,
+            "scale": null
         }
     ],
+    "red_flags": [],
+    "career_progression": {
+        "pattern": "growing",
+        "assessment": "The candidate has shown a trajectory of increasing responsibility and skill development in growth engineering and marketing automation."
+    },
+    "candidate_summary": "Vadla Vamsi Krishna is a Growth Engineer with experience in marketing automation and data analysis. They have built systems for personal branding and lead qualification, utilizing tools like n8n and Python. Currently interning at Niti AI, they are developing GTM strategies and automation systems.",
     "keywords": [
         "Growth Engineer",
         "Marketing Automation",
         "Data Analysis",
-        "Funnel Tracking",
-        "GTM Strategy",
-        "Python Developer",
+        "Python",
+        "n8n",
+        "CRM",
+        "Power BI",
+        "Lead Qualification",
         "Automation",
-        "Lead Nurturing",
-        "CRM Systems",
-        "Dashboard Design",
-        "Social Media",
-        "Engagement",
-        "Project Management"
-    ],
-    "summary": "Growth Engineer with a focus on marketing automation and data analysis. Experienced in building systems for lead qualification and campaign metrics."
+        "Dashboards",
+        "RevOps",
+        "Funnel Optimization",
+        "AI Tools",
+        "Workflow Automation",
+        "Sensex Analysis"
+    ]
 }

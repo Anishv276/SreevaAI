@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { getSession, createSession } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 
 export async function POST(req: Request) {
@@ -14,6 +14,8 @@ export async function POST(req: Request) {
         const { phase, data } = body;
 
         console.log(`[ONBOARDING API] Phase: ${phase}`, data);
+
+        let response = NextResponse.json({ success: true });
 
         switch (phase) {
             case "security":
@@ -55,10 +57,24 @@ export async function POST(req: Request) {
                         onboardingStep: 5 
                     }
                 });
+
+                // Update the JWT session so middleware reflects completion
+                const newToken = await createSession({
+                    ...session,
+                    onboardingComplete: true
+                });
+
+                response.cookies.set("session", newToken, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === "production",
+                    sameSite: "lax",
+                    maxAge: 60 * 60 * 24 * 7,
+                    path: "/",
+                });
                 break;
         }
 
-        return NextResponse.json({ success: true });
+        return response;
     } catch (error) {
         console.error("Setup error:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

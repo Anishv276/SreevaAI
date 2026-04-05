@@ -164,7 +164,9 @@ const worker = new Worker('resume-processing', async (job) => {
 
     const scoringInput = { 
         resume: structuredResume, 
-        jd: jdDetails 
+        jd: jdDetails,
+        resume_raw_text: resumeText,
+        jd_raw_text: jdText || (drive as any).description || ""
     };
 
     tempInputPath = join(tmpdir(), `scoring_${Date.now()}_${Math.random().toString(36).substring(7)}.json`);
@@ -177,7 +179,11 @@ const worker = new Worker('resume-processing', async (job) => {
 
     await new Promise((resolve, reject) => {
       pythonProcess.stdout.on("data", (data) => { outputData += data.toString(); });
-      pythonProcess.stderr.on("data", (data) => { errorData += data.toString(); });
+      pythonProcess.stderr.on("data", (data) => { 
+        const chunk = data.toString();
+        errorData += chunk; 
+        process.stderr.write(chunk); // Pipe to main console for real-time visibility
+      });
       pythonProcess.on("close", (code) => {
         if (code !== 0) reject(new Error(`Python script exited with code ${code}: ${errorData}`));
         else resolve(null);
@@ -312,7 +318,7 @@ const gradingWorker = new Worker('assessment-grading', async (job) => {
       jdText
     });
 
-    await prisma.assessment.update({
+    await (prisma as any).assessment.update({
       where: { id: assessmentId },
       data: { aiReport: JSON.stringify(report) }
     });

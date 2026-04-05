@@ -68,7 +68,10 @@ export async function POST(request: Request) {
             return response;
         }
 
-        const userProfile = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+        const userProfile = await prisma.user.findUnique({ 
+            where: { email: normalizedEmail },
+            include: { organization: { select: { onboardingComplete: true } } }
+        });
 
         if (!userProfile || !userProfile.password) {
             return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
@@ -87,6 +90,7 @@ export async function POST(request: Request) {
             name: userProfile.name || "",
             role,
             orgId: userProfile.orgId || null,
+            onboardingComplete: userProfile.organization?.onboardingComplete ?? false,
         });
 
         const response = NextResponse.json({

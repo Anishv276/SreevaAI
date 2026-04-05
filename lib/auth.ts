@@ -14,6 +14,7 @@ export interface SessionUser {
     name: string;
     role: SessionRole;
     orgId: string | null;
+    onboardingComplete?: boolean;
 }
 
 export function normalizeRole(role: string | null | undefined): SessionRole {

@@ -235,6 +235,18 @@ export function JobDescription({
                             />
                             <p className="text-[10px] text-gray-400 mt-1">Comma-separated</p>
                         </div>
+
+                        {/* Experience */}
+                        <div>
+                            <FieldLabel>Experience (Yrs)</FieldLabel>
+                            <input
+                                type="text"
+                                placeholder="e.g. 2–5 years"
+                                value={formData.experience || ""}
+                                onChange={(e) => updateFormData((prev: any) => ({ ...prev, experience: e.target.value }))}
+                                className={`${inputClass} ${isAnalyzing && !formData.experience ? "bg-orange-50/20" : ""}`}
+                            />
+                        </div>
                     </div>
 
                     {/* Right column */}
@@ -263,28 +275,16 @@ export function JobDescription({
                             />
                         </div>
 
-                        {/* Experience + Salary */}
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <FieldLabel>Experience (Yrs)</FieldLabel>
-                                <input
-                                    type="text"
-                                    placeholder="e.g. 2–5 years"
-                                    value={formData.experience || ""}
-                                    onChange={(e) => updateFormData((prev: any) => ({ ...prev, experience: e.target.value }))}
-                                    className={`${inputClass} ${isAnalyzing && !formData.experience ? "bg-orange-50/20" : ""}`}
-                                />
-                            </div>
-                            <div>
-                                <FieldLabel>Salary Range</FieldLabel>
-                                <input
-                                    type="text"
-                                    placeholder="e.g. ₹12–18 LPA"
-                                    value={formData.salary || ""}
-                                    onChange={(e) => updateFormData((prev: any) => ({ ...prev, salary: e.target.value }))}
-                                    className={`${inputClass} ${isAnalyzing && !formData.salary ? "bg-orange-50/20" : ""}`}
-                                />
-                            </div>
+                        {/* Salary */}
+                        <div>
+                            <FieldLabel>Salary Range</FieldLabel>
+                            <input
+                                type="text"
+                                placeholder="e.g. ₹12–18 LPA"
+                                value={formData.salary || ""}
+                                onChange={(e) => updateFormData((prev: any) => ({ ...prev, salary: e.target.value }))}
+                                className={`${inputClass} ${isAnalyzing && !formData.salary ? "bg-orange-50/20" : ""}`}
+                            />
                         </div>
                     </div>
                 </div>

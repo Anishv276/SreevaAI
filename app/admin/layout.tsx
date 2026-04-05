@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { cn } from "@/lib/utils";
 import { OnboardingRedirect } from "@/components/admin/onboarding-redirect";
+import { RecruiterAssistant } from "@/components/admin/RecruiterAssistant";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
     const session = await getSession();
@@ -20,23 +21,21 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         redirect("/login");
     }
 
-    // Determine onboarding status
+    // Determine onboarding status for Sidebar visibility
     const org = await prisma.organization.findUnique({
         where: { id: session.orgId as string },
         select: { onboardingComplete: true }
     });
 
-    const needsOnboarding = org ? !org.onboardingComplete : false;
+    const showSidebar = org?.onboardingComplete === true;
 
     return (
         <div className="flex min-h-screen bg-white">
-            <OnboardingRedirect needsOnboarding={needsOnboarding} />
-
-            {!needsOnboarding && <Sidebar />}
+            {showSidebar && <Sidebar />}
             
             <div className={cn(
                 "flex-1 bg-white min-w-0 transition-all duration-300", 
-                !needsOnboarding && "md:pl-[220px]"
+                showSidebar && "md:pl-[220px]"
             )}>
                 <main className="min-h-screen">
                     <div className="max-w-[1600px] mx-auto p-8 md:p-12 lg:p-16">
@@ -44,6 +43,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     </div>
                 </main>
             </div>
+
+            {/* Premium AI Assistant */}
+            {showSidebar && <RecruiterAssistant />}
         </div>
     );
 }

@@ -78,10 +78,7 @@ function CreateDriveForm() {
     // Lifted state
     const [aiEnabled, setAiEnabled] = useState(true);
     const [weights, setWeights] = useState<ScreeningWeight>({ threshold: 60 });
-    const [customFields, setCustomFields] = useState<CustomField[]>([
-        { id: 1, label: "Portfolio URL", type: "Text", required: true },
-        { id: 2, label: "Why do you want to join us?", type: "Long Text", required: false },
-    ]);
+    const [customFields, setCustomFields] = useState<CustomField[]>([]);
 
     // AI Analysis State
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -228,13 +225,17 @@ function CreateDriveForm() {
                     const skills = extracted.skills;
                     const salary = extracted.salary;
 
-                    // Combined Skill Mapping
-                    const mustHave = Array.isArray(skills?.must_have) ? skills.must_have : [];
-                    const goodToHave = Array.isArray(skills?.good_to_have) ? skills.good_to_have : [];
-                    const allSkills = [...mustHave, ...goodToHave].filter(Boolean).join(", ");
+                    // Individual Skill Mapping (extracting 'skill' from new object schema)
+                    const mustHaveArr = Array.isArray(skills?.must_have) 
+                        ? skills.must_have.map((s: any) => typeof s === 'object' ? s.skill : s) 
+                        : [];
+                    const goodToHaveArr = Array.isArray(skills?.good_to_have) 
+                        ? skills.good_to_have.map((s: any) => typeof s === 'object' ? s.skill : s) 
+                        : [];
+                    const allSkills = [...mustHaveArr, ...goodToHaveArr].filter(Boolean).join(", ");
 
                     // Summary/Description mapping
-                    const desc = extracted.summary || extracted.description || extracted.job_description || text || prev.description;
+                    const desc = extracted.role_summary || extracted.summary || extracted.description || extracted.job_description || text || prev.description;
 
                     // Experience string mapping
                     const minExp = experience?.min_years ?? experience?.min;
@@ -251,8 +252,11 @@ function CreateDriveForm() {
                         : prev.salary;
 
                     // Responsibilities & Requirements mapping
-                    const resp = Array.isArray(extracted.responsibilities) ? extracted.responsibilities.join("\n") : 
-                                 (typeof extracted.responsibilities === 'string' ? extracted.responsibilities : (prev.responsibilities || ""));
+                    // Use new 'responsibilities_flat' if available
+                    const respArr = extracted.responsibilities_flat || extracted.responsibilities;
+                    const resp = Array.isArray(respArr) 
+                        ? respArr.map((r: any) => typeof r === 'object' ? r.task : r).join("\n") 
+                        : (typeof respArr === 'string' ? respArr : (prev.responsibilities || ""));
                     
                     const req = Array.isArray(extracted.requirements) ? extracted.requirements.join("\n") :
                                 (typeof extracted.requirements === 'string' ? extracted.requirements : (prev.requirements || ""));
@@ -265,6 +269,7 @@ function CreateDriveForm() {
                         salary: salaryText,
                         experience: expText,
                         department: extracted.department || prev.department,
+                        workMode: extracted.work_type || prev.workMode,
                         responsibilities: resp,
                         requirements: req,
                         extractedDetails: extracted, 
@@ -309,7 +314,7 @@ function CreateDriveForm() {
             return true; // Interview always valid
         }
         if (step === 4) {
-            return customFields.length > 0;
+            return true; // Registration fields are now optional
         }
         return true;
     };
