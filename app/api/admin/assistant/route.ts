@@ -40,7 +40,7 @@ function detectIntent(message: string): string {
         return 'filter_by_date';
     }
     
-    if (lower.includes('summarize') || lower.includes('tell me about') || lower.includes('profile') || lower.includes('details about')) {
+    if (lower.includes('summarize') || lower.includes('tell me about') || lower.includes('profile') || lower.includes('details about') || lower.includes('skill') || lower.includes('experience')) {
         return 'summarize_candidate';
     }
     
@@ -60,7 +60,7 @@ function detectIntent(message: string): string {
     return 'general';
 }
 
-function extractName(message: string): string | null {
+function extractName(message: string, history: any[] = []): string | null {
     const patterns = [
         /about\s+(\w+\s+\w+)/i,
         /for\s+(\w+\s+\w+)/i,
@@ -77,6 +77,22 @@ function extractName(message: string): string | null {
     const singleMatch = message.match(/(?:find|show|search|list)\s+(?:me\s+)?(\w+)$/i);
     if (singleMatch && singleMatch[1].length > 2) {
         return singleMatch[1].trim();
+    }
+    
+    // Check history for context if this is a follow-up (e.g., "what skills he has")
+    if (history.length > 0) {
+        for (let i = history.length - 1; i >= 0; i--) {
+            const h = history[i];
+            if (h.role === 'user') {
+                const hName = extractName(h.content, []); // recursive call without history
+                if (hName) return hName;
+            }
+            // Also check assistant responses for names mentioned in bold
+            if (h.role === 'assistant') {
+                const boldMatch = h.content.match(/\*\*([\w\s]+)\*\*/);
+                if (boldMatch) return boldMatch[1].trim();
+            }
+        }
     }
     
     return null;
@@ -516,8 +532,8 @@ async function filterByDrive(message: string, orgId: string) {
     };
 }
 
-async function summarizeCandidate(message: string, orgId: string) {
-    const name = extractName(message);
+async function summarizeCandidate(message: string, orgId: string, history: any[] = []) {
+    const name = extractName(message, history);
     
     if (!name) {
         return { type: 'general', message: "Which candidate? Try 'summarize John' or 'profile of John Smith'." };
@@ -541,33 +557,39 @@ async function summarizeCandidate(message: string, orgId: string) {
         return { type: 'list', message: `No candidate found matching '${name}'. Try a different name.` };
     }
     
-    let aiReport = null;
-    if (candidate.aiReport) {
-        try {
-            aiReport = JSON.parse(candidate.aiReport);
-        } catch (e) {}
-    }
+    let aiReport: any = null;
+    let resumeData: any = null;
+    
+    try {
+        if (candidate.aiReport) aiReport = JSON.parse(candidate.aiReport);
+        if (candidate.structuredResume) resumeData = JSON.parse(candidate.structuredResume);
+    } catch (e) {}
+    
+    const skills = resumeData?.skills || [];
+    const experience = resumeData?.workExperience || [];
     
     let summary = `**${candidate.fullName}**\n`;
     summary += `📧 ${candidate.email}\n`;
     summary += `💼 Applied for: ${candidate.drive.title}\n`;
     summary += `📊 AI Score: ${candidate.aiScore || 'N/A'}/100\n`;
     summary += `📌 Status: ${candidate.status}\n`;
-    summary += `📅 Applied: ${new Date(candidate.createdAt).toLocaleDateString()}\n`;
     
+    if (skills.length > 0) {
+        summary += `\n🛠️ **Technical Skills:** ${skills.slice(0, 10).join(', ')}`;
+    }
+
+    if (experience.length > 0) {
+        const latest = experience[0];
+        summary += `\n🏗️ **Experience:** ${latest.title} at ${latest.company}`;
+    }
+
     if (aiReport?.recruiter_snapshot) {
-        summary += `\n🎯 **AI Insight:** ${aiReport.recruiter_snapshot}`;
+        summary += `\n\n🎯 **AI Insight:** ${aiReport.recruiter_snapshot}`;
     }
     
     if (aiReport?.strengths?.length > 0) {
         summary += `\n\n✅ **Strengths:**\n`;
         summary += aiReport.strengths.slice(0, 3).map((s: string) => `• ${s}`).join('\n');
-    }
-    
-    if (aiReport?.concerns || aiReport?.weaknesses) {
-        const concerns = aiReport.concerns || aiReport.weaknesses || [];
-        summary += `\n⚠️ **Areas to Review:**\n`;
-        summary += concerns.slice(0, 3).map((c: any) => `• ${c.point || c}`).join('\n');
     }
     
     if (candidate.interview) {
@@ -578,7 +600,7 @@ async function summarizeCandidate(message: string, orgId: string) {
         type: 'summary',
         title: `Candidate Profile: ${candidate.fullName}`,
         message: summary,
-        action: "Want to take action? I can help schedule interview, update status, or resend links!"
+        action: "I can help move this candidate to 'Shortlisted' or trigger a follow-up assessment!"
     };
 }
 
@@ -734,7 +756,7 @@ export async function POST(request: Request) {
                 result = await filterByDrive(message, orgId);
                 break;
             case 'summarize_candidate':
-                result = await summarizeCandidate(message, orgId);
+                result = await summarizeCandidate(message, orgId, history);
                 break;
             case 'count_query':
                 result = await countQuery(message, orgId);
