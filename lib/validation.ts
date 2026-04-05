@@ -33,8 +33,6 @@ export const createDriveSchema = z.object({
   aiScreening: z.object({
     enabled: z.boolean().optional()
   }).optional(),
-  registrationFields: z.array(z.any()).optional(),
-  extractedDetails: z.record(z.string(), z.any()).optional(),
   location: z.string().optional(),
 });
 

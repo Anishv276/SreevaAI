@@ -83,8 +83,6 @@ model Drive {
   requirements         String?
   salary               String?
   skills               String?
-  jdFileName           String?
-  jdPreviewUrl         String?
   extractedDetails     String?       @default("{}")
   applications         Application[]
   creator              User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
