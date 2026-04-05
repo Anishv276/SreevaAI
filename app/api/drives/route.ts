@@ -11,16 +11,19 @@ export async function GET(request: Request) {
 
         const { searchParams } = new URL(request.url);
         const status = searchParams.get("status");
-
-        const where = {}; // No status filtering since status column was removed
         const queryResult = driveQuerySchema.safeParse({ status });
         if (!queryResult.success) {
             return NextResponse.json({ error: "Invalid query parameters" }, { status: 400 });
         }
 
         // ── SECURITY: Filter by Org ─────────────────────────
-        const targetOrgId = new URL(request.url).searchParams.get("orgId"); let where: any = {}; if (session.role === "SUPER_ADMIN") { if (targetOrgId) where.orgId = targetOrgId; } else { where.orgId = session.orgId; }
-        if (queryResult.data.status) where.status = queryResult.data.status;
+        const targetOrgId = new URL(request.url).searchParams.get("orgId");
+        let where: any = {};
+        if ((session as any).role === "SUPER_ADMIN") {
+            if (targetOrgId) where.orgId = targetOrgId;
+        } else {
+            where.orgId = (session as any).orgId;
+        }
 
         const drives = await prisma.drive.findMany({
             where,
@@ -99,9 +102,8 @@ export async function POST(request: Request) {
                         },
                     },
                 },
-                registrationFields: JSON.stringify(data.registrationFields || []),
-                orgId: session.orgId,
-                creatorId: session.userId,
+                orgId: (session as any).orgId,
+                creatorId: (session as any).userId,
             } as any,
         });
 

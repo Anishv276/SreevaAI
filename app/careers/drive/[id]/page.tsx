@@ -1,7 +1,7 @@
 "use client";
 import { PortalHeader } from "@/components/careers/portal-header";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Clock, MapPin, Share2, Briefcase } from "lucide-react";
+import { ArrowLeft, Clock, MapPin, Share2, Briefcase, FileText, UserCircle2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, use } from "react";
 
@@ -173,9 +173,9 @@ export default function DriveDetailsPage({ params }: { params: Promise<{ id: str
                                 </div>
 
                                 <div className="space-y-3">
-                                    <Link href={`/careers/apply/${drive.id}`} className="block">
-                                        <Button className="w-full h-14 bg-[#F97316] hover:bg-orange-600 text-white font-black text-lg rounded-2xl shadow-[0_10px_30px_rgba(249,115,22,0.3)] hover:translate-y-[-2px] hover:shadow-[0_15px_40px_rgba(249,115,22,0.4)] transition-all duration-300">
-                                            APPLY NOW
+                                    <Link href={`/careers/apply/${drive.id}/start`} className="w-full">
+                                        <Button className="w-full h-14 bg-[#F97316] hover:bg-orange-600 text-white font-black text-lg rounded-2xl shadow-[0_10px_30px_rgba(249,115,22,0.3)] hover:translate-y-[-2px] hover:shadow-[0_15px_40px_rgba(249,115,22,0.4)] transition-all duration-300 uppercase tracking-widest italic">
+                                            Apply Now
                                         </Button>
                                     </Link>
                                     {drive.jdPreviewUrl && (

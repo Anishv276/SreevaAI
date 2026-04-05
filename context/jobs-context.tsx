@@ -60,7 +60,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
     // Load initial data
     useEffect(() => {
-        if (!pathname.startsWith("/admin")) return;
+        if (!pathname.startsWith("/admin") && !pathname.startsWith("/careers")) return;
         fetchJobs().catch(() => undefined);
     }, [pathname]);
 

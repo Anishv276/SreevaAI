@@ -109,8 +109,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         
         if (data.aiScreening?.enabled !== undefined) updateData.aiScreeningEnabled = data.aiScreening.enabled;
         
-        if (data.registrationFields !== undefined) updateData.registrationFields = JSON.stringify(data.registrationFields);
-        if (data.status !== undefined) updateData.status = data.status;
+
 
         const updated = await prisma.drive.update({
             where: { id: driveId },

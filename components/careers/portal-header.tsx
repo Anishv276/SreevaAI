@@ -1,28 +1,9 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Briefcase, ArrowLeft } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Briefcase } from "lucide-react";
 
 export function PortalHeader() {
-    const [session, setSession] = useState<any>(null);
-
-    useEffect(() => {
-        const checkAuth = async () => {
-            try {
-                const res = await fetch("/api/auth/me");
-                if (res.ok) {
-                    const data = await res.json();
-                    setSession(data);
-                }
-            } catch (err) {
-                console.error("Auth check failed", err);
-            }
-        };
-        checkAuth();
-    }, []);
-
     return (
         <header className="sticky top-0 z-40 w-full border-b bg-white/70 backdrop-blur-xl border-orange-100/50 shadow-sm">
             <div className="container mx-auto flex h-16 items-center justify-between px-6 lg:px-8 max-w-7xl">
@@ -42,14 +23,7 @@ export function PortalHeader() {
                         Candidate Portal
                     </div>
 
-                    {session && (
-                        <Link href={session.role === "SUPER_ADMIN" ? "/super-admin" : "/admin"}>
-                            <button className="flex items-center gap-2 h-10 px-4 bg-gray-900 text-white font-black text-[10px] tracking-widest uppercase rounded-xl shadow-xl active:scale-95 transition-all group">
-                                <ArrowLeft className="h-3 w-3 transition-transform group-hover:-translate-x-1" />
-                                BACK TO DASHBOARD
-                            </button>
-                        </Link>
-                    )}
+
                 </div>
             </div>
         </header>

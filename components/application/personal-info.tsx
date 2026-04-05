@@ -10,6 +10,7 @@ interface PersonalInfoProps {
     analysisError: string | null;
     startAnalysis: (file: File) => void;
     clearResume: () => void;
+    mode: string;
 }
 
 export function PersonalInfo({ 
@@ -18,31 +19,34 @@ export function PersonalInfo({
     isAnalyzing, 
     analysisError, 
     startAnalysis, 
-    clearResume 
+    clearResume,
+    mode 
 }: PersonalInfoProps) {
     const inputClass = "h-12 rounded-2xl border-gray-100 bg-gray-50/30 px-4 text-sm font-medium transition-all focus:bg-white focus:border-[#F97316] focus:ring-4 focus:ring-orange-500/10 placeholder:text-gray-300";
 
     return (
         <div className="space-y-12 animate-in-fade">
             {/* Quick Resume Upload Section */}
-            <div className="space-y-6">
-                <div className="flex items-center gap-4">
-                    <span className="h-2 w-2 rounded-full bg-[#F97316] shadow-[0_0_10px_rgba(249,115,22,0.4)]" />
-                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Step 0: Smart Extraction</p>
+            {mode === "resume" && (
+                <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                        <span className="h-2 w-2 rounded-full bg-[#F97316] shadow-[0_0_10px_rgba(249,115,22,0.4)]" />
+                        <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Step 0: Smart Extraction</p>
+                    </div>
+                    <div className="bg-orange-50/30 rounded-[2rem] p-6 border border-orange-100/50">
+                        <p className="text-sm font-bold text-gray-900 mb-4">
+                            Upload your resume to let Lumoscale AI auto-fill your details.
+                        </p>
+                        <ResumeUpload 
+                            formData={formData}
+                            isAnalyzing={isAnalyzing}
+                            analysisError={analysisError}
+                            startAnalysis={startAnalysis}
+                            clearFile={clearResume}
+                        />
+                    </div>
                 </div>
-                <div className="bg-orange-50/30 rounded-[2rem] p-6 border border-orange-100/50">
-                    <p className="text-sm font-bold text-gray-900 mb-4">
-                        Upload your resume to let Lumoscale AI auto-fill your details.
-                    </p>
-                    <ResumeUpload 
-                        formData={formData}
-                        isAnalyzing={isAnalyzing}
-                        analysisError={analysisError}
-                        startAnalysis={startAnalysis}
-                        clearFile={clearResume}
-                    />
-                </div>
-            </div>
+            )}
 
             <div className="flex items-center gap-4">
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-100 to-transparent" />

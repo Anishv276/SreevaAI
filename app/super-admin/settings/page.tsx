@@ -11,13 +11,18 @@ import {
     ChevronRight,
     X,
     ShieldAlert,
-    Mail
+    Mail,
+    Eye,
+    EyeOff
 } from "lucide-react";
 
 export default function SuperAdminSettingsPage() {
     const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
+    const [showCurrent, setShowCurrent] = useState(false);
+    const [showNew, setShowNew] = useState(false);
+    const [showConfirm, setShowConfirm] = useState(false);
     const [otp, setOtp] = useState("");
     
     const [showOtpModal, setShowOtpModal] = useState(false);
@@ -129,47 +134,72 @@ export default function SuperAdminSettingsPage() {
                     {/* Security Update Section matching Pic 3 Main Content Area */}
                     <div className="bg-white border border-gray-100 rounded-[3rem] p-12 lg:p-16 shadow-[0_40px_100px_rgba(0,0,0,0.015)] relative pb-32">
                         <div className="space-y-2 mb-14">
-                            <h2 className="text-2xl font-black text-gray-950 tracking-tight uppercase italic leading-none">Security Protocol</h2>
-                            <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px] italic opacity-60">Authentication sequence required for root changes</p>
+                            <h2 className="text-2xl font-black text-gray-950 tracking-tight uppercase italic leading-none">Update Password</h2>
+                            <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px] italic opacity-60">Security verification required for password changes</p>
                         </div>
 
                         <form onSubmit={handleInitialSubmit} className="space-y-10 max-w-4xl">
                             {/* Current Password Field */}
                             <div className="space-y-4">
-                                <label className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Current Credential</label>
+                                <label className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Current Password</label>
                                 <div className="relative group max-w-lg">
                                     <KeyRound className="absolute left-6 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-200 group-focus-within:text-gray-950 transition-colors" />
                                     <input
-                                        type="password"
+                                        type={showCurrent ? "text" : "password"}
                                         value={currentPassword}
                                         onChange={e => setCurrentPassword(e.target.value)}
-                                        placeholder="Current Root Password"
-                                        className="w-full h-14 pl-16 pr-8 bg-gray-50 border border-transparent rounded-[1.25rem] text-[13px] font-bold text-gray-950 outline-none focus:bg-white focus:border-gray-200 transition-all shadow-inner"
+                                        placeholder="Enter Current Password"
+                                        className="w-full h-14 pl-16 pr-14 bg-gray-50 border border-transparent rounded-[1.25rem] text-[13px] font-bold text-gray-950 outline-none focus:bg-white focus:border-gray-200 transition-all shadow-inner"
                                     />
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowCurrent(!showCurrent)}
+                                        className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-200 hover:text-[#F97316] transition-colors"
+                                    >
+                                        {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
                                 </div>
                             </div>
 
                             {/* New Password Grid */}
                             <div className="grid md:grid-cols-2 gap-10 pt-10 border-t border-dashed border-gray-100">
                                 <div className="space-y-4">
-                                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">New Master Key</label>
-                                    <input
-                                        type="password"
-                                        value={newPassword}
-                                        onChange={e => setNewPassword(e.target.value)}
-                                        placeholder="Min. 6 Characters"
-                                        className="w-full h-14 px-8 bg-gray-50 border border-transparent rounded-[1.25rem] text-[13px] font-bold text-gray-950 outline-none focus:bg-white focus:border-gray-200 transition-all shadow-inner"
-                                    />
+                                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">New Password</label>
+                                    <div className="relative group">
+                                        <input
+                                            type={showNew ? "text" : "password"}
+                                            value={newPassword}
+                                            onChange={e => setNewPassword(e.target.value)}
+                                            placeholder="Min. 6 Characters"
+                                            className="w-full h-14 pl-8 pr-14 bg-gray-50 border border-transparent rounded-[1.25rem] text-[13px] font-bold text-gray-950 outline-none focus:bg-white focus:border-gray-200 transition-all shadow-inner"
+                                        />
+                                        <button 
+                                            type="button"
+                                            onClick={() => setShowNew(!showNew)}
+                                            className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-200 hover:text-[#F97316] transition-colors"
+                                        >
+                                            {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                        </button>
+                                    </div>
                                 </div>
                                 <div className="space-y-4">
-                                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Verify Key</label>
-                                    <input
-                                        type="password"
-                                        value={confirmPassword}
-                                        onChange={e => setConfirmPassword(e.target.value)}
-                                        placeholder="Repat Root Key"
-                                        className="w-full h-14 px-8 bg-gray-50 border border-transparent rounded-[1.25rem] text-[13px] font-bold text-gray-950 outline-none focus:bg-white focus:border-gray-200 transition-all shadow-inner"
-                                    />
+                                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Confirm New Password</label>
+                                    <div className="relative group">
+                                        <input
+                                            type={showConfirm ? "text" : "password"}
+                                            value={confirmPassword}
+                                            onChange={e => setConfirmPassword(e.target.value)}
+                                            placeholder="Repeat New Password"
+                                            className="w-full h-14 pl-8 pr-14 bg-gray-50 border border-transparent rounded-[1.25rem] text-[13px] font-bold text-gray-950 outline-none focus:bg-white focus:border-gray-200 transition-all shadow-inner"
+                                        />
+                                        <button 
+                                            type="button"
+                                            onClick={() => setShowConfirm(!showConfirm)}
+                                            className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-200 hover:text-[#F97316] transition-colors"
+                                        >
+                                            {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 

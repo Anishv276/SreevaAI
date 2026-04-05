@@ -8,7 +8,7 @@
         "country": "India"
     },
     "experience": {
-        "total_years": 1,
+        "total_years": 2,
         "relevant_years": 1
     },
     "current_company": "Niti AI",
@@ -21,8 +21,14 @@
         "technical": [
             "Marketing automation",
             "Workflow automation",
+            "Revops",
             "Data analysis",
-            "Python"
+            "Funnel tracking",
+            "Dashboards",
+            "Python",
+            "DuckDB",
+            "Pandas",
+            "Power BI"
         ],
         "tools": [
             "n8n",
@@ -30,23 +36,20 @@
             "Google Sheets",
             "CRM tools",
             "Zapier",
-            "Power BI"
+            "Bitscale",
+            "Apollo"
         ],
         "soft_skills": [
             "Lead segmentation",
             "Funnel optimization",
-            "Content strategy",
-            "Communication"
+            "Content strategy"
         ]
     },
     "projects": [
         {
             "name": "Multi Channel Lead Qualification System",
-            "description": "Created automated lead capture across various platforms and unified all inbound sources into a single workflow.",
-            "technologies": [
-                "Python",
-                "n8n"
-            ]
+            "description": "Created automated lead capture across Instagram, Facebook, website, and email.",
+            "technologies": []
         },
         {
             "name": "Sensex Analysis Project",
@@ -59,26 +62,24 @@
         },
         {
             "name": "Campaign Metrics and Slack Reporting System",
-            "description": "Built automation to send live campaign data into Slack and improved visibility for teams.",
+            "description": "Built automation to send live campaign data into Slack and improved visibility.",
             "technologies": []
         }
     ],
     "keywords": [
         "Growth Engineer",
-        "Marketing automation",
-        "Workflow automation",
-        "Data analysis",
-        "Lead segmentation",
-        "Funnel optimization",
-        "Content strategy",
-        "Python",
-        "CRM tools",
-        "Power BI",
+        "Marketing Automation",
+        "Data Analysis",
+        "Funnel Tracking",
+        "GTM Strategy",
+        "Python Developer",
         "Automation",
-        "RevOps",
-        "Dashboards",
-        "Campaign management",
-        "Market analysis"
+        "Lead Nurturing",
+        "CRM Systems",
+        "Dashboard Design",
+        "Social Media",
+        "Engagement",
+        "Project Management"
     ],
-    "summary": "Growth Engineer with a focus on marketing and workflow automation. Experienced in leveraging data analysis techniques and automation tools to enhance client engagement and performance."
+    "summary": "Growth Engineer with a focus on marketing automation and data analysis. Experienced in building systems for lead qualification and campaign metrics."
 }

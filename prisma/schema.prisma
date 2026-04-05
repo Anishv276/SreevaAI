@@ -13,15 +13,15 @@ model Organization {
   name      String
   slug      String   @unique
   logoUrl   String?
-  industry  String?
-  size      String?
-  website   String?
   plan      String   @default("STARTER")
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  users     User[]
+  industry  String?
+  size      String?
+  website   String?
   drives    Drive[]
+  users     User[]
 }
 
 model SuperAdmin {
@@ -29,69 +29,66 @@ model SuperAdmin {
   email              String              @unique
   password           String
   name               String
-  verificationTokens VerificationToken[]
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
+  verificationTokens VerificationToken[]
 }
 
 model User {
   id           String        @id @default(cuid())
   email        String        @unique
   name         String?
-  role         String        @default("CANDIDATE") // SUPER_ADMIN | ORG_ADMIN | CANDIDATE
-  orgId        String?
+  role         String        @default("CANDIDATE")
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   password     String?
-  organization Organization? @relation(fields: [orgId], references: [id])
+  orgId        String?
   applications Application[]
   drives       Drive[]       @relation("CreatedDrives")
+  organization Organization? @relation(fields: [orgId], references: [id])
 }
 
 model Drive {
-  id                   Int           @id @default(autoincrement())
-  title                String
-  role                 String?
-  description          String
-  department           String
-  location             String        @default("Remote")
-  type                 String        @default("Full-time")
-  status               String        @default("ACTIVE")
-  screeningThreshold   Int           @default(60)
-  aiScreeningEnabled   Boolean       @default(true)
-  creatorId            String
-  orgId                String?
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
-  deadline             DateTime?
-  positions            Int?          @default(1)
-  registrationFields   String?       @default("[]")
-  workMode             String?       @default("Remote")
-  // Legacy interview fields
-  interviewEnabled     Boolean       @default(true)
-  interviewLanguage    String?       @default("English")
-  interviewTime        Int?          @default(10)
-  proctoringLevel      String?       @default("Medium")
-  aiFollowUpDepth      Int?          @default(3)
-  interviewQuestions   String?       @default("[]")
-  // JD fields
-  jdFileName           String?
-  jdPreviewUrl         String?
-  // Content
-  experience           String?
-  responsibilities     String?
-  requirements         String?
-  salary               String?
-  skills               String?
-  extractedDetails     String?       @default("{}")
-  applications         Application[]
-  creator              User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
-  organization         Organization? @relation(fields: [orgId], references: [id])
+  id                 Int           @id @default(autoincrement())
+  title              String
+  role               String?
+  description        String
+  department         String
+  type               String        @default("Full-time")
+  screeningThreshold Int           @default(60)
+  creatorId          String
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  deadline           DateTime?
+  positions          Int?          @default(1)
+  registrationFields String?       @default("[]")
+  workMode           String?       @default("Remote")
+  experience         String?
+  responsibilities   String?
+  requirements       String?
+  salary             String?
+  skills             String?
+  extractedDetails   String?       @default("{}")
+  interviewEnabled   Boolean       @default(true)
+  interviewLanguage  String?       @default("English")
+  interviewTime      Int?          @default(10)
+  proctoringLevel    String?       @default("Medium")
+  aiFollowUpDepth    Int?          @default(3)
+  interviewQuestions String?       @default("[]")
+  jdFileName         String?
+  jdPreviewUrl       String?
+  orgId              String?
+  location           String        @default("Remote")
+  status             String        @default("ACTIVE")
+  aiScreeningEnabled Boolean       @default(true)
+  applications       Application[]
+  creator            User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
+  organization       Organization? @relation(fields: [orgId], references: [id])
 }
 
 model Application {
-  id               String      @id @default(cuid())
-  status           String      @default("APPLIED")
+  id               String     @id @default(cuid())
+  status           String     @default("APPLIED")
   fullName         String
   email            String
   phone            String
@@ -100,15 +97,15 @@ model Application {
   aiReport         String?
   driveId          Int
   userId           String?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
   resumeText       String?
   experienceYears  Float?
   relevantYears    Float?
-  structuredResume String?     @default("{}")
-  submissionData   Json?       @default("{}")
-  drive            Drive       @relation(fields: [driveId], references: [id], onDelete: Cascade)
-  user             User?       @relation(fields: [userId], references: [id])
+  structuredResume String?    @default("{}")
+  submissionData   Json?      @default("{}")
+  drive            Drive      @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  user             User?      @relation(fields: [userId], references: [id])
   interview        Interview?
 }
 
@@ -129,11 +126,12 @@ model Interview {
   aiSummary             String?
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 }
+
 model VerificationToken {
   id           String      @id @default(cuid())
-  superAdminId String?
-  superAdmin   SuperAdmin? @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
   token        String      @unique
   expires      DateTime
   createdAt    DateTime    @default(now())
+  superAdminId String?
+  superAdmin   SuperAdmin? @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Suspense, useEffect } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Steps } from "@/components/create-drive/steps"; // Reusing Steps component
 import { Button } from "@/components/ui/button";
 import { PersonalInfo } from "@/components/application/personal-info";
@@ -17,6 +17,8 @@ const STEPS = ["Personal Info", "Professional Details", "Resume & Review"];
 
 export default function ApplicationPage() {
     const params = useParams();
+    const searchParams = useSearchParams();
+    const mode = searchParams.get("mode");
     const id = params?.id as string;
     const router = useRouter();
     const { addCandidate } = useCandidates();
@@ -50,12 +52,29 @@ export default function ApplicationPage() {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysisError, setAnalysisError] = useState<string | null>(null);
 
-    // Check for previous application on mount
+    // Check for previous application or pre-fill data on mount
     useEffect(() => {
         if (id && typeof window !== "undefined") {
             const hasApplied = localStorage.getItem(`applied_${id}`);
             if (hasApplied === "true") {
                 setAlreadyApplied(true);
+                return;
+            }
+
+            const prefill = localStorage.getItem(`prefill_${id}`);
+            if (prefill) {
+                try {
+                    const data = JSON.parse(prefill);
+                    setFormData(prev => ({
+                        ...prev,
+                        ...data,
+                        resumeUploaded: !!data.resumeUrl
+                    }));
+                    // Clean up after pre-filling
+                    localStorage.removeItem(`prefill_${id}`);
+                } catch (e) {
+                    console.error("Failed to parse pre-fill data:", e);
+                }
             }
         }
     }, [id]);
@@ -257,6 +276,7 @@ export default function ApplicationPage() {
                                             analysisError={analysisError}
                                             startAnalysis={startAnalysis}
                                             clearResume={clearResume}
+                                            mode={mode || "manual"}
                                         />
                                     )}
                                     {currentStep === 1 && (

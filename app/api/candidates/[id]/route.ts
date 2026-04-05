@@ -11,7 +11,9 @@ export async function GET(
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
-        const id = (await params).id;
+        const { searchParams } = new URL(request.url);
+        const { id } = await params;
+        const targetOrgId = searchParams.get("orgId") || session.orgId;
 
         const candidateRows = await prisma.$queryRawUnsafe(
             `
@@ -21,7 +23,6 @@ export async function GET(
               a."fullName",
               a.email,
               a.phone,
-              a.location,
               a."resumeUrl",
               a."aiScore",
               a."aiReport",
@@ -36,14 +37,15 @@ export async function GET(
               a."updatedAt",
               d.title AS "driveTitle",
               d.department AS "driveDepartment",
-              d.type AS "driveType"
+              d.type AS "driveType",
+              d."orgId" AS "orgId"
             FROM "Application" a
             LEFT JOIN "Drive" d ON d.id = a."driveId"
-            WHERE a.id = $1 AND d."orgId" = $2
+            WHERE a.id = $1 ${session.role !== "SUPER_ADMIN" ? 'AND d."orgId" = $2' : (targetOrgId ? 'AND d."orgId" = $2' : '')}
             LIMIT 1
             `,
             id,
-            session.orgId
+            ...(session.role !== "SUPER_ADMIN" || targetOrgId ? [targetOrgId] : [])
         );
 
         const candidate = Array.isArray(candidateRows) && candidateRows.length > 0 ? candidateRows[0] as any : null;
@@ -108,7 +110,6 @@ export async function GET(
                 title: candidate.driveTitle,
                 department: candidate.driveDepartment,
                 type: candidate.driveType,
-                location: candidate.location || "Remote",
             },
             assessment,
             interview,

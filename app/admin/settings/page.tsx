@@ -10,7 +10,7 @@ import {
     Camera, Check, ChevronRight, Plus, Trash2, Crown,
     Slack, Calendar, Globe, Mail, Phone, Shield,
     BarChart3, AlertCircle, Zap, ExternalLink, Upload, Lock, Eye, EyeOff,
-    Loader2
+    Loader2, KeyRound, CheckCircle2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/auth-context";
@@ -89,6 +89,55 @@ export default function SettingsPage() {
         website: "",
         logoUrl: "" 
     });
+
+    /* Password */
+    const [currentPassword, setCurrentPassword] = useState("");
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [passwordError, setPasswordError] = useState("");
+    const [passwordSuccess, setPasswordSuccess] = useState(false);
+    const [showCurrent, setShowCurrent] = useState(false);
+    const [showNew, setShowNew] = useState(false);
+    const [showConfirm, setShowConfirm] = useState(false);
+
+    const handlePasswordUpdate = async () => {
+        setPasswordError("");
+        setPasswordSuccess(false);
+
+        if (newPassword !== confirmPassword) {
+            setPasswordError("New passwords do not match");
+            return;
+        }
+
+        if (newPassword.length < 6) {
+            setPasswordError("Password must be at least 6 characters");
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const res = await fetch("/api/auth/profile", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ currentPassword, newPassword }),
+            });
+
+            if (res.ok) {
+                setPasswordSuccess(true);
+                setCurrentPassword("");
+                setNewPassword("");
+                setConfirmPassword("");
+                setTimeout(() => setPasswordSuccess(false), 3000);
+            } else {
+                const data = await res.json();
+                setPasswordError(data.error || "Failed to update password");
+            }
+        } catch (error) {
+            setPasswordError("Network infrastructure error");
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     // Initial Fetch
     useEffect(() => {
@@ -173,19 +222,50 @@ export default function SettingsPage() {
 
     /* Team */
     const [inviteEmail, setInviteEmail] = useState("");
-    const [inviteRole, setInviteRole] = useState("HR");
-    const [team, setTeam] = useState([
-        { id: 1, name: "Vamsi Admin", email: "vamsi@lumoscale", role: "Admin" },
-        { id: 2, name: "HR Manager",  email: "hr@company.com",  role: "HR"    }
-    ]);
+    const [inviteRole, setInviteRole] = useState("RECRUITER");
+    const [team, setTeam] = useState<{ id: string; name: string; email: string; role: string; isActive: boolean }[]>([]);
+    const [isInviting, setIsInviting] = useState(false);
 
-    /* Password */
-    const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
-    const [showPw, setShowPw] = useState({ current: false, next: false, confirm: false });
-    const [pwError, setPwError] = useState("");
-    const [pwSaved, setPwSaved] = useState(false);
-    
-    // ... Password logic from original file ...
+    const fetchTeam = async () => {
+        try {
+            const res = await fetch("/api/admin/team");
+            if (res.ok) {
+                const data = await res.json();
+                setTeam(data);
+            }
+        } catch (error) { console.error("Error fetching team:", error); }
+    };
+
+    useEffect(() => {
+        if (activeSection === "team") fetchTeam();
+    }, [activeSection]);
+
+    const handleInviteSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!inviteEmail) return;
+        setIsInviting(true);
+        try {
+            const res = await fetch("/api/admin/team", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
+            });
+            if (res.ok) {
+                setInviteEmail("");
+                fetchTeam();
+            }
+        } catch (error) { console.error("Error inviting member:", error); }
+        finally { setIsInviting(false); }
+    };
+
+    const removeMember = async (id: string) => {
+        if (!confirm("Are you sure you want to remove this member?")) return;
+        try {
+            const res = await fetch(`/api/admin/team/${id}`, { method: "DELETE" });
+            if (res.ok) fetchTeam();
+        } catch (error) { console.error("Error removing member:", error); }
+    };
+
 
     if (isLoading) {
         return (
@@ -379,14 +459,218 @@ export default function SettingsPage() {
                         </div>
                     )}
 
+                    {/* ── Password Security ── */}
+                    {activeSection === "password" && (
+                        <div className="space-y-6 animate-in-fade">
+                            <SettingsCard 
+                                title="Update Password" 
+                                description="Change your account security credentials."
+                            >
+                                <div className="grid grid-cols-1 gap-6 max-w-lg">
+                                    <Field label="Current Password">
+                                        <div className="relative">
+                                            <Lock className="absolute left-3.5 top-3 h-4 w-4 text-gray-300" />
+                                            <Input 
+                                                type={showCurrent ? "text" : "password"}
+                                                className="pl-10 pr-10 h-11 rounded-xl border-gray-100 bg-gray-50/50 font-bold focus:bg-white"
+                                                value={currentPassword} 
+                                                onChange={e => setCurrentPassword(e.target.value)} 
+                                            />
+                                            <button 
+                                                type="button"
+                                                onClick={() => setShowCurrent(!showCurrent)}
+                                                className="absolute right-3.5 top-3 text-gray-300 hover:text-[#F97316] transition-colors"
+                                            >
+                                                {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                            </button>
+                                        </div>
+                                    </Field>
+                                    
+                                    <div className="h-px bg-gray-50 my-2" />
+
+                                    <Field label="New Password">
+                                        <div className="relative">
+                                            <KeyRound className="absolute left-3.5 top-3 h-4 w-4 text-gray-300" />
+                                            <Input 
+                                                type={showNew ? "text" : "password"}
+                                                className="pl-10 pr-10 h-11 rounded-xl border-gray-100 bg-gray-50/50 font-bold focus:bg-white"
+                                                value={newPassword} 
+                                                onChange={e => setNewPassword(e.target.value)} 
+                                            />
+                                            <button 
+                                                type="button"
+                                                onClick={() => setShowNew(!showNew)}
+                                                className="absolute right-3.5 top-3 text-gray-300 hover:text-[#F97316] transition-colors"
+                                            >
+                                                {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                            </button>
+                                        </div>
+                                    </Field>
+
+                                    <Field label="Confirm New Password">
+                                        <div className="relative">
+                                            <Check className="absolute left-3.5 top-3 h-4 w-4 text-gray-300" />
+                                            <Input 
+                                                type={showConfirm ? "text" : "password"}
+                                                className="pl-10 pr-10 h-11 rounded-xl border-gray-100 bg-gray-50/50 font-bold focus:bg-white"
+                                                value={confirmPassword} 
+                                                onChange={e => setConfirmPassword(e.target.value)} 
+                                            />
+                                            <button 
+                                                type="button"
+                                                onClick={() => setShowConfirm(!showConfirm)}
+                                                className="absolute right-3.5 top-3 text-gray-300 hover:text-[#F97316] transition-colors"
+                                            >
+                                                {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                            </button>
+                                        </div>
+                                    </Field>
+
+
+                                    {passwordError && (
+                                        <div className="p-4 rounded-2xl bg-red-50 border border-red-100 flex items-center gap-3 text-red-600 animate-in-shake">
+                                            <AlertCircle className="h-4 w-4" />
+                                            <p className="text-[11px] font-black uppercase tracking-widest leading-none mt-0.5">{passwordError}</p>
+                                        </div>
+                                    )}
+
+                                    {passwordSuccess && (
+                                        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center gap-3 text-emerald-600 animate-in-fade">
+                                            <CheckCircle2 className="h-4 w-4" />
+                                            <p className="text-[11px] font-black uppercase tracking-widest leading-none mt-0.5">Access Synchronized Successfully</p>
+                                        </div>
+                                    )}
+
+                                    <Button 
+                                        onClick={handlePasswordUpdate}
+                                        disabled={isSaving}
+                                        className="h-14 w-full bg-gray-950 text-white font-black uppercase tracking-widest italic rounded-2xl hover:bg-black hover:-translate-y-1 active:scale-95 transition-all shadow-xl flex items-center justify-center gap-3"
+                                    >
+                                        {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Shield className="h-5 w-5" />}
+                                        {isSaving ? "Updating password..." : "Update Password"}
+                                    </Button>
+                                </div>
+                            </SettingsCard>
+                        </div>
+                    )}
+
+                    {/* ═══ TEAM MANAGEMENT ═══ */}
+                    {activeSection === "team" && (
+                        <div className="space-y-10 animate-in-up">
+                            {/* Invite Portal Card */}
+                            <SettingsCard 
+                                title="Onboard Member" 
+                                description="Invite your team to collaborate on recruitment drives."
+                            >
+                                <form onSubmit={handleInviteSubmit} className="flex flex-col sm:flex-row items-end gap-5">
+                                    <div className="flex-1 space-y-2">
+                                        <Label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Collaborator Email</Label>
+                                        <div className="relative group">
+                                            <Mail className="absolute left-3.5 top-3 h-4.5 w-4.5 text-gray-300 group-focus-within:text-[#F97316] transition-colors" />
+                                            <Input 
+                                                placeholder="colleague@company.com"
+                                                className="pl-12 h-12 rounded-xl border-gray-100 bg-gray-50/50 font-bold focus:bg-white transition-all text-[13px]"
+                                                value={inviteEmail}
+                                                onChange={e => setInviteEmail(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="w-full sm:w-48 space-y-2">
+                                        <Label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Strategic Role</Label>
+                                        <select 
+                                            value={inviteRole}
+                                            onChange={e => setInviteRole(e.target.value)}
+                                            className="w-full h-12 px-4 rounded-xl border border-gray-100 bg-gray-50/50 font-black text-xs text-gray-950 uppercase tracking-widest outline-none focus:bg-white transition-all italic"
+                                        >
+                                            <option value="RECRUITER">Recruiter</option>
+                                            <option value="HR">HR Manager</option>
+                                            <option value="ADMIN">Admin</option>
+                                        </select>
+                                    </div>
+                                    <Button 
+                                        type="submit"
+                                        disabled={isInviting || !inviteEmail}
+                                        className="h-12 px-8 rounded-xl bg-gray-950 text-white font-black text-[10px] uppercase tracking-widest transition-all hover:bg-black active:scale-95 shadow-xl shadow-gray-100"
+                                    >
+                                        {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Dispatch Invite"}
+                                    </Button>
+                                </form>
+                            </SettingsCard>
+
+                            {/* Team Registry List */}
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-3 px-1">
+                                    <div className="h-4 w-1 bg-[#F97316] rounded-full" />
+                                    <h2 className="text-[11px] font-black text-gray-900 uppercase tracking-widest italic">Team Registry</h2>
+                                </div>
+
+                                <div className="bg-white rounded-[2rem] border border-gray-50 shadow-[0_8px_30px_rgba(0,0,0,0.02)] overflow-hidden">
+                                    <div className="grid grid-cols-[2fr_1.5fr_1fr_0.5fr] gap-4 px-10 py-6 border-b border-gray-50 text-[9px] font-black text-gray-300 uppercase tracking-widest">
+                                        <span>Collaborator</span>
+                                        <span>Identifier</span>
+                                        <span className="text-center">Protocol</span>
+                                        <span className="text-right">Action</span>
+                                    </div>
+
+                                    <div className="divide-y divide-gray-50/50">
+                                        {team.length === 0 ? (
+                                            <div className="py-20 text-center flex flex-col items-center gap-3">
+                                                <Users className="h-8 w-8 text-gray-100" />
+                                                <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest font-italic leading-none italic">No collaborators synchronised</p>
+                                            </div>
+                                        ) : (
+                                            team.map((member) => (
+                                                <div key={member.id} className="grid grid-cols-[2fr_1.5fr_1fr_0.5fr] gap-4 px-10 py-6 items-center hover:bg-gray-50/30 transition-all group">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="h-11 w-11 rounded-full bg-gray-950 text-white flex items-center justify-center font-black text-[14px] shadow-lg group-hover:bg-[#F97316] transition-all duration-300">
+                                                            {member.email[0].toUpperCase()}
+                                                        </div>
+                                                        <div className="flex flex-col gap-0.5 truncate">
+                                                            <p className="text-gray-950 font-black text-sm tracking-tight truncate leading-none uppercase italic">{member.name || "Pending Onboarding"}</p>
+                                                            <p className="text-gray-400 text-[9px] font-black uppercase tracking-widest opacity-60 leading-none mt-1">ID: {member.id.slice(-8)}</p>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2 truncate">
+                                                        <Mail className="h-3 w-3 text-gray-200" />
+                                                        <span className="text-[12px] font-bold text-gray-500 lowercase truncate">{member.email}</span>
+                                                    </div>
+
+                                                    <div className="text-center">
+                                                        <span className={cn(
+                                                            "px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest italic border inline-flex items-center gap-2",
+                                                            member.role === 'ADMIN' ? 'bg-orange-50 text-[#F97316] border-orange-100/50' : 'bg-gray-50 text-gray-400 border-gray-100'
+                                                        )}>
+                                                            <Shield className="h-3 w-3" />
+                                                            {member.role}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="text-right">
+                                                        <button 
+                                                            onClick={() => removeMember(member.id)}
+                                                            className="h-9 w-9 flex items-center justify-center rounded-xl bg-gray-50 text-gray-300 hover:bg-red-50 hover:text-red-600 transition-all active:scale-95"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* (Other sections remain simplified for space) */}
-                    {(activeSection === "password" || activeSection === "team" || activeSection === "billing") && (
+                    {(activeSection === "billing" || activeSection === "integrations") && (
                         <div className="p-12 text-center bg-white rounded-[3rem] border border-gray-50 shadow-inner space-y-6">
                              <div className="h-20 w-20 rounded-[2rem] bg-orange-50 text-[#F97316] flex items-center justify-center mx-auto shadow-xl">
                                 <Shield className="h-10 w-10" />
                              </div>
                              <div className="space-y-2">
-                                <h3 className="text-2xl font-black text-gray-900 tracking-tight uppercase italic leading-none">{activeSection} Security</h3>
+                                <h3 className="text-2xl font-black text-gray-900 tracking-tight uppercase italic leading-none">{activeSection} System</h3>
                                 <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px] italic opacity-70">Infrastructure upgrade in progress</p>
                              </div>
                         </div>
