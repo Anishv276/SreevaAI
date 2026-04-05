@@ -20,11 +20,19 @@ export type Job = {
     createdAt: string;
 };
 
+interface Pagination {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+}
+
 interface JobsContextType {
     jobs: Job[];
+    pagination: Pagination;
     addJob: (job: Omit<Job, "id" | "applicants" | "status" | "daysLeft" | "createdAt">) => Promise<Job>;
     deleteJob: (id: number) => Promise<void>;
-    fetchJobs: () => Promise<void>;
+    fetchJobs: (page?: number, limit?: number) => Promise<void>;
     toggleDriveStatus: (id: number, newStatus: "ACTIVE" | "INACTIVE") => Promise<void>;
     updateJob: (id: number, data: any) => Promise<Job>;
     bulkDeleteJobs: (ids: number[]) => Promise<void>;
@@ -34,14 +42,22 @@ const JobsContext = createContext<JobsContextType | undefined>(undefined);
 
 export function JobsProvider({ children }: { children: React.ReactNode }) {
     const [jobs, setJobs] = useState<Job[]>([]);
+    const [pagination, setPagination] = useState<Pagination>({
+        total: 0,
+        page: 1,
+        limit: 10,
+        totalPages: 0
+    });
     const pathname = usePathname();
 
-    const fetchJobs = async () => {
+    const fetchJobs = async (page: number = 1, limit: number = 10) => {
         try {
-            const res = await fetch("/api/drives");
+            const res = await fetch(`/api/drives?page=${page}&limit=${limit}`);
             if (res.ok) {
-                const data = await res.json();
-                setJobs(data);
+                const result = await res.json();
+                const { drives, pagination: pagData } = result;
+                setJobs(drives);
+                setPagination(pagData);
                 return;
             }
 
@@ -169,7 +185,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <JobsContext.Provider value={{ jobs, addJob, deleteJob, fetchJobs, toggleDriveStatus, updateJob, bulkDeleteJobs }}>
+        <JobsContext.Provider value={{ jobs, pagination, addJob, deleteJob, fetchJobs, toggleDriveStatus, updateJob, bulkDeleteJobs }}>
             {children}
         </JobsContext.Provider>
     );

@@ -1,25 +1,26 @@
 import { prisma } from "@/lib/prisma";
+import { calculateScore as realAIScore } from "@/lib/openai";
 
-// Mock AI Scoring Logic
+// Real AI Scoring Logic
 export async function calculateCandidateScore(resumeText: string, jobDescription: string) {
-    // In a real scenario, this would call OpenAI or Gemini API
-    // const completion = await openai.chat.completions.create({...})
+    if (!resumeText || resumeText === "Mock resume text...") {
+        return {
+            score: 0,
+            status: "REJECTED",
+            reasoning: "Resume content missing or invalid.",
+            skillsFound: [],
+            missingSkills: [],
+            flags: ["No resume text available"],
+            recommendation: "Reject"
+        };
+    }
 
-    console.log("Analyzing resume against JD...");
-
-    // Mocking a score between 60 and 95
-    const score = Math.floor(Math.random() * (95 - 60 + 1)) + 60;
-
-    const analysis = {
-        score,
-        matchPercentage: `${score}%`,
-        skillsFound: ["React", "Node.js", "TypeScript"],
-        missingSkills: ["GraphQL"],
-        flags: score < 70 ? ["Low experience in required tech stack"] : [],
-        recommendation: score > 75 ? "Shortlist" : "Review Manually"
+    const aiResult = await realAIScore(resumeText, jobDescription);
+    
+    return {
+        ...aiResult,
+        matchPercentage: `${aiResult.score}%`,
     };
-
-    return analysis;
 }
 
 export async function processApplication(applicationId: string) {
@@ -30,8 +31,8 @@ export async function processApplication(applicationId: string) {
 
     if (!application) return;
 
-    // Simulate Resume Parsing
-    const resumeText = "Mock resume text extracted from file...";
+    // Use actual candidate resume text
+    const resumeText = application.resumeText || "";
 
     const aiResult = await calculateCandidateScore(resumeText, application.drive.description);
 
@@ -40,7 +41,7 @@ export async function processApplication(applicationId: string) {
         data: {
             aiScore: aiResult.score,
             aiReport: JSON.stringify(aiResult),
-            status: aiResult.score > application.drive.screeningThreshold ? "SCREENING_PASSED" : "APPLIED"
+            status: aiResult.score >= (application.drive.screeningThreshold || 60) ? "Shortlisted" : "Rejected"
         }
     });
 

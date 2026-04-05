@@ -1,193 +1,265 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
-import Link from "next/link";
+import { PortalHeader } from "@/components/careers/portal-header";
 import { Button } from "@/components/ui/button";
-import { CandidateHeader } from "@/components/careers/header";
-import { CandidateFooter } from "@/components/careers/footer";
-import { ArrowLeft, Clock, MapPin, Users, DollarSign, CheckCircle2, ArrowRight } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/auth-context";
-import { useJobs } from "@/context/jobs-context";
+import { ArrowLeft, Clock, MapPin, Share2, Briefcase, FileText, UserCircle2, CheckCircle2 } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useState, use } from "react";
 
 export default function JobDetailsPage({ params }: { params: Promise<{ id: string }> }) {
-    const resolvedParams = use(params);
-    const { jobs } = useJobs(); // Use context
+    const { id } = use(params);
     const [job, setJob] = useState<any>(null);
-    const router = useRouter();
-    const { isAuthenticated } = useAuth(); // Assuming auth context exists or removed if not
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (jobs.length > 0) {
-            const foundJob = jobs.find((j) => j.id.toString() === resolvedParams.id);
-            setJob(foundJob);
-        } else {
-            // Fallback fetch if context empty (e.g. refresh)
-            fetch(`/api/drives/${resolvedParams.id}`)
-                .then(res => res.json())
-                .then(data => setJob(data))
-                .catch(err => console.error(err));
-        }
-    }, [resolvedParams.id, jobs]);
+        fetch(`/api/drives/${id}`)
+            .then(res => {
+                if (!res.ok) throw new Error("Not found");
+                return res.json();
+            })
+            .then(data => setJob(data))
+            .catch(err => console.error(err))
+            .finally(() => setLoading(false));
+    }, [id]);
 
-    const handleApply = () => {
-        if (!job) return;
-
-        if (isAuthenticated) {
-            router.push(`/careers/apply?jobId=${job.id}`);
-        } else {
-            // Save intention to apply
-            localStorage.setItem("pendingJobId", job.id.toString());
-            router.push("/signin");
-        }
-    };
+    if (loading) return (
+        <div className="min-h-screen bg-[#FDFCFB]">
+            <PortalHeader />
+            <div className="container mx-auto px-4 py-8 max-w-7xl animate-pulse">
+                <div className="h-[200px] bg-gray-100 rounded-3xl mb-8 shadow-sm" />
+                <div className="grid lg:grid-cols-3 gap-12">
+                    <div className="lg:col-span-2 space-y-8">
+                        <div className="h-8 w-48 bg-gray-100 rounded-lg" />
+                        <div className="h-32 bg-gray-50 rounded-2xl" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 
     if (!job) {
         return (
-            <div className="min-h-screen bg-gray-50 flex flex-col">
-                <CandidateHeader />
-                <main className="flex-1 container py-20 text-center">
-                    <p>Loading job details...</p>
-                </main>
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="text-center">
+                    <h1 className="text-2xl font-bold mb-4">Job Not Found</h1>
+                    <Link href="/careers"><Button>Back to Jobs</Button></Link>
+                </div>
             </div>
         );
     }
 
-    // Extended mock data for the view
-    const salary = "$120k - $180k";
-    const responsibilities = [
-        "Design and build scalable RESTful APIs",
-        "Optimize database queries and system performance",
-        "Write clean, maintainable, well-documented code",
-        "Collaborate with frontend and mobile teams",
-        "Participate in code reviews"
-    ];
-    const requirements = [
-        "5+ years of backend development experience",
-        "Strong proficiency in Node.js or Python",
-        "Experience with PostgreSQL, MongoDB",
-        "Solid understanding of RESTful API design",
-        "Familiarity with AWS, GCP, or Azure"
-    ];
+    // Process real data from the job object
+    const salary = job.salary || "As per policy";
+    const responsibilities = job.responsibilities 
+        ? job.responsibilities.split("\n").filter((l: string) => l.trim().length > 0)
+        : [];
+    
+    // Using skills or requirements as bullets
+    const requirements = (job.requirements || job.skills)
+        ? (job.requirements || job.skills).split("\n").map((s: string) => s.replace(/^[•\-\*]\s*/, '').trim()).filter((s: string) => s.length > 0)
+        : [];
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col">
-            <CandidateHeader />
+        <div className="min-h-screen bg-[#FDFCFB] selection:bg-orange-100 selection:text-orange-900">
+            <PortalHeader />
 
-            <main className="flex-1 container max-w-4xl py-12 px-4">
-                <Link
-                    href="/"
-                    className="inline-flex items-center text-sm font-medium text-gray-500 hover:text-blue-600 mb-8 transition-colors"
-                >
-                    <ArrowLeft className="mr-2 h-4 w-4" /> Back to Jobs
-                </Link>
+            <main className="container mx-auto px-4 py-12 max-w-7xl 2xl:max-w-screen-2xl animate-in-fade">
+                {/* Breadcrumb / Back */}
+                <div className="mb-10">
+                    <Link href="/careers" className="group inline-flex items-center text-sm font-bold text-gray-400 hover:text-[#F97316] transition-all">
+                        <ArrowLeft className="h-4 w-4 mr-2 transition-transform group-hover:-translate-x-1" /> 
+                        BACK TO OPPORTUNITIES
+                    </Link>
+                </div>
 
-                {/* Job Header Card */}
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8 animate-in-slide-up">
-                    <div className="flex flex-col md:flex-row justify-between gap-6">
-                        <div>
-                            <h1 className="text-3xl font-bold text-gray-900 mb-2">{job.title}</h1>
-                            <div className="flex flex-wrap items-center gap-4 text-gray-600 text-sm">
-                                <span className="font-medium text-blue-600">{job.department}</span>
-                                <span>•</span>
-                                <span>Full-time</span>
-                            </div>
+                <div className="grid gap-12 lg:grid-cols-3 items-start">
+                    {/* Left Column: Job Description & Details */}
+                    <div className="lg:col-span-2 space-y-6">
+                        {/* Hero Section */}
+                        <div className="relative overflow-hidden rounded-3xl bg-white border border-orange-100 shadow-[0_15px_40px_-15px_rgba(249,115,22,0.08)] p-8 transition-all duration-500 hover:shadow-[0_25px_50px_-15px_rgba(249,115,22,0.12)]">
+                            {/* Decorative Background Elements */}
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-orange-50 to-transparent rounded-full -mr-32 -mt-32 opacity-50" />
+                            <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-orange-50 to-transparent rounded-full -ml-16 -mb-16 opacity-30" />
 
-                            <div className="flex flex-wrap gap-4 mt-6">
-                                <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 px-3 py-1.5 rounded-full">
-                                    <MapPin className="h-4 w-4 text-gray-500" /> {job.location}
+                            <div className="relative z-10 flex flex-col items-start gap-6">
+                                <div className="flex gap-4 items-center">
+                                    <div className="px-3 py-1 rounded-full bg-orange-100/50 text-[#F97316] text-[10px] font-black uppercase tracking-[0.2em] border border-orange-200/50">
+                                        {job.department}
+                                    </div>
+                                    {job.status === "CLOSED" && (
+                                        <div className="px-3 py-1 rounded-full bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-[0.2em] border border-red-100 flex items-center gap-1.5 animate-in-fade">
+                                            <div className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                                            CLOSED
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="flex items-center gap-2 text-sm text-gray-600 bg-green-50 px-3 py-1.5 rounded-full border border-green-100">
-                                    <DollarSign className="h-4 w-4 text-green-600" /> {salary}
-                                </div>
-                                <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 px-3 py-1.5 rounded-full">
-                                    <Users className="h-4 w-4 text-gray-500" /> {job.applicants} applicants
-                                </div>
-                                <div className="flex items-center gap-2 text-sm text-orange-600 bg-orange-50 px-3 py-1.5 rounded-full border border-orange-100">
-                                    <Clock className="h-4 w-4" /> Closes in {job.daysLeft} days
+                                <h1 className="text-3xl lg:text-3xl font-black text-gray-900 tracking-tight leading-tight">
+                                    {job.title}
+                                </h1>
+                                <div className="flex flex-wrap gap-8 pt-2">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 rounded-xl bg-orange-50 text-[#F97316] border border-orange-100">
+                                            <MapPin className="h-5 w-5" />
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Location</p>
+                                            <p className="text-gray-900 font-bold">{job.location || "Remote"}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 rounded-xl bg-orange-50 text-[#F97316] border border-orange-100">
+                                            <Clock className="h-5 w-5" />
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Type</p>
+                                            <p className="text-gray-900 font-bold">{job.type || "Full-time"}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 rounded-xl bg-orange-50 text-green-600 border border-orange-100">
+                                            <FileText className="h-5 w-5" />
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Compensation</p>
+                                            <p className="text-gray-900 font-bold">{salary}</p>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="flex flex-col justify-center min-w-[200px]">
-                            <Button size="lg" onClick={handleApply} className="w-full bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/20">
-                                Apply for this Role <ArrowRight className="ml-2 h-4 w-4" />
-                            </Button>
+                        {/* Content Sections */}
+                        <div className="space-y-12 px-4 lg:px-8">
+                            <section className="space-y-6">
+                                <div className="flex items-center gap-3">
+                                    <span className="h-8 w-1 bg-[#F97316] rounded-full shadow-[0_0_10px_rgba(249,115,22,0.3)]" />
+                                    <h2 className="text-xl font-black text-gray-900 tracking-tight">About the Role</h2>
+                                </div>
+                                <div className="prose prose-orange max-w-none text-gray-600 leading-[1.6] text-sm font-medium whitespace-pre-wrap">
+                                    {job.description || `We are looking for a passionate ${job.title} to join our ${job.department} team.`}
+                                </div>
+                            </section>
+
+                            {(responsibilities.length > 0 || requirements.length > 0) && (
+                                <section className="space-y-8">
+                                    <div className="flex items-center gap-4">
+                                        <span className="h-10 w-1.5 bg-[#F97316] rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)]" />
+                                        <h2 className="text-2xl font-black text-gray-900 tracking-tight">Requirements & Responsibilities</h2>
+                                    </div>
+                                    <div className="grid md:grid-cols-2 gap-8">
+                                        {responsibilities.length > 0 && (
+                                            <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm transition-all hover:shadow-md">
+                                                <h3 className="text-sm font-black text-[#F97316] mb-3 uppercase tracking-wider">What you'll do</h3>
+                                                <ul className="space-y-3">
+                                                    {responsibilities.map((item: string, idx: number) => (
+                                                        <li key={idx} className="flex items-start gap-2 text-gray-600 font-medium text-[13px]">
+                                                            <div className="mt-1.5 h-1 w-1 rounded-full bg-[#F97316] flex-shrink-0" />
+                                                            {item}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                        {requirements.length > 0 && (
+                                            <div className="p-6 rounded-3xl bg-gray-900 text-white shadow-xl transition-all hover:scale-[1.01]">
+                                                <h3 className="text-sm font-black text-orange-400 mb-3 uppercase tracking-wider">What we look for</h3>
+                                                <ul className="space-y-3">
+                                                    {requirements.map((item: string, idx: number) => (
+                                                        <li key={idx} className="flex items-start gap-2 text-gray-300 font-medium text-[13px]">
+                                                            <div className="mt-1.5 h-1 w-1 rounded-full bg-orange-400 flex-shrink-0" />
+                                                            {item}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                    </div>
+                                </section>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Right Column: Sticky Action Box */}
+                    <div className="lg:sticky lg:top-28 space-y-6">
+                        <div className="relative group overflow-hidden rounded-[2.5rem] bg-white border border-gray-100 shadow-[0_20px_40px_rgba(0,0,0,0.04)] p-8 transition-all hover:shadow-[0_30px_60px_rgba(249,115,22,0.1)]">
+                            <div className="relative z-10 space-y-6">
+                                <div className="space-y-2">
+                                    <h3 className="text-xl font-black text-gray-900 leading-tight">Ready to shape the future?</h3>
+                                    <p className="text-sm text-gray-500 font-medium">Join us in building the next generation of AI-driven tools.</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {job.status === "CLOSED" ? (
+                                        <Button disabled className="w-full h-14 bg-gray-200 text-gray-400 font-black text-lg rounded-2xl shadow-none cursor-not-allowed uppercase tracking-widest italic border-gray-100">
+                                            Applications Closed
+                                        </Button>
+                                    ) : (
+                                        <Link href={`/careers/apply/${job.id}?mode=resume`} className="w-full">
+                                            <Button className="w-full h-14 bg-[#F97316] hover:bg-orange-600 text-white font-black text-lg rounded-2xl shadow-[0_10px_30px_rgba(249,115,22,0.3)] hover:translate-y-[-2px] hover:shadow-[0_15px_40px_rgba(249,115,22,0.4)] transition-all duration-300 uppercase tracking-widest italic">
+                                                Apply Now
+                                            </Button>
+                                        </Link>
+                                    )}
+                                    {job.jdPreviewUrl && (
+                                        <Button 
+                                            variant="outline" 
+                                            onClick={() => window.open(job.jdPreviewUrl, '_blank')}
+                                            className="w-full h-12 rounded-2xl border-gray-100 text-gray-500 font-bold hover:bg-orange-50 hover:text-[#F97316] transition-all"
+                                        >
+                                            <Briefcase className="h-4 w-4 mr-2" /> VIEW FULL JD
+                                        </Button>
+                                    )}
+                                    <Button variant="outline" className="w-full h-12 rounded-2xl border-gray-100 text-gray-500 font-bold hover:bg-orange-50 hover:text-[#F97316] transition-all">
+                                        <Share2 className="h-4 w-4 mr-2" /> SHARE THIS ROLE
+                                    </Button>
+                                </div>
+
+                                <div className="pt-4 border-t border-gray-50 flex items-center justify-between text-[11px] font-black text-gray-400 uppercase tracking-widest">
+                                    {job.status === "CLOSED" ? (
+                                        <>
+                                            <span className="text-red-600">Applications are closed</span>
+                                            <span className="flex h-2 w-2 rounded-full bg-red-500" />
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span>Applications are open</span>
+                                            <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Process Card */}
+                        <div className="rounded-[2.5rem] bg-[#111111] p-8 shadow-2xl border border-white/5">
+                            <h4 className="text-lg font-black text-white mb-6 uppercase tracking-widest flex items-center gap-3">
+                                <span className="h-6 w-1 bg-orange-500 rounded-full" />
+                                HIRING PROCESS
+                            </h4>
+                            <div className="space-y-0 relative">
+                                {[
+                                    "Resume Screening", 
+                                    "Voice AI Interview", 
+                                    "Technical Round", 
+                                    "Final Offer"
+                                ].map((step, i, arr) => (
+                                    <div key={i} className="flex gap-4 group pb-6 last:pb-0 relative">
+                                        {i !== arr.length - 1 && (
+                                            <div className="absolute left-4 top-10 bottom-0 w-0.5 bg-gray-800" />
+                                        )}
+                                        <div className="relative z-10 h-8 w-8 rounded-xl bg-orange-500 text-white flex items-center justify-center font-black text-sm shadow-[0_0_15px_rgba(249,115,22,0.3)]">
+                                            {i + 1}
+                                        </div>
+                                        <div className="pt-1.5">
+                                            <p className="text-[13px] font-black text-gray-100 uppercase tracking-widest group-hover:text-orange-400 transition-colors">{step}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>
-
-                {/* Content Section */}
-                <div className="grid gap-8 animate-in-slide-up" style={{ animationDelay: "0.1s" }}>
-
-                    <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-                        <h2 className="text-xl font-bold text-gray-900 mb-4">About the Role</h2>
-                        <div className="prose max-w-none text-gray-600 leading-relaxed">
-                            <p>
-                                We&apos;re looking for an experienced backend engineer to join our core platform team.
-                                You&apos;ll be responsible for designing and building scalable APIs that serve millions of users globally.
-                                This role offers the opportunity to work with cutting-edge technologies, collaborate with talented
-                                engineers, and make a real impact on our product.
-                            </p>
-                        </div>
-                    </section>
-
-                    <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-                        <h2 className="text-xl font-bold text-gray-900 mb-6">Key Responsibilities</h2>
-                        <ul className="space-y-4">
-                            {responsibilities.map((item, i) => (
-                                <li key={i} className="flex items-start gap-3">
-                                    <CheckCircle2 className="h-5 w-5 text-blue-600 mt-0.5" />
-                                    <span className="text-gray-700">{item}</span>
-                                </li>
-                            ))}
-                        </ul>
-                    </section>
-
-                    <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-                        <h2 className="text-xl font-bold text-gray-900 mb-6">Requirements</h2>
-                        <ul className="space-y-4">
-                            {requirements.map((item, i) => (
-                                <li key={i} className="flex items-start gap-3">
-                                    <div className="h-1.5 w-1.5 rounded-full bg-gray-400 mt-2" />
-                                    <span className="text-gray-700">{item}</span>
-                                </li>
-                            ))}
-                        </ul>
-                    </section>
-
-                    <section className="bg-blue-50 rounded-2xl border border-blue-100 p-8">
-                        <h2 className="text-xl font-bold text-gray-900 mb-6">Application Process</h2>
-                        <div className="flex flex-col md:flex-row gap-4 justify-between relative">
-                            <div className="absolute top-4 left-0 right-0 h-0.5 bg-blue-200 hidden md:block" />
-
-                            {[
-                                { step: "1", title: "Submit", desc: "Resume & Info" },
-                                { step: "2", title: "Assessment", desc: "Online Test" },
-                                { step: "3", title: "Interview", desc: "Technical Round" },
-                                { step: "4", title: "Offer", desc: "Welcome!" },
-                            ].map((item, i) => (
-                                <div key={i} className="relative z-10 flex flex-col items-center text-center bg-transparent">
-                                    <div className="h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold shadow-md mb-3 border-4 border-white">
-                                        {item.step}
-                                    </div>
-                                    <h3 className="font-semibold text-gray-900 text-sm">{item.title}</h3>
-                                    <p className="text-xs text-gray-500 mt-1">{item.desc}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </section>
-                </div>
-
-                <div className="mt-12 text-center pb-12">
-                    <Button size="lg" onClick={handleApply} className="h-14 px-10 text-lg bg-blue-600 hover:bg-blue-700 shadow-xl shadow-blue-500/20 transition-transform hover:scale-105">
-                        Apply Now <ArrowRight className="ml-2 h-5 w-5" />
-                    </Button>
-                </div>
-
             </main>
-
-            <CandidateFooter />
         </div>
     );
 }

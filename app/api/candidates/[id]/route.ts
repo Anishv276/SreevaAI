@@ -123,3 +123,54 @@ export async function GET(
         return NextResponse.json({ error: "Failed to fetch candidate" }, { status: 500 });
     }
 }
+
+export async function DELETE(
+    request: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
+        const { id } = await params;
+        const orgId = (new URL(request.url).searchParams.get("orgId") || session?.orgId);
+
+        // ── SECURITY & FETCH: Ensure candidate belongs to the Org ──────
+        const candidate = await prisma.application.findFirst({
+            where: { 
+                id, 
+                drive: { orgId } 
+            },
+            select: { 
+                id: true,
+                resumeUrl: true 
+            }
+        });
+
+        if (!candidate) {
+            return NextResponse.json({ error: "Candidate not found or unauthorized" }, { status: 404 });
+        }
+
+        // ── STORAGE CLEANUP: Purge Resume from R2 ──────────
+        try {
+            if (candidate.resumeUrl) {
+                const { deleteObject, getKeyFromUrl } = await import("@/lib/s3");
+                const bucket = process.env.R2_RESUMES_BUCKET || "resumes";
+                const key = getKeyFromUrl(candidate.resumeUrl);
+                if (key) await deleteObject(bucket, key);
+            }
+        } catch (storageErr) {
+            console.error("[DELETE_SINGLE_CANDIDATE_STORAGE_ERROR]:", storageErr);
+        }
+
+        // ── DATABASE DELETION ─────────────────────────────
+        await prisma.application.delete({
+            where: { id }
+        });
+
+        return NextResponse.json({ message: "Candidate deleted successfully" });
+    } catch (error) {
+        console.error("Error deleting candidate:", error);
+        return NextResponse.json({ error: "Failed to delete candidate" }, { status: 500 });
+    }
+}

@@ -43,6 +43,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [showGreeting, setShowGreeting] = useState(false);
     const [shouldConnect, setShouldConnect] = useState(false);
     const [interviewEndsAt, setInterviewEndsAt] = useState<number | null>(null);
+    const [sessionDuration, setSessionDuration] = useState(INTERVIEW_DURATION_SECONDS);
     const [remainingSeconds, setRemainingSeconds] = useState(INTERVIEW_DURATION_SECONDS);
     const [timerExpired, setTimerExpired] = useState(false);
     const recordedChunksRef = useRef<Blob[]>([]);
@@ -124,6 +125,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 if (res.ok && data.token && data.serverUrl) {
                     setToken(data.token);
                     setServerUrl(data.serverUrl);
+                    if (data.duration) {
+                        setSessionDuration(data.duration);
+                        setRemainingSeconds(data.duration);
+                    }
                     setShouldConnect(true);
                 }
             } catch (err) {
@@ -181,6 +186,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 nextServerUrl = data.serverUrl;
                 setToken(data.token);
                 setServerUrl(data.serverUrl);
+                if (data.duration) {
+                    setSessionDuration(data.duration);
+                    setRemainingSeconds(data.duration);
+                }
                 setShouldConnect(true);
             }
 
@@ -189,8 +198,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             }
 
             if (!interviewEndsAt) {
-                setInterviewEndsAt(Date.now() + INTERVIEW_DURATION_SECONDS * 1000);
-                setRemainingSeconds(INTERVIEW_DURATION_SECONDS);
+                setInterviewEndsAt(Date.now() + sessionDuration * 1000);
+                setRemainingSeconds(sessionDuration);
                 setTimerExpired(false);
             }
 

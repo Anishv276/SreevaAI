@@ -185,7 +185,7 @@ export default function ApplicationPage() {
             // Set localStorage on success
             localStorage.setItem(`applied_${id}`, "true");
             setIsSuccess(true);
-            // router.push(`/careers/drive/${id}`);
+            // router.push(`/careers/jobs/${id}`);
         } catch (error: any) {
             console.error("Failed to submit application:", error);
             if (error.status === 409 || error.message?.toLowerCase().includes("already applied")) {
@@ -220,7 +220,7 @@ export default function ApplicationPage() {
                     </p>
                     
                     <div className="pt-6 space-y-4">
-                        <Link href={`/careers/drive/${id}`}>
+                        <Link href={`/careers/jobs/${id}`}>
                             <Button className="w-full h-14 rounded-2xl bg-gray-900 hover:bg-black text-white font-black text-lg shadow-xl transition-all hover:translate-y-[-2px]">
                                 VIEW STATUS
                             </Button>
@@ -244,7 +244,7 @@ export default function ApplicationPage() {
                 {/* Header Section */}
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12 px-2">
                     <div className="space-y-3">
-                        <Link href={`/careers/drive/${id}`} className="group inline-flex items-center text-[10px] font-black tracking-[0.2em] text-gray-400 hover:text-[#F97316] transition-all uppercase">
+                        <Link href={`/careers/jobs/${id}`} className="group inline-flex items-center text-[10px] font-black tracking-[0.2em] text-gray-400 hover:text-[#F97316] transition-all uppercase">
                             <ArrowLeft className="h-3 w-3 mr-2 transition-transform group-hover:-translate-x-1" /> 
                             Back to Job Details
                         </Link>

@@ -93,7 +93,7 @@ export default function ApplyStartPage({ params }: { params: Promise<{ id: strin
                     {/* Header Section */}
                     <div className="flex flex-col items-center text-center space-y-6">
                         <Link 
-                            href={`/careers/drive/${id}`}
+                            href={`/careers/jobs/${id}`}
                             className="group flex items-center gap-2 text-gray-400 hover:text-gray-950 transition-all font-bold uppercase tracking-widest text-[10px]"
                         >
                             <ArrowLeft className="h-3 w-3 group-hover:-translate-x-1 transition-transform" /> Back to Job Details

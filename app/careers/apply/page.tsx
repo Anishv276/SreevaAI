@@ -76,7 +76,8 @@ function ApplicationContent() {
                 body: JSON.stringify({
                     fileName: formData.resume.name,
                     fileType: formData.resume.type,
-                    driveId: jobId
+                    driveId: jobId,
+                    type: "RESUME"
                 })
             });
 

@@ -78,6 +78,7 @@ export const presignedUrlSchema = z.object({
   fileName: z.string().min(1, "File name required").max(255),
   fileType: z.string().min(1, "File type required").regex(/^[\w-]+\/[\w-]+$/, "Invalid MIME type"),
   driveId: z.coerce.number().int().positive().optional(),
+  type: z.enum(["JD", "RESUME"]).optional().default("RESUME"),
 });
 
 export const extractSchema = z.object({

@@ -84,70 +84,62 @@ const worker = new Worker('resume-processing', async (job) => {
     return;
   }
   
-  let resumeText = initialResumeText || "";
-  let tempResumePath: string | null = null;
-  let tempInputPath: string | null = null;
-
-
-  try {
-    // 1. EXTRACT STRUCTURED DATA (Always do this to ensure we have the latest schema)
-    console.log(`[JOB] Extracting structured resume data...`);
-    
-    // Check if resumeUrl is a valid HTTP(S) URL
-    const isRemoteUrl = typeof resumeUrl === 'string' && (resumeUrl.startsWith('http://') || resumeUrl.startsWith('https://'));
-    console.log(`[JOB] resumeUrl: "${resumeUrl}", isRemoteUrl: ${isRemoteUrl}`);
-
-    if (isRemoteUrl && !tempResumePath) {
-      tempResumePath = join(tmpdir(), `resume_${applicationId}_${Date.now()}.pdf`);
-      // Re-download or use existing URL if we don't have a local path
-      try {
-        console.log(`[JOB] Fetching remote resume from: ${resumeUrl}`);
-        const response = await fetch(resumeUrl);
-        if (!response.ok) throw new Error(`Failed to fetch resume: ${response.statusText}`);
-        const buffer = Buffer.from(await response.arrayBuffer());
-        await writeFile(tempResumePath, buffer);
-      } catch (fetchErr) {
-        console.warn(`[JOB] Could not download resume from ${resumeUrl}:`, fetchErr);
-        tempResumePath = null;
-      }
-    }
-    
+    let resumeText = initialResumeText || "";
     let structuredResume = initialStructuredResume || {};
+    let tempResumePath: string | null = null;
+    let tempInputPath: string | null = null;
 
-    if (Object.keys(structuredResume).length > 0) {
-      console.log(`[JOB] Found pre-extracted structuredResume in DB/job data. Skipping PDF/text extraction.`);
-    } else {
-      // If no remote URL (mock or manual entry) but we have resumeText, process it as a .txt file
-      if (!tempResumePath && resumeText) {
-        tempResumePath = join(tmpdir(), `resume_${applicationId}_${Date.now()}.txt`);
-        await writeFile(tempResumePath, resumeText);
-        console.log(`[JOB] Saved resumeText to temporary .txt file for structured extraction.`);
-      }
+    try {
+        // 1. ENSURE TEXT & STRUCTURE (Always re-extract if text is empty)
+        const needsExtraction = !resumeText || resumeText.length < 10 || Object.keys(structuredResume).length === 0;
+        
+        if (needsExtraction) {
+            console.log(`[JOB] Resume text or structure missing. Initiating extraction...`);
+            
+            // Check if resumeUrl is a valid HTTP(S) URL
+            const isRemoteUrl = typeof resumeUrl === 'string' && (resumeUrl.startsWith('http://') || resumeUrl.startsWith('https://'));
+            
+            if (isRemoteUrl) {
+                tempResumePath = join(tmpdir(), `resume_${applicationId}_${Date.now()}.pdf`);
+                try {
+                    console.log(`[JOB] Fetching remote resume for extraction: ${resumeUrl}`);
+                    const response = await fetch(resumeUrl);
+                    if (!response.ok) throw new Error(`Failed to fetch resume: ${response.statusText}`);
+                    const buffer = Buffer.from(await response.arrayBuffer());
+                    await writeFile(tempResumePath, buffer);
+                } catch (fetchErr) {
+                    console.warn(`[JOB] Could not download resume from ${resumeUrl}:`, fetchErr);
+                    tempResumePath = null;
+                }
+            }
 
-      if (tempResumePath) {
-        const extractProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempResumePath, "RESUME"]);
+            if (tempResumePath) {
+                const extractProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempResumePath, "RESUME"]);
+                let extractionOutput = "";
+                
+                await new Promise((resolve, reject) => {
+                    extractProcess.stdout.on("data", (data) => { extractionOutput += data.toString(); });
+                    extractProcess.on("close", (code) => {
+                        if (code !== 0) reject(new Error(`Extraction failed code ${code}`));
+                        else resolve(null);
+                    });
+                });
 
-        let extractionOutput = "";
-        await new Promise((resolve, reject) => {
-          extractProcess.stdout.on("data", (data) => { extractionOutput += data.toString(); });
-          extractProcess.on("close", (code) => {
-            if (code !== 0) reject(new Error(`Extraction failed with code ${code}: ${extractionOutput}`));
-            else resolve(null);
-          });
-        });
-
-        try {
-          const parsedExtraction = JSON.parse(extractionOutput);
-          resumeText = parsedExtraction.text || resumeText;
-          structuredResume = parsedExtraction.data || {};
-        } catch (parseErr) {
-          console.error(`[JOB] Failed to parse extraction output:`, parseErr);
-          console.error(`[JOB] Output was: ${extractionOutput}`);
+                try {
+                    const parsedExtraction = JSON.parse(extractionOutput);
+                    resumeText = parsedExtraction.text || resumeText;
+                    structuredResume = parsedExtraction.data || structuredResume;
+                } catch (parseErr) {
+                    console.error(`[JOB] Failed to parse extraction output`);
+                }
+            } else if (resumeText) {
+                // If we have text but no file, we might still want to "extract" structure from the text
+                // But for now, we'll assume the text is enough for scoring
+                console.log(`[JOB] No remote file found, but have resumeText. Proceeding.`);
+            }
+        } else {
+            console.log(`[JOB] Using provided resume text and structured data.`);
         }
-      } else {
-        console.log(`[JOB] No PDF file or resume text available for extraction. Using empty structured data.`);
-      }
-    }
 
     // Update the DB with the latest structured data
     await (prisma.application as any).update({

@@ -1,6 +1,7 @@
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { interviewTokenSchema } from "@/lib/validation";
+import { prisma } from "@/lib/prisma";
 
 function toWsUrl(rawUrl: string) {
     if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://") && !rawUrl.startsWith("ws://") && !rawUrl.startsWith("wss://")) {
@@ -33,6 +34,19 @@ export async function POST(req: NextRequest) {
         }
 
         const { applicationId, participantName } = result.data;
+
+        // Fetch application to get drive details (interview duration)
+        const application = await prisma.application.findUnique({
+            where: { id: applicationId },
+            include: { drive: true }
+        });
+
+        if (!application) {
+            return NextResponse.json({ error: "Application not found" }, { status: 404 });
+        }
+
+        const driveDurationMins = application.drive.interviewTime || 15;
+        const durationSeconds = driveDurationMins * 60;
 
         const apiKey = process.env.LIVEKIT_API_KEY;
         const apiSecret = process.env.LIVEKIT_API_SECRET;
@@ -98,7 +112,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ 
             token, 
             serverUrl: wsUrl,
-            roomName
+            roomName,
+            duration: durationSeconds
         });
     } catch (err) {
         console.error("Token generation error:", err);

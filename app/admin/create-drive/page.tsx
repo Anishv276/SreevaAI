@@ -23,7 +23,7 @@ const STEPS = [
     "Preview"
 ];
 
-// const CANDIDATE_LINK = "hirer.ai/careers/drive/backend-engineer-2024";
+// const CANDIDATE_LINK = "hirer.ai/careers/jobs/backend-engineer-2024";
 
 // Per-step validation messages shown when fields appear incomplete
 const STEP_VALIDATION_HINTS: Record<number, string> = {
@@ -409,7 +409,7 @@ function CreateDriveForm() {
     };
 
     const handleCopy = () => {
-        const link = `${window.location.origin}/careers/drive/${publishedDriveId}`;
+        const link = `${window.location.origin}/careers/jobs/${publishedDriveId}`;
         navigator.clipboard.writeText(link);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -550,7 +550,7 @@ function CreateDriveForm() {
                     <div className="flex items-center gap-3 rounded-xl bg-white border border-orange-200 px-4 py-3">
                         <span className="flex-1 text-[13px] font-mono text-gray-700 text-left truncate">
                             {publishedDriveId 
-                                ? `${typeof window !== 'undefined' ? window.location.origin : ''}/careers/drive/${publishedDriveId}`
+                                ? `${typeof window !== 'undefined' ? window.location.origin : ''}/careers/jobs/${publishedDriveId}`
                                 : "Generating link..."}
                         </span>
                         <button

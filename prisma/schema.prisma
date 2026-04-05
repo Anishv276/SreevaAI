@@ -20,7 +20,11 @@ model Organization {
   industry  String?
   size      String?
   website   String?
+  location  String?
+  onboardingStep     Int      @default(0)
+  onboardingComplete Boolean  @default(false)
   drives    Drive[]
+  invites   OrgInvite[]
   users     User[]
 }
 
@@ -39,13 +43,37 @@ model User {
   email        String        @unique
   name         String?
   role         String        @default("CANDIDATE")
+  orgRole      String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   password     String?
   orgId        String?
   applications Application[]
   drives       Drive[]       @relation("CreatedDrives")
+  acceptedInvites OrgInvite[] @relation("AcceptedInvites")
+  sentInvites     OrgInvite[] @relation("SentInvites")
   organization Organization? @relation(fields: [orgId], references: [id])
+}
+
+model OrgInvite {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId          String
+  email          String
+  orgRole        String
+  tokenHash      String       @unique
+  status         String       @default("PENDING")
+  invitedByUserId String
+  acceptedUserId String?
+  expiresAt      DateTime
+  respondedAt    DateTime?
+  acceptedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  acceptedUser   User?        @relation("AcceptedInvites", fields: [acceptedUserId], references: [id], onDelete: SetNull)
+  invitedByUser  User         @relation("SentInvites", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, status])
 }
 
 model Drive {

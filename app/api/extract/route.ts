@@ -89,9 +89,13 @@ export async function POST(request: Request) {
 
             (async () => {
                 try {
-                    // Upload either way!
                     const { putObject } = await import("@/lib/s3");
-                    const bucket = process.env.R2_BUCKET_NAME || "resumes";
+                    
+                    // Determine bucket based on TYPE
+                    const bucket = type === "JD" 
+                        ? (process.env.R2_JDS_BUCKET || "jds")
+                        : (process.env.R2_RESUMES_BUCKET || "resumes");
+                    
                     const prefix = type === "JD" ? "jds/" : "resumes/";
                     const fileName = `${prefix}${uuidv4()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
                     const url = await putObject(bucket, fileName, buffer, file.type);
@@ -106,7 +110,20 @@ export async function POST(request: Request) {
         await unlink(tempFilePath).catch(() => { });
 
         if (exitCode !== 0) {
-            return NextResponse.json({ error: "Extraction failed" }, { status: 500 });
+            console.error("Python Extraction Failed:", errorData);
+            return NextResponse.json({ 
+                error: "Document processing failed. The file format might be unsupported or corrupted.",
+                code: "EXTRACTION_PROCESS_ERROR",
+                details: errorData 
+            }, { status: 502 });
+        }
+
+        if (!fileUrl) {
+            return NextResponse.json({ 
+                error: "Secure storage upload failed. We couldn't save your document.",
+                code: "STORAGE_UPLOAD_ERROR",
+                details: "Cloudflare R2 connection timed out or rejected the request."
+            }, { status: 503 });
         }
 
         try {
@@ -116,10 +133,19 @@ export async function POST(request: Request) {
                 url: fileUrl
             });
         } catch (e) {
-            return NextResponse.json({ error: "Invalid response" }, { status: 500 });
+            console.error("Parse Error:", outputData, e);
+            return NextResponse.json({ 
+                error: "Received invalid data format from processing engine.",
+                code: "MALFORMED_RESPONSE_ERROR"
+            }, { status: 502 });
         }
 
-    } catch (error) {
-        return NextResponse.json({ error: "Failed to process" }, { status: 500 });
+    } catch (error: any) {
+        console.error("General Extraction Error:", error);
+        return NextResponse.json({ 
+            error: "An unexpected error occurred while processing your request.",
+            code: "INTERNAL_SERVER_ERROR",
+            details: error.message 
+        }, { status: 500 });
     }
 }

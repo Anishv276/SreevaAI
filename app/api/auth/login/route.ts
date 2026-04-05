@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { createSession, normalizeRole } from "@/lib/auth";
+import { isRateLimited } from "@/lib/ratelimit";
 
 type SuperAdminDelegate = {
     findUnique: (args: { where: { email: string } }) => Promise<{
@@ -21,6 +22,15 @@ export async function POST(request: Request) {
         }
 
         const normalizedEmail = email.toLowerCase().trim();
+
+        // ── RATE LIMITING ───────────────────────────────────
+        const isLimited = await isRateLimited(`login:${normalizedEmail}`, 5, 60);
+        if (isLimited) {
+            return NextResponse.json({ 
+                error: "Too many login attempts. Please try again in a minute.", 
+                code: "RATE_LIMIT_EXCEEDED" 
+            }, { status: 429 });
+        }
 
         const prismaWithSuperAdmin = prisma as unknown as { superAdmin?: SuperAdminDelegate };
         const superAdmin = prismaWithSuperAdmin.superAdmin

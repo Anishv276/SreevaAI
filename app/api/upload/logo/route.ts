@@ -28,7 +28,7 @@ export async function POST(req: Request) {
         const key = `org_${session.orgId}_${Date.now()}_${file.name}`;
         
         // Target your "logos" bucket explicitly
-        const BUCKET_NAME = "logos";
+        const BUCKET_NAME = process.env.R2_LOGOS_BUCKET || "logos";
 
         await s3Client.send(new PutObjectCommand({
             Bucket: BUCKET_NAME,
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
         }));
 
         // RESOLUTION: Use the specialized logo host if provided, fallback to default R2 URL
-        const host = process.env.NEXT_PUBLIC_LOGO_URL || process.env.NEXT_PUBLIC_R2_URL;
+        const host = process.env.NEXT_PUBLIC_R2_LOGOS_URL;
         const baseUrl = host?.replace(/\/$/, "");
         const publicUrl = `${baseUrl}/${key}`;
 

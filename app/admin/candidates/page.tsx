@@ -20,15 +20,45 @@ import {
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useCandidates } from "@/context/candidates-context";
+import { useJobs } from "@/context/jobs-context";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { useEffect } from "react";
 
 export default function CandidatesPage() {
-    const { candidates, bulkDeleteCandidates } = useCandidates();
+    const { candidates, pagination, fetchCandidates, bulkDeleteCandidates } = useCandidates();
+    const { jobs } = useJobs();
     const [searchTerm, setSearchTerm] = useState("");
+    const [statusFilter, setStatusFilter] = useState("all");
+    const [roleFilter, setRoleFilter] = useState("all");
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [resendingId, setResendingId] = useState<string | null>(null);
     const searchParams = useSearchParams();
-    const driveId = searchParams.get("driveId");
+    const driveIdParam = searchParams.get("driveId");
+
+    // Initialize role filter from URL if present
+    useEffect(() => {
+        if (driveIdParam) {
+            setRoleFilter(driveIdParam);
+        }
+    }, [driveIdParam]);
+
+    // Refetch when filters change
+    useEffect(() => {
+        fetchCandidates(1, pagination.limit, roleFilter, statusFilter);
+    }, [statusFilter, roleFilter]);
+
+    const handlePageChange = (newPage: number) => {
+        if (newPage >= 1 && newPage <= pagination.totalPages) {
+            fetchCandidates(newPage, pagination.limit, roleFilter, statusFilter);
+        }
+    };
 
     const handleResendInterview = async (applicationId: string) => {
         setResendingId(applicationId);
@@ -50,13 +80,9 @@ export default function CandidatesPage() {
     };
 
     const filteredCandidates = candidates.filter(candidate => {
-        const matchesSearch = candidate.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        return candidate.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             candidate.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
             candidate.email.toLowerCase().includes(searchTerm.toLowerCase());
-
-        const matchesDrive = driveId ? candidate.driveId?.toString() === driveId : true;
-
-        return matchesSearch && matchesDrive;
     });
 
     const toggleSelection = (id: string) => {
@@ -137,8 +163,17 @@ export default function CandidatesPage() {
                             <X className="h-4 w-4 mr-2" /> Cancel
                         </Button>
                     )}
-                    <Button variant="outline" className="h-11 px-6 rounded-xl border-gray-200 text-gray-600 font-bold hover:bg-gray-50 transition-all">
-                        <Download className="h-4 w-4 mr-2" /> Export
+                    <Button 
+                        variant="outline" 
+                        onClick={() => {
+                            let url = `/api/candidates/export?page=1&limit=1000`;
+                            if (roleFilter !== "all") url += `&driveId=${roleFilter}`;
+                            if (statusFilter !== "all") url += `&status=${statusFilter}`;
+                            window.location.href = url;
+                        }}
+                        className="h-11 px-6 rounded-xl border-gray-200 text-gray-600 font-bold hover:bg-gray-50 transition-all"
+                    >
+                        <Download className="h-4 w-4 mr-2" /> Export CSV
                     </Button>
                 </div>
             </div>
@@ -157,12 +192,33 @@ export default function CandidatesPage() {
                         />
                     </div>
                     <div className="flex items-center gap-3 w-full sm:w-auto">
-                        <Button variant="outline" size="sm" className="gap-2 h-10 px-4 border-dashed rounded-lg border-gray-200 text-gray-400 font-bold hover:text-[#F97316] hover:border-orange-200 transition-all">
-                            <SlidersHorizontal className="h-3.5 w-3.5" /> Status
-                        </Button>
-                        <Button variant="outline" size="sm" className="gap-2 h-10 px-4 border-dashed rounded-lg border-gray-200 text-gray-400 font-bold hover:text-[#F97316] hover:border-orange-200 transition-all">
-                            <SlidersHorizontal className="h-3.5 w-3.5" /> Role
-                        </Button>
+                        <Select value={statusFilter} onValueChange={setStatusFilter}>
+                            <SelectTrigger className="h-10 px-4 border-dashed rounded-lg border-gray-200 text-gray-400 font-bold hover:text-[#F97316] hover:border-orange-200 transition-all bg-transparent">
+                                <SlidersHorizontal className="h-3.5 w-3.5 mr-2" />
+                                <SelectValue placeholder="Status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Statuses</SelectItem>
+                                <SelectItem value="Applied">New Applied</SelectItem>
+                                <SelectItem value="Shortlisted">Shortlisted</SelectItem>
+                                <SelectItem value="Interview Pending">Interview Pending</SelectItem>
+                                <SelectItem value="Interview Completed">Interview Completed</SelectItem>
+                                <SelectItem value="Rejected">Rejected</SelectItem>
+                            </SelectContent>
+                        </Select>
+
+                        <Select value={roleFilter} onValueChange={setRoleFilter}>
+                            <SelectTrigger className="h-10 px-4 border-dashed rounded-lg border-gray-200 text-gray-400 font-bold hover:text-[#F97316] hover:border-orange-200 transition-all bg-transparent w-[180px]">
+                                <SlidersHorizontal className="h-3.5 w-3.5 mr-2" />
+                                <SelectValue placeholder="Role" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Roles</SelectItem>
+                                {jobs.map(job => (
+                                    <SelectItem key={job.id} value={job.id.toString()}>{job.title}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
                 </div>
 
@@ -324,13 +380,25 @@ export default function CandidatesPage() {
 
             <div className="px-8 py-6 border-t border-gray-50 flex items-center justify-between bg-gray-50/30">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                    Showing <span className="text-gray-900">{filteredCandidates.length}</span> of <span className="text-gray-900">{candidates.length}</span> candidates
+                    Showing <span className="text-gray-900">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="text-gray-900">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="text-gray-900">{pagination.total}</span> candidates
                 </p>
                 <div className="flex gap-3">
-                    <Button variant="outline" size="sm" className="h-10 px-4 rounded-xl border-gray-200 text-gray-400 font-bold hover:text-gray-600 transition-all" disabled>
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-10 px-4 rounded-xl border-gray-200 text-gray-400 font-bold hover:text-gray-600 transition-all" 
+                        disabled={pagination.page <= 1}
+                        onClick={() => handlePageChange(pagination.page - 1)}
+                    >
                         <ChevronLeft className="h-4 w-4 mr-2" /> Previous
                     </Button>
-                    <Button variant="outline" size="sm" className="h-10 px-4 rounded-xl border-gray-200 text-gray-400 font-bold hover:text-gray-600 transition-all" disabled>
+                    <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-10 px-4 rounded-xl border-gray-200 text-gray-400 font-bold hover:text-gray-600 transition-all" 
+                        disabled={pagination.page >= pagination.totalPages}
+                        onClick={() => handlePageChange(pagination.page + 1)}
+                    >
                         Next <ChevronRight className="h-4 w-4 ml-2" />
                     </Button>
                 </div>

@@ -1,7 +1,11 @@
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://default:OMboFa8vP57TeD1aXCTQsi2ZkMfp2Ooa@redis-13015.crce179.ap-south-1-1.ec2.cloud.redislabs.com:13015';
+const REDIS_URL = process.env.REDIS_URL;
+
+if (!REDIS_URL && process.env.NODE_ENV === 'production') {
+  throw new Error('REDIS_URL is not defined in environment variables');
+}
 
 /**
  * Shared IORedis connection for BullMQ.
@@ -11,7 +15,7 @@ const REDIS_URL = process.env.REDIS_URL || 'redis://default:OMboFa8vP57TeD1aXCTQ
  * - maxRetriesPerRequest: null → required by BullMQ.
  */
 function createRedisConnection(): IORedis {
-  return new IORedis(REDIS_URL, {
+  return new IORedis(REDIS_URL || 'redis://localhost:6379', {
     maxRetriesPerRequest: null,
     lazyConnect: true,
     retryStrategy: (times: number) => Math.min(times * 500, 10_000), // max 10s between retries

@@ -22,12 +22,19 @@ export function JobCard({ job }: { job: Job }) {
                         <div className="px-3 py-1 rounded-full bg-orange-50 text-[#F97316] text-[10px] font-black uppercase tracking-widest border border-orange-100">
                             {job.department || "TECH"}
                         </div>
-                        {isNew && (
-                            <div className="flex items-center gap-1.5">
-                                <span className="text-[9px] font-black text-green-600 uppercase tracking-tighter">New Posting</span>
-                                <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                            </div>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                            {job.status === "CLOSED" ? (
+                                <>
+                                    <span className="text-[9px] font-black text-red-600 uppercase tracking-tighter">Application Closed</span>
+                                    <div className="h-2 w-2 rounded-full bg-red-500" />
+                                </>
+                            ) : isNew && (
+                                <>
+                                    <span className="text-[9px] font-black text-green-600 uppercase tracking-tighter">New Posting</span>
+                                    <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                                </>
+                            )}
+                        </div>
                     </div>
                     
                     <h3 className="font-black text-2xl text-gray-900 group-hover:text-[#F97316] transition-colors leading-tight">
@@ -58,7 +65,7 @@ export function JobCard({ job }: { job: Job }) {
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Estimated Range</p>
                     <p className="text-gray-900 font-black tracking-tight">{salary}</p>
                 </div>
-                <Link href={`/careers/drive/${job.id}`}>
+                <Link href={`/careers/jobs/${job.id}`}>
                     <Button className="h-12 w-12 rounded-2xl bg-gray-50 text-gray-400 group-hover:bg-[#F97316] group-hover:text-white group-hover:shadow-[0_10px_20px_rgba(249,115,22,0.3)] transition-all duration-300" variant="ghost" size="icon">
                         <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
                     </Button>

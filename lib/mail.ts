@@ -90,3 +90,62 @@ export async function sendApplicationStatusEmail({
         return { success: false, error };
     }
 }
+
+export async function sendTeamInviteEmail({
+    email,
+    inviterName,
+    organizationName,
+    role,
+    inviteUrl,
+    expiresAt,
+}: {
+    email: string;
+    inviterName: string;
+    organizationName: string;
+    role: "ADMIN" | "HR" | "TEAM";
+    inviteUrl: string;
+    expiresAt: Date;
+}) {
+    const roleLabel = role === "TEAM" ? "Team" : role;
+    const subject = `You're invited to join ${organizationName} on Lumoscale`;
+
+    const html = `
+        <div style="font-family: Inter, Arial, sans-serif; max-width: 620px; margin: 0 auto; padding: 24px; border: 1px solid #f1f5f9; border-radius: 14px; background: #ffffff;">
+            <h2 style="margin: 0 0 8px; color: #111827; font-size: 24px; font-weight: 800;">Workspace Invitation</h2>
+            <p style="margin: 0 0 18px; color: #4b5563; font-size: 14px; line-height: 1.6;">
+                <strong>${inviterName}</strong> invited you to join <strong>${organizationName}</strong> on Lumoscale as <strong>${roleLabel}</strong>.
+            </p>
+            <div style="padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; margin-bottom: 18px;">
+                <p style="margin: 0 0 6px; color: #334155; font-size: 13px;"><strong>Email:</strong> ${email}</p>
+                <p style="margin: 0 0 6px; color: #334155; font-size: 13px;"><strong>Role:</strong> ${roleLabel}</p>
+                <p style="margin: 0; color: #334155; font-size: 13px;"><strong>Expires:</strong> ${expiresAt.toUTCString()}</p>
+            </div>
+            <a href="${inviteUrl}" style="display: inline-block; background: #f97316; color: #fff; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 20px; border-radius: 10px;">
+                Review Invitation
+            </a>
+            <p style="margin-top: 18px; color: #94a3b8; font-size: 12px; line-height: 1.5;">
+                If you were not expecting this invite, you can safely ignore this email.
+            </p>
+        </div>
+    `;
+
+    try {
+        const payload = await resend.emails.send({
+            from: FROM_EMAIL,
+            to: email,
+            subject,
+            html,
+        });
+
+        if (payload.error) {
+            console.error(`[INVITE EMAIL ERROR] Resend rejected invite to ${email}:`, payload.error);
+            return { success: false, error: payload.error };
+        }
+
+        console.log(`[INVITE EMAIL] Invite sent to ${email}`);
+        return { success: true };
+    } catch (error) {
+        console.error(`[INVITE EMAIL EXCEPTION] Failed to send invite to ${email}:`, error);
+        return { success: false, error };
+    }
+}

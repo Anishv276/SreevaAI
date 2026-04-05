@@ -40,10 +40,18 @@ export type Candidate = {
     structuredResume?: any;
 };
 
+interface Pagination {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+}
+
 interface CandidatesContextType {
     candidates: Candidate[];
+    pagination: Pagination;
     addCandidate: (candidate: Omit<Candidate, "id" | "date" | "status" | "score">) => Promise<void>;
-    fetchCandidates: () => Promise<void>;
+    fetchCandidates: (page?: number, limit?: number, driveId?: string, status?: string) => Promise<void>;
     bulkDeleteCandidates: (ids: string[]) => Promise<void>;
 }
 
@@ -51,15 +59,27 @@ const CandidatesContext = createContext<CandidatesContextType | undefined>(undef
 
 export function CandidatesProvider({ children }: { children: React.ReactNode }) {
     const [candidates, setCandidates] = useState<Candidate[]>([]);
+    const [pagination, setPagination] = useState<Pagination>({
+        total: 0,
+        page: 1,
+        limit: 10,
+        totalPages: 0
+    });
     const pathname = usePathname();
 
-    const fetchCandidates = async () => {
+    const fetchCandidates = async (page: number = 1, limit: number = 10, driveId?: string, status?: string) => {
         try {
-            const res = await fetch("/api/candidates");
+            let url = `/api/candidates?page=${page}&limit=${limit}`;
+            if (driveId && driveId !== "all") url += `&driveId=${driveId}`;
+            if (status && status !== "all") url += `&status=${encodeURIComponent(status)}`;
+
+            const res = await fetch(url);
             if (res.ok) {
-                const data = await res.json();
+                const result = await res.json();
+                const { candidates: rawCandidates, pagination: pagData } = result;
+                
                 // Map API data to Context structure if necessary
-                const mappedCandidates = data.map((c: any) => ({
+                const mappedCandidates = rawCandidates.map((c: any) => ({
                     id: c.id.toString(),
                     name: c.name,
                     email: c.email,
@@ -76,6 +96,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                     relevantYears: c.relevantYears
                 }));
                 setCandidates(mappedCandidates);
+                setPagination(pagData);
             }
         } catch (error) {
             console.error("Failed to fetch candidates:", error);
@@ -94,7 +115,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             try {
                 const data = JSON.parse(event.data);
                 if (data.type === "NEW_APPLICATIONS" || data.type === "UPDATED_APPLICATIONS") {
-                    fetchCandidates();
+                    fetchCandidates(pagination.page, pagination.limit);
                 }
             } catch (e) {
                 // Invalid JSON, ignore
@@ -145,16 +166,8 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
 
             const savedCandidate = await response.json();
 
-            // Optimistically update or re-fetch
-            const newCandidate: Candidate = {
-                id: savedCandidate.id.toString(),
-                ...newCandidateData,
-                status: savedCandidate.status as any,
-                score: savedCandidate.aiScore || 0,
-                date: new Date(savedCandidate.createdAt).toLocaleDateString(),
-            };
-
-            setCandidates(prev => [newCandidate, ...prev]);
+            // Refetch to ensure we have the correct paginated state
+            fetchCandidates(pagination.page, pagination.limit);
         } catch (error) {
             throw error;
         }
@@ -169,7 +182,8 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             });
 
             if (response.ok) {
-                setCandidates(prev => prev.filter(c => !ids.includes(c.id)));
+                // Refetch to ensure we have the correct paginated state after deletion
+                fetchCandidates(pagination.page, pagination.limit);
             } else {
                 throw new Error("Failed to bulk delete candidates");
             }
@@ -180,7 +194,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     };
 
     return (
-        <CandidatesContext.Provider value={{ candidates, addCandidate, fetchCandidates, bulkDeleteCandidates }}>
+        <CandidatesContext.Provider value={{ candidates, pagination, addCandidate, fetchCandidates, bulkDeleteCandidates }}>
             {children}
         </CandidatesContext.Provider>
     );

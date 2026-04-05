@@ -15,15 +15,28 @@ export async function POST(request: Request) {
             );
         }
 
-        const { fileName, fileType, driveId } = result.data;
+        const { fileName, fileType, driveId, type } = result.data;
 
         const uniqueId = uuidv4();
         const safeFileName = fileName.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
-        const key = `resumes/drive_${driveId || 'unknown'}/${uniqueId}_${safeFileName}`;
-
-        const uploadUrl = await getPresignedUploadUrl(key, fileType);
         
-        const publicUrl = `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}/${key}`;
+        // Pick BUCKET and PREFIX based on TYPE
+        const isJD = type === "JD";
+        const bucket = isJD 
+            ? (process.env.R2_JDS_BUCKET || "jds")
+            : (process.env.R2_RESUMES_BUCKET || "resumes");
+        
+        const prefix = isJD ? "jds/" : "resumes/";
+        const key = `${prefix}drive_${driveId || 'unknown'}/${uniqueId}_${safeFileName}`;
+
+        const uploadUrl = await getPresignedUploadUrl(bucket, key, fileType);
+        
+        // Pick PUBLIC DOMAIN based on TYPE
+        const publicUrlBase = isJD 
+            ? (process.env.NEXT_PUBLIC_R2_JDS_URL || "")
+            : (process.env.NEXT_PUBLIC_R2_RESUMES_URL || "");
+            
+        const publicUrl = `${publicUrlBase.replace(/\/$/, '')}/${key}`;
 
         return NextResponse.json({ 
             uploadUrl, 

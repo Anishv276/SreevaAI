@@ -71,6 +71,7 @@ export async function POST(request: Request) {
                     email: adminEmail.toLowerCase().trim(),
                     name: adminName || adminEmail.split("@")[0],
                     role: "ORG_ADMIN",
+                    orgRole: "ADMIN", // Platform-standard role
                     password: hashedPassword,
                     orgId: org.id,
                 },

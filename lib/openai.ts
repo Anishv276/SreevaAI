@@ -32,35 +32,54 @@ export async function calculateScore(resumeText: string, jdText: string) {
         ${resumeText}
 
         Task:
-        Evaluate the candidate's fit for the job based on the skills, experience, and requirements.
+        Analyze the candidate's resume against the Job Description.
         
         Return a JSON object with:
         - score (number, 0-100)
-        - reasoning (string, brief explanation of the score)
-        - status (string, "Shortlisted" if score >= 70 else "Rejected")
+        - reasoning (string, 1-2 sentences why this score)
+        - status (string, "Shortlisted" | "Rejected" | "Borderline")
+        - skillsFound (array of strings, key technical skills from JD found in resume)
+        - missingSkills (array of strings, key technical skills from JD MISSING in resume)
+        - flags (array of strings, any red flags like "Too little experience", "Job hopping", "Misaligned location")
+        - recommendation (string, "Shortlist" | "Reject" | "Interview" | "Under Review")
     `;
 
     try {
         if (!process.env.OPENAI_API_KEY) {
             console.warn("OPENAI_API_KEY not found. Returning mock results.");
-            return { score: 85, status: "Shortlisted", reasoning: "Mock Score: Strong candidate match." };
+            return { 
+                score: 85, 
+                status: "Shortlisted", 
+                reasoning: "Mock Mode: Strong candidate match.",
+                skillsFound: ["React", "TypeScript", "Node.js"],
+                missingSkills: [],
+                flags: [],
+                recommendation: "Shortlist"
+            };
         }
 
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
-                { role: "system", content: "You are an expert HR recruiter. BE strict but fair. Return ONLY valid JSON." },
+                { role: "system", content: "You are a professional hiring manager AI. Be precise and objective. Return ONLY valid JSON." },
                 { role: "user", content: prompt }
             ],
             response_format: { type: "json_object" },
         });
 
         const content = completion.choices[0].message.content;
-        return content ? JSON.parse(content) : { score: 0, status: "Rejected", reasoning: "Failed to analyze" };
+        return content ? JSON.parse(content) : { score: 0, status: "Rejected", reasoning: "Analysis failed", skillsFound: [], missingSkills: [], flags: ["Extraction Failed"], recommendation: "Reject" };
     } catch (error) {
         console.error("OpenAI Scoring Error:", error);
-        // Default to a safe fallback
-        return { score: 0, status: "Pending", reasoning: "AI Analysis Failed" };
+        return { 
+            score: 0, 
+            status: "Error", 
+            reasoning: "AI Analysis Failed",
+            skillsFound: [],
+            missingSkills: [],
+            flags: ["AI Service Unavailable"],
+            recommendation: "Manual Review"
+        };
     }
 }
 

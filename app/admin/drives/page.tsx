@@ -43,7 +43,7 @@ import { cn } from "@/lib/utils";
 
 export default function DrivesPage() {
     const router = useRouter();
-    const { jobs, deleteJob, fetchJobs, toggleDriveStatus, bulkDeleteJobs } = useJobs();
+    const { jobs, pagination, deleteJob, fetchJobs, toggleDriveStatus, bulkDeleteJobs } = useJobs();
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
     const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -55,11 +55,18 @@ export default function DrivesPage() {
     
     const selectedDrive = jobs.find(j => j.id === previewDriveId);
 
+    const handlePageChange = (newPage: number) => {
+        if (newPage >= 1 && newPage <= pagination.totalPages) {
+            setIsLoading(true);
+            fetchJobs(newPage, pagination.limit).finally(() => setIsLoading(false));
+        }
+    };
+
     // Initial load
     useEffect(() => {
         const load = async () => {
             setIsLoading(true);
-            await fetchJobs();
+            await fetchJobs(pagination.page, pagination.limit);
             setIsLoading(false);
         };
         load();
@@ -195,128 +202,158 @@ export default function DrivesPage() {
                     <p className="text-gray-500 mt-1">Get started by creating a new recruitment drive.</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {filteredDrives.map((drive) => (
-                        <Card 
-                            key={drive.id} 
-                            onClick={() => isSelectionMode && toggleSelection(drive.id)}
-                            className={cn(
-                                "group relative bg-white/90 backdrop-blur-sm border-gray-100 hover:border-orange-200/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_50px_rgba(249,115,22,0.12)] transition-all duration-500 rounded-2xl overflow-hidden",
-                                isSelectionMode ? "cursor-pointer" : "cursor-default",
-                                selectedIds.has(drive.id) && "ring-2 ring-[#F97316] border-[#F97316]/50 bg-orange-50/30"
-                            )}
-                        >
-                            {isSelectionMode && (
-                                <div className="absolute top-4 left-4 z-20">
-                                    <Checkbox 
-                                        checked={selectedIds.has(drive.id)}
-                                        onCheckedChange={() => toggleSelection(drive.id)}
-                                        className="h-6 w-6 border-2 border-[#F97316] bg-white rounded-lg shadow-sm"
-                                    />
-                                </div>
-                            )}
-                            {/* Animated Background Accent */}
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-orange-100/20 to-transparent rounded-full -mr-12 -mt-12 transition-transform duration-700 group-hover:scale-150" />
-                            
-                            <CardHeader className="pb-4 pt-6 px-6 relative z-10">
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-orange-50 to-white flex items-center justify-center text-[#F97316] shadow-[0_4px_12px_rgba(249,115,22,0.1)] border border-orange-100 group-hover:rotate-6 group-hover:scale-110 transition-all duration-300">
-                                        <Briefcase className="h-7 w-7" />
+                <div className="space-y-10">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        {filteredDrives.map((drive) => (
+                            <Card 
+                                key={drive.id} 
+                                onClick={() => isSelectionMode && toggleSelection(drive.id)}
+                                className={cn(
+                                    "group relative bg-white/90 backdrop-blur-sm border-gray-100 hover:border-orange-200/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_50px_rgba(249,115,22,0.12)] transition-all duration-500 rounded-2xl overflow-hidden",
+                                    isSelectionMode ? "cursor-pointer" : "cursor-default",
+                                    selectedIds.has(drive.id) && "ring-2 ring-[#F97316] border-[#F97316]/50 bg-orange-50/30"
+                                )}
+                            >
+                                {/* ... Card content remains the same ... */}
+                                {isSelectionMode && (
+                                    <div className="absolute top-4 left-4 z-20">
+                                        <Checkbox 
+                                            checked={selectedIds.has(drive.id)}
+                                            onCheckedChange={() => toggleSelection(drive.id)}
+                                            className="h-6 w-6 border-2 border-[#F97316] bg-white rounded-lg shadow-sm"
+                                        />
                                     </div>
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild onClick={(e) => isSelectionMode && e.stopPropagation()}>
-                                            <Button variant="ghost" size="icon" className="h-10 w-10 -mr-2 text-gray-400 hover:text-gray-600 hover:bg-orange-50/50 rounded-xl transition-colors">
-                                                <MoreHorizontal className="h-5 w-5" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="w-56 p-2 rounded-xl border-gray-100 shadow-xl">
-                                            <Link href={`/admin/candidates?driveId=${drive.id}`}>
-                                                <DropdownMenuItem className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700">
-                                                    <Eye className="mr-2 h-4 w-4" /> View Applicants
+                                )}
+                                {/* Animated Background Accent */}
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-orange-100/20 to-transparent rounded-full -mr-12 -mt-12 transition-transform duration-700 group-hover:scale-150" />
+                                
+                                <CardHeader className="pb-4 pt-6 px-6 relative z-10">
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-orange-50 to-white flex items-center justify-center text-[#F97316] shadow-[0_4px_12px_rgba(249,115,22,0.1)] border border-orange-100 group-hover:rotate-6 group-hover:scale-110 transition-all duration-300">
+                                            <Briefcase className="h-7 w-7" />
+                                        </div>
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild onClick={(e) => isSelectionMode && e.stopPropagation()}>
+                                                <Button variant="ghost" size="icon" className="h-10 w-10 -mr-2 text-gray-400 hover:text-gray-600 hover:bg-orange-50/50 rounded-xl transition-colors">
+                                                    <MoreHorizontal className="h-5 w-5" />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end" className="w-56 p-2 rounded-xl border-gray-100 shadow-xl">
+                                                <Link href={`/admin/candidates?driveId=${drive.id}`}>
+                                                    <DropdownMenuItem className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700">
+                                                        <Eye className="mr-2 h-4 w-4" /> View Applicants
+                                                    </DropdownMenuItem>
+                                                </Link>
+                                                <DropdownMenuItem
+                                                    className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700"
+                                                    onClick={() => router.push(`/admin/create-drive?id=${drive.id}`)}
+                                                >
+                                                    <Edit className="mr-2 h-4 w-4" /> Edit Drive Details
                                                 </DropdownMenuItem>
-                                            </Link>
-                                            <DropdownMenuItem
-                                                className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700"
-                                                onClick={() => router.push(`/admin/create-drive?id=${drive.id}`)}
-                                            >
-                                                <Edit className="mr-2 h-4 w-4" /> Edit Drive Details
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                                className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer rounded-lg py-2.5"
-                                                onClick={() => handleDelete(drive.id)}
-                                            >
-                                                <Trash2 className="mr-2 h-4 w-4" /> Delete Drive
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                </div>
-                                <div className="space-y-2">
-                                    <h3 
-                                        className="font-extrabold text-gray-900 text-xl tracking-tight leading-tight cursor-pointer hover:text-[#F97316] transition-colors"
-                                        onClick={() => router.push(`/admin/candidates?driveId=${drive.id}`)}
+                                                <DropdownMenuItem
+                                                    className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer rounded-lg py-2.5"
+                                                    onClick={() => handleDelete(drive.id)}
+                                                >
+                                                    <Trash2 className="mr-2 h-4 w-4" /> Delete Drive
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h3 
+                                            className="font-extrabold text-gray-900 text-xl tracking-tight leading-tight cursor-pointer hover:text-[#F97316] transition-colors"
+                                            onClick={() => router.push(`/admin/candidates?driveId=${drive.id}`)}
+                                        >
+                                            {drive.title}
+                                        </h3>
+                                        <div className="flex flex-wrap gap-2 pt-1">
+                                            <div className="px-3 py-1 rounded-lg bg-gray-50 text-gray-600 text-[11px] font-bold uppercase tracking-wider border border-gray-100/50">
+                                                {drive.department}
+                                            </div>
+                                            <div className="px-3 py-1 rounded-lg bg-orange-50/30 text-[#F97316] text-[11px] font-bold uppercase tracking-wider border border-orange-100/30">
+                                                {drive.type}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </CardHeader>
+
+                                <CardContent className="px-6 py-4 relative z-10">
+                                    <div 
+                                        className="flex items-center justify-between p-3.5 bg-gray-50/50 rounded-2xl border border-gray-100/50 group-hover:bg-white transition-colors duration-500"
+                                        onClick={(e) => isSelectionMode && e.stopPropagation()}
                                     >
-                                        {drive.title}
-                                    </h3>
-                                    <div className="flex flex-wrap gap-2 pt-1">
-                                        <div className="px-3 py-1 rounded-lg bg-gray-50 text-gray-600 text-[11px] font-bold uppercase tracking-wider border border-gray-100/50">
-                                            {drive.department}
+                                        {/* Toggle Switch */}
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="h-2.5 w-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse" />
+                                            <span className="text-[11px] font-black uppercase tracking-wider text-green-600">
+                                                Published
+                                            </span>
                                         </div>
-                                        <div className="px-3 py-1 rounded-lg bg-orange-50/30 text-[#F97316] text-[11px] font-bold uppercase tracking-wider border border-orange-100/30">
-                                            {drive.type}
+                                        <div className="flex flex-col items-end">
+                                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                                                <Calendar className="h-3 w-3" />
+                                                Posted
+                                            </div>
+                                            <div className="text-[13px] font-bold text-gray-700">
+                                                {new Date(drive.createdAt).toLocaleDateString()}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            </CardHeader>
+                                </CardContent>
 
-                            <CardContent className="px-6 py-4 relative z-10">
-                                <div 
-                                    className="flex items-center justify-between p-3.5 bg-gray-50/50 rounded-2xl border border-gray-100/50 group-hover:bg-white transition-colors duration-500"
-                                    onClick={(e) => isSelectionMode && e.stopPropagation()}
-                                >
-                                    {/* Toggle Switch */}
-                                    <div className="flex items-center gap-2.5">
-                                        <div className="h-2.5 w-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse" />
-                                        <span className="text-[11px] font-black uppercase tracking-wider text-green-600">
-                                            Published
-                                        </span>
-                                    </div>
-                                    <div className="flex flex-col items-end">
-                                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                                            <Calendar className="h-3 w-3" />
-                                            Posted
+                                <CardFooter className="px-6 pb-6 pt-2 flex items-center justify-between relative z-10">
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-10 w-10 rounded-xl bg-orange-50 flex items-center justify-center text-[#F97316] shadow-sm border border-orange-100/50">
+                                            <Users className="h-5 w-5" />
                                         </div>
-                                        <div className="text-[13px] font-bold text-gray-700">
-                                            {new Date(drive.createdAt).toLocaleDateString()}
+                                        <div className="flex flex-col">
+                                            <span className="text-base font-black text-gray-900 leading-none">{drive.applicants || 0}</span>
+                                            <span className="text-[10px] text-gray-400 uppercase font-black tracking-tighter">Candidates</span>
                                         </div>
                                     </div>
-                                </div>
-                            </CardContent>
+                                    <Button 
+                                        variant="ghost" 
+                                        className="h-11 px-4 rounded-xl text-[#F97316] hover:text-white hover:bg-[#F97316] font-bold text-xs gap-2 group/btn transition-all duration-300 shadow-sm hover:shadow-[0_4px_15px_rgba(249,115,22,0.3)] border border-orange-100/50 hover:border-transparent"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (isSelectionMode) return;
+                                            setPreviewDriveId(drive.id);
+                                        }}
+                                    >
+                                        View Details 
+                                        <ChevronRight className="h-4 w-4 transition-transform group-hover/btn:translate-x-1" />
+                                    </Button>
+                                </CardFooter>
+                            </Card>
+                        ))}
+                    </div>
 
-                            <CardFooter className="px-6 pb-6 pt-2 flex items-center justify-between relative z-10">
-                                <div className="flex items-center gap-3">
-                                    <div className="h-10 w-10 rounded-xl bg-orange-50 flex items-center justify-center text-[#F97316] shadow-sm border border-orange-100/50">
-                                        <Users className="h-5 w-5" />
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-base font-black text-gray-900 leading-none">{drive.applicants || 0}</span>
-                                        <span className="text-[10px] text-gray-400 uppercase font-black tracking-tighter">Candidates</span>
-                                    </div>
-                                </div>
-                                <Button 
-                                    variant="ghost" 
-                                    className="h-11 px-4 rounded-xl text-[#F97316] hover:text-white hover:bg-[#F97316] font-bold text-xs gap-2 group/btn transition-all duration-300 shadow-sm hover:shadow-[0_4px_15px_rgba(249,115,22,0.3)] border border-orange-100/50 hover:border-transparent"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (isSelectionMode) return;
-                                        setPreviewDriveId(drive.id);
-                                    }}
-                                >
-                                    View Details 
-                                    <ChevronRight className="h-4 w-4 transition-transform group-hover/btn:translate-x-1" />
-                                </Button>
-                            </CardFooter>
-                        </Card>
-                    ))}
+                    {/* Pagination Footer */}
+                    <div className="flex items-center justify-between py-10 border-t border-gray-100">
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                            Showing <span className="text-gray-900">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="text-gray-900">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="text-gray-900">{pagination.total}</span> drives
+                        </p>
+                        <div className="flex gap-3">
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="h-11 px-6 rounded-xl border-gray-200 text-gray-500 font-bold hover:bg-gray-50 disabled:opacity-30 transition-all"
+                                disabled={pagination.page <= 1 || isLoading}
+                                onClick={() => handlePageChange(pagination.page - 1)}
+                            >
+                                <ChevronRight className="h-4 w-4 mr-2 rotate-180" /> Previous
+                            </Button>
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="h-11 px-6 rounded-xl border-gray-200 text-gray-500 font-bold hover:bg-gray-50 disabled:opacity-30 transition-all"
+                                disabled={pagination.page >= pagination.totalPages || isLoading}
+                                onClick={() => handlePageChange(pagination.page + 1)}
+                            >
+                                Next <ChevronRight className="h-4 w-4 ml-2" />
+                            </Button>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -397,11 +434,11 @@ export default function DrivesPage() {
                                 <div className="group/link relative p-4 rounded-2xl bg-[#F97316]/[0.03] border-2 border-dashed border-orange-100 hover:border-orange-200 transition-all">
                                     <div className="flex items-center gap-4">
                                         <div className="flex-1 font-mono text-xs text-orange-700 break-all select-all pr-12">
-                                            {`${typeof window !== 'undefined' ? window.location.origin : ''}/careers/drive/${selectedDrive.id}`}
+                                            {`${typeof window !== 'undefined' ? window.location.origin : ''}/careers/jobs/${selectedDrive.id}`}
                                         </div>
                                         <button 
                                             onClick={() => {
-                                                const link = `${window.location.origin}/careers/drive/${selectedDrive.id}`;
+                                                const link = `${window.location.origin}/careers/jobs/${selectedDrive.id}`;
                                                 navigator.clipboard.writeText(link);
                                                 setCopySuccess(true);
                                                 setTimeout(() => setCopySuccess(false), 2000);
@@ -474,7 +511,7 @@ export default function DrivesPage() {
                                 variant="outline" 
                                 className="h-12 w-12 rounded-xl flex items-center justify-center p-0 border-orange-100 text-[#F97316] hover:bg-orange-50"
                                 onClick={() => {
-                                    const link = `${window.location.origin}/careers/drive/${selectedDrive.id}`;
+                                    const link = `${window.location.origin}/careers/jobs/${selectedDrive.id}`;
                                     window.open(link, '_blank');
                                 }}
                             >

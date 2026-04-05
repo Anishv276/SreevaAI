@@ -12,6 +12,9 @@ export async function GET(request: Request) {
         const { searchParams } = new URL(request.url);
         const driveIdStr = searchParams.get("driveId");
         const driveId = driveIdStr ? parseInt(driveIdStr) : null;
+        const page = parseInt(searchParams.get("page") || "1");
+        const limit = parseInt(searchParams.get("limit") || "10");
+        const offset = (page - 1) * limit;
 
         const assessmentTableResult = await prisma.$queryRawUnsafe<Array<{ exists: boolean }>>(
             `
@@ -58,19 +61,34 @@ export async function GET(request: Request) {
             ${interviewJoin}
         `;
 
+        const orgId = searchParams.get("orgId") || session?.orgId;
+
         const candidates = driveId
             ? await prisma.$queryRawUnsafe(
                 `${baseSelect}
                 WHERE a."driveId" = $1 AND d."orgId" = $2
-                ORDER BY a."createdAt" DESC`,
-                driveId,  (new URL(request.url).searchParams.get("orgId") || session?.orgId)
+                ORDER BY a."createdAt" DESC
+                LIMIT $3 OFFSET $4`,
+                driveId, orgId, limit, offset
             )
             : await prisma.$queryRawUnsafe(
                 `${baseSelect}
                 WHERE d."orgId" = $1
-                ORDER BY a."createdAt" DESC`,
-                 (new URL(request.url).searchParams.get("orgId") || session?.orgId)
+                ORDER BY a."createdAt" DESC
+                LIMIT $2 OFFSET $3`,
+                orgId, limit, offset
             );
+
+        // Get total count for pagination
+        const countQuery = driveId 
+            ? `SELECT COUNT(*)::INT FROM "Application" a JOIN "Drive" d ON d.id = a."driveId" WHERE a."driveId" = $1 AND d."orgId" = $2`
+            : `SELECT COUNT(*)::INT FROM "Application" a JOIN "Drive" d ON d.id = a."driveId" WHERE d."orgId" = $1`;
+        
+        const countResult = driveId 
+            ? await prisma.$queryRawUnsafe<any[]>(countQuery, driveId, orgId)
+            : await prisma.$queryRawUnsafe<any[]>(countQuery, orgId);
+        
+        const total = countResult[0]?.count || 0;
 
         const formattedCandidates = (candidates as any[]).map((app: any) => {
             const interviewStateRaw = String(app.interviewStatusRaw || app.assessmentStatus || "").toUpperCase();
@@ -105,6 +123,7 @@ export async function GET(request: Request) {
 
             return {
                 id: app.id,
+                driveId: app.driveId,
                 name: app.fullName,
                 email: app.email,
                 role: app.driveTitle || "Unknown Role",
@@ -117,16 +136,28 @@ export async function GET(request: Request) {
             };
         });
 
-        return NextResponse.json(formattedCandidates);
+        return NextResponse.json({
+            candidates: formattedCandidates,
+            pagination: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
     } catch (error) {
         console.error("Error fetching candidates:", error);
         return NextResponse.json({ error: "Failed to fetch candidates" }, { status: 500 });
     }
 }
 
+import { sanitizeObject } from "@/lib/utils";
+import { isRateLimited } from "@/lib/ratelimit";
+
 export async function POST(request: Request) {
     try {
-        const body = await request.json();
+        const rawBody = await request.json();
+        const body = sanitizeObject(rawBody);
 
         const result = createCandidateSchema.safeParse(body);
         if (!result.success) {
@@ -138,12 +169,32 @@ export async function POST(request: Request) {
 
         const data = result.data;
 
+        // ── RATE LIMITING ───────────────────────────────────
+        const isLimited = await isRateLimited(`apply:${data.email.toLowerCase().trim()}`, 5, 3600);
+        if (isLimited) {
+            return NextResponse.json({ 
+                error: "You've submitted too many applications recently. Please try again in an hour.", 
+                code: "RATE_LIMIT_EXCEEDED" 
+            }, { status: 429 });
+        }
+
         const drive = await prisma.drive.findUnique({
             where: { id: data.driveId }, include: { organization: { select: { isActive: true } } },
         });
 
         if (!drive) {
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        }
+
+        const now = new Date();
+        const deadline = drive.deadline ? new Date(drive.deadline) : null;
+        const isClosed = (deadline && deadline < now) || (drive as any).status === "CLOSED";
+
+        if (isClosed) {
+            return NextResponse.json({ 
+                error: "Applications for this position are no longer being accepted.",
+                code: "DRIVE_CLOSED"
+            }, { status: 410 });
         }
 
         if (drive.organization && !drive.organization.isActive) {
@@ -245,6 +296,26 @@ export async function DELETE(request: Request) {
 
         const validIds = belongsToOrg.map(a => a.id);
         if (validIds.length === 0) return NextResponse.json({ message: "No matching candidates found" });
+
+        // ── STORAGE CLEANUP: Purge Resumes from R2 ──────────
+        try {
+            const candidatesToCleanup = await prisma.application.findMany({
+                where: { id: { in: validIds } },
+                select: { resumeUrl: true }
+            });
+
+            const { deleteObject, getKeyFromUrl } = await import("@/lib/s3");
+            const bucket = process.env.R2_RESUMES_BUCKET || "resumes";
+
+            for (const cand of candidatesToCleanup) {
+                if (cand.resumeUrl) {
+                    const key = getKeyFromUrl(cand.resumeUrl);
+                    if (key) await deleteObject(bucket, key);
+                }
+            }
+        } catch (storageErr) {
+            console.error("[DELETE_CANDIDATE_STORAGE_ERROR]:", storageErr);
+        }
 
         try {
             const waitingResume = await resumeQueue.getJobs(['waiting', 'delayed', 'active']);

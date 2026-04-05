@@ -141,6 +141,40 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
             return NextResponse.json({ error: "Invalid drive ID" }, { status: 400 });
         }
 
+        // ── STORAGE CLEANUP: Purge JD & Resumes from R2 ──────────
+        try {
+            // Fetch drive details before deletion to get the R2 links
+            const driveWithApps = await prisma.drive.findUnique({
+                where: { id: driveId },
+                select: {
+                    jdPreviewUrl: true,
+                    applications: {
+                        select: { resumeUrl: true }
+                    }
+                }
+            });
+
+            if (driveWithApps) {
+                const { deleteObject, getKeyFromUrl } = await import("@/lib/s3");
+                
+                // Cleanup JD from "jds" bucket
+                if (driveWithApps.jdPreviewUrl) {
+                    const key = getKeyFromUrl(driveWithApps.jdPreviewUrl);
+                    if (key) await deleteObject(process.env.R2_JDS_BUCKET || "jds", key);
+                }
+
+                // Cleanup all Resumes from "resumes" bucket
+                for (const app of driveWithApps.applications) {
+                    if (app.resumeUrl) {
+                        const key = getKeyFromUrl(app.resumeUrl);
+                        if (key) await deleteObject(process.env.R2_RESUMES_BUCKET || "resumes", key);
+                    }
+                }
+            }
+        } catch (storageErr) {
+            console.error("[DELETE_SINGLE_DRIVE_STORAGE_ERROR]:", storageErr);
+        }
+
         await prisma.$transaction([
             prisma.application.deleteMany({
                 where: { driveId },
