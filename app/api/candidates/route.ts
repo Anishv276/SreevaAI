@@ -25,6 +25,7 @@ export async function GET(request: Request) {
                   a."createdAt",
                   a."experienceYears",
                   a."relevantYears",
+                  a.location,
                   d.title AS "driveTitle",
                   s.status AS "assessmentStatus",
                   i.status AS "interviewStatusRaw"
@@ -48,6 +49,7 @@ export async function GET(request: Request) {
                   a."createdAt",
                   a."experienceYears",
                   a."relevantYears",
+                  a.location,
                   d.title AS "driveTitle",
                   s.status AS "assessmentStatus",
                   i.status AS "interviewStatusRaw"
@@ -99,7 +101,7 @@ export async function GET(request: Request) {
                 status: mainStatus,
                 interviewStatus,
                 date: new Date(app.createdAt).toLocaleDateString(),
-                location: "Remote",
+                location: app.location || "Remote",
                 experienceYears: app.experienceYears,
                 relevantYears: app.relevantYears,
             };
@@ -163,7 +165,7 @@ export async function POST(request: Request) {
 
         const resumeText = data.resumeText?.trim() || "";
 
-        const { driveId, fullName, email, phone, resumeUrl, structuredResume, ...submissionData } = data;
+        const { driveId, fullName, email, phone, resumeUrl, structuredResume, location, ...submissionData } = data;
 
         const application = await prisma.application.create({
             data: {
@@ -171,6 +173,7 @@ export async function POST(request: Request) {
                 fullName: fullName.trim(),
                 email: email.toLowerCase().trim(),
                 phone: phone.trim(),
+                location: location?.trim() || null,
                 resumeUrl: resumeUrl?.trim() || "https://example.com/resume.pdf",
                 resumeText: resumeText,
                 structuredResume: structuredResume ? JSON.stringify(structuredResume) : null,

@@ -274,35 +274,12 @@ export default function DrivesPage() {
                                     onClick={(e) => isSelectionMode && e.stopPropagation()}
                                 >
                                     {/* Toggle Switch */}
-                                    <button
-                                        onClick={(e) => {
-                                            if (isSelectionMode) return;
-                                            toggleDriveStatus(
-                                                drive.id,
-                                                (drive.status === 'ACTIVE' || drive.status === 'Active') ? "INACTIVE" : "ACTIVE"
-                                            );
-                                        }}
-                                        className="flex items-center gap-2.5"
-                                    >
-                                        <div className={`relative w-11 h-6 rounded-full transition-all duration-300 ${
-                                            drive.status === 'ACTIVE' || drive.status === 'Active'
-                                                ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]'
-                                                : 'bg-gray-300'
-                                        }`}>
-                                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all duration-300 ${
-                                                drive.status === 'ACTIVE' || drive.status === 'Active'
-                                                    ? 'left-6'
-                                                    : 'left-1'
-                                            }`} />
-                                        </div>
-                                        <span className={`text-[11px] font-black uppercase tracking-wider transition-colors duration-200 ${
-                                            drive.status === 'ACTIVE' || drive.status === 'Active'
-                                                ? 'text-green-600'
-                                                : 'text-gray-400'
-                                        }`}>
-                                            {drive.status === 'ACTIVE' || drive.status === 'Active' ? 'Active' : 'Inactive'}
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="h-2.5 w-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)] animate-pulse" />
+                                        <span className="text-[11px] font-black uppercase tracking-wider text-green-600">
+                                            Published
                                         </span>
-                                    </button>
+                                    </div>
                                     <div className="flex flex-col items-end">
                                         <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
                                             <Calendar className="h-3 w-3" />
@@ -383,7 +360,7 @@ export default function DrivesPage() {
                                     <Badge variant="secondary" className="px-3 py-1 bg-gray-100 text-gray-600 border-0 font-bold uppercase text-[10px] tracking-widest">{selectedDrive.type}</Badge>
                                     <Badge variant="secondary" className="px-3 py-1 bg-green-50 text-green-600 border-0 font-bold uppercase text-[10px] tracking-widest flex items-center gap-1.5 leading-none h-6 px-2.5">
                                         <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                                        {selectedDrive.status}
+                                        Published
                                     </Badge>
                                 </div>
                             </div>
@@ -392,12 +369,6 @@ export default function DrivesPage() {
                             <div className="grid grid-cols-2 gap-6 p-6 bg-gray-50 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden group/grid">
                                 <div className="absolute inset-0 bg-gradient-to-br from-orange-50/0 via-orange-50/0 to-orange-100/30 opacity-0 group-hover/grid:opacity-100 transition-opacity duration-700" />
                                 
-                                <div className="space-y-1.5 relative z-10">
-                                    <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">
-                                        <MapPin className="h-3 w-3" /> Location
-                                    </div>
-                                    <p className="font-bold text-gray-900 text-sm">{selectedDrive.location || "Remote"}</p>
-                                </div>
                                 <div className="space-y-1.5 relative z-10">
                                     <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">
                                         <DollarSign className="h-3 w-3" /> Salary

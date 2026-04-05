@@ -10,15 +10,15 @@ import { ScreeningAssessment, ScreeningWeight } from "@/components/create-drive/
 import { RegistrationForm, CustomField } from "@/components/create-drive/registration-form";
 import { FinalPreview } from "@/components/create-drive/final-preview";
 import { CandidatePreview } from "@/components/create-drive/candidate-preview";
+import { InterviewSetup } from "@/components/create-drive/interview-setup";
 import { useJobs } from "@/context/jobs-context";
-import { Switch } from "@/components/ui/switch";
-import { Copy, CheckCircle2, Rocket, AlertCircle, X, Camera, ShieldCheck, Zap, Eye, PenLine, Sparkles, ChevronLeft, Upload, ChevronRight } from "lucide-react";
+import { Copy, CheckCircle2, Rocket, AlertCircle, X, Eye, PenLine, Sparkles, ChevronLeft, ChevronRight, Upload } from "lucide-react";
 
 const STEPS = [
     "Basic Info",
     "Job Description",
     "Screening",
-    "Assessment",
+    "Interview",
     "Registration",
     "Preview"
 ];
@@ -29,7 +29,7 @@ const STEPS = [
 const STEP_VALIDATION_HINTS: Record<number, string> = {
     0: "Please fill all required fields.",
     1: "Please fill all required fields.",
-    2: "Please ensure assessment weights sum to exactly 100% before continuing.",
+    2: "Please set an AI match threshold before continuing.",
     3: "Please add at least one registration field before continuing.",
 };
 
@@ -53,7 +53,6 @@ function CreateDriveForm() {
         title: "",
         role: "",
         department: "",
-        location: "",
         workMode: "Remote",
         employmentType: "Full-time",
         deadline: "",
@@ -63,11 +62,13 @@ function CreateDriveForm() {
         skills: "",
         responsibilities: "",
         requirements: "",
-        assessmentCount: 5,
-        assessmentDifficulty: "Medium",
-        assessmentTime: 15,
-        assessmentMode: "TEST",
-        extractedDetails: {}, // New field for structured storage
+        extractedDetails: {},
+        interviewEnabled: true,
+        interviewLanguage: "English",
+        interviewTime: 10,
+        interviewAntiCheat: "Medium",
+        interviewFollowUp: 3,
+        interviewQuestions: [],
     });
     const [creationMethod, setCreationMethod] = useState<null | 'manual' | 'scan'>(isEditMode ? 'manual' : null);
     const [published, setPublished] = useState(false);
@@ -76,8 +77,7 @@ function CreateDriveForm() {
 
     // Lifted state
     const [aiEnabled, setAiEnabled] = useState(true);
-    const [assessmentEnabled, setAssessmentEnabled] = useState(true);
-    const [weights, setWeights] = useState<ScreeningWeight>({ skills: 30, experience: 40, education: 30 });
+    const [weights, setWeights] = useState<ScreeningWeight>({ threshold: 60 });
     const [customFields, setCustomFields] = useState<CustomField[]>([
         { id: 1, label: "Portfolio URL", type: "Text", required: true },
         { id: 2, label: "Why do you want to join us?", type: "Long Text", required: false },
@@ -91,8 +91,8 @@ function CreateDriveForm() {
     // Track which steps have been explicitly completed
     const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
     const [toast, setToast] = useState<string | null>(null);
-    const [showDurationDropdown, setShowDurationDropdown] = useState(false);
     const formRef = useRef<HTMLDivElement>(null);
+    const analysisAbortRef = useRef<AbortController | null>(null);
 
     // Initial load for edit mode
     useEffect(() => {
@@ -105,8 +105,7 @@ function CreateDriveForm() {
                     title: drive.title,
                     role: (drive as any).role || drive.title,
                     department: drive.department,
-                    location: drive.location,
-                    workMode: (drive as any).workMode || (drive.location.includes("Remote") ? "Remote" : "On-site"),
+                    workMode: (drive as any).workMode || "Remote",
                     employmentType: drive.type,
                     deadline: (drive as any).deadline ? new Date((drive as any).deadline).toISOString().split('T')[0] : "",
                     description: drive.description,
@@ -115,28 +114,29 @@ function CreateDriveForm() {
                     requirements: (drive as any).requirements || "",
                     experience: (drive as any).experience || "",
                     salary: (drive as any).salary || "",
-                    assessmentCount: (drive as any).assessmentCount || prev.assessmentCount,
-                    assessmentDifficulty: (drive as any).assessmentDifficulty || prev.assessmentDifficulty,
-                    assessmentTime: (drive as any).assessmentTime || prev.assessmentTime,
-                    assessmentMode: (drive as any).assessmentMode || "TEST",
+                    interviewEnabled: (drive as any).interviewEnabled ?? true,
+                    interviewLanguage: (drive as any).interviewLanguage || "English",
+                    interviewTime: (drive as any).interviewTime || 10,
+                    interviewAntiCheat: (drive as any).proctoringLevel || "Medium",
+                    interviewFollowUp: (drive as any).aiFollowUpDepth || 3,
+                    interviewQuestions: typeof (drive as any).interviewQuestions === 'string' 
+                        ? JSON.parse((drive as any).interviewQuestions) 
+                        : ((drive as any).interviewQuestions || []),
                     extractedDetails: (drive as any).extractedDetails || {},
+                    jdFileName: (drive as any).jdFileName || "",
+                    jdPreviewUrl: (drive as any).jdPreviewUrl || "",
                 }));
                 
-                // If the app has more detailed screening/reg fields in the DB, 
-                // we would map them here. Assuming defaults based on existing code.
-                if ((drive as any).aiScreeningEnabled !== undefined) {
-                    setAiEnabled((drive as any).aiScreeningEnabled);
-                }
-                if ((drive as any).aiScreeningWeights) {
-                    try {
-                        const w = typeof (drive as any).aiScreeningWeights === 'string' 
-                            ? JSON.parse((drive as any).aiScreeningWeights) 
-                            : (drive as any).aiScreeningWeights;
-                        setWeights(w);
-                    } catch (e) { console.error("Failed to parse weights", e); }
-                }
-                if ((drive as any).assessmentEnabled !== undefined) {
-                    setAssessmentEnabled((drive as any).assessmentEnabled);
+                // Prioritize the top-level database columns first
+                const loadedWeights = (drive as any).aiScreeningWeights 
+                    ? (typeof (drive as any).aiScreeningWeights === 'string' ? JSON.parse((drive as any).aiScreeningWeights) : (drive as any).aiScreeningWeights)
+                    : (drive as any).aiScreening?.weights;
+
+                if (loadedWeights) {
+                    setWeights(loadedWeights);
+                    setAiEnabled(true);
+                } else if ((drive as any).screeningThreshold !== undefined) {
+                    setWeights({ threshold: (drive as any).screeningThreshold });
                 }
                 if ((drive as any).registrationFields) {
                     try {
@@ -150,10 +150,61 @@ function CreateDriveForm() {
         }
     }, [isEditMode, driveId, jobs]);
 
+    // Ensure clean state when switching to "New Drive" from Dashboard
+    useEffect(() => {
+        if (!isEditMode && !driveId) {
+            setFormData({
+                title: "",
+                role: "",
+                department: "",
+                location: "",
+                workMode: "Remote",
+                employmentType: "Full-time",
+                deadline: "",
+                description: "",
+                salary: "",
+                experience: "",
+                skills: "",
+                responsibilities: "",
+                requirements: "",
+                extractedDetails: {},
+                interviewEnabled: true,
+                interviewLanguage: "English",
+                interviewTime: 10,
+                interviewAntiCheat: "Medium",
+                interviewFollowUp: 3,
+                interviewQuestions: [],
+            });
+            setCreationMethod(null);
+            setCurrentStep(0);
+            setIsAnalyzing(false);
+            setAnalysisError(null);
+        }
+    }, [isEditMode, driveId]);
+
     const startAnalysis = async ({ file, url }: { file?: File, url?: string }) => {
         setIsAnalyzing(true);
         setAnalysisError(null);
-        if (file) setFormData((prev: any) => ({ ...prev, jdFileName: file.name }));
+        
+        // FORCE UPDATE NEW FILENAME IMMEDIATELY
+        if (file) {
+            setFormData((prev: any) => ({ 
+                ...prev, 
+                jdFileName: file.name,
+                jdFile: file,
+                jdPreviewUrl: URL.createObjectURL(file)
+            }));
+        } else if (url) {
+            setFormData((prev: any) => ({ 
+                ...prev, 
+                jdFileName: "Extracted from Link",
+                jdPreviewUrl: url
+            }));
+        }
+
+        analysisAbortRef.current?.abort(); // Cancel any existing one
+        const controller = new AbortController();
+        analysisAbortRef.current = controller;
 
         const data = new FormData();
         if (file) data.append("file", file);
@@ -161,57 +212,79 @@ function CreateDriveForm() {
         data.append("type", "JD");
 
         try {
-            const res = await fetch("/api/extract", { method: "POST", body: data });
+            console.log("Starting analysis for:", file?.name || url);
+            const res = await fetch("/api/extract", { 
+                method: "POST", 
+                body: data,
+                signal: controller.signal 
+            });
             if (res.ok) {
-                const { data: extracted, text } = await res.json();
-                
+                const responseData = await res.json();
+                const { data: extracted, text, url: r2Url } = responseData;
+                console.log("Analysis success:", extracted);
                 // Map the new structured schema to our form data
                 setFormData((prev: any) => {
                     const experience = extracted.experience;
                     const skills = extracted.skills;
                     const salary = extracted.salary;
 
-                    // Improved Skill Mapping: Combine Must Have and Good to Have for the single 'skills' field
-                    const allSkills = [
-                        ...(Array.isArray(skills?.must_have) ? skills.must_have : []),
-                        ...(Array.isArray(skills?.good_to_have) ? skills.good_to_have : [])
-                    ].filter(Boolean).join(", ");
+                    // Combined Skill Mapping
+                    const mustHave = Array.isArray(skills?.must_have) ? skills.must_have : [];
+                    const goodToHave = Array.isArray(skills?.good_to_have) ? skills.good_to_have : [];
+                    const allSkills = [...mustHave, ...goodToHave].filter(Boolean).join(", ");
 
-                    // Strict check for numeric 0
-                    const expText = (typeof experience?.min_years === 'number') 
-                        ? `${experience.min_years}${experience.max_years ? `-${experience.max_years}` : "+"} years` 
+                    // Summary/Description mapping
+                    const desc = extracted.summary || extracted.description || extracted.job_description || text || prev.description;
+
+                    // Experience string mapping
+                    const minExp = experience?.min_years ?? experience?.min;
+                    const maxExp = experience?.max_years ?? experience?.max;
+                    const expText = (typeof minExp === 'number') 
+                        ? `${minExp}${maxExp ? `-${maxExp}` : "+"} years` 
                         : prev.experience;
 
-                    const salaryText = (typeof salary?.min === 'number')
-                        ? `${salary.currency || "₹"}${salary.min}${salary.max ? ` - ${salary.max}` : ""} ${salary.period || ""}`
+                    // Salary mapping
+                    const salaryMin = salary?.min;
+                    const salaryMax = salary?.max;
+                    const salaryText = (typeof salaryMin === 'number')
+                        ? `${salary.currency || "₹"}${salaryMin}${salaryMax ? ` - ${salaryMax}` : ""} ${salary.period || ""}`
                         : prev.salary;
+
+                    // Responsibilities & Requirements mapping
+                    const resp = Array.isArray(extracted.responsibilities) ? extracted.responsibilities.join("\n") : 
+                                 (typeof extracted.responsibilities === 'string' ? extracted.responsibilities : (prev.responsibilities || ""));
+                    
+                    const req = Array.isArray(extracted.requirements) ? extracted.requirements.join("\n") :
+                                (typeof extracted.requirements === 'string' ? extracted.requirements : (prev.requirements || ""));
 
                     return {
                         ...prev,
-                        title: prev.title || extracted.job_title || "",
-                        role: prev.role || extracted.job_title || "",
-                        location: prev.location || (extracted.location?.city ? `${extracted.location.city}, ${extracted.location.country || ""}` : ""),
-                        workMode: extracted.location?.remote ? "Remote" : "On-site",
-                        employmentType: extracted.employment_type ? (extracted.employment_type.charAt(0).toUpperCase() + extracted.employment_type.slice(1)) : prev.employmentType,
-                        description: extracted.summary || extracted.description || text || prev.description,
+                        title: extracted.job_title || prev.title || "",
+                        description: desc,
                         skills: allSkills || prev.skills,
                         salary: salaryText,
                         experience: expText,
                         department: extracted.department || prev.department,
-                        responsibilities: extracted.responsibilities?.join("\n") || prev.responsibilities,
-                        requirements: extracted.requirements?.join("\n") || prev.requirements,
-                        extractedDetails: extracted, // STORE THE FULL JSON
+                        responsibilities: resp,
+                        requirements: req,
+                        extractedDetails: extracted, 
+                        jdPreviewUrl: r2Url || prev.jdPreviewUrl,
                     };
                 });
             } else {
-                const error = await res.json();
-                setAnalysisError(error.error || "Failed to extract JD details.");
+                const errData = await res.json();
+                console.error("Extraction error response:", errData);
+                setAnalysisError(errData.error || "Failed to extract JD details.");
             }
-        } catch (e) {
+        } catch (e: any) {
+            if (e.name === 'AbortError') return; // Silence aborts
             console.error("Analysis failed:", e);
             setAnalysisError("An error occurred during AI analysis.");
         } finally {
             setIsAnalyzing(false);
+            if (analysisAbortRef.current === controller) {
+                analysisAbortRef.current = null;
+            }
         }
     };
 
@@ -230,10 +303,12 @@ function CreateDriveForm() {
             return !!(formData.description?.trim() || isAnalyzing || formData.jdFileName);
         }
         if (step === 2 && aiEnabled) {
-            const total = Object.values(weights).reduce((a, b) => a + b, 0);
-            return total === 100;
+            return (weights?.threshold ?? 0) > 0;
         }
         if (step === 3) {
+            return true; // Interview always valid
+        }
+        if (step === 4) {
             return customFields.length > 0;
         }
         return true;
@@ -262,13 +337,38 @@ function CreateDriveForm() {
     const prevStep = () => setCurrentStep(prev => Math.max(prev - 1, 0));
 
     const handlePublish = async () => {
+        // Safely parse interviewQuestions — DB returns it as a JSON string, Zod expects an array
+        let parsedQuestions = formData.interviewQuestions || [];
+        if (typeof parsedQuestions === "string") {
+            try { parsedQuestions = JSON.parse(parsedQuestions); } catch { parsedQuestions = []; }
+        }
+
+        // Explicitly pick only the fields that match the Zod schema
         const jobData = {
-            ...formData,
-            aiScreening: { enabled: aiEnabled, weights },
-            assessmentEnabled,
+            title: formData.title,
+            description: formData.description,
+            role: formData.role,
+            department: formData.department,
+            employmentType: formData.employmentType,
+            workMode: formData.workMode,
+            positions: formData.positions,
+            deadline: formData.deadline || null,
+            salary: formData.salary,
+            experience: formData.experience,
+            skills: formData.skills,
+            responsibilities: formData.responsibilities,
+            requirements: formData.requirements,
+            jdFileName: formData.jdFileName,
+            jdPreviewUrl: formData.jdPreviewUrl,
+            interviewEnabled: formData.interviewEnabled,
+            interviewLanguage: formData.interviewLanguage,
+            interviewTime: formData.interviewTime,
+            interviewAntiCheat: formData.interviewAntiCheat,
+            interviewFollowUp: formData.interviewFollowUp,
+            interviewQuestions: parsedQuestions,
             registrationFields: customFields,
-            status: "ACTIVE", // Prisma expects ACTIVE
-            postedAt: new Date().toISOString(),
+            extractedDetails: formData.extractedDetails || {},
+            screeningThreshold: weights?.threshold || 0,
         };
         
         console.log("handlePublish called. isEditMode:", isEditMode, "Data:", jobData);
@@ -283,7 +383,11 @@ function CreateDriveForm() {
                 savedId = Number(driveId);
             } else {
                 console.log("Logic: Adding new job");
-                result = await addJob(jobData);
+                result = await addJob({
+                    ...jobData,
+                    status: "ACTIVE",
+                    postedAt: new Date().toISOString(),
+                } as any);
                 savedId = result?.id;
             }
 
@@ -363,7 +467,7 @@ function CreateDriveForm() {
     }
 
     // ── AI Scan Initial Screen ────────────────────────────────
-    if (creationMethod === 'scan' && !formData.jdFileName) {
+    if (creationMethod === 'scan') {
         return (
             <div className="max-w-3xl mx-auto py-12 space-y-8 animate-in-fade">
                 <button 
@@ -375,24 +479,45 @@ function CreateDriveForm() {
                 
                 <div className="bg-white p-12 rounded-[2.5rem] border-2 border-dashed border-gray-200 hover:border-orange-300 transition-all duration-500">
                     <div className="text-center space-y-6">
-                        <div className="h-16 w-16 bg-orange-100 rounded-2xl flex items-center justify-center text-[#F97316] mx-auto">
-                            <Upload className="h-8 w-8" />
-                        </div>
-                        <div className="space-y-2">
-                            <h2 className="text-2xl font-bold text-gray-900">Upload Job Description</h2>
-                            <p className="text-gray-500">Our AI will scan all fields end-to-end to pre-fill your hiring drive.</p>
-                        </div>
+                        {!formData.jdFileName && (
+                            <>
+                                <div className="h-16 w-16 bg-orange-100 rounded-2xl flex items-center justify-center text-[#F97316] mx-auto">
+                                    <Upload className="h-8 w-8" />
+                                </div>
+                                <div className="space-y-2">
+                                    <h2 className="text-2xl font-bold text-gray-900">Upload Job Description</h2>
+                                    <p className="text-gray-500">Our AI will scan all fields end-to-end to pre-fill your hiring drive.</p>
+                                </div>
+                            </>
+                        )}
                         <JobDescription 
                             formData={formData} 
                             updateFormData={setFormData} 
                             isAnalyzing={isAnalyzing}
                             analysisError={analysisError}
-                            startAnalysis={async (params) => {
-                                await startAnalysis(params);
-                                setCreationMethod('manual'); // Transition to form after scan
-                                setCurrentStep(0); // Land on Basic Info
+                            startAnalysis={(params) => {
+                                startAnalysis(params); // Run in background
+                                setCreationMethod('manual'); // Transition instantly
+                                setCurrentStep(0); // Land on Basic Info (Step 0)
                             }}
+                            abortAnalysis={() => {
+                                analysisAbortRef.current?.abort();
+                                setIsAnalyzing(false);
+                            }}
+                            mode="scan"
                         />
+
+                        {formData.jdFileName && !isAnalyzing && (
+                            <div className="pt-4 animate-in-fade">
+                                <Button 
+                                    onClick={() => { setCreationMethod('manual'); setCurrentStep(0); }}
+                                    className="bg-gray-900 hover:bg-gray-800 text-white px-10 h-12 rounded-2xl font-bold text-[15px] shadow-xl hover:shadow-2xl transition-all active:scale-95 flex items-center gap-2 mx-auto"
+                                >
+                                    Continue to Form Steps
+                                    <ChevronRight className="h-5 w-5" />
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -492,7 +617,13 @@ function CreateDriveForm() {
                 }}
             >
                 <div className="p-8">
-                    {currentStep === 0 && <BasicInfo formData={formData} updateFormData={setFormData} />}
+                    {currentStep === 0 && (
+                        <BasicInfo 
+                            formData={formData} 
+                            updateFormData={setFormData} 
+                            isAnalyzing={isAnalyzing} 
+                        />
+                    )}
                     {currentStep === 1 && (
                         <JobDescription 
                             formData={formData} 
@@ -500,6 +631,11 @@ function CreateDriveForm() {
                             isAnalyzing={isAnalyzing}
                             analysisError={analysisError}
                             startAnalysis={startAnalysis}
+                            abortAnalysis={() => {
+                                analysisAbortRef.current?.abort();
+                                setIsAnalyzing(false);
+                            }}
+                            mode="form"
                         />
                     )}
                     {currentStep === 2 && (
@@ -511,181 +647,10 @@ function CreateDriveForm() {
                         />
                     )}
                     {currentStep === 3 && (
-                        <div className="space-y-10 animate-in-up duration-500 max-w-3xl mx-auto">
-                            <div className="flex items-center justify-between gap-4 mb-2">
-                                <div className="flex items-center gap-4">
-                                    <div className="p-2.5 bg-gray-900 rounded-xl shadow-lg">
-                                        <ShieldCheck className="w-6 h-6 text-white" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-xl font-bold text-gray-900 leading-tight">Assessment Parameters</h3>
-                                        <p className="text-sm text-gray-500 font-medium">Configure the evaluation strategy and constraints.</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-xl border border-gray-100">
-                                    <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Required</span>
-                                    <Switch checked={assessmentEnabled} onCheckedChange={setAssessmentEnabled} />
-                                </div>
-                            </div>
-
-                            {assessmentEnabled ? (
-                                <>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
-                                        {/* QUESTION COUNT */}
-                                        <div className="space-y-3">
-                                            <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Question Count</label>
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex-1 flex items-center justify-between p-1 bg-gray-50 rounded-xl border border-gray-200">
-                                                    <button 
-                                                        onClick={() => setFormData({...formData, assessmentCount: Math.max(1, formData.assessmentCount - 1)})}
-                                                        className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm transition-all text-gray-500 font-bold"
-                                                    >–</button>
-                                                    <input 
-                                                        type="number"
-                                                        value={formData.assessmentCount}
-                                                        onChange={(e) => setFormData({...formData, assessmentCount: Math.max(1, parseInt(e.target.value) || 1)})}
-                                                        className="w-12 bg-transparent text-center text-lg font-black text-gray-900 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                    />
-                                                    <button 
-                                                        onClick={() => setFormData({...formData, assessmentCount: Math.min(20, formData.assessmentCount + 1)})}
-                                                        className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm transition-all text-gray-500 font-bold"
-                                                    >+</button>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* DIFFICULTY LEVEL */}
-                                        <div className="space-y-3">
-                                            <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Difficulty Level</label>
-                                            <div className="flex gap-2 p-1 bg-gray-50 rounded-xl border border-gray-200">
-                                                {["Entry", "Medium", "Expert"].map((level) => (
-                                                    <button
-                                                        key={level}
-                                                        onClick={() => setFormData({...formData, assessmentDifficulty: level})}
-                                                        className={`flex-1 py-2.5 rounded-lg font-bold text-[12px] transition-all ${
-                                                            formData.assessmentDifficulty === level 
-                                                            ? 'bg-white text-gray-900 shadow-sm border border-gray-100' 
-                                                            : 'text-gray-400 hover:text-gray-600'
-                                                        }`}
-                                                    >
-                                                        {level}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* ASSESSMENT MODE */}
-                                        <div className="space-y-3 md:col-span-2">
-                                            <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Assessment Strategy</label>
-                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                                {[
-                                                    { id: "TEST", label: "Test Only", icon: ShieldCheck, desc: "MCQ / Mixed" },
-                                                    { id: "CODING", label: "Coding Only", icon: Zap, desc: "Sandbox Environment" },
-                                                    { id: "BOTH", label: "Hybrid Mode", icon: Rocket, desc: "Test + Coding" },
-                                                ].map((mode) => (
-                                                    <button
-                                                        key={mode.id}
-                                                        onClick={() => setFormData({...formData, assessmentMode: mode.id})}
-                                                        className={`p-4 rounded-2xl text-left transition-all border flex items-center gap-4 ${
-                                                            formData.assessmentMode === mode.id 
-                                                            ? 'bg-white border-gray-900 shadow-md ring-4 ring-gray-50' 
-                                                            : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'
-                                                        }`}
-                                                    >
-                                                        <div className={`p-2 rounded-lg ${formData.assessmentMode === mode.id ? 'bg-gray-100 text-gray-900' : 'bg-gray-50 text-gray-400'}`}>
-                                                            <mode.icon className="w-4 h-4" />
-                                                        </div>
-                                                        <div>
-                                                            <p className={`font-bold text-[13px] ${formData.assessmentMode === mode.id ? 'text-gray-900' : 'text-gray-500'}`}>{mode.label}</p>
-                                                            <p className="text-[10px] opacity-60 font-medium">{mode.desc}</p>
-                                                        </div>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* DURATION CUSTOM DROPDOWN */}
-                                        <div className="space-y-3 md:col-span-2">
-                                            <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest font-mono italic">Session Duration</label>
-                                            <div className="relative">
-                                                <div 
-                                                    onClick={() => setShowDurationDropdown(!showDurationDropdown)}
-                                                    className={`w-full h-14 px-6 flex items-center justify-between rounded-2xl font-bold transition-all cursor-pointer ${
-                                                        showDurationDropdown 
-                                                        ? 'bg-white border-2 border-gray-900 shadow-xl ring-4 ring-gray-50' 
-                                                        : 'bg-gray-50 border border-gray-200 text-gray-700 hover:bg-white hover:border-gray-400'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`p-2 rounded-lg ${showDurationDropdown ? 'bg-gray-100 text-gray-900' : 'bg-gray-200/50 text-gray-400'}`}>
-                                                            <ShieldCheck className="w-4 h-4" />
-                                                        </div>
-                                                        <span className={showDurationDropdown ? 'text-gray-900' : 'text-gray-600'}>
-                                                            {formData.assessmentTime} Minutes
-                                                        </span>
-                                                    </div>
-                                                    <div className={`transition-transform duration-300 font-black ${showDurationDropdown ? 'rotate-180 text-gray-900' : 'text-gray-300'}`}>
-                                                        ↓
-                                                    </div>
-                                                </div>
-                                                
-                                                {showDurationDropdown && (
-                                                    <div className="absolute top-full left-0 w-full mt-3 bg-white border border-gray-100 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.15)] p-3 z-50 grid grid-cols-2 gap-2 animate-in-up duration-300 border-t-4 border-t-gray-900">
-                                                        {[15, 30, 45, 60, 90, 120].map((mins) => (
-                                                            <button
-                                                                key={mins}
-                                                                onClick={() => {
-                                                                    setFormData({...formData, assessmentTime: mins});
-                                                                    setShowDurationDropdown(false);
-                                                                }}
-                                                                className={`group relative overflow-hidden py-5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${
-                                                                    formData.assessmentTime === mins 
-                                                                    ? 'bg-gray-900 text-white shadow-lg scale-[0.98]' 
-                                                                    : 'bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-gray-900'
-                                                                }`}
-                                                            >
-                                                                <span className="relative z-10">{mins} Minutes</span>
-                                                                {mins > 59 && (
-                                                                    <span className="block text-[8px] opacity-40 mt-1">({mins/60} Hour{mins > 60 ? 's' : ''})</span>
-                                                                )}
-                                                                {formData.assessmentTime === mins && (
-                                                                    <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-green-400" />
-                                                                )}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="p-5 bg-gray-50 border border-gray-100 rounded-2xl">
-                                        <div className="flex gap-4">
-                                            <ShieldCheck className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
-                                            <p className="text-[11px] text-gray-500 font-medium leading-relaxed">
-                                                Integrity verification is enabled by default. This includes **Webcam Monitoring**, **Multi-monitor Detection**, and **Behavioral Tracking**.
-                                            </p>
-                                        </div>
-                                    </div>
-                                </>
-                            ) : (
-                                <div className="p-12 rounded-[2.5rem] bg-gray-50/50 border-2 border-dashed border-gray-100 flex flex-col items-center justify-center text-center gap-4 animate-in-fade">
-                                    <div className="h-16 w-16 bg-white rounded-2xl shadow-sm flex items-center justify-center text-gray-300">
-                                        <ShieldCheck className="h-8 w-8" />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <p className="font-bold text-gray-900 text-lg">Online Assessment Disabled</p>
-                                        <p className="text-sm text-gray-500 max-w-sm">Candidates will proceed directly to the registration page without taking a technical test.</p>
-                                    </div>
-                                    <button 
-                                        onClick={() => setAssessmentEnabled(true)}
-                                        className="text-[#F97316] text-[13px] font-bold hover:underline mt-2"
-                                    >
-                                        Enable Assessment
-                                    </button>
-                                </div>
-                            )}
-                        </div>
+                        <InterviewSetup
+                            formData={formData}
+                            updateFormData={setFormData}
+                        />
                     )}
                     {currentStep === 4 && (
                         <RegistrationForm
@@ -698,7 +663,7 @@ function CreateDriveForm() {
                             formData={formData}
                             aiEnabled={aiEnabled}
                             weights={weights}
-                            regFieldCount={customFields.length + 6} // 6 standard fields
+                            regFieldCount={customFields.length + 6}
                         />
                     )}
                 </div>
@@ -706,7 +671,25 @@ function CreateDriveForm() {
                 {/* Footer Actions */}
                 <div className="flex justify-between items-center px-8 py-4 bg-white border-t border-gray-100">
                     {currentStep === 0 ? (
-                        <div />
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => {
+                                if (isEditMode) {
+                                    router.push("/admin");
+                                } else if (formData.jdFileName) {
+                                    // Go back to the scan upload screen where our file is still visible
+                                    analysisAbortRef.current?.abort();
+                                    setIsAnalyzing(false);
+                                    setCreationMethod('scan');
+                                } else {
+                                    setCreationMethod(null);
+                                }
+                            }}
+                            className="border-gray-300 bg-white text-gray-800 hover:bg-gray-50 h-9 font-semibold"
+                        >
+                            {isEditMode ? "Cancel" : "Back"}
+                        </Button>
                     ) : (
                         <Button variant="outline" size="sm" onClick={prevStep}
                             className="border-gray-300 bg-white text-gray-800 hover:bg-gray-50 h-9 font-semibold">

@@ -1,71 +1,72 @@
 {
-    "job_title": "DevOps Engineer",
+    "job_title": "Software Development Engineer in Test (SDET)",
     "company_name": null,
     "department": null,
     "location": {
         "city": null,
         "state": null,
         "country": null,
-        "remote": true
+        "remote": false
     },
-    "employment_type": "full-time",
+    "employment_type": null,
     "experience": {
-        "min_years": 2,
-        "max_years": 5
+        "min_years": 5,
+        "max_years": 8
     },
     "skills": {
         "must_have": [
-            "Linux/Unix",
+            "Python",
+            "API testing",
+            "Postman",
+            "REST Assured",
+            "Jenkins",
+            "GitLab CI",
+            "Azure DevOps",
+            "Selenium",
+            "Pytest",
+            "SQL",
+            "JMeter",
+            "Locust"
+        ],
+        "good_to_have": [
             "AWS",
             "Azure",
             "GCP",
-            "Python",
-            "Bash",
-            "Shell",
             "Docker",
             "Kubernetes",
-            "Jenkins",
-            "GitHub Actions",
-            "GitLab CI",
-            "Ansible",
-            "Puppet",
-            "Chef",
-            "Terraform",
-            "CloudFormation"
-        ],
-        "good_to_have": [
-            "microservices architecture"
+            "Cucumber",
+            "Behave"
         ],
         "soft_skills": [
-            "problem-solving",
             "communication",
-            "team collaboration",
-            "ability to work in fast-paced environments"
+            "leadership",
+            "teamwork"
         ]
     },
     "education": {
-        "required": "Bachelor\u2019s degree in Computer Science or related field",
+        "required": null,
         "preferred": null
     },
     "responsibilities": [
-        "Design, implement, and maintain CI/CD pipelines",
-        "Automate infrastructure provisioning using IaC tools (Terraform, CloudFormation)",
-        "Manage cloud platforms such as AWS, Azure, or GCP",
-        "Deploy and manage containerized applications using Docker and Kubernetes",
-        "Monitor system performance using tools like Prometheus, Grafana, or ELK Stack",
-        "Ensure system security, scalability, and high availability",
-        "Collaborate with development teams for smooth deployments",
-        "Troubleshoot production issues and perform root cause analysis"
+        "Design, develop, and maintain automation frameworks using Python to ensure scalable and reusable solutions.",
+        "Develop and execute test plans, test cases, and automation scripts to validate APIs, backend systems, and integrations.",
+        "Perform functional, integration, and regression testing for applications.",
+        "Collaborate with cross-functional teams to understand business and technical requirements.",
+        "Conduct performance and load testing for APIs to ensure optimal application performance.",
+        "Identify, analyze, and document bugs and track their resolution.",
+        "Implement and enhance CI/CD pipelines to integrate automated tests into the development lifecycle.",
+        "Continuously improve testing processes, tools, and practices to ensure high-quality releases.",
+        "Mentor and guide junior QA team members in testing practices and automation."
     ],
     "requirements": [
-        "Strong knowledge of Linux/Unix systems",
-        "Experience with cloud platforms (AWS/Azure/GCP)",
-        "Proficiency in scripting (Python, Bash, Shell)",
-        "Hands-on experience with Docker and Kubernetes",
-        "Familiarity with CI/CD tools (Jenkins, GitHub Actions, GitLab CI)",
-        "Knowledge of configuration management tools (Ansible, Puppet, Chef)",
-        "Understanding of networking and security principles",
-        "Certifications (AWS DevOps, Kubernetes CKA, etc.)"
+        "Strong programming skills in Python and experience in building test automation frameworks.",
+        "Proficiency in API testing using tools like Postman, REST Assured, or similar.",
+        "Deep understanding of RESTful APIs, their architecture, and common testing techniques.",
+        "Hands-on experience with CI/CD pipelines and tools like Jenkins, GitLab CI, or Azure DevOps.",
+        "Solid understanding of software QA methodologies, tools, and best practices.",
+        "Experience in testing tools like Selenium, Pytest, or similar.",
+        "Familiarity with database testing and SQL queries.",
+        "Knowledge of performance testing tools such as JMeter or Locust."
     ],
     "salary": {
         "min": null,
@@ -74,21 +75,21 @@
         "period": null
     },
     "keywords": [
-        "DevOps",
-        "Engineer",
-        "CI/CD",
-        "pipelines",
+        "SDET",
+        "Software Development Engineer in Test",
+        "Python",
         "automation",
-        "infrastructure",
-        "cloud",
-        "Docker",
-        "Kubernetes",
-        "monitoring",
-        "Terraform",
-        "AWS",
-        "Azure",
-        "GCP",
-        "scripting"
+        "API testing",
+        "functional testing",
+        "integration testing",
+        "regression testing",
+        "performance testing",
+        "CI/CD",
+        "Postman",
+        "Selenium",
+        "Jenkins",
+        "SQL",
+        "cloud platforms"
     ],
-    "summary": "We are seeking a skilled DevOps Engineer to build, manage, and optimize scalable infrastructure and deployment pipelines."
+    "summary": "We are seeking a skilled and detail-oriented Software Development Engineer in Test (SDET) with 5-8 years of experience in Python automation and API testing to ensure the highest quality of software through innovative testing strategies and automation."
 }

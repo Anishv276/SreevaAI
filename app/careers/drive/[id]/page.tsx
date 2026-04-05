@@ -21,7 +21,20 @@ export default function DriveDetailsPage({ params }: { params: Promise<{ id: str
             .finally(() => setLoading(false));
     }, [id]);
 
-    if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#FDFCFB] font-bold text-gray-400 uppercase tracking-widest">Loading Assessment Details...</div>;
+    if (loading) return (
+        <div className="min-h-screen bg-[#FDFCFB]">
+            <PortalHeader />
+            <div className="container mx-auto px-4 py-8 max-w-7xl animate-pulse">
+                <div className="h-[200px] bg-gray-100 rounded-3xl mb-8 shadow-sm" />
+                <div className="grid lg:grid-cols-3 gap-12">
+                    <div className="lg:col-span-2 space-y-8">
+                        <div className="h-8 w-48 bg-gray-100 rounded-lg" />
+                        <div className="h-32 bg-gray-50 rounded-2xl" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 
     if (!drive) {
         return (
@@ -42,7 +55,7 @@ export default function DriveDetailsPage({ params }: { params: Promise<{ id: str
         <div className="min-h-screen bg-[#FDFCFB] selection:bg-orange-100 selection:text-orange-900">
             <PortalHeader />
 
-            <main className="container mx-auto px-4 py-12 max-w-6xl animate-in-fade">
+            <main className="container mx-auto px-4 py-12 max-w-7xl 2xl:max-w-screen-2xl animate-in-fade">
                 {/* Breadcrumb / Back */}
                 <div className="mb-10">
                     <Link href="/careers" className="group inline-flex items-center text-sm font-bold text-gray-400 hover:text-[#F97316] transition-all">
@@ -53,18 +66,18 @@ export default function DriveDetailsPage({ params }: { params: Promise<{ id: str
 
                 <div className="grid gap-12 lg:grid-cols-3 items-start">
                     {/* Left Column: Job Description & Details */}
-                    <div className="lg:col-span-2 space-y-10">
+                    <div className="lg:col-span-2 space-y-6">
                         {/* Hero Section */}
-                        <div className="relative overflow-hidden rounded-[2.5rem] bg-white border border-orange-100 shadow-[0_20px_60px_-15px_rgba(249,115,22,0.1)] p-10 lg:p-14 transition-all duration-500 hover:shadow-[0_40px_80px_-15px_rgba(249,115,22,0.15)]">
+                        <div className="relative overflow-hidden rounded-3xl bg-white border border-orange-100 shadow-[0_15px_40px_-15px_rgba(249,115,22,0.08)] p-8 transition-all duration-500 hover:shadow-[0_25px_50px_-15px_rgba(249,115,22,0.12)]">
                             {/* Decorative Background Elements */}
                             <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-orange-50 to-transparent rounded-full -mr-32 -mt-32 opacity-50" />
                             <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-orange-50 to-transparent rounded-full -ml-16 -mb-16 opacity-30" />
 
                             <div className="relative z-10 flex flex-col items-start gap-6">
-                                <div className="px-4 py-1.5 rounded-full bg-orange-100/50 text-[#F97316] text-[11px] font-black uppercase tracking-[0.2em] border border-orange-200/50">
+                                <div className="px-3 py-1 rounded-full bg-orange-100/50 text-[#F97316] text-[10px] font-black uppercase tracking-[0.2em] border border-orange-200/50">
                                     {drive.department}
                                 </div>
-                                <h1 className="text-4xl lg:text-5xl font-black text-gray-900 tracking-tight leading-[1.1]">
+                                <h1 className="text-3xl lg:text-3xl font-black text-gray-900 tracking-tight leading-tight">
                                     {drive.title}
                                 </h1>
                                 <div className="flex flex-wrap gap-8 pt-2">
@@ -102,12 +115,12 @@ export default function DriveDetailsPage({ params }: { params: Promise<{ id: str
                         {/* Content Sections */}
                         <div className="space-y-12 px-4 lg:px-8">
                             <section className="space-y-6">
-                                <div className="flex items-center gap-4">
-                                    <span className="h-10 w-1.5 bg-[#F97316] rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)]" />
-                                    <h2 className="text-2xl font-black text-gray-900 tracking-tight">About the Role</h2>
+                                <div className="flex items-center gap-3">
+                                    <span className="h-8 w-1 bg-[#F97316] rounded-full shadow-[0_0_10px_rgba(249,115,22,0.3)]" />
+                                    <h2 className="text-xl font-black text-gray-900 tracking-tight">About the Role</h2>
                                 </div>
-                                <div className="prose prose-orange max-w-none text-gray-600 leading-[1.8] text-lg font-medium whitespace-pre-wrap">
-                                    {drive.description || `We are looking for a passionate ${drive.title} to join our ${drive.department} team. You will be responsible for building scalable solutions and working with cross-functional teams.`}
+                                <div className="prose prose-orange max-w-none text-gray-600 leading-[1.6] text-sm font-medium whitespace-pre-wrap">
+                                    {drive.description || `We are looking for a passionate ${drive.title} to join our ${drive.department} team.`}
                                 </div>
                             </section>
 
@@ -119,12 +132,12 @@ export default function DriveDetailsPage({ params }: { params: Promise<{ id: str
                                     </div>
                                     <div className="grid md:grid-cols-2 gap-8">
                                         {responsibilities.length > 0 && (
-                                            <div className="p-8 rounded-[2rem] bg-white border border-gray-100 shadow-sm transition-all hover:shadow-md">
-                                                <h3 className="text-lg font-black text-[#F97316] mb-4 uppercase tracking-wider">What you'll do</h3>
-                                                <ul className="space-y-4">
+                                            <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm transition-all hover:shadow-md">
+                                                <h3 className="text-sm font-black text-[#F97316] mb-3 uppercase tracking-wider">What you'll do</h3>
+                                                <ul className="space-y-3">
                                                     {responsibilities.map((item: string, idx: number) => (
-                                                        <li key={idx} className="flex items-start gap-3 text-gray-600 font-medium">
-                                                            <div className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[#F97316] flex-shrink-0" />
+                                                        <li key={idx} className="flex items-start gap-2 text-gray-600 font-medium text-[13px]">
+                                                            <div className="mt-1.5 h-1 w-1 rounded-full bg-[#F97316] flex-shrink-0" />
                                                             {item}
                                                         </li>
                                                     ))}
@@ -132,12 +145,12 @@ export default function DriveDetailsPage({ params }: { params: Promise<{ id: str
                                             </div>
                                         )}
                                         {skills.length > 0 && (
-                                            <div className="p-8 rounded-[2rem] bg-gray-900 text-white shadow-xl transition-all hover:scale-[1.02]">
-                                                <h3 className="text-lg font-black text-orange-400 mb-4 uppercase tracking-wider">What we look for</h3>
-                                                <ul className="space-y-4">
+                                            <div className="p-6 rounded-3xl bg-gray-900 text-white shadow-xl transition-all hover:scale-[1.01]">
+                                                <h3 className="text-sm font-black text-orange-400 mb-3 uppercase tracking-wider">What we look for</h3>
+                                                <ul className="space-y-3">
                                                     {skills.map((item: string, idx: number) => (
-                                                        <li key={idx} className="flex items-start gap-3 text-gray-300 font-medium text-[15px]">
-                                                            <div className="mt-1.5 h-1.5 w-1.5 rounded-full bg-orange-400 flex-shrink-0" />
+                                                        <li key={idx} className="flex items-start gap-2 text-gray-300 font-medium text-[13px]">
+                                                            <div className="mt-1.5 h-1 w-1 rounded-full bg-orange-400 flex-shrink-0" />
                                                             {item}
                                                         </li>
                                                     ))}
@@ -165,6 +178,15 @@ export default function DriveDetailsPage({ params }: { params: Promise<{ id: str
                                             APPLY NOW
                                         </Button>
                                     </Link>
+                                    {drive.jdPreviewUrl && (
+                                        <Button 
+                                            variant="outline" 
+                                            onClick={() => window.open(drive.jdPreviewUrl, '_blank')}
+                                            className="w-full h-12 rounded-2xl border-gray-100 text-gray-500 font-bold hover:bg-orange-50 hover:text-[#F97316] transition-all"
+                                        >
+                                            <Briefcase className="h-4 w-4 mr-2" /> VIEW FULL JD
+                                        </Button>
+                                    )}
                                     <Button variant="outline" className="w-full h-12 rounded-2xl border-gray-100 text-gray-500 font-bold hover:bg-orange-50 hover:text-[#F97316] transition-all">
                                         <Share2 className="h-4 w-4 mr-2" /> SHARE THIS ROLE
                                     </Button>

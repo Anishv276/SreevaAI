@@ -39,7 +39,7 @@ export function JobCard({ job }: { job: Job }) {
                     <div className="flex flex-wrap gap-4 text-sm text-gray-400 font-bold uppercase tracking-wider">
                         <div className="flex items-center gap-2">
                             <MapPin className="h-4 w-4" />
-                            {job.location || "Remote"}
+                            {(job as any).workMode || "Remote"}
                         </div>
                         <div className="flex items-center gap-2 text-gray-900">
                             <Clock className="h-4 w-4 text-[#F97316]" />

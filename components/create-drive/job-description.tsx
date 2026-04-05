@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Upload, Loader2, FileText, X, CheckCircle2, PenLine } from "lucide-react";
+import { Upload, Loader2, FileText, X, CheckCircle2, PenLine, Eye } from "lucide-react";
 
 const textareaClass =
     "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-[13px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 transition-all duration-150 resize-none";
@@ -23,13 +23,17 @@ export function JobDescription({
     updateFormData,
     isAnalyzing,
     analysisError,
-    startAnalysis
+    startAnalysis,
+    abortAnalysis,
+    mode = 'form'
 }: {
     formData: any;
     updateFormData: (data: any) => void;
     isAnalyzing: boolean;
     analysisError: string | null;
     startAnalysis: ({ file, url }: { file?: File, url?: string }) => void;
+    abortAnalysis?: () => void;
+    mode?: 'scan' | 'form';
 }) {
     const [dragOver, setDragOver] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -47,8 +51,19 @@ export function JobDescription({
         if (file) startAnalysis({ file });
     };
 
-    const clearFile = () =>
-        updateFormData((prev: any) => ({ ...prev, jdFileName: undefined, description: "", skills: "" }));
+    const clearFile = () => {
+        abortAnalysis?.(); // STOP BACKGROUND IF RUNNING
+        updateFormData((prev: any) => ({ 
+            ...prev, 
+            jdFileName: undefined, 
+            description: "", 
+            skills: "",
+            responsibilities: "",
+            requirements: "",
+            experience: "",
+            salary: ""
+        }));
+    };
 
     return (
         <div className="space-y-6">
@@ -59,12 +74,14 @@ export function JobDescription({
             )}
             {/* ── TOP: Upload JD ─────────────── */}
             <section>
-                <div className="flex items-center gap-3 mb-3">
-                    <span className="h-5 w-1 rounded-full bg-[#F97316]" />
-                    <p className="text-[13px] font-bold text-gray-900 uppercase tracking-widest">Upload JD</p>
-                </div>
+                {mode === 'form' && (
+                    <div className="flex items-center gap-3 mb-3 font-bold text-gray-900 uppercase tracking-widest text-[13px]">
+                        <span className="h-5 w-1 rounded-full bg-[#F97316]" />
+                        Upload JD
+                    </div>
+                )}
 
-                {!formData.jdFileName ? (
+                {(!formData.jdFileName || isAnalyzing) ? (
                     <div
                         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                         onDragLeave={() => setDragOver(false)}
@@ -77,9 +94,35 @@ export function JobDescription({
                         {isAnalyzing ? (
                             <>
                                 <Loader2 className="h-8 w-8 text-[#F97316] animate-spin flex-shrink-0" />
-                                <div>
-                                    <p className="text-[13px] font-semibold text-gray-700">Analyzing document…</p>
-                                    <p className="text-[11px] text-gray-400">Extracting JD details with AI in background</p>
+                                <div className="flex-1">
+                                    <p className="text-[13px] font-semibold text-gray-700 truncate max-w-[200px]">
+                                        Analyzing {formData.jdFileName || "document"}…
+                                    </p>
+                                    <p className="text-[11px] text-gray-400">AI extraction in progress</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {formData.jdPreviewUrl && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); window.open(formData.jdPreviewUrl, '_blank'); }}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:text-[#F97316] hover:bg-orange-50 transition-all text-xs font-semibold"
+                                        >
+                                            <Eye className="h-3 w-3" />
+                                            Preview
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            abortAnalysis?.(); // MUST STOP FIRST
+                                            clearFile();
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all text-xs font-semibold"
+                                    >
+                                        <X className="h-3 w-3" />
+                                        Cancel
+                                    </button>
                                 </div>
                             </>
                         ) : (
@@ -122,26 +165,45 @@ export function JobDescription({
                                 )}
                             </div>
                         </div>
-                        <button type="button" onClick={clearFile} className="h-7 w-7 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                            <X className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                            {formData.jdPreviewUrl && (
+                                <button
+                                    type="button"
+                                    onClick={() => window.open(formData.jdPreviewUrl, '_blank')}
+                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-100 bg-white text-gray-500 hover:text-orange-600 hover:border-orange-200 transition-all text-[11px] font-bold uppercase tracking-wider"
+                                >
+                                    <Eye className="h-3.5 w-3.5" />
+                                    Preview JD
+                                </button>
+                            )}
+                            <button 
+                                type="button" 
+                                onClick={clearFile} 
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-100 bg-white text-gray-400 hover:text-red-500 hover:border-red-200 transition-all text-[11px] font-bold uppercase tracking-wider"
+                            >
+                                <X className="h-3.5 w-3.5" />
+                                Re-upload
+                            </button>
+                        </div>
                     </div>
                 )}
             </section>
 
-            {/* Divider */}
-            <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-gray-100" />
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Write / Edit</span>
-                <div className="flex-1 h-px bg-gray-100" />
-            </div>
+            {mode === 'form' && (
+                <>
+                    {/* Divider */}
+                    <div className="flex items-center gap-3">
+                        <div className="flex-1 h-px bg-gray-100" />
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Write / Edit</span>
+                        <div className="flex-1 h-px bg-gray-100" />
+                    </div>
 
-            {/* ── BOTTOM: Write & Edit JD ────────────────────── */}
-            <section>
-                <div className="flex items-center gap-3 mb-4">
-                    <span className="h-5 w-1 rounded-full bg-[#F97316]" />
-                    <p className="text-[13px] font-bold text-gray-900 uppercase tracking-widest">Job Description</p>
-                </div>
+                    {/* ── BOTTOM: Write & Edit JD ────────────────────── */}
+                    <section>
+                        <div className="flex items-center gap-3 mb-4">
+                            <span className="h-5 w-1 rounded-full bg-[#F97316]" />
+                            <p className="text-[13px] font-bold text-gray-900 uppercase tracking-widest">Job Description</p>
+                        </div>
 
                 <div className="grid md:grid-cols-2 gap-4">
                     {/* Left column */}
@@ -226,7 +288,23 @@ export function JobDescription({
                         </div>
                     </div>
                 </div>
-            </section>
+                    </section>
+                    
+                    {isAnalyzing && (
+                        <div className="p-4 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-between mb-6 animate-in-fade">
+                            <div className="flex items-center gap-3">
+                                <div className="h-9 w-9 rounded-xl bg-orange-100 flex items-center justify-center">
+                                    <PenLine className="h-5 w-5 text-[#F97316] animate-pulse" />
+                                </div>
+                                <div>
+                                    <p className="text-[13px] font-bold text-gray-900">Background Extraction Active…</p>
+                                    <p className="text-[11px] text-orange-600 font-medium">JD info and skills are being filled end-to-end</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
         </div>
     );
 }

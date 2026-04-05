@@ -90,8 +90,17 @@ export default function ApplicationPage() {
                     if (extractedData.full_name && !formData.fullName) updates.fullName = extractedData.full_name;
                     if (extractedData.email && !formData.email) updates.email = extractedData.email;
                     if (extractedData.phone && !formData.phone) updates.phone = extractedData.phone;
+                    
+                    // Map Location (City, State)
+                    if (extractedData.location && !formData.location) {
+                        const { city, state } = extractedData.location;
+                        if (city && state) updates.location = `${city}, ${state}`;
+                        else if (city) updates.location = city;
+                        else if (state) updates.location = state;
+                    }
+
                     if (extractedData.experience) {
-                        const years = extractedData.experience.total_years || extractedData.experience.min_years;
+                        const years = extractedData.experience.total_years || extractedData.experience.relevant_years;
                         if (years !== undefined && years !== null && !formData.experience) {
                             updates.experience = String(years);
                         }

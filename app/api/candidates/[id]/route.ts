@@ -17,6 +17,7 @@ export async function GET(
               a."fullName",
               a.email,
               a.phone,
+              a.location,
               a."resumeUrl",
               a."aiScore",
               a."aiReport",
@@ -31,7 +32,7 @@ export async function GET(
               a."updatedAt",
               d.title AS "driveTitle",
               d.department AS "driveDepartment",
-              d.location AS "driveLocation"
+              d.type AS "driveType"
             FROM "Application" a
             LEFT JOIN "Drive" d ON d.id = a."driveId"
             WHERE a.id = $1
@@ -88,7 +89,8 @@ export async function GET(
             drive: {
                 title: candidate.driveTitle,
                 department: candidate.driveDepartment,
-                location: candidate.driveLocation,
+                type: candidate.driveType,
+                location: candidate.location || "Remote",
             },
             assessment,
             interview,

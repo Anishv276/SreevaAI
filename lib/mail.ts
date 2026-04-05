@@ -56,8 +56,15 @@ export async function sendApplicationStatusEmail({
             <p style="color: #4B5563;">Hi ${fullName},</p>
             <p style="color: #4B5563;">Thank you for your interest in the <strong>${jobTitle}</strong> position at Lumoscale.</p>
             <p style="color: #4B5563;">After carefully reviewing your profile, we regret to inform you that we will not be moving forward with your application for this specific role at this time.</p>
-            <p style="color: #4B5563;">We appreciate the time you took to apply and wish you the best of luck in your job search.</p>
-            <br />
+            <p style="color: #4B5563; font-size: 15px; margin-bottom: 25px;">We appreciate the time you took to apply and wish you the best of luck in your job search.</p>
+            
+            <div style="background-color: #F9FAFB; border-radius: 16px; padding: 25px; border: 1px solid #F3F4F6; text-align: center; margin: 30px 0;">
+                <p style="color: #6B7280; font-size: 14px; font-weight: 600; margin-bottom: 20px; line-height: 1.5;">If you are interested in exploring other opportunities at Lumoscale, we invite you to view our live job board.</p>
+                <div style="text-align: center;">
+                    <a href="https://lumoscale.co/careers" style="background-color: #F97316; color: white; padding: 14px 30px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 14px; display: inline-block; box-shadow: 0 4px 12px rgba(249,115,22,0.20);">Explore All Openings</a>
+                </div>
+            </div>
+
             <p style="color: #9CA3AF; font-size: 12px; margin-bottom: 5px;">Best Regards,</p>
             <p style="color: #374151; font-weight: 700; margin-top: 0;">Lumoscale Recruitment Team</p>
         </div>

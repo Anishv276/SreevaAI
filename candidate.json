@@ -1,0 +1,84 @@
+{
+    "full_name": "Vadla Vamsi Krishna",
+    "email": "Vamsivk1465@gmail.com",
+    "phone": "+91 8919053970",
+    "location": {
+        "city": "Bangalore",
+        "state": null,
+        "country": "India"
+    },
+    "experience": {
+        "total_years": 1,
+        "relevant_years": 1
+    },
+    "current_company": "Niti AI",
+    "education": [
+        "B.Tech from SRM University",
+        "MPC from Narayana Junior College",
+        "SSC from Narayana School"
+    ],
+    "skills": {
+        "technical": [
+            "Marketing automation",
+            "Workflow automation",
+            "Data analysis",
+            "Python"
+        ],
+        "tools": [
+            "n8n",
+            "AI tools",
+            "Google Sheets",
+            "CRM tools",
+            "Zapier",
+            "Power BI"
+        ],
+        "soft_skills": [
+            "Lead segmentation",
+            "Funnel optimization",
+            "Content strategy",
+            "Communication"
+        ]
+    },
+    "projects": [
+        {
+            "name": "Multi Channel Lead Qualification System",
+            "description": "Created automated lead capture across various platforms and unified all inbound sources into a single workflow.",
+            "technologies": [
+                "Python",
+                "n8n"
+            ]
+        },
+        {
+            "name": "Sensex Analysis Project",
+            "description": "Built a system to collect, clean, and analyze Sensex market data using Python and DuckDB.",
+            "technologies": [
+                "Python",
+                "DuckDB",
+                "Power BI"
+            ]
+        },
+        {
+            "name": "Campaign Metrics and Slack Reporting System",
+            "description": "Built automation to send live campaign data into Slack and improved visibility for teams.",
+            "technologies": []
+        }
+    ],
+    "keywords": [
+        "Growth Engineer",
+        "Marketing automation",
+        "Workflow automation",
+        "Data analysis",
+        "Lead segmentation",
+        "Funnel optimization",
+        "Content strategy",
+        "Python",
+        "CRM tools",
+        "Power BI",
+        "Automation",
+        "RevOps",
+        "Dashboards",
+        "Campaign management",
+        "Market analysis"
+    ],
+    "summary": "Growth Engineer with a focus on marketing and workflow automation. Experienced in leveraging data analysis techniques and automation tools to enhance client engagement and performance."
+}

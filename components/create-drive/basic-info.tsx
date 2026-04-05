@@ -380,15 +380,29 @@ const WORK_MODES = ["Remote", "Hybrid", "On-site"];
 interface BasicInfoProps {
     formData: any;
     updateFormData: (data: any) => void;
+    isAnalyzing?: boolean;
 }
 
-export function BasicInfo({ formData, updateFormData }: BasicInfoProps) {
+export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoProps) {
     const handleChange = (field: string, value: any) => {
         updateFormData({ ...formData, [field]: value });
     };
 
     return (
         <div className="space-y-6">
+            {isAnalyzing && (
+                <div className="p-4 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-between animate-in-fade">
+                    <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-xl bg-orange-100 flex items-center justify-center">
+                            <Layers className="h-5 w-5 text-[#F97316] animate-pulse" />
+                        </div>
+                        <div>
+                            <p className="text-[13px] font-bold text-gray-900">Scanning JD in Background…</p>
+                            <p className="text-[11px] text-orange-600 font-medium">Fields will auto-fill as AI extracts details</p>
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* ── Role Details ──────────────────── */}
             <section>
                 <div className="flex items-center gap-3 mb-3">

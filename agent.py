@@ -69,12 +69,14 @@ APP_BASE_URL = (
 ).rstrip("/")
 
 
-def build_tts():
+def build_tts(language: str = "en"):
+    # Language mapping for Cartesia (using ISO 639-1)
     return cartesia.TTS(
         model=CARTESIA_MODEL,
         voice=CARTESIA_VOICE_ID,
         speed=CARTESIA_VOICE_SPEED,
         word_timestamps=False,
+        language=language,
     )
 
 
@@ -108,6 +110,8 @@ async def get_interview_context(app_id: str):
             "fullName": "Candidate",
             "jobTitle": "the position",
             "jd": "See resume.",
+            "language": "English",
+            "timeLimit": 10,
         }
 
     try:
@@ -116,7 +120,8 @@ async def get_interview_context(app_id: str):
 
         try:
             query = """
-            SELECT a."fullName", d.title, d.description, d.skills 
+            SELECT a."fullName", d.title, d.description, d.skills, 
+                   d."interviewLanguage", d."interviewTime", d."aiFollowUpDepth", d."interviewQuestions"
             FROM "Application" a 
             JOIN "Drive" d ON a."driveId" = d.id 
             WHERE a.id = $1
@@ -124,10 +129,23 @@ async def get_interview_context(app_id: str):
             """
             row = await conn.fetchrow(query, app_id)
             if row:
+                # Parse questions from JSON string if needed
+                questions_raw = row["interviewQuestions"]
+                questions = []
+                if questions_raw:
+                    try:
+                        questions = json.loads(questions_raw) if isinstance(questions_raw, str) else questions_raw
+                    except:
+                        questions = []
+
                 return {
                     "fullName": row["fullName"],
                     "jobTitle": row["title"],
                     "jd": f"Description: {row['description']}\nSkills: {row['skills']}",
+                    "language": row["interviewLanguage"] or "English",
+                    "timeLimit": row["interviewTime"] or 10,
+                    "followUpDepth": row["aiFollowUpDepth"] or 3,
+                    "questions": questions if isinstance(questions, list) else [],
                 }
         finally:
             await conn.close()
@@ -138,6 +156,9 @@ async def get_interview_context(app_id: str):
         "fullName": "Candidate",
         "jobTitle": "the position",
         "jd": "Technical Role.",
+        "language": "English",
+        "timeLimit": 10,
+        "followUpDepth": 3,
     }
 
 
@@ -337,32 +358,52 @@ async def entrypoint(ctx: JobContext):
     candidate_name = context["fullName"]
     job_title = context["jobTitle"]
     job_details = context["jd"]
+    interview_lang = context["language"]
+    time_limit_mins = context["timeLimit"]
+    follow_up_depth = context["followUpDepth"]
+    custom_questions = context["questions"]
 
-    logger.info(f"Preparing interview with {candidate_name} for {job_title}")
+    # Formatting custom questions for the prompt
+    questions_list = "\n".join([f"- {q}" for q in custom_questions]) if custom_questions else "Focus on technical fundamentals for the role."
+
+    # Language Mapping for STT and TTS
+    LANGUAGE_MAPPING = {
+        "English": {"stt": "en", "tts": "en"},
+        "Hindi": {"stt": "hi-IN", "tts": "hi"},
+        "Spanish": {"stt": "es", "tts": "es"},
+        "French": {"stt": "fr", "tts": "fr"},
+        "German": {"stt": "de", "tts": "de"},
+        "Mandarin": {"stt": "zh", "tts": "zh"},
+        "Japanese": {"stt": "ja", "tts": "ja"},
+        "Korean": {"stt": "ko", "tts": "ko"},
+        "Arabic": {"stt": "ar", "tts": "ar"},
+        "Portuguese": {"stt": "pt", "tts": "pt"},
+        "Russian": {"stt": "ru", "tts": "ru"},
+    }
+    
+    lang_codes = LANGUAGE_MAPPING.get(interview_lang, {"stt": "en", "tts": "en"})
+    logger.info(f"Preparing interview with {candidate_name} for {job_title} in {interview_lang}")
 
     # Tailored System Prompt
     system_prompt = f"""
     You are an expert Technical Recruiter at Lumoscale AI.
-    Your goal is to conduct a professional and engaging voice interview.
+    Your goal is to conduct a professional and engaging voice interview in {interview_lang}.
     
     CANDIDATE: {candidate_name}
     POSITION: {job_title}
+    TIME LIMIT: {time_limit_mins} minutes
+    FOLLOW-UP DEPTH: Level {follow_up_depth} of 5
     
-    JOB DESCRIPTION:
-    {job_details}
+    MANDATORY TOPICS TO COVER:
+    {questions_list}
     
-    INTERVIEW FLOW:
-    1. The candidate has already been greeted. Do NOT introduce yourself or say hello again.
-       Jump directly into the first technical question for the {job_title} role.
-    2. Start the technical discussion based on the requirements for {job_title}.
-    3. Ask 3 tailored technical questions one-by-one. 
-    4. Listen to their responses. Ask follow-up questions if they provide short or incomplete answers.
-    5. At the end, thank them and mention the team will reach out.
-
-    VOICE STYLE:
-    - Keep responses concise — this is a spoken conversation, not a written one.
-    - Avoid bullet points or lists in your speech.
-    - Speak naturally, as a human recruiter would.
+    IMPORTANT:
+    1. The conversation MUST be in {interview_lang}.
+    2. The candidate has already been greeted. Jump directly into the first question.
+    3. Integration: Weave the "MANDATORY TOPICS" into the conversation naturally. Do not just read them as a list.
+    4. Listen and ask follow-up questions one-by-one with Level {follow_up_depth} depth. 
+    5. Ensure all mandatory topics are addressed before concluding.
+    6. At the end, thank them and conclude the call.
     """
 
     chat_ctx = llm.ChatContext()
@@ -407,9 +448,10 @@ async def entrypoint(ctx: JobContext):
         stt=deepgram.STT(
             model=STT_MODEL,
             smart_format=True, # Improved punctuation and capitalization
+            language=lang_codes["stt"],
         ),
         llm=openai.LLM(model=LLM_MODEL),
-        tts=build_tts(),
+        tts=build_tts(language=lang_codes["tts"]),
         turn_handling=TurnHandlingOptions(
             endpointing=EndpointingOptions(
                 min_delay=0.3,
@@ -599,12 +641,46 @@ async def entrypoint(ctx: JobContext):
         except RuntimeError:
             logger.info("Skipping greeting because agent session is no longer running")
 
-    # Wait for either explicit finish signal OR disconnect — both paths should finalize
+    # Wait for either explicit finish signal OR disconnect OR hard timeout
     finished_task = asyncio.create_task(interview_finished_event.wait())
     disconnected_task = asyncio.create_task(disconnect_event.wait())
-    done, _ = await asyncio.wait(
-        {finished_task, disconnected_task}, return_when=asyncio.FIRST_COMPLETED
+    timeout_task = asyncio.create_task(asyncio.sleep(time_limit_mins * 60))
+
+    done, pending = await asyncio.wait(
+        {finished_task, disconnected_task, timeout_task}, return_when=asyncio.FIRST_COMPLETED
     )
+
+    if timeout_task in done:
+        # Language-specific goodbye messages
+        GOODBYE_MESSAGES = {
+            "English": "Our time is up for this session. Thank you for your responses. Goodbye!",
+            "Hindi": "इस सत्र के लिए हमारा समय समाप्त हो गया है। आपकी प्रतिक्रियाओं के लिए धन्यवाद। अलविदा!",
+            "Spanish": "Nuestro tiempo se ha acabado para esta sesión. Gracias por sus respuestas. ¡Adiós!",
+            "French": "Notre temps est écoulé pour cette session. Merci pour vos réponses. Au revoir !",
+            "German": "Unsere Zeit für diese Sitzung ist abgelaufen. Vielen Dank für Ihre Antworten. Auf Wiedersehen!",
+            "Mandarin": "本次面试的时间已到。感谢您的回答。再见！",
+            "Japanese": "今回のセッションの時間は終了しました。ご回答ありがとうございました。さようなら！",
+            "Korean": "이번 세션 시간이 다 되었습니다. 답변해 주셔서 감사합니다. 안녕히 가세요!",
+            "Arabic": "لقد انتهى وقتنا لهذه الجلسة. شكرا لردودكم. وداعا!",
+            "Portuguese": "O nosso tempo acabou para esta sessão. Obrigado pelas suas respostas. Adeus!",
+            "Russian": "Наше время для этой сессии истекло. Спасибо за ваши ответы. До свидания!"
+        }
+        goodbye_text = GOODBYE_MESSAGES.get(interview_lang, "Our time is up for this session. Goodbye!")
+
+        try:
+            await session.say(goodbye_text)
+            await asyncio.sleep(5) # Let them hear the goodbye
+        except Exception: pass
+        
+        # FORCE DISCONNECT ROOM
+        logger.info(f"Session hard-terminated due to time limit ({time_limit_mins}m)")
+        interview_marked_finished = True
+        interview_finished_event.set()
+        disconnect_event.set()
+    
+    # Cancel remaining tasks
+    for task in pending:
+        task.cancel()
     
     # --- Grace Period: Wait for final STT results to arrive (Deepgram/LiveKit tail) ---
     logger.info(f"Interview ended (finished={finished_task in done}). Waiting 5s for final transcripts...")

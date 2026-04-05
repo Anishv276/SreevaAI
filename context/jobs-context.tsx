@@ -127,6 +127,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
                 return data;
             } else {
                 const errorData = await res.json();
+                // Log exact field errors so we can debug validation failures
+                console.error("[updateJob] Validation details:", JSON.stringify(errorData.details, null, 2));
                 const error = new Error(errorData.error || "Failed to update job") as any;
                 error.details = errorData.details;
                 throw error;

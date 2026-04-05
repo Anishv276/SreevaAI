@@ -67,7 +67,7 @@ export async function POST(request: Request) {
         let outputData = "";
         let errorData = "";
 
-        const [exitCode, resumeUrl] = await Promise.all([
+        const [exitCode, fileUrl] = await Promise.all([
             (async () => {
                 const pythonCommand = process.platform === "win32" ? "python" : "python3";
                 const pythonProcess = spawn(pythonCommand, ["scripts/extract_pdf.py", tempFilePath, type]);
@@ -88,15 +88,14 @@ export async function POST(request: Request) {
             })(),
 
             (async () => {
-                if (type !== "RESUME") return null;
                 try {
+                    // Upload either way!
                     const { putObject } = await import("@/lib/s3");
-                    const fileName = `${uuidv4()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-                    await putObject("resumes", fileName, buffer, file.type);
-                    
-                    const r2PubUrl = process.env.NEXT_PUBLIC_R2_URL || "";
-                    // Ensure proper URL formatting
-                    return `${r2PubUrl.replace(/\/$/, '')}/${fileName}`;
+                    const bucket = process.env.R2_BUCKET_NAME || "resumes";
+                    const prefix = type === "JD" ? "jds/" : "resumes/";
+                    const fileName = `${prefix}${uuidv4()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+                    const url = await putObject(bucket, fileName, buffer, file.type);
+                    return url;
                 } catch (err) { 
                     console.error("R2 Upload Error:", err);
                     return null; 
@@ -114,7 +113,7 @@ export async function POST(request: Request) {
             const result = JSON.parse(outputData);
             return NextResponse.json({
                 ...result,
-                url: resumeUrl
+                url: fileUrl
             });
         } catch (e) {
             return NextResponse.json({ error: "Invalid response" }, { status: 500 });

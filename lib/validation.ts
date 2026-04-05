@@ -7,28 +7,29 @@ export const driveIdSchema = z.object({
 export const createDriveSchema = z.object({
   title: z.string().min(1, "Title is required").max(200),
   description: z.string().max(5000).optional().default(""),
+  role: z.string().optional(),
   department: z.string().min(1, "Department is required"),
-  location: z.string().optional().default("Remote"),
   employmentType: z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance"]).optional(),
   type: z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance"]).optional(),
-  status: z.enum(["DRAFT", "ACTIVE", "PAUSED", "CLOSED"]).optional(),
   workMode: z.enum(["Remote", "Hybrid", "On-site"]).optional(),
   positions: z.coerce.number().int().min(1).optional(),
-  deadline: z.string().nullable().optional(), // Relaxed validation to accept YYYY-MM-DD or ISO
+  deadline: z.string().nullable().optional(),
   salary: z.string().optional(),
   experience: z.string().optional(),
   skills: z.string().optional(),
   responsibilities: z.string().optional(),
-  aiScreening: z.object({
-    enabled: z.boolean().optional(),
-    weights: z.record(z.string(), z.number()).optional(),
-  }).optional(),
-  assessmentCount: z.coerce.number().int().min(1).max(100).optional(),
-  assessmentDifficulty: z.enum(["Easy", "Medium", "Hard", "Entry", "Expert"]).optional(),
-  assessmentTime: z.coerce.number().int().min(5).max(180).optional(),
-  assessmentMode: z.enum(["TEST", "CODING", "BOTH"]).optional(),
+  requirements: z.string().optional(),
+  jdFileName: z.string().optional(),
+  jdPreviewUrl: z.string().optional(),
+  interviewEnabled: z.boolean().optional(),
+  interviewLanguage: z.string().optional(),
+  interviewTime: z.coerce.number().int().optional(),
+  interviewAntiCheat: z.string().optional(),
+  interviewFollowUp: z.coerce.number().int().optional(),
+  interviewQuestions: z.array(z.any()).optional(),
   registrationFields: z.array(z.any()).optional(),
   extractedDetails: z.record(z.string(), z.any()).optional(),
+  screeningThreshold: z.coerce.number().int().optional(),
 });
 
 export const updateDriveSchema = createDriveSchema.partial();
@@ -116,7 +117,6 @@ export const extractSchema = z.object({
 });
 
 export const driveQuerySchema = z.object({
-  status: z.enum(["DRAFT", "ACTIVE", "PAUSED", "CLOSED"]).nullish().transform(v => v ?? undefined),
 });
 
 export const candidateQuerySchema = z.object({

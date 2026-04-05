@@ -19,7 +19,7 @@ export default function PortalPage() {
 
     // Extract unique locations from current jobs
     const uniqueLocations = useMemo(() => {
-        const locations = jobs.map(j => j.location).filter(Boolean);
+        const locations = jobs.map(j => (j as any).workMode).filter(Boolean);
         return Array.from(new Set(locations)).sort();
     }, [jobs]);
 
@@ -52,7 +52,7 @@ export default function PortalPage() {
         return jobs.filter(job => {
             const matchesSearch = job.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                                  job.department.toLowerCase().includes(searchQuery.toLowerCase());
-            const matchesLocation = job.location.toLowerCase().includes(locationQuery.toLowerCase());
+            const matchesLocation = ((job as any).workMode || "").toLowerCase().includes(locationQuery.toLowerCase());
             const matchesCategory = activeCategory === "All Jobs" || 
                                    job.department.toLowerCase() === activeCategory.toLowerCase();
             

@@ -26,10 +26,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
         return NextResponse.json({
             ...drive,
-            applicants: drive._count.applications,
+            applicants: drive._count?.applications || 0,
             daysLeft: Math.max(0, Math.ceil((new Date(drive.createdAt).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24))),
             aiScreening: {
-                enabled: (drive as any).aiScreeningEnabled,
+                enabled: (drive as any).interviewEnabled,
                 weights: (drive as any).aiScreeningWeights ? JSON.parse((drive as any).aiScreeningWeights) : {}
             },
             registrationFields: (drive as any).registrationFields ? JSON.parse((drive as any).registrationFields) : [],
@@ -70,8 +70,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         
         if (data.title !== undefined) updateData.title = data.title;
         if (data.description !== undefined) updateData.description = data.description;
+        if (data.role !== undefined) updateData.role = data.role;
         if (data.department !== undefined) updateData.department = data.department;
-        if (data.location !== undefined) updateData.location = data.location;
         if (data.employmentType !== undefined || data.type !== undefined) {
             updateData.type = data.employmentType || data.type;
         }
@@ -84,20 +84,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.skills !== undefined) updateData.skills = data.skills;
         if (data.responsibilities !== undefined) updateData.responsibilities = data.responsibilities;
         if (data.extractedDetails !== undefined) updateData.extractedDetails = JSON.stringify(data.extractedDetails);
-        
-        if (data.aiScreening?.enabled !== undefined) updateData.aiScreeningEnabled = data.aiScreening.enabled;
-        if (data.aiScreening?.weights !== undefined) updateData.aiScreeningWeights = JSON.stringify(data.aiScreening.weights);
-        
-        if (data.assessmentCount !== undefined) updateData.assessmentCount = data.assessmentCount;
-        if (data.assessmentDifficulty !== undefined) updateData.assessmentDifficulty = data.assessmentDifficulty;
-        if (data.assessmentTime !== undefined) updateData.assessmentTime = data.assessmentTime;
-        if (data.assessmentMode !== undefined) updateData.assessmentMode = data.assessmentMode;
+        if (data.jdFileName !== undefined) updateData.jdFileName = data.jdFileName;
+        if (data.jdPreviewUrl !== undefined) updateData.jdPreviewUrl = data.jdPreviewUrl;
         
         if (data.registrationFields !== undefined) updateData.registrationFields = JSON.stringify(data.registrationFields);
-        if (data.status !== undefined) updateData.status = data.status;
-
-        updateData.proctoringEnabled = true;
-        updateData.webcamMonitoring = true;
+        
+        if (data.screeningThreshold !== undefined) updateData.screeningThreshold = data.screeningThreshold;
+        
+        // Add new interview fields to PATCH
+        if (data.interviewEnabled !== undefined) updateData.interviewEnabled = data.interviewEnabled;
+        if (data.interviewLanguage !== undefined) updateData.interviewLanguage = data.interviewLanguage;
+        if (data.interviewTime !== undefined) updateData.interviewTime = data.interviewTime;
+        if (data.interviewAntiCheat !== undefined) updateData.proctoringLevel = data.interviewAntiCheat;
+        if (data.interviewFollowUp !== undefined) updateData.aiFollowUpDepth = data.interviewFollowUp;
+        if (data.interviewQuestions !== undefined) updateData.interviewQuestions = JSON.stringify(data.interviewQuestions);
+        if (data.requirements !== undefined) updateData.requirements = data.requirements;
 
         const updated = await prisma.drive.update({
             where: { id: driveId },

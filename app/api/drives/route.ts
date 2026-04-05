@@ -9,12 +9,7 @@ export async function GET(request: Request) {
         const { searchParams } = new URL(request.url);
         const status = searchParams.get("status");
 
-        const queryResult = driveQuerySchema.safeParse({ status });
-        if (!queryResult.success) {
-            return NextResponse.json({ error: "Invalid query parameters" }, { status: 400 });
-        }
-
-        const where = queryResult.data.status ? { status: queryResult.data.status } : {};
+        const where = {}; // No status filtering since status column was removed
 
         const drives = await prisma.drive.findMany({
             where,
@@ -26,16 +21,16 @@ export async function GET(request: Request) {
             },
         });
 
-        const formattedDrives = drives.map((drive) => ({
+        const formattedDrives = drives.map((drive: any) => ({
             ...drive,
-            applicants: drive._count.applications,
+            applicants: drive._count?.applications || 0,
             daysLeft: Math.max(0, Math.ceil((new Date(drive.createdAt).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24))),
             aiScreening: {
-                enabled: (drive as any).aiScreeningEnabled,
-                weights: (drive as any).aiScreeningWeights ? JSON.parse((drive as any).aiScreeningWeights) : {}
+                enabled: drive.interviewEnabled,
+                weights: { threshold: drive.screeningThreshold || 60 }
             },
-            registrationFields: (drive as any).registrationFields ? JSON.parse((drive as any).registrationFields) : [],
-            extractedDetails: (drive as any).extractedDetails ? JSON.parse((drive as any).extractedDetails) : {}
+            registrationFields: drive.registrationFields ? JSON.parse(drive.registrationFields) : [],
+            extractedDetails: drive.extractedDetails ? JSON.parse(drive.extractedDetails) : {}
         }));
 
         return NextResponse.json(formattedDrives);
@@ -64,28 +59,28 @@ export async function POST(request: Request) {
             data: {
                 title: data.title,
                 description: data.description || "",
+                role: data.role || null,
                 department: data.department,
-                location: data.location || "Remote",
                 type: data.employmentType || data.type || "Full-time",
-                status: data.status || "ACTIVE",
                 workMode: data.workMode || "Remote",
                 positions: data.positions || 1,
                 deadline: deadline,
-                aiScreeningEnabled: data.aiScreening?.enabled ?? true,
-                aiScreeningWeights: JSON.stringify(data.aiScreening?.weights || {}),
+                interviewEnabled: data.interviewEnabled ?? true,
+                interviewLanguage: data.interviewLanguage || "English",
+                interviewTime: data.interviewTime || 10,
+                proctoringLevel: data.interviewAntiCheat || "Medium",
+                aiFollowUpDepth: data.interviewFollowUp || 3,
+                interviewQuestions: JSON.stringify(data.interviewQuestions || []),
                 salary: data.salary || null,
                 experience: data.experience || null,
                 skills: data.skills || null,
                 responsibilities: data.responsibilities || null,
+                requirements: data.requirements || null,
                 extractedDetails: JSON.stringify(data.extractedDetails || {}),
-                assessmentCount: data.assessmentCount ?? 5,
-                assessmentDifficulty: data.assessmentDifficulty ?? "Medium",
-                assessmentTypes: "MIXED",
-                assessmentTime: data.assessmentTime ?? 15,
-                assessmentMode: data.assessmentMode ?? "TEST",
-                proctoringEnabled: true,
-                webcamMonitoring: true,
+                jdFileName: data.jdFileName || null,
+                jdPreviewUrl: data.jdPreviewUrl || null,
                 registrationFields: JSON.stringify(data.registrationFields || []),
+                screeningThreshold: data.screeningThreshold || 0,
                 creator: {
                     connectOrCreate: {
                         where: { email: "admin@lumoscale" },
