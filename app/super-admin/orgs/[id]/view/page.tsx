@@ -13,19 +13,44 @@ import {
     Filter,
     MoreVertical,
     Download,
-    Trash2
+    Trash2,
+    AlertCircle
 } from "lucide-react";
 import { JobCard } from "@/components/careers/job-card";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
+import { Job } from "@/context/jobs-context";
+
+// ── TypeScript Interfaces ─────────────────────────────────────
+interface OrgDetail {
+    id: string;
+    name: string;
+    slug: string;
+    plan: string;
+    isActive: boolean;
+    industry: string | null;
+}
+
+interface Candidate {
+    id: string;
+    name: string | null;
+    email: string;
+    role: string;
+    score: number;
+    status: string;
+    interviewStatus: string | null;
+    date: string;
+}
 
 export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const router = useRouter();
-    const [view, setView] = useState<"drives" | "candidates">("candidates"); // Matching Pic 2's focus
-    const [org, setOrg] = useState<any>(null);
-    const [drives, setDrives] = useState<any[]>([]);
-    const [candidates, setCandidates] = useState<any[]>([]);
+    const [view, setView] = useState<"drives" | "candidates">("candidates");
+    const [org, setOrg] = useState<OrgDetail | null>(null);
+    const [drives, setDrives] = useState<Job[]>([]);
+    const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+    const [deleteError, setDeleteError] = useState("");
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
 
@@ -38,6 +63,11 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                     fetch(`/api/candidates?orgId=${id}`)
                 ]);
                 
+                if (!orgRes.ok) {
+                    setError("Failed to load organization data. Please try again.");
+                    return;
+                }
+
                 const [orgData, drivesData, candidatesData] = await Promise.all([
                     orgRes.json(),
                     drivesRes.json(),
@@ -47,8 +77,8 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                 setOrg(orgData);
                 setDrives(drivesData.drives || []);
                 setCandidates(candidatesData.candidates || []);
-            } catch (err) {
-                console.error(err);
+            } catch {
+                setError("Network error. Could not connect to the server.");
             } finally {
                 setLoading(false);
             }
@@ -63,14 +93,18 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
     const confirmDeleteCandidates = async () => {
         setIsDeleting(true);
+        setDeleteError("");
         try {
             const res = await fetch(`/api/candidates?orgId=${id}`, { method: "DELETE" });
             if (res.ok) {
                 setCandidates([]);
                 setIsDeleteModalOpen(false);
+            } else {
+                const data = await res.json();
+                setDeleteError(data.error || "Failed to delete candidates. Please try again.");
             }
-        } catch (err) {
-            console.error(err);
+        } catch {
+            setDeleteError("Network error. Could not complete the purge operation.");
         } finally {
             setIsDeleting(false);
         }
@@ -81,6 +115,21 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
             <div className="min-h-screen bg-white p-20 flex flex-col items-center justify-center gap-6">
                 <Loader2 className="h-10 w-10 text-[#F97316] animate-spin opacity-30" />
                 <p className="text-gray-400 font-black text-[10px] uppercase tracking-[0.3em]">Synchronizing Portal Context...</p>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="min-h-screen bg-white p-20 flex flex-col items-center justify-center gap-6">
+                <AlertCircle className="h-10 w-10 text-red-400" />
+                <p className="text-gray-900 font-black text-lg">{error}</p>
+                <button
+                    onClick={() => router.back()}
+                    className="flex items-center gap-2 text-gray-400 hover:text-gray-900 text-xs font-black uppercase tracking-widest transition-all"
+                >
+                    <ArrowLeft className="h-4 w-4" /> Return to Registry
+                </button>
             </div>
         );
     }

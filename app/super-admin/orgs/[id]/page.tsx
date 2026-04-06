@@ -17,6 +17,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
     const [saved, setSaved] = useState(false);
+    const [resetLoading, setResetLoading] = useState(false);
+    const [resetSuccess, setResetSuccess] = useState(false);
 
     const [form, setForm] = useState({
         name: "",
@@ -77,6 +79,31 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
             setError("Connection error. Try again.");
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleResetPassword = async () => {
+        setResetLoading(true);
+        setResetSuccess(false);
+        setError("");
+
+        try {
+            const res = await fetch(`/api/super-admin/orgs/${id}/reset-password`, {
+                method: "POST"
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                setError(data.error || "Failed to initialize reset flow");
+                return;
+            }
+
+            setResetSuccess(true);
+            setTimeout(() => setResetSuccess(false), 5000);
+        } catch {
+            setError("Reset service unreachable. Try again.");
+        } finally {
+            setResetLoading(false);
         }
     };
 
@@ -185,10 +212,26 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                 <div className="md:col-span-2">
                                     <button
                                         type="button"
-                                        className="w-full h-16 rounded-[1.5rem] border border-dashed border-gray-200 text-gray-400 font-black text-[10px] uppercase tracking-widest hover:border-[#F97316] hover:text-[#F97316] hover:bg-orange-50/30 transition-all flex items-center justify-center gap-3 group/btn"
+                                        onClick={handleResetPassword}
+                                        disabled={resetLoading || resetSuccess}
+                                        className={`w-full h-16 rounded-[1.5rem] border border-dashed transition-all flex items-center justify-center gap-3 group/btn ${
+                                            resetSuccess
+                                                ? "bg-emerald-50 border-emerald-200 text-emerald-600"
+                                                : "border-gray-200 text-gray-400 hover:border-[#F97316] hover:text-[#F97316] hover:bg-orange-50/30"
+                                        }`}
                                     >
-                                        <ShieldCheck className="h-4 w-4 group-hover/btn:rotate-12 transition-transform" />
-                                        Initialize Password Reset Flow
+                                        {resetLoading ? (
+                                            <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" />
+                                        ) : resetSuccess ? (
+                                            <CheckCircle2 className="h-4 w-4" />
+                                        ) : (
+                                            <ShieldCheck className="h-4 w-4 group-hover/btn:rotate-12 transition-transform" />
+                                        )}
+                                        {resetLoading 
+                                            ? "Requesting Token..." 
+                                            : resetSuccess 
+                                                ? "Reset Link Dispatched Successfully" 
+                                                : "Initialize Password Reset Flow"}
                                     </button>
                                 </div>
                             </div>

@@ -1,46 +1,75 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 
-// GET /api/super-admin/orgs — list all organizations with stats
-export async function GET() {
+// GET /api/super-admin/orgs — list organizations with stats, pagination, and search
+export async function GET(request: Request) {
     try {
-        // Fetch orgs with immediate counts for users and drives
-        // For candidates, we can't do a direct _count on Application via Org easily in Prisma without deep nesting
-        // so we fetch orgs and then do a single optimized count query
+        const session = await getSession();
+        if (!session || session.role !== "SUPER_ADMIN") {
+            return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
+        }
+
+        const { searchParams } = new URL(request.url);
+        const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
+        const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")));
+        const search = searchParams.get("q")?.trim() || "";
+        const offset = (page - 1) * limit;
+
+        // ── Phase 1: Total Count (Search Filtered) ───────────────────
+        const whereClause = search ? {
+            OR: [
+                { name: { contains: search, mode: "insensitive" as const } },
+                { slug: { contains: search, mode: "insensitive" as const } },
+            ]
+        } : {};
+
+        const total = await prisma.organization.count({ where: whereClause });
+        const totalPages = Math.ceil(total / limit);
+
+        // ── Phase 2: Paginated Org Data (Standard Prisma) ────────────
         const orgs = await prisma.organization.findMany({
+            where: whereClause,
             orderBy: { createdAt: "desc" },
+            skip: offset,
+            take: limit,
             include: {
-                _count: { 
-                    select: { 
-                        users: true, 
-                        drives: true 
-                    } 
-                },
-                drives: {
-                    select: {
-                        _count: {
-                            select: { applications: true }
-                        }
-                    }
+                _count: {
+                    select: { users: true, drives: true }
                 }
-            },
+            }
         });
 
-        const formatted = orgs.map(org => {
-            // Sum up candidates across all drives for this org
-            const candidateCount = org.drives.reduce((sum, drive) => sum + drive._count.applications, 0);
-            
-            return {
-                ...org,
-                adminCount: org._count.users,
-                driveCount: org._count.drives,
-                candidateCount,
-                drives: undefined // Hide the relation from the response
-            };
-        });
+        // ── Phase 3: Aggregated Candidate Counts (SQL Optimized) ──────
+        // We only fetch candidate counts for the organizations on this page
+        const orgIds = orgs.map(o => o.id);
+        let candidateCounts: { orgId: string; count: bigint }[] = [];
 
-        return NextResponse.json(formatted);
+        if (orgIds.length > 0) {
+            candidateCounts = await prisma.$queryRaw`
+                SELECT d."orgId", COUNT(a.id)::BIGINT as "count"
+                FROM "Application" a
+                JOIN "Drive" d ON d.id = a."driveId"
+                WHERE d."orgId" IN (${orgIds.join(",")})
+                GROUP BY d."orgId"
+            ` as { orgId: string; count: bigint }[];
+        }
+
+        // Map candidate counts back to orgs
+        const countMap = new Map(candidateCounts.map(c => [c.orgId, Number(c.count)]));
+
+        const formatted = orgs.map(org => ({
+            ...org,
+            adminCount: org._count.users,
+            driveCount: org._count.drives,
+            candidateCount: countMap.get(org.id) || 0,
+        }));
+
+        return NextResponse.json({
+            orgs: formatted,
+            pagination: { total, page, limit, totalPages },
+        });
     } catch (error) {
         console.error("Error fetching orgs:", error);
         return NextResponse.json({ error: "Failed to fetch organizations" }, { status: 500 });
@@ -50,6 +79,11 @@ export async function GET() {
 // POST /api/super-admin/orgs — create new org + HR admin user
 export async function POST(request: Request) {
     try {
+        const session = await getSession();
+        if (!session || session.role !== "SUPER_ADMIN") {
+            return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
+        }
+
         const body = await request.json();
         const { orgName, slug, plan, logoUrl, adminEmail, adminName, adminPassword } = body;
 

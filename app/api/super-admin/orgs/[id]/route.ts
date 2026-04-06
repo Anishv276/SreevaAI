@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 
 // GET /api/super-admin/orgs/[id] — fetch org for editing
 export async function GET(
@@ -7,6 +8,11 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const session = await getSession();
+        if (!session || session.role !== "SUPER_ADMIN") {
+            return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
+        }
+
         const { id } = await params;
         const org = await prisma.organization.findUnique({
             where: { id },
@@ -35,6 +41,11 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const session = await getSession();
+        if (!session || session.role !== "SUPER_ADMIN") {
+            return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
+        }
+
         const { id } = await params;
         const body = await request.json();
         const { name, plan, isActive, logoUrl, slug } = body;
@@ -63,6 +74,11 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const session = await getSession();
+        if (!session || session.role !== "SUPER_ADMIN") {
+            return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
+        }
+
         const { id } = await params;
 
         // Get all drives for this org to cascade delete applications

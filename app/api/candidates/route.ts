@@ -63,7 +63,20 @@ export async function GET(request: Request) {
             ${interviewJoin}
         `;
 
-        const orgId = searchParams.get("orgId") || session?.orgId;
+        // ── Security & Filtering ───────────────────
+        const isSuperAdmin = session?.role === "SUPER_ADMIN";
+        // If Super Admin, use the orgId param. If not, LOCK to session orgId.
+        const orgId = isSuperAdmin 
+            ? (searchParams.get("orgId") || session?.orgId) 
+            : session?.orgId;
+
+        if (!orgId) {
+            return NextResponse.json({ 
+                candidates: [], 
+                pagination: { total: 0, pages: 0, page, limit } 
+            });
+        }
+
 
         let dateClause = "";
         let paramIndex = driveId ? 3 : 2;
@@ -289,21 +302,36 @@ export async function DELETE(request: Request) {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
-        const body = await request.json();
+        const { searchParams } = new URL(request.url);
+        const orgId = searchParams.get("orgId") || session?.orgId;
 
-        const result = bulkDeleteCandidatesSchema.safeParse(body);
-        if (!result.success) {
-            return NextResponse.json(
-                { error: "Validation failed", details: result.error.flatten().fieldErrors },
-                { status: 400 }
-            );
+        // Try to get body, but don't fail if missing (for full-org purge)
+        let ids: string[] = [];
+        try {
+            const body = await request.json();
+            const result = bulkDeleteCandidatesSchema.safeParse(body);
+            if (result.success) {
+                ids = result.data.ids;
+            }
+        } catch (e) {
+            // No body provided, will check orgId
         }
 
-        const { ids } = result.data;
+        if (ids.length === 0 && !orgId) {
+            return NextResponse.json({ error: "No candidates or organization specified for deletion" }, { status: 400 });
+        }
 
-        // ── SECURITY: Ensure candidates belong to the Org ──────
+        // ── SECURITY: Find candidates belonging to the Org ──────
+        const whereClause: any = {
+            drive: { orgId }
+        };
+
+        if (ids.length > 0) {
+            whereClause.id = { in: ids };
+        }
+
         const belongsToOrg = await prisma.application.findMany({
-            where: { id: { in: ids }, drive: { orgId:  (new URL(request.url).searchParams.get("orgId") || session?.orgId) } },
+            where: whereClause,
             select: { id: true }
         });
 

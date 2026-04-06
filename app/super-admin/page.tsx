@@ -12,36 +12,60 @@ import {
 } from "lucide-react";
 
 async function getStats() {
-    const [orgCount, driveCount, candidateCount, totalInterviews] = await Promise.all([
-        prisma.organization.count(),
-        prisma.drive.count(),
-        prisma.application.count(),
-        prisma.interview.count(),
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+    // Single consolidated query — fetches all KPI counts in one DB round-trip
+    const [statsResult, activeOrgs] = await Promise.all([
+        prisma.$queryRaw<[{
+            org_count: bigint;
+            active_org_count: bigint;
+            drive_count: bigint;
+            candidate_count: bigint;
+            new_candidates_this_week: bigint;
+            total_interviews: bigint;
+        }]>`
+            SELECT
+                (SELECT COUNT(*) FROM "Organization") AS org_count,
+                (SELECT COUNT(*) FROM "Organization" WHERE "isActive" = true) AS active_org_count,
+                (SELECT COUNT(*) FROM "Drive") AS drive_count,
+                (SELECT COUNT(*) FROM "Application") AS candidate_count,
+                (SELECT COUNT(*) FROM "Application" WHERE "createdAt" >= ${oneWeekAgo}) AS new_candidates_this_week,
+                (SELECT COUNT(*) FROM "Interview") AS total_interviews
+        `,
+        prisma.organization.findMany({
+            where: { isActive: true },
+            orderBy: { createdAt: "desc" },
+            take: 3,
+            include: { 
+                _count: { 
+                    select: { 
+                        users: true,
+                        drives: true 
+                    } 
+                } 
+            }
+        })
     ]);
 
-    const activeOrgs = await prisma.organization.findMany({
-        where: { isActive: true },
-        orderBy: { createdAt: "desc" },
-        take: 3,
-        include: { 
-            _count: { 
-                select: { 
-                    users: true,
-                    drives: true 
-                } 
-            } 
-        }
-    });
-
-    return { orgCount, driveCount, candidateCount, totalInterviews, activeOrgs };
+    const s = statsResult[0];
+    return {
+        orgCount: Number(s.org_count),
+        activeOrgCount: Number(s.active_org_count),
+        driveCount: Number(s.drive_count),
+        candidateCount: Number(s.candidate_count),
+        newCandidatesThisWeek: Number(s.new_candidates_this_week),
+        totalInterviews: Number(s.total_interviews),
+        activeOrgs,
+    };
 }
 
 export default async function SuperAdminDashboard() {
-    const { orgCount, driveCount, candidateCount, totalInterviews, activeOrgs } = await getStats();
+    const { orgCount, activeOrgCount, driveCount, candidateCount, newCandidatesThisWeek, totalInterviews, activeOrgs } = await getStats();
 
     const stats = [
-        { label: "ACTIVE ORGANIZATIONS", value: orgCount, sub: `${orgCount} portals live and active`, icon: Building2 },
-        { label: "TOTAL CANDIDATES", value: candidateCount, sub: "New applications this week", icon: Users },
+        { label: "ACTIVE ORGANIZATIONS", value: activeOrgCount, sub: `${activeOrgCount} out of ${orgCount} portals active`, icon: Building2 },
+        { label: "TOTAL CANDIDATES", value: candidateCount, sub: `+${newCandidatesThisWeek} new applications this week`, icon: Users },
         { label: "ACTIVE DRIVES", value: driveCount, sub: "Jobs currently accepting", icon: Zap },
         { label: "COMPLETED INTERVIEWS", value: totalInterviews, sub: "Interviews processed to date", icon: Activity },
     ];

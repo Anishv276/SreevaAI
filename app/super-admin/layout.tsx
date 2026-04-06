@@ -133,7 +133,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
                             {user?.name?.[0] || user?.email?.[0] || "V"}
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-gray-950 text-[12px] font-black truncate uppercase tracking-tight">{user?.name || "Vamsi"}</p>
+                            <p className="text-gray-950 text-[12px] font-black truncate uppercase tracking-tight">{user?.name || user?.email?.split("@")[0] || "Admin"}</p>
                             <p className="text-gray-500 text-[10px] font-black truncate lowercase mt-1 tracking-widest leading-none">{user?.email}</p>
                         </div>
                     </div>

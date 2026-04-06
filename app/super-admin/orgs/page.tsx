@@ -41,16 +41,36 @@ export default function OrgsPage() {
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     
+    // Pagination & Search state
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [total, setTotal] = useState(0);
+    const [search, setSearch] = useState("");
+    const [searchInput, setSearchInput] = useState("");
+    const limit = 20;
+
     // Modal State
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [orgToDelete, setOrgToDelete] = useState<Org | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
 
-    const fetchOrgs = async () => {
+    const fetchOrgs = async (currentPage = page, query = search) => {
+        setLoading(true);
         try {
-            const res = await fetch("/api/super-admin/orgs");
+            const params = new URLSearchParams({
+                page: String(currentPage),
+                limit: String(limit),
+                ...(query ? { q: query } : {}),
+            });
+            const res = await fetch(`/api/super-admin/orgs?${params}`);
             const data = await res.json();
-            setOrgs(Array.isArray(data) ? data : []);
+            if (data.orgs) {
+                setOrgs(data.orgs);
+                setTotal(data.pagination.total);
+                setTotalPages(data.pagination.totalPages);
+            } else {
+                setOrgs([]);
+            }
         } catch (error) {
             console.error("Error fetching orgs:", error);
             setOrgs([]);
@@ -59,8 +79,17 @@ export default function OrgsPage() {
         }
     };
 
+    // Debounced search — waits 300ms after user stops typing before hitting the API
     useEffect(() => {
-        fetchOrgs();
+        const timer = setTimeout(() => {
+            setSearch(searchInput);
+            setPage(1);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchInput]);
+
+    useEffect(() => {
+        fetchOrgs(page, search);
         const handleClickOutside = (e: MouseEvent) => {
             if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
                 setActiveMenu(null);
@@ -68,7 +97,8 @@ export default function OrgsPage() {
         };
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [page, search]);
 
     const toggleSuspend = async (org: Org) => {
         try {
@@ -77,7 +107,7 @@ export default function OrgsPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ isActive: !org.isActive }),
             });
-            if (res.ok) fetchOrgs();
+            if (res.ok) fetchOrgs(page, search);
         } catch (error) {
             console.error("Error toggling status:", error);
         }
@@ -94,7 +124,7 @@ export default function OrgsPage() {
         try {
             const res = await fetch(`/api/super-admin/orgs/${orgToDelete.id}`, { method: "DELETE" });
             if (res.ok) {
-                fetchOrgs();
+                fetchOrgs(page, search);
                 setIsDeleteModalOpen(false);
                 setOrgToDelete(null);
             }
@@ -114,7 +144,7 @@ export default function OrgsPage() {
                     <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
                     <div>
                         <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Organizations</h1>
-                        <p className="text-gray-500 font-medium mt-1 text-base">Partner registry · {orgs.length} organizations</p>
+                        <p className="text-gray-500 font-medium mt-1 text-base">Partner registry · {total} organizations</p>
                     </div>
                 </div>
                 <Link
@@ -138,6 +168,8 @@ export default function OrgsPage() {
                         <input
                             type="text"
                             placeholder="Search organizations..."
+                            value={searchInput}
+                            onChange={e => setSearchInput(e.target.value)}
                             className="h-10 w-[300px] pl-10 pr-4 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] transition-all"
                         />
                     </div>
@@ -209,7 +241,12 @@ export default function OrgsPage() {
                                             <Eye className="h-4 w-4" />
                                         </Link>
                                         
-                                        <div className="relative overflow-visible" ref={activeMenu === can.id ? menuRef : null}>
+                                        <div className="relative overflow-visible" ref={(el) => {
+                                            if (el && activeMenu === can.id) {
+                                                // @ts-ignore
+                                                menuRef.current = el;
+                                            }
+                                        }}>
                                             <button 
                                                 onClick={() => setActiveMenu(activeMenu === can.id ? null : can.id)}
                                                 className="h-10 w-10 flex items-center justify-center rounded-xl bg-gray-50 text-gray-300 hover:text-gray-950 hover:bg-gray-100 transition-all active:scale-90"
@@ -253,11 +290,19 @@ export default function OrgsPage() {
                         <div className="px-6 py-4 bg-gray-50/50 flex items-center justify-between border-t border-gray-100">
                              <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-widest flex items-center gap-3">
                                 <Layers className="h-4 w-4" />
-                                SHOWING {orgs.length} OF {orgs.length} PARTNERS
+                                SHOWING {orgs.length} OF {total} PARTNERS · PAGE {page} OF {totalPages || 1}
                              </p>
                              <div className="flex items-center gap-2">
-                                <button className="h-9 px-4 bg-gray-100 text-gray-400 font-bold text-[11px] uppercase tracking-widest rounded-lg opacity-50 cursor-not-allowed">Previous</button>
-                                <button className="h-9 px-4 bg-white border border-gray-200 text-gray-900 font-bold text-[11px] uppercase tracking-widest rounded-lg hover:bg-gray-50 shadow-sm transition-all">Next</button>
+                                <button
+                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    disabled={page <= 1}
+                                    className="h-9 px-4 bg-gray-100 text-gray-400 font-bold text-[11px] uppercase tracking-widest rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-200 transition-all"
+                                >Previous</button>
+                                <button
+                                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={page >= totalPages}
+                                    className="h-9 px-4 bg-white border border-gray-200 text-gray-900 font-bold text-[11px] uppercase tracking-widest rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 shadow-sm transition-all"
+                                >Next</button>
                              </div>
                         </div>
                     </div>
