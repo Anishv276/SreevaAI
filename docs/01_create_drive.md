@@ -10,7 +10,7 @@ The **Create Drive** module allows HR/Admins to define the parameters of a recru
 2. **AI JD Extraction**:
    - Admin uploads a PDF/Docx Job Description.
    - The system triggers `/api/extract`, which saves the file temporarily and calls a Python script.
-   - The Python script (`extract_pdf.py`) uses `pypdf` for text extraction and `OpenAI GPT-4o` to structure the JD into skills, responsibilities, and experience.
+   - The Python script (`extract_pdf.py`) uses `PyMuPDF4LLM` for markdown-first extraction and `pdfplumber` for table-aware parsing before `OpenAI GPT-4o` structures the JD into skills, responsibilities, and experience.
 3. **Screening Configuration**: AI screening is toggled, and weights (Skills vs. Experience vs. Education) are defined for the automated scoring engine.
 4. **Assessment Strategy**: Admin selects the test mode (MCQ, Coding, or Hybrid) and sets time limits and proctoring strictness.
 5. **Persistence**: On publish, the data is saved to the PostgreSQL database via Prisma, and a unique candidate portal link is generated.
@@ -24,7 +24,7 @@ The **Create Drive** module allows HR/Admins to define the parameters of a recru
 
 ## 4. Tools & Open-Source Models
 - **AI Extraction Engine**: OpenAI `GPT-4o` (via Python child process).
-- **PDF Processing**: `pypdf` (Python library).
+- **PDF Processing**: `PyMuPDF4LLM` + `pdfplumber` (Python libraries).
 - **Storage**: Temporary local storage for initial JD processing.
 
 ## 5. Related Code (File Map)

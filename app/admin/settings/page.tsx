@@ -162,8 +162,11 @@ export default function SettingsPage() {
                 const data = await res.json();
                 setDomainInfo(data.domain === null ? null : data);
             }
-        } catch (err) { console.error(err); }
-        finally { setIsLoadingDomain(false); }
+        } catch (err) { 
+            console.error("Domain fetch failed:", err); 
+        } finally { 
+            setIsLoadingDomain(false); 
+        }
     };
 
     const pwStrength = (pw: string) => {
@@ -199,9 +202,10 @@ export default function SettingsPage() {
     useEffect(() => {
         const fetchAll = async () => {
             try {
-                const res = await fetch("/api/admin/organization");
-                if (res.ok) {
-                    const data = await res.json();
+                // Fetch basic org data first
+                const orgRes = await fetch("/api/admin/organization");
+                if (orgRes.ok) {
+                    const data = await orgRes.json();
                     setCompany({
                         name: data.name || "",
                         industry: data.industry || "Technology",
@@ -210,11 +214,19 @@ export default function SettingsPage() {
                         logoUrl: data.logoUrl || ""
                     });
                 }
-                await loadTeamData();
-                await fetchDomainInfo();
-            } catch (err) { console.error(err); }
-            finally { setIsLoading(false); }
+            } catch (err) {
+                console.error("Org data fetch failed:", err);
+            } finally {
+                setIsLoading(false);
+            }
+
+            // Fetch secondary data in background
+            Promise.allSettled([
+                loadTeamData(),
+                fetchDomainInfo()
+            ]).catch(err => console.error("Secondary fetch failed:", err));
         };
+        
         fetchAll();
         if (user) {
             setProfile({ name: user.name || "", email: user.email || "", phone: "" });

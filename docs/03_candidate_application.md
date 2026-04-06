@@ -27,7 +27,7 @@ The **Candidate Application** module provides a seamless, AI-enhanced experience
 
 ## 4. Tools & Open-Source Models
 - **AI Extraction**: OpenAI `GPT-4o`.
-- **Document Parsing**: `pypdf` (Python).
+- **Document Parsing**: `PyMuPDF4LLM` + `pdfplumber` (Python).
 - **File Uploads**: Supabase SDK for persistent storage.
 
 ## 5. Related Code (File Map)

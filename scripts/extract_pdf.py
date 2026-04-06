@@ -1,31 +1,75 @@
-
 import sys
 import json
 import os
 import re
+import importlib
+import warnings
 from datetime import datetime
-from pypdf import PdfReader
+
+# Suppress all warnings to stderr to keep stdout pure for JSON
+warnings.filterwarnings("ignore")
+
+
+def load_optional_module(module_name):
+    try:
+        return importlib.import_module(module_name)
+    except ImportError:
+        return None
+
+
+pdfplumber = load_optional_module("pdfplumber")
+pymupdf4llm = load_optional_module("pymupdf4llm")
 from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
+
 
 def extract_text(file_path):
     """
     Extract text from PDF or raw text file.
     """
     if file_path.lower().endswith(".pdf"):
-        try:
-            reader = PdfReader(file_path)
-            text = ""
-            for page in reader.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n"
-            return text.strip()
-        except Exception as e:
-            print(json.dumps({"error": f"PDF Extraction Error: {str(e)}"}))
-            sys.exit(1)
+        extraction_errors = []
+        markdown_text = ""
+        table_sections = []
+
+        if pymupdf4llm is None:
+            extraction_errors.append("PyMuPDF4LLM is not installed")
+        else:
+            try:
+                markdown_text = extract_pdf_markdown(file_path)
+            except Exception as e:
+                extraction_errors.append(f"PyMuPDF4LLM failed: {str(e)}")
+
+        if pdfplumber is None:
+            extraction_errors.append("pdfplumber is not installed")
+        else:
+            try:
+                table_sections = extract_tables_with_pdfplumber(file_path)
+            except Exception as e:
+                extraction_errors.append(f"pdfplumber failed: {str(e)}")
+
+        extracted_parts = []
+        if markdown_text:
+            extracted_parts.append(markdown_text)
+
+        if table_sections:
+            extracted_parts.append(
+                "## Extracted Tables\n\n" + "\n\n".join(table_sections)
+            )
+
+        combined_text = "\n\n".join(extracted_parts).strip()
+        if combined_text:
+            return combined_text
+
+        details = (
+            " | ".join(extraction_errors)
+            if extraction_errors
+            else "No content detected"
+        )
+        print(json.dumps({"error": f"PDF Extraction Error: {details}"}))
+        sys.exit(1)
     else:
         # Assume it's a text file
         try:
@@ -35,6 +79,77 @@ def extract_text(file_path):
             print(json.dumps({"error": f"Text File Error: {str(e)}"}))
             sys.exit(1)
 
+
+def extract_pdf_markdown(file_path):
+    if pymupdf4llm is None:
+        return ""
+
+    markdown_text = pymupdf4llm.to_markdown(file_path)
+    return markdown_text.strip() if markdown_text else ""
+
+
+def normalize_table_cell(cell):
+    if cell is None:
+        return ""
+
+    text = str(cell).replace("\n", " ").strip()
+    text = re.sub(r"\s+", " ", text)
+    return text.replace("|", "\\|")
+
+
+def table_to_markdown(table):
+    if not table:
+        return ""
+
+    rows = []
+    for row in table:
+        if not row:
+            continue
+
+        normalized_row = [normalize_table_cell(cell) for cell in row]
+        if any(normalized_row):
+            rows.append(normalized_row)
+
+    if not rows:
+        return ""
+
+    max_cols = max(len(row) for row in rows)
+    padded_rows = [row + [""] * (max_cols - len(row)) for row in rows]
+    header = padded_rows[0]
+    body = padded_rows[1:]
+
+    if not any(header):
+        header = [f"column_{index + 1}" for index in range(max_cols)]
+
+    lines = [
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join(["---"] * max_cols) + " |",
+    ]
+    for row in body:
+        lines.append("| " + " | ".join(row) + " |")
+
+    return "\n".join(lines)
+
+
+def extract_tables_with_pdfplumber(file_path):
+    extracted_tables = []
+
+    if pdfplumber is None:
+        return extracted_tables
+
+    with pdfplumber.open(file_path) as pdf:
+        for page_index, page in enumerate(pdf.pages, start=1):
+            tables = page.extract_tables() or []
+            for table_index, table in enumerate(tables, start=1):
+                table_markdown = table_to_markdown(table)
+                if table_markdown:
+                    extracted_tables.append(
+                        f"### Table {table_index} (Page {page_index})\n{table_markdown}"
+                    )
+
+    return extracted_tables
+
+
 def normalize_skill(skill):
     """
     Normalize skill names for fuzzy matching.
@@ -42,30 +157,30 @@ def normalize_skill(skill):
     """
     s = skill.lower().strip()
     # Remove common suffixes
-    s = re.sub(r'\.js$', '', s)
-    s = re.sub(r'js$', '', s)
+    s = re.sub(r"\.js$", "", s)
+    s = re.sub(r"js$", "", s)
     # Remove special characters and spaces
-    s = re.sub(r'[\.\-\_\s\/]', '', s)
+    s = re.sub(r"[\.\-\_\s\/]", "", s)
     # Common aliases
     aliases = {
-        'nodejs': 'node',
-        'reactjs': 'react',
-        'vuejs': 'vue',
-        'angularjs': 'angular',
-        'postgresql': 'postgres',
-        'mongodb': 'mongo',
-        'amazonaws': 'aws',
-        'googlecloud': 'gcp',
-        'googlecloudplatform': 'gcp',
-        'microsoftazure': 'azure',
-        'machinelearning': 'ml',
-        'artificialintelligence': 'ai',
-        'expressjs': 'express',
-        'nextjs': 'next',
-        'nuxtjs': 'nuxt',
-        'tailwindcss': 'tailwind',
-        'typescriptlang': 'typescript',
-        'javascriptjs': 'javascript',
+        "nodejs": "node",
+        "reactjs": "react",
+        "vuejs": "vue",
+        "angularjs": "angular",
+        "postgresql": "postgres",
+        "mongodb": "mongo",
+        "amazonaws": "aws",
+        "googlecloud": "gcp",
+        "googlecloudplatform": "gcp",
+        "microsoftazure": "azure",
+        "machinelearning": "ml",
+        "artificialintelligence": "ai",
+        "expressjs": "express",
+        "nextjs": "next",
+        "nuxtjs": "nuxt",
+        "tailwindcss": "tailwind",
+        "typescriptlang": "typescript",
+        "javascriptjs": "javascript",
     }
     return aliases.get(s, s)
 
@@ -206,9 +321,7 @@ def compute_score(jd_data, resume_data):
             career_score -= 1
 
     # Seniority match bonus/penalty
-    seniority_map = {
-        "junior": 1, "mid": 2, "senior": 3, "lead": 4, "manager": 5
-    }
+    seniority_map = {"junior": 1, "mid": 2, "senior": 3, "lead": 4, "manager": 5}
     if jd_seniority and candidate_seniority:
         jd_level = seniority_map.get(jd_seniority, 0)
         cand_level = seniority_map.get(candidate_seniority, 0)
@@ -239,7 +352,7 @@ def compute_score(jd_data, resume_data):
         if missing_ratio > 0.5:
             hard_rejected = True
             rejection_reasons.append(
-                f"Missing {len(missing_must)} of {len(jd_must_have)} must-have skills ({round(missing_ratio*100)}%)"
+                f"Missing {len(missing_must)} of {len(jd_must_have)} must-have skills ({round(missing_ratio * 100)}%)"
             )
 
     if exp_status == "significantly_below" and jd_min_years:
@@ -276,25 +389,28 @@ def compute_score(jd_data, resume_data):
             "good_score": good_score,
             "good_max": 10,
             "career_score": career_score,
-            "career_max": 10
+            "career_max": 10,
         },
         "skill_matching": {
             "matched_must": matched_must,
             "missing_must": missing_must,
             "matched_good": matched_good,
             "total_must": len(jd_must_have),
-            "match_ratio": round(len(matched_must) / len(jd_must_have) * 100) if jd_must_have else 100
+            "match_ratio": round(len(matched_must) / len(jd_must_have) * 100)
+            if jd_must_have
+            else 100,
         },
         "exp_status": exp_status,
         "hard_rejected": hard_rejected,
         "rejection_reasons": rejection_reasons,
         "candidate_years": candidate_years,
-        "jd_min_years": jd_min_years
+        "jd_min_years": jd_min_years,
     }
 
 
-def generate_report(jd_data, resume_data, jd_raw_text,
-                    resume_raw_text, score_result, client):
+def generate_report(
+    jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client
+):
     """
     LLM writes ONLY the human-readable report.
     Score and status are already locked — LLM cannot change them.
@@ -323,17 +439,17 @@ LOCKED RESULTS — DO NOT CHANGE THESE
 ═══════════════════════════════════════
 Final Score     : {total}/100
 Status          : {status}
-Skills Score    : {breakdown['skills_score']}/{breakdown['skills_max']}
-Experience Score: {breakdown['exp_score']}/{breakdown['exp_max']}
-Bonus Score     : {breakdown['good_score']}/{breakdown['good_max']}
-Career Score    : {breakdown['career_score']}/{breakdown['career_max']}
+Skills Score    : {breakdown["skills_score"]}/{breakdown["skills_max"]}
+Experience Score: {breakdown["exp_score"]}/{breakdown["exp_max"]}
+Bonus Score     : {breakdown["good_score"]}/{breakdown["good_max"]}
+Career Score    : {breakdown["career_score"]}/{breakdown["career_max"]}
 
 Must-have matched : {json.dumps(matched)}
 Must-have missing : {json.dumps(missing)}
 Good-to-have matched: {json.dumps(matched_good)}
 Experience status : {exp_status} 
   (Candidate: {candidate_years} yrs | Required: {jd_min_years} yrs)
-{f"Hard rejection reasons: {json.dumps(score_result['rejection_reasons'])}" if score_result['hard_rejected'] else ""}
+{f"Hard rejection reasons: {json.dumps(score_result['rejection_reasons'])}" if score_result["hard_rejected"] else ""}
 
 ═══════════════════════════════════════
 JOB DESCRIPTION DATA
@@ -451,27 +567,32 @@ Return ONLY valid JSON in this exact schema:
                     "Every point you make is backed by something specific from the resume or JD. "
                     "You are honest — if a candidate is weak, you say so clearly and specifically. "
                     "Output ONLY valid JSON. No markdown. No extra text."
-                )
+                ),
             },
-            {"role": "user", "content": prompt}
+            {"role": "user", "content": prompt},
         ],
-        response_format={"type": "json_object"}
+        response_format={"type": "json_object"},
     )
 
     return json.loads(completion.choices[0].message.content)
 
+
 def extract_data(text, type_):
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        print(json.dumps({"error": "OPENAI_API_KEY is not set in the environment or .env file."}))
+        print(
+            json.dumps(
+                {"error": "OPENAI_API_KEY is not set in the environment or .env file."}
+            )
+        )
         sys.exit(1)
-        
+
     try:
         client = OpenAI(api_key=api_key)
     except Exception as e:
         print(json.dumps({"error": f"Failed to initialize OpenAI client: {str(e)}"}))
         sys.exit(1)
-    
+
     prompt = ""
     det_results = None
 
@@ -793,15 +914,14 @@ Resume:
         score_result = compute_score(jd_data, resume_data)
 
         # ── 2. HIGH-FIDELITY AI EVALUATION ───────────────────
-        print(f"--- [AI] Synthesizing evaluation report for {resume_data.get('full_name', 'candidate')}... ---", file=sys.stderr, flush=True)
+        print(
+            f"--- [AI] Synthesizing evaluation report for {resume_data.get('full_name', 'candidate')}... ---",
+            file=sys.stderr,
+            flush=True,
+        )
         try:
             report = generate_report(
-                jd_data, 
-                resume_data, 
-                jd_raw_text, 
-                resume_raw_text, 
-                score_result, 
-                client
+                jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client
             )
             # ── 3. ASSEMBLE FINAL OUTPUT ───────────────────────
             final_data = {
@@ -814,7 +934,7 @@ Resume:
                 "rejection_reasons": score_result["rejection_reasons"],
                 "candidate_years": score_result["candidate_years"],
                 "jd_min_years": score_result["jd_min_years"],
-                **report # Spread report to top-level for frontend
+                **report,  # Spread report to top-level for frontend
             }
             return final_data
         except Exception as e:
@@ -822,7 +942,7 @@ Resume:
             return {
                 **score_result,
                 "recruiter_snapshot": f"Automated evaluation completed with score {score_result['score']}.",
-                "ai_verdict": f"Status: {score_result['status']}. Score: {score_result['score']}."
+                "ai_verdict": f"Status: {score_result['status']}. Score: {score_result['score']}.",
             }
 
     # Model and temperature based on type
@@ -834,45 +954,58 @@ Resume:
         "You extract precise, structured data from documents. "
         "Output ONLY valid JSON. Follow the schema exactly."
         if type_ in ["JD", "RESUME"]
-        else
-        "You are a senior recruiter reporting to a hiring manager. You translate technical data into high-quality hiring insights."
+        else "You are a senior recruiter reporting to a hiring manager. You translate technical data into high-quality hiring insights."
     )
 
     try:
         if type_ in ["JD", "RESUME"]:
-             print(f"--- [AI] Extracting structured {type_} data... ---", file=sys.stderr, flush=True)
+            print(
+                f"--- [AI] Extracting structured {type_} data... ---",
+                file=sys.stderr,
+                flush=True,
+            )
         else:
-             print(f"--- [AI] Processing {type_} task... ---", file=sys.stderr, flush=True)
+            print(
+                f"--- [AI] Processing {type_} task... ---", file=sys.stderr, flush=True
+            )
 
         completion = client.chat.completions.create(
             model=model,
             temperature=temperature,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": prompt},
             ],
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
         )
         content = completion.choices[0].message.content
-        
+
         # Merge deterministic results with AI reasoning if it was a score request
         if type_ == "SCORE":
             # SCORE now returns enriched data directly from the if/elif block
             return content
+
+        if content is None:
+            raise ValueError("OpenAI returned empty content")
 
         return json.loads(content)
     except Exception as e:
         print(json.dumps({"error": f"OpenAI Error: {str(e)}"}))
         sys.exit(1)
 
+
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print(json.dumps({"error": "Usage: python scripts/extract_pdf.py <file_path> <type>"}))
+        print(
+            json.dumps(
+                {"error": "Usage: python scripts/extract_pdf.py <file_path> <type>"}
+            )
+        )
         sys.exit(1)
 
     file_path = sys.argv[1]
     type_ = sys.argv[2]
-    
+
     if not os.path.exists(file_path):
         print(json.dumps({"error": f"File not found: {file_path}"}))
         sys.exit(1)
@@ -887,6 +1020,6 @@ if __name__ == "__main__":
         # For JD or RESUME, file_path is a PDF/text file
         text = extract_text(file_path)
         data = extract_data(text, type_)
-        
+
         # Output to stdout for the backend
         print(json.dumps({"text": text, "data": data}))
