@@ -10,7 +10,7 @@ import {
     Camera, Check, ChevronRight, Plus, Trash2, Crown,
     Slack, Calendar, Globe, Mail, Phone, Shield,
     BarChart3, AlertCircle, Zap, ExternalLink, Upload, Lock, Eye, EyeOff,
-    Loader2
+    Loader2, Copy
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/auth-context";
@@ -22,6 +22,7 @@ const sections = [
     { id: "company",       icon: Building2,   label: "Company" },
     { id: "notifications", icon: Bell,        label: "Notifications" },
     { id: "team",          icon: Users,       label: "Team Members" },
+    { id: "domains",       icon: Globe,       label: "Domains" },
     { id: "billing",       icon: CreditCard,  label: "Billing" },
     { id: "integrations",  icon: Plug,        label: "Integrations" },
     { id: "password",      icon: Lock,        label: "Password" },
@@ -141,6 +142,30 @@ export default function SettingsPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [saved, setSaved] = useState(false);
 
+    /* Domains */
+    const [domainInfo, setDomainInfo] = useState<any>(null);
+    const [isLoadingDomain, setIsLoadingDomain] = useState(false);
+    const [newDomain, setNewDomain] = useState("");
+    const [copiedIndex, setCopiedIndex] = useState<{i: number, type: 'host' | 'value'} | null>(null);
+
+    const handleCopy = (text: string, i: number, type: 'host' | 'value') => {
+        navigator.clipboard.writeText(text);
+        setCopiedIndex({i, type});
+        setTimeout(() => setCopiedIndex(null), 2000);
+    };
+
+    const fetchDomainInfo = async () => {
+        setIsLoadingDomain(true);
+        try {
+            const res = await fetch("/api/admin/organization/domain");
+            if (res.ok) {
+                const data = await res.json();
+                setDomainInfo(data.domain === null ? null : data);
+            }
+        } catch (err) { console.error(err); }
+        finally { setIsLoadingDomain(false); }
+    };
+
     const pwStrength = (pw: string) => {
         if (pw.length === 0) return 0;
         let s = 0;
@@ -186,6 +211,7 @@ export default function SettingsPage() {
                     });
                 }
                 await loadTeamData();
+                await fetchDomainInfo();
             } catch (err) { console.error(err); }
             finally { setIsLoading(false); }
         };
@@ -224,14 +250,24 @@ export default function SettingsPage() {
     const handleLogoDelete = () => setIsLogoModalOpen(true);
 
     const confirmLogoDelete = async () => {
+        if (!company.logoUrl) return;
         setIsProcessingAction(true);
         try {
-            setCompany(prev => ({ ...prev, logoUrl: null as any }));
+            // 1. Evict from Cloudflare R2
+            await fetch("/api/upload/logo", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: company.logoUrl }),
+            });
+
+            // 2. Clear from Organization Record
+            setCompany(prev => ({ ...prev, logoUrl: "" }));
             await fetch("/api/admin/organization", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ...company, logoUrl: null })
+                body: JSON.stringify({ ...company, logoUrl: "" })
             });
+            
             setIsLogoModalOpen(false);
         } catch (err) {
             console.error("Delete Error:", err);
@@ -595,6 +631,139 @@ export default function SettingsPage() {
                         </SettingsCard>
                     )}
 
+                    {/* ═══ DOMAINS ═══ */}
+                    {activeSection === "domains" && (
+                        <div className="space-y-6">
+                            <SettingsCard 
+                                title="Custom Email Domain" 
+                                description="Connect your business domain to send white-labeled recruitment emails."
+                            >
+                                {!domainInfo ? (
+                                    <div className="space-y-6">
+                                        <div className="p-8 rounded-[2.5rem] bg-orange-50/40 border border-orange-100/50 flex items-center gap-8 shadow-inner shadow-orange-100/30">
+                                            <div className="h-20 w-20 bg-white rounded-3xl flex items-center justify-center text-[#F97316] shadow-sm flex-shrink-0 group-hover:scale-110 transition-transform duration-500"><Globe className="h-10 w-10" /></div>
+                                            <div className="space-y-1">
+                                                <h4 className="text-xl font-black text-gray-950 uppercase italic tracking-tight">Register New Domain</h4>
+                                                <p className="text-xs font-medium text-gray-400">Increase email deliverability and candidate trust with your official identity.</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex gap-3">
+                                            <div className="relative flex-1">
+                                                <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                                <Input 
+                                                    className="pl-10 h-12 rounded-2xl border-gray-100 bg-white shadow-sm font-bold text-[13px] focus:ring-4 focus:ring-orange-50 focus:border-[#F97316] placeholder:font-medium placeholder:text-gray-300 transition-all" 
+                                                    placeholder="GITSOLUTIONS.COM" 
+                                                    value={newDomain}
+                                                    onChange={e => setNewDomain(e.target.value.toLowerCase())}
+                                                />
+                                            </div>
+                                            <Button 
+                                                disabled={isLoadingDomain || !newDomain}
+                                                onClick={async () => {
+                                                    setIsLoadingDomain(true);
+                                                    try {
+                                                        const res = await fetch("/api/admin/setup/domain", {
+                                                            method: "POST",
+                                                            body: JSON.stringify({ domain: newDomain })
+                                                        });
+                                                        if (res.ok) fetchDomainInfo();
+                                                    } finally { setIsLoadingDomain(false); }
+                                                }}
+                                                className="h-12 px-8 rounded-2xl bg-black text-white hover:bg-[#F97316] shadow-xl hover:shadow-[#F97316]/20 transition-all font-black text-[11px] uppercase tracking-widest disabled:opacity-30"
+                                            >
+                                                {isLoadingDomain ? <Loader2 className="h-4 w-4 animate-spin" /> : "Link Domain"}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        <div className="flex items-center justify-between p-6 rounded-[2rem] bg-gradient-to-r from-gray-900 via-gray-800 to-gray-950 text-white shadow-2xl relative overflow-hidden group">
+                                            <div className="absolute right-0 top-0 h-full w-48 bg-gradient-to-l from-white/[0.03] to-transparent pointer-events-none" />
+                                            <div className="flex items-center gap-6 relative z-10">
+                                                <div className="h-14 w-14 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/[0.08] shadow-[0_0_20px_rgba(255,255,255,0.05)]"><Globe className="h-7 w-7 text-white" /></div>
+                                                <div>
+                                                    <div className="flex items-center gap-3">
+                                                        <p className="text-xl font-black uppercase italic leading-none">{domainInfo.customDomain}</p>
+                                                        <Badge className={cn("text-[8px] font-black uppercase px-2 py-0.5 border-0 rounded-md tracking-widest", 
+                                                            domainInfo.isDomainVerified ? "bg-emerald-500 text-white shadow-[0_0_12px_rgba(16,185,129,0.3)]" : "bg-orange-500 text-white"
+                                                        )}>
+                                                            {domainInfo.isDomainVerified ? "Verified" : domainInfo.resendStatus === "pending" ? "Sync Pending" : "Handshake Required"}
+                                                        </Badge>
+                                                    </div>
+                                                    <p className="text-[10px] uppercase font-bold text-gray-400 mt-2 tracking-widest leading-none">Registered to Resend Ecosystem</p>
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={async () => {
+                                                    if (!confirm("Are you sure you want to disconnect this domain? This will stop white-labeled emails from working.")) return;
+                                                    await fetch("/api/admin/organization/domain", { method: "DELETE" });
+                                                    fetchDomainInfo();
+                                                }}
+                                                className="relative z-10 h-10 w-10 flex items-center justify-center rounded-xl bg-white/10 hover:bg-red-500 transition-all text-white/50 hover:text-white"
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </button>
+                                        </div>
+
+                                        {!domainInfo.isDomainVerified && domainInfo.records && (
+                                            <div className="space-y-6 pt-4 animate-in-fade">
+                                                <div className="space-y-2 border-l-2 border-[#F97316] pl-4">
+                                                    <h4 className="text-xs font-black text-gray-900 uppercase italic leading-none">Handshake Protocol</h4>
+                                                    <p className="text-[10px] text-gray-400 font-medium">Add these records to your DNS provider (Cloudflare, GoDaddy, etc.) then click check status.</p>
+                                                </div>
+
+                                                <div className="border border-gray-100 rounded-2xl overflow-hidden shadow-[0_2px_12px_rgba(0,0,0,0.03)] bg-gray-50/50">
+                                                    <div className="bg-white border-b border-gray-100 px-6 py-4 flex text-[10px] font-black uppercase text-gray-400 tracking-[0.2em] italic">
+                                                        <div className="w-[10%]">Type</div>
+                                                        <div className="w-[20%]">Host Name</div>
+                                                        <div className="flex-1">Encryption Value</div>
+                                                        <div className="w-[10%] text-center">Priority</div>
+                                                    </div>
+                                                    <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto">
+                                                        {domainInfo.records.map((rec: any, i: number) => (
+                                                            <div key={i} className="flex items-center px-6 py-5 bg-white hover:bg-orange-50/10 transition-all group">
+                                                                <div className="w-[10%]">
+                                                                    <Badge className="bg-gray-900 text-white border-0 text-[9px] font-black italic px-2 py-0.5">{rec.type}</Badge>
+                                                                </div>
+                                                                <div className="w-[20%] pr-4 relative">
+                                                                    <div className="flex items-center justify-between gap-2 p-2 rounded-lg border border-transparent hover:border-gray-200 hover:bg-gray-50 transition-all cursor-pointer" onClick={() => handleCopy(rec.name || "@", i, 'host')}>
+                                                                        <span className="font-mono text-[9px] font-bold text-gray-950 truncate uppercase">{rec.name || "@"}</span>
+                                                                        {copiedIndex?.i === i && copiedIndex?.type === 'host' ? <Check className="h-3 w-3 text-emerald-500 shrink-0" /> : <Copy className="h-3 w-3 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex-1 relative pr-4">
+                                                                    <div className="flex items-center justify-between gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50 hover:border-[#F97316] hover:bg-white transition-all cursor-pointer shadow-sm" onClick={() => handleCopy(rec.value, i, 'value')}>
+                                                                        <span className="font-mono text-[9px] font-medium text-gray-600 break-all leading-relaxed pr-8">{rec.value}</span>
+                                                                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                                                            {copiedIndex?.i === i && copiedIndex?.type === 'value' ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="w-[10%] text-center">
+                                                                    <span className="text-[10px] font-black text-gray-400 italic">{rec.priority ?? "-"}</span>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                <Button 
+                                                    onClick={fetchDomainInfo}
+                                                    disabled={isLoadingDomain}
+                                                    className="h-10 px-8 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 text-gray-900 font-black text-[10px] uppercase tracking-widest shadow-sm flex items-center gap-2"
+                                                >
+                                                    {isLoadingDomain ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 text-[#F97316]" />}
+                                                    Check Handshake Status
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </SettingsCard>
+                        </div>
+                    )}
+
                     {/* ═══ TEAM ═══ */}
                     {activeSection === "team" && (
                         <div className="space-y-6">
@@ -625,12 +794,8 @@ export default function SettingsPage() {
                                         {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Plus className="h-4 w-4 mr-1.5" /> Invite</>}
                                     </Button>
                                 </div>
-                                {inviteMessage && (
-                                    <p className="mt-4 text-xs font-bold text-emerald-600">{inviteMessage}</p>
-                                )}
-                                {inviteError && (
-                                    <p className="mt-4 text-xs font-bold text-red-500">{inviteError}</p>
-                                )}
+                                {inviteMessage && <p className="mt-4 text-xs font-bold text-emerald-600">{inviteMessage}</p>}
+                                {inviteError && <p className="mt-4 text-xs font-bold text-red-500">{inviteError}</p>}
                             </SettingsCard>
 
                             <SettingsCard title="Pending Invitations" description={`${pendingInvites.length} pending invitation(s)`}>
@@ -653,10 +818,8 @@ export default function SettingsPage() {
                                                     <Badge className={cn("text-[10px] font-bold border-0 rounded-lg px-3 py-1.5", roleBadge(invite.orgRole))}>
                                                         {invite.orgRole}
                                                     </Badge>
-                                                    <button
-                                                        onClick={() => cancelInvite(invite.id)}
-                                                        className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all"
-                                                    >
+                                                    <button onClick={() => cancelInvite(invite.id)}
+                                                        className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all">
                                                         <Trash2 className="h-3.5 w-3.5" />
                                                     </button>
                                                 </div>
@@ -704,18 +867,14 @@ export default function SettingsPage() {
                     {/* ═══ BILLING ═══ */}
                     {activeSection === "billing" && (
                         <div className="space-y-6">
-
-                            {/* Current Plan */}
                             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                                 <div className="px-6 py-5 border-b border-gray-100">
                                     <h2 className="text-lg font-bold text-gray-900">Current Plan</h2>
                                     <p className="text-sm text-gray-500 font-medium mt-1">Your active subscription and usage details.</p>
                                 </div>
                                 <div className="px-6 py-6">
-                                    {/* Plan card — premium slate gradient */}
                                     <div className="relative flex items-center justify-between p-6 rounded-xl bg-gradient-to-br from-slate-800 to-slate-950 text-white overflow-hidden shadow-md">
                                         <div className="absolute -right-6 -top-6 h-36 w-36 rounded-full bg-white/[0.03] pointer-events-none" />
-                                        
                                         <div className="flex items-center gap-4 relative z-10">
                                             <div className="h-12 w-12 rounded-xl bg-white/10 border border-white/[0.08] flex items-center justify-center flex-shrink-0">
                                                 <Crown className="h-6 w-6 text-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.4)]" />
@@ -728,14 +887,11 @@ export default function SettingsPage() {
                                                 <p className="text-slate-400 text-xs font-medium mt-1">Billed monthly · Renews Mar 20, 2026</p>
                                             </div>
                                         </div>
-
                                         <div className="text-right relative z-10">
                                             <p className="font-bold text-3xl tracking-tight tabular-nums">$49</p>
                                             <p className="text-slate-400 text-xs font-medium mt-1">per month</p>
                                         </div>
                                     </div>
-
-                                    {/* Billing details row */}
                                     <div className="grid grid-cols-3 gap-4 mt-4">
                                         {[
                                             { label: "Next Invoice",  value: "Mar 20, 2026" },
@@ -751,7 +907,6 @@ export default function SettingsPage() {
                                 </div>
                             </div>
 
-                            {/* Usage Analytics */}
                             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                                 <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
                                     <div>
@@ -770,21 +925,12 @@ export default function SettingsPage() {
                                             const pct = Math.round((used / max) * 100);
                                             return (
                                                 <div key={label} className="relative p-5 rounded-xl border border-gray-100 bg-white hover:border-[#F97316]/30 transition-all duration-300 group overflow-hidden shadow-sm">
-                                                    <div className={`h-10 w-10 rounded-lg ${bg} flex items-center justify-center mb-4 shadow-sm`}>
-                                                        <Icon className={`h-5 w-5 ${text}`} />
-                                                    </div>
-
+                                                    <div className={`h-10 w-10 rounded-lg ${bg} flex items-center justify-center mb-4 shadow-sm`}><Icon className={`h-5 w-5 ${text}`} /></div>
                                                     <p className="text-3xl font-bold text-gray-900 leading-none tracking-tight tabular-nums">{used}</p>
                                                     <p className="text-xs font-semibold text-gray-400 mt-2 uppercase tracking-widest">{label.split(" ")[0]} <span className="opacity-40">/ {max}</span></p>
-
                                                     <div className="mt-4 h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
-                                                        <div className="h-full rounded-full transition-all duration-700"
-                                                            style={{
-                                                                width: `${pct}%`,
-                                                                background: accent,
-                                                            }} />
+                                                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: accent }} />
                                                     </div>
-
                                                     <p className={`text-[10px] font-bold mt-2 ${text} uppercase tracking-widest`}>{pct}% utilized</p>
                                                 </div>
                                             );
@@ -793,7 +939,6 @@ export default function SettingsPage() {
                                 </div>
                             </div>
 
-                            {/* Enterprise Card */}
                             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                                 <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
                                     <div>
@@ -804,25 +949,14 @@ export default function SettingsPage() {
                                 </div>
                                 <div className="px-6 py-6">
                                     <div className="grid grid-cols-2 gap-y-4 gap-x-8 mb-8">
-                                        {[
-                                            "Unlimited recruitment drives",
-                                            "Unlimited AI screenings",
-                                            "Up to 50 team members",
-                                            "Priority support & SLA",
-                                            "Custom integrations",
-                                            "Advanced analytics dashboard",
-                                        ].map(feat => (
+                                        {["Unlimited recruitment drives","Unlimited AI screenings","Up to 50 team members","Priority support & SLA","Custom integrations","Advanced analytics dashboard"].map(feat => (
                                             <div key={feat} className="flex items-center gap-3">
-                                                <div className="h-6 w-6 rounded-lg bg-gray-900 flex items-center justify-center flex-shrink-0">
-                                                    <Check className="h-3.5 w-3.5 text-white" />
-                                                </div>
+                                                <div className="h-6 w-6 rounded-lg bg-gray-900 flex items-center justify-center flex-shrink-0"><Check className="h-3.5 w-3.5 text-white" /></div>
                                                 <span className="text-sm font-medium text-gray-600">{feat}</span>
                                             </div>
                                         ))}
                                     </div>
-                                    <Button className="h-11 px-8 rounded-lg bg-[#F97316] hover:bg-orange-600 text-white font-bold shadow-md transition-all">
-                                        Elevate to Enterprise <ExternalLink className="h-4 w-4 ml-2.5" />
-                                    </Button>
+                                    <Button className="h-11 px-8 rounded-lg bg-[#F97316] hover:bg-orange-600 text-white font-bold shadow-md transition-all">Elevate to Enterprise <ExternalLink className="h-4 w-4 ml-2.5" /></Button>
                                 </div>
                             </div>
                         </div>
@@ -840,9 +974,7 @@ export default function SettingsPage() {
                                     { icon: BarChart3, name: "ATS / HRMS",            desc: "Sync candidate data with your existing system.",      color: "bg-gray-50 text-gray-500",   connected: false },
                                 ].map(({ icon: Icon, name, desc, color, connected }) => (
                                     <div key={name} className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 bg-gray-50/30 hover:bg-white hover:border-gray-200 transition-all group">
-                                        <div className={cn("h-11 w-11 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm", color)}>
-                                            <Icon className="h-5 w-5" />
-                                        </div>
+                                        <div className={cn("h-11 w-11 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm", color)}><Icon className="h-5 w-5" /></div>
                                         <div className="flex-1 min-w-0">
                                             <p className="font-bold text-gray-900 text-sm tracking-tight">{name}</p>
                                             <p className="text-xs text-gray-400 font-medium tracking-tight mt-0.5">{desc}</p>
@@ -853,10 +985,7 @@ export default function SettingsPage() {
                                                 <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Active</span>
                                             </div>
                                         ) : (
-                                            <Button variant="outline" size="sm"
-                                                className="h-9 px-4 rounded-lg border-gray-200 text-gray-500 font-bold text-[11px] hover:border-orange-200 hover:text-[#F97316] hover:bg-orange-50 transition-all">
-                                                Connect
-                                            </Button>
+                                            <Button variant="outline" size="sm" className="h-9 px-4 rounded-lg border-gray-200 text-gray-500 font-bold text-[11px] hover:border-orange-200 hover:text-[#F97316] hover:bg-orange-50 transition-all">Connect</Button>
                                         )}
                                     </div>
                                 ))}
@@ -872,105 +1001,36 @@ export default function SettingsPage() {
                                     <Field label="Current Password">
                                         <div className="relative">
                                             <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                            <Input
-                                                type={showPw.current ? "text" : "password"}
-                                                placeholder="Enter current password"
+                                            <Input type={showPw.current ? "text" : "password"} placeholder="Enter current password"
                                                 className="pl-10 pr-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
-                                                value={passwords.current}
-                                                onChange={e => setPasswords(p => ({ ...p, current: e.target.value }))}
-                                            />
-                                            <button type="button" onClick={() => setShowPw(s => ({ ...s, current: !s.current }))}
-                                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316] transition-colors">
-                                                {showPw.current ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                            </button>
+                                                value={passwords.current} onChange={e => setPasswords(p => ({ ...p, current: e.target.value }))} />
+                                            <button type="button" onClick={() => setShowPw(s => ({ ...s, current: !s.current }))} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316]"><Eye className="h-4 w-4" /></button>
                                         </div>
                                     </Field>
-
                                     <Field label="New Password">
                                         <div className="relative">
                                             <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                            <Input
-                                                type={showPw.next ? "text" : "password"}
-                                                placeholder="Enter new password"
+                                            <Input type={showPw.next ? "text" : "password"} placeholder="Enter new password"
                                                 className="pl-10 pr-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
-                                                value={passwords.next}
-                                                onChange={e => setPasswords(p => ({ ...p, next: e.target.value }))}
-                                            />
-                                            <button type="button" onClick={() => setShowPw(s => ({ ...s, next: !s.next }))}
-                                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316] transition-colors">
-                                                {showPw.next ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                            </button>
+                                                value={passwords.next} onChange={e => setPasswords(p => ({ ...p, next: e.target.value }))} />
+                                            <button type="button" onClick={() => setShowPw(s => ({ ...s, next: !s.next }))} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316]"><Eye className="h-4 w-4" /></button>
                                         </div>
-                                        {passwords.next.length > 0 && (
-                                            <div className="mt-3 space-y-1.5">
-                                                <div className="flex gap-1.5">
-                                                    {[1,2,3,4].map(i => (
-                                                        <div key={i} className={cn(
-                                                            "h-1.5 flex-1 rounded-full transition-all duration-300",
-                                                            pwStrength(passwords.next) >= i ? strengthColor[pwStrength(passwords.next)] : "bg-gray-100"
-                                                        )} />
-                                                    ))}
-                                                </div>
-                                                <p className={cn("text-[10px] font-bold uppercase tracking-widest",
-                                                    pwStrength(passwords.next) <= 1 ? "text-red-500" :
-                                                    pwStrength(passwords.next) === 2 ? "text-orange-500" :
-                                                    pwStrength(passwords.next) === 3 ? "text-yellow-600" : "text-emerald-600"
-                                                )}>
-                                                    Strength: {strengthLabel[pwStrength(passwords.next)]}
-                                                </p>
-                                            </div>
-                                        )}
                                     </Field>
-
                                     <Field label="Confirm New Password">
                                         <div className="relative">
                                             <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                            <Input
-                                                type={showPw.confirm ? "text" : "password"}
-                                                placeholder="Re-enter new password"
-                                                className={cn(
-                                                    "pl-10 pr-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:ring-4 transition-all",
-                                                    passwords.confirm && passwords.next !== passwords.confirm
-                                                        ? "border-red-200 focus:border-red-200 focus:ring-red-50"
-                                                        : "focus:border-[#F97316] focus:ring-orange-50"
-                                                )}
-                                                value={passwords.confirm}
-                                                onChange={e => setPasswords(p => ({ ...p, confirm: e.target.value }))}
-                                            />
-                                            <button type="button" onClick={() => setShowPw(s => ({ ...s, confirm: !s.confirm }))}
-                                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316] transition-colors">
-                                                {showPw.confirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                            </button>
+                                            <Input type={showPw.confirm ? "text" : "password"} placeholder="Re-enter new password"
+                                                className="pl-10 pr-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
+                                                value={passwords.confirm} onChange={e => setPasswords(p => ({ ...p, confirm: e.target.value }))} />
+                                            <button type="button" onClick={() => setShowPw(s => ({ ...s, confirm: !s.confirm }))} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316]"><Eye className="h-4 w-4" /></button>
                                         </div>
-                                        {passwords.confirm && passwords.next !== passwords.confirm && (
-                                            <p className="text-xs font-bold text-red-500 mt-1">Passwords do not match</p>
-                                        )}
                                     </Field>
-
-                                    {pwError && (
-                                        <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-100">
-                                            <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
-                                            <p className="text-xs font-bold text-red-600">{pwError}</p>
-                                        </div>
-                                    )}
-
-                                    <div className="p-4 rounded-xl bg-orange-50 border border-orange-100 flex items-start gap-3">
-                                        <Shield className="h-4 w-4 text-[#F97316] flex-shrink-0 mt-0.5" />
-                                        <p className="text-xs font-medium text-orange-800 leading-relaxed">
-                                            <span className="font-bold">Security Rule:</span> Use 8+ characters with uppercase letters, numbers, and special symbols.
-                                        </p>
-                                    </div>
+                                    {pwError && <p className="text-xs font-bold text-red-500 mt-1">{pwError}</p>}
                                 </div>
                             </SettingsCard>
-
-                            <div className="flex justify-end">
-                                <Button onClick={handlePasswordSave}
-                                    disabled={isSaving}
-                                    className={cn(
-                                        "h-10 px-8 rounded-lg font-bold transition-all shadow-sm",
-                                        pwSaved ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-[#F97316] hover:bg-orange-600 text-white"
-                                    )}>
-                                    {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                            <div className="flex justify-end pt-4">
+                                <Button onClick={handlePasswordSave} disabled={isSaving} className={cn("h-10 px-8 rounded-lg font-bold shadow-sm", pwSaved ? "bg-emerald-500 text-white" : "bg-[#F97316] text-white")}>
+                                    {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                                     {pwSaved ? "Password Updated" : "Update Password"}
                                 </Button>
                             </div>
@@ -980,15 +1040,8 @@ export default function SettingsPage() {
                     {/* ── Save Button ── */}
                     {["profile","company","notifications"].includes(activeSection) && (
                         <div className="flex justify-end pt-4">
-                            <Button 
-                                onClick={handleSave}
-                                disabled={isSaving}
-                                className={cn(
-                                    "h-11 px-12 rounded-lg font-bold shadow-md transition-all hover:translate-y-[-2px] active:translate-y-[0px] disabled:opacity-50",
-                                    saved ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-[#F97316] hover:bg-orange-600 text-white"
-                                )}
-                            >
-                                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                            <Button onClick={handleSave} disabled={isSaving} className={cn("h-11 px-12 rounded-lg font-bold shadow-md transition-all", saved ? "bg-emerald-500 text-white" : "bg-[#F97316] text-white")}>
+                                {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                                 {saved ? "Changes Saved" : "Save Changes"}
                             </Button>
                         </div>

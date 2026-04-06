@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { prisma } from "@/lib/prisma";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = process.env.FROM_EMAIL || 'Lumoscale <careers@lumoscale.com>';
@@ -7,6 +8,7 @@ export async function sendApplicationStatusEmail({
     email,
     fullName,
     jobTitle,
+    orgId,
     status,
     score,
     interviewLink
@@ -14,6 +16,7 @@ export async function sendApplicationStatusEmail({
     email: string;
     fullName: string;
     jobTitle: string;
+    orgId?: string;
     status: 'SHORTLISTED' | 'REJECTED' | 'ACCEPTED' | 'INTERVIEW' | 'Hired';
     score: number;
     interviewLink?: string;
@@ -70,9 +73,22 @@ export async function sendApplicationStatusEmail({
         </div>
     `;
 
+    let from = FROM_EMAIL;
+
+    if (orgId) {
+        const org = await prisma.organization.findUnique({
+            where: { id: orgId },
+            select: { customSenderEmail: true, customSenderName: true, isDomainVerified: true, name: true }
+        });
+        if (org?.isDomainVerified && org?.customSenderEmail) {
+            const displayName = org.customSenderName || org.name;
+            from = `${displayName} <${org.customSenderEmail}>`;
+        }
+    }
+
     try {
         const payload = await resend.emails.send({
-            from: FROM_EMAIL,
+            from: from,
             to: email,
             subject: subject,
             html: html,

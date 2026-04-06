@@ -23,6 +23,11 @@ model Organization {
   location  String?
   onboardingStep     Int      @default(0)
   onboardingComplete Boolean  @default(false)
+  customDomain       String?
+  resendDomainId     String?
+  isDomainVerified   Boolean  @default(false)
+  customSenderEmail  String?
+  customSenderName   String?
   drives    Drive[]
   invites   OrgInvite[]
   users     User[]

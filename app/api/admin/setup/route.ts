@@ -46,6 +46,16 @@ export async function POST(req: Request) {
                 });
                 break;
 
+            case "email":
+                await prisma.organization.update({
+                    where: { id: session.orgId },
+                    data: {
+                        customSenderEmail: data.senderEmail,
+                        customSenderName: data.senderName
+                    } as any
+                });
+                break;
+
             case "complete":
                 // ACTIVATION FIX: Hard-stamp the initialization flag
                 await prisma.organization.update({
@@ -54,7 +64,7 @@ export async function POST(req: Request) {
                         // @ts-ignore
                         onboardingComplete: true,
                         // @ts-ignore
-                        onboardingStep: 5 
+                        onboardingStep: 6 
                     }
                 });
 
