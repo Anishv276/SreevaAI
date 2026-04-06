@@ -12,7 +12,7 @@ import { FinalPreview } from "@/components/create-drive/final-preview";
 import { CandidatePreview } from "@/components/create-drive/candidate-preview";
 import { InterviewSetup } from "@/components/create-drive/interview-setup";
 import { useJobs } from "@/context/jobs-context";
-import { Copy, CheckCircle2, Rocket, AlertCircle, X, Eye, PenLine, Sparkles, ChevronLeft, ChevronRight, Upload } from "lucide-react";
+import { Copy, CheckCircle2, Rocket, AlertCircle, X, Eye, PenLine, Sparkles, ChevronLeft, ChevronRight, Upload, Bot } from "lucide-react";
 
 const STEPS = [
     "Basic Info",
@@ -88,6 +88,7 @@ function CreateDriveForm() {
     // Track which steps have been explicitly completed
     const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
     const [toast, setToast] = useState<string | null>(null);
+    const [syncedFromAi, setSyncedFromAi] = useState(false);
     const formRef = useRef<HTMLDivElement>(null);
     const analysisAbortRef = useRef<AbortController | null>(null);
 
@@ -147,37 +148,63 @@ function CreateDriveForm() {
         }
     }, [isEditMode, driveId, jobs]);
 
+    // Handle redirection from AI Chat
+    useEffect(() => {
+        const method = searchParams.get("method");
+        console.log("CreateDrive Sync - Method:", method);
+        if (method === "ai-chat") {
+            const draft = localStorage.getItem("jd_draft");
+            console.log("CreateDrive Sync - Draft found:", !!draft);
+            if (draft) {
+                try {
+                    const data = JSON.parse(draft);
+                    console.log("CreateDrive Sync - Structured Data:", data);
+                    setFormData((prev: any) => ({ ...prev, ...data }));
+                    setCreationMethod("manual");
+                    setSyncedFromAi(true);
+                    setCurrentStep(0);
+                    localStorage.removeItem("jd_draft");
+                    showToast("Job Description synced from AI Assistant!");
+                } catch (e) {
+                    console.error("CreateDrive Sync - Parse Error:", e);
+                }
+            }
+        }
+    }, [searchParams]);
+
     // Ensure clean state when switching to "New Drive" from Dashboard
     useEffect(() => {
-        if (!isEditMode && !driveId) {
-            setFormData({
-                title: "",
-                role: "",
-                department: "",
-                location: "",
-                workMode: "Remote",
-                employmentType: "Full-time",
-                deadline: "",
-                description: "",
-                salary: "",
-                experience: "",
-                skills: "",
-                responsibilities: "",
-                requirements: "",
-                extractedDetails: {},
-                interviewEnabled: true,
-                interviewLanguage: "English",
-                interviewTime: 10,
-                interviewAntiCheat: "Medium",
-                interviewFollowUp: 3,
-                interviewQuestions: [],
-            });
-            setCreationMethod(null);
-            setCurrentStep(0);
-            setIsAnalyzing(false);
-            setAnalysisError(null);
+        if (!isEditMode && !searchParams.get("id")) {
+            const method = searchParams.get("method");
+            if (method !== "ai-chat") {
+                setFormData({
+                    title: "",
+                    role: "",
+                    department: "",
+                    workMode: "Remote",
+                    employmentType: "Full-time",
+                    deadline: "",
+                    description: "",
+                    salary: "",
+                    experience: "",
+                    skills: "",
+                    responsibilities: "",
+                    requirements: "",
+                    extractedDetails: {},
+                    interviewEnabled: true,
+                    interviewLanguage: "English",
+                    interviewTime: 10,
+                    interviewAntiCheat: "Medium",
+                    interviewFollowUp: 3,
+                    interviewQuestions: [],
+                });
+                setCreationMethod(null);
+                setCurrentStep(0);
+                setIsAnalyzing(false);
+                setAnalysisError(null);
+            }
         }
-    }, [isEditMode, driveId]);
+    }, [isEditMode, searchParams]);
 
     const startAnalysis = async ({ file, url }: { file?: File, url?: string }) => {
         setIsAnalyzing(true);
@@ -429,35 +456,55 @@ function CreateDriveForm() {
                     <p className="text-gray-500 text-lg font-medium">Choose a method to configure your recruitment drive.</p>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
                     {/* Manual Option */}
                     <button
                         onClick={() => setCreationMethod('manual')}
-                        className="group relative flex flex-col items-center gap-6 p-10 rounded-[2.5rem] bg-white border-2 border-gray-100 hover:border-[#F97316] transition-all duration-500 hover:shadow-[0_20px_50px_rgba(249,115,22,0.12)] hover:-translate-y-2"
+                        className="group relative flex flex-col items-center gap-6 p-8 sm:p-10 rounded-[2.5rem] bg-white border-2 border-gray-100 hover:border-[#F97316] transition-all duration-500 hover:shadow-[0_20px_50px_rgba(249,115,22,0.12)] hover:-translate-y-2"
                     >
-                        <div className="h-20 w-20 rounded-3xl bg-gray-50 flex items-center justify-center text-gray-400 group-hover:bg-orange-50 group-hover:text-[#F97316] transition-all duration-500 group-hover:rotate-6">
-                            <PenLine className="h-10 w-10" />
+                        <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-3xl bg-gray-50 flex items-center justify-center text-gray-400 group-hover:bg-orange-50 group-hover:text-[#F97316] transition-all duration-500 group-hover:rotate-6">
+                            <PenLine className="h-8 w-8 sm:h-10 sm:w-10" />
                         </div>
                         <div className="space-y-2 text-center">
-                            <h3 className="text-2xl font-bold text-gray-900 group-hover:text-[#F97316] transition-colors">Fill Manually</h3>
-                            <p className="text-gray-500 text-sm leading-relaxed">Enter all drive details from scratch using our step-by-step form.</p>
+                            <h3 className="text-xl sm:text-2xl font-bold text-gray-900 group-hover:text-[#F97316] transition-colors">Fill Manually</h3>
+                            <p className="text-gray-500 text-[13px] sm:text-sm leading-relaxed">Enter all drive details from scratch using our step-by-step form.</p>
                         </div>
                         <div className="absolute bottom-6 right-6 h-10 w-10 rounded-full border border-gray-100 flex items-center justify-center text-gray-300 group-hover:bg-[#F97316] group-hover:text-white group-hover:border-transparent transition-all duration-500">
                             <ChevronRight className="h-5 w-5" />
                         </div>
                     </button>
 
+                    {/* AI Assistant Option */}
+                    <button
+                        onClick={() => router.push("/admin/create-drive/ai-chat")}
+                        className="group relative flex flex-col items-center gap-6 p-8 sm:p-10 rounded-[2.5rem] bg-white border-2 border-gray-100 hover:border-[#F97316] transition-all duration-500 hover:shadow-[0_20px_50px_rgba(249,115,22,0.12)] hover:-translate-y-2"
+                    >
+                        <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-3xl bg-orange-50 flex items-center justify-center text-[#F97316] group-hover:scale-110 transition-all duration-500">
+                            <Bot className="h-8 w-8 sm:h-10 sm:w-10" />
+                        </div>
+                        <div className="space-y-2 text-center">
+                            <h3 className="text-xl sm:text-2xl font-bold text-gray-900 group-hover:text-[#F97316] transition-colors">AI Assistant</h3>
+                            <p className="text-gray-500 text-[13px] sm:text-sm leading-relaxed">Design your Job Description instantly through a pro AI chat architect.</p>
+                        </div>
+                        <div className="absolute bottom-6 right-6 h-10 w-10 rounded-full border border-gray-100 flex items-center justify-center text-gray-300 group-hover:bg-[#F97316] group-hover:text-white group-hover:border-transparent transition-all duration-500">
+                            <ChevronRight className="h-5 w-5" />
+                        </div>
+                        <div className="absolute -top-3 -right-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-lg">
+                            Popular
+                        </div>
+                    </button>
+
                     {/* AI Scan Option */}
                     <button
                         onClick={() => setCreationMethod('scan')}
-                        className="group relative flex flex-col items-center gap-6 p-10 rounded-[2.5rem] bg-white border-2 border-gray-100 hover:border-[#F97316] transition-all duration-500 hover:shadow-[0_20px_50px_rgba(249,115,22,0.12)] hover:-translate-y-2"
+                        className="group relative flex flex-col items-center gap-6 p-8 sm:p-10 rounded-[2.5rem] bg-white border-2 border-gray-100 hover:border-[#F97316] transition-all duration-500 hover:shadow-[0_20px_50px_rgba(249,115,22,0.12)] hover:-translate-y-2"
                     >
-                        <div className="h-20 w-20 rounded-3xl bg-gray-50 flex items-center justify-center text-gray-400 group-hover:bg-orange-50 group-hover:text-[#F97316] transition-all duration-500 group-hover:-rotate-6">
-                            <Sparkles className="h-10 w-10" />
+                        <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-3xl bg-gray-50 flex items-center justify-center text-gray-400 group-hover:bg-orange-50 group-hover:text-[#F97316] transition-all duration-500 group-hover:-rotate-6">
+                            <Sparkles className="h-8 w-8 sm:h-10 sm:w-10" />
                         </div>
                         <div className="space-y-2 text-center">
-                            <h3 className="text-2xl font-bold text-gray-900 group-hover:text-[#F97316] transition-colors">Scan from JD</h3>
-                            <p className="text-gray-500 text-sm leading-relaxed">Upload a Job Description and let our AI auto-fill the entire form for you.</p>
+                            <h3 className="text-xl sm:text-2xl font-bold text-gray-900 group-hover:text-[#F97316] transition-colors">Scan from JD</h3>
+                            <p className="text-gray-500 text-[13px] sm:text-sm leading-relaxed">Upload a Job Description and let our AI auto-fill the entire form for you.</p>
                         </div>
                         <div className="absolute bottom-6 right-6 h-10 w-10 rounded-full border border-gray-100 flex items-center justify-center text-gray-300 group-hover:bg-[#F97316] group-hover:text-white group-hover:border-transparent transition-all duration-500">
                             <ChevronRight className="h-5 w-5" />
@@ -682,6 +729,8 @@ function CreateDriveForm() {
                             onClick={() => {
                                 if (isEditMode) {
                                     router.push("/admin");
+                                } else if (syncedFromAi) {
+                                    router.push("/admin/create-drive/ai-chat");
                                 } else if (formData.jdFileName) {
                                     // Go back to the scan upload screen where our file is still visible
                                     analysisAbortRef.current?.abort();

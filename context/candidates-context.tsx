@@ -1,6 +1,13 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useRef,
+    useState,
+} from "react";
 import { usePathname } from "next/navigation";
 
 export type Candidate = {
@@ -50,88 +57,286 @@ interface Pagination {
 interface CandidatesContextType {
     candidates: Candidate[];
     pagination: Pagination;
+    isLoading: boolean;
     addCandidate: (candidate: Omit<Candidate, "id" | "date" | "status" | "score">) => Promise<void>;
-    fetchCandidates: (page?: number, limit?: number, driveId?: string, status?: string, startDate?: string, endDate?: string) => Promise<void>;
+    fetchCandidates: (page?: number, limit?: number, driveId?: string, status?: string, startDate?: string, endDate?: string, search?: string) => Promise<void>;
     bulkDeleteCandidates: (ids: string[]) => Promise<void>;
 }
 
 const CandidatesContext = createContext<CandidatesContextType | undefined>(undefined);
 
+const DEFAULT_LIMIT = 10;
+const FETCH_REUSE_WINDOW_MS = 4000;
+const STREAM_REFRESH_DEBOUNCE_MS = 1200;
+
 export function CandidatesProvider({ children }: { children: React.ReactNode }) {
     const [candidates, setCandidates] = useState<Candidate[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
     const [pagination, setPagination] = useState<Pagination>({
         total: 0,
         page: 1,
-        limit: 10,
+        limit: DEFAULT_LIMIT,
         totalPages: 0
     });
+
+    const [isHydrated, setIsHydrated] = useState(false);
     const pathname = usePathname();
+    const isCandidatesRoute = pathname.startsWith("/admin/candidates");
 
-    const fetchCandidates = async (page: number = 1, limit: number = 10, driveId?: string, status?: string, startDate?: string, endDate?: string) => {
-        try {
-            let url = `/api/candidates?page=${page}&limit=${limit}`;
-            if (driveId && driveId !== "all") url += `&driveId=${driveId}`;
-            if (status && status !== "all") url += `&status=${encodeURIComponent(status)}`;
-            if (startDate) url += `&startDate=${startDate}`;
-            if (endDate) url += `&endDate=${endDate}`;
-
-            const res = await fetch(url);
-            if (res.ok) {
-                const result = await res.json();
-                const { candidates: rawCandidates, pagination: pagData } = result;
-                
-                // Map API data to Context structure if necessary
-                const mappedCandidates = rawCandidates.map((c: any) => ({
-                    id: c.id.toString(),
-                    name: c.name,
-                    email: c.email,
-                    phone: c.phone || "",
-                    location: c.location || "",
-                    role: c.role || "Unknown Role",
-                    driveId: c.driveId?.toString(),
-                    status: c.status,
-                    interviewStatus: c.interviewStatus,
-                    score: c.score || 0,
-                    date: c.date,
-                    resumeUrl: c.resumeUrl,
-                    experienceYears: c.experienceYears,
-                    relevantYears: c.relevantYears
-                }));
-                setCandidates(mappedCandidates);
-                setPagination(pagData);
-            }
-        } catch (error) {
-            console.error("Failed to fetch candidates:", error);
-        }
-    };
+    const eventSourceRef = useRef<EventSource | null>(null);
+    const paginationRef = useRef<Pagination>(pagination);
+    const refreshTimerRef = useRef<number | null>(null);
+    const hasFetchedAdminDataRef = useRef(false);
+    const lastFetchRef = useRef<{ key: string; at: number } | null>(null);
+    const inFlightRequestsRef = useRef<Map<string, Promise<void>>>(new Map());
 
     useEffect(() => {
-        if (!pathname.startsWith("/admin")) return;
+        setIsHydrated(true);
+    }, []);
 
-        fetchCandidates();
+    useEffect(() => {
+        paginationRef.current = pagination;
+    }, [pagination]);
 
-        // SSE connection for real-time updates
+    const buildFetchKey = (
+        page: number,
+        limit: number,
+        driveId?: string,
+        status?: string,
+        startDate?: string,
+        endDate?: string,
+        search?: string
+    ) => {
+        return [
+            page,
+            limit,
+            driveId || "all",
+            status || "all",
+            startDate || "none",
+            endDate || "none",
+            search || ""
+        ].join("|");
+    };
+
+    const fetchCandidatesInternal = useCallback(async (
+        page: number = 1,
+        limit: number = DEFAULT_LIMIT,
+        driveId?: string,
+        status?: string,
+        startDate?: string,
+        endDate?: string,
+        search?: string,
+        options?: { force?: boolean; background?: boolean }
+    ) => {
+        const key = buildFetchKey(page, limit, driveId, status, startDate, endDate, search);
+        const now = Date.now();
+
+        const inFlight = inFlightRequestsRef.current.get(key);
+        if (inFlight) {
+            await inFlight;
+            return;
+        }
+
+        const lastFetch = lastFetchRef.current;
+        const canReuseRecentFetch =
+            !options?.force &&
+            lastFetch?.key === key &&
+            now - lastFetch.at < FETCH_REUSE_WINDOW_MS &&
+            hasFetchedAdminDataRef.current;
+
+        if (canReuseRecentFetch) {
+            return;
+        }
+
+        const requestPromise = (async () => {
+            if (!options?.background) {
+                setIsLoading(true);
+            }
+
+            try {
+                const params = new URLSearchParams({
+                    page: String(page),
+                    limit: String(limit),
+                });
+
+                if (driveId && driveId !== "all") {
+                    params.set("driveId", driveId);
+                }
+                if (status && status !== "all") {
+                    params.set("status", status);
+                }
+                if (startDate) {
+                    params.set("startDate", startDate);
+                }
+                if (endDate) {
+                    params.set("endDate", endDate);
+                }
+                if (search && search.trim()) {
+                    params.set("search", search.trim());
+                }
+
+                const res = await fetch(`/api/candidates?${params.toString()}`);
+                if (!res.ok) {
+                    return;
+                }
+
+                const result = await res.json();
+                const { candidates: rawCandidates, pagination: pagData } = result;
+
+                const mappedCandidates = Array.isArray(rawCandidates)
+                    ? rawCandidates.map((c: any) => ({
+                        id: c.id.toString(),
+                        name: c.name || c.fullName || "Unknown Candidate",
+                        email: c.email || "",
+                        phone: c.phone || "",
+                        location: c.location || "-",
+                        role: c.role || "Unknown Role",
+                        driveId: c.driveId?.toString(),
+                        status: c.status,
+                        interviewStatus: c.interviewStatus,
+                        score: c.score || 0,
+                        date: c.date,
+                        resumeUrl: c.resumeUrl,
+                        experienceYears: c.experienceYears,
+                        relevantYears: c.relevantYears
+                    }))
+                    : [];
+
+                setCandidates(mappedCandidates);
+                if (pagData) {
+                    setPagination({
+                        total: Number(pagData.total ?? 0),
+                        page: Number(pagData.page ?? page),
+                        limit: Number(pagData.limit ?? limit),
+                        totalPages: Number(pagData.totalPages ?? 0),
+                    });
+                }
+
+                hasFetchedAdminDataRef.current = true;
+                lastFetchRef.current = { key, at: Date.now() };
+            } catch (error) {
+                console.error("Failed to fetch candidates:", error);
+            } finally {
+                if (!options?.background) {
+                    setIsLoading(false);
+                }
+            }
+        })();
+
+        inFlightRequestsRef.current.set(key, requestPromise);
+
+        try {
+            await requestPromise;
+        } finally {
+            inFlightRequestsRef.current.delete(key);
+        }
+    }, []);
+
+    const fetchCandidates = useCallback(async (
+        page: number = 1,
+        limit: number = DEFAULT_LIMIT,
+        driveId?: string,
+        status?: string,
+        startDate?: string,
+        endDate?: string,
+        search?: string
+    ) => {
+        await fetchCandidatesInternal(page, limit, driveId, status, startDate, endDate, search);
+    }, [fetchCandidatesInternal]);
+
+    const scheduleStreamRefresh = useCallback(() => {
+        if (refreshTimerRef.current !== null) {
+            return;
+        }
+
+        refreshTimerRef.current = window.setTimeout(() => {
+            refreshTimerRef.current = null;
+
+            const current = paginationRef.current;
+            void fetchCandidatesInternal(
+                current.page,
+                current.limit,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                { force: true, background: true }
+            );
+        }, STREAM_REFRESH_DEBOUNCE_MS);
+    }, [fetchCandidatesInternal]);
+
+    // REAL-TIME ARCHITECTURE: Establish stable stream only for candidates route
+    useEffect(() => {
+        if (!isHydrated || !isCandidatesRoute) {
+            return;
+        }
+
+        // PERSISTENT STREAM: Don't recreate if already live
+        if (eventSourceRef.current) {
+            return;
+        }
+
         const eventSource = new EventSource("/api/stream");
-        
-        eventSource.onmessage = (event) => {
+        eventSourceRef.current = eventSource;
+
+        eventSource.onmessage = (event: MessageEvent<string>) => {
             try {
                 const data = JSON.parse(event.data);
                 if (data.type === "NEW_APPLICATIONS" || data.type === "UPDATED_APPLICATIONS") {
-                    fetchCandidates(pagination.page, pagination.limit);
+                    // Debounced, non-blocking refresh
+                    scheduleStreamRefresh();
                 }
-            } catch (e) {
-                // Invalid JSON, ignore
+            } catch {
+                // Ignore transient parsing errors
             }
         };
 
         eventSource.onerror = () => {
-            // Connection lost, will auto-reconnect
+            // Connection lost - SSE will auto-retry
         };
 
         return () => {
-            eventSource.close();
+            // Secure cleanup on unmount
+            if (eventSourceRef.current) {
+                eventSourceRef.current.close();
+                eventSourceRef.current = null;
+            }
+            if (refreshTimerRef.current !== null) {
+                window.clearTimeout(refreshTimerRef.current);
+                refreshTimerRef.current = null;
+            }
         };
-    }, [pathname]);
+    }, [isHydrated, isCandidatesRoute, fetchCandidatesInternal, scheduleStreamRefresh]);
+
+    useEffect(() => {
+        if (isCandidatesRoute) {
+            return;
+        }
+
+        if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+        }
+
+        if (refreshTimerRef.current !== null) {
+            window.clearTimeout(refreshTimerRef.current);
+            refreshTimerRef.current = null;
+        }
+    }, [isCandidatesRoute]);
+
+    useEffect(() => {
+        return () => {
+            if (eventSourceRef.current) {
+                eventSourceRef.current.close();
+                eventSourceRef.current = null;
+            }
+            if (refreshTimerRef.current !== null) {
+                window.clearTimeout(refreshTimerRef.current);
+                refreshTimerRef.current = null;
+            }
+        };
+    }, []);
 
     const addCandidate = async (newCandidateData: Omit<Candidate, "id" | "date" | "status" | "score">) => {
         try {
@@ -169,7 +374,10 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             const savedCandidate = await response.json();
 
             // Refetch to ensure we have the correct paginated state
-            fetchCandidates(pagination.page, pagination.limit);
+            const current = paginationRef.current;
+            await fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, {
+                force: true,
+            });
         } catch (error) {
             throw error;
         }
@@ -185,7 +393,10 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
 
             if (response.ok) {
                 // Refetch to ensure we have the correct paginated state after deletion
-                fetchCandidates(pagination.page, pagination.limit);
+                const current = paginationRef.current;
+                await fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, {
+                    force: true,
+                });
             } else {
                 throw new Error("Failed to bulk delete candidates");
             }
@@ -196,7 +407,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     };
 
     return (
-        <CandidatesContext.Provider value={{ candidates, pagination, addCandidate, fetchCandidates, bulkDeleteCandidates }}>
+        <CandidatesContext.Provider value={{ candidates, pagination, isLoading, addCandidate, fetchCandidates, bulkDeleteCandidates }}>
             {children}
         </CandidatesContext.Provider>
     );

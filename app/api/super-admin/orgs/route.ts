@@ -28,46 +28,25 @@ export async function GET(request: Request) {
         const total = await prisma.organization.count({ where: whereClause });
         const totalPages = Math.ceil(total / limit);
 
-        // ── Phase 2: Paginated Org Data (Standard Prisma) ────────────
-        const orgs = await prisma.organization.findMany({
-            where: whereClause,
-            orderBy: { createdAt: "desc" },
-            skip: offset,
-            take: limit,
-            include: {
-                _count: {
-                    select: { users: true, drives: true }
-                }
-            }
-        });
-
-        // ── Phase 3: Aggregated Candidate Counts (SQL Optimized) ──────
-        // We only fetch candidate counts for the organizations on this page
-        const orgIds = orgs.map(o => o.id);
-        let candidateCounts: { orgId: string; count: bigint }[] = [];
-
-        if (orgIds.length > 0) {
-            candidateCounts = await prisma.$queryRaw`
-                SELECT d."orgId", COUNT(a.id)::BIGINT as "count"
-                FROM "Application" a
-                JOIN "Drive" d ON d.id = a."driveId"
-                WHERE d."orgId" IN (${orgIds.join(",")})
-                GROUP BY d."orgId"
-            ` as { orgId: string; count: bigint }[];
-        }
-
-        // Map candidate counts back to orgs
-        const countMap = new Map(candidateCounts.map(c => [c.orgId, Number(c.count)]));
-
-        const formatted = orgs.map(org => ({
-            ...org,
-            adminCount: org._count.users,
-            driveCount: org._count.drives,
-            candidateCount: countMap.get(org.id) || 0,
-        }));
+        // ── Phase 2: Paginated Org Data (Unified SQL) ──────────────
+        // This query merges the organization fetch with count calculations
+        // for Admins, Drives, and Candidates into one database round-trip.
+        const sqlSearch = search ? `%${search}%` : "%";
+        
+        const orgs = await prisma.$queryRaw<any[]>`
+            SELECT 
+                o.*,
+                (SELECT COUNT(*)::INT FROM "User" u WHERE u."orgId" = o.id) as "adminCount",
+                (SELECT COUNT(*)::INT FROM "Drive" d WHERE d."orgId" = o.id) as "driveCount",
+                (SELECT COUNT(*)::INT FROM "Application" a JOIN "Drive" d ON d.id = a."driveId" WHERE d."orgId" = o.id) as "candidateCount"
+            FROM "Organization" o
+            WHERE (o."name" ILIKE ${sqlSearch} OR o."slug" ILIKE ${sqlSearch})
+            ORDER BY o."createdAt" DESC
+            LIMIT ${limit} OFFSET ${offset}
+        `;
 
         return NextResponse.json({
-            orgs: formatted,
+            orgs,
             pagination: { total, page, limit, totalPages },
         });
     } catch (error) {

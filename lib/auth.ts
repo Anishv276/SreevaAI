@@ -68,6 +68,15 @@ export async function refreshSessionCookie(request: NextRequest, response: NextR
     const parsed = await verifySession(sessionCookie);
     if (!parsed) return response;
 
+    const expSeconds = Number((parsed as any).exp || 0);
+    if (expSeconds > 0) {
+        const remainingMs = expSeconds * 1000 - Date.now();
+        const refreshThresholdMs = 24 * 60 * 60 * 1000; // refresh only in last 24h
+        if (remainingMs > refreshThresholdMs) {
+            return response;
+        }
+    }
+
     // Remove existing timestamps to prevent conflicts when re-signing
     const { exp, iat, ...userData } = parsed as any;
     

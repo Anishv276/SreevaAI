@@ -117,6 +117,8 @@ model Drive {
   applications       Application[]
   creator            User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
   organization       Organization? @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, status])
 }
 
 model Application {
@@ -140,6 +142,8 @@ model Application {
   drive            Drive      @relation(fields: [driveId], references: [id], onDelete: Cascade)
   user             User?      @relation(fields: [userId], references: [id])
   interview        Interview?
+
+  @@index([driveId, status, updatedAt])
 }
 
 model Interview {

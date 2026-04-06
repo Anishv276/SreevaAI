@@ -10,7 +10,7 @@ import {
     Camera, Check, ChevronRight, Plus, Trash2, Crown,
     Slack, Calendar, Globe, Mail, Phone, Shield,
     BarChart3, AlertCircle, Zap, ExternalLink, Upload, Lock, Eye, EyeOff,
-    Loader2, Copy
+    Loader2, Copy, X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/auth-context";
@@ -126,6 +126,7 @@ export default function SettingsPage() {
 
     // Modal States
     const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
+    const [isLogoPreviewOpen, setIsLogoPreviewOpen] = useState(false);
     const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
     const [memberToRemoveId, setMemberToRemoveId] = useState<string | null>(null);
     const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -504,7 +505,13 @@ export default function SettingsPage() {
                             <SettingsCard title="Company Logo" description="This logo will appear on your recruitment drives, landing pages, and AI interview screens.">
                                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-8">
                                     <div className="relative group">
-                                        <div className="h-32 w-32 rounded-3xl border-2 border-dashed border-gray-100 bg-gray-50 flex items-center justify-center overflow-hidden transition-all group-hover:border-orange-200 group-hover:bg-orange-50 shadow-inner group-hover:shadow-orange-100/50">
+                                        <div 
+                                            onClick={() => !company.logoUrl && logoInputRef.current?.click()}
+                                            className={cn(
+                                                "h-32 w-32 rounded-3xl border-2 border-dashed border-gray-100 bg-gray-50 flex items-center justify-center overflow-hidden transition-all group-hover:border-orange-200 group-hover:bg-orange-50 shadow-inner group-hover:shadow-orange-100/50",
+                                                !company.logoUrl && "cursor-pointer"
+                                            )}
+                                        >
                                             {isUploadingLogo ? (
                                                 <div className="flex flex-col items-center gap-2">
                                                     <Loader2 className="h-8 w-8 text-[#F97316] animate-spin" />
@@ -513,20 +520,21 @@ export default function SettingsPage() {
                                             ) : company.logoUrl ? (
                                                 <img src={company.logoUrl} className="h-full w-full object-contain p-3 transition-transform duration-500 group-hover:scale-105" alt="Logo Preview" />
                                             ) : (
-                                                <Building2 className="h-12 w-12 text-gray-200 group-hover:text-orange-300 transition-colors" />
+                                                <div className="flex flex-col items-center gap-2 text-gray-300 group-hover:text-orange-400 transition-all duration-300">
+                                                    <Upload className="h-8 w-8" />
+                                                    <span className="text-[10px] font-black uppercase tracking-widest">Upload</span>
+                                                </div>
                                             )}
                                         </div>
                                         
                                         {company.logoUrl && !isUploadingLogo && (
                                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 rounded-3xl flex items-center justify-center gap-2 backdrop-blur-[2px]">
-                                                <a 
-                                                    href={company.logoUrl} 
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer"
+                                                <button 
+                                                    onClick={() => setIsLogoPreviewOpen(true)}
                                                     className="h-10 w-10 bg-white text-gray-900 rounded-xl flex items-center justify-center shadow-lg hover:bg-[#F97316] hover:text-white transition-all transform hover:scale-110"
                                                 >
                                                     <Eye className="h-5 w-5" />
-                                                </a>
+                                                </button>
                                                 <button 
                                                     onClick={handleLogoDelete}
                                                     className="h-10 w-10 bg-white text-red-500 rounded-xl flex items-center justify-center shadow-lg hover:bg-red-500 hover:text-white transition-all transform hover:scale-110"
@@ -545,23 +553,14 @@ export default function SettingsPage() {
                                             accept="image/*" 
                                             onChange={handleLogoUpload} 
                                         />
-                                        <div className="flex gap-2">
+                                        <div className="flex gap-2.5">
                                             <Button 
                                                 disabled={isUploadingLogo}
                                                 onClick={() => logoInputRef.current?.click()}
                                                 className="h-11 px-6 rounded-xl bg-gray-950 hover:bg-[#F97316] text-white font-bold shadow-2xl transition-all"
                                             >
-                                                {isUploadingLogo ? "Syncing..." : "Change Logo"}
+                                                {isUploadingLogo ? "Syncing..." : company.logoUrl ? "Change Logo" : "Upload Logo"}
                                             </Button>
-                                            {company.logoUrl && (
-                                                <Button 
-                                                    variant="outline"
-                                                    onClick={handleLogoDelete}
-                                                    className="h-11 px-4 rounded-xl border-gray-100 text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all font-bold"
-                                                >
-                                                    Remove
-                                                </Button>
-                                            )}
                                         </div>
                                         <p className="text-[11px] text-gray-400 font-bold uppercase tracking-widest leading-none">
                                             <span className="text-[#F97316]">Pro Tip:</span> Use a high-quality SVG or PNG with transparent background.
@@ -1096,6 +1095,28 @@ export default function SettingsPage() {
                 confirmText="Cancel Invite"
                 isLoading={isProcessingAction}
             />
+
+            {/* Logo Preview Modal */}
+            {isLogoPreviewOpen && company.logoUrl && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-8 backdrop-blur-xl bg-white/40 animate-in-fade">
+                    <div className="absolute inset-0" onClick={() => setIsLogoPreviewOpen(false)} />
+                    <div className="relative w-full max-w-2xl bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_40px_100px_rgba(0,0,0,0.1)] p-12 py-16 animate-in-scale">
+                        <button onClick={() => setIsLogoPreviewOpen(false)} className="absolute top-8 right-8 h-12 w-12 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-400 hover:text-gray-900 transition-all">
+                            <X className="h-6 w-6" />
+                        </button>
+                        <div className="space-y-8 text-center">
+                            <div className="space-y-2">
+                                <h3 className="text-2xl font-black text-gray-900 uppercase italic tracking-tighter">Branding Asset</h3>
+                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none">Identity Verification Preview</p>
+                            </div>
+                            <div className="bg-gray-50/50 rounded-3xl p-12 border border-dashed border-gray-200">
+                                <img src={company.logoUrl} className="max-h-[300px] mx-auto object-contain drop-shadow-xl" alt="Logo Preview" />
+                            </div>
+                            <p className="text-[10px] font-black text-[#F97316] uppercase italic leading-none tracking-widest">Logo successfully synchronized with R2 storage</p>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     </>
     );

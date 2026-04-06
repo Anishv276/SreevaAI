@@ -1,7 +1,6 @@
 import { Sidebar } from "@/components/layout/sidebar";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { cn } from "@/lib/utils";
 import { OnboardingRedirect } from "@/components/admin/onboarding-redirect";
 import { RecruiterAssistant } from "@/components/admin/RecruiterAssistant";
@@ -21,16 +20,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         redirect("/login");
     }
 
-    // Determine onboarding status for Sidebar visibility
-    const org = await prisma.organization.findUnique({
-        where: { id: session.orgId as string },
-        select: { onboardingComplete: true }
-    });
-
-    const showSidebar = org?.onboardingComplete === true;
+    // PERFORMANCE: Use session-cached onboarding flag to avoid redundant DB rounds on navigation
+    const needsOnboarding = session.onboardingComplete !== true;
+    const showSidebar = !needsOnboarding;
 
     return (
         <div className="flex min-h-screen bg-white">
+            {/* Real-time State Synchronization */}
+            <OnboardingRedirect needsOnboarding={needsOnboarding} />
+            
             {showSidebar && <Sidebar />}
             
             <div className={cn(

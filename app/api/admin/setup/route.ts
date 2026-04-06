@@ -19,14 +19,36 @@ export async function POST(req: Request) {
 
         switch (phase) {
             case "security":
-                const { password } = data;
+                const { password, currentPassword } = data;
                 if (!password || password.length < 8) {
-                    return NextResponse.json({ error: "Invalid password" }, { status: 400 });
+                    return NextResponse.json({ error: "Invalid password format." }, { status: 400 });
                 }
+
+                // SECURITY HANDSHAKE: Verify current password
+                const user = await prisma.user.findUnique({
+                    where: { id: session.userId },
+                    select: { password: true }
+                });
+
+                if (user?.password) {
+                    if (!currentPassword) {
+                        return NextResponse.json({ error: "Current password is required for security verification." }, { status: 400 });
+                    }
+                    const isMatch = await bcrypt.compare(currentPassword, user.password);
+                    if (!isMatch) {
+                        return NextResponse.json({ error: "Security violation: Current password does not match original signature." }, { status: 403 });
+                    }
+                }
+
                 const hashedPassword = await bcrypt.hash(password, 10);
                 await prisma.user.update({
                     where: { id: session.userId },
                     data: { password: hashedPassword }
+                });
+                // PROGRESS TRACKING
+                await prisma.organization.update({
+                    where: { id: session.orgId },
+                    data: { onboardingStep: 1 }
                 });
                 break;
 
@@ -41,7 +63,8 @@ export async function POST(req: Request) {
                         website: data.website,
                         // @ts-ignore
                         location: data.location,
-                        logoUrl: data.logoUrl
+                        logoUrl: data.logoUrl,
+                        onboardingStep: 2
                     }
                 });
                 break;
@@ -51,7 +74,8 @@ export async function POST(req: Request) {
                     where: { id: session.orgId },
                     data: {
                         customSenderEmail: data.senderEmail,
-                        customSenderName: data.senderName
+                        customSenderName: data.senderName,
+                        onboardingStep: 4
                     } as any
                 });
                 break;
@@ -85,8 +109,11 @@ export async function POST(req: Request) {
         }
 
         return response;
-    } catch (error) {
-        console.error("Setup error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    } catch (error: any) {
+        console.error("[ONBOARDING_API_ERROR]", error);
+        return NextResponse.json({ 
+            error: error.message || "Protocol Failure in onboarding handshake.",
+            details: error.code
+        }, { status: 500 });
     }
 }

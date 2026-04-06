@@ -71,24 +71,54 @@ export default function DrivesPage() {
     const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     
-    const selectedDrive = jobs.find(j => j.id === previewDriveId);
+    // Fresh Data for Preview
+    const [freshDriveDetails, setFreshDriveDetails] = useState<any>(null);
+    const [isFetchingFresh, setIsFetchingFresh] = useState(false);
+    
+    const selectedDrive = freshDriveDetails && freshDriveDetails.id === previewDriveId 
+        ? freshDriveDetails 
+        : jobs.find(j => j.id === previewDriveId);
+
+    // Fetch fresh data when preview is opened
+    useEffect(() => {
+        if (!previewDriveId) {
+            setFreshDriveDetails(null);
+            return;
+        }
+
+        const fetchFresh = async () => {
+            setIsFetchingFresh(true);
+            try {
+                const res = await fetch(`/api/drives/${previewDriveId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setFreshDriveDetails(data);
+                }
+            } catch (err) {
+                console.error("Failed to fetch fresh drive details:", err);
+            } finally {
+                setIsFetchingFresh(false);
+            }
+        };
+
+        fetchFresh();
+    }, [previewDriveId]);
+
+    // Initial load and Filter Sync
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            fetchJobs(1, pagination.limit, searchQuery, statusFilter).finally(() => setIsLoading(false));
+        }, 300); // 300ms Search Debounce
+
+        return () => clearTimeout(handler);
+    }, [searchQuery, statusFilter, pagination.limit]);
 
     const handlePageChange = (newPage: number) => {
         if (newPage >= 1 && newPage <= pagination.totalPages) {
             setIsLoading(true);
-            fetchJobs(newPage, pagination.limit).finally(() => setIsLoading(false));
+            fetchJobs(newPage, pagination.limit, searchQuery, statusFilter).finally(() => setIsLoading(false));
         }
     };
-
-    // Initial load
-    useEffect(() => {
-        const load = async () => {
-            setIsLoading(true);
-            await fetchJobs(pagination.page, pagination.limit);
-            setIsLoading(false);
-        };
-        load();
-    }, []);
 
     const handleDelete = async (id: number) => {
         setDriveToDelete(id);
@@ -110,19 +140,7 @@ export default function DrivesPage() {
         }
     };
 
-    const filteredDrives = jobs.filter(drive => {
-        const matchesSearch = drive.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            drive.department.toLowerCase().includes(searchQuery.toLowerCase());
-        
-        // Status logic
-        const matchesStatus = statusFilter === "all" || (statusFilter === "active"); 
-        
-        // Safety check for optional type field
-        const matchesType = typeFilter === "all" || 
-            (drive.type && drive.type.toLowerCase() === typeFilter.toLowerCase());
-        
-        return matchesSearch && matchesStatus && matchesType;
-    });
+    const filteredDrives = jobs;
 
     const toggleSelection = (id: number) => {
         const newSelected = new Set(selectedIds);
@@ -456,7 +474,15 @@ export default function DrivesPage() {
                         </div>
 
                         {/* Drawer Content */}
-                        <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar">
+                        <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar relative">
+                            {isFetchingFresh && (
+                                <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center gap-4 animate-in-fade">
+                                    <div className="h-12 w-12 rounded-2xl bg-orange-50 flex items-center justify-center text-[#F97316] shadow-sm animate-bounce">
+                                        <Briefcase className="h-6 w-6" />
+                                    </div>
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-600 animate-pulse">Syncing Fresh Data...</p>
+                                </div>
+                            )}
                             {/* Title Section */}
                             <div className="space-y-4">
                                 <h1 className="text-3xl font-black text-gray-900 leading-tight">{selectedDrive.title}</h1>

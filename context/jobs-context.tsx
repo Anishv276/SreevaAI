@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 // import { activeDrivesData } from "@/lib/mock-data"; 
 
@@ -32,7 +32,7 @@ interface JobsContextType {
     pagination: Pagination;
     addJob: (job: Omit<Job, "id" | "applicants" | "status" | "daysLeft" | "createdAt">) => Promise<Job>;
     deleteJob: (id: number) => Promise<void>;
-    fetchJobs: (page?: number, limit?: number) => Promise<void>;
+    fetchJobs: (page?: number, limit?: number, search?: string, status?: string) => Promise<void>;
     toggleDriveStatus: (id: number, newStatus: "ACTIVE" | "INACTIVE") => Promise<void>;
     updateJob: (id: number, data: any) => Promise<Job>;
     bulkDeleteJobs: (ids: number[]) => Promise<void>;
@@ -49,10 +49,20 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         totalPages: 0
     });
     const pathname = usePathname();
+    const isAdminRoute = pathname.startsWith("/admin");
+    const isCareersRoute = pathname.startsWith("/careers");
+    const hasLoadedOnceRef = useRef({ admin: false, careers: false });
+    const inFlightRef = useRef<Promise<void> | null>(null);
 
-    const fetchJobs = async (page: number = 1, limit: number = 10) => {
+    const fetchJobs = async (page: number = 1, limit: number = 10, search: string = "", status: string = "all") => {
+        if (inFlightRef.current) {
+            await inFlightRef.current;
+            return;
+        }
+
+        const requestPromise = (async () => {
         try {
-            const res = await fetch(`/api/drives?page=${page}&limit=${limit}`);
+            const res = await fetch(`/api/drives?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&status=${status}`);
             if (res.ok) {
                 const result = await res.json();
                 const { drives, pagination: pagData } = result;
@@ -72,13 +82,30 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             console.error("Failed to fetch jobs:", error);
             setJobs([]);
         }
+        })();
+
+        inFlightRef.current = requestPromise;
+
+        try {
+            await requestPromise;
+        } finally {
+            inFlightRef.current = null;
+        }
     };
 
-    // Load initial data
+    // Load data once per section (admin/careers), no re-fetch per sub-route click
     useEffect(() => {
-        if (!pathname.startsWith("/admin") && !pathname.startsWith("/careers")) return;
-        fetchJobs().catch(() => undefined);
-    }, [pathname]);
+        if (isAdminRoute && !hasLoadedOnceRef.current.admin) {
+            hasLoadedOnceRef.current.admin = true;
+            fetchJobs().catch(() => undefined);
+            return;
+        }
+
+        if (isCareersRoute && !hasLoadedOnceRef.current.careers) {
+            hasLoadedOnceRef.current.careers = true;
+            fetchJobs().catch(() => undefined);
+        }
+    }, [isAdminRoute, isCareersRoute]);
 
     const addJob = async (newJobData: Omit<Job, "id" | "applicants" | "status" | "daysLeft" | "createdAt">): Promise<Job> => {
         try {

@@ -22,7 +22,7 @@ export default function OnboardingPage() {
     const hasLoaded = useRef(false);
     
     // Form States
-    const [passwords, setPasswords] = useState({ next: "", confirm: "" });
+    const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
     const [showPw, setShowPw] = useState(false);
     const [company, setCompany] = useState({ 
         name: "", 
@@ -36,6 +36,7 @@ export default function OnboardingPage() {
         customSenderName: ""
     });
     const [inviteEmail, setInviteEmail] = useState("");
+    const [inviteRole, setInviteRole] = useState("recruiter");
     const [pendingInvites, setPendingInvites] = useState<{id?: string; email: string; role: string}[]>([]);
     
     // UI Helpers
@@ -43,6 +44,7 @@ export default function OnboardingPage() {
     const [isUploading, setIsUploading] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [showLogoPreview, setShowLogoPreview] = useState(false);
 
     // Email Setup Sub-wizard
     const [emailSubStep, setEmailSubStep] = useState(0); // 0: Input, 1: Records, 2: Sender
@@ -69,6 +71,20 @@ export default function OnboardingPage() {
                         if (sanitized[key] === null) sanitized[key] = "";
                     });
                     setCompany(prev => ({ ...prev, ...sanitized }));
+                    
+                    // ONBOARDING SYNC: Restore last step
+                    if (data.onboardingStep !== undefined) {
+                        const step = Math.min(Math.max(data.onboardingStep, 0), STEPS.length - 1);
+                        setCurrentStep(step);
+                    }
+                }
+                
+                // LOCAL RECOVERY: Restore draft if server data is newer or identical
+                const draft = localStorage.getItem("onboarding_draft");
+                if (draft) {
+                    const { company: draftCo, passwords: draftPw } = JSON.parse(draft);
+                    if (draftCo) setCompany(prev => ({ ...prev, ...draftCo }));
+                    if (draftPw) setPasswords(prev => ({ ...prev, ...draftPw }));
                 }
             } catch (err) {
                 console.error(err);
@@ -79,17 +95,46 @@ export default function OnboardingPage() {
         load();
     }, []);
 
+    // AUTO-SAVE Mirroring
+    useEffect(() => {
+        if (!isLoading) {
+            localStorage.setItem("onboarding_draft", JSON.stringify({ company, passwords }));
+        }
+    }, [company, passwords, isLoading]);
+
     const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+
+        // ASSET PROTECTION: Validate type and size
+        if (!file.type.startsWith("image/")) {
+            setError("Identity violation: Branding asset must be an image type (PNG, JPG, SVG).");
+            return;
+        }
+        if (file.size > 2 * 1024 * 1024) { // 2MB Limit
+            setError("Identity violation: Branding asset exceeds 2MB limit.");
+            return;
+        }
+
+        const oldLogoUrl = company.logoUrl;
         setIsUploading(true);
         setError(null);
         try {
             const formData = new FormData();
             formData.append("file", file);
             const res = await fetch("/api/upload/logo", { method: "POST", body: formData });
-            if (!res.ok) throw new Error("Upload failed.");
+            if (!res.ok) throw new Error("Deployment failed. Could not upload branding asset.");
             const { url } = await res.json();
+            
+            // EVICTION: Remove old asset if it exists
+            if (oldLogoUrl) {
+                await fetch("/api/upload/logo", {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url: oldLogoUrl }),
+                });
+            }
+
             setCompany(prev => ({ ...prev, logoUrl: url }));
         } catch (err: any) {
             setError(err.message);
@@ -98,17 +143,19 @@ export default function OnboardingPage() {
         }
     };
 
-    const handleLogoDelete = async () => {
-        if (!company.logoUrl) return;
+    const handleLogoDelete = async (targetUrl?: string) => {
+        const urlToDel = targetUrl || company.logoUrl;
+        if (!urlToDel) return;
+        
         setIsUploading(true);
         setShowDeleteConfirm(false);
         try {
             const res = await fetch("/api/upload/logo", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ url: company.logoUrl }),
+                body: JSON.stringify({ url: urlToDel }),
             });
-            if (res.ok) setCompany({...company, logoUrl: ""});
+            if (res.ok && !targetUrl) setCompany({...company, logoUrl: ""});
         } catch (err) {
             console.error("Asset eviction failed:", err);
         } finally {
@@ -118,13 +165,21 @@ export default function OnboardingPage() {
 
     const handleInvite = async () => {
         if (!inviteEmail) return;
+        
+        // PROTOCOL VALIDATION: Email Format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(inviteEmail)) {
+            setError("Deployment Failure: Invite target must be a valid email address.");
+            return;
+        }
+
         setIsSaving(true);
         setError(null);
         try {
             const res = await fetch("/api/admin/team", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email: inviteEmail, role: "recruiter" }),
+                body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
             });
             const data = await res.json();
             
@@ -132,7 +187,7 @@ export default function OnboardingPage() {
                 setPendingInvites([...pendingInvites, { 
                     id: data.invite?.id,
                     email: inviteEmail, 
-                    role: "recruiter" 
+                    role: inviteRole 
                 }]);
                 setInviteEmail("");
             } else {
@@ -172,23 +227,53 @@ export default function OnboardingPage() {
         try {
             if (currentStep === 0) {
                 if (passwords.next.length < 8) { setError("Security policy violation: Password must be 8+ characters."); setIsSaving(false); return; }
-                await fetch("/api/admin/setup", { method: "POST", body: JSON.stringify({ phase: "security", data: { password: passwords.next } }) });
+                const res = await fetch("/api/admin/setup", { 
+                    method: "POST", 
+                    body: JSON.stringify({ 
+                        phase: "security", 
+                        data: { 
+                            password: passwords.next,
+                            currentPassword: passwords.current 
+                        } 
+                    }) 
+                });
+                if (!res.ok) {
+                    const data = await res.json();
+                    setError(data.error || "Security handshake failed.");
+                    setIsSaving(false);
+                    return;
+                }
             }
             if (currentStep === 1) { // IDENTITY (STEP 2)
+                const urlRegex = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,63})([/\w .-]*)*\/?$/;
                 if (!company.name || !company.website || !company.location || !company.industry || !company.size) { 
                     setError("Operational profile incomplete: All identification fields are mandatory."); 
                     setIsSaving(false); 
                     return; 
                 }
+                if (!urlRegex.test(company.website)) {
+                    setError("Operational profile violation: Official Website must be a valid URL (e.g., company.com).");
+                    setIsSaving(false);
+                    return;
+                }
                 await fetch("/api/admin/setup", { method: "POST", body: JSON.stringify({ phase: "branding", data: company }) });
             }
             if (currentStep === 3) { // EMAIL
                 if (emailSubStep === 2) {
-                    if (!company.customSenderEmail) { setError("Official sender email is missing."); setIsSaving(false); return; }
+                    if (!company.customSenderEmail || !company.customSenderName) { 
+                        setError("Identity incomplete: Official sender name and email are mandatory for activation."); 
+                        setIsSaving(false); 
+                        return; 
+                    }
                     await fetch("/api/admin/setup", { method: "POST", body: JSON.stringify({ phase: "email", data: { 
                         senderEmail: company.customSenderEmail,
                         senderName: company.customSenderName
                     } }) });
+                } else if (emailSubStep === 1) {
+                    // Force verification check or stay on page
+                    setError("Security handshake in progress: DNS records must be verified before proceeding.");
+                    setIsSaving(false);
+                    return;
                 } else {
                     setCurrentStep(prev => prev + 1);
                     setIsSaving(false);
@@ -197,6 +282,7 @@ export default function OnboardingPage() {
             }
             if (currentStep === STEPS.length - 1) {
                 await fetch("/api/admin/setup", { method: "POST", body: JSON.stringify({ phase: "complete" }) });
+                localStorage.removeItem("onboarding_draft"); // CLEANUP: Initialized
                 window.location.href = "/admin";
                 return;
             }
@@ -282,11 +368,32 @@ export default function OnboardingPage() {
                                         <p className="text-[11px] text-gray-500 font-bold uppercase mt-3 tracking-widest">PRIVATE ADMINISTRATION KEY SYNC</p>
                                     </div>
                                 </div>
-                                <div className="max-w-lg space-y-3">
-                                    <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Administrator Password <span className="text-[#F97316]">*</span></label>
-                                    <div className="relative">
-                                        <input type={showPw ? "text" : "password"} className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 transition-all" value={passwords.next} onChange={e => setPasswords({...passwords, next: e.target.value})} />
-                                        <button onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316] transition-colors">{showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                                <div className="max-w-xl grid md:grid-cols-2 gap-8">
+                                    <div className="space-y-3">
+                                        <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Current Signature <span className="text-[#F97316]">*</span></label>
+                                        <div className="relative">
+                                            <input 
+                                                type={showPw ? "text" : "password"} 
+                                                className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 transition-all placeholder:text-gray-300" 
+                                                placeholder="••••••••"
+                                                value={passwords.current} 
+                                                onChange={e => setPasswords({...passwords, current: e.target.value})} 
+                                            />
+                                            <button onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316] transition-colors">{showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">New Administrator Key <span className="text-[#F97316]">*</span></label>
+                                        <div className="relative">
+                                            <input 
+                                                type={showPw ? "text" : "password"} 
+                                                className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 transition-all placeholder:text-gray-300" 
+                                                placeholder="••••••••"
+                                                value={passwords.next} 
+                                                onChange={e => setPasswords({...passwords, next: e.target.value})} 
+                                            />
+                                            <button onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316] transition-colors">{showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -305,14 +412,14 @@ export default function OnboardingPage() {
                                                 <div className="relative h-full w-full group/logo">
                                                     <img src={company.logoUrl} className="h-full w-full object-contain p-6" />
                                                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                                        <button onClick={() => window.open(company.logoUrl, '_blank')} className="h-8 w-8 rounded-full bg-white text-gray-900 flex items-center justify-center hover:scale-110 transition-transform"><Eye className="h-4 w-4" /></button>
+                                                        <button onClick={() => setShowLogoPreview(true)} className="h-8 w-8 rounded-full bg-white text-gray-900 flex items-center justify-center hover:scale-110 transition-transform"><Eye className="h-4 w-4" /></button>
                                                         <button onClick={() => setShowDeleteConfirm(true)} className="h-8 w-8 rounded-full bg-white text-red-500 flex items-center justify-center hover:scale-110 transition-transform"><Trash2 className="h-4 w-4" /></button>
                                                     </div>
                                                     {showDeleteConfirm && (
                                                         <div className="absolute inset-0 bg-black/80 z-20 flex flex-col items-center justify-center p-2 text-center animate-in-fade">
                                                             <p className="text-[9px] font-black uppercase text-white mb-2 leading-none">Delete Identity?</p>
                                                             <div className="flex gap-2">
-                                                                <button onClick={handleLogoDelete} className="h-6 px-3 bg-red-600 text-white rounded-lg text-[10px] font-bold hover:bg-red-700 transition-colors">Yes</button>
+                                                                <button onClick={() => handleLogoDelete()} className="h-6 px-3 bg-red-600 text-white rounded-lg text-[10px] font-bold hover:bg-red-700 transition-colors">Yes</button>
                                                                 <button onClick={() => setShowDeleteConfirm(false)} className="h-6 px-3 bg-white text-black rounded-lg text-[10px] font-bold hover:bg-gray-100 transition-colors">No</button>
                                                             </div>
                                                         </div>
@@ -370,21 +477,48 @@ export default function OnboardingPage() {
                                         <p className="text-[11px] text-gray-500 font-bold uppercase mt-3 tracking-widest">DEPLOY TEAM INVITATIONS</p>
                                     </div>
                                 </div>
-                                <div className="bg-gray-50/50 p-6 rounded-2xl flex flex-col md:flex-row items-end gap-4 border border-gray-100">
-                                    <div className="flex-1 w-full space-y-2">
-                                        <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Colleague Email Address</label>
-                                        <input className="h-11 rounded-xl border border-gray-200 bg-white px-4 w-full text-[14px] font-medium shadow-sm hover:border-orange-300 transition-all" placeholder="COLLEAGUE@COMPANY.COM" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} />
+                                <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 flex flex-col gap-6">
+                                    <div className="flex flex-col md:flex-row items-end gap-4 w-full">
+                                        <div className="flex-1 w-full space-y-2">
+                                            <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Colleague Email</label>
+                                            <input 
+                                                className="h-11 rounded-xl border border-gray-200 bg-white px-4 w-full text-[14px] font-medium shadow-sm hover:border-orange-300 transition-all placeholder:text-gray-300" 
+                                                placeholder="COLLEAGUE@COMPANY.COM" 
+                                                value={inviteEmail} 
+                                                onChange={e => setInviteEmail(e.target.value.toLowerCase())} 
+                                            />
+                                        </div>
+                                        <div className="w-full md:w-48 space-y-2">
+                                            <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Access Level</label>
+                                            <select 
+                                                className="h-11 rounded-xl border border-gray-200 bg-white px-4 w-full text-[12px] font-bold uppercase tracking-widest shadow-sm hover:border-orange-300 transition-all outline-none"
+                                                value={inviteRole}
+                                                onChange={e => setInviteRole(e.target.value)}
+                                            >
+                                                <option value="recruiter">RECRUITER</option>
+                                                <option value="hr_manager">HR MANAGER</option>
+                                                <option value="admin">ADMINISTRATOR</option>
+                                            </select>
+                                        </div>
                                     </div>
-                                    <button onClick={handleInvite} className="h-11 px-8 bg-black text-white rounded-xl font-bold text-[13px] shadow-lg hover:scale-105 active:scale-95 transition-all">Invite Now</button>
+                                    <button 
+                                        onClick={handleInvite} 
+                                        className="h-11 px-8 bg-black text-white rounded-xl font-bold text-[13px] shadow-lg hover:scale-102 active:scale-95 transition-all w-full md:ml-auto md:w-fit"
+                                    >
+                                        Send Team Invite
+                                    </button>
                                 </div>
                                 <div className="space-y-3">
                                     {pendingInvites.length > 0 && pendingInvites.map(m => (
-                                        <div key={m.email} className="flex items-center justify-between p-5 bg-white border border-gray-100 rounded-[1.5rem] shadow-sm hover:border-orange-200 transition-all">
+                                        <div key={m.email} className="flex items-center justify-between p-5 bg-white border border-gray-100 rounded-[1.5rem] shadow-sm hover:border-orange-200 transition-all group">
                                             <div className="flex items-center gap-4">
-                                                <div className="h-10 w-10 rounded-xl bg-orange-50 text-[#F97316] flex items-center justify-center font-bold text-xs">{m.email[0]}</div>
-                                                <p className="text-sm font-bold text-gray-900 uppercase italic tracking-tight">{m.email}</p>
+                                                <div className="h-10 w-10 rounded-xl bg-orange-50 text-[#F97316] flex items-center justify-center font-black text-xs uppercase italic">{m.email[0]}</div>
+                                                <div>
+                                                    <p className="text-sm font-black text-gray-900 uppercase italic tracking-tight">{m.email}</p>
+                                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1">{m.role.replace('_', ' ')}</p>
+                                                </div>
                                             </div>
-                                            <button onClick={() => removeInvite(m)} className="h-10 w-10 flex items-center justify-center text-gray-300 hover:text-red-500 transition-all"><Trash2 className="h-4 w-4" /></button>
+                                            <button onClick={() => removeInvite(m)} className="h-10 w-10 flex items-center justify-center text-gray-200 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"><Trash2 className="h-4 w-4" /></button>
                                         </div>
                                     ))}
                                 </div>
@@ -503,12 +637,27 @@ export default function OnboardingPage() {
                                                 <div className="space-y-2">
                                                     <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Official Sender Email</label>
                                                     <div className="flex gap-2">
-                                                        <input className="h-11 flex-1 rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 font-medium shadow-sm focus:border-[#F97316] transition-all" placeholder="CAREERS" value={company.customSenderEmail.split("@")[0]} onChange={e => setCompany({...company, customSenderEmail: `${e.target.value.toLowerCase()}@${company.customDomain}`})} />
+                                                        <input 
+                                                            className="h-11 flex-1 rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 font-medium shadow-sm focus:border-[#F97316] transition-all" 
+                                                            placeholder="CAREERS" 
+                                                            value={company.customSenderEmail.split("@")[0]} 
+                                                            onChange={e => {
+                                                                const localPart = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "").split("@")[0].trim();
+                                                                const domain = company.customDomain || "yourdomain.com";
+                                                                setCompany({...company, customSenderEmail: localPart ? `${localPart}@${domain}` : ""});
+                                                            }} 
+                                                        />
                                                         <div className="flex items-center px-4 bg-gray-100 rounded-xl border border-gray-200 text-gray-400 text-[11px] font-bold italic">@{company.customDomain}</div>
                                                     </div>
                                                 </div>
                                             </div>
-                                            <button onClick={() => setCurrentStep(4)} className="h-11 px-10 w-full bg-black text-white rounded-xl font-bold text-[13px] shadow-xl hover:scale-102 transition-all flex items-center justify-center gap-2">Complete Activation <ChevronRight className="h-4 w-4" /></button>
+                                            <button 
+                                                onClick={handleNext} 
+                                                disabled={isSaving}
+                                                className="h-11 px-10 w-full bg-black text-white rounded-xl font-bold text-[13px] shadow-xl hover:scale-102 transition-all flex items-center justify-center gap-2"
+                                            >
+                                                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Complete Activation <ChevronRight className="h-4 w-4" /></>}
+                                            </button>
                                         </div>
                                     </div>
                                 )}
@@ -534,6 +683,26 @@ export default function OnboardingPage() {
                         </button>
                     </div>
                 </div>
+
+                {/* LOGO PREVIEW MODAL - Security Shield */}
+                {showLogoPreview && company.logoUrl && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-8 backdrop-blur-2xl bg-white/40 animate-in-fade">
+                        <div className="absolute inset-0 cursor-pointer" onClick={() => setShowLogoPreview(false)} />
+                        <div className="relative w-full max-w-2xl bg-white rounded-[3rem] border border-gray-100 shadow-[0_40px_100px_rgba(0,0,0,0.15)] p-16 animate-in-scale">
+                            <button onClick={() => setShowLogoPreview(false)} className="absolute top-8 right-8 h-12 w-12 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-400 hover:text-gray-900 transition-all"><X className="h-6 w-6" /></button>
+                            <div className="space-y-8 text-center">
+                                <div className="space-y-2">
+                                    <h3 className="text-2xl font-black text-gray-900 uppercase italic tracking-tighter">Branding Asset Preview</h3>
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none">Workspace Identity Check</p>
+                                </div>
+                                <div className="bg-gray-50/50 rounded-[2rem] p-12 border border-dashed border-gray-200">
+                                    <img src={company.logoUrl} className="max-h-[300px] mx-auto object-contain drop-shadow-2xl" alt="Logo Preview" />
+                                </div>
+                                <p className="text-[10px] font-black text-[#F97316] uppercase italic leading-none tracking-widest">Digital fingerprint verified</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

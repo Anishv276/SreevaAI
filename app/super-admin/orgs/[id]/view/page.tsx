@@ -17,6 +17,7 @@ import {
     AlertCircle
 } from "lucide-react";
 import { JobCard } from "@/components/careers/job-card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { Job } from "@/context/jobs-context";
 
@@ -49,18 +50,27 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
     const [drives, setDrives] = useState<Job[]>([]);
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [loading, setLoading] = useState(true);
+    const [candidatesLoading, setCandidatesLoading] = useState(false);
     const [error, setError] = useState("");
     const [deleteError, setDeleteError] = useState("");
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
 
+    // Pagination & Search state
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalCandidates, setTotalCandidates] = useState(0);
+    const [limit] = useState(10);
+    const [searchInput, setSearchInput] = useState("");
+    const [search, setSearch] = useState("");
+
+    // 1. Initial load (Org + Drives)
     useEffect(() => {
-        const load = async () => {
+        const loadBaseData = async () => {
             try {
-                const [orgRes, drivesRes, candidatesRes] = await Promise.all([
+                const [orgRes, drivesRes] = await Promise.all([
                     fetch(`/api/super-admin/orgs/${id}`),
-                    fetch(`/api/drives?orgId=${id}`),
-                    fetch(`/api/candidates?orgId=${id}`)
+                    fetch(`/api/drives?orgId=${id}`)
                 ]);
                 
                 if (!orgRes.ok) {
@@ -68,26 +78,61 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                     return;
                 }
 
-                const [orgData, drivesData, candidatesData] = await Promise.all([
+                const [orgData, drivesData] = await Promise.all([
                     orgRes.json(),
-                    drivesRes.json(),
-                    candidatesRes.json()
+                    drivesRes.json()
                 ]);
                 
                 setOrg(orgData);
                 setDrives(drivesData.drives || []);
-                setCandidates(candidatesData.candidates || []);
             } catch {
                 setError("Network error. Could not connect to the server.");
             } finally {
                 setLoading(false);
             }
         };
-        load();
+        loadBaseData();
     }, [id]);
 
+    // 2. Fetch Candidates (Paginated & Debounced)
+    const fetchCandidates = async (p = page, q = search) => {
+        setCandidatesLoading(true);
+        try {
+            const params = new URLSearchParams({
+                orgId: id,
+                page: String(p),
+                limit: String(limit),
+                ...(q ? { q } : {}),
+            });
+            const res = await fetch(`/api/candidates?${params}`);
+            const data = await res.json();
+            if (data.candidates) {
+                setCandidates(data.candidates);
+                setTotalCandidates(data.pagination.total);
+                setTotalPages(data.pagination.totalPages);
+            }
+        } catch (error) {
+            console.error("Error fetching candidates:", error);
+        } finally {
+            setCandidatesLoading(false);
+        }
+    };
+
+    // Debounce search
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setSearch(searchInput);
+            setPage(1);
+        }, 200);
+        return () => clearTimeout(timer);
+    }, [searchInput]);
+
+    useEffect(() => {
+        fetchCandidates(page, search);
+    }, [page, search, id]);
+
     const handleDeleteCandidates = () => {
-        if (candidates.length === 0) return;
+        if (totalCandidates === 0) return;
         setIsDeleteModalOpen(true);
     };
 
@@ -112,9 +157,42 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-white p-20 flex flex-col items-center justify-center gap-6">
-                <Loader2 className="h-10 w-10 text-[#F97316] animate-spin opacity-30" />
-                <p className="text-gray-400 font-black text-[10px] uppercase tracking-[0.3em]">Synchronizing Portal Context...</p>
+            <div className="min-h-screen bg-white">
+                <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-gray-100 px-8 py-10 lg:px-12">
+                    <div className="max-w-7xl mx-auto space-y-12">
+                        <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
+                            <div className="space-y-4">
+                                <Skeleton className="h-3 w-40" />
+                                <div className="flex items-center gap-4">
+                                    <div className="h-10 w-1 bg-gray-100 rounded-full" />
+                                    <div className="space-y-2">
+                                        <Skeleton className="h-10 w-64" />
+                                        <Skeleton className="h-3 w-32" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+                <main className="max-w-7xl mx-auto p-8 lg:p-12">
+                    <div className="space-y-8">
+                        <Skeleton className="h-16 w-full max-w-lg rounded-[1.5rem]" />
+                        <div className="bg-white border border-gray-100 rounded-[3rem] overflow-hidden p-12 space-y-8">
+                            <div className="grid grid-cols-6 gap-4">
+                                {Array(6).fill(0).map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+                            </div>
+                            {Array(5).fill(0).map((_, i) => (
+                                <div key={i} className="flex gap-6 items-center">
+                                    <Skeleton className="h-14 w-14 rounded-full" />
+                                    <div className="space-y-2 flex-1">
+                                        <Skeleton className="h-4 w-1/4" />
+                                        <Skeleton className="h-3 w-1/3" />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </main>
             </div>
         );
     }
@@ -152,7 +230,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 <div className="h-10 w-1 bg-[#F97316] rounded-full" />
                                 <div>
                                     <h1 className="text-4xl font-black text-gray-900 tracking-tighter leading-none uppercase italic">{view === "drives" ? "Drives" : "Candidates"}</h1>
-                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name} · {candidates.length} Applicants</p>
+                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name} · {totalCandidates} Applicants</p>
                                 </div>
                             </div>
                         </div>
@@ -162,7 +240,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                             <button 
                                 onClick={handleDeleteCandidates}
                                 className="flex items-center gap-2 px-6 py-3 bg-red-50 text-red-600 font-black text-[10px] uppercase tracking-widest rounded-xl shadow-sm border border-red-100 hover:bg-red-100 transition-all disabled:opacity-50"
-                                disabled={candidates.length === 0}
+                                disabled={totalCandidates === 0}
                             >
                                 <Trash2 className="h-4 w-4" />
                                 Delete Candidates
@@ -234,12 +312,14 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                             <input
                                 type="text"
                                 placeholder="Search by name, role, or email..."
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
                                 className="w-full h-16 pl-16 pr-8 bg-gray-50/50 border border-gray-100 rounded-[1.5rem] text-sm font-black text-gray-900 placeholder:text-gray-300 outline-none focus:bg-white focus:ring-4 focus:ring-gray-900/5 transition-all"
                             />
                         </div>
 
                         {/* Candidates Table Styled like Pic 2 */}
-                        <div className="bg-white border border-gray-100 rounded-[3rem] shadow-[0_20px_80px_rgba(0,0,0,0.015)] overflow-hidden">
+                        <div className="bg-white border border-gray-100 rounded-[3rem] shadow-[0_20px_80px_rgba(0,0,0,0.015)] overflow-hidden min-h-[400px]">
                             <div className="grid grid-cols-[3fr_2fr_1fr_1fr_1.5fr_1.5fr_auto] gap-4 px-12 py-8 border-b border-gray-50 text-[10px] font-black text-gray-300 uppercase tracking-widest bg-gray-50/5">
                                 <span>CANDIDATE</span>
                                 <span>APPLIED FOR</span>
@@ -250,7 +330,19 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 <span className="text-right">ACTIONS</span>
                             </div>
 
-                            {candidates.length === 0 ? (
+                            {candidatesLoading ? (
+                                <div className="divide-y divide-gray-50/50 p-12 space-y-10">
+                                    {Array(5).fill(0).map((_, i) => (
+                                        <div key={i} className="flex gap-6 items-center">
+                                            <Skeleton className="h-14 w-14 rounded-full" />
+                                            <div className="space-y-3 flex-1">
+                                                <Skeleton className="h-5 w-1/4" />
+                                                <Skeleton className="h-3 w-1/3" />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : candidates.length === 0 ? (
                                 <div className="py-40 text-center space-y-6">
                                     <UserCircle2 className="h-12 w-12 text-gray-200 mx-auto" />
                                     <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">No active candidate records found.</p>
@@ -298,10 +390,18 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                         
                         {/* Pagination Area matching Pic 2 */}
                         <div className="flex items-center justify-between px-12 py-8 mt-4">
-                            <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest italic leading-none">SHOWING 1 OF {candidates.length} CANDIDATES</p>
+                            <p className="text-gray-400 text-[10px] font-black uppercase tracking-widest italic leading-none">SHOWING {candidates.length} OF {totalCandidates} CANDIDATES · PAGE {page} OF {totalPages || 1}</p>
                             <div className="flex items-center gap-4">
-                                <button className="px-6 py-3 bg-gray-50 text-gray-300 font-black text-[10px] uppercase tracking-widest rounded-xl shadow-sm border border-white opacity-50 cursor-not-allowed transition-all">Previous</button>
-                                <button className="px-6 py-3 bg-gray-50 text-gray-900 font-black text-[10px] uppercase tracking-widest rounded-xl shadow-sm border border-gray-100 hover:bg-gray-100 transition-all shadow-gray-200">Next</button>
+                                <button 
+                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    disabled={page <= 1 || candidatesLoading}
+                                    className="px-6 py-3 bg-gray-50 text-gray-900 font-black text-[10px] uppercase tracking-widest rounded-xl shadow-sm border border-gray-100 hover:bg-gray-100 transition-all shadow-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                                >Previous</button>
+                                <button 
+                                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={page >= totalPages || candidatesLoading}
+                                    className="px-6 py-3 bg-gray-50 text-gray-900 font-black text-[10px] uppercase tracking-widest rounded-xl shadow-sm border border-gray-100 hover:bg-gray-100 transition-all shadow-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                                >Next</button>
                             </div>
                         </div>
                     </div>

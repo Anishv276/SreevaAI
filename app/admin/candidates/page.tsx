@@ -32,7 +32,7 @@ import {
 import { useEffect } from "react";
 
 export default function CandidatesPage() {
-    const { candidates, pagination, fetchCandidates, bulkDeleteCandidates } = useCandidates();
+    const { candidates, pagination, isLoading, fetchCandidates, bulkDeleteCandidates } = useCandidates();
     const { jobs } = useJobs();
     const [searchTerm, setSearchTerm] = useState("");
     const [statusFilter, setStatusFilter] = useState("all");
@@ -55,33 +55,56 @@ export default function CandidatesPage() {
         }
     }, [driveIdParam]);
 
-    // Refetch when filters change
+    // Refetch when filters or search changes
     useEffect(() => {
-        let startDate: string | undefined;
-        let endDate: string | undefined;
+        const handler = setTimeout(() => {
+            let startDate: string | undefined;
+            let endDate: string | undefined;
 
-        if (dateFilter === "today") {
-            startDate = new Date().toISOString().split("T")[0];
-            endDate = startDate;
-        } else if (dateFilter === "week") {
-            const date = new Date();
-            date.setDate(date.getDate() - 7);
-            startDate = date.toISOString().split("T")[0];
-        } else if (dateFilter === "month") {
-            const date = new Date();
-            date.setMonth(date.getMonth() - 1);
-            startDate = date.toISOString().split("T")[0];
-        } else if (dateFilter === "custom") {
-            startDate = customRange.start || undefined;
-            endDate = customRange.end || undefined;
-        }
+            if (dateFilter === "today") {
+                startDate = new Date().toISOString().split("T")[0];
+                endDate = startDate;
+            } else if (dateFilter === "week") {
+                const date = new Date();
+                date.setDate(date.getDate() - 7);
+                startDate = date.toISOString().split("T")[0];
+            } else if (dateFilter === "month") {
+                const date = new Date();
+                date.setMonth(date.getMonth() - 1);
+                startDate = date.toISOString().split("T")[0];
+            } else if (dateFilter === "custom") {
+                startDate = customRange.start || undefined;
+                endDate = customRange.end || undefined;
+            }
 
-        fetchCandidates(1, pagination.limit, roleFilter, statusFilter, startDate, endDate);
-    }, [statusFilter, roleFilter, dateFilter, customRange]);
+            fetchCandidates(1, pagination.limit, roleFilter, statusFilter, startDate, endDate, searchTerm);
+        }, 200); // 200ms Search Debounce
+
+        return () => clearTimeout(handler);
+    }, [statusFilter, roleFilter, dateFilter, customRange, searchTerm, pagination.limit]);
 
     const handlePageChange = (newPage: number) => {
         if (newPage >= 1 && newPage <= pagination.totalPages) {
-            fetchCandidates(newPage, pagination.limit, roleFilter, statusFilter);
+            let startDate: string | undefined;
+            let endDate: string | undefined;
+
+            if (dateFilter === "today") {
+                startDate = new Date().toISOString().split("T")[0];
+                endDate = startDate;
+            } else if (dateFilter === "week") {
+                const date = new Date();
+                date.setDate(date.getDate() - 7);
+                startDate = date.toISOString().split("T")[0];
+            } else if (dateFilter === "month") {
+                const date = new Date();
+                date.setMonth(date.getMonth() - 1);
+                startDate = date.toISOString().split("T")[0];
+            } else if (dateFilter === "custom") {
+                startDate = customRange.start || undefined;
+                endDate = customRange.end || undefined;
+            }
+
+            fetchCandidates(newPage, pagination.limit, roleFilter, statusFilter, startDate, endDate, searchTerm);
         }
     };
 
@@ -104,17 +127,7 @@ export default function CandidatesPage() {
         }
     };
 
-    const filteredCandidates = candidates.filter(candidate => {
-        // First filter by drive/role
-        const matchesRole = roleFilter === "all" || candidate.driveId === roleFilter;
-        if (!matchesRole) return false;
-
-        // Then filter by search term
-        const search = searchTerm.toLowerCase();
-        return candidate.name.toLowerCase().includes(search) ||
-            candidate.role.toLowerCase().includes(search) ||
-            candidate.email.toLowerCase().includes(search);
-    });
+    const filteredCandidates = candidates;
 
     const toggleSelection = (id: string) => {
         const newSelected = new Set(selectedIds);
@@ -173,7 +186,7 @@ export default function CandidatesPage() {
                         </h1>
                         <div className="flex items-center gap-3 mt-1.5">
                             <p className="text-gray-500 font-medium text-base">
-                                Talent pool • {pagination.total} applicants
+                                Talent pool • {pagination.total ?? 0} applicants
                             </p>
                             {driveIdParam && jobs.find(j => j.id.toString() === driveIdParam) && (
                                 <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-orange-50 border border-orange-100 text-[#F97316] text-[10px] font-black uppercase tracking-widest animate-in-fade">
@@ -345,7 +358,20 @@ export default function CandidatesPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {filteredCandidates.map((candidate) => (
+                            {isLoading ? (
+                                <TableRow>
+                                    <TableCell colSpan={isSelectionMode ? 8 : 7} className="py-12 text-center text-sm font-bold text-gray-400">
+                                        Loading candidates...
+                                    </TableCell>
+                                </TableRow>
+                            ) : filteredCandidates.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={isSelectionMode ? 8 : 7} className="py-12 text-center text-sm font-bold text-gray-400">
+                                        No candidates found for selected filters
+                                    </TableCell>
+                                </TableRow>
+                            ) : (
+                            filteredCandidates.map((candidate) => (
                                 (() => {
                                     const mainStatus =
                                         candidate.status === "Rejected"
@@ -473,7 +499,7 @@ export default function CandidatesPage() {
                                 </TableRow>
                                     );
                                 })()
-                            ))}
+                            )))}
                         </TableBody>
                     </Table>
                 </div>
@@ -481,7 +507,7 @@ export default function CandidatesPage() {
 
             <div className="px-8 py-6 border-t border-gray-50 flex items-center justify-between bg-gray-50/30">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                    Showing <span className="text-gray-900">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="text-gray-900">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="text-gray-900">{pagination.total}</span> candidates
+                    Showing <span className="text-gray-900">{pagination.total > 0 ? (pagination.page - 1) * pagination.limit + 1 : 0}</span> to <span className="text-gray-900">{Math.min(pagination.page * pagination.limit, pagination.total || 0)}</span> of <span className="text-gray-900">{pagination.total || 0}</span> candidates
                 </p>
                 <div className="flex gap-3">
                     <Button 

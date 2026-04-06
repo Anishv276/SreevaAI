@@ -67,47 +67,45 @@ export async function POST(request: Request) {
         let outputData = "";
         let errorData = "";
 
-        const [exitCode, fileUrl] = await Promise.all([
-            (async () => {
-                const pythonCommand = process.platform === "win32" ? "python" : "python3";
-                const pythonProcess = spawn(pythonCommand, ["scripts/extract_pdf.py", tempFilePath, type]);
+        // ── PARALLEL PROCESSING: Extraction + Background Upload ────────────────
+        const uploadPromise = (async () => {
+            try {
+                const { putObject } = await import("@/lib/s3");
+                const bucket = type === "JD" 
+                    ? (process.env.R2_JDS_BUCKET || "jds")
+                    : (process.env.R2_RESUMES_BUCKET || "resumes");
+                
+                const prefix = type === "JD" ? "jds/" : "resumes/";
+                const fileName = `${prefix}${uuidv4()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+                return await putObject(bucket, fileName, buffer, file.type);
+            } catch (err) { 
+                console.error("R2 Upload Error:", err);
+                return null; 
+            }
+        })();
 
-                let outputDataStr = "";
-                let errorDataStr = "";
+        // Primary bottleneck: Java/Python Extraction
+        const pythonCommand = process.platform === "win32" ? "python" : "python3";
+        const pythonProcess = spawn(pythonCommand, ["scripts/extract_pdf.py", tempFilePath, type]);
 
-                pythonProcess.stdout.on("data", (data) => { outputDataStr += data.toString(); });
-                pythonProcess.stderr.on("data", (data) => { errorDataStr += data.toString(); });
+        let outputDataStr = "";
+        let errorDataStr = "";
 
-                const code = await new Promise((resolve) => {
-                    pythonProcess.on("close", (code) => resolve(code));
-                });
+        pythonProcess.stdout.on("data", (data) => { outputDataStr += data.toString(); });
+        pythonProcess.stderr.on("data", (data) => { errorDataStr += data.toString(); });
 
-                outputData = outputDataStr;
-                errorData = errorDataStr;
-                return code;
-            })(),
+        const exitCode = await new Promise((resolve) => {
+            pythonProcess.on("close", (code) => resolve(code));
+        });
 
-            (async () => {
-                try {
-                    const { putObject } = await import("@/lib/s3");
-                    
-                    // Determine bucket based on TYPE
-                    const bucket = type === "JD" 
-                        ? (process.env.R2_JDS_BUCKET || "jds")
-                        : (process.env.R2_RESUMES_BUCKET || "resumes");
-                    
-                    const prefix = type === "JD" ? "jds/" : "resumes/";
-                    const fileName = `${prefix}${uuidv4()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-                    const url = await putObject(bucket, fileName, buffer, file.type);
-                    return url;
-                } catch (err) { 
-                    console.error("R2 Upload Error:", err);
-                    return null; 
-                }
-            })()
-        ]);
+        outputData = outputDataStr;
+        errorData = errorDataStr;
 
+        // Cleanup temp file
         await unlink(tempFilePath).catch(() => { });
+
+        // Wait for R2 URL but don't let it block if extraction failed
+        const fileUrl = await uploadPromise;
 
         if (exitCode !== 0) {
             console.error("Python Extraction Failed:", errorData);

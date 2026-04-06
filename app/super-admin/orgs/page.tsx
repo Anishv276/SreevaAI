@@ -21,6 +21,7 @@ import {
     Layers,
     Globe
 } from "lucide-react";
+import { Skeleton as Shimmer } from "@/components/ui/skeleton";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 
 interface Org {
@@ -29,7 +30,10 @@ interface Org {
     slug: string;
     plan: string;
     isActive: boolean;
-    _count: {
+    adminCount: number;
+    driveCount: number;
+    candidateCount: number;
+    _count?: {
         users: number;
         drives: number;
     };
@@ -84,7 +88,7 @@ export default function OrgsPage() {
         const timer = setTimeout(() => {
             setSearch(searchInput);
             setPage(1);
-        }, 300);
+        }, 200);
         return () => clearTimeout(timer);
     }, [searchInput]);
 
@@ -176,25 +180,45 @@ export default function OrgsPage() {
                 </div>
 
                 {loading ? (
-                    <div className="py-40 text-center flex flex-col items-center justify-center gap-4">
-                        <Loader2 className="h-10 w-10 text-[#F97316] animate-spin opacity-20" />
-                        <p className="text-gray-300 text-[10px] font-black uppercase tracking-widest tracking-[0.3em] animate-pulse">Syncing Portal Context</p>
+                    <div className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden animate-in-fade">
+                        <div className="grid grid-cols-[2.5fr_1.5fr_1fr_1fr_1.5fr_1.2fr] gap-4 px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+                             {Array(6).fill(0).map((_, i) => <Shimmer key={i} className="h-4 w-20 rounded-md" />)}
+                        </div>
+                        <div className="divide-y divide-gray-100">
+                             {Array(5).fill(0).map((_, i) => (
+                                <div key={i} className="grid grid-cols-[2.5fr_1.5fr_1fr_1fr_1.5fr_1.2fr] gap-4 px-6 py-6 items-center">
+                                    <div className="flex items-center gap-4">
+                                        <Shimmer className="h-10 w-10 rounded-full flex-shrink-0" />
+                                        <div className="space-y-2">
+                                            <Shimmer className="h-4 w-32" />
+                                            <Shimmer className="h-3 w-20" />
+                                        </div>
+                                    </div>
+                                    <Shimmer className="h-4 w-24" />
+                                    <Shimmer className="h-6 w-8 mx-auto" />
+                                    <Shimmer className="h-6 w-8 mx-auto" />
+                                    <Shimmer className="h-8 w-24 mx-auto rounded-full" />
+                                    <Shimmer className="h-10 w-10 ml-auto rounded-xl" />
+                                </div>
+                             ))}
+                        </div>
                     </div>
                 ) : (
                     <div className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
                         {/* Table Header */}
-                        <div className="grid grid-cols-[2.5fr_1.5fr_1fr_1fr_1.5fr_1.2fr] gap-4 px-6 py-4 border-b border-gray-100 text-[11px] font-semibold text-gray-500 uppercase tracking-wider bg-gray-50/50">
+                        <div className="grid grid-cols-[2.2fr_1.2fr_0.8fr_0.8fr_1fr_1.2fr_1.2fr] gap-4 px-6 py-4 border-b border-gray-100 text-[11px] font-semibold text-gray-500 uppercase tracking-wider bg-gray-50/50">
                             <span>ORGANIZATION</span>
                             <span>IDENTIFIER</span>
                             <span className="text-center">ADMINS</span>
                             <span className="text-center">DRIVES</span>
+                            <span className="text-center">CANDIDATES</span>
                             <span className="text-center">STATUS</span>
                             <span className="text-right">ACTIONS</span>
                         </div>
 
                         <div className="divide-y divide-gray-100">
                             {orgs.map((can) => (
-                                <div key={can.id} className="grid grid-cols-[2.5fr_1.5fr_1fr_1fr_1.5fr_1.2fr] gap-4 px-6 py-4 items-center hover:bg-gray-50 transition-all group">
+                                <div key={can.id} className="grid grid-cols-[2.2fr_1.2fr_0.8fr_0.8fr_1fr_1.2fr_1.2fr] gap-4 px-6 py-4 items-center hover:bg-gray-50 transition-all group">
                                     {/* Sidebar Circle + Info Block */}
                                     <div className="flex items-center gap-4">
                                         <div className="h-10 w-10 rounded-full bg-gray-900 text-white flex flex-shrink-0 items-center justify-center font-bold text-sm shadow-sm group-hover:scale-105 transition-transform">
@@ -215,13 +239,16 @@ export default function OrgsPage() {
                                         <p className="text-[9px] font-semibold text-gray-400 uppercase tracking-widest ml-5.5 leading-none">Internal ID</p>
                                     </div>
 
-                                    {/* Stats matching table numbers */}
                                     <div className="text-center font-black text-gray-950 text-base tabular-nums tracking-tighter">
-                                        {can._count.users}
+                                        {can.adminCount ?? can._count?.users ?? 0}
                                     </div>
 
                                     <div className="text-center font-black text-gray-950 text-base tabular-nums tracking-tighter">
-                                        {can._count.drives}
+                                        {can.driveCount ?? can._count?.drives ?? 0}
+                                    </div>
+
+                                    <div className="text-center font-black text-[#F97316] text-base tabular-nums tracking-tighter">
+                                        {can.candidateCount || 0}
                                     </div>
 
                                     <div className="text-center">

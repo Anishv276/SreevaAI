@@ -41,17 +41,6 @@ export async function GET(request: Request) {
                         completedAt: true,
                         interviewDuration: true,
                     }
-                },
-                assessment: {
-                    select: {
-                        id: true,
-                        status: true,
-                        accessToken: true,
-                        expiresAt: true,
-                        startedAt: true,
-                        completedAt: true,
-                        score: true,
-                    }
                 }
             },
             orderBy: { createdAt: "desc" }
@@ -63,17 +52,10 @@ export async function GET(request: Request) {
                     status: app.interview.status,
                     token: app.interview.accessToken,
                     expiresAt: app.interview.expiresAt,
-                    canStart: app.interview.status === "PENDING" && new Date() < new Date(app.interview.expiresAt),
-                }
-                : null;
-
-            const assessmentStage = app.assessment
-                ? {
-                    status: app.assessment.status,
-                    token: app.assessment.accessToken,
-                    expiresAt: app.assessment.expiresAt,
-                    canStart: app.assessment.status === "PENDING" && new Date() < new Date(app.assessment.expiresAt),
-                    score: app.assessment.score,
+                    canStart:
+                        app.interview.status === "PENDING" &&
+                        !!app.interview.expiresAt &&
+                        new Date() < new Date(app.interview.expiresAt),
                 }
                 : null;
 
@@ -84,7 +66,7 @@ export async function GET(request: Request) {
                 createdAt: app.createdAt,
                 drive: app.drive,
                 interview: interviewStage,
-                assessment: assessmentStage,
+                assessment: null,
             };
         });
 

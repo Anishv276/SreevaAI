@@ -4,6 +4,44 @@ import { resumeQueue, gradingQueue } from "@/lib/queue";
 import { createCandidateSchema, bulkDeleteCandidatesSchema, candidateQuerySchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
 
+const TABLE_CHECK_TTL_MS = 5 * 60 * 1000;
+
+let tableCheckCache: {
+    hasAssessmentTable: boolean;
+    hasInterviewTable: boolean;
+    expiresAt: number;
+} | null = null;
+
+async function getTableAvailability() {
+    if (tableCheckCache && Date.now() < tableCheckCache.expiresAt) {
+        return tableCheckCache;
+    }
+
+    const result = await prisma.$queryRawUnsafe<Array<{ hasAssessmentTable: boolean; hasInterviewTable: boolean }>>(
+        `
+        SELECT
+            EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'Assessment'
+            ) AS "hasAssessmentTable",
+            EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'Interview'
+            ) AS "hasInterviewTable"
+        `
+    );
+
+    tableCheckCache = {
+        hasAssessmentTable: Boolean(result?.[0]?.hasAssessmentTable),
+        hasInterviewTable: Boolean(result?.[0]?.hasInterviewTable),
+        expiresAt: Date.now() + TABLE_CHECK_TTL_MS,
+    };
+
+    return tableCheckCache;
+}
+
 export async function GET(request: Request) {
     try {
         const session = await getSession();
@@ -14,32 +52,13 @@ export async function GET(request: Request) {
         const driveId = driveIdStr ? parseInt(driveIdStr) : null;
         const startDate = searchParams.get("startDate");
         const endDate = searchParams.get("endDate");
+        const search = searchParams.get("search")?.trim() || "";
+        const status = searchParams.get("status") || "all";
         const page = parseInt(searchParams.get("page") || "1");
         const limit = parseInt(searchParams.get("limit") || "10");
         const offset = (page - 1) * limit;
 
-        const assessmentTableResult = await prisma.$queryRawUnsafe<Array<{ exists: boolean }>>(
-            `
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = 'Assessment'
-            ) AS "exists"
-            `
-        );
-
-        const interviewTableResult = await prisma.$queryRawUnsafe<Array<{ exists: boolean }>>(
-            `
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = 'Interview'
-            ) AS "exists"
-            `
-        );
-
-        const hasAssessmentTable = Boolean(assessmentTableResult?.[0]?.exists);
-        const hasInterviewTable = Boolean(interviewTableResult?.[0]?.exists);
+        const { hasAssessmentTable, hasInterviewTable } = await getTableAvailability();
 
         const assessmentSelect = hasAssessmentTable
             ? `s.status AS "assessmentStatus"`
@@ -65,20 +84,17 @@ export async function GET(request: Request) {
 
         // ── Security & Filtering ───────────────────
         const isSuperAdmin = session?.role === "SUPER_ADMIN";
-        // If Super Admin, use the orgId param. If not, LOCK to session orgId.
         const orgId = isSuperAdmin 
             ? (searchParams.get("orgId") || session?.orgId) 
             : session?.orgId;
 
         if (!orgId) {
-            return NextResponse.json({ 
-                candidates: [], 
-                pagination: { total: 0, pages: 0, page, limit } 
-            });
+            return NextResponse.json({ candidates: [], pagination: { total: 0, pages: 0, page, limit } });
         }
 
-
         let dateClause = "";
+        let searchClause = "";
+        let statusClause = "";
         let paramIndex = driveId ? 3 : 2;
         const queryParams: any[] = driveId ? [driveId, orgId] : [orgId];
 
@@ -93,11 +109,24 @@ export async function GET(request: Request) {
             queryParams.push(end);
         }
 
+        if (status && status !== "all") {
+            statusClause += ` AND a."status" = $${paramIndex++}`;
+            queryParams.push(status);
+        }
+
+        if (search) {
+            searchClause = ` AND (a."fullName" ILIKE $${paramIndex} OR a."email" ILIKE $${paramIndex} OR d."title" ILIKE $${paramIndex})`;
+            queryParams.push(`%${search}%`);
+            paramIndex++;
+        }
+
         const candidates = await prisma.$queryRawUnsafe(
             `${baseSelect}
             WHERE d."orgId" = ${driveId ? "$2" : "$1"}
             ${driveId ? 'AND a."driveId" = $1' : ""}
             ${dateClause}
+            ${statusClause}
+            ${searchClause}
             ORDER BY a."createdAt" DESC
             LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
             ...queryParams, limit, offset
@@ -111,6 +140,8 @@ export async function GET(request: Request) {
             WHERE d."orgId" = ${driveId ? "$2" : "$1"}
             ${driveId ? 'AND a."driveId" = $1' : ""}
             ${dateClause}
+            ${statusClause}
+            ${searchClause}
         `;
         
         const countResult = await prisma.$queryRawUnsafe<any[]>(countQuery, ...queryParams);

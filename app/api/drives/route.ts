@@ -11,6 +11,7 @@ export async function GET(request: Request) {
 
         const { searchParams } = new URL(request.url);
         const status = searchParams.get("status");
+        const search = searchParams.get("search") || "";
         const page = parseInt(searchParams.get("page") || "1");
         const limit = parseInt(searchParams.get("limit") || "10");
         const skip = (page - 1) * limit;
@@ -27,6 +28,21 @@ export async function GET(request: Request) {
             if (targetOrgId) where.orgId = targetOrgId;
         } else {
             where.orgId = (session as any).orgId;
+        }
+
+        // Add Search & Status filters
+        if (search) {
+            where.OR = [
+                { title: { contains: search, mode: "insensitive" } },
+                { department: { contains: search, mode: "insensitive" } },
+                { role: { contains: search, mode: "insensitive" } }
+            ];
+        }
+
+        if (status && status !== "all") {
+            // Map the internal status if needed (e.g. CLOSED vs ACTIVE)
+            if (status === "active") where.status = "ACTIVE";
+            if (status === "inactive") where.status = "CLOSED";
         }
 
         const [drives, total] = await Promise.all([

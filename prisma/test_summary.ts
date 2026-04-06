@@ -1,11 +1,10 @@
-import { AsyncOpenAI } from 'openai';
+import OpenAI from "openai";
 import { PrismaClient } from '@prisma/client';
 import * as dotenv from 'dotenv';
-import * as re from 're'; // No need for re in TS, just placeholder
 
 dotenv.config();
 const prisma = new PrismaClient();
-const openai = new AsyncOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 async function runDemo() {
   console.log('🔍 Fetching the last transcript...');
@@ -28,7 +27,7 @@ async function runDemo() {
     ]
   });
 
-  const summary = response.choices[0].message.content;
+  const summary = response.choices[0]?.message?.content || "";
   console.log('\n--- NEW AI SUMMARY ---');
   console.log(summary);
   console.log('----------------------');

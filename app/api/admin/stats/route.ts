@@ -15,39 +15,32 @@ export async function GET() {
         // Native JavaScript start of month: Year, Month, 1st day at midnight
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-        // 1. Active Drives
-        const activeDrives = await prisma.drive.count({
-            where: {
-                orgId,
-                status: { in: ['ACTIVE', 'Active'] }
-            }
-        });
-
-        // 2. Total Candidates
-        const totalCandidates = await prisma.application.count({
-            where: {
-                drive: { orgId }
-            }
-        });
-
-        // 3. AI Interviews (Completed)
-        const aiInterviews = await prisma.interview.count({
-            where: {
-                status: 'COMPLETED',
-                application: {
+        // PERFORMANCE: Consolidated High-Speed Unified Stats Query
+        const [activeDrives, totalCandidates, aiInterviews, hiredThisMonth] = await Promise.all([
+            // 1. Active Drives
+            prisma.drive.count({
+                where: { orgId, status: { in: ['ACTIVE', 'Active'] } }
+            }),
+            // 2. Total Candidates
+            prisma.application.count({
+                where: { drive: { orgId } }
+            }),
+            // 3. AI Interviews (Completed)
+            prisma.interview.count({
+                where: { 
+                    status: 'COMPLETED',
+                    application: { drive: { orgId } }
+                }
+            }),
+            // 4. Hired This Month
+            prisma.application.count({
+                where: {
+                    status: 'Hired',
+                    updatedAt: { gte: monthStart },
                     drive: { orgId }
                 }
-            }
-        });
-
-        // 4. Hired This Month
-        const hiredThisMonth = await prisma.application.count({
-            where: {
-                status: 'Hired',
-                updatedAt: { gte: monthStart },
-                drive: { orgId }
-            }
-        });
+            })
+        ]);
 
         return NextResponse.json({
             activeDrives,
@@ -55,8 +48,8 @@ export async function GET() {
             aiInterviews,
             hiredThisMonth
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error("Dashboard stats error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: error.message || "Protocol Failure in analytics handshake." }, { status: 500 });
     }
 }

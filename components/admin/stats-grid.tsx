@@ -14,23 +14,57 @@ interface StatsData {
 export function StatsGrid() {
     const [stats, setStats] = useState<StatsData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchStats = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const res = await fetch("/api/admin/stats");
+            
+            if (res.ok) {
+                const data = await res.json();
+                setStats(data);
+            } else {
+                const errorData = await res.json().catch(() => ({}));
+                setError(errorData.error || "Analytics connection timeout.");
+            }
+        } catch (error) {
+            console.error("Failed to fetch dashboard stats", error);
+            setError("Network protocol failure. Please verify connection.");
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        const fetchStats = async () => {
-            try {
-                const res = await fetch("/api/admin/stats");
-                if (res.ok) {
-                    const data = await res.json();
-                    setStats(data);
-                }
-            } catch (error) {
-                console.error("Failed to fetch dashboard stats", error);
-            } finally {
-                setLoading(false);
-            }
-        };
         fetchStats();
     }, []);
+
+    if (error) {
+        return (
+            <div className="bg-orange-50/50 border border-orange-100 rounded-[2rem] p-8 flex flex-col md:flex-row items-center justify-between gap-6 mb-8 group overflow-hidden relative">
+                <div className="absolute top-0 right-0 h-32 w-32 bg-orange-100/30 rounded-full -mr-16 -mt-16 blur-3xl group-hover:bg-orange-200/40 transition-all duration-700" />
+                <div className="flex items-start gap-5 relative">
+                    <div className="h-12 w-12 rounded-2xl bg-white border border-orange-200 flex items-center justify-center text-[#F97316] shadow-sm shrink-0">
+                        <TrendingUp className="h-6 w-6 opacity-30" />
+                    </div>
+                    <div className="space-y-1">
+                        <h3 className="text-gray-900 font-black text-lg tracking-tight">Analytics Offline</h3>
+                        <p className="text-gray-500 text-sm font-medium leading-relaxed max-w-md">
+                            {error}. Your core data is safe—our telemetry system just needs a quick nudge to reconnect.
+                        </p>
+                    </div>
+                </div>
+                <button 
+                    onClick={fetchStats}
+                    className="relative px-6 py-2.5 bg-gray-900 text-white font-black text-xs uppercase tracking-[0.15em] rounded-xl hover:bg-[#F97316] transition-all transform hover:scale-[1.03] active:scale-[0.98] shadow-lg shadow-gray-200"
+                >
+                    Retry Connection
+                </button>
+            </div>
+        );
+    }
 
     const statsConfig = [
         {
