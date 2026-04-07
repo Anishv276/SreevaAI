@@ -74,15 +74,18 @@ export default function ApplyStartPage({ params }: { params: Promise<{ id: strin
             }
 
             localStorage.setItem(`prefill_${drive.id}`, JSON.stringify(prefillData))
+            // Navigate immediately — keep isAnalyzing=true so the spinner stays
+            // visible through the page transition (no flicker back to card state)
             router.push(`/careers/apply/${drive.id}?mode=resume`)
             
         } catch (err: any) {
             console.error("Apply error:", err)
             setError(err.message || "An error occurred. Please try the manual option.")
-        } finally {
+            // Only reset on error so the user can try again
             setIsAnalyzing(false)
         }
     }
+
 
     return (
         <div className="min-h-screen bg-[#FDFCFB] flex flex-col">
@@ -133,7 +136,7 @@ export default function ApplyStartPage({ params }: { params: Promise<{ id: strin
                                             <Loader2 className="h-10 w-10 text-[#F97316] animate-spin" />
                                         </div>
                                     </div>
-                                    <p className="text-[10px] text-[#F97316] font-black uppercase tracking-[0.2em] animate-pulse">Analyzing Resume...</p>
+                                    <p className="text-[11px] text-black font-inter font-bold tracking-tight animate-pulse">Analyzing Resume...</p>
                                 </div>
                             ) : (
                                 <>
@@ -171,7 +174,7 @@ export default function ApplyStartPage({ params }: { params: Promise<{ id: strin
             </main>
 
             <footer className="p-8 text-center border-t border-gray-100 bg-white">
-                <p className="text-gray-300 font-black uppercase tracking-[0.4em] text-[10px]">
+                <p className="text-gray-900 font-inter font-bold text-[11px] tracking-wide opacity-80">
                     Powered by Hirer.AI Intelligence Engine © 2026
                 </p>
             </footer>

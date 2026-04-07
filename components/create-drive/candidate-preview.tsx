@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 
 interface CandidatePreviewProps {
     formData: any;
+    customFields?: any[];
     regFieldCount: number;
     onClose: () => void;
 }
 
-export function CandidatePreview({ formData, regFieldCount, onClose }: CandidatePreviewProps) {
+export function CandidatePreview({ formData, customFields = [], regFieldCount, onClose }: CandidatePreviewProps) {
     const [viewMode, setViewMode] = useState<"desktop" | "mobile">("desktop");
     const [page, setPage] = useState<"jd" | "apply">("jd");
 
@@ -311,9 +312,34 @@ export function CandidatePreview({ formData, regFieldCount, onClose }: Candidate
                                                     <h2 className="text-sm font-black text-gray-900 uppercase tracking-widest">Additional Questions</h2>
                                                 </div>
                                                 <div className="space-y-8">
-                                                    <p className="text-xs text-gray-400 font-bold uppercase tracking-widest italic text-center py-4 border border-dashed border-gray-100 rounded-2xl">
-                                                        Your {regFieldCount - 6} custom questions will appear here
-                                                    </p>
+                                                    {customFields.length === 0 ? (
+                                                        <p className="text-xs text-gray-400 font-bold uppercase tracking-widest italic text-center py-4 border border-dashed border-gray-100 rounded-2xl">
+                                                            Your {regFieldCount - 6} custom questions will appear here
+                                                        </p>
+                                                    ) : (
+                                                        customFields.map((field: any) => (
+                                                            <div key={field.id} className="space-y-2">
+                                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                                                                    {field.label} {field.required ? "*" : ""}
+                                                                </label>
+                                                                {field.type === "Short" && <div className={inputClass}>Short Answer Text</div>}
+                                                                {field.type === "Long" && <div className="h-32 w-full rounded-2xl border border-gray-100 bg-gray-50/50 p-5 text-sm font-medium text-gray-300">Long Answer Text</div>}
+                                                                {field.type === "Url" && <div className={inputClass}>https://...</div>}
+                                                                {field.type === "File" && (
+                                                                    <div className="h-24 w-full border-2 border-dashed border-gray-100 rounded-2xl flex flex-col items-center justify-center bg-gray-50/50 text-gray-300">
+                                                                        <Upload className="w-5 h-5 mb-1" />
+                                                                        <span className="text-[10px] font-black uppercase tracking-widest">Upload File</span>
+                                                                    </div>
+                                                                )}
+                                                                {field.type === "Yes/No" && (
+                                                                    <div className="flex gap-3">
+                                                                        <div className="h-10 px-6 rounded-xl border border-orange-200 bg-orange-50 text-[#F97316] text-[10px] font-black uppercase tracking-widest flex items-center">Yes</div>
+                                                                        <div className="h-10 px-6 rounded-xl border border-gray-100 bg-gray-50/50 text-gray-300 text-[10px] font-black uppercase tracking-widest flex items-center">No</div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ))
+                                                    )}
                                                 </div>
                                             </section>
                                         )}

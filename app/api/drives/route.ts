@@ -7,42 +7,50 @@ import { getSession } from "@/lib/auth";
 export async function GET(request: Request) {
     try {
         const session = await getSession();
-        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-
         const { searchParams } = new URL(request.url);
         const status = searchParams.get("status");
         const search = searchParams.get("search") || "";
         const page = parseInt(searchParams.get("page") || "1");
         const limit = parseInt(searchParams.get("limit") || "10");
         const skip = (page - 1) * limit;
+        const orgId = searchParams.get("orgId");
+        const now = new Date();
 
-        const queryResult = driveQuerySchema.safeParse({ status });
-        if (!queryResult.success) {
-            return NextResponse.json({ error: "Invalid query parameters" }, { status: 400 });
-        }
-
-        // ── SECURITY: Filter by Org ─────────────────────────
-        const targetOrgId = new URL(request.url).searchParams.get("orgId");
         let where: any = {};
-        if ((session as any).role === "SUPER_ADMIN") {
-            if (targetOrgId) where.orgId = targetOrgId;
+
+        if (session) {
+            // ── ADMIN ACCESS: Filter by Role & Org ───────────
+            if ((session as any).role === "SUPER_ADMIN") {
+                if (orgId) where.orgId = orgId;
+            } else {
+                where.orgId = (session as any).orgId;
+            }
+
+            if (status && status !== "all") {
+                if (status === "active") where.status = "ACTIVE";
+                if (status === "inactive") where.status = "CLOSED";
+            }
         } else {
-            where.orgId = (session as any).orgId;
+            // ── PUBLIC ACCESS: Only show Active & Non-Expired ──
+            where.status = "ACTIVE";
+            where.AND = [
+                {
+                    OR: [
+                        { deadline: null },
+                        { deadline: { gte: now } }
+                    ]
+                }
+            ];
+            if (orgId) where.orgId = orgId;
         }
 
-        // Add Search & Status filters
+        // Search filters
         if (search) {
             where.OR = [
                 { title: { contains: search, mode: "insensitive" } },
                 { department: { contains: search, mode: "insensitive" } },
                 { role: { contains: search, mode: "insensitive" } }
             ];
-        }
-
-        if (status && status !== "all") {
-            // Map the internal status if needed (e.g. CLOSED vs ACTIVE)
-            if (status === "active") where.status = "ACTIVE";
-            if (status === "inactive") where.status = "CLOSED";
         }
 
         const [drives, total] = await Promise.all([

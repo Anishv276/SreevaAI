@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { PersonalInfo } from "@/components/application/personal-info";
 import { ProfessionalDetails } from "@/components/application/professional-details";
 import { ResumeReview } from "@/components/application/resume-review";
+import { ExperienceInfo } from "@/components/application/experience-info";
+import { EducationInfo } from "@/components/application/education-info";
+import { CertificationInfo } from "@/components/application/certification-info";
 import { PortalHeader } from "@/components/careers/portal-header";
 import { ArrowLeft, CheckCircle2, Loader2, AlertCircle, X } from "lucide-react";
 import Link from "next/link";
@@ -51,7 +54,11 @@ export default function ApplicationPage() {
         resumeText: "",
         resumeUrl: "",
         structuredResume: {},
-        agreedToTerms: false
+        agreedToTerms: false,
+        customAnswers: {} as Record<string, any>,
+        education: [] as any[],
+        experience_list: [] as any[],
+        certifications: [] as any[]
     });
     
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -169,6 +176,24 @@ export default function ApplicationPage() {
             }
         }
 
+        // Custom Questions Validation
+        if (job?.registrationFields) {
+            try {
+                const fields = typeof job.registrationFields === 'string' ? JSON.parse(job.registrationFields) : job.registrationFields;
+                if (Array.isArray(fields)) {
+                    for (const field of fields) {
+                        if (field.required) {
+                            const answer = formData.customAnswers[field.label];
+                            if (!answer || (typeof answer === 'string' && answer.trim() === "")) {
+                                showAlert(`Please answer the required question: ${field.label}`, "error");
+                                return;
+                            }
+                        }
+                    }
+                }
+            } catch (e) { console.error("Validation check failed for custom fields", e); }
+        }
+
         if (!formData.resumeUploaded) {
             showAlert("Please upload your Resume/CV to continue.", "error");
             return;
@@ -198,7 +223,11 @@ export default function ApplicationPage() {
                 coverLetter: formData.coverLetter,
                 resumeUrl: formData.resumeUrl || (formData.resumeUploaded ? "resume_mock.pdf" : undefined),
                 resumeText: formData.resumeText,
-                structuredResume: formData.structuredResume
+                structuredResume: formData.structuredResume,
+                education: formData.education,
+                experience_list: formData.experience_list,
+                certifications: formData.certifications,
+                ...formData.customAnswers
             });
 
             localStorage.setItem(`applied_${id}`, "true");
@@ -288,7 +317,7 @@ export default function ApplicationPage() {
             <main className="container mx-auto px-4 py-12 max-w-4xl animate-in-fade">
                 {/* Header Section */}
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10 px-2">
-                    <div className="space-y-10">
+                    <div className="space-y-14">
                         <Link href={`/careers/jobs/${id}`}>
                             <Button variant="outline" className="h-10 px-4 rounded-xl border-gray-100 bg-white/50 text-gray-500 text-xs font-black uppercase tracking-widest hover:bg-white hover:text-[#F97316] hover:border-orange-100 transition-all shadow-sm group">
                                 <ArrowLeft className="h-4 w-4 mr-2 transition-transform group-hover:-translate-x-1" /> 
@@ -310,7 +339,7 @@ export default function ApplicationPage() {
                                 <div className="space-y-6">
                                     <div className="flex items-center gap-3">
                                         <span className="h-6 w-1 bg-[#F97316] rounded-full" />
-                                        <h3 className="text-lg font-bold text-gray-900">Personal Information</h3>
+                                        <h3 className="text-lg font-inter font-bold text-black">Personal Information</h3>
                                     </div>
                                     <PersonalInfo 
                                         formData={formData} 
@@ -329,7 +358,7 @@ export default function ApplicationPage() {
                                 <div className="space-y-6">
                                     <div className="flex items-center gap-3">
                                         <span className="h-6 w-1 bg-[#F97316] rounded-full" />
-                                        <h3 className="text-lg font-bold text-gray-900">Professional Details</h3>
+                                        <h3 className="text-lg font-inter font-bold text-gray-900">Professional Details</h3>
                                     </div>
                                     <ProfessionalDetails 
                                         formData={formData} 
@@ -337,14 +366,147 @@ export default function ApplicationPage() {
                                         isAnalyzing={isAnalyzing}
                                     />
                                 </div>
-                                
+                                {job?.registrationFields && (() => {
+                                    try {
+                                        const fields = typeof job.registrationFields === 'string' ? JSON.parse(job.registrationFields) : job.registrationFields;
+                                        if (!Array.isArray(fields) || fields.length === 0) return null;
+
+                                        return (
+                                            <>
+                                                <div className="border-t border-gray-100" />
+                                                <div className="space-y-6">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
+                                                        <h3 className="text-lg font-inter font-bold text-gray-900">Additional Questions</h3>
+                                                    </div>
+                                                    <div className="grid gap-8">
+                                                        {fields.map((field: any) => (
+                                                            <div key={field.id} className="space-y-3">
+                                                                <label className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">
+                                                                    {field.label} {field.required ? "*" : ""}
+                                                                </label>
+                                                                {field.type === "Short" && (
+                                                                    <input
+                                                                        type="text"
+                                                                        className="w-full h-12 rounded-2xl border-gray-100 bg-gray-50/30 px-4 text-sm font-medium transition-all focus:bg-white focus:border-[#F97316] focus:ring-4 focus:ring-orange-500/10 placeholder:text-gray-300"
+                                                                        value={formData.customAnswers[field.label] || ""}
+                                                                        onChange={(e) => updateFormData({ 
+                                                                            customAnswers: { ...formData.customAnswers, [field.label]: e.target.value } 
+                                                                        })}
+                                                                    />
+                                                                )}
+                                                                {field.type === "Long" && (
+                                                                    <textarea
+                                                                        className="w-full h-32 rounded-2xl border-gray-100 bg-gray-50/30 p-4 text-sm font-medium transition-all focus:bg-white focus:border-[#F97316] focus:ring-4 focus:ring-orange-500/10 placeholder:text-gray-300"
+                                                                        value={formData.customAnswers[field.label] || ""}
+                                                                        onChange={(e) => updateFormData({ 
+                                                                            customAnswers: { ...formData.customAnswers, [field.label]: e.target.value } 
+                                                                        })}
+                                                                    />
+                                                                )}
+                                                                {field.type === "Url" && (
+                                                                    <input
+                                                                        type="url"
+                                                                        placeholder="https://..."
+                                                                        className="w-full h-12 rounded-2xl border-gray-100 bg-gray-50/30 px-4 text-sm font-medium transition-all focus:bg-white focus:border-[#F97316] focus:ring-4 focus:ring-orange-500/10 placeholder:text-gray-300"
+                                                                        value={formData.customAnswers[field.label] || ""}
+                                                                        onChange={(e) => updateFormData({ 
+                                                                            customAnswers: { ...formData.customAnswers, [field.label]: e.target.value } 
+                                                                        })}
+                                                                    />
+                                                                )}
+                                                                {field.type === "File" && (
+                                                                    <input
+                                                                        type="file"
+                                                                        className="w-full h-12 flex items-center justify-center p-2 rounded-2xl border-2 border-dashed border-gray-100 bg-gray-50/30 text-sm font-medium focus:border-[#F97316]"
+                                                                        onChange={(e) => {
+                                                                            const file = e.target.files?.[0];
+                                                                            if (file) {
+                                                                                updateFormData({ 
+                                                                                    customAnswers: { ...formData.customAnswers, [field.label]: file.name } 
+                                                                                });
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                )}
+                                                                {field.type === "Yes/No" && (
+                                                                    <div className="flex gap-4">
+                                                                        {["Yes", "No"].map(opt => (
+                                                                            <button
+                                                                                key={opt}
+                                                                                type="button"
+                                                                                onClick={() => updateFormData({ 
+                                                                                    customAnswers: { ...formData.customAnswers, [field.label]: opt } 
+                                                                                })}
+                                                                                className={`h-11 px-8 rounded-xl font-bold text-xs uppercase tracking-widest transition-all ${
+                                                                                    formData.customAnswers[field.label] === opt
+                                                                                        ? "bg-[#F97316] text-white shadow-lg"
+                                                                                        : "bg-gray-50 text-gray-400 hover:bg-gray-100"
+                                                                                }`}
+                                                                            >
+                                                                                {opt}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </>
+                                        );
+                                    } catch (e) { return null; }
+                                })()}
+
+                                <div className="border-t border-gray-100" />
+
+                                {/* Experience Section */}
+                                <div className="space-y-6">
+                                    <div className="flex items-center gap-3">
+                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
+                                        <h3 className="text-lg font-inter font-bold text-gray-900">Professional Experience</h3>
+                                    </div>
+                                    <ExperienceInfo 
+                                        value={formData.experience_list} 
+                                        onChange={(val) => updateFormData({ experience_list: val })} 
+                                    />
+                                </div>
+
+                                <div className="border-t border-gray-100" />
+
+                                {/* Education Section */}
+                                <div className="space-y-6">
+                                    <div className="flex items-center gap-3">
+                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
+                                        <h3 className="text-lg font-inter font-bold text-gray-900">Academic History</h3>
+                                    </div>
+                                    <EducationInfo 
+                                        value={formData.education} 
+                                        onChange={(val) => updateFormData({ education: val })} 
+                                    />
+                                </div>
+
+                                <div className="border-t border-gray-100" />
+
+                                {/* Certifications Section */}
+                                <div className="space-y-6">
+                                    <div className="flex items-center gap-3">
+                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
+                                        <h3 className="text-lg font-inter font-bold text-gray-900">Certifications & Awards (Optional)</h3>
+                                    </div>
+                                    <CertificationInfo 
+                                        value={formData.certifications} 
+                                        onChange={(val) => updateFormData({ certifications: val })} 
+                                    />
+                                </div>
+
                                 <div className="border-t border-gray-100" />
                                 
                                 {/* Resume & Review Section */}
                                 <div className="space-y-6">
                                     <div className="flex items-center gap-3">
                                         <span className="h-6 w-1 bg-[#F97316] rounded-full" />
-                                        <h3 className="text-lg font-bold text-gray-900">Resume & Review</h3>
+                                        <h3 className="text-lg font-inter font-bold text-gray-900">Final Submission</h3>
                                     </div>
                                     <ResumeReview 
                                         formData={formData} 
@@ -365,7 +527,7 @@ export default function ApplicationPage() {
                     <div className="bg-gray-50 border-t border-gray-100 px-8 py-10 flex flex-col items-center">
                         <Button
                             onClick={handleSubmit}
-                            disabled={isSubmitting}
+                            disabled={isSubmitting || !formData.agreedToTerms}
                             className="w-full max-w-md h-14 rounded-2xl bg-gray-900 hover:bg-black text-white font-bold text-base shadow-lg transition-all hover:translate-y-[-2px] disabled:opacity-50 disabled:cursor-not-allowed group/btn"
                         >
                             {isSubmitting ? (

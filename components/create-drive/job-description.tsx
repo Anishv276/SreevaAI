@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Upload, Loader2, FileText, X, CheckCircle2, PenLine, Eye } from "lucide-react";
+import { Upload, Loader2, FileText, X, CheckCircle2, PenLine, Eye, Search, ChevronDown } from "lucide-react";
+import { createPortal } from "react-dom";
+import { useEffect } from "react";
 
 const textareaClass =
     "w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-[14px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316] hover:border-orange-300 transition-all duration-200 resize-none";
@@ -15,6 +17,103 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
             {children}
             {required && <span className="text-[#F97316] font-black">*</span>}
         </label>
+    );
+}
+
+
+const currencies = [
+    { code: "INR", symbol: "₹", name: "Indian Rupee" },
+    { code: "USD", symbol: "$", name: "US Dollar" },
+    { code: "EUR", symbol: "€", name: "Euro" },
+    { code: "GBP", symbol: "£", name: "British Pound" },
+    { code: "AUD", symbol: "A$", name: "Australian Dollar" },
+    { code: "CAD", symbol: "C$", name: "Canadian Dollar" },
+    { code: "SGD", symbol: "S$", name: "Singapore Dollar" },
+    { code: "AED", symbol: "د.إ", name: "UAE Dirham" },
+    { code: "JPY", symbol: "¥", name: "Japanese Yen" },
+    { code: "CNY", symbol: "¥", name: "Chinese Yuan" },
+    { code: "CHF", symbol: "Fr", name: "Swiss Franc" },
+    { code: "HKD", symbol: "HK$", name: "Hong Kong Dollar" },
+    { code: "NZD", symbol: "NZ$", name: "New Zealand Dollar" },
+];
+
+function CurrencySelector({ value, onChange }: { value: string; onChange: (code: string) => void }) {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState("");
+    const [rect, setRect] = useState<DOMRect | null>(null);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    const filtered = currencies.filter(c => 
+        c.code.toLowerCase().includes(search.toLowerCase()) || 
+        c.name.toLowerCase().includes(search.toLowerCase())
+    );
+
+    const handleOpen = () => {
+        if (!open && triggerRef.current) setRect(triggerRef.current.getBoundingClientRect());
+        setOpen(!open);
+        if (!open) setSearch("");
+    };
+
+    useEffect(() => {
+        if (!open) return;
+        const h = (e: MouseEvent) => {
+            if (!triggerRef.current?.contains(e.target as Node) && !dropdownRef.current?.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener("mousedown", h);
+        return () => document.removeEventListener("mousedown", h);
+    }, [open]);
+
+    const dropdown = open && rect ? (
+        <div
+            ref={dropdownRef}
+            style={{ position: "fixed", top: rect.bottom + 6, left: rect.left, width: 220, zIndex: 9999 }}
+            className="rounded-2xl border border-gray-100 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
+        >
+            <div className="p-2 border-b border-gray-50">
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                    <input 
+                        autoFocus
+                        placeholder="Search..."
+                        className="w-full h-9 pl-9 pr-4 text-xs font-bold bg-gray-50 border-none rounded-xl focus:ring-0 outline-none"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                    />
+                </div>
+            </div>
+            <div className="max-h-60 overflow-y-auto p-1">
+                {filtered.map(c => (
+                    <button
+                        key={c.code}
+                        type="button"
+                        onClick={() => { onChange(c.code); setOpen(false); }}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-orange-50 transition-colors text-left"
+                    >
+                        <div className="flex flex-col">
+                            <span className="text-[11px] font-black text-gray-900">{c.code}</span>
+                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{c.name}</span>
+                        </div>
+                        <span className="text-xs font-black text-[#F97316]">{c.symbol}</span>
+                    </button>
+                ))}
+            </div>
+        </div>
+    ) : null;
+
+    return (
+        <div className="relative">
+            <button
+                ref={triggerRef}
+                type="button"
+                onClick={handleOpen}
+                className="h-11 px-4 rounded-xl border border-gray-200 bg-gray-50/30 flex items-center gap-2 hover:bg-white hover:border-orange-200 transition-all"
+            >
+                <span className="text-[13px] font-bold text-gray-900">{value}</span>
+                <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
+            </button>
+            {typeof window !== "undefined" && createPortal(dropdown, document.body)}
+        </div>
     );
 }
 
@@ -270,14 +369,34 @@ export function JobDescription({
                                 />
                             </div>
                             <div>
-                                <FieldLabel>Salary Range</FieldLabel>
-                                <input
-                                    type="text"
-                                    placeholder="e.g. ₹12–18 LPA"
-                                    value={formData.salary || ""}
-                                    onChange={(e) => updateFormData((prev: any) => ({ ...prev, salary: e.target.value }))}
-                                    className={`${inputClass} ${isAnalyzing && !formData.salary ? "bg-orange-50/20" : ""}`}
-                                />
+                                <FieldLabel>Salary Range (LPA Inbuilt)</FieldLabel>
+                                <div className="flex items-center gap-2">
+                                    <div className="relative flex-1">
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. 12–18"
+                                            value={(formData.salary || "").split(" ")[0] || ""}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                const parts = (formData.salary || "").split(" ");
+                                                const curr = parts[1] || "INR";
+                                                updateFormData((prev: any) => ({ ...prev, salary: `${val} ${curr} LPA` }));
+                                            }}
+                                            className={inputClass}
+                                        />
+                                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-gray-300 uppercase tracking-widest pointer-events-none">
+                                            LPA
+                                        </div>
+                                    </div>
+                                    <CurrencySelector 
+                                        value={(formData.salary || "").split(" ")[1] || "INR"}
+                                        onChange={(code) => {
+                                            const parts = (formData.salary || "").split(" ");
+                                            const amount = parts[0] || "";
+                                            updateFormData((prev: any) => ({ ...prev, salary: `${amount} ${code} LPA` }));
+                                        }}
+                                    />
+                                </div>
                             </div>
                         </div>
                     </section>

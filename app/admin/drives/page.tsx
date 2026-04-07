@@ -520,30 +520,6 @@ export default function DrivesPage() {
                                 </div>
                             </div>
 
-                            {/* Kiosk link Section */}
-                            <div className="space-y-4">
-                                <div className="flex items-center gap-2 text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">
-                                    <Share2 className="h-3.5 w-3.5 text-[#F97316]" /> Kiosk Link
-                                </div>
-                                <div className="group/link relative p-4 rounded-2xl bg-[#F97316]/[0.03] border-2 border-dashed border-orange-100 hover:border-orange-200 transition-all">
-                                    <div className="flex items-center gap-4">
-                                        <div className="flex-1 font-mono text-xs text-orange-700 break-all select-all pr-12">
-                                            {`${typeof window !== 'undefined' ? window.location.origin : ''}/careers/jobs/${selectedDrive.id}`}
-                                        </div>
-                                        <button 
-                                            onClick={() => {
-                                                const link = `${window.location.origin}/careers/jobs/${selectedDrive.id}`;
-                                                navigator.clipboard.writeText(link);
-                                                setCopySuccess(true);
-                                                setTimeout(() => setCopySuccess(false), 2000);
-                                            }}
-                                            className="absolute right-4 p-2.5 rounded-xl bg-white border border-orange-100 shadow-sm text-[#F97316] hover:bg-[#F97316] hover:text-white hover:shadow-orange-500/20 active:scale-95 transition-all"
-                                        >
-                                            {copySuccess ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
 
                             {/* Job Brief */}
                             <div className="space-y-4">

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Briefcase } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export function PortalHeader() {
     return (
@@ -19,9 +20,11 @@ export function PortalHeader() {
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <div className="hidden md:flex px-3 py-1 rounded-full bg-orange-50 text-[#F97316] text-[10px] font-black uppercase tracking-widest border border-orange-100">
-                        Candidate Portal
-                    </div>
+                    <Link href="/careers">
+                        <Button variant="ghost" className="hidden md:flex h-8 px-4 rounded-full bg-orange-50 hover:bg-orange-100 text-[#F97316] text-[10px] font-black uppercase tracking-widest border border-orange-100 transition-all">
+                            Candidate Portal
+                        </Button>
+                    </Link>
 
 
                 </div>

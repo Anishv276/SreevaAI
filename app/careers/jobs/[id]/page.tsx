@@ -129,7 +129,7 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
                                             <MapPin className="h-5 w-5" />
                                         </div>
                                         <div>
-                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Work Location</p>
+                                            <p className="text-[10px] font-black text-gray-900 uppercase tracking-widest leading-none mb-1">Work Location</p>
                                             <p className="text-gray-900 font-bold">{job.location || "Remote"}</p>
                                         </div>
                                     </div>
@@ -138,7 +138,7 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
                                             <FileText className="h-5 w-5" />
                                         </div>
                                         <div>
-                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">Compensation</p>
+                                            <p className="text-[10px] font-black text-gray-900 uppercase tracking-widest leading-none mb-1">Salary Range</p>
                                             <p className="text-gray-900 font-bold">{job.salary || "Competitive"}</p>
                                         </div>
                                     </div>
@@ -176,24 +176,22 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
                                         <p className="text-gray-400 text-sm italic">Details coming soon...</p>
                                     )}
                                 </ul>
-                            </div>
-
-                            <div className="bg-gray-900 rounded-[2rem] p-8 shadow-2xl text-white relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full blur-3xl" />
-                                <div className="flex items-center gap-3 mb-8">
-                                    <div className="h-10 w-10 rounded-xl bg-white/10 text-orange-400 flex items-center justify-center border border-white/5">
+                            </div>                             <div className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-sm hover:shadow-md transition-all relative overflow-hidden group/who">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-orange-50 rounded-full blur-3xl opacity-50 group-hover/who:scale-110 transition-transform duration-700" />
+                                <div className="flex items-center gap-3 mb-8 relative z-10">
+                                    <div className="h-10 w-10 rounded-xl bg-gray-50 text-[#F97316] flex items-center justify-center border border-gray-100">
                                         <UserCircle2 className="h-5 w-5" />
                                     </div>
-                                    <h3 className="text-lg font-black text-white uppercase tracking-tight">Who you are</h3>
+                                    <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight">Who you are</h3>
                                 </div>
-                                <ul className="space-y-4">
+                                <ul className="space-y-4 relative z-10">
                                     {requirements.length > 0 ? requirements.map((item: string, idx: number) => (
-                                        <li key={idx} className="flex items-start gap-4 text-gray-300 font-medium text-sm leading-relaxed">
-                                            <div className="mt-2 h-1.5 w-1.5 rounded-full bg-orange-500 flex-shrink-0" />
+                                        <li key={idx} className="flex items-start gap-4 text-gray-600 font-medium text-sm leading-relaxed">
+                                            <div className="mt-2 h-1.5 w-1.5 rounded-full bg-orange-400 flex-shrink-0" />
                                             {item}
                                         </li>
                                     )) : (
-                                        <p className="text-gray-500 text-sm italic">Requirements to be finalized.</p>
+                                        <p className="text-gray-400 text-sm italic">Requirements to be finalized.</p>
                                     )}
                                 </ul>
                             </div>
@@ -218,25 +216,36 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
 
                         {/* Hiring Process */}
                         <section className="px-4 pt-8">
-                           <div className="rounded-[2.5rem] bg-[#111111] p-10 shadow-2xl relative overflow-hidden">
-                                <div className="absolute bottom-0 right-0 w-64 h-64 bg-orange-500/5 rounded-full blur-3xl" />
-                                <h4 className="text-xl font-black text-white mb-10 uppercase tracking-[0.2em] flex items-center gap-4">
-                                    <span className="h-8 w-1.5 bg-orange-500 rounded-full" />
+                           <div className="rounded-[2.5rem] bg-white border border-orange-100 p-10 shadow-[0_20px_50px_rgba(249,115,22,0.03)] relative overflow-hidden group">
+                                <div className="absolute bottom-0 right-0 w-64 h-64 bg-orange-50 rounded-full blur-3xl opacity-50 group-hover:scale-110 transition-transform duration-700" />
+                                <h4 className="text-xl font-black text-gray-900 mb-10 uppercase tracking-[0.2em] flex items-center gap-4 relative z-10">
+                                    <span className="h-8 w-1.5 bg-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.3)]" />
                                     OUR PROCESS
                                 </h4>
-                                <div className="flex flex-col md:flex-row gap-8 relative">
+                                <div className="flex flex-col md:flex-row items-center justify-center gap-12 md:gap-20 relative z-10 max-w-6xl mx-auto">
                                     {[
                                         { title: "Review", desc: "Expert assessment" },
                                         { title: "Voice AI", desc: "Interactive screening" },
                                         { title: "Technical", desc: "Deep dive round" },
                                         { title: "Onboarding", desc: "The final offer" }
-                                    ].map((step, i) => (
-                                        <div key={i} className="flex-1 relative group">
-                                            <div className="mb-4 h-12 w-12 rounded-2xl bg-white/5 border border-white/10 text-orange-500 flex items-center justify-center font-black text-lg transition-all group-hover:bg-orange-500 group-hover:text-white group-hover:scale-110">
+                                    ].map((step, i, arr) => (
+                                        <div key={i} className="flex flex-col items-center text-center relative group/step">
+                                            <div className="mb-6 h-14 w-14 rounded-2xl bg-orange-50 border border-orange-100 text-[#F97316] flex items-center justify-center font-black text-xl transition-all group-hover/step:bg-[#F97316] group-hover/step:text-white group-hover/step:scale-110 shadow-sm relative z-10">
                                                 {i + 1}
                                             </div>
-                                            <p className="font-black text-white text-xs uppercase tracking-widest mb-1">{step.title}</p>
-                                            <p className="text-[11px] text-gray-500 font-bold uppercase">{step.desc}</p>
+                                            <div className="space-y-1 relative z-10">
+                                                <p className="font-black text-gray-900 text-xs uppercase tracking-[0.2em]">{step.title}</p>
+                                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest whitespace-nowrap">{step.desc}</p>
+                                            </div>
+                                            
+                                            {/* Phase Transition Arrow */}
+                                            {i < arr.length - 1 && (
+                                                <div className="hidden md:flex absolute top-7 -right-12 translate-x-1/2 text-gray-200 group-hover/step:text-orange-300 transition-colors">
+                                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                                                        <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
+                                                    </svg>
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -263,46 +272,30 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
                                     </Button>
                                 ) : (
                                     <Link href={`/careers/apply/${job.id}/start`} className="block w-full">
-                                        <Button className="w-full h-16 bg-[#F97316] hover:bg-orange-600 text-white font-black text-xl rounded-2xl shadow-[0_15px_40px_rgba(249,115,22,0.3)] hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-[0.1em] italic group">
-                                            APPLY FOR ROLE
+                                        <Button className="w-full h-16 bg-[#F97316] hover:bg-orange-600 text-white font-inter font-bold text-xl rounded-2xl shadow-[0_15px_40px_rgba(249,115,22,0.3)] hover:scale-[1.02] active:scale-95 transition-all tracking-[0.02em] group shadow-orange-500/10">
+                                            Apply for role
                                             <ArrowLeft className="ml-2 h-5 w-5 rotate-180 transition-transform group-hover:translate-x-1" />
                                         </Button>
                                     </Link>
                                 )}
-
-                                <div className="grid grid-cols-2 gap-3">
-                                    <Button 
-                                        variant="outline" 
-                                        onClick={() => window.open(job.jdPreviewUrl, '_blank')}
-                                        disabled={!job.jdPreviewUrl}
-                                        className="h-14 rounded-2xl border-gray-100 text-gray-500 text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all shadow-sm"
-                                    >
-                                        <FileText className="h-4 w-4 mr-2" /> FULL JD
-                                    </Button>
-                                    
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="outline" className="h-14 rounded-2xl border-gray-100 text-gray-500 text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all shadow-sm">
-                                                <Share2 className="h-4 w-4 mr-2" /> SHARE
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="w-56 p-2 rounded-2xl border-gray-100 shadow-xl">
-                                            <DropdownMenuItem onClick={shareActions.whatsapp} className="h-12 rounded-xl flex gap-3 px-4 cursor-pointer font-bold text-[10px] uppercase tracking-widest hover:bg-orange-50"><MessageSquare className="h-4 w-4" /> WhatsApp</DropdownMenuItem>
-                                            <DropdownMenuItem onClick={shareActions.facebook} className="h-12 rounded-xl flex gap-3 px-4 cursor-pointer font-bold text-[10px] uppercase tracking-widest hover:bg-orange-50"><Facebook className="h-4 w-4" /> Facebook</DropdownMenuItem>
-                                            <DropdownMenuItem onClick={shareActions.copy} className="h-12 rounded-xl flex gap-3 px-4 cursor-pointer font-bold text-[10px] uppercase tracking-widest hover:bg-orange-50 border-t"><LinkIcon className="h-4 w-4" /> Copy Link</DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                </div>
+                                <Button 
+                                    variant="outline" 
+                                    onClick={() => window.open(job.jdPreviewUrl, '_blank')}
+                                    disabled={!job.jdPreviewUrl}
+                                    className="w-full h-14 rounded-2xl border-gray-100 text-gray-500 text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all shadow-sm"
+                                >
+                                    <FileText className="h-4 w-4 mr-2" /> FULL JD
+                                </Button>
                             </div>
 
                             <div className="pt-6 border-t border-gray-50 flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                     <div className={`h-2 w-2 rounded-full ${job.status === 'CLOSED' ? 'bg-red-500' : 'bg-green-500 animate-pulse'}`} />
-                                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                    <span className="text-[10px] font-black text-gray-900 uppercase tracking-widest">
                                         {job.status === 'CLOSED' ? 'Applications Closed' : 'Accepting Applications'}
                                     </span>
                                 </div>
-                                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                <span className="text-[10px] font-black text-gray-900 uppercase tracking-widest">
                                     {job.applicants} Applied
                                 </span>
                             </div>
@@ -319,30 +312,30 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
                                     )}
                                 </div>
                                 <div>
-                                    <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-1">Company</h4>
+                                    <h4 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-1">Company</h4>
                                     <p className="text-xl font-black text-gray-900 tracking-tight">{org.name || "Lumoscale"}</p>
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 gap-6 pt-2">
+                            <div className="grid grid-cols-1 gap-6 pt-2 border-t border-gray-50 mt-8">
                                 <div className="flex items-center justify-between pb-4 border-b border-gray-50">
                                     <div className="flex items-center gap-3">
                                         <Building2 className="h-4 w-4 text-[#F97316]" />
-                                        <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Industry</span>
+                                        <span className="text-xs font-black text-gray-900 uppercase tracking-widest">Industry</span>
                                     </div>
                                     <span className="text-xs font-bold text-gray-900">{org.industry || "Technology"}</span>
                                 </div>
                                 <div className="flex items-center justify-between pb-4 border-b border-gray-50">
                                     <div className="flex items-center gap-3">
                                         <Users2 className="h-4 w-4 text-[#F97316]" />
-                                        <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Size</span>
+                                        <span className="text-xs font-black text-gray-900 uppercase tracking-widest">Size</span>
                                     </div>
                                     <span className="text-xs font-bold text-gray-900">{org.size || "11-50 employees"}</span>
                                 </div>
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         <Globe className="h-4 w-4 text-[#F97316]" />
-                                        <span className="text-xs font-black text-gray-400 uppercase tracking-widest">Website</span>
+                                        <span className="text-xs font-black text-gray-900 uppercase tracking-widest">Website</span>
                                     </div>
                                     <a 
                                         href={org.website ? (org.website.startsWith('http') ? org.website : `https://${org.website}`) : '#'} 
@@ -354,12 +347,6 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
                                 </div>
                             </div>
 
-                            <div className="p-5 rounded-2xl bg-orange-50/50 border border-orange-100 flex gap-4">
-                                <Info className="h-5 w-5 text-[#F97316] flex-shrink-0 mt-0.5" />
-                                <p className="text-[11px] font-medium text-orange-900/70 leading-relaxed">
-                                    Our recruiting pipeline is powered by Antigravity AI, ensuring high-fidelity technical evaluation for all applicants.
-                                </p>
-                            </div>
                         </div>
                     </aside>
 

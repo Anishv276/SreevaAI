@@ -32,6 +32,8 @@ export const putObject = async (bucket: string, key: string, body: Buffer, conte
         publicUrlBase = process.env.NEXT_PUBLIC_R2_LOGOS_URL || "";
     } else if (bucketName.includes("jd")) {
         publicUrlBase = process.env.NEXT_PUBLIC_R2_JDS_URL || "";
+    } else if (bucketName.includes("certification")) {
+        publicUrlBase = process.env.NEXT_PUBLIC_R2_CERTIFICATIONS_URL || "";
     } else {
         // Default to Resumes
         publicUrlBase = process.env.NEXT_PUBLIC_R2_RESUMES_URL || "";

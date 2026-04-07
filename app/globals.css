@@ -58,6 +58,7 @@
   html {
     color-scheme: light;
     scrollbar-gutter: stable;
+    zoom: 0.9; /* Sets global zoom to 90% for a compact, professional look */
   }
 
   body {

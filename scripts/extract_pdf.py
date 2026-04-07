@@ -235,8 +235,14 @@ def compute_score(jd_data, resume_data):
         resume_technical = raw_tech
 
     raw_tools = resume_skills.get("tools", [])
+    resume_tools = []
     if raw_tools and isinstance(raw_tools[0], dict):
-        resume_tools = [s["tool"] for s in raw_tools]
+        for s in raw_tools:
+            # CONTRACT: tools with confidence="low" or tool=null are EXCLUDED
+            tool_name = s.get("tool")
+            confidence = s.get("confidence", "high")
+            if tool_name and confidence != "low":
+                resume_tools.append(tool_name)
     else:
         resume_tools = raw_tools
 
@@ -246,8 +252,16 @@ def compute_score(jd_data, resume_data):
     career_pattern = resume_data.get("career_progression", {}).get("pattern", "unknown")
     resume_red_flags = resume_data.get("red_flags", [])
 
+    has_tech = jd_data.get("has_technical_requirements", True)
+
     # ── Build normalized resume skill set ─────────────────────
     all_resume_skills = resume_technical + resume_tools
+    
+    # Add domain skills ONLY for non-technical roles as per contract
+    if not has_tech:
+        domain_skills = resume_skills.get("domain_skills", [])
+        all_resume_skills.extend(domain_skills)
+
     resume_normalized = {normalize_skill(str(s)): s for s in all_resume_skills}
 
     # ── 1. Must-have skill matching (55 pts) ──────────────────
@@ -258,6 +272,8 @@ def compute_score(jd_data, resume_data):
     missing_must = []
     total_weight = 0
     matched_weight = 0
+
+    has_tech = jd_data.get("has_technical_requirements", True)
 
     for skill, weight in jd_must_have:
         w = weight_map.get(weight, 2)
@@ -270,8 +286,12 @@ def compute_score(jd_data, resume_data):
 
     if total_weight > 0:
         skills_score = round((matched_weight / total_weight) * 55)
+    elif not has_tech:
+        # Non-technical role with no specific technical must-haves
+        skills_score = 45  # Good baseline for non-tech roles
     else:
-        skills_score = 40  # neutral if no must-haves defined
+        # Technical role but no skills extracted? That's a data gap.
+        skills_score = 30  # Baseline penalty
 
     # ── 2. Experience score (25 pts) ──────────────────────────
     exp_score = 0
@@ -603,37 +623,129 @@ def extract_data(text, type_):
     det_results = None
 
     if type_ == "JD":
-        prompt = f"""You are a senior technical recruiter extracting structured data from a Job Description.
-Your output will be used to score resumes and generate candidate evaluation reports.
-Every field must be specific, accurate, and evidence-based — pulled directly from the JD text.
+        prompt = f"""You are a senior technical recruiter and structured data engineer.
+Your job is to extract a precise, bias-free, machine-readable JSON object from a Job Description.
+This output is consumed by an automated scoring engine that matches hundreds of resumes.
+Every field you produce directly affects hiring decisions — accuracy and fairness are non-negotiable.
 
-Return JSON in this exact schema:
+════════════════════════════════════════════════
+BEFORE YOU EXTRACT — MANDATORY PRE-CHECKS
+════════════════════════════════════════════════
+
+1. SOFT SKILLS NEVER GO IN must_have OR good_to_have
+   Communication, problem-solving, teamwork, leadership, ownership, willingness to learn —
+   these are NEVER technical skills. They belong ONLY in soft_skills.
+   If a JD has no real technical must-haves → must_have = []
+   A scoring engine will try to match must_have against resumes. Soft skills WILL break scoring.
+
+2. GENDER AND BIAS NEUTRALITY
+   Strip all gendered language from extracted text:
+     "he/she" → "the candidate"
+     "guys", "rockstar", "ninja", "guru", "hustler" → remove or neutralize
+     "recent graduate" with age implication → keep as "entry-level"
+   Never infer or state gender. Never use language that implies cultural fit bias.
+
+3. LOCATION — NEVER ASSUME
+   If no city/state/country is mentioned → all location fields = null
+   Do NOT infer location from company name, language, or currency.
+   If remote=true is stated → work_type = "Remote", hybrid = false
+   If hybrid is stated → work_type = "Hybrid", remote = false
+   If neither is stated → work_type = "On-site", but remote=false, hybrid=false, city/state/country = null
+   NEVER set work_type = "On-site" and leave all location fields null without flagging it.
+
+4. EXPERIENCE — NUMBERS ONLY
+   Convert all text ranges to numbers: "2-4 years" → min_years: 2, max_years: 4
+   Fresher/entry-level/0 experience → min_years: 0, max_years: 1
+   "5+ years" → min_years: 5, max_years: null
+   If no experience mentioned → min_years: null, max_years: null
+   NEVER guess experience from seniority title alone.
+
+5. SKILL NORMALIZATION — CONSISTENT NAMES
+   Always use the canonical form:
+     React.js / ReactJS / React JS → "React"
+     Node.js / NodeJS → "Node.js"
+     Postgres / PostgreSQL / postgres → "PostgreSQL"
+     AWS / Amazon Web Services → "AWS"
+     GCP / Google Cloud / Google Cloud Platform → "GCP"
+     MS Azure / Microsoft Azure → "Azure"
+     JS / Javascript / javascript → "JavaScript"
+     TS / Typescript → "TypeScript"
+     ML / Machine Learning → "Machine Learning"
+     AI tools / artificial intelligence tools → "AI Tools"
+     n8n / N8N → "n8n"
+   When in doubt: use the official product name exactly as the vendor writes it.
+
+6. MUST-HAVE vs GOOD-TO-HAVE — STRICT CLASSIFICATION
+   must_have: ONLY skills the JD marks as required, mandatory, must have, essential.
+     weight = "critical" if mentioned 2+ times OR the role cannot function without it
+     weight = "high" if clearly required, mentioned once
+     weight = "medium" if required but a minor part of the role
+   good_to_have: ONLY skills listed as preferred, bonus, nice-to-have, plus, or advantageous.
+   If a skill is ambiguous → classify as good_to_have, never must_have.
+   If must_have ends up empty because the JD has no real technical requirements → that is correct.
+
+7. SALARY STANDARDIZATION
+   Always convert to annual base numbers in the local currency:
+     "5-10 LPA" → min: 500000, max: 1000000, currency: "INR", period: "yearly"
+     "50-70k USD" → min: 50000, max: 70000, currency: "USD", period: "yearly"
+     "₹30,000/month" → min: 360000, max: null, currency: "INR", period: "yearly"
+   If salary not mentioned → min: null, max: null, currency: null, period: null, disclosed: false
+
+8. DEAL BREAKERS — ONLY IF EXPLICIT
+   Only extract if the JD explicitly states a hard disqualifier.
+   Examples of valid deal breakers: "must be based in X city", "only Indian nationals", "no freshers"
+   DO NOT invent deal breakers from soft language like "preferred" or "ideally".
+
+9. RESPONSIBILITIES — PRESERVE EXACT TOOL NAMES
+   In responsibilities_flat, copy tool/tech names exactly as they appear in the JD.
+   In responsibilities (rich), extract skills_involved only from skills actually used in that task.
+   seniority_signal: Does this task imply junior / mid / senior level work?
+     junior = guided task, learning on the job
+     mid = independent execution, some ownership
+     senior = owns outcomes, makes decisions, influences architecture
+
+10. DO NOT HALLUCINATE
+    If a field has no data in the JD → null or []
+    Never infer company name from email domains, logos, or context clues.
+    Never fill in location from assumed country based on language or currency.
+
+════════════════════════════════════════════════
+OUTPUT SCHEMA
+════════════════════════════════════════════════
+
+Return ONLY valid JSON matching this schema exactly. No markdown. No explanation. No extra keys.
 
 {{
   "job_title": string,
   "company_name": string | null,
   "department": string | null,
+
   "work_type": "Remote" | "Hybrid" | "On-site",
   "employment_type": "Full-time" | "Part-time" | "Contract" | "Internship" | "Freelance" | null,
-  "role_context": {{
-    "seniority": "junior" | "mid" | "senior" | "lead" | "manager" | null,
-    "team_size_hint": string | null,
-    "work_style": "startup" | "enterprise" | "agency" | "unknown",
-    "ic_or_manager": "ic" | "manager" | "both" | "unknown",
-    "pace": "fast-paced" | "structured" | "unknown"
-  }},
+
   "location": {{
     "city": string | null,
     "state": string | null,
     "country": string | null,
     "remote": boolean,
-    "hybrid": boolean
+    "hybrid": boolean,
+    "location_confidence": "stated" | "inferred" | "unknown"
   }},
+
+  "role_context": {{
+    "seniority": "intern" | "junior" | "mid" | "senior" | "lead" | "manager" | null,
+    "team_size_hint": string | null,
+    "work_style": "startup" | "enterprise" | "agency" | "unknown",
+    "ic_or_manager": "ic" | "manager" | "both" | "unknown",
+    "pace": "fast-paced" | "structured" | "unknown"
+  }},
+
   "experience": {{
     "min_years": number | null,
     "max_years": number | null,
     "preferred_background": string
   }},
+
   "skills": {{
     "must_have": [
       {{
@@ -650,11 +762,14 @@ Return JSON in this exact schema:
     ],
     "soft_skills": [string]
   }},
+
   "education": {{
     "required": string | null,
     "preferred": string | null
   }},
+
   "responsibilities_flat": [string],
+
   "responsibilities": [
     {{
       "task": string,
@@ -662,13 +777,16 @@ Return JSON in this exact schema:
       "seniority_signal": "junior" | "mid" | "senior" | null
     }}
   ],
+
   "requirements": [string],
+
   "deal_breakers": [
     {{
       "condition": string,
       "reason": string
     }}
   ],
+
   "interview_signals": [
     {{
       "area": string,
@@ -676,233 +794,267 @@ Return JSON in this exact schema:
       "why_it_matters": string
     }}
   ],
+
   "salary": {{
     "min": number | null,
     "max": number | null,
     "currency": string | null,
-    "period": "yearly" | "monthly" | null
+    "period": "yearly" | "monthly" | null,
+    "disclosed": boolean
   }},
+
   "scoring_hints": {{
     "prioritize": string,
     "red_flags_to_watch": [string],
     "green_flags_to_reward": [string]
   }},
+
   "role_summary": string,
+  "has_technical_requirements": boolean,
   "keywords": [string]
 }}
 
-Extraction Rules:
-
-SKILLS:
-- must_have: Only skills explicitly required or mandatory in the JD.
-  weight "critical" = mentioned multiple times OR role cannot function without it
-  weight "high" = clearly required, mentioned once
-  weight "medium" = required but minor part of the role
-  why_needed = one line on what this skill is used for in THIS role specifically
-- good_to_have: Only skills listed as preferred, bonus, or nice-to-have.
-  context = why this would help in this role
-- soft_skills: Communication, leadership, teamwork etc. NEVER put technical tools here.
-- Normalize all skill names: "experience in React.js" → "React.js", "exp with postgres" → "PostgreSQL"
-
-WORK TYPE:
-- If remote=true and hybrid=false → "Remote"
-- If hybrid=true → "Hybrid"
-- If neither mentioned → "On-site"
-
-EXPERIENCE:
-- Convert to numbers: "2-4 years" → min_years: 2, max_years: 4
-- If fresher role → min_years: 0
-- preferred_background: one line on what kind of prior experience suits this role
-
-RESPONSIBILITIES:
-- responsibilities_flat: Plain readable strings for frontend display. Preserve all tool/tech names exactly.
-- responsibilities: Rich version with skills_involved and seniority_signal for scoring engine.
-  seniority_signal: does this task suggest junior/mid/senior level work?
-
-REQUIREMENTS:
-- Flat list of candidate-facing requirements exactly as written in JD. Keep them readable.
-
-DEAL BREAKERS:
-- Only extract if JD explicitly mentions hard disqualifiers.
-- Examples: "must have fintech experience", "only for Indian citizens", "no freshers"
-
-INTERVIEW SIGNALS:
-- Based on responsibilities and requirements, generate 3-5 areas an interviewer should probe.
-- Be specific to this role — not generic interview advice.
-
-SALARY:
-- Convert "5-10 LPA" → min: 500000, max: 1000000, currency: "INR", period: "yearly"
-- Convert "50-70k USD" → min: 50000, max: 70000, currency: "USD", period: "yearly"
-
-ROLE SUMMARY:
-- 2-3 sentences written like a senior recruiter briefing a colleague.
-- What this role actually is, what kind of person succeeds, and what the hard requirements are.
-- Do NOT copy-paste from the JD.
-
-SCORING HINTS:
-- prioritize: What matters most for THIS specific role
-- red_flags_to_watch: What in a resume should concern a reviewer
-- green_flags_to_reward: What in a resume should impress a reviewer
-
-KEYWORDS:
-- 10-15 keywords for resume matching. Focus on technical terms, domain, and role-specific language.
-
-IMPORTANT: Output ONLY valid JSON. No markdown, no explanation, no extra text.
-
+════════════════════════════════════════════════
 Job Description:
 {text}
 """
     elif type_ == "RESUME":
-        prompt = f"""You are a senior technical recruiter extracting structured data from a candidate resume.
-Your output will be used to score this candidate against a job description and generate a detailed evaluation report.
-Every field must be specific and evidence-based — pulled directly from the resume text.
-Never invent or assume information that is not present in the resume.
+        prompt = f"""You are a senior technical recruiter and structured data engineer.
+Your job is to extract a precise, bias-free, machine-readable JSON object from a candidate resume.
+This output feeds a deterministic scoring engine that matches this resume against job descriptions.
+Accuracy directly affects hiring decisions — do not guess, invent, or over-interpret.
 
-Return JSON in this exact schema:
+════════════════════════════════════════════════
+MANDATORY PRE-CHECKS — READ BEFORE EXTRACTING
+════════════════════════════════════════════════
+
+1. NEVER INVENT DATA
+   If a field has no evidence in the resume → use null or []
+   Never infer company credibility, project scale, or impact numbers that aren't written.
+   "mentioned in resume" is a valid evidence value — it signals low confidence for the scoring engine.
+
+2. SOFT SKILLS — STRICT DEFINITION
+   soft_skills accepts ONLY: communication, leadership, collaboration, teamwork, ownership,
+   problem-solving, adaptability, time management, attention to detail, critical thinking.
+   NEVER place in soft_skills:
+     - Domain skills (data analysis, lead nurturing, competitor analysis)
+     - Functional skills (workflow automation, campaign management, SEO)
+     - Technical tools of any kind
+   Domain/functional skills that don't fit technical[] or tools[] → add to a separate
+   "domain_skills" array in the skills object.
+
+3. TOOLS vs TECHNICAL — STRICT SPLIT
+   technical[]: Programming languages, frameworks, libraries ONLY.
+     Examples: Python, React, Node.js, Pandas, TensorFlow, FastAPI
+   tools[]: Platforms, SaaS apps, cloud services, databases, automation tools, BI tools.
+     Examples: n8n, Zapier, HubSpot, Notion, Power BI, AWS, PostgreSQL, Slack, Apollo
+   If a tool is listed generically (e.g. "CRM tools", "AI tools", "automation software"):
+     → Set tool name to null, add a "category" field: "CRM", "AI", "automation"
+     → evidence must note "generic mention — specific tool unknown"
+     → This signals to the scoring engine that it cannot do exact matching.
+
+4. EXPERIENCE — CALCULATE HONESTLY
+   total_years: Sum only NON-OVERLAPPING work periods.
+     If two roles run concurrently, count the overlapping months ONCE.
+     Algorithm:
+       1. List all (start_date, end_date) pairs as month offsets from earliest start.
+       2. Merge overlapping intervals.
+       3. Sum the merged durations. Convert to years (round to 1 decimal).
+   career_start_year: Year of the earliest role, internship, or freelance gig in the resume.
+   seniority_level: Infer strictly from EVIDENCE, not job title alone.
+     junior  = 0–2 years, individual contributor, guided or structured tasks
+     mid     = 2–5 years, independent execution, some ownership of outcomes
+     senior  = 5+ years, owns outcomes end-to-end, influences team/architecture
+     lead    = leads others, directly manages or mentors team members
+     manager = direct management responsibility stated explicitly
+   NEVER assign "mid" or above to a fresh graduate with <2 years total experience.
+
+5. TIMELINE CONSISTENCY
+   For each role, if start_year = end_year (same year), duration_months must be ≤ 11.
+   If is_current = true, compute duration_months up to the current extraction date.
+   Flag any role where end_year < start_year as a data error in red_flags.
+   Flag overlapping roles explicitly in career_progression.assessment.
+
+6. IMPACT SIGNALS — EXTRACT, NEVER INVENT
+   Extract only numbers, percentages, scale indicators explicitly written in the resume.
+   Examples of valid impact: "reduced load time by 40%", "served 10k daily users", "3x revenue growth"
+   If none found → impact_signals: [] (correct — do NOT write generic phrases like "improved efficiency")
+   The scoring engine treats empty impact_signals as a signal of low evidence quality.
+
+7. TECHNOLOGIES IN PROJECTS — ALWAYS EXTRACT
+   For every project, extract technologies from the description text even if not in a separate list.
+   Example: "Built automation to send Slack messages" → technologies: ["Slack", "automation"]
+   Never leave technologies: [] if the project description names any tool or technology.
+
+8. RED FLAGS — DETECT THESE SPECIFICALLY
+   Check for and report every applicable flag:
+   - "overlapping_roles": Two or more roles with concurrent date ranges
+   - "job_hopping": 2+ roles under 10 months each (excluding internships)
+   - "employment_gap": Unexplained gap of 6+ months between roles
+   - "vague_descriptions": Role has no specifics — only generic duties, no tool names, no outcomes
+   - "no_progression": Same seniority level across 3+ roles at different companies
+   - "generic_skills": Skills listed that are categories not specific tools (e.g. "CRM tools", "AI tools")
+   - "title_inflation": Job title implies seniority (Senior, Lead, Director) not supported by experience length
+   Severity:
+     high   = likely dealbreaker for most roles (overlapping roles, title inflation with <1yr exp)
+     medium = worth probing in interview (vague descriptions, job hopping, generic skills)
+     low    = minor concern (single short-tenure role, missing impact data)
+
+9. SKILL NORMALIZATION
+   Use canonical names:
+     React.js / ReactJS → "React"
+     Node.js / NodeJS → "Node.js"
+     n8n / N8N → "n8n"
+     Power BI / PowerBI → "Power BI"
+     Google Sheets / GSheets → "Google Sheets"
+     Postgres / PostgreSQL → "PostgreSQL"
+   Never normalize to a generic category. "HubSpot" stays "HubSpot", not "CRM".
+
+10. BIAS NEUTRALITY
+    Use "they/them" or candidate's stated name — never assume gender.
+    Do not comment on age, nationality, institution prestige, or personal details.
+    candidate_summary must describe skills and experience only — not personal attributes.
+
+════════════════════════════════════════════════
+OUTPUT SCHEMA
+════════════════════════════════════════════════
+
+Return ONLY valid JSON matching this schema exactly. No markdown. No explanation. No extra keys.
 
 {{
   "full_name": string,
   "email": string | null,
   "phone": string | null,
+
   "location": {{
     "city": string | null,
     "state": string | null,
     "country": string | null
   }},
+
   "current_company": string | null,
   "current_role": string | null,
+  "canonical_role_type": string | null,
+  // Normalized role category for scoring: e.g. "Software Engineer", "Data Analyst",
+  // "GTM / Growth Engineer", "Product Manager", "DevOps Engineer"
+  // Use a standard role family — not the exact resume title
+
   "experience": {{
     "total_years": number | null,
+    // NON-OVERLAPPING sum. See Pre-check #4.
     "career_start_year": number | null,
-    "seniority_level": "junior" | "mid" | "senior" | "lead" | "manager" | null
+    "seniority_level": "intern" | "junior" | "mid" | "senior" | "lead" | "manager" | null,
+    "has_concurrent_roles": boolean,
+    // true if any two roles in work_history overlap in time
+    "concurrent_roles_note": string | null
+    // Describe which roles overlap and by how many months, if applicable
   }},
+
   "work_history": [
     {{
       "company": string,
       "role": string,
+      "company_type": "startup" | "enterprise" | "agency" | "freelance" | "unknown",
+      // Infer from context. "unknown" if insufficient signal.
       "duration_months": number | null,
       "start_year": number | null,
       "end_year": number | null,
       "is_current": boolean,
       "what_they_built": [string],
+      // OUTCOMES and DELIVERABLES — not tool lists.
+      // Bad:  "built systems using Notion and CRM tools"
+      // Good: "built automated lead qualification pipeline", "created Slack reporting dashboard"
       "technologies_used": [string],
+      // Specific tool and tech names only. Canonical form. No categories.
       "impact_signals": [string],
-      "seniority_signal": "junior" | "mid" | "senior" | null
+      // Only numbers and outcomes explicitly stated. [] if none found.
+      "seniority_signal": "intern" | "junior" | "mid" | "senior" | null
+      // Does the WORK DESCRIBED match this level — not the job title.
     }}
   ],
+
   "skills": {{
     "technical": [
       {{
-        "skill": string,
-        "evidence": string,
+        "skill": string,           // canonical name
+        "evidence": string,        // company or project name where used
         "years_of_use": number | null
       }}
     ],
     "tools": [
       {{
-        "tool": string,
-        "evidence": string
+        "tool": string | null,     // specific tool name. null if only category known.
+        "category": string | null, // e.g. "CRM", "AI", "automation" — only if tool is null
+        "evidence": string,        // company/project or "mentioned in resume" if no context
+        "confidence": "high" | "medium" | "low"
+        // high   = named + used in a specific role
+        // medium = named but no role/project context
+        // low    = generic category mention only
       }}
     ],
+    "domain_skills": [string],
+    // Functional competencies that are NOT soft skills and NOT specific tools.
+    // Examples: "lead generation", "campaign analytics", "GTM strategy", "data analysis",
+    //           "workflow automation", "SEO", "content marketing"
+
     "soft_skills": [string]
+    // ONLY: communication, leadership, collaboration, ownership, problem-solving, etc.
+    // See Pre-check #2 for full rules.
   }},
+
   "education": [
     {{
-      "degree": string,
+      "degree": string | null,
       "field": string | null,
       "institution": string | null,
-      "year": number | null
+      "year": number | null,
+      "type": "degree" | "diploma" | "certification" | "course" | "school"
     }}
   ],
+
   "projects": [
     {{
       "name": string | null,
       "description": string,
+      // What was built and what problem it solved. Specific.
       "technologies": [string],
+      // Extract from description text if not listed explicitly. Never leave [] if tools are named.
       "impact": string | null,
+      // Only if explicitly stated. null otherwise.
       "scale": string | null
+      // Only if explicitly stated. null otherwise.
     }}
   ],
+
   "red_flags": [
     {{
       "flag": string,
+      // One of: overlapping_roles | job_hopping | employment_gap | vague_descriptions |
+      //         no_progression | generic_skills | title_inflation | skill_mismatch | data_error
       "severity": "high" | "medium" | "low",
       "detail": string
+      // Specific — name companies, dates, or skills involved. No generic language.
     }}
   ],
+
   "career_progression": {{
     "pattern": "growing" | "lateral" | "declining" | "mixed" | "early-career" | "unknown",
     "assessment": string
+    // 1–2 sentences. Name actual companies and role types. Note overlaps or gaps if present.
   }},
+
   "candidate_summary": string,
+  // 2–3 sentences written like a recruiter briefing a colleague.
+  // Must name: specific tools/skills, at least one company, and the domain they work in.
+  // Must state their actual seniority level based on evidence — not their title.
+  // Bias-neutral. No gendered language.
+  // Do NOT copy their resume objective or summary section.
+
   "keywords": [string]
+  // 10–15 keywords for JD matching. Canonical names. No categories.
 }}
 
-Extraction Rules:
-
-EXPERIENCE:
-- total_years: Calculate from career_start_year to now if not explicitly stated. Round to 1 decimal.
-- career_start_year: Year of first job or internship found in resume.
-- seniority_level: Infer from role titles, responsibilities, and years — do not just use title.
-  junior = 0-2 years, individual contributor, guided work
-  mid = 2-5 years, independent execution, some ownership
-  senior = 5+ years, owns outcomes, influences decisions
-  lead/manager = leads a team or function
-
-WORK HISTORY:
-- Extract every role mentioned, most recent first.
-- what_they_built: What did they actually create, build, or deliver? Be specific. Preserve tool and tech names.
-- impact_signals: Numbers, scale, outcomes if mentioned (e.g. "reduced load time by 40%", "handled 1M requests/day").
-  If no impact mentioned → empty array, do NOT invent numbers.
-- technologies_used: Only tools/tech explicitly mentioned for this role.
-- duration_months: Calculate from dates if provided. If "Present" → calculate to current month.
-- seniority_signal: Does the work described sound junior, mid, or senior level?
-
-SKILLS:
-- technical: Languages, frameworks, libraries only.
-  evidence = which company or project they used this skill at. If unclear → "mentioned in resume"
-  years_of_use = estimate from work history. If cannot determine → null
-- tools: Software, platforms, SaaS tools, cloud services, databases.
-  evidence = where they used it
-- soft_skills: ONLY genuine soft skills — communication, leadership, problem-solving etc.
-  NEVER put technical tools, platforms, or domain knowledge here.
-  If you are unsure whether something is a soft skill → put it in tools instead.
-
-EDUCATION:
-- Extract all degrees, certifications, and courses mentioned.
-- If only certification and no degree → still extract.
-
-PROJECTS:
-- description: What was built and what problem it solved. Be specific.
-- impact: Measurable outcome if mentioned. If not mentioned → null. Do NOT invent.
-- scale: Users, requests, data volume if mentioned. If not mentioned → null.
-
-RED FLAGS — extract only if genuinely present:
-- "job_hopping": Multiple jobs under 12 months each with no explanation
-- "gap": Unexplained employment gap over 6 months
-- "vague_descriptions": Roles with no specifics — only generic duties listed
-- "no_progression": Same role/level across multiple companies over many years
-- "skill_mismatch": Skills listed don't align with any work history
-- severity: high = likely dealbreaker, medium = worth probing, low = minor concern
-
-CAREER PROGRESSION:
-- pattern: Does the career show growth, lateral moves, or decline in seniority?
-- assessment: One sentence on what the career arc looks like.
-
-CANDIDATE SUMMARY:
-- 2-3 sentences written like a recruiter briefing a colleague.
-- What kind of professional is this person, what have they built, what level are they at.
-- Be specific — name actual companies, tools, domains from the resume.
-- Do NOT copy-paste from the resume's own summary section.
-
-KEYWORDS:
-- 10-15 keywords for JD matching. Focus on technical skills, domain, tools, and role types.
-
-IMPORTANT:
-- Never invent impact numbers, companies, or skills not present in the resume.
-- If a field has no data → use null or empty array, never guess.
-- Output ONLY valid JSON. No markdown, no explanation, no extra text.
-
+════════════════════════════════════════════════
 Resume:
 {text}"""
     elif type_ == "SCORE":

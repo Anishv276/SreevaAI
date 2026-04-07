@@ -118,33 +118,10 @@ export default function AiChatJdPage() {
                 }
 
                 setGeneratedJd(data);
-                
-                const jdSummary = `<strong>AI SYNTHESIS COMPLETE:</strong> I've architected a full Job Description for ${data.job_title}.
-
-<strong>CORE DETAILS:</strong>
-<strong>Role Name:</strong> ${data.role_name}
-<strong>Department:</strong> ${data.department}
-<strong>Experience:</strong> ${data.experience}
-<strong>Salary:</strong> ${data.salary}
-<strong>Mode:</strong> ${data.work_mode} (${data.employment_type})
-
-<strong>IMPACT DESCRIPTION:</strong>
-${data.description}
-
-<strong>RESPONSIBILITIES:</strong>
-${data.responsibilities.slice(0, 3).map((r: string) => `• ${r}`).join("\n")}
-
-<strong>CANDIDATE REQUIREMENTS:</strong>
-${data.candidate_requirements.slice(0, 3).map((req: string) => `• ${req}`).join("\n")}
-
-<strong>KEY SKILLS:</strong>
-• ${data.technical_skills.join(", ")}
-
-Does this configuration look correct, or would you like me to adjust any specific fields?`;
 
                 setMessages(prev => prev.map(m => m.id === thinkingMsgId ? { 
                     ...m, 
-                    content: jdSummary, 
+                    content: "", 
                     status: "done",
                     data: data
                 } : m));
@@ -411,39 +388,140 @@ Does this configuration look correct, or would you like me to adjust any specifi
                                     </div>
                                 ) : (
                                     <div className="space-y-4 w-full">
-                                        <div 
-                                            className={cn(
-                                                "p-7 rounded-[2.5rem] text-[15px] leading-relaxed transition-all duration-500",
-                                                m.role === "user" 
-                                                    ? "bg-gray-900 text-white rounded-tr-none font-bold shadow-2xl" 
-                                                    : "bg-white text-gray-800 rounded-tl-none border border-gray-100 shadow-xl shadow-gray-200/20"
-                                            )}
-                                            dangerouslySetInnerHTML={{ __html: m.content.replace(/\n/g, '<br />') }}
-                                        />
+                                        {/* Regular text message */}
+                                        {m.content && (
+                                            <div 
+                                                className={cn(
+                                                    "p-7 rounded-[2.5rem] text-[15px] leading-relaxed transition-all duration-500",
+                                                    m.role === "user" 
+                                                        ? "bg-gray-900 text-white rounded-tr-none font-bold shadow-2xl" 
+                                                        : "bg-white text-gray-800 rounded-tl-none border border-gray-100 shadow-xl shadow-gray-200/20"
+                                                )}
+                                                dangerouslySetInnerHTML={{ __html: m.content.replace(/\n/g, '<br />') }}
+                                            />
+                                        )}
 
-                                        {m.data && (
-                                            <div className="animate-in-slide-up pl-4 pt-2 flex flex-wrap gap-3">
-                                                <button 
-                                                    onClick={() => handleUseJd(m.data)}
-                                                    className="h-11 px-8 rounded-xl text-white font-bold text-[10px] uppercase tracking-widest shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-3"
-                                                    style={{
-                                                        background: "linear-gradient(135deg, #F97316, #ea6608)",
-                                                        boxShadow: "0 10px 20px rgba(249,115,22,0.2)"
-                                                    }}
-                                                >
-                                                    <Rocket className="h-4 w-4" />
-                                                    <span>Add to Drive</span>
-                                                    <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                                                </button>
+                                        {/* Premium JD Card */}
+                                        {m.data && m.data.job_title !== "INCOMPLETE_SPECIFICATIONS" && (
+                                            <div className="bg-white rounded-3xl border border-gray-100 shadow-2xl shadow-gray-200/30 overflow-hidden w-full animate-in-fade">
+                                                {/* Card Header */}
+                                                <div className="px-8 py-7 border-b border-gray-50" style={{ background: "linear-gradient(135deg, #fff7ed 0%, #fff 60%)" }}>
+                                                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                                                        <div>
+                                                            <p className="text-[10px] font-black text-orange-400 uppercase tracking-[0.3em] mb-2">Architect Complete</p>
+                                                            <h3 className="text-2xl font-black text-gray-900 tracking-tight leading-none">{m.data.job_title}</h3>
+                                                            <p className="text-sm font-bold text-gray-400 mt-1">{m.data.role_name} · {m.data.department}</p>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-2 mt-1">
+                                                            <span className="px-4 py-2 rounded-full bg-orange-100 text-orange-700 text-[11px] font-black uppercase tracking-widest">{m.data.work_mode}</span>
+                                                            <span className="px-4 py-2 rounded-full bg-gray-100 text-gray-600 text-[11px] font-black uppercase tracking-widest">{m.data.employment_type}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-6 mt-5">
+                                                        <div>
+                                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Experience</p>
+                                                            <p className="text-[15px] font-black text-gray-900 mt-0.5">{m.data.experience}</p>
+                                                        </div>
+                                                        <div className="w-px bg-gray-100" />
+                                                        <div>
+                                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Compensation</p>
+                                                            <p className="text-[15px] font-black text-gray-900 mt-0.5">{m.data.salary}</p>
+                                                        </div>
+                                                        {m.data.location && (<>
+                                                            <div className="w-px bg-gray-100" />
+                                                            <div>
+                                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Location</p>
+                                                                <p className="text-[15px] font-black text-gray-900 mt-0.5">{m.data.location}</p>
+                                                            </div>
+                                                        </>)}
+                                                    </div>
+                                                </div>
 
-                                                <button 
-                                                    onClick={() => handleDownloadPdf(m.data)}
-                                                    className="h-11 px-8 rounded-xl border-2 border-gray-900 text-gray-900 font-bold text-[10px] uppercase tracking-widest transition-all hover:bg-gray-900 hover:text-white active:scale-95 flex items-center gap-3"
-                                                >
-                                                    <FileText className="h-4 w-4" />
-                                                    <span>Download PDF</span>
-                                                </button>
+                                                {/* Executive Summary */}
+                                                <div className="px-8 py-6 border-b border-gray-50">
+                                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-3">Executive Summary</p>
+                                                    <p className="text-[14px] text-gray-600 leading-relaxed font-medium">{m.data.description}</p>
+                                                </div>
+
+                                                {/* Responsibilities */}
+                                                {m.data.responsibilities?.length > 0 && (
+                                                    <div className="px-8 py-6 border-b border-gray-50">
+                                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4">Key Responsibilities</p>
+                                                        <ul className="space-y-3">
+                                                            {m.data.responsibilities.map((r: string, i: number) => (
+                                                                <li key={i} className="flex gap-3 text-[13px] text-gray-700 font-medium leading-relaxed">
+                                                                    <span className="h-5 w-5 rounded-full bg-orange-50 border border-orange-100 text-orange-500 text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">{i+1}</span>
+                                                                    {r}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+
+                                                {/* Technical Skills */}
+                                                {m.data.technical_skills?.length > 0 && (
+                                                    <div className="px-8 py-6 border-b border-gray-50">
+                                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4">Required Skills</p>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {m.data.technical_skills.map((s: string, i: number) => (
+                                                                <span key={i} className="px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-100 text-[12px] font-bold text-gray-600">{s}</span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Candidate Requirements */}
+                                                {m.data.candidate_requirements?.length > 0 && (
+                                                    <div className="px-8 py-6 border-b border-gray-50">
+                                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4">Candidate Profile</p>
+                                                        <ul className="space-y-2.5">
+                                                            {m.data.candidate_requirements.map((req: string, i: number) => (
+                                                                <li key={i} className="flex gap-3 text-[13px] text-gray-700 font-medium leading-relaxed">
+                                                                    <span className="text-orange-400 font-black mt-0.5">•</span>
+                                                                    {req}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+
+                                                {/* Perks */}
+                                                {m.data.perks?.length > 0 && (
+                                                    <div className="px-8 py-6 border-b border-gray-50">
+                                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4">Perks & Benefits</p>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {m.data.perks.map((p: string, i: number) => (
+                                                                <span key={i} className="px-4 py-2 rounded-full bg-emerald-50 border border-emerald-100 text-[11px] font-bold text-emerald-700">{p}</span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Footer CTA */}
+                                                <div className="px-8 py-5 bg-gray-50/50 flex flex-wrap gap-3">
+                                                    <button 
+                                                        onClick={() => handleUseJd(m.data)}
+                                                        className="h-11 px-8 rounded-xl text-white font-bold text-[10px] uppercase tracking-widest shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-3"
+                                                        style={{ background: "linear-gradient(135deg, #F97316, #ea6608)", boxShadow: "0 10px 20px rgba(249,115,22,0.2)" }}
+                                                    >
+                                                        <Rocket className="h-4 w-4" />
+                                                        <span>Add to Drive</span>
+                                                        <ChevronRight className="h-4 w-4" />
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleDownloadPdf(m.data)}
+                                                        className="h-11 px-8 rounded-xl border-2 border-gray-200 text-gray-600 font-bold text-[10px] uppercase tracking-widest transition-all hover:border-gray-900 hover:text-gray-900 active:scale-95 flex items-center gap-3"
+                                                    >
+                                                        <FileText className="h-4 w-4" />
+                                                        <span>Download PDF</span>
+                                                    </button>
+                                                </div>
                                             </div>
+                                        )}
+
+                                        {/* Legacy action buttons fallback for non-JD data messages */}
+                                        {m.data && m.data.job_title === "INCOMPLETE_SPECIFICATIONS" && (
+                                            <div className="pl-4 pt-2"></div>
                                         )}
                                     </div>
                                 )}

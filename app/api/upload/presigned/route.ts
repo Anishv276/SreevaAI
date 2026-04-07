@@ -22,19 +22,28 @@ export async function POST(request: Request) {
         
         // Pick BUCKET and PREFIX based on TYPE
         const isJD = type === "JD";
+        const isCert = type === "CERTIFICATION";
+        
         const bucket = isJD 
             ? (process.env.R2_JDS_BUCKET || "jds")
-            : (process.env.R2_RESUMES_BUCKET || "resumes");
+            : isCert
+                ? (process.env.R2_CERTIFICATIONS_BUCKET || "certifications")
+                : (process.env.R2_RESUMES_BUCKET || "resumes");
         
-        const prefix = isJD ? "jds/" : "resumes/";
+        const prefix = isJD ? "jds/" : isCert ? "certifications/" : "resumes/";
         const key = `${prefix}drive_${driveId || 'unknown'}/${uniqueId}_${safeFileName}`;
 
         const uploadUrl = await getPresignedUploadUrl(bucket, key, fileType);
         
         // Pick PUBLIC DOMAIN based on TYPE
-        const publicUrlBase = isJD 
-            ? (process.env.NEXT_PUBLIC_R2_JDS_URL || "")
-            : (process.env.NEXT_PUBLIC_R2_RESUMES_URL || "");
+        let publicUrlBase = "";
+        if (isJD) {
+            publicUrlBase = process.env.NEXT_PUBLIC_R2_JDS_URL || "";
+        } else if (isCert) {
+            publicUrlBase = process.env.NEXT_PUBLIC_R2_CERTIFICATIONS_URL || "";
+        } else {
+            publicUrlBase = process.env.NEXT_PUBLIC_R2_RESUMES_URL || "";
+        }
             
         const publicUrl = `${publicUrlBase.replace(/\/$/, '')}/${key}`;
 

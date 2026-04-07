@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
-// import { activeDrivesData } from "@/lib/mock-data"; 
 
 // Define the Job type
 export type Job = {
@@ -13,10 +12,10 @@ export type Job = {
     applicants: number;
     status: string;
     daysLeft: number;
-    // Add other fields as needed for the full job description
     description?: string;
     salary?: string;
     type?: string;
+    registrationFields?: string;
     createdAt: string;
 };
 

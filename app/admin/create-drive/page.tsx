@@ -252,7 +252,8 @@ function CreateDriveForm() {
                     const skills = extracted.skills;
                     const salary = extracted.salary;
 
-                    // Individual Skill Mapping (extracting 'skill' from new object schema)
+                    // ── SKILLS MAPPING ─────────────────────────
+                    // Extract 'skill' string from new object schema
                     const mustHaveArr = Array.isArray(skills?.must_have) 
                         ? skills.must_have.map((s: any) => typeof s === 'object' ? s.skill : s) 
                         : [];
@@ -261,24 +262,34 @@ function CreateDriveForm() {
                         : [];
                     const allSkills = [...mustHaveArr, ...goodToHaveArr].filter(Boolean).join(", ");
 
-                    // Summary/Description mapping
+                    // ── DESCRIPTION MAPPING ─────────────────────
                     const desc = extracted.role_summary || extracted.summary || extracted.description || extracted.job_description || text || prev.description;
 
-                    // Experience string mapping
-                    const minExp = experience?.min_years ?? experience?.min;
-                    const maxExp = experience?.max_years ?? experience?.max;
-                    const expText = (typeof minExp === 'number') 
-                        ? `${minExp}${maxExp ? `-${maxExp}` : "+"} years` 
-                        : prev.experience;
+                    // ── EXPERIENCE MAPPING ──────────────────────
+                    // Convert numeric years to readable string
+                    const minExp = experience?.min_years;
+                    const maxExp = experience?.max_years;
+                    let expText = prev.experience;
+                    if (typeof minExp === 'number') {
+                        expText = `${minExp}${maxExp ? `–${maxExp}` : "+"}`;
+                    }
 
-                    // Salary mapping
+                    // ── SALARY MAPPING ──────────────────────────
+                    // Convert raw numbers (500000) back to LPA (5) for the UI if possible
+                    // Or just use a clean string. The user wants "{amount} {currency} LPA"
                     const salaryMin = salary?.min;
                     const salaryMax = salary?.max;
-                    const salaryText = (typeof salaryMin === 'number')
-                        ? `${salary.currency || "₹"}${salaryMin}${salaryMax ? ` - ${salaryMax}` : ""} ${salary.period || ""}`
-                        : prev.salary;
+                    const currency = salary?.currency || "INR";
+                    let salaryText = prev.salary;
 
-                    // Responsibilities & Requirements mapping
+                    if (typeof salaryMin === 'number') {
+                        // Convert to LPA if it's a large number, or keep if already small
+                        const minLPA = salaryMin > 1000 ? (salaryMin / 100000).toFixed(1).replace(/\.0$/, "") : salaryMin;
+                        const maxLPA = salaryMax ? (salaryMax > 1000 ? (salaryMax / 100000).toFixed(1).replace(/\.0$/, "") : salaryMax) : null;
+                        salaryText = `${minLPA}${maxLPA ? `–${maxLPA}` : ""} ${currency} LPA`;
+                    }
+
+                    // ── RESPONSIBILITIES & REQUIREMENTS ──────────
                     // Use new 'responsibilities_flat' if available
                     const respArr = extracted.responsibilities_flat || extracted.responsibilities;
                     const resp = Array.isArray(respArr) 
@@ -290,13 +301,15 @@ function CreateDriveForm() {
 
                     return {
                         ...prev,
-                        title: extracted.job_title || prev.title || "",
+                        title: `${extracted.job_title || prev.role || "New"} Recruitment Drive`,
+                        role: extracted.job_title || prev.role || "",
                         description: desc,
                         skills: allSkills || prev.skills,
                         salary: salaryText,
                         experience: expText,
                         department: extracted.department || prev.department,
                         workMode: extracted.work_type || prev.workMode,
+                        employmentType: extracted.employment_type || prev.employmentType,
                         responsibilities: resp,
                         requirements: req,
                         extractedDetails: extracted, 
@@ -794,6 +807,7 @@ function CreateDriveForm() {
             {showCandidatePreview && (
                 <CandidatePreview 
                     formData={formData} 
+                    customFields={customFields}
                     regFieldCount={customFields.length + 6}
                     onClose={() => setShowCandidatePreview(false)}
                 />

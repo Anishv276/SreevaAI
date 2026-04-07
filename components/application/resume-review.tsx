@@ -25,24 +25,6 @@ export function ResumeReview({
 }: ResumeReviewProps) {
     return (
         <div className="space-y-12 animate-in-fade">
-            <div className="space-y-6">
-                <div className="flex items-center gap-4">
-                    <span className="h-2 w-2 rounded-full bg-[#F97316] shadow-[0_0_10px_rgba(249,115,22,0.4)]" />
-                    <p className="text-[11px] font-black text-gray-500 uppercase tracking-[0.2em]">Profile Authentication</p>
-                </div>
-            </div>
-
-            <div className="space-y-4">
-                <Label htmlFor="coverletter" className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">Cover Letter / Message (Optional)</Label>
-                <textarea
-                    id="coverletter"
-                    value={formData.coverLetter || ""}
-                    onChange={(e) => updateFormData({ coverLetter: e.target.value })}
-                    className="min-h-[150px] w-full rounded-[2rem] border-gray-100 bg-gray-50/30 px-6 py-4 text-sm font-medium transition-all focus:bg-white focus:border-[#F97316] focus:ring-4 focus:ring-orange-500/10 placeholder:text-gray-300 outline-none"
-                    placeholder="Tell us why you're a perfect fit for this role..."
-                />
-            </div>
-
             <div className="flex items-start space-x-3 p-6 rounded-2xl bg-gray-50/50 border border-gray-100 transition-all hover:bg-orange-50/20 group/terms">
                 <Checkbox 
                     id="terms" 

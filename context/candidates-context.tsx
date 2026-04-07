@@ -45,6 +45,9 @@ export type Candidate = {
     noticePeriod?: string;
     coverLetter?: string;
     structuredResume?: any;
+    education?: any[];
+    experience_list?: any[];
+    certifications?: any[];
 };
 
 interface Pagination {

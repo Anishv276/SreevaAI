@@ -20,7 +20,7 @@ interface RegistrationProps {
 export function RegistrationForm({ customFields, setCustomFields }: RegistrationProps) {
 
     const addField = () =>
-        setCustomFields(prev => [...prev, { id: Date.now(), label: "", type: "Text", required: false }]);
+        setCustomFields(prev => [...prev, { id: Date.now(), label: "", type: "Short", required: false }]);
 
     const removeField = (id: number) =>
         setCustomFields(prev => prev.filter(f => f.id !== id));
@@ -82,8 +82,9 @@ export function RegistrationForm({ customFields, setCustomFields }: Registration
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                <SelectItem value="Text">Short Text</SelectItem>
-                                                <SelectItem value="Long Text">Long Text</SelectItem>
+                                                <SelectItem value="Short">Short Text</SelectItem>
+                                                <SelectItem value="Long">Long Text</SelectItem>
+                                                <SelectItem value="Url">URL</SelectItem>
                                                 <SelectItem value="File">File Upload</SelectItem>
                                                 <SelectItem value="Yes/No">Yes/No</SelectItem>
                                             </SelectContent>

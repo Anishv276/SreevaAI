@@ -1,6 +1,7 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ResumeUpload } from "./resume-upload";
+import { PhoneInput } from "./phone-input";
 import { cn } from "@/lib/utils";
 
 interface PersonalInfoProps {
@@ -56,7 +57,7 @@ export function PersonalInfo({
 
             <div className="flex items-center gap-4">
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-100 to-transparent" />
-                <span className="text-[10px] font-black text-gray-300 uppercase tracking-[0.3em]">Personal Details</span>
+                <span className="text-[10px] font-inter font-black text-black uppercase tracking-[0.3em]">Personal Details</span>
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent via-gray-100 to-transparent" />
             </div>
 
@@ -86,14 +87,11 @@ export function PersonalInfo({
 
             <div className="grid gap-8 md:grid-cols-2">
                 <div className="space-y-3">
-                    <Label htmlFor="phone" className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">Phone Number *</Label>
-                    <Input
-                        id="phone"
-                        type="tel"
-                        placeholder="+1 (555) 000-0000"
+                    <Label htmlFor="phone" className="text-[11px] font-inter font-black text-gray-500 uppercase tracking-widest ml-1">Phone Number *</Label>
+                    <PhoneInput
                         value={formData.phone}
-                        onChange={(e) => updateFormData({ phone: e.target.value })}
-                        className={cn(inputClass, isAnalyzing && !formData.phone && "bg-orange-50/50")}
+                        onChange={(val) => updateFormData({ phone: val })}
+                        className={cn(isAnalyzing && !formData.phone && "bg-orange-50/50")}
                     />
                 </div>
                 <div className="space-y-3">

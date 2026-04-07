@@ -19,39 +19,28 @@ import { useRef } from "react";
 
 const Plyr = dynamic(() => import("plyr-react").then((mod) => mod.Plyr), { ssr: false });
 
-/* ── Circular score ring ─────────────────────────── */
-function ScoreRing({ score }: { score: number }) {
-    const radius = 52;
-    const circumference = 2 * Math.PI * radius;
-    const progress = (score / 100) * circumference;
-    const color = score >= 80 ? "#22C55E" : score >= 50 ? "#F97316" : "#EF4444";
-    const label = score >= 80 ? "Excellent" : score >= 50 ? "Good Match" : "Weak Match";
-
+/* ── Premium Score Indicator ─────────────────────────── */
+function ScoreIndicator({ score, status }: { score: number, status: string }) {
+    const isHigh = score >= 80;
+    const isMid = score >= 50;
+    const colorClass = isHigh ? "text-green-600 bg-green-50 border-green-100" : isMid ? "text-orange-600 bg-orange-50 border-orange-100" : "text-red-600 bg-red-50 border-red-100";
+    const label = isHigh ? "Executive Match" : isMid ? "Strong Candidate" : "Mixed Alignment";
+    
     return (
-        <div className="flex flex-col items-center gap-4">
-            <div className="relative h-36 w-36 flex items-center justify-center">
-                <svg className="absolute inset-0 -rotate-90" viewBox="0 0 120 120" fill="none">
-                    <circle cx="60" cy="60" r={radius} stroke="#F3F4F6" strokeWidth="10" />
-                    <circle
-                        cx="60" cy="60" r={radius}
-                        stroke={color}
-                        strokeWidth="10"
-                        strokeLinecap="round"
-                        strokeDasharray={circumference}
-                        strokeDashoffset={circumference - progress}
-                        style={{ filter: `drop-shadow(0 0 8px ${color}66)`, transition: "stroke-dashoffset 1s ease" }}
-                    />
-                </svg>
-                <div className="text-center z-10">
-                    <span className="text-4xl font-black text-gray-900 leading-none">{score}</span>
-                    <span className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">/ 100</span>
+        <div className="flex items-center gap-4 animate-in fade-in zoom-in duration-700" style={{ fontFamily: 'Inter, sans-serif' }}>
+            <div className="flex flex-col items-end gap-1">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{label}</p>
+                <div className={cn("px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border", colorClass)}>
+                    {status}
                 </div>
             </div>
-            <div className={cn(
-                "px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest shadow-sm",
-                score >= 80 ? "bg-green-50 text-green-700" : score >= 50 ? "bg-orange-50 text-[#F97316]" : "bg-red-50 text-red-600"
-            )}>
-                {label}
+            <div className="h-16 w-[1px] bg-gray-100 mx-1" />
+            <div className="flex flex-col items-center justify-center bg-gray-50/50 rounded-2xl p-3 border border-gray-100 shadow-sm min-w-[80px]">
+                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">SCORE</span>
+                <div className="flex items-baseline gap-0.5">
+                    <span className="text-3xl font-black text-gray-900 leading-none">{score}</span>
+                    <span className="text-xs font-bold text-gray-400 leading-none">/100</span>
+                </div>
             </div>
         </div>
     );
@@ -164,11 +153,14 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
         ? structuredResume.skills.technical.map((s: any) => typeof s === 'object' ? s.skill : s) 
         : [];
     const toolSkills = Array.isArray(structuredResume.skills?.tools) 
-        ? structuredResume.skills.tools.map((s: any) => typeof s === 'object' ? s.tool : s) 
+        ? structuredResume.skills.tools.map((s: any) => (typeof s === 'object' ? s.tool : s)).filter(Boolean) 
         : [];
     const softSkills = Array.isArray(structuredResume.skills?.soft_skills) ? structuredResume.skills.soft_skills : [];
+    const domainSkills = Array.isArray(structuredResume.skills?.domain_skills) ? structuredResume.skills.domain_skills : [];
     const redFlags = aiData.red_flags || structuredResume.red_flags || [];
     const careerProgression = structuredResume.career_progression || null;
+    const workHistory = Array.isArray(structuredResume.work_history) ? structuredResume.work_history : [];
+    const breakdown = aiData.breakdown || null;
 
     const statusColors: Record<string, string> = {
         Shortlisted: "bg-green-50 text-green-700",
@@ -183,7 +175,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
     };
 
     return (
-        <div className="space-y-8 pb-16">
+        <div className="space-y-8 pb-16" style={{ fontFamily: 'Inter, sans-serif' }}>
             <div className="flex items-center gap-3">
                 <Link href="/admin/candidates">
                     <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl bg-white border border-gray-100 text-gray-400 hover:text-gray-900 hover:border-gray-200 shadow-sm transition-all">
@@ -210,60 +202,53 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                             </Avatar>
                         </div>
 
-                        <div className="space-y-3">
+                        <div className="space-y-4">
                             <div className="flex items-center gap-3 flex-wrap">
-                                <h1 className="text-3xl font-black text-gray-900 tracking-tight">{candidate.fullName}</h1>
-                                <Badge className={cn("text-[10px] font-black uppercase tracking-widest border-0 rounded-xl px-3 py-1.5 shadow-sm", statusColors[normalizedStatus] ?? "bg-gray-50 text-gray-600")}>
-                                    {normalizedStatus}
-                                </Badge>
+                                <h1 className="text-4xl font-black text-gray-900 tracking-tight">{candidate.fullName}</h1>
                                 {score >= 75 && (
-                                    <Badge className="bg-indigo-600 text-white text-[9px] font-black uppercase tracking-widest border-0 rounded-xl px-2.5 py-1.5 shadow-[0_4px_12px_rgba(79,70,229,0.3)] flex items-center gap-1.5">
+                                    <div className="bg-indigo-600 text-white text-[9px] font-black uppercase tracking-widest rounded-full px-3 py-1 flex items-center gap-1.5 shadow-lg shadow-indigo-200">
                                         <Sparkles className="h-3 w-3" /> AI Verified
-                                    </Badge>
+                                    </div>
                                 )}
                             </div>
-                            <p className="text-lg font-bold text-gray-500">{candidate.drive?.title || "Role N/A"}</p>
-                            <div className="flex flex-wrap gap-5">
+                            <p className="text-xl font-bold text-gray-400">{candidate.drive?.title || "Role N/A"}</p>
+                            <div className="flex flex-wrap gap-6 pt-1">
                                 {[
                                     { icon: Mail,     value: candidate.email },
                                     { icon: Phone,    value: candidate.phone || "N/A" },
                                     { icon: MapPin, value: structuredResume.location?.city ? `${structuredResume.location.city}, ${structuredResume.location.country || ""}` : (candidate.location || "N/A") },
                                     { icon: Calendar, value: mounted ? `Applied ${new Date(candidate.createdAt).toLocaleDateString()}` : "Applied --/--/----" },
                                 ].filter(item => item.value !== "N/A" && item.value !== "N/A, ").map(({ icon: Icon, value }) => (
-                                    <div key={value} className="flex items-center gap-2 text-sm font-bold text-gray-400">
-                                        <Icon className="h-3.5 w-3.5" />
+                                    <div key={value} className="flex items-center gap-2.5 text-sm font-bold text-gray-500">
+                                        <div className="h-7 w-7 rounded-lg bg-gray-50 flex items-center justify-center">
+                                            <Icon className="h-3.5 w-3.5 text-gray-400" />
+                                        </div>
                                         <span>{value}</span>
                                     </div>
                                 ))}
                             </div>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3 flex-wrap md:flex-nowrap">
-                        <Button 
-                            onClick={() => setShowSubmissionPreview(true)}
-                            variant="outline" 
-                            className="h-11 px-5 rounded-xl font-bold border-gray-200 text-gray-600 hover:border-gray-300 transition-all cursor-pointer"
-                        >
-                            <UserSearch className="h-4 w-4 mr-2" /> View Submission
-                        </Button>
+                    <div className="flex items-center gap-6 relative z-10">
+                        <div className="flex flex-col items-end gap-6 h-full justify-between">
+                            <ScoreIndicator score={score} status={normalizedStatus} />
+                            
+                            <div className="flex items-center gap-2">
+                                <Button 
+                                    onClick={() => setShowSubmissionPreview(true)}
+                                    variant="outline" 
+                                    className="h-10 px-5 rounded-2xl font-black text-[10px] uppercase tracking-widest border-gray-100 text-gray-500 hover:bg-gray-50 hover:text-gray-900 shadow-sm transition-all bg-white/50 backdrop-blur-sm"
+                                >
+                                    <UserSearch className="h-3.5 w-3.5 mr-2" /> View Profile
+                                </Button>
 
-                        <Button asChild variant="outline" className="h-11 px-5 rounded-xl font-bold border-gray-200 text-gray-600 hover:border-gray-300 transition-all cursor-pointer">
-                            <a href={candidate.resumeUrl} target="_blank" rel="noopener noreferrer" download={`${candidate.fullName.replace(/\s+/g, '_')}_Resume.pdf`}>
-                                <Download className="h-4 w-4 mr-2" /> Resume
-                            </a>
-                        </Button>
-
-                        {(candidate.status === "Shortlisted") && candidate.interview?.status !== "COMPLETED" && (
-                            <Button
-                                onClick={handleResendInterview}
-                                disabled={resendingInterview}
-                                variant="outline"
-                                className="h-11 px-5 rounded-xl font-bold border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-all cursor-pointer"
-                            >
-                                <RefreshCw className={cn("h-4 w-4 mr-2", resendingInterview && "animate-spin")} />
-                                {resendingInterview ? "Sending..." : "Resend Interview Link"}
-                            </Button>
-                        )}
+                                <Button asChild variant="outline" className="h-10 px-5 rounded-2xl font-black text-[10px] uppercase tracking-widest border-gray-100 text-gray-500 hover:bg-gray-50 hover:text-gray-900 shadow-sm transition-all bg-white/50 backdrop-blur-sm">
+                                    <a href={candidate.resumeUrl} target="_blank" rel="noopener noreferrer" download={`${candidate.fullName.replace(/\s+/g, '_')}_Resume.pdf`}>
+                                        <Download className="h-3.5 w-3.5 mr-2" /> Resume
+                                    </a>
+                                </Button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -289,260 +274,329 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 space-y-6">
+            <div className="w-full">
+                <div className="space-y-6">
                     {activeTab === "analysis" && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                        <div className="space-y-16 animate-in fade-in slide-in-from-bottom-2 duration-500 pb-20">
                              {/* 🎯 Recruiter Snapshot */}
-                             <div className="relative bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] overflow-hidden p-8">
-                                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-300 via-[#F97316] to-orange-400" />
-                                <div className="flex items-center gap-3 mb-5">
-                                    <div className="h-10 w-10 rounded-xl bg-orange-50 flex items-center justify-center">
-                                        <UserSearch className="h-5 w-5 text-[#F97316]" />
-                                    </div>
-                                    <div>
-                                        <p className="font-black text-gray-900 text-base">Recruiter Snapshot</p>
-                                        <p className="text-xs font-bold text-gray-400">Executive briefing on this candidate</p>
-                                    </div>
+                             <div className="space-y-8">
+                                <div className="inline-flex items-center gap-4 bg-black rounded-2xl px-8 py-4 shadow-xl border border-gray-800">
+                                    <h3 className="text-xl font-black text-white tracking-tight">Recruiter Snapshot</h3>
+                                    <div className="h-4 w-[1px] bg-gray-700" />
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Executive talent synthesis</p>
                                 </div>
-                                <div className="bg-gradient-to-br from-orange-50/60 to-amber-50/30 rounded-2xl p-6 border border-orange-100/50">
-                                    <p className="text-gray-800 leading-relaxed font-bold text-[15px] italic">
-                                        "{aiData.recruiter_snapshot || summary}"
-                                    </p>
+                                <div className="relative bg-white rounded-3xl border border-gray-200 shadow-[0_8px_32px_rgba(0,0,0,0.04)] overflow-hidden p-10">
+                                    <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-300 via-[#F97316] to-orange-400" />
+                                    <div className="bg-gradient-to-br from-orange-50/60 to-amber-50/30 rounded-3xl p-8 border border-orange-100/50">
+                                        <p className="text-gray-800 leading-relaxed font-bold text-[18px] italic">
+                                            &ldquo;{aiData.recruiter_snapshot || summary}&rdquo;
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* ✅ Detailed Verdict */}
-                            <div className={cn(
-                                "bg-white rounded-2xl border shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-8 relative overflow-hidden",
-                                normalizedStatus === "Shortlisted" ? "border-green-100 bg-green-50/20" : 
-                                normalizedStatus === "Borderline" ? "border-orange-100 bg-orange-50/20" : "border-red-100 bg-red-50/20"
-                            )}>
-                                <div className="flex items-center gap-3 mb-5">
-                                    <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center",
-                                        normalizedStatus === "Shortlisted" ? "bg-green-50 text-green-600" : "bg-red-50 text-red-500"
-                                    )}>
-                                        {normalizedStatus === "Shortlisted" ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+                            {/* 📊 Premium Score Breakdown */}
+                            {breakdown && (
+                                <div className="space-y-8" style={{ fontFamily: 'Inter, sans-serif' }}>
+                                    <div className="inline-flex items-center gap-4 bg-black rounded-2xl px-8 py-4 shadow-xl border border-gray-800">
+                                        <h3 className="text-xl font-black text-white tracking-tight">Evaluation Breakdown</h3>
+                                        <div className="h-4 w-[1px] bg-gray-700" />
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Data-driven metric assessment</p>
                                     </div>
-                                    <p className={cn("font-black text-base uppercase tracking-tight", normalizedStatus === "Shortlisted" ? "text-green-800" : "text-red-700")}>
-                                        AI Verdict: {normalizedStatus}
-                                    </p>
-                                </div>
-                                <p className="text-gray-700 leading-relaxed font-bold text-[15px]">
-                                    {aiData.ai_verdict || aiData.reasoning || "The AI evaluation determined this candidate's profile aligns with the role requirements."}
-                                </p>
-                            </div>
-
-                            {/* 📋 Decision Matrix Table */}
-                            {aiData.decision_breakdown && (
-                                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] overflow-hidden transition-all">
-                                    <div className="px-8 py-6 border-b border-gray-50 flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="h-9 w-9 rounded-xl bg-gray-50 flex items-center justify-center">
-                                                <Target className="h-4 w-4 text-gray-500" />
-                                            </div>
-                                            <p className="font-black text-gray-900 text-sm">Requirement Decision Matrix</p>
-                                        </div>
-                                    </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-left">
-                                            <thead>
-                                                <tr className="bg-gray-50/50">
-                                                    <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Requirement</th>
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Required</th>
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Candidate</th>
-                                                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Status</th>
-                                                    <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Note</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-50">
-                                                {aiData.decision_breakdown.map((row: any, i: number) => (
-                                                    <tr key={i} className="hover:bg-gray-50/30 transition-all">
-                                                        <td className="px-8 py-4 font-black text-gray-900 text-sm">{row.criteria}</td>
-                                                        <td className="px-6 py-4 text-xs font-bold text-gray-500">{row.required}</td>
-                                                        <td className="px-6 py-4">
-                                                            <div className={cn(
-                                                                "inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-black uppercase tracking-tighter",
-                                                                row.result === 'pass' ? "bg-green-50 text-green-700" : row.result === 'fail' ? "bg-red-50 text-red-600" : "bg-orange-50 text-orange-700"
-                                                            )}>
-                                                                {row.result === 'pass' ? <CheckCircle2 className="h-3 w-3" /> : row.result === 'fail' ? <XCircle className="h-3 w-3" /> : <RefreshCw className="h-3 w-3" />}
-                                                                {row.candidate_has}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                                        {[
+                                            { label: "Must-Have Skills", score: breakdown.skills_score, max: breakdown.skills_max, desc: "Tech stack match" },
+                                            { label: "Exp Relevance", score: breakdown.exp_score, max: breakdown.exp_max, desc: "Domain depth score" },
+                                            { label: "Good-to-Have", score: breakdown.good_score, max: breakdown.good_max, desc: "Bonus tool match" },
+                                            { label: "Career signals", score: breakdown.career_score, max: breakdown.career_max, desc: "Growth trajectory" },
+                                        ].map((item, idx) => {
+                                            const percent = (item.score / item.max) * 100;
+                                            return (
+                                                <div key={idx} className="group relative bg-white rounded-[32px] border border-gray-200 p-8 shadow-[0_4px_24px_rgba(0,0,0,0.02)] transition-all duration-500 hover:shadow-[0_12px_40px_rgba(0,0,0,0.06)] hover:-translate-y-1">
+                                                    <div className="flex items-center justify-between mb-10 relative z-10">
+                                                        <div className="flex flex-col">
+                                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{item.label}</p>
+                                                            <p className="text-[9px] font-bold text-gray-300 uppercase tracking-widest mt-0.5">{item.desc}</p>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="flex items-baseline gap-0.5 justify-end">
+                                                                <span className="text-4xl font-black text-gray-900 tabular-nums tracking-tighter">{item.score}</span>
+                                                                <span className="text-xs font-bold text-gray-300">/{item.max}</span>
                                                             </div>
-                                                        </td>
-                                                        <td className="px-6 py-4">
-                                                            <Badge className={cn("rounded-lg text-[9px] font-black uppercase tracking-widest border-0 shadow-none px-2 py-0.5", 
-                                                                row.result === 'pass' ? "bg-green-100/50 text-green-700" : row.result === 'fail' ? "bg-red-100/50 text-red-700" : "bg-orange-100/50 text-orange-700")}>
-                                                                {row.result}
-                                                            </Badge>
-                                                        </td>
-                                                        <td className="px-8 py-4 text-[13px] font-bold text-gray-400">{row.note}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-4 relative z-10">
+                                                        <div className="flex items-center justify-between text-[10px] font-black">
+                                                            <span className="text-gray-900 uppercase tracking-widest">Weightage</span>
+                                                            <span className="text-gray-400">{Math.round(percent)}%</span>
+                                                        </div>
+                                                        <div className="h-2 w-full bg-gray-50 rounded-full overflow-hidden border border-gray-100 p-0.5">
+                                                            <div className="h-full rounded-full transition-all duration-1000 bg-gray-900" style={{ width: `${percent}%` }} />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-6">
-                                    <div className="flex items-center gap-3 mb-5">
-                                        <div className="h-9 w-9 rounded-xl bg-green-50 flex items-center justify-center">
-                                            <TrendingUp className="h-4 w-4 text-green-600" />
+                            {/* ✅ Detailed AI Verdict Card */}
+                            <div className="space-y-8">
+                                <div className="inline-flex items-center gap-4 bg-black rounded-2xl px-8 py-4 shadow-xl border border-gray-800">
+                                    <h3 className="text-xl font-black text-white tracking-tight">AI System Verdict</h3>
+                                    <div className="h-4 w-[1px] bg-gray-700" />
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Final suitability analysis</p>
+                                </div>
+                                <div className={cn(
+                                    "bg-white rounded-[32px] border shadow-[0_8px_32px_rgba(0,0,0,0.03)] p-10 relative overflow-hidden",
+                                    normalizedStatus === "Shortlisted" ? "border-green-200 bg-green-50/20" : 
+                                    normalizedStatus === "Borderline" ? "border-orange-200 bg-orange-50/20" : "border-red-200 bg-red-50/20"
+                                )}>
+                                    <div className="flex items-center gap-6 mb-8">
+                                        <div className={cn(
+                                            "h-14 w-14 rounded-2xl flex items-center justify-center shadow-lg",
+                                            normalizedStatus === "Shortlisted" ? "bg-green-100 text-green-600" : 
+                                            normalizedStatus === "Borderline" ? "bg-orange-100 text-orange-600" : "bg-red-100 text-red-600"
+                                        )}>
+                                            {normalizedStatus === "Shortlisted" ? <CheckCircle2 className="h-7 w-7" /> : <AlertTriangle className="h-7 w-7" />}
                                         </div>
-                                        <p className="font-black text-gray-900 text-sm">Key Strengths</p>
+                                        <div>
+                                            <p className={cn("text-[10px] font-black uppercase tracking-[0.3em] mb-1.5", 
+                                                normalizedStatus === "Shortlisted" ? "text-green-600" : 
+                                                normalizedStatus === "Borderline" ? "text-orange-600" : "text-red-600"
+                                            )}>Decision Consensus</p>
+                                            <h3 className={cn("text-3xl font-black tracking-tighter uppercase", 
+                                                normalizedStatus === "Shortlisted" ? "text-green-800" : 
+                                                normalizedStatus === "Borderline" ? "text-orange-800" : "text-red-800"
+                                            )}>{normalizedStatus}</h3>
+                                        </div>
                                     </div>
-                                    <ul className="space-y-3">
-                                        {strengths.length > 0 ? (aiData.strengths as any).map((s: any, i: number) => (
-                                            <li key={i} className="flex items-start gap-3 text-sm">
-                                                <div className="h-5 w-5 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                                    <CheckCircle2 className="h-3 w-3 text-green-600" />
-                                                </div>
-                                                <span className="text-gray-600 font-bold leading-snug">{typeof s === 'string' ? s : s.point}</span>
-                                            </li>
-                                        )) : <li className="text-sm text-gray-400 font-bold">No specific strengths identified.</li>}
-                                    </ul>
+                                    <div className="pl-20 border-l-2 border-dashed border-gray-100 italic">
+                                        <p className="text-gray-700 leading-relaxed font-bold text-[18px]">
+                                            &ldquo;{aiData.ai_verdict || aiData.reasoning || "The automated evaluation suggests a high degree of alignment with role requirements."}&rdquo;
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                                <div className="space-y-8">
+                                    <div className="inline-flex items-center gap-4 bg-black rounded-2xl px-8 py-4 shadow-xl border border-gray-800">
+                                        <h3 className="text-xl font-black text-white tracking-tight">Key Strengths</h3>
+                                    </div>
+                                    <div className="bg-white rounded-[32px] border border-gray-200 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-10 h-full">
+                                        <ul className="space-y-6">
+                                            {strengths.length > 0 ? (aiData.strengths as any).map((s: any, i: number) => (
+                                                <li key={i} className="flex items-start gap-4 text-[16px]">
+                                                    <div className="h-2 w-2 rounded-full bg-green-500 mt-2.5 flex-shrink-0" />
+                                                    <span className="text-gray-600 font-bold leading-relaxed">{typeof s === 'string' ? s : s.point}</span>
+                                                </li>
+                                            )) : <li className="text-sm text-gray-400 font-bold italic">No specific signals detected.</li>}
+                                        </ul>
+                                    </div>
                                 </div>
 
-                                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-6">
-                                    <div className="flex items-center gap-3 mb-5">
-                                        <div className="h-9 w-9 rounded-xl bg-orange-50 flex items-center justify-center">
-                                            <AlertTriangle className="h-4 w-4 text-[#F97316]" />
-                                        </div>
-                                        <p className="font-black text-gray-900 text-sm">Critical Gaps</p>
+                                <div className="space-y-8">
+                                    <div className="inline-flex items-center gap-4 bg-black rounded-2xl px-8 py-4 shadow-xl border border-gray-800">
+                                        <h3 className="text-xl font-black text-white tracking-tight">Critical Gaps</h3>
                                     </div>
-                                    <div className="space-y-4">
-                                        {aiData.concerns && aiData.concerns.length > 0 ? aiData.concerns.map((c: any, i: number) => (
-                                            <div key={i} className="p-4 rounded-xl bg-red-50/30 border border-red-100">
-                                               <p className="text-sm font-black text-red-700 mb-1">{c.point}</p>
-                                               <p className="text-xs font-bold text-gray-500 leading-relaxed">{c.impact}</p>
-                                            </div>
-                                        )) : weaknesses.map((s: string, i: number) => (
-                                            <li key={i} className="flex items-start gap-3 text-sm">
-                                                <div className="h-5 w-5 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                                    <XCircle className="h-3 w-3 text-orange-600" />
+                                    <div className="bg-white rounded-[32px] border border-gray-200 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-10 h-full">
+                                        <div className="space-y-6">
+                                            {aiData.concerns && aiData.concerns.length > 0 ? aiData.concerns.map((c: any, i: number) => (
+                                                <div key={i} className="p-7 rounded-[28px] bg-red-50/30 border border-red-100 transition-all hover:bg-red-50/50">
+                                                   <p className="text-sm font-black text-red-700 mb-2 uppercase tracking-wide">{c.point}</p>
+                                                   <p className="text-[14px] font-bold text-gray-500 leading-relaxed italic">&ldquo;{c.impact}&rdquo;</p>
                                                 </div>
-                                                <span className="text-gray-600 font-bold leading-snug">{s}</span>
-                                            </li>
-                                        ))}
-                                        {(aiData.concerns?.length === 0 && weaknesses.length === 0) && <li className="text-sm text-gray-400 font-bold">No specific concerns identified.</li>}
+                                            )) : weaknesses.map((s: string, i: number) => (
+                                                <li key={i} className="flex items-start gap-4 text-[16px]">
+                                                    <div className="h-2 w-2 rounded-full bg-red-400 mt-2.5 flex-shrink-0" />
+                                                    <span className="text-gray-600 font-bold leading-relaxed">{s}</span>
+                                                </li>
+                                            ))}
+                                            {(aiData.concerns?.length === 0 && weaknesses.length === 0) && <li className="text-sm text-gray-400 font-bold italic">No specific critical gaps identified.</li>}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
                             {/* 🏗 Experience Deep Dive & Projects */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-8">
-                                    <div className="flex items-center gap-3 mb-6">
-                                        <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                                            <BriefcaseBusiness className="h-5 w-5 text-amber-600" />
-                                        </div>
-                                        <div>
-                                            <p className="font-black text-gray-900 text-base">Experience Deep Dive</p>
-                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{aiData.experience_assessment?.vs_required || "Assessment pending"}</p>
-                                        </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                                <div className="space-y-8">
+                                    <div className="inline-flex items-center gap-4 bg-black rounded-2xl px-8 py-4 shadow-xl w-full border border-gray-800">
+                                        <h3 className="text-xl font-black text-white tracking-tight px-2">Experience Context</h3>
+                                        <div className="h-4 w-[1px] bg-gray-700 mx-2" />
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] truncate">{aiData.experience_assessment?.vs_required || "Trajectory check"}</p>
                                     </div>
-                                    {aiData.experience_assessment ? (
-                                        <div className="space-y-5">
-                                            <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
-                                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Impact Quality</p>
-                                                <p className="text-sm font-bold text-gray-700 leading-relaxed italic">"{aiData.experience_assessment.quality}"</p>
+                                    <div className="bg-white rounded-[32px] border border-gray-200 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-10">
+                                        {aiData.experience_assessment ? (
+                                            <div className="space-y-6">
+                                                <div className="p-7 rounded-[28px] bg-gray-50 border border-gray-100">
+                                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Impact Analysis</p>
+                                                    <p className="text-[16px] font-bold text-gray-700 leading-relaxed italic">"{aiData.experience_assessment.quality}"</p>
+                                                </div>
+                                                <div className="p-7 rounded-[28px] bg-gray-50 border border-gray-100">
+                                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">Role Alignment</p>
+                                                    <p className="text-[16px] font-bold text-gray-700 leading-relaxed italic">"{aiData.experience_assessment.relevance}"</p>
+                                                </div>
                                             </div>
-                                            <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
-                                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">JD Relevance</p>
-                                                <p className="text-sm font-bold text-gray-700 leading-relaxed italic">"{aiData.experience_assessment.relevance}"</p>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <p className="text-sm text-gray-400 font-bold italic">Detailed experience assessment not available.</p>
-                                    )}
+                                        ) : (
+                                            <p className="text-sm text-gray-400 font-bold italic text-center py-10 opacity-60">Deep dive currently unavailable.</p>
+                                        )}
+                                    </div>
                                 </div>
 
-                                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-8">
-                                    <div className="flex items-center gap-3 mb-6">
-                                        <div className="h-10 w-10 rounded-xl bg-emerald-50 flex items-center justify-center">
-                                            <Target className="h-5 w-5 text-emerald-600" />
-                                        </div>
-                                        <div>
-                                            <p className="font-black text-gray-900 text-base">Project Relevance</p>
-                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Rating: {aiData.project_relevance?.rating || "N/A"}</p>
-                                        </div>
+                                <div className="space-y-8">
+                                    <div className="inline-flex items-center gap-4 bg-black rounded-2xl px-8 py-4 shadow-xl w-full border border-gray-800">
+                                        <h3 className="text-xl font-black text-white tracking-tight px-2">Project Spectrum</h3>
+                                        <div className="h-4 w-[1px] bg-gray-700 mx-2" />
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] truncate">Rating: {aiData.project_relevance?.rating || "N/A"}</p>
                                     </div>
-                                    {aiData.project_relevance ? (
-                                       <div className="p-5 rounded-2xl bg-emerald-50/30 border border-emerald-100">
-                                            <p className="text-sm font-bold text-gray-800 leading-relaxed">
-                                                {aiData.project_relevance.reasoning}
-                                            </p>
-                                       </div>
-                                    ) : (
-                                        <p className="text-sm text-gray-400 font-bold italic">Project relevance analysis not available.</p>
-                                    )}
+                                    <div className="bg-white rounded-[32px] border border-gray-200 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-10 h-[calc(100%-80px)]">
+                                        {aiData.project_relevance ? (
+                                           <div className="p-8 rounded-[28px] bg-emerald-50/40 border border-emerald-100 flex items-center justify-center min-h-[160px]">
+                                                <p className="text-[17px] font-bold text-gray-800 leading-relaxed text-center">
+                                                    &ldquo;{aiData.project_relevance.reasoning}&rdquo;
+                                                </p>
+                                           </div>
+                                        ) : (
+                                            <p className="text-sm text-gray-400 font-bold italic text-center py-10 opacity-60">Spectrum check unavailable.</p>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* 🛡 Red Flags */}
+                            {/* 🛡 Automated Risk Signals */}
                             {redFlags.length > 0 && (
-                                <div className="bg-white rounded-2xl border border-red-50 shadow-[0_4px_24px_rgba(239,68,68,0.04)] p-6 overflow-hidden relative">
-                                    <div className="flex items-center gap-3 mb-5">
-                                        <div className="h-9 w-9 rounded-xl bg-red-50 flex items-center justify-center">
-                                            <ShieldCheck className="h-4 w-4 text-red-500" />
-                                        </div>
-                                        <p className="font-black text-gray-900 text-sm">Automated Red Flags</p>
+                                <div className="space-y-8" style={{ fontFamily: 'Inter, sans-serif' }}>
+                                    <div className="inline-flex items-center gap-4 bg-red-950 rounded-2xl px-8 py-4 shadow-xl border border-red-900/40">
+                                        <h3 className="text-xl font-black text-white tracking-tight uppercase">Integrity Risk Signals</h3>
                                     </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        {redFlags.map((flag: any, i: number) => (
-                                            <div key={i} className="p-3.5 rounded-xl bg-gray-50 border border-gray-100">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <span className="text-[10px] font-black uppercase tracking-widest text-[#F97316]">{flag.flag?.replace('_', ' ') || 'Flag'}</span>
-                                                    <Badge className={cn(
-                                                        "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border-0",
-                                                        flag.severity === 'High' ? "bg-red-100 text-red-600" : "bg-orange-100 text-orange-600"
-                                                    )}>
-                                                        {flag.severity} RISK
-                                                    </Badge>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                        {redFlags.map((flag: any, i: number) => {
+                                            const isHigh = flag.severity === 'High';
+                                            return (
+                                                <div key={i} className={cn(
+                                                    "group relative bg-white rounded-[32px] border border-gray-200 p-10 transition-all hover:shadow-[0_12px_40px_rgba(0,0,0,0.06)] overflow-hidden",
+                                                    isHigh ? "ring-2 ring-red-50/50" : "ring-2 ring-orange-50/50"
+                                                )}>
+                                                    <div className={cn(
+                                                        "absolute left-0 top-0 bottom-0 w-2",
+                                                        isHigh ? "bg-red-500" : "bg-orange-500"
+                                                    )} />
+                                                    <div className="flex items-center justify-between mb-6">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className={cn(
+                                                                "h-10 w-10 rounded-2xl flex items-center justify-center shadow-sm",
+                                                                isHigh ? "bg-red-50 text-red-500" : "bg-orange-50 text-orange-500"
+                                                            )}>
+                                                                {isHigh ? <ShieldCheck className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+                                                            </div>
+                                                            <span className={cn("text-[11px] font-black uppercase tracking-[0.2em]", isHigh ? "text-red-600" : "text-orange-600")}>
+                                                                {flag.flag?.replace('_', ' ') || 'Integrity Check'}
+                                                            </span>
+                                                        </div>
+                                                        <span className={cn("px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest", isHigh ? "bg-red-100 text-red-700" : "bg-orange-100 text-orange-700")}>
+                                                            {flag.severity} RISK
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[17px] font-bold text-gray-700 leading-snug pl-14">
+                                                        {flag.detail}
+                                                    </p>
                                                 </div>
-                                                <p className="text-[13px] font-bold text-gray-700 leading-tight">{flag.detail}</p>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             )}
 
-                            <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-8">
-                                <div className="flex items-center gap-3 mb-6">
-                                    <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center">
-                                        <Terminal className="h-5 w-5 text-indigo-600" />
-                                    </div>
-                                    <p className="font-black text-gray-900 text-base">Technical Technical Knowledge</p>
+                            {/* 🧠 Premium Skill Knowledge Map */}
+                            <div className="space-y-8" style={{ fontFamily: 'Inter, sans-serif' }}>
+                                <div className="inline-flex items-center gap-4 bg-black rounded-2xl px-8 py-4 shadow-xl border border-gray-800">
+                                    <h3 className="text-xl font-black text-white tracking-tight">Skill Knowledge Spectrum</h3>
+                                    <div className="h-4 w-[1px] bg-gray-700" />
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Multi-factor depth assessment</p>
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div>
-                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Core Technical</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {techSkills.map((s: string) => (
-                                                <Badge key={s} variant="secondary" className="bg-indigo-50 text-indigo-700 border-indigo-100 rounded-lg text-xs font-bold px-2.5 py-1">{s}</Badge>
-                                            ))}
+                                
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                                    {[
+                                        { title: "Core Technical", skills: techSkills, bg: "bg-indigo-50/50", text: "text-indigo-700", border: "border-indigo-100" },
+                                        { title: "Tools & Platforms", skills: toolSkills, bg: "bg-emerald-50/50", text: "text-emerald-700", border: "border-emerald-100" },
+                                        { title: "Domain Expertise", skills: domainSkills, bg: "bg-amber-50/50", text: "text-amber-700", border: "border-amber-100" },
+                                        { title: "Power Skills", skills: softSkills, bg: "bg-violet-50/50", text: "text-violet-700", border: "border-violet-100" },
+                                    ].map((cat, idx) => (
+                                        <div key={idx} className="bg-white rounded-[32px] border border-gray-200 p-8 shadow-[0_4px_24px_rgba(0,0,0,0.02)] transition-all hover:shadow-[0_8px_32px_rgba(0,0,0,0.05)] flex flex-col h-full ring-1 ring-gray-100/50">
+                                            <div className="flex items-center justify-between mb-8">
+                                                <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">{cat.title}</p>
+                                                <span className={cn("px-3 py-1 rounded-full text-[10px] font-black", cat.bg, cat.text)}>
+                                                    {cat.skills.length}
+                                                </span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2 mt-auto">
+                                                {cat.skills.length > 0 ? cat.skills.map((s: string) => (
+                                                    <span key={s} className={cn("px-4 py-2 rounded-2xl text-[13px] font-bold transition-all border", cat.bg, cat.text, cat.border)}>
+                                                        {s}
+                                                    </span>
+                                                )) : <span className="text-xs text-gray-300 font-bold italic">No signals.</span>}
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div>
-                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Tools & Systems</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {toolSkills.map((s: string) => (
-                                                <Badge key={s} variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-100 rounded-lg text-xs font-bold px-2.5 py-1">{s}</Badge>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Soft Skills</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {softSkills.map((s: string) => (
-                                                <Badge key={s} variant="secondary" className="bg-orange-50 text-orange-700 border-orange-100 rounded-lg text-xs font-bold px-2.5 py-1">{s}</Badge>
-                                            ))}
-                                        </div>
-                                    </div>
+                                    ))}
                                 </div>
                             </div>
 
+                            {/* 🌱 Premium Candidate Potential Projection */}
+                            {aiData.candidate_potential && (
+                                <div className="space-y-8" style={{ fontFamily: 'Inter, sans-serif' }}>
+                                    <div className="inline-flex items-center gap-4 bg-black rounded-2xl px-8 py-4 shadow-xl border border-gray-800">
+                                        <h3 className="text-xl font-black text-white tracking-tight">Growth & Potential Prediction</h3>
+                                        <div className="h-4 w-[1px] bg-gray-700" />
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Talent trajectory analysis</p>
+                                    </div>
+                                    
+                                    <div className={cn(
+                                        "bg-white rounded-[32px] border shadow-[0_8px_32px_rgba(0,0,0,0.03)] overflow-hidden",
+                                        aiData.candidate_potential.for_this_role === 'High' ? "border-green-200 ring-2 ring-green-50/50" :
+                                        aiData.candidate_potential.for_this_role === 'Medium' ? "border-amber-200 ring-2 ring-amber-50/50" : "border-gray-200"
+                                    )}>
+                                        <div className="flex flex-col lg:flex-row divide-y lg:divide-y-0 lg:divide-x divide-gray-100">
+                                            <div className={cn(
+                                                "lg:w-1/3 p-12 flex flex-col items-center justify-center text-center gap-2",
+                                                aiData.candidate_potential.for_this_role === 'High' ? "bg-green-50/30" : 
+                                                aiData.candidate_potential.for_this_role === 'Medium' ? "bg-amber-50/30" : "bg-gray-50/30"
+                                            )}>
+                                                <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.3em]">Trajectory</p>
+                                                <h4 className={cn(
+                                                    "text-6xl font-black tracking-tighter",
+                                                    aiData.candidate_potential.for_this_role === 'High' ? "text-green-600" : 
+                                                    aiData.candidate_potential.for_this_role === 'Medium' ? "text-amber-600" : "text-gray-900"
+                                                )}>
+                                                    {aiData.candidate_potential.for_this_role}
+                                                </h4>
+                                                <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest mt-4 uppercase">{aiData.candidate_potential.for_this_role === 'High' ? "EXECUTIVE MATCH" : "POTENTIAL ASSET"}</p>
+                                            </div>
+                                            <div className="flex-1 p-12 space-y-10">
+                                                <div>
+                                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Talent Synthesis Brief</p>
+                                                    <p className="text-gray-700 leading-relaxed font-bold text-[18px]">
+                                                        {aiData.candidate_potential.reasoning}
+                                                    </p>
+                                                </div>
+                                                {aiData.candidate_potential.alternative_fit && (
+                                                    <div className="pt-8 border-t border-gray-100 flex items-start gap-4">
+                                                        <div className="flex-1">
+                                                            <p className="text-[11px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-2">Strategy Alignment</p>
+                                                            <p className="text-[16px] font-bold text-gray-500 italic">
+                                                                <span className="text-gray-900 not-italic uppercase text-[12px] tracking-tight">Alternative Role Horizon:</span> {aiData.candidate_potential.alternative_fit}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -613,44 +667,6 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                             </div>
                         </div>
                     )}
-                </div>
-
-                <div className="lg:col-span-1 space-y-6">
-                    <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_8px_32px_rgba(0,0,0,0.03)] overflow-hidden p-8 sticky top-8">
-                        <div className="flex flex-col items-center gap-8">
-                            <ScoreRing score={score} />
-                            
-                            <div className="w-full space-y-6 pt-6 border-t border-gray-50">
-                                <div className="space-y-2">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Application Progress</p>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <span className="text-xs font-bold text-gray-900">Scanning & AI Evaluation</span>
-                                        <span className="text-xs font-black text-green-600">100%</span>
-                                    </div>
-                                    <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                                        <div className="h-full bg-green-500 rounded-full" style={{ width: '100%' }} />
-                                    </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                    {[
-                                        { label: "Job Post", value: candidate.drive?.title || "N/A", icon: Target },
-                                        { label: "Applied On", value: mounted ? new Date(candidate.createdAt).toLocaleDateString() : "--/--/----", icon: Calendar },
-                                        { label: "Location", value: candidate.location || "Remote", icon: MapPin },
-                                        { label: "Mobile", value: candidate.phone || "Not Provided", icon: Phone },
-                                    ].map(({ label, value, icon: Icon }) => (
-                                        <div key={label} className="flex items-center gap-3">
-                                            <div className="h-8 w-8 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0"><Icon className="h-4 w-4 text-gray-400" /></div>
-                                            <div>
-                                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{label}</p>
-                                                <p className="text-sm font-bold text-gray-900 truncate max-w-[160px]">{value}</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
 

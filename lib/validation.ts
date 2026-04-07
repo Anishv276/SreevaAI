@@ -63,7 +63,7 @@ export const createCandidateSchema = z.object({
   expectedCtc: z.coerce.string().optional(),
   noticePeriod: z.coerce.string().optional(),
   coverLetter: z.coerce.string().optional(),
-});
+}).catchall(z.any());
 
 export const bulkDeleteCandidatesSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, "At least one ID required"),
@@ -78,7 +78,7 @@ export const presignedUrlSchema = z.object({
   fileName: z.string().min(1, "File name required").max(255),
   fileType: z.string().min(1, "File type required").regex(/^[\w-]+\/[\w-]+$/, "Invalid MIME type"),
   driveId: z.coerce.number().int().positive().optional(),
-  type: z.enum(["JD", "RESUME"]).optional().default("RESUME"),
+  type: z.enum(["JD", "RESUME", "CERTIFICATION"]).optional().default("RESUME"),
 });
 
 export const extractSchema = z.object({
