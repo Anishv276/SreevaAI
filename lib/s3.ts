@@ -36,6 +36,8 @@ export const putObject = async (bucket: string, key: string, body: Buffer, conte
         publicUrlBase = process.env.NEXT_PUBLIC_R2_CERTIFICATIONS_URL || "";
     } else if (bucketName.includes("passport")) {
         publicUrlBase = process.env.NEXT_PUBLIC_R2_PASSPORTS_URL || "https://pub-d82df8c40dbf4492b6a22bc1bf1ab505.r2.dev";
+    } else if (bucketName.includes("interview")) {
+        publicUrlBase = process.env.NEXT_PUBLIC_R2_INTERVIEW_URL || "https://pub-e4a8b24775c741f6a650def856cfec9f.r2.dev";
     } else {
         // Default to Resumes
         publicUrlBase = process.env.NEXT_PUBLIC_R2_RESUMES_URL || "";
