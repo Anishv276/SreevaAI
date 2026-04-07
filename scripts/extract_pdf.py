@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def extract_text(file_path):
+def extract_text(file_path, type_="RESUME"):
     """
     Extract text from PDF or raw text file.
     """
@@ -42,6 +42,12 @@ def extract_text(file_path):
             except Exception as e:
                 extraction_errors.append(f"PyMuPDF4LLM failed: {str(e)}")
 
+        # JDs rarely need structural table extraction, skip to save time (~5-10s)
+        if type_ == "JD":
+            if markdown_text:
+                return markdown_text.strip()
+            # fallback to plumber only if markdown failed
+            
         if pdfplumber is None:
             extraction_errors.append("pdfplumber is not installed")
         else:
@@ -1018,7 +1024,7 @@ if __name__ == "__main__":
         print(json.dumps({"data": data}))
     else:
         # For JD or RESUME, file_path is a PDF/text file
-        text = extract_text(file_path)
+        text = extract_text(file_path, type_)
         data = extract_data(text, type_)
 
         # Output to stdout for the backend

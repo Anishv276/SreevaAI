@@ -4,16 +4,16 @@ import { useState, useRef } from "react";
 import { Upload, Loader2, FileText, X, CheckCircle2, PenLine, Eye } from "lucide-react";
 
 const textareaClass =
-    "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-[13px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 transition-all duration-150 resize-none";
+    "w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-[14px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316] hover:border-orange-300 transition-all duration-200 resize-none";
 
 const inputClass =
-    "w-full h-9 rounded-xl border border-gray-200 bg-white px-3 text-[13px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 transition-all duration-150";
+    "w-full h-11 rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316] hover:border-orange-300 transition-all duration-200";
 
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
     return (
-        <label className="flex items-center gap-1 text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-1.5">
+        <label className="flex items-center gap-1 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">
             {children}
-            {required && <span className="text-[#F97316]">*</span>}
+            {required && <span className="text-[#F97316] font-black">*</span>}
         </label>
     );
 }
@@ -199,95 +199,87 @@ export function JobDescription({
                     </div>
 
                     {/* ── BOTTOM: Write & Edit JD ────────────────────── */}
-                    <section>
+                    <section className="space-y-4">
                         <div className="flex items-center gap-3 mb-4">
                             <span className="h-5 w-1 rounded-full bg-[#F97316]" />
-                            <p className="text-[13px] font-bold text-gray-900 uppercase tracking-widest">Job Description</p>
+                            <p className="text-[13px] font-bold text-gray-900 uppercase tracking-widest">Job Description Components</p>
                         </div>
 
-                <div className="grid md:grid-cols-2 gap-4">
-                    {/* Left column */}
-                    <div className="space-y-4">
-                        {/* Description */}
-                        <div>
-                            <FieldLabel>Job Description {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
-                            <div className="relative">
-                                <PenLine className="absolute left-3 top-3 h-3 w-3 text-gray-300 pointer-events-none" />
+                        {/* Top Row: Description & Responsibilities */}
+                        <div className="grid md:grid-cols-2 gap-6 items-start">
+                            <div>
+                                <FieldLabel>Job Description {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
+                                <div className="relative">
+                                    <PenLine className="absolute left-3 top-3 h-3.5 w-3.5 text-gray-300 pointer-events-none" />
+                                    <textarea
+                                        rows={6}
+                                        placeholder="Describe the role, expectations, and ideal candidate…"
+                                        value={formData.description || ""}
+                                        onChange={(e) => updateFormData((prev: any) => ({ ...prev, description: e.target.value }))}
+                                        className={`${textareaClass} pl-9 ${isAnalyzing && !formData.description ? "bg-orange-50/20" : ""}`}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <FieldLabel>Key Responsibilities {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
                                 <textarea
-                                    rows={5}
-                                    placeholder="Describe the role, expectations, and ideal candidate…"
-                                    value={formData.description || ""}
-                                    onChange={(e) => updateFormData((prev: any) => ({ ...prev, description: e.target.value }))}
-                                    className={`${textareaClass} pl-8 ${isAnalyzing && !formData.description ? "bg-orange-50/20" : ""}`}
+                                    rows={6}
+                                    placeholder="• Define clear objectives&#10;• Collaborate with cross-functional teams&#10;• ..."
+                                    value={formData.responsibilities || ""}
+                                    onChange={(e) => updateFormData((prev: any) => ({ ...prev, responsibilities: e.target.value }))}
+                                    className={`${textareaClass} ${isAnalyzing && !formData.responsibilities ? "bg-orange-50/20" : ""}`}
                                 />
                             </div>
                         </div>
 
-                        {/* Skills */}
-                        <div>
-                            <FieldLabel required>Required Skills {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
-                            <input
-                                type="text"
-                                placeholder="e.g. React, Node.js, TypeScript"
-                                value={formData.skills || ""}
-                                onChange={(e) => updateFormData((prev: any) => ({ ...prev, skills: e.target.value }))}
-                                className={`${inputClass} ${isAnalyzing && !formData.skills ? "bg-orange-50/20" : ""}`}
-                            />
-                            <p className="text-[10px] text-gray-400 mt-1">Comma-separated</p>
+                        {/* Middle Row: Skills & Requirements */}
+                        <div className="grid md:grid-cols-2 gap-6 items-start">
+                            <div>
+                                <FieldLabel required>Required Skills {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
+                                <textarea
+                                    rows={4}
+                                    placeholder="• React.js & Next.js&#10;• TypeScript & Node.js&#10;• AWS / Cloud Infrastructure"
+                                    value={formData.skills || ""}
+                                    onChange={(e) => updateFormData((prev: any) => ({ ...prev, skills: e.target.value }))}
+                                    className={`${textareaClass} ${isAnalyzing && !formData.skills ? "bg-orange-50/20" : ""}`}
+                                />
+                                <p className="text-[10px] text-gray-400 font-medium mt-1.5 ml-1">Write skills as bullet points for better AI matching</p>
+                            </div>
+                            <div>
+                                <FieldLabel>Requirements {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
+                                <textarea
+                                    rows={4}
+                                    placeholder="• Bachelor's degree in CS or related field&#10;• 3+ years of experience in...&#10;• ..."
+                                    value={formData.requirements || ""}
+                                    onChange={(e) => updateFormData((prev: any) => ({ ...prev, requirements: e.target.value }))}
+                                    className={`${textareaClass} ${isAnalyzing && !formData.requirements ? "bg-orange-50/20" : ""}`}
+                                />
+                            </div>
                         </div>
 
-                        {/* Experience */}
-                        <div>
-                            <FieldLabel>Experience (Yrs)</FieldLabel>
-                            <input
-                                type="text"
-                                placeholder="e.g. 2–5 years"
-                                value={formData.experience || ""}
-                                onChange={(e) => updateFormData((prev: any) => ({ ...prev, experience: e.target.value }))}
-                                className={`${inputClass} ${isAnalyzing && !formData.experience ? "bg-orange-50/20" : ""}`}
-                            />
+                        {/* Bottom Row: Experience & Salary */}
+                        <div className="grid md:grid-cols-2 gap-6 items-end">
+                            <div>
+                                <FieldLabel>Experience (Yrs)</FieldLabel>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. 2–5 years"
+                                    value={formData.experience || ""}
+                                    onChange={(e) => updateFormData((prev: any) => ({ ...prev, experience: e.target.value }))}
+                                    className={`${inputClass} ${isAnalyzing && !formData.experience ? "bg-orange-50/20" : ""}`}
+                                />
+                            </div>
+                            <div>
+                                <FieldLabel>Salary Range</FieldLabel>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. ₹12–18 LPA"
+                                    value={formData.salary || ""}
+                                    onChange={(e) => updateFormData((prev: any) => ({ ...prev, salary: e.target.value }))}
+                                    className={`${inputClass} ${isAnalyzing && !formData.salary ? "bg-orange-50/20" : ""}`}
+                                />
+                            </div>
                         </div>
-                    </div>
-
-                    {/* Right column */}
-                    <div className="space-y-4">
-                        {/* Responsibilities */}
-                        <div>
-                            <FieldLabel>Key Responsibilities {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
-                            <textarea
-                                rows={4}
-                                placeholder="• Define clear objectives&#10;• Collaborate with cross-functional teams&#10;• ..."
-                                value={formData.responsibilities || ""}
-                                onChange={(e) => updateFormData((prev: any) => ({ ...prev, responsibilities: e.target.value }))}
-                                className={`${textareaClass} ${isAnalyzing && !formData.responsibilities ? "bg-orange-50/20" : ""}`}
-                            />
-                        </div>
-
-                        {/* Requirements */}
-                        <div>
-                            <FieldLabel>Requirements {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
-                            <textarea
-                                rows={4}
-                                placeholder="• Bachelor's degree in CS or related field&#10;• 3+ years of experience in...&#10;• ..."
-                                value={formData.requirements || ""}
-                                onChange={(e) => updateFormData((prev: any) => ({ ...prev, requirements: e.target.value }))}
-                                className={`${textareaClass} ${isAnalyzing && !formData.requirements ? "bg-orange-50/20" : ""}`}
-                            />
-                        </div>
-
-                        {/* Salary */}
-                        <div>
-                            <FieldLabel>Salary Range</FieldLabel>
-                            <input
-                                type="text"
-                                placeholder="e.g. ₹12–18 LPA"
-                                value={formData.salary || ""}
-                                onChange={(e) => updateFormData((prev: any) => ({ ...prev, salary: e.target.value }))}
-                                className={`${inputClass} ${isAnalyzing && !formData.salary ? "bg-orange-50/20" : ""}`}
-                            />
-                        </div>
-                    </div>
-                </div>
                     </section>
                     
                     {isAnalyzing && (

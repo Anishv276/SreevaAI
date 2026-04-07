@@ -59,7 +59,7 @@ export async function calculateScore(resumeText: string, jdText: string) {
         }
 
         const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model: "gpt-4o-mini",
             messages: [
                 { role: "system", content: "You are a professional hiring manager AI. Be precise and objective. Return ONLY valid JSON." },
                 { role: "user", content: prompt }

@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
 
 type Message = {
     id: string;
@@ -68,14 +70,7 @@ export default function AiChatJdPage() {
     }, [messages]);
 
     const clearChat = () => {
-        const initial: Message[] = [
-            {
-                id: "1",
-                role: "assistant" as const,
-                content: "<strong>WELCOME TO THE AI JOB ARCHITECT:</strong> I'm designed to help you synthesize 100% complete hiring drives instantly.\n\n<strong>REQUIRED SPECIFICATIONS:</strong> To architect a precise Job Description, please ensure your prompt includes:\n\n1. ROLE NAME (e.g., Senior React Dev)\n2. SALARY RANGE (e.g., 12-15 LPA)\n3. EXPERIENCE (e.g., 4+ Years)\n4. WORK MODE (Remote, Hybrid, or On-site)\n5. DEPARTMENT (e.g., Engineering, Sales)\n\nTell me these details, and I'll build the full requirements, responsibilities, and technical skills for you.",
-            }
-        ];
-        setMessages(initial);
+        setMessages([]);
         localStorage.removeItem("ai_chat_history");
     };
 
@@ -84,7 +79,8 @@ export default function AiChatJdPage() {
         if (!messageText || isGenerating) return;
 
         const userMsg: Message = { id: Date.now().toString(), role: "user", content: messageText };
-        setMessages(prev => [...prev, userMsg]);
+        const updatedMessages = [...messages, userMsg];
+        setMessages(updatedMessages);
         setInput("");
         setIsGenerating(true);
 
@@ -101,7 +97,7 @@ export default function AiChatJdPage() {
                 method: "POST",
                 body: JSON.stringify({ 
                     prompt: messageText,
-                    history: messages
+                    history: updatedMessages
                 }),
             });
 
@@ -114,7 +110,7 @@ export default function AiChatJdPage() {
                         {
                             id: (Date.now() + 1).toString(),
                             role: "assistant",
-                            content: data.description,
+                            content: data.description || "I need a few more details to architect this role correctly. Please provide the missing fields.",
                         }
                     ]);
                     setIsGenerating(false);
@@ -174,8 +170,6 @@ Does this configuration look correct, or would you like me to adjust any specifi
             return;
         }
 
-        console.log("AI Chat Sync - Initiating with data:", jd);
-
         const formattedData = {
            title: jd.job_title,
            role: jd.role_name,
@@ -191,141 +185,152 @@ Does this configuration look correct, or would you like me to adjust any specifi
            extractedDetails: jd
         };
 
-        console.log("AI Chat Sync - Formatted Payload:", formattedData);
         localStorage.setItem("jd_draft", JSON.stringify(formattedData));
         router.push("/admin/create-drive?method=ai-chat");
     };
 
+    const handleDownloadPdf = async (jd: any) => {
+        if (!jd) return;
+        
+        // Create an invisible element for capture
+        const element = document.createElement("div");
+        element.style.padding = "40px";
+        element.style.width = "794px"; // A4 width in pixels at 96dpi
+        element.style.fontFamily = "Inter, sans-serif";
+        element.style.background = "white";
+        element.style.color = "#111827";
+        
+        element.innerHTML = `
+            <div style="border-bottom: 2px solid #F97316; padding-bottom: 20px; margin-bottom: 30px;">
+                <h1 style="font-size: 28px; font-weight: 900; margin: 0; letter-spacing: -0.025em;">${jd.job_title}</h1>
+                <p style="color: #6B7280; font-weight: 700; text-transform: uppercase; font-size: 10px; margin-top: 8px; letter-spacing: 0.1em;">${jd.department} • ${jd.work_mode}</p>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+                <div>
+                   <p style="font-size: 10px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; margin-bottom: 5px;">Experience</p>
+                   <p style="font-weight: 700; font-size: 14px; margin: 0;">${jd.experience}</p>
+                </div>
+                <div>
+                   <p style="font-size: 10px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; margin-bottom: 5px;">Compensation</p>
+                   <p style="font-weight: 700; font-size: 14px; margin: 0;">${jd.salary}</p>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 30px;">
+                <h2 style="font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #111827; margin-bottom: 12px;">Executive Summary</h2>
+                <p style="font-size: 14px; line-height: 1.6; color: #374151;">${jd.description}</p>
+            </div>
+
+            <div style="margin-bottom: 30px;">
+                <h2 style="font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #111827; margin-bottom: 12px;">Key Responsibilities</h2>
+                <ul style="padding-left: 18px; margin: 0;">
+                    ${jd.responsibilities.map((r: string) => `<li style="font-size: 13px; color: #374151; margin-bottom: 8px; line-height: 1.5;">${r}</li>`).join('')}
+                </ul>
+            </div>
+
+            <div style="margin-bottom: 30px;">
+                <h2 style="font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #111827; margin-bottom: 12px;">Required Technical Skills</h2>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    ${jd.technical_skills.map((s: string) => `<span style="background: #F3F4F6; padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 700; color: #374151;">${s}</span>`).join('')}
+                </div>
+            </div>
+
+            <div style="margin-bottom: 30px;">
+                <h2 style="font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #111827; margin-bottom: 12px;">Candidate Profile</h2>
+                <ul style="padding-left: 18px; margin: 0;">
+                    ${jd.candidate_requirements.map((req: string) => `<li style="font-size: 13px; color: #374151; margin-bottom: 8px; line-height: 1.5;">${req}</li>`).join('')}
+                </ul>
+            </div>
+
+            <div style="margin-top: 50px; border-top: 1px solid #F3F4F6; padding-top: 20px; text-align: center;">
+                <p style="font-size: 10px; font-weight: 700; color: #D1D5DB; text-transform: uppercase; letter-spacing: 0.2em;">Architected by Hirer.ai Neural Engine</p>
+            </div>
+        `;
+        
+        document.body.appendChild(element);
+        
+        try {
+            const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+            const imgData = canvas.toDataURL("image/png");
+            
+            const pdf = new jsPDF("p", "mm", "a4");
+            const imgWidth = 210;
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            
+            pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+            pdf.save(`${jd.job_title.replace(/\s+/g, '_')}_JD.pdf`);
+        } finally {
+            document.body.removeChild(element);
+        }
+    };
+
     return (
         <div className="fixed inset-0 md:left-[220px] z-40 flex flex-col bg-white overflow-hidden border-l border-gray-100 font-sans animate-entry-flow">
-            {/* Header - Simple Premium Standard */}
-            <header className="shrink-0 px-8 py-5 bg-white border-b border-gray-100 z-30 relative">
-                <div className="max-w-2xl mx-auto w-full">
-                    <div className="flex items-center justify-between mb-1">
-                        <button 
-                            onClick={() => router.push("/admin/create-drive")}
-                            className="group flex items-center gap-2 text-gray-400 hover:text-gray-900 transition-colors"
-                        >
-                            <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
-                            <span className="text-[10px] font-bold uppercase tracking-widest">Back to Methods</span>
-                        </button>
+            {/* Header - Transparent Modern Glassmorphism */}
+            <header className="shrink-0 px-8 py-5 bg-white/80 backdrop-blur-md border-b border-gray-100 z-30 relative shadow-sm">
+                <div className="max-w-5xl mx-auto w-full flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#F97316] to-orange-600 flex items-center justify-center text-white shadow-lg shadow-orange-500/20 transform hover:scale-105 transition-all">
+                            <Bot className="h-6 w-6" />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-black text-gray-900 tracking-tight leading-none mb-1">
+                                Hirer AI Architect
+                            </h1>
+                            <div className="flex items-center gap-2">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest leading-none"> Neural Engine V2 </p>
+                            </div>
+                        </div>
+                    </div>
 
+                    <div className="flex items-center gap-4">
                         <button 
                             onClick={clearChat}
-                            className="group flex items-center gap-2 text-gray-400 hover:text-orange-600 transition-colors"
+                            className="group flex items-center gap-2 px-4 py-2 rounded-xl text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-all duration-300"
                         >
-                            <RefreshCcw className="h-3.5 w-3.5 transition-transform group-hover:rotate-180 duration-500" />
-                            <span className="text-[9px] font-black uppercase tracking-[0.2em]">Reset Chat</span>
+                            <RefreshCcw className="h-4 w-4 transition-transform group-hover:rotate-180" />
+                            <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">Reset</span>
                         </button>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <div className="h-8 w-1 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full" />
-                        <div>
-                            <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900 tracking-tight">
-                                AI Job Architect
-                            </h1>
-                            <p className="text-gray-400 font-medium mt-0.5 text-xs">
-                                Synthesize job descriptions and requirements using our pro neural engine.
-                            </p>
-                        </div>
+                        <button 
+                            onClick={() => {
+                                clearChat();
+                                router.push("/admin/create-drive");
+                            }}
+                            className="group flex items-center gap-3 px-8 py-3 rounded-xl border-2 border-gray-900 text-gray-900 font-bold hover:bg-gray-900 hover:text-white transition-all duration-500 shadow-xl shadow-gray-200/20 active:scale-95"
+                        >
+                            <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+                            <span className="text-[10px] font-black uppercase tracking-widest leading-none">Exit Architect</span>
+                        </button>
                     </div>
                 </div>
             </header>
 
-            {/* Chat Body - Scrolling Middle */}
-            <main className="flex-1 relative overflow-hidden flex flex-col z-10 bg-[#FBFBFC]">
-                <div 
-                    ref={scrollRef}
-                    className="flex-1 overflow-y-auto px-6 py-6 space-y-6 custom-scrollbar scroll-smooth"
-                >
-                    <div className="max-w-2xl mx-auto w-full space-y-6">
-                        {messages.map((m) => (
-                            <div 
-                                key={m.id}
-                                className={cn(
-                                    "flex gap-3 animate-in-fade group",
-                                    m.role === "user" ? "flex-row-reverse" : "flex-row"
-                                )}
-                            >
-                                <div className={cn(
-                                    "h-8 w-8 rounded-lg flex items-center justify-center shrink-0 border shadow-sm",
-                                    m.role === "user" 
-                                        ? "bg-gray-100 border-gray-200 text-gray-400" 
-                                        : "bg-white border-gray-100 text-[#F97316]"
-                                )}>
-                                    {m.role === "user" ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
-                                </div>
-
-                                <div className={cn(
-                                    "max-w-[85%] sm:max-w-[75%]",
-                                    m.role === "user" ? "items-end text-right" : "items-start text-left"
-                                )}>
-                                    {m.status === "thinking" ? (
-                                        <div className="bg-white border border-gray-100 p-3 rounded-xl rounded-tl-none shadow-sm flex items-center gap-3 w-max">
-                                            <Loader2 className="h-3 w-3 animate-spin text-[#F97316]" />
-                                            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-none animate-pulse">AI is typing...</p>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-3 w-full">
-                                            <div 
-                                                className={cn(
-                                                    "p-4 rounded-xl shadow-sm whitespace-pre-wrap leading-relaxed text-[13px] transition-all",
-                                                    m.role === "user" 
-                                                        ? "bg-gray-950 text-white rounded-tr-none font-bold" 
-                                                        : "bg-white text-gray-800 rounded-tl-none"
-                                                )}
-                                                dangerouslySetInnerHTML={{ __html: m.content.replace(/\n/g, '<br />') }}
-                                            />
-
-                                            {m.data && (
-                                                <div className="animate-in-slide-up pl-1 pt-2">
-                                                    <button 
-                                                        onClick={() => handleUseJd(m.data)}
-                                                        className="h-10 px-6 rounded-lg bg-orange-500 text-white font-bold text-xs shadow-md hover:bg-orange-600 transition-all hover:scale-[1.02] active:scale-100 flex items-center gap-2"
-                                                    >
-                                                        <Rocket className="h-3.5 w-3.5" />
-                                                        <span>Create Drive</span>
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Bottom Area */}
-                <div className="shrink-0 bg-white pt-6 pb-6 px-6 border-t border-gray-50 z-20">
-                    <div className="max-w-2xl mx-auto w-full space-y-4">
-                        {/* Suggestions */}
-                        {messages.length === 1 && !isGenerating && (
-                            <div className="flex flex-wrap gap-2 animate-in-fade justify-center">
-                                {[
-                                    "Senior React Developer, 4yrs exp",
-                                    "Product Manager for Fintech",
-                                    "Backend Dev, Python, $140k"
-                                ].map(s => (
-                                    <button 
-                                        key={s} 
-                                        onClick={() => handleSend(s)}
-                                        className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-[10px] font-bold text-gray-400 hover:text-[#F97316] hover:border-[#F97316]/30 transition-all shadow-sm"
-                                    >
-                                        {s}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-
-                        <div className="relative group">
-                            <div className="relative bg-white rounded-xl p-1 shadow-lg shadow-gray-200/40 flex items-center transition-all duration-300 focus-within:shadow-orange-500/10">
-                                <div className="pl-4 text-gray-300">
-                                    <MessageSquare className="h-4 w-4" />
+            {/* Chat Scroll Sanctuary */}
+            <main 
+                ref={scrollRef}
+                className="flex-1 overflow-y-auto px-6 pt-10 pb-32 space-y-12 bg-[#FDFDFF] custom-scrollbar scroll-smooth"
+            >
+                {messages.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center -mt-20 px-8 animate-in-fade text-center max-w-2xl mx-auto">
+                        <div className="h-24 w-24 rounded-[2.5rem] bg-gradient-to-br from-[#F97316] to-orange-600 flex items-center justify-center text-white shadow-2xl shadow-orange-500/20 mb-10 transform scale-125">
+                            <Bot className="h-12 w-12" />
+                        </div>
+                        <h2 className="text-5xl font-black text-gray-900 tracking-tighter leading-none mb-8">
+                            Architect Your Vision
+                        </h2>
+                        <p className="text-gray-400 font-bold text-[11px] mb-16 uppercase tracking-[0.6em]">
+                            Hirer Neural Synthesis Engine Online
+                        </p>
+                        <div className="w-full max-w-4xl group scale-110">
+                            <div className="relative bg-white rounded-[3rem] p-3 shadow-[0_40px_100px_rgba(0,0,0,0.07)] border border-orange-100/40 flex items-center transition-all duration-700 hover:shadow-[0_40px_120px_rgba(249,115,22,0.1)] focus-within:border-orange-400 focus-within:shadow-[0_40px_120px_rgba(249,115,22,0.15)]">
+                                <div className="pl-8 text-orange-400">
+                                    <MessageSquare className="h-8 w-8" />
                                 </div>
                                 <input 
-                                    className="flex-1 bg-transparent border-none focus:ring-0 px-3 h-12 text-[13px] font-bold text-gray-900 placeholder:text-gray-300"
-                                    placeholder="Describe requirements (e.g. Node.js Dev, 3yrs, Hybrid...)"
+                                    className="flex-1 bg-transparent border-none outline-none ring-0 focus:ring-0 focus:outline-none px-7 h-20 text-[20px] font-bold text-gray-900 placeholder:text-gray-300"
+                                    placeholder="Brief your high-impact requirements..."
                                     value={input}
                                     onChange={e => setInput(e.target.value)}
                                     onKeyPress={e => e.key === "Enter" && handleSend()}
@@ -333,15 +338,158 @@ Does this configuration look correct, or would you like me to adjust any specifi
                                 <button 
                                     disabled={!input.trim() || isGenerating}
                                     onClick={() => handleSend()}
-                                    className="h-10 px-5 rounded-lg bg-orange-500 text-white font-bold text-xs shadow-md hover:bg-orange-600 transition-all disabled:opacity-30 flex items-center gap-2"
+                                    className="h-20 px-14 rounded-full text-white font-bold shadow-2xl transition-all duration-300 flex items-center justify-center gap-4 overflow-hidden hover:scale-[1.02] active:scale-95 shrink-0"
+                                    style={{
+                                        background: "linear-gradient(135deg, #F97316, #ea6608)",
+                                    }}
                                 >
-                                    {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <span>Send</span>}
+                                    <span className="text-[12px] font-black uppercase tracking-[0.3em]">Architect</span>
+                                    <Zap className="h-6 w-6" />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* High-Fidelity Suggestion Chips */}
+                        <div className="w-full flex flex-col items-center gap-8 mt-24 animate-in-fade">
+                            <div className="flex items-center gap-6 w-full max-w-2xl">
+                                <div className="h-px bg-gray-100 flex-1" />
+                                <p className="text-[11px] font-bold text-gray-300 uppercase tracking-[0.6em] whitespace-nowrap">Try a Blueprint</p>
+                                <div className="h-px bg-gray-100 flex-1" />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-5xl px-8">
+                                {[
+                                    "Senior React Developer, 4yrs exp, 12-15 LPA",
+                                    "Product Manager for Fintech, Remote, Engineering",
+                                    "Backend Engineer (Node.js), 5yrs, Bangalore Office",
+                                    "HR Generalist, Hybrid, 3+ Years exp, Operations",
+                                    "DevOps Specialist, AWS Infrastructure, $140k Range",
+                                    "Sales Executive, B2B SaaS, 2yrs exp, Growth"
+                                ].map(s => (
+                                    <button 
+                                        key={s} 
+                                        onClick={() => handleSend(s)}
+                                        className="px-8 py-5 rounded-3xl border border-gray-50 bg-white text-[14px] font-bold text-gray-400 hover:text-[#F97316] hover:border-orange-200 hover:shadow-[0_20px_40px_rgba(249,115,22,0.1)] transition-all duration-500 text-left flex items-center group/card shadow-sm"
+                                    >
+                                        <div className="h-2 w-2 rounded-full bg-gray-100 group-hover/card:bg-orange-400 mr-4 transition-colors" />
+                                        <span className="flex-1">{s}</span>
+                                        <ArrowLeft className="h-4 w-4 rotate-180 opacity-0 group-hover/card:opacity-100 transition-all translate-x-[-10px] group-hover/card:translate-x-0" />
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="max-w-4xl mx-auto w-full space-y-12">
+                        {messages.map((m) => (
+                        <div 
+                            key={m.id}
+                            className={cn(
+                                "flex gap-6 animate-in-fade group",
+                                m.role === "user" ? "flex-row-reverse" : "flex-row"
+                            )}
+                        >
+                            <div className={cn(
+                                "h-10 w-10 rounded-xl flex items-center justify-center shrink-0 border shadow-sm transition-all duration-500",
+                                m.role === "user" 
+                                    ? "bg-gray-900 border-gray-800 text-white text-xs font-black uppercase" 
+                                    : "bg-white border-orange-50 text-[#F97316] group-hover:border-orange-200"
+                            )}>
+                                {m.role === "user" ? "ME" : <Bot className="h-5 w-5" />}
+                            </div>
+
+                            <div className={cn(
+                                "max-w-[85%] sm:max-w-[80%] flex flex-col",
+                                m.role === "user" ? "items-end" : "items-start"
+                            )}>
+                                {m.status === "thinking" ? (
+                                    <div className="bg-white border border-orange-100 p-6 rounded-3xl rounded-tl-none shadow-2xl flex items-center gap-4 w-max">
+                                        <div className="flex gap-1.5 items-center">
+                                            <span className="h-2 w-2 bg-orange-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                                            <span className="h-2 w-2 bg-orange-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                                            <span className="h-2 w-2 bg-orange-400 rounded-full animate-bounce" />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-4 w-full">
+                                        <div 
+                                            className={cn(
+                                                "p-7 rounded-[2.5rem] text-[15px] leading-relaxed transition-all duration-500",
+                                                m.role === "user" 
+                                                    ? "bg-gray-900 text-white rounded-tr-none font-bold shadow-2xl" 
+                                                    : "bg-white text-gray-800 rounded-tl-none border border-gray-100 shadow-xl shadow-gray-200/20"
+                                            )}
+                                            dangerouslySetInnerHTML={{ __html: m.content.replace(/\n/g, '<br />') }}
+                                        />
+
+                                        {m.data && (
+                                            <div className="animate-in-slide-up pl-4 pt-2 flex flex-wrap gap-3">
+                                                <button 
+                                                    onClick={() => handleUseJd(m.data)}
+                                                    className="h-11 px-8 rounded-xl text-white font-bold text-[10px] uppercase tracking-widest shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-3"
+                                                    style={{
+                                                        background: "linear-gradient(135deg, #F97316, #ea6608)",
+                                                        boxShadow: "0 10px 20px rgba(249,115,22,0.2)"
+                                                    }}
+                                                >
+                                                    <Rocket className="h-4 w-4" />
+                                                    <span>Add to Drive</span>
+                                                    <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                                                </button>
+
+                                                <button 
+                                                    onClick={() => handleDownloadPdf(m.data)}
+                                                    className="h-11 px-8 rounded-xl border-2 border-gray-900 text-gray-900 font-bold text-[10px] uppercase tracking-widest transition-all hover:bg-gray-900 hover:text-white active:scale-95 flex items-center gap-3"
+                                                >
+                                                    <FileText className="h-4 w-4" />
+                                                    <span>Download PDF</span>
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                    </div>
+                )}
+            </main>
+
+            {/* Floating Interaction Sanctuary */}
+            {messages.length > 0 && (
+                <div className="fixed bottom-0 left-0 right-0 md:left-[220px] pointer-events-none p-8 z-40">
+                    <div className="max-w-4xl mx-auto w-full flex flex-col items-center gap-6">
+                        {/* Floating Input Pill */}
+                        <div className="relative w-full pointer-events-auto group">
+                            <div className="relative bg-white/80 backdrop-blur-2xl rounded-[2.5rem] p-2 shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-white flex items-center transition-all duration-500 focus-within:shadow-[0_20px_60px_rgba(249,115,22,0.15)] focus-within:border-orange-200">
+                                <div className="pl-6 text-gray-400">
+                                    <MessageSquare className="h-5 w-5" />
+                                </div>
+                                <input 
+                                    className="flex-1 bg-transparent border-none outline-none ring-0 focus:ring-0 px-5 h-16 text-[16px] font-bold text-gray-900 placeholder:text-gray-300"
+                                    placeholder="Refine requirements here..."
+                                    value={input}
+                                    onChange={e => setInput(e.target.value)}
+                                    onKeyPress={e => e.key === "Enter" && handleSend()}
+                                />
+                                <button 
+                                    disabled={!input.trim() || isGenerating}
+                                    onClick={() => handleSend()}
+                                    className="h-14 w-14 rounded-xl text-white font-bold shadow-lg transition-all duration-300 disabled:opacity-20 flex items-center justify-center overflow-hidden hover:scale-105 active:scale-95 shrink-0"
+                                    style={{
+                                        background: "linear-gradient(135deg, #F97316, #ea6608)",
+                                    }}
+                                >
+                                    {isGenerating ? (
+                                        <Loader2 className="h-5 w-5 animate-spin" />
+                                    ) : (
+                                        <Zap className="h-5 w-5" />
+                                    )}
                                 </button>
                             </div>
                         </div>
                     </div>
                 </div>
-            </main>
+            )}
 
             <style dangerouslySetInnerHTML={{ __html: `
                 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
