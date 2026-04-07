@@ -127,84 +127,41 @@ export async function POST(request: Request) {
         const data = result.data;
         const deadline = data.deadline ? new Date(data.deadline) : null;
 
-        let drive;
-        try {
-            drive = await prisma.drive.create({
-                data: {
-                    title: data.title,
-                    description: data.description || "",
-                    role: data.role || null,
-                    department: data.department,
-                    type: data.employmentType || data.type || "Full-time",
-                    workMode: data.workMode || "Remote",
-                    positions: data.positions || 1,
-                    deadline: deadline,
-                    aiScreeningEnabled: data.aiScreening?.enabled ?? true,
-                    salary: data.salary || null,
-                    experience: data.experience || null,
-                    skills: data.skills || null,
-                    responsibilities: data.responsibilities || null,
-                    requirements: data.requirements || null,
-                    extractedDetails: JSON.stringify(data.extractedDetails || {}),
-                    jdFileName: data.jdFileName || null,
-                    jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
-                    registrationFields: JSON.stringify(data.registrationFields || []),
-                    screeningThreshold: data.screeningThreshold || 0,
-                    
-                    // Interview configuration
-                    interviewEnabled: data.interviewEnabled ?? true,
-                    interviewLanguage: data.interviewLanguage || "English",
-                    interviewTime: data.interviewTime || 10,
-                    proctoringLevel: data.interviewAntiCheat || "Medium",
-                    aiFollowUpDepth: data.interviewFollowUp || 3,
-                    interviewQuestions: JSON.stringify(data.interviewQuestions || []),
-                    isPassportRequired: data.isPassportRequired || false,
-
-                    orgId: (session as any).orgId,
-                    creatorId: (session as any).userId,
-                } as any,
-            });
-        } catch (error: any) {
-            // If the error is due to unknown argument (client out of sync), retry without isPassportRequired
-            if (error.message?.includes("Unknown argument `isPassportRequired`")) {
-                console.warn("[PRISMA_SYNC_WARNING]: isPassportRequired unknown, retrying without it. Please run 'npx prisma generate'.");
-                const { isPassportRequired: _, ...dataWithoutPassport } = {
-                    title: data.title,
-                    description: data.description || "",
-                    role: data.role || null,
-                    department: data.department,
-                    type: data.employmentType || data.type || "Full-time",
-                    workMode: data.workMode || "Remote",
-                    positions: data.positions || 1,
-                    deadline: deadline,
-                    aiScreeningEnabled: data.aiScreening?.enabled ?? true,
-                    salary: data.salary || null,
-                    experience: data.experience || null,
-                    skills: data.skills || null,
-                    responsibilities: data.responsibilities || null,
-                    requirements: data.requirements || null,
-                    extractedDetails: JSON.stringify(data.extractedDetails || {}),
-                    jdFileName: data.jdFileName || null,
-                    jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
-                    registrationFields: JSON.stringify(data.registrationFields || []),
-                    screeningThreshold: data.screeningThreshold || 0,
-                    interviewEnabled: data.interviewEnabled ?? true,
-                    interviewLanguage: data.interviewLanguage || "English",
-                    interviewTime: data.interviewTime || 10,
-                    proctoringLevel: data.interviewAntiCheat || "Medium",
-                    aiFollowUpDepth: data.interviewFollowUp || 3,
-                    interviewQuestions: JSON.stringify(data.interviewQuestions || []),
-                    orgId: (session as any).orgId,
-                    creatorId: (session as any).userId,
-                };
+        const drive = await prisma.drive.create({
+            data: {
+                title: data.title,
+                description: data.description || "",
+                role: data.role || null,
+                department: data.department,
+                type: data.employmentType || data.type || "Full-time",
+                workMode: data.workMode || "Remote",
+                positions: data.positions || 1,
+                deadline: deadline,
+                aiScreeningEnabled: data.aiScreening?.enabled ?? true,
+                salary: data.salary || null,
+                experience: data.experience || null,
+                skills: data.skills || null,
+                responsibilities: data.responsibilities || null,
+                requirements: data.requirements || null,
+                extractedDetails: JSON.stringify(data.extractedDetails || {}),
+                jdFileName: data.jdFileName || null,
+                jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
+                registrationFields: JSON.stringify(data.registrationFields || []),
+                screeningThreshold: data.screeningThreshold || 0,
                 
-                drive = await prisma.drive.create({
-                    data: dataWithoutPassport as any,
-                });
-            } else {
-                throw error;
-            }
-        }
+                // Interview configuration
+                interviewEnabled: data.interviewEnabled ?? true,
+                interviewLanguage: data.interviewLanguage || "English",
+                interviewTime: data.interviewTime || 10,
+                proctoringLevel: data.interviewAntiCheat || "Medium",
+                aiFollowUpDepth: data.interviewFollowUp || 3,
+                interviewQuestions: JSON.stringify(data.interviewQuestions || []),
+                isPassportRequired: data.isPassportRequired || false,
+
+                orgId: (session as any).orgId,
+                creatorId: (session as any).userId,
+            } as any,
+        });
 
         return NextResponse.json(drive);
     } catch (error: any) {
