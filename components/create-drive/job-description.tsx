@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { useEffect } from "react";
 
 const textareaClass =
-    "w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-[14px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316] hover:border-orange-300 transition-all duration-200 resize-none";
+    "w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-[14px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316] hover:border-orange-300 transition-all duration-200 resize-none overflow-y-auto";
 
 const inputClass =
     "w-full h-11 rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316] hover:border-orange-300 transition-all duration-200";
@@ -369,7 +369,11 @@ export function JobDescription({
                                 />
                             </div>
                             <div>
-                                <FieldLabel>Salary Range (LPA Inbuilt)</FieldLabel>
+                                {(() => {
+                                    const curr = (formData.salary || "").split(" ")[1] || "INR";
+                                    const label = curr === "INR" ? "Salary Range (LPA · INR)" : `Salary Range (${curr})`;
+                                    return <FieldLabel>{label}</FieldLabel>;
+                                })()}
                                 <div className="flex items-center gap-2">
                                     <div className="relative flex-1">
                                         <input
@@ -385,7 +389,7 @@ export function JobDescription({
                                             className={inputClass}
                                         />
                                         <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-gray-300 uppercase tracking-widest pointer-events-none">
-                                            LPA
+                                            {((formData.salary || "").split(" ")[1] || "INR") === "INR" ? "LPA" : (formData.salary || "").split(" ")[1] || ""}
                                         </div>
                                     </div>
                                     <CurrencySelector 

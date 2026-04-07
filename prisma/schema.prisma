@@ -113,6 +113,7 @@ model Drive {
   orgId              String?
   location           String        @default("Remote")
   status             String        @default("ACTIVE")
+  isPassportRequired Boolean       @default(false)
   aiScreeningEnabled Boolean       @default(true)
   applications       Application[]
   creator            User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
@@ -128,6 +129,7 @@ model Application {
   email            String
   phone            String
   resumeUrl        String
+  passportUrl      String?
   aiScore          Int?
   aiReport         String?
   driveId          Int

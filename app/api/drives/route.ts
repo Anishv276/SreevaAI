@@ -145,9 +145,18 @@ export async function POST(request: Request) {
                 requirements: data.requirements || null,
                 extractedDetails: JSON.stringify(data.extractedDetails || {}),
                 jdFileName: data.jdFileName || null,
-                jdPreviewUrl: data.jdPreviewUrl || null,
+                jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
                 registrationFields: JSON.stringify(data.registrationFields || []),
                 screeningThreshold: data.screeningThreshold || 0,
+                
+                // Interview configuration
+                interviewEnabled: data.interviewEnabled ?? true,
+                interviewLanguage: data.interviewLanguage || "English",
+                interviewTime: data.interviewTime || 10,
+                proctoringLevel: data.interviewAntiCheat || "Medium",
+                aiFollowUpDepth: data.interviewFollowUp || 3,
+                interviewQuestions: JSON.stringify(data.interviewQuestions || []),
+                isPassportRequired: data.isPassportRequired || false,
 
                 orgId: (session as any).orgId,
                 creatorId: (session as any).userId,

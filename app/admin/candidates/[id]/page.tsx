@@ -195,7 +195,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                     <div className="flex items-start gap-8">
                         <div className="relative flex-shrink-0">
                             <Avatar className="h-24 w-24 rounded-2xl border-4 border-white shadow-[0_8px_24px_rgba(0,0,0,0.1)]">
-                                <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${candidate.fullName}`} />
+                                <AvatarImage src={candidate.passportUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${candidate.fullName}`} className="object-cover" />
                                 <AvatarFallback className="text-2xl font-black bg-gray-900 text-white rounded-2xl">
                                     {candidate.fullName?.substring(0, 2).toUpperCase()}
                                 </AvatarFallback>

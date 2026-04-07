@@ -34,6 +34,7 @@ export const createDriveSchema = z.object({
     enabled: z.boolean().optional()
   }).optional(),
   location: z.string().optional(),
+  isPassportRequired: z.boolean().optional(),
 });
 
 export const updateDriveSchema = createDriveSchema.partial();
@@ -52,6 +53,7 @@ export const createCandidateSchema = z.object({
   email: z.string().email("Valid email required"),
   phone: z.string().min(1, "Phone is required").max(20),
   resumeUrl: z.string().optional(), // Relaxed for mocks/internal paths
+  passportUrl: z.string().optional(),
   resumeText: z.string().optional(),
   structuredResume: z.any().optional(),
   portfolio: z.string().optional(), // Relaxed

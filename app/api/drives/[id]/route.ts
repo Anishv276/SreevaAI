@@ -100,7 +100,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.responsibilities !== undefined) updateData.responsibilities = data.responsibilities;
         if (data.extractedDetails !== undefined) updateData.extractedDetails = JSON.stringify(data.extractedDetails);
         if (data.jdFileName !== undefined) updateData.jdFileName = data.jdFileName;
-        if (data.jdPreviewUrl !== undefined) updateData.jdPreviewUrl = data.jdPreviewUrl;
+        if (data.jdPreviewUrl !== undefined) {
+            updateData.jdPreviewUrl = data.jdPreviewUrl?.startsWith("blob:") ? undefined : data.jdPreviewUrl;
+        }
         
         if (data.registrationFields !== undefined) updateData.registrationFields = JSON.stringify(data.registrationFields);
         
@@ -114,6 +116,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.interviewFollowUp !== undefined) updateData.aiFollowUpDepth = data.interviewFollowUp;
         if (data.interviewQuestions !== undefined) updateData.interviewQuestions = JSON.stringify(data.interviewQuestions);
         if (data.requirements !== undefined) updateData.requirements = data.requirements;
+        if ((data as any).isPassportRequired !== undefined) updateData.isPassportRequired = (data as any).isPassportRequired;
         
         if (data.aiScreening?.enabled !== undefined) updateData.aiScreeningEnabled = data.aiScreening.enabled;
         

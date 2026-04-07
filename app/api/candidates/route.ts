@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resumeQueue, gradingQueue } from "@/lib/queue";
-import { createCandidateSchema, bulkDeleteCandidatesSchema, candidateQuerySchema } from "@/lib/validation";
+import { createCandidateSchema, bulkDeleteCandidatesSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
+import { sanitizeObject } from "@/lib/utils";
+import { isRateLimited } from "@/lib/ratelimit";
 
 const TABLE_CHECK_TTL_MS = 5 * 60 * 1000;
 
@@ -190,6 +192,7 @@ export async function GET(request: Request) {
                 date: new Date(app.createdAt).toLocaleDateString(),
                 experienceYears: app.experienceYears,
                 relevantYears: app.relevantYears,
+                passportUrl: app.passportUrl,
             };
         });
 
@@ -207,9 +210,6 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Failed to fetch candidates" }, { status: 500 });
     }
 }
-
-import { sanitizeObject } from "@/lib/utils";
-import { isRateLimited } from "@/lib/ratelimit";
 
 export async function POST(request: Request) {
     try {
@@ -287,7 +287,14 @@ export async function POST(request: Request) {
 
         const resumeText = data.resumeText?.trim() || "";
 
-        const { driveId, fullName, email, phone, resumeUrl, structuredResume, ...submissionData } = data;
+        const { 
+            driveId, fullName, email, phone, resumeUrl, passportUrl, structuredResume, 
+            experienceYears, relevantYears, ...submissionData 
+        } = data;
+
+        // EMERGENCY GUARD: Never save blob URLs to the database
+        const finalResumeUrl = resumeUrl?.startsWith("blob:") ? undefined : resumeUrl?.trim();
+        const finalPassportUrl = passportUrl?.startsWith("blob:") ? undefined : passportUrl?.trim();
 
         const application = await prisma.application.create({
             data: {
@@ -295,8 +302,11 @@ export async function POST(request: Request) {
                 fullName: fullName.trim(),
                 email: email.toLowerCase().trim(),
                 phone: phone.trim(),
-                resumeUrl: resumeUrl?.trim() || "https://example.com/resume.pdf",
+                resumeUrl: finalResumeUrl || "https://example.com/resume.pdf",
+                passportUrl: finalPassportUrl,
                 resumeText: resumeText,
+                experienceYears: experienceYears || (structuredResume as any)?.experience?.total_years || null,
+                relevantYears: relevantYears || null,
                 structuredResume: structuredResume ? JSON.stringify(structuredResume) : null,
                 submissionData: submissionData as any,
                 status: "Pending",
@@ -317,8 +327,8 @@ export async function POST(request: Request) {
         }, {
             attempts: 3,
             backoff: { type: 'exponential', delay: 2000 },
-            removeOnComplete: true, // AUTO-DELETE from Redis after success
-            removeOnFail: { count: 50 } // Keep only last 50 failures for debugging
+            removeOnComplete: true, 
+            removeOnFail: { count: 50 } 
         });
 
         return NextResponse.json(application);
@@ -336,7 +346,6 @@ export async function DELETE(request: Request) {
         const { searchParams } = new URL(request.url);
         const orgId = searchParams.get("orgId") || session?.orgId;
 
-        // Try to get body, but don't fail if missing (for full-org purge)
         let ids: string[] = [];
         try {
             const body = await request.json();
@@ -345,14 +354,13 @@ export async function DELETE(request: Request) {
                 ids = result.data.ids;
             }
         } catch (e) {
-            // No body provided, will check orgId
+            // No body provided
         }
 
         if (ids.length === 0 && !orgId) {
             return NextResponse.json({ error: "No candidates or organization specified for deletion" }, { status: 400 });
         }
 
-        // ── SECURITY: Find candidates belonging to the Org ──────
         const whereClause: any = {
             drive: { orgId }
         };
@@ -369,7 +377,6 @@ export async function DELETE(request: Request) {
         const validIds = belongsToOrg.map(a => a.id);
         if (validIds.length === 0) return NextResponse.json({ message: "No matching candidates found" });
 
-        // ── STORAGE CLEANUP: Purge Resumes from R2 ──────────
         try {
             const candidatesToCleanup = await prisma.application.findMany({
                 where: { id: { in: validIds } },

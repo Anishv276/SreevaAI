@@ -8,7 +8,7 @@ import { extractJDFromText } from "@/lib/openai";
 import { z } from "zod";
 
 const extractQuerySchema = z.object({
-    type: z.enum(["JD", "RESUME"]),
+    type: z.enum(["JD", "RESUME", "PASSPORT"]),
     url: z.string().url().optional(),
 });
 
@@ -23,11 +23,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing file or URL" }, { status: 400 });
         }
 
-        if (!typeRaw || !["JD", "RESUME"].includes(typeRaw)) {
-            return NextResponse.json({ error: "Invalid type. Must be JD or RESUME" }, { status: 400 });
+        if (!typeRaw || !["JD", "RESUME", "PASSPORT"].includes(typeRaw)) {
+            return NextResponse.json({ error: "Invalid type. Must be JD, RESUME or PASSPORT" }, { status: 400 });
         }
 
-        const type = typeRaw as "JD" | "RESUME";
+        const type = typeRaw as "JD" | "RESUME" | "PASSPORT";
 
         if (url) {
             if (type !== "JD") {
@@ -67,45 +67,56 @@ export async function POST(request: Request) {
         let outputData = "";
         let errorData = "";
 
-        // ── PARALLEL PROCESSING: Extraction + Background Upload ────────────────
-        const uploadPromise = (async () => {
-            try {
-                const { putObject } = await import("@/lib/s3");
-                const bucket = type === "JD" 
-                    ? (process.env.R2_JDS_BUCKET || "jds")
-                    : (process.env.R2_RESUMES_BUCKET || "resumes");
-                
-                const prefix = type === "JD" ? "jds/" : "resumes/";
-                const fileName = `${prefix}${uuidv4()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-                return await putObject(bucket, fileName, buffer, file.type);
-            } catch (err) { 
-                console.error("R2 Upload Error:", err);
-                return null; 
-            }
-        })();
+        const bucket = type === "JD" 
+            ? (process.env.R2_JDS_BUCKET || "jds")
+            : type === "PASSPORT"
+                ? (process.env.R2_PASSPHOTO_BUCKET || "passportphoto")
+                : (process.env.R2_RESUMES_BUCKET || "resumes");
+
+        const prefix = type === "JD" ? "jds/" : type === "PASSPORT" ? "passport/" : "resumes/";
+        const fileName = `${prefix}${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
 
         // Primary bottleneck: Java/Python Extraction
         const pythonCommand = process.platform === "win32" ? "python" : "python3";
         const pythonProcess = spawn(pythonCommand, ["scripts/extract_pdf.py", tempFilePath, type]);
 
-        let outputDataStr = "";
-        let errorDataStr = "";
-
-        pythonProcess.stdout.on("data", (data) => { outputDataStr += data.toString(); });
-        pythonProcess.stderr.on("data", (data) => { errorDataStr += data.toString(); });
+        pythonProcess.stdout.on("data", (data) => { outputData += data.toString(); });
+        pythonProcess.stderr.on("data", (data) => { errorData += data.toString(); });
 
         const exitCode = await new Promise((resolve) => {
             pythonProcess.on("close", (code) => resolve(code));
         });
 
-        outputData = outputDataStr;
-        errorData = errorDataStr;
+        // 7. SYNC UPLOAD: Handle R2 persistence
+        let fileUrl = null;
+        try {
+            const { putObject } = await import("@/lib/s3");
+            fileUrl = await putObject(bucket, fileName, buffer, file.type);
+            console.log("[STORAGE_SUCCESS]:", { type, fileName, url: fileUrl });
+        } catch (storageErr: any) {
+            console.error("[STORAGE_FATAL_ERROR]:", { type, fileName, error: storageErr.message });
+            // For JD, it's critical we have a persistent link
+            if (type === "JD") {
+                return NextResponse.json({ 
+                    error: "Could not persist JD to cloud storage. Please check bucket permissions.", 
+                    code: "STORAGE_VULNERABILITY",
+                    details: storageErr.message 
+                }, { status: 507 });
+            }
+        }
 
-        // Cleanup temp file
+        // Cleanup temp file (after upload is attempted)
         await unlink(tempFilePath).catch(() => { });
 
-        // Wait for R2 URL but don't let it block if extraction failed
-        const fileUrl = await uploadPromise;
+        if (type === "PASSPORT") {
+            if (!fileUrl) {
+                return NextResponse.json({ 
+                    error: "Passport security dispatch failed. Identity persistence incomplete.", 
+                    code: "STORAGE_VULNERABILITY" 
+                }, { status: 507 });
+            }
+            return NextResponse.json({ url: fileUrl });
+        }
 
         if (exitCode !== 0) {
             console.error("Python Extraction Failed:", errorData);
@@ -116,19 +127,11 @@ export async function POST(request: Request) {
             }, { status: 502 });
         }
 
-        if (!fileUrl) {
-            return NextResponse.json({ 
-                error: "Secure storage upload failed. We couldn't save your document.",
-                code: "STORAGE_UPLOAD_ERROR",
-                details: "Cloudflare R2 connection timed out or rejected the request."
-            }, { status: 503 });
-        }
-
         try {
             const result = JSON.parse(outputData);
             return NextResponse.json({
                 ...result,
-                url: fileUrl
+                url: fileUrl || null  // null if R2 upload failed (only for non-critical assets)
             });
         } catch (e) {
             console.error("Parse Error:", outputData, e);

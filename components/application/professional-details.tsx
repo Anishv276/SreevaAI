@@ -1,7 +1,89 @@
+"use client";
+
+import { useState, useRef, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { ChevronDown } from "lucide-react";
+
+const CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "SGD", "AUD"];
+
+function InlineCurrencySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const h = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+        document.addEventListener("mousedown", h);
+        return () => document.removeEventListener("mousedown", h);
+    }, []);
+
+    return (
+        <div ref={ref} className="relative flex-shrink-0">
+            <button
+                type="button"
+                onClick={() => setOpen(!open)}
+                className="h-12 px-3 flex items-center gap-1 rounded-2xl border border-gray-100 bg-gray-50/50 hover:bg-white hover:border-orange-200 transition-all text-xs font-black text-gray-700"
+            >
+                {value} <ChevronDown className={`h-3 w-3 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
+            </button>
+            {open && (
+                <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-100 rounded-2xl shadow-xl overflow-hidden w-24">
+                    {CURRENCIES.map(c => (
+                        <button
+                            key={c}
+                            type="button"
+                            onClick={() => { onChange(c); setOpen(false); }}
+                            className={`w-full px-3 py-2 text-xs font-bold text-left transition-all hover:bg-orange-50 hover:text-[#F97316] ${value === c ? "text-[#F97316] bg-orange-50/50" : "text-gray-700"}`}
+                        >
+                            {c}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function parseCTC(raw: string): { amount: string; currency: string } {
+    const parts = raw?.split("||") || [];
+    return { amount: parts[0] || "", currency: parts[1] || "INR" };
+}
+
+function formatCTC(amount: string, currency: string): string {
+    return amount ? `${amount}||${currency}` : "";
+}
+
+function CTCInput({ label, id, value, onChange, inputClass }: { label: string; id: string; value: string; onChange: (v: string) => void; inputClass: string; }) {
+    const { amount, currency } = parseCTC(value);
+    const placeholder = currency === "INR" ? "e.g. 12 LPA" : `e.g. 120,000`;
+    const suffix = currency === "INR" ? "LPA" : currency;
+
+    return (
+        <div className="space-y-3">
+            <Label htmlFor={id} className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">
+                {label} <span className="text-[#F97316] font-black text-[9px] ml-1 normal-case tracking-normal">{currency === "INR" ? "LPA" : currency}</span>
+            </Label>
+            <div className="flex gap-2 items-center">
+                <div className="relative flex-1">
+                    <Input
+                        id={id}
+                        type="text"
+                        placeholder={placeholder}
+                        value={amount}
+                        onChange={(e) => onChange(formatCTC(e.target.value, currency))}
+                        className={cn(inputClass, "pr-14")}
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-gray-300 uppercase tracking-widest pointer-events-none">
+                        {suffix}
+                    </span>
+                </div>
+                <InlineCurrencySelect value={currency} onChange={(c) => onChange(formatCTC(amount, c))} />
+            </div>
+        </div>
+    );
+}
 
 export function ProfessionalDetails({ 
     formData, 
@@ -21,9 +103,10 @@ export function ProfessionalDetails({
                 <Input
                     id="experience"
                     type="number"
+                    min={0}
                     placeholder="e.g. 5"
-                    value={formData.experience}
-                    onChange={(e) => updateFormData({ experience: e.target.value })}
+                    value={formData.experience || ""}
+                    onChange={(e) => updateFormData({ experience: e.target.value, experienceYears: parseFloat(e.target.value) || 0 })}
                     className={cn(inputClass, isAnalyzing && !formData.experience && "bg-orange-50/50")}
                 />
             </div>
@@ -34,21 +117,18 @@ export function ProfessionalDetails({
                     <Input
                         id="current-company"
                         placeholder="Company Name"
-                        value={formData.currentCompany}
+                        value={formData.currentCompany || ""}
                         onChange={(e) => updateFormData({ currentCompany: e.target.value })}
                         className={cn(inputClass, isAnalyzing && !formData.currentCompany && "bg-orange-50/50")}
                     />
                 </div>
-                <div className="space-y-3">
-                    <Label htmlFor="ctc" className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">Current CTC</Label>
-                    <Input
-                        id="ctc"
-                        placeholder="e.g. $120,000"
-                        value={formData.ctc}
-                        onChange={(e) => updateFormData({ ctc: e.target.value })}
-                        className={inputClass}
-                    />
-                </div>
+                <CTCInput
+                    label="Current CTC"
+                    id="ctc"
+                    value={formData.ctc || ""}
+                    onChange={(v) => updateFormData({ ctc: v })}
+                    inputClass={inputClass}
+                />
             </div>
 
             <div className="grid gap-8 md:grid-cols-2">
@@ -70,16 +150,13 @@ export function ProfessionalDetails({
                         </SelectContent>
                     </Select>
                 </div>
-                <div className="space-y-3">
-                    <Label htmlFor="expected-ctc" className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">Expected CTC *</Label>
-                    <Input
-                        id="expected-ctc"
-                        placeholder="e.g. $140,000"
-                        value={formData.expectedCtc}
-                        onChange={(e) => updateFormData({ expectedCtc: e.target.value })}
-                        className={inputClass}
-                    />
-                </div>
+                <CTCInput
+                    label="Expected CTC *"
+                    id="expected-ctc"
+                    value={formData.expectedCtc || ""}
+                    onChange={(v) => updateFormData({ expectedCtc: v })}
+                    inputClass={inputClass}
+                />
             </div>
         </div>
     );

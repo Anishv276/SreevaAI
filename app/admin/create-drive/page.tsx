@@ -79,6 +79,7 @@ function CreateDriveForm() {
     const [aiEnabled, setAiEnabled] = useState(true);
     const [weights, setWeights] = useState<ScreeningWeight>({ threshold: 60 });
     const [customFields, setCustomFields] = useState<CustomField[]>([]);
+    const [isPassportRequired, setIsPassportRequired] = useState(false);
 
     // AI Analysis State
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -144,6 +145,7 @@ function CreateDriveForm() {
                         setCustomFields(fields);
                     } catch (e) { console.error("Failed to parse reg fields", e); }
                 }
+                setIsPassportRequired((drive as any).isPassportRequired || false);
             }
         }
     }, [isEditMode, driveId, jobs]);
@@ -296,8 +298,21 @@ function CreateDriveForm() {
                         ? respArr.map((r: any) => typeof r === 'object' ? r.task : r).join("\n") 
                         : (typeof respArr === 'string' ? respArr : (prev.responsibilities || ""));
                     
-                    const req = Array.isArray(extracted.requirements) ? extracted.requirements.join("\n") :
-                                (typeof extracted.requirements === 'string' ? extracted.requirements : (prev.requirements || ""));
+                    // ── REQUIREMENTS ────────────────────────────────
+                    // Use extracted requirements; if empty, synthesize from education + skills
+                    let reqArr: string[] = [];
+                    if (Array.isArray(extracted.requirements) && extracted.requirements.length > 0) {
+                        reqArr = extracted.requirements;
+                    } else {
+                        // Synthesize from education, experience and skills as fallback
+                        if (extracted.education?.required) reqArr.push(extracted.education.required);
+                        if (extracted.experience?.preferred_background) reqArr.push(extracted.experience.preferred_background);
+                        if (mustHaveArr.length > 0) reqArr.push(`Proficiency in: ${mustHaveArr.slice(0, 5).join(", ")}`);
+                        if (extracted.deal_breakers?.length > 0) {
+                            extracted.deal_breakers.forEach((db: any) => reqArr.push(db.condition || db));
+                        }
+                    }
+                    const req = reqArr.length > 0 ? reqArr.join("\n") : (prev.requirements || "");
 
                     return {
                         ...prev,
@@ -313,6 +328,7 @@ function CreateDriveForm() {
                         responsibilities: resp,
                         requirements: req,
                         extractedDetails: extracted, 
+                        // Keep the R2 URL if available, otherwise keep the existing blob URL for in-session preview
                         jdPreviewUrl: r2Url || prev.jdPreviewUrl,
                     };
                 });
@@ -414,6 +430,7 @@ function CreateDriveForm() {
             registrationFields: customFields,
             extractedDetails: formData.extractedDetails || {},
             screeningThreshold: weights?.threshold || 0,
+            isPassportRequired: isPassportRequired,
         };
         
         console.log("handlePublish called. isEditMode:", isEditMode, "Data:", jobData);
@@ -721,6 +738,8 @@ function CreateDriveForm() {
                         <RegistrationForm
                             customFields={customFields}
                             setCustomFields={setCustomFields}
+                            isPassportRequired={isPassportRequired}
+                            setIsPassportRequired={setIsPassportRequired}
                         />
                     )}
                     {currentStep === 5 && (

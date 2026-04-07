@@ -80,7 +80,7 @@ export async function PATCH(req: Request) {
                 industry,
                 size,
                 website,
-                logoUrl
+                logoUrl: logoUrl?.startsWith("blob:") ? undefined : logoUrl
             }
         });
 

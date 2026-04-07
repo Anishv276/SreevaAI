@@ -134,14 +134,14 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                             </div>
                             <div className="flex items-center gap-4">
                                 <Slider
-                                    value={[formData.interviewDuration || 15]}
-                                    onValueChange={([v]) => setField("interviewDuration", v)}
+                                    value={[formData.interviewTime || 10]}
+                                    onValueChange={([v]) => setField("interviewTime", v)}
                                     min={5}
                                     max={30}
                                     step={5}
                                     className="flex-1"
                                 />
-                                <span className="text-sm font-bold text-gray-900 w-16 text-center">{formData.interviewDuration || 15} min</span>
+                                <span className="text-sm font-bold text-gray-900 w-16 text-center">{formData.interviewTime || 10} min</span>
                             </div>
                         </div>
                     </div>

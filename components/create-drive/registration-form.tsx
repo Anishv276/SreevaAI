@@ -15,9 +15,11 @@ export interface CustomField {
 interface RegistrationProps {
     customFields: CustomField[];
     setCustomFields: (fields: CustomField[] | ((prev: CustomField[]) => CustomField[])) => void;
+    isPassportRequired: boolean;
+    setIsPassportRequired: (v: boolean) => void;
 }
 
-export function RegistrationForm({ customFields, setCustomFields }: RegistrationProps) {
+export function RegistrationForm({ customFields, setCustomFields, isPassportRequired, setIsPassportRequired }: RegistrationProps) {
 
     const addField = () =>
         setCustomFields(prev => [...prev, { id: Date.now(), label: "", type: "Short", required: false }]);
@@ -33,11 +35,16 @@ export function RegistrationForm({ customFields, setCustomFields }: Registration
             <div className="space-y-4 border p-6 rounded-xl bg-gray-50/50">
                 <h3 className="text-lg font-semibold">Standard Fields</h3>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {["Full Name", "Email Address", "Phone Number", "Resume Upload", "Current Location", "Total Experience"].map((field) => (
+                    {["Full Name", "Email Address", "Phone Number", "Resume Upload", "Passport Photo", "Current Location", "Total Experience"].map((field) => (
                         <div key={field} className="flex items-center space-x-2 border p-3 rounded-lg bg-white">
-                            <Checkbox id={field} defaultChecked disabled={field === "Full Name" || field === "Email Address"} />
+                            <Checkbox 
+                                id={field} 
+                                checked={field === "Passport Photo" ? isPassportRequired : true} 
+                                onCheckedChange={(v) => { if (field === "Passport Photo") setIsPassportRequired(!!v); }}
+                                disabled={field !== "Passport Photo"} 
+                            />
                             <Label htmlFor={field} className="flex-1 cursor-pointer">{field}</Label>
-                            <span className="text-xs text-gray-400 capitalize">{field === "Resume Upload" ? "File" : "Text"}</span>
+                            <span className="text-xs text-gray-400 capitalize">{ (field === "Resume Upload" || field === "Passport Photo") ? "File" : "Text"}</span>
                         </div>
                     ))}
                 </div>

@@ -53,6 +53,9 @@ export default function ApplicationPage() {
         resumeUploaded: false,
         resumeText: "",
         resumeUrl: "",
+        passportUrl: "",
+        passportUploaded: false,
+        isUploadingPassport: false,
         structuredResume: {},
         agreedToTerms: false,
         customAnswers: {} as Record<string, any>,
@@ -120,7 +123,11 @@ export default function ApplicationPage() {
                             email: extractedData?.email || "",
                             phone: extractedData?.phone || "",
                             location: extractedData?.location?.city || (typeof extractedData?.location === 'string' ? extractedData?.location : ""),
-                            experience: extractedData?.experience?.total_years || "",
+                            experience: (() => {
+                                const yrs = extractedData?.experience?.total_years;
+                                return (typeof yrs === 'number' && yrs >= 0) ? String(yrs) : "";
+                            })(),
+                            experienceYears: extractedData?.experience?.total_years || null,
                             currentCompany: extractedData?.current_company || "",
                         };
 
@@ -140,6 +147,32 @@ export default function ApplicationPage() {
             setAnalysisError("Network error. Please check your connection.");
         } finally {
             setIsAnalyzing(false);
+        }
+    };
+
+    const startPassportUpload = async (file: File) => {
+        updateFormData({ isUploadingPassport: true });
+        
+        const data = new FormData();
+        data.append("file", file);
+        data.append("type", "PASSPORT");
+        
+        try {
+            const response = await fetch("/api/extract", { method: "POST", body: data });
+            if (response.ok) {
+                const { url: passportUrl } = await response.json();
+                updateFormData({ 
+                    passportUrl: passportUrl || "",
+                    passportUploaded: true,
+                    isUploadingPassport: false
+                });
+            } else {
+                showAlert("Failed to upload passport photo.", "error");
+                updateFormData({ isUploadingPassport: false });
+            }
+        } catch (err) {
+            showAlert("Upload failed. Please try again.", "error");
+            updateFormData({ isUploadingPassport: false });
         }
     };
     
@@ -223,6 +256,7 @@ export default function ApplicationPage() {
                 coverLetter: formData.coverLetter,
                 resumeUrl: formData.resumeUrl || (formData.resumeUploaded ? "resume_mock.pdf" : undefined),
                 resumeText: formData.resumeText,
+                passportUrl: formData.passportUrl,
                 structuredResume: formData.structuredResume,
                 education: formData.education,
                 experience_list: formData.experience_list,
@@ -349,6 +383,11 @@ export default function ApplicationPage() {
                                         startAnalysis={startAnalysis}
                                         clearResume={clearResume}
                                         mode={mode || "manual"}
+                                        isPassportRequired={!!(job as any)?.isPassportRequired}
+                                        isUploadingPassport={formData.isUploadingPassport}
+                                        startPassportUpload={startPassportUpload}
+                                        passportUploaded={formData.passportUploaded}
+                                        passportUrl={formData.passportUrl}
                                     />
                                 </div>
                                 

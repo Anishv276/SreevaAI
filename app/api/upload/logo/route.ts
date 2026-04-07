@@ -1,15 +1,5 @@
 import { NextResponse } from "next/server";
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSession } from "@/lib/auth";
-
-const s3Client = new S3Client({
-    region: "auto",
-    endpoint: process.env.R2_ENDPOINT!,
-    credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-    },
-});
 
 export async function POST(req: Request) {
     try {
@@ -25,22 +15,13 @@ export async function POST(req: Request) {
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
-        const key = `org_${session.orgId}_${Date.now()}_${file.name}`;
+        const key = `logo_${session.orgId}_${Date.now()}_${file.name}`;
         
         // Target your "logos" bucket explicitly
         const BUCKET_NAME = process.env.R2_LOGOS_BUCKET || "logos";
 
-        await s3Client.send(new PutObjectCommand({
-            Bucket: BUCKET_NAME,
-            Key: key,
-            Body: buffer,
-            ContentType: file.type,
-        }));
-
-        // RESOLUTION: Use the specialized logo host if provided, fallback to default R2 URL
-        const host = process.env.NEXT_PUBLIC_R2_LOGOS_URL;
-        const baseUrl = host?.replace(/\/$/, "");
-        const publicUrl = `${baseUrl}/${key}`;
+        const { putObject } = await import("@/lib/s3");
+        const publicUrl = await putObject(BUCKET_NAME, key, buffer, file.type);
 
         return NextResponse.json({ url: publicUrl });
     } catch (error) {
@@ -59,18 +40,13 @@ export async function DELETE(req: Request) {
         const { url } = await req.json();
         if (!url) return NextResponse.json({ error: "No URL provided" }, { status: 400 });
 
-        // Extract key from URL
-        const host = process.env.NEXT_PUBLIC_R2_LOGOS_URL || "";
-        const key = url.replace(host, "").replace(/^\/+/, "");
+        const { deleteObject, getKeyFromUrl } = await import("@/lib/s3");
+        const key = getKeyFromUrl(url);
 
         if (!key) return NextResponse.json({ error: "Invalid key" }, { status: 400 });
 
         const BUCKET_NAME = process.env.R2_LOGOS_BUCKET || "logos";
-
-        await s3Client.send(new DeleteObjectCommand({
-            Bucket: BUCKET_NAME,
-            Key: key,
-        }));
+        await deleteObject(BUCKET_NAME, key);
 
         return NextResponse.json({ success: true });
     } catch (error) {
