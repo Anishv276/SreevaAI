@@ -217,7 +217,7 @@ export default function CandidateDashboard() {
                                                                     app.interview.status === "PENDING" && app.interview.canStart
                                                                         ? {
                                                                             label: "Start Interview",
-                                                                            href: `/careers/interview/${app.id}?token=${app.interview.token}`
+                                                                            href: `/interview/${app.id}?token=${app.interview.token}`
                                                                         }
                                                                         : undefined
                                                                 }

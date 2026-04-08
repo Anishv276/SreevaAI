@@ -28,7 +28,7 @@ import {
     MapPin,
     AlertCircle,
     FileText,
-    Share2
+    Link as LinkIcon
 } from "lucide-react";
 import {
     Select,
@@ -75,9 +75,10 @@ export default function DrivesPage() {
     const [freshDriveDetails, setFreshDriveDetails] = useState<any>(null);
     const [isFetchingFresh, setIsFetchingFresh] = useState(false);
     
+    const cachedDrive = jobs.find(j => j.id === previewDriveId);
     const selectedDrive = freshDriveDetails && freshDriveDetails.id === previewDriveId 
         ? freshDriveDetails 
-        : jobs.find(j => j.id === previewDriveId);
+        : cachedDrive;
 
     // Fetch fresh data when preview is opened
     useEffect(() => {
@@ -87,6 +88,8 @@ export default function DrivesPage() {
         }
 
         const fetchFresh = async () => {
+            // Only show full-screen overlay if we don't have job data yet
+            const hasExistingData = jobs.some(j => j.id === previewDriveId);
             setIsFetchingFresh(true);
             try {
                 const res = await fetch(`/api/drives/${previewDriveId}`);
@@ -102,7 +105,7 @@ export default function DrivesPage() {
         };
 
         fetchFresh();
-    }, [previewDriveId]);
+    }, [previewDriveId, jobs]);
 
     // Initial load and Filter Sync
     useEffect(() => {
@@ -337,6 +340,17 @@ export default function DrivesPage() {
                                                     <Edit className="mr-2 h-4 w-4" /> Edit Drive Details
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem
+                                                    className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700"
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        const link = `${window.location.origin}/careers/jobs/${(drive as any).slug || drive.id}`;
+                                                        await navigator.clipboard.writeText(link);
+                                                        alert("Link copied to clipboard!");
+                                                    }}
+                                                >
+                                                    <LinkIcon className="mr-2 h-4 w-4" /> Copy Job Link
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
                                                     className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer rounded-lg py-2.5"
                                                     onClick={() => handleDelete(drive.id)}
                                                 >
@@ -476,11 +490,13 @@ export default function DrivesPage() {
                         {/* Drawer Content */}
                         <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar relative">
                             {isFetchingFresh && (
-                                <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center gap-4 animate-in-fade">
-                                    <div className="h-12 w-12 rounded-2xl bg-orange-50 flex items-center justify-center text-[#F97316] shadow-sm animate-bounce">
-                                        <Briefcase className="h-6 w-6" />
+                                <div className="absolute top-4 right-14 z-50">
+                                    <div className="bg-white/80 backdrop-blur-sm border border-orange-100 rounded-full px-3 py-1 flex items-center gap-2 shadow-sm">
+                                        <Loader2 className="h-3 w-3 text-orange-500 animate-spin" />
+                                        <span className="text-[9px] font-bold text-orange-600 uppercase tracking-widest">
+                                            {freshDriveDetails ? "Updating..." : "Syncing..."}
+                                        </span>
                                     </div>
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-600 animate-pulse">Syncing Fresh Data...</p>
                                 </div>
                             )}
                             {/* Title Section */}
@@ -518,6 +534,43 @@ export default function DrivesPage() {
                                     </div>
                                     <p className="font-bold text-gray-900 text-sm">{new Date(selectedDrive.createdAt).toLocaleDateString()}</p>
                                 </div>
+                            </div>
+
+
+                            {/* Public Job Link Section */}
+                            <div className="p-6 bg-orange-50/30 rounded-2xl border border-orange-100/50 space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 text-[11px] font-black text-gray-500 uppercase tracking-[0.2em]">
+                                        <LinkIcon className="h-3.5 w-3.5 text-[#F97316]" /> Public Job Link
+                                    </div>
+                                    <Badge variant="secondary" className="text-[9px] font-bold bg-white text-green-600 border-green-100 h-5">LIVE</Badge>
+                                </div>
+                                <div className="flex gap-2">
+                                    <div className="flex-1 bg-white border border-gray-100 rounded-xl px-4 py-3 flex items-center overflow-hidden">
+                                        <span className="text-[12px] font-medium text-gray-500 truncate select-all">
+                                            {`${typeof window !== 'undefined' ? window.location.origin : ''}/careers/jobs/${(selectedDrive as any).slug || selectedDrive.id}`}
+                                        </span>
+                                    </div>
+                                    <Button 
+                                        variant="outline" 
+                                        className="rounded-xl border-gray-100 hover:border-orange-200 hover:bg-orange-50 h-auto py-3 px-4 transition-all"
+                                        onClick={async () => {
+                                            const link = `${window.location.origin}/careers/jobs/${(selectedDrive as any).slug || selectedDrive.id}`;
+                                            await navigator.clipboard.writeText(link);
+                                            setCopySuccess(true);
+                                            setTimeout(() => setCopySuccess(false), 2000);
+                                        }}
+                                    >
+                                        {copySuccess ? (
+                                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                        ) : (
+                                            <Copy className="h-4 w-4 text-gray-400" />
+                                        )}
+                                    </Button>
+                                </div>
+                                {copySuccess && (
+                                    <p className="text-[10px] text-green-600 font-bold uppercase tracking-widest text-center animate-in-fade">Copied to clipboard!</p>
+                                )}
                             </div>
 
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { interviewFinalizationQueue } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
 import { interviewFinalizeSchema } from "@/lib/validation";
+import crypto from "crypto";
 
 export const runtime = "nodejs";
 
@@ -14,41 +15,28 @@ async function persistInterviewUpdateRaw(params: {
   const { applicationId, recordingUrl, transcript, interviewStatus } = params;
   const finalStatus = interviewStatus || "COMPLETED";
 
-  await prisma.$executeRawUnsafe(
-    `
-    INSERT INTO "Interview" (id, "applicationId", "accessToken", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "completedAt", "createdAt", "updatedAt")
-    VALUES (gen_random_uuid()::text, $1, 'finalize-upload', COALESCE($2::text, 'COMPLETED'), $3, CASE WHEN $3::text IS NOT NULL THEN NOW() ELSE NULL END, $4, CASE WHEN COALESCE($2::text, 'COMPLETED') = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
-    ON CONFLICT ("applicationId")
-    DO UPDATE SET
-      status = COALESCE($2::text, 'COMPLETED'),
-      "interviewRecordingUrl" = COALESCE($3::text, "Interview"."interviewRecordingUrl"),
-      "interviewRecordedAt" = CASE WHEN $3::text IS NOT NULL THEN NOW() ELSE "Interview"."interviewRecordedAt" END,
-      "interviewTranscript" = COALESCE($4::text, "Interview"."interviewTranscript"),
-      "completedAt" = CASE WHEN COALESCE($2::text, 'COMPLETED') = 'COMPLETED' THEN NOW() ELSE "Interview"."completedAt" END,
-      "updatedAt" = NOW()
-    `,
-    applicationId,
-    finalStatus,
-    recordingUrl || null,
-    transcript || null
-  );
+  const interviewId = crypto.randomUUID();
+  const accessToken = crypto.randomUUID();
 
   await prisma.$executeRawUnsafe(
     `
-    UPDATE "Assessment"
-    SET
-      "interviewRecordingUrl" = COALESCE($1::text, "interviewRecordingUrl"),
-      "interviewRecordedAt" = CASE WHEN $1::text IS NOT NULL THEN NOW() ELSE "interviewRecordedAt" END,
-      "interviewTranscript" = COALESCE($2::text, "interviewTranscript"),
-      status = COALESCE($3::text, 'COMPLETED'),
-      "completedAt" = CASE WHEN COALESCE($3::text, 'COMPLETED') = 'COMPLETED' THEN NOW() ELSE "completedAt" END,
+    INSERT INTO "Interview" (id, "applicationId", "accessToken", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "completedAt", "createdAt", "updatedAt")
+    VALUES ($1, $2, $3, COALESCE($4::text, 'COMPLETED'), $5, CASE WHEN $5::text IS NOT NULL THEN NOW() ELSE NULL END, $6, CASE WHEN COALESCE($4::text, 'COMPLETED') = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
+    ON CONFLICT ("applicationId")
+    DO UPDATE SET
+      status = COALESCE($4::text, 'COMPLETED'),
+      "interviewRecordingUrl" = COALESCE($5::text, "Interview"."interviewRecordingUrl"),
+      "interviewRecordedAt" = CASE WHEN $5::text IS NOT NULL THEN NOW() ELSE "Interview"."interviewRecordedAt" END,
+      "interviewTranscript" = COALESCE($6::text, "Interview"."interviewTranscript"),
+      "completedAt" = CASE WHEN COALESCE($4::text, 'COMPLETED') = 'COMPLETED' THEN NOW() ELSE "Interview"."completedAt" END,
       "updatedAt" = NOW()
-    WHERE "applicationId" = $4
     `,
-    recordingUrl || null,
-    transcript || null,
+    interviewId,
+    applicationId,
+    accessToken,
     finalStatus,
-    applicationId
+    recordingUrl || null,
+    transcript || null
   );
 }
 
@@ -83,13 +71,12 @@ export async function POST(req: Request) {
       );
     }
 
-    if (appStatus) {
-      await prisma.$executeRawUnsafe(
-        'UPDATE "Application" SET status = $1, "updatedAt" = NOW() WHERE id = $2',
-        appStatus,
-        applicationId
-      );
-    }
+    const finalAppStatus = appStatus || "COMPLETED";
+    await prisma.$executeRawUnsafe(
+      'UPDATE "Application" SET status = $1, "updatedAt" = NOW() WHERE id = $2',
+      finalAppStatus,
+      applicationId
+    );
 
     let jobId: string | number | undefined;
     try {

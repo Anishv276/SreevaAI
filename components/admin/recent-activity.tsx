@@ -12,7 +12,7 @@ const activities = [
     },
     {
         id: 2,
-        action: "AI Assessment completed · Score 87%",
+        action: "AI interview completed · Score 87%",
         drive: "Product Designer",
         time: "1h ago",
         icon: FileCheck,

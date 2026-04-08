@@ -14,27 +14,23 @@ export async function POST(
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        // Verify the interview token against the database
-        let interview;
-        if (interviewToken === "dev-bypass" && process.env.NODE_ENV === "development") {
-            // Find any interview for this application to bypass for testing
-            interview = await prisma.interview.findFirst({
-                where: { applicationId },
-            });
-        } else {
-            interview = await prisma.interview.findFirst({
+        // Dev bypass supports local testing with a static token value.
+        const isDev = process.env.NODE_ENV === "development";
+        const isDevBypass = interviewToken === "dev-bypass";
+
+        if (!isDevBypass || !isDev) {
+            const interview = await prisma.interview.findFirst({
                 where: {
                     applicationId,
                     accessToken: interviewToken,
                 },
             });
+
+            if (!interview) {
+                return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
+            }
         }
 
-        if (!interview) {
-            return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
-        }
-
-        // Generate LiveKit token
         const roomName = `interview_${applicationId}`;
         const participantIdentity = `candidate_${applicationId}`;
 
@@ -43,6 +39,7 @@ export async function POST(
             process.env.LIVEKIT_API_SECRET,
             {
                 identity: participantIdentity,
+                ttl: "2h",
             }
         );
 
@@ -54,9 +51,9 @@ export async function POST(
             canSubscribe: true,
         });
 
-        return NextResponse.json({ 
+        return NextResponse.json({
             token: await at.toJwt(),
-            url: process.env.LIVEKIT_URL 
+            url: process.env.LIVEKIT_URL,
         });
     } catch (error) {
         console.error("LiveKit token error:", error);

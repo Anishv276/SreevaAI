@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
   title: "Hirer.ai - AI-Powered Recruitment Platform",
-  description: "Automate your hiring process with AI-driven screening and assessments.",
+  description: "Automate your hiring process with AI-driven screening and interviews.",
 };
 
 export default function RootLayout({

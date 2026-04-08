@@ -373,12 +373,7 @@ export default function CandidatesPage() {
                             ) : (
                             filteredCandidates.map((candidate) => (
                                 (() => {
-                                    const mainStatus =
-                                        candidate.status === "Rejected"
-                                            ? "Rejected"
-                                            : candidate.status === "Borderline"
-                                                ? "Borderline"
-                                                : "Shortlisted";
+                                    const mainStatus = candidate.status;
                                     const interviewStage = candidate.interviewStatus || "Not Selected";
 
                                     return (
@@ -443,18 +438,20 @@ export default function CandidatesPage() {
                                     </TableCell>
                                     <TableCell className="py-5">
                                         <Badge variant="secondary" className={cn(
-                                            "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm",
-                                            mainStatus === 'Shortlisted' ? 'bg-green-50 text-green-700' :
-                                                mainStatus === 'Rejected' ? 'bg-red-50 text-red-700' :
-                                                    'bg-amber-50 text-amber-700'
+                                            "rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border-0 shadow-sm",
+                                            mainStatus === 'Rejected' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'
                                         )}>
                                             {mainStatus}
                                         </Badge>
                                     </TableCell>
                                     <TableCell className="py-5">
-                                        <p className="text-[11px] font-bold text-gray-500">
+                                        <Badge variant="outline" className={cn(
+                                            "rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border-gray-100 shadow-sm transition-all",
+                                            interviewStage === 'Interview Completed' || interviewStage === 'COMPLETED' ? 'text-indigo-600 bg-indigo-50/20 shadow-none border-indigo-100' : 
+                                            interviewStage === 'Interview Pending' || interviewStage === 'PENDING' ? 'text-amber-600 bg-amber-50/20 shadow-none border-amber-100' : 'text-gray-500 bg-gray-50'
+                                        )}>
                                             {interviewStage}
-                                        </p>
+                                        </Badge>
                                     </TableCell>
                                     <TableCell className="py-5 text-[12px] font-bold text-gray-400">
                                         {candidate.date}

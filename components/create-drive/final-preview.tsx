@@ -1,10 +1,10 @@
 import { Clock, ShieldCheck, Zap, Brain, Rocket, Mic, Languages, ShieldAlert } from "lucide-react";
-import { ScreeningWeight } from "./screening-assessment";
+import { ScreeningConfig } from "./screening-settings";
 
 interface FinalPreviewProps {
     formData: any;
     aiEnabled: boolean;
-    weights: ScreeningWeight;
+    weights: ScreeningConfig;
     regFieldCount: number;
 }
 

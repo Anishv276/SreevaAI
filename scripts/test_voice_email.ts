@@ -10,7 +10,7 @@ async function runTest() {
     const testName = "Vamsivk";
     const testJob = "Senior Full Stack Developer";
     const testScore = 92;
-    const testLink = "http://localhost:3000/careers/interview/test-session-id?token=test-token";
+    const testLink = "http://localhost:3000/interview/test-session-id?token=test-token";
 
     console.log(`📧 Sending test AI Interview email to ${testEmail}...`);
 
@@ -21,7 +21,7 @@ async function runTest() {
             jobTitle: testJob,
             status: "ACCEPTED",
             score: testScore,
-            assessmentLink: testLink
+            interviewLink: testLink
         });
 
         if (result.success) {

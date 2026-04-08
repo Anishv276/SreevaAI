@@ -34,8 +34,8 @@ export default function ApplicationPage() {
         setTimeout(() => setPageAlert(null), 4000);
     };
     
-    // Fix: j.id is a number, id is a string
-    const job = jobs.find(j => j.id.toString() === id);
+    // Fix: support both numeric ID and random Slug
+    const job = jobs.find(j => j.id.toString() === id || (j as any).slug === id);
     const jobTitle = job?.title || "this position";
     
     const [formData, setFormData] = useState({
@@ -69,11 +69,6 @@ export default function ApplicationPage() {
     
     useEffect(() => {
         if (id && typeof window !== "undefined") {
-            const hasApplied = localStorage.getItem(`applied_${id}`);
-            if (hasApplied === "true") {
-                setAlreadyApplied(true);
-                return;
-            }
             const prefill = localStorage.getItem(`prefill_${id}`);
             if (prefill) {
                 try {
@@ -136,6 +131,34 @@ export default function ApplicationPage() {
                                 (newData as any)[key] = autoFillFields[key];
                             }
                         });
+
+                        // ── Auto-fill Education ─────────────────────────
+                        if (extractedData?.education && Array.isArray(extractedData.education)) {
+                            newData.education = extractedData.education.map((edu: any) => ({
+                                id: Math.random().toString(36).substr(2, 9),
+                                institution: edu.institution || "",
+                                degree: edu.degree || "",
+                                fieldOfStudy: edu.field || "",
+                                startDate: edu.start_year ? String(edu.start_year) : "", // Simplified year to string
+                                endDate: edu.year || edu.end_year ? String(edu.year || edu.end_year) : "",
+                                grade: ""
+                            }));
+                        }
+
+                        // ── Auto-fill Professional Experience ───────────
+                        if (extractedData?.work_history && Array.isArray(extractedData.work_history)) {
+                            newData.experience_list = extractedData.work_history.map((job: any) => ({
+                                id: Math.random().toString(36).substr(2, 9),
+                                title: job.role || "",
+                                company: job.company || "",
+                                location: "", // Not explicitly in simple work_history
+                                startDate: job.start_year ? String(job.start_year) : "",
+                                endDate: job.end_year ? String(job.end_year) : "",
+                                current: !!job.is_current,
+                                description: (job.what_they_built || []).join("\n") + 
+                                             (job.technologies_used?.length ? "\n\nStack: " + job.technologies_used.join(", ") : "")
+                            }));
+                        }
                     }
                     
                     return newData;
@@ -247,7 +270,7 @@ export default function ApplicationPage() {
                 location: formData.location,
                 portfolio: formData.portfolio,
                 role: jobTitle,
-                driveId: id,
+                driveId: String(job?.id || id),
                 experience: formData.experience,
                 currentCompany: formData.currentCompany,
                 currentCtc: formData.ctc,

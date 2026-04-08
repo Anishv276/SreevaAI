@@ -116,10 +116,12 @@ model Drive {
   isPassportRequired Boolean       @default(false)
   aiScreeningEnabled Boolean       @default(true)
   applications       Application[]
+  slug               String?       @unique
   creator            User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
   organization       Organization? @relation(fields: [orgId], references: [id])
 
   @@index([orgId, status])
+  @@index([slug])
 }
 
 model Application {
@@ -163,6 +165,7 @@ model Interview {
   updatedAt             DateTime    @updatedAt
   interviewDuration     Int?
   aiSummary             String?
+  snapshots             String[]    @default([])
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 }
 

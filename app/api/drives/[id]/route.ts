@@ -7,12 +7,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         const { id } = await params;
         const driveId = parseInt(id);
         
-        if (isNaN(driveId)) {
-            return NextResponse.json({ error: "Invalid drive ID" }, { status: 400 });
-        }
-
-        const drive = await prisma.drive.findUnique({
-            where: { id: driveId },
+        const drive = await (prisma.drive as any).findFirst({
+            where: {
+                OR: [
+                    ...(isNaN(driveId) ? [] : [{ id: driveId }]),
+                    { slug: id }
+                ]
+            },
             include: {
                 organization: {
                     select: { 
@@ -44,14 +45,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             applicants: drive._count?.applications || 0,
             daysLeft: Math.max(0, Math.ceil((new Date(drive.createdAt).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24))),
             aiScreening: {
-                enabled: (drive as any).interviewEnabled,
-                weights: (drive as any).aiScreeningWeights ? JSON.parse((drive as any).aiScreeningWeights) : {}
+                enabled: (drive as any).aiScreeningEnabled ?? true,
+                weights: {} // Schema doesn't have a weights field yet
             },
             registrationFields: (drive as any).registrationFields ? JSON.parse((drive as any).registrationFields) : [],
             extractedDetails: (drive as any).extractedDetails ? JSON.parse((drive as any).extractedDetails) : {}
         });
-    } catch (error) {
-        return NextResponse.json({ error: "Failed to fetch drive" }, { status: 500 });
+    } catch (error: any) {
+        console.error("[GET_DRIVE_ERROR]:", error);
+        return NextResponse.json({ 
+            error: "Failed to fetch drive", 
+            details: error.message 
+        }, { status: 500 });
     }
 }
 
@@ -147,7 +152,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     try {
         const { id } = await params;
         const driveId = parseInt(id);
-        
+
         if (isNaN(driveId)) {
             return NextResponse.json({ error: "Invalid drive ID" }, { status: 400 });
         }

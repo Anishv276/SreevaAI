@@ -125,7 +125,6 @@ function extractStatus(message: string): string | null {
         'hired': 'Hired',
         'interview': 'INTERVIEW',
         'interviewing': 'INTERVIEW',
-        'assessment': 'ASSESSMENT',
     };
     
     for (const [key, value] of Object.entries(statusMap)) {
@@ -611,7 +610,7 @@ async function summarizeCandidate(message: string, orgId: string, history: any[]
         type: 'summary',
         title: `Candidate Profile: ${candidate.fullName}`,
         message: summary,
-        action: "I can help move this candidate to 'Shortlisted' or trigger a follow-up assessment!"
+        action: "I can help move this candidate to 'Shortlisted' or resend the interview link."
     };
 }
 

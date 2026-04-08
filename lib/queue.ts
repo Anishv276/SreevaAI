@@ -52,31 +52,13 @@ export const resumeQueue = new Queue('resume-processing', {
   defaultJobOptions 
 });
 
-// 2. Handles assessment question generation (GPT-4o)
-export const assessmentQueue = new Queue('assessment-generation', { 
-  connection: redisConnection,
-  defaultJobOptions 
-});
-
-// 3. Handles transactional emails (invites, reports)
+// 2. Handles transactional emails (invites, reports)
 export const emailQueue = new Queue('email-delivery', { 
   connection: redisConnection,
   defaultJobOptions 
 });
 
-// 4. Handles grading of submitted assessments (GPT-4o-mini)
-export const gradingQueue = new Queue('assessment-grading', { 
-  connection: redisConnection,
-  defaultJobOptions 
-});
-
-// 5. Handles high-frequency proctoring violations in batches
-export const proctoringQueue = new Queue('proctoring-events', { 
-  connection: redisConnection,
-  defaultJobOptions 
-});
-
-// 6. Handles async interview recording/transcript persistence
+// 3. Handles async interview recording/transcript persistence
 export const interviewFinalizationQueue = new Queue('interview-finalization', { 
   connection: redisConnection,
   defaultJobOptions 

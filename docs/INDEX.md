@@ -10,7 +10,7 @@ Our platform is built on a modern, asynchronous architecture using **Next.js**, 
 Explore each phase of the recruitment lifecycle in detail:
 
 1.  **[Phase 1: Recruitment Drive Creation](./01_create_drive.md)**
-    *   Admin setup, AI JD extraction, and assessment configuration.
+    *   Admin setup, AI JD extraction, and interview configuration.
 2.  **[Phase 2: Job Link & Board Posting](./02_job_sharing.md)**
     *   Dynamic link generation and the candidate landing portal.
 3.  **[Phase 3: Candidate Application & AI Resume Extraction](./03_candidate_application.md)**
@@ -18,13 +18,13 @@ Explore each phase of the recruitment lifecycle in detail:
 4.  **[Phase 4: AI Screening & Scoring Engine](./04_ai_screening.md)**
     *   Asynchronous background processing, BullMQ, and OpenAI scoring.
 5.  **[Phase 5: Automated Communication](./05_automated_communication.md)**
-    *   Automated status emails and secure assessment link delivery.
-6.  **[Phase 6: AI-Powered Assessment Generation](./06_assessment_generation.md)**
-    *   Dynamic, personalized question and coding challenge creation.
-7.  **[Phase 7: Secure Assessment & Proctoring Suite](./07_proctoring_execution.md)**
-    *   The "locked-down" exam environment with real-time AI monitoring.
-8.  **[Phase 8: AI Grading & Comprehensive Reporting](./08_grading_reporting.md)**
-    *   Strict automated evaluation and final performance reporting.
+    *   Automated status emails and secure interview link delivery.
+6.  **[Phase 6: AI Interview Session Orchestration](./06_interview_session.md)**
+    *   Dynamic interview setup, prompt prep, and candidate-specific context.
+7.  **[Phase 7: Interview Proctoring & Integrity Suite](./07_proctoring_execution.md)**
+    *   Fullscreen interview environment with real-time monitoring.
+8.  **[Phase 8: AI Review & Comprehensive Reporting](./08_grading_reporting.md)**
+    *   Structured AI analysis and final hiring reporting.
 
 ## 🛠 Core Internal Tools
 - **Worker System**: Managed in `worker.ts`, handling all heavy lifting from scoring to grading.

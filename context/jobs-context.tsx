@@ -16,6 +16,7 @@ export type Job = {
     salary?: string;
     type?: string;
     registrationFields?: string;
+    slug?: string;
     createdAt: string;
 };
 

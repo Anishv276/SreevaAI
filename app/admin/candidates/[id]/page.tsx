@@ -113,6 +113,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                 : "Shortlisted";
 
     const interviewRecordingUrl = candidate?.interview?.interviewRecordingUrl || candidate?.assessment?.interviewRecordingUrl || "";
+    const interviewAiSummary = candidate?.interview?.aiSummary || candidate?.assessment?.aiSummary || "";
     const interviewTranscript = candidate?.interview?.interviewTranscript || candidate?.assessment?.interviewTranscript || "";
 
     useEffect(() => {
@@ -122,6 +123,19 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
         }
     }, [candidate]);
 
+    const snapshots = candidate?.interview?.snapshots || candidate?.assessment?.snapshots || [];
+    let interviewSnapshot: string | null = null;
+    if (Array.isArray(snapshots) && snapshots.length > 0) {
+        interviewSnapshot = snapshots[snapshots.length - 1];
+    } else if (typeof snapshots === 'string' && snapshots.startsWith('[')) {
+        try {
+            const parsed = JSON.parse(snapshots);
+            if (Array.isArray(parsed) && parsed.length > 0) interviewSnapshot = parsed[parsed.length - 1];
+        } catch {}
+    } else if (typeof snapshots === 'string' && snapshots.length > 10) {
+        interviewSnapshot = snapshots;
+    }
+    
     if (loading) {
         return (
             <div className="flex justify-center items-center min-h-[60vh]">
@@ -148,6 +162,9 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
             </div>
         );
     }
+
+    const displayAvatar = interviewSnapshot || candidate.passportUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${candidate.fullName}`;
+    console.log("[Dossier] Snapshot Data:", { snapshots, interviewSnapshot, displayAvatar });
 
     const techSkills = Array.isArray(structuredResume.skills?.technical) 
         ? structuredResume.skills.technical.map((s: any) => typeof s === 'object' ? s.skill : s) 
@@ -195,7 +212,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                     <div className="flex items-start gap-8">
                         <div className="relative flex-shrink-0">
                             <Avatar className="h-24 w-24 rounded-2xl border-4 border-white shadow-[0_8px_24px_rgba(0,0,0,0.1)]">
-                                <AvatarImage src={candidate.passportUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${candidate.fullName}`} className="object-cover" />
+                                <AvatarImage src={displayAvatar} className="object-cover" />
                                 <AvatarFallback className="text-2xl font-black bg-gray-900 text-white rounded-2xl">
                                     {candidate.fullName?.substring(0, 2).toUpperCase()}
                                 </AvatarFallback>
@@ -206,7 +223,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                             <div className="flex items-center gap-3 flex-wrap">
                                 <h1 className="text-4xl font-black text-gray-900 tracking-tight">{candidate.fullName}</h1>
                                 {score >= 75 && (
-                                    <div className="bg-indigo-600 text-white text-[9px] font-black uppercase tracking-widest rounded-full px-3 py-1 flex items-center gap-1.5 shadow-lg shadow-indigo-200">
+                                    <div className="bg-indigo-600 text-white text-[9px] font-bold uppercase tracking-widest rounded-full px-3 py-1 flex items-center gap-1.5 shadow-lg shadow-indigo-200">
                                         <Sparkles className="h-3 w-3" /> AI Verified
                                     </div>
                                 )}
@@ -534,11 +551,17 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                 </span>
                                             </div>
                                             <div className="flex flex-wrap gap-2 mt-auto">
-                                                {cat.skills.length > 0 ? cat.skills.map((s: string) => (
-                                                    <span key={s} className={cn("px-4 py-2 rounded-2xl text-[13px] font-bold transition-all border", cat.bg, cat.text, cat.border)}>
-                                                        {s}
-                                                    </span>
-                                                )) : <span className="text-xs text-gray-300 font-bold italic">No signals.</span>}
+                                                {cat.skills.length > 0 ? cat.skills.map((s: any, sIdx: number) => {
+                                                    const skillName = typeof s === 'object' ? (s.skill || s.tool) : s;
+                                                    return (
+                                                        <span key={`${skillName}-${sIdx}`} className={cn("px-4 py-2 rounded-2xl text-[13px] font-bold transition-all border", cat.bg, cat.text, cat.border)}>
+                                                            {skillName}
+                                                            {typeof s === 'object' && s.years_of_use && (
+                                                                <span className="opacity-50 ml-1 text-[10px]">({s.years_of_use}y)</span>
+                                                            )}
+                                                        </span>
+                                                    );
+                                                }) : <span className="text-xs text-gray-300 font-bold italic">No signals.</span>}
                                             </div>
                                         </div>
                                     ))}
@@ -615,46 +638,97 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                 </div>
 
                                 {interviewRecordingUrl ? (
-                                    <div className="space-y-8">
-                                        <div className="rounded-3xl border-8 border-gray-900 bg-black overflow-hidden shadow-2xl relative">
-                                             <style jsx global>{`
-                                                .plyr--full-ui {
-                                                    --plyr-color-main: #F97316;
-                                                }
-                                            `}</style>
-                                            <Plyr
-                                                ref={plyrRef}
-                                                source={{
-                                                    type: "video",
-                                                    sources: [{ src: interviewRecordingUrl, type: "video/webm" }],
-                                                }}
-                                                options={{
-                                                    duration: recordingDurationSec || undefined,
-                                                    controls: ["play-large", "play", "progress", "current-time", "mute", "volume", "captions", "settings", "pip", "fullscreen"],
-                                                }}
-                                            />
-                                        </div>
-                                        
-                                        <div className="flex flex-wrap gap-4">
-                                            <div className="bg-orange-50/50 border border-orange-100 rounded-2xl px-6 py-4 flex flex-col gap-1">
-                                                <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Duration</p>
-                                                <p className="text-xl font-black text-gray-900 tracking-tight">{recordingDurationSec ? formatDuration(recordingDurationSec) : "Loading..."}</p>
+                                    <div className="space-y-12">
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                                            {/* LEFT COLUMN: Summary & Metadata */}
+                                            <div className="space-y-8">
+                                                <div className="p-8 rounded-[32px] bg-indigo-50/40 border border-indigo-100 shadow-sm relative overflow-hidden group">
+                                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                                        <Sparkles className="h-12 w-12 text-indigo-600" />
+                                                    </div>
+                                                    <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-4">AI Sentiment Analysis</p>
+                                                    <div className="space-y-6">
+                                                        <div className="max-h-[200px] overflow-y-auto custom-scrollbar pr-2">
+                                                            <p className="text-[15px] font-bold text-gray-700 leading-snug italic relative z-10">
+                                                                &ldquo;{interviewAiSummary ? (interviewAiSummary.split(' ').slice(0, 60).join(' ') + (interviewAiSummary.split(' ').length > 60 ? '...' : '')) : "AI is synthesizing..."}&rdquo;
+                                                            </p>
+                                                        </div>
+                                                        
+                                                        <div className="pt-6 border-t border-indigo-100/50 flex flex-wrap gap-4">
+                                                            <div className="flex flex-col gap-1">
+                                                                <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Duration</p>
+                                                                <p className="text-xl font-black text-gray-900 tracking-tight">{recordingDurationSec ? formatDuration(recordingDurationSec) : "..."}</p>
+                                                            </div>
+                                                            <div className="w-[1px] h-10 bg-indigo-100 hidden sm:block" />
+                                                            <div className="flex flex-col gap-1">
+                                                                <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Words Spoken</p>
+                                                                <p className="text-xl font-black text-gray-900 tracking-tight">
+                                                                    {interviewTranscript ? `${interviewTranscript.split(' ').length}` : "..."}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
-                                             <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl px-6 py-4 flex flex-col gap-1">
-                                                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Questions Asked</p>
-                                                <p className="text-xl font-black text-gray-900 tracking-tight">8 Blocks</p>
-                                            </div>
-                                        </div>
 
-                                        <div className="space-y-4 pt-6 border-t border-gray-100">
-                                            <div className="flex items-center gap-2">
-                                                <MessageSquare className="h-4 w-4 text-gray-400" />
-                                                <h3 className="text-xs font-black uppercase tracking-widest text-gray-400">Interview Transcript</h3>
-                                            </div>
-                                            <div className="bg-gray-50/80 rounded-2xl p-8 border border-gray-100">
-                                                <p className="text-gray-700 leading-relaxed font-semibold italic whitespace-pre-wrap">
-                                                    {interviewTranscript || "Transcript extraction in progress..."}
-                                                </p>
+                                            {/* RIGHT COLUMN: Video Player & Transcript */}
+                                            <div className="space-y-6">
+                                                <div className="space-y-4">
+                                                    <div className="rounded-3xl border-8 border-gray-900 bg-black overflow-hidden shadow-2xl relative">
+                                                        <style jsx global>{`
+                                                            .plyr--full-ui {
+                                                                --plyr-color-main: #F97316;
+                                                            }
+                                                        `}</style>
+                                                            <Plyr
+                                                                key={interviewRecordingUrl}
+                                                                ref={plyrRef}
+                                                            source={{
+                                                                type: "video",
+                                                                sources: [{ src: interviewRecordingUrl, type: "video/webm" }],
+                                                            }}
+                                                            options={{
+                                                                duration: recordingDurationSec || undefined,
+                                                                controls: ["play-large", "play", "progress", "current-time", "mute", "volume", "captions", "settings", "pip", "fullscreen"],
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest text-center">Cloudflare R2 Encrypted Recording</p>
+                                                </div>
+
+                                                <div className="space-y-6 pt-4 border-t border-gray-100">
+                                                    <div className="flex items-center gap-4">
+                                                        <h3 className="text-xs font-black uppercase tracking-widest text-gray-900 flex-shrink-0">Full Session Log</h3>
+                                                        <div className="h-[1px] flex-1 bg-gray-100" />
+                                                    </div>
+                                                    
+                                                    <div className="bg-white rounded-[32px] border border-gray-100 h-[500px] overflow-y-auto custom-scrollbar p-6 space-y-4">
+                                                        {interviewTranscript ? interviewTranscript.split('\n').filter((line: string) => line.trim()).map((line: string, idx: number) => {
+                                                            const isAI = line.toLowerCase().startsWith('ai:') || line.toLowerCase().startsWith('system:');
+                                                            const isUser = line.toLowerCase().startsWith('candidate:') || line.toLowerCase().startsWith('user:');
+                                                            const cleanLine = line.replace(/^(ai:|candidate:|user:|system:)\s*/i, '');
+                                                            
+                                                            return (
+                                                                <div key={idx} className="py-6 space-y-3">
+                                                                    <div className="flex flex-col gap-1">
+                                                                        <p className="text-[11px] font-black uppercase tracking-widest text-gray-900 flex items-center gap-3">
+                                                                            {isAI ? "AI Synthesizer" : isUser ? "Candidate" : "System Log"}
+                                                                            <span className="h-[1px] flex-1 bg-gray-100" />
+                                                                        </p>
+                                                                    </div>
+                                                                    <p className="text-gray-700 leading-relaxed font-bold italic text-sm">
+                                                                        &ldquo;{cleanLine}&rdquo;
+                                                                    </p>
+                                                                </div>
+                                                            );
+                                                        }) : (
+                                                            <div className="h-full flex flex-col items-center justify-center opacity-30 gap-3">
+                                                                <RefreshCw className="h-8 w-8 animate-spin" />
+                                                                <p className="text-xs font-black uppercase tracking-widest">Reconstructing Log...</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

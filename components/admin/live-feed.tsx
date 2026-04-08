@@ -16,7 +16,7 @@ const feedItems = [
         icon: UserPlus, color: "#F97316", bg: "#FFF7ED", // orange-50
     },
     {
-        id: 2, action: "AI assessment completed · Score 87%",
+        id: 2, action: "AI interview completed · Score 87%",
         drive: "Product Designer", time: "1h ago",
         icon: FileCheck, color: "#22C55E", bg: "#F0FDF4", // green-50
     },
@@ -70,8 +70,8 @@ const alerts = [
     },
     {
         id: 2,
-        text: "2 candidates dropped off during assessment",
-        meta: "Backend Engineer · assessment timeout",
+        text: "2 candidates dropped off during interview",
+        meta: "Backend Engineer · interview timeout",
         time: "3h ago",
         level: "red",
     },

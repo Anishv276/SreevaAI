@@ -4,19 +4,19 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Brain, Sparkles } from "lucide-react";
 
-export interface ScreeningWeight {
+export interface ScreeningConfig {
     threshold: number;
 }
 
-interface ScreeningProps {
-    weights: ScreeningWeight;
-    setWeights: (w: ScreeningWeight | ((prev: ScreeningWeight) => ScreeningWeight)) => void;
+interface ScreeningSettingsProps {
+    config: ScreeningConfig;
+    setConfig: (w: ScreeningConfig | ((prev: ScreeningConfig) => ScreeningConfig)) => void;
     aiEnabled: boolean;
     setAiEnabled: (v: boolean) => void;
 }
 
-export function ScreeningAssessment({ weights, setWeights, aiEnabled, setAiEnabled }: ScreeningProps) {
-    const threshold = weights?.threshold ?? 60;
+export function ScreeningSettings({ config, setConfig, aiEnabled, setAiEnabled }: ScreeningSettingsProps) {
+    const threshold = config?.threshold ?? 60;
 
     return (
         <div className="space-y-10 animate-in-fade">
@@ -28,11 +28,11 @@ export function ScreeningAssessment({ weights, setWeights, aiEnabled, setAiEnabl
                         </div>
                         <div>
                             <h3 className="text-xl font-bold text-gray-900">AI Resume Screening</h3>
-                            <p className="text-sm text-gray-500 font-medium">Auto-score candidates & shortlist only the top matches.</p>
+                            <p className="text-sm text-gray-500 font-medium">Auto-score candidates and shortlist only top matches.</p>
                         </div>
                     </div>
-                    <Switch 
-                        checked={aiEnabled} 
+                    <Switch
+                        checked={aiEnabled}
                         onCheckedChange={setAiEnabled}
                         className="data-[state=checked]:bg-purple-600"
                     />
@@ -48,10 +48,10 @@ export function ScreeningAssessment({ weights, setWeights, aiEnabled, setAiEnabl
                                         <span className="text-[13px] font-bold uppercase tracking-widest">Match Threshold</span>
                                     </div>
                                     <p className="text-[14px] text-purple-600/70 font-medium leading-relaxed">
-                                        Candidates with an AI match score below this percentage will be automatically filtered out.
+                                        Candidates below this AI match score are automatically filtered out.
                                     </p>
                                 </div>
-                                
+
                                 <div className="flex flex-col items-center gap-6 min-w-[280px]">
                                     <div className="flex items-baseline gap-1 text-purple-700">
                                         <span className="text-5xl font-black tracking-tighter">{threshold}</span>
@@ -59,7 +59,7 @@ export function ScreeningAssessment({ weights, setWeights, aiEnabled, setAiEnabl
                                     </div>
                                     <Slider
                                         value={[threshold]}
-                                        onValueChange={([v]) => setWeights({ threshold: v })}
+                                        onValueChange={([v]) => setConfig({ threshold: v })}
                                         max={100}
                                         min={1}
                                         step={1}

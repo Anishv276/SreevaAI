@@ -9,9 +9,34 @@ export const createDriveSchema = z.object({
   description: z.string().max(5000).optional().default(""),
   role: z.string().optional(),
   department: z.string().min(1, "Department is required"),
-  employmentType: z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance", "full-time", "part-time", "contract", "internship", "freelance"]).transform(v => v.charAt(0).toUpperCase() + v.slice(1).replace("-t", "-T")).optional(),
-  type: z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance", "full-time", "part-time", "contract", "internship", "freelance"]).transform(v => v.charAt(0).toUpperCase() + v.slice(1).replace("-t", "-T")).optional(),
-  workMode: z.enum(["Remote", "Hybrid", "On-site", "Onsite", "on-site", "onsite"]).transform(v => v.toLowerCase().includes("site") ? "On-site" : v.charAt(0).toUpperCase() + v.slice(1)).optional(),
+  employmentType: z.preprocess((val) => {
+    if (!val || typeof val !== "string") return val;
+    const lower = val.toLowerCase();
+    if (lower.includes("full") || lower.includes("permanent")) return "Full-time";
+    if (lower.includes("part")) return "Part-time";
+    if (lower.includes("contract")) return "Contract";
+    if (lower.includes("intern")) return "Internship";
+    if (lower.includes("freelance")) return "Freelance";
+    return val;
+  }, z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance", "full-time", "part-time", "contract", "internship", "freelance"])).transform(v => v.charAt(0).toUpperCase() + v.slice(1).replace("-t", "-T")).optional(),
+  type: z.preprocess((val) => {
+    if (!val || typeof val !== "string") return val;
+    const lower = val.toLowerCase();
+    if (lower.includes("full") || lower.includes("permanent")) return "Full-time";
+    if (lower.includes("part")) return "Part-time";
+    if (lower.includes("contract")) return "Contract";
+    if (lower.includes("intern")) return "Internship";
+    if (lower.includes("freelance")) return "Freelance";
+    return val;
+  }, z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance", "full-time", "part-time", "contract", "internship", "freelance"])).transform(v => v.charAt(0).toUpperCase() + v.slice(1).replace("-t", "-T")).optional(),
+  workMode: z.preprocess((val) => {
+    if (!val || typeof val !== "string") return val;
+    const lower = val.toLowerCase();
+    if (lower.includes("remote")) return "Remote";
+    if (lower.includes("hybrid")) return "Hybrid";
+    if (lower.includes("site") || lower.includes("office")) return "On-site";
+    return val;
+  }, z.enum(["Remote", "Hybrid", "On-site", "Onsite", "on-site", "onsite"])).transform(v => v.toLowerCase().includes("site") ? "On-site" : v.charAt(0).toUpperCase() + v.slice(1)).optional(),
   positions: z.coerce.number().int().min(1).optional(),
   deadline: z.string().nullable().optional(),
   salary: z.string().optional(),
@@ -79,7 +104,7 @@ export const interviewTokenSchema = z.object({
 export const presignedUrlSchema = z.object({
   fileName: z.string().min(1, "File name required").max(255),
   fileType: z.string().min(1, "File type required").regex(/^[\w-]+\/[\w-]+$/, "Invalid MIME type"),
-  driveId: z.coerce.number().int().positive().optional(),
+  driveId: z.string().optional(),
   type: z.enum(["JD", "RESUME", "CERTIFICATION"]).optional().default("RESUME"),
 });
 
@@ -100,10 +125,12 @@ export const candidateQuerySchema = z.object({
 
 export const interviewFinalizeSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),
-  status: z.enum(["COMPLETED", "FAILED", "NO_SHOW"]).optional(),
+  interviewStatus: z.enum(["COMPLETED", "FAILED", "NO_SHOW"]).optional(),
+  status: z.enum(["COMPLETED", "FAILED", "NO_SHOW"]).optional(), // Legacy support
+  appStatus: z.string().optional(),
   recordingUrl: z.string().optional(),
   transcript: z.string().optional(),
-  duration: z.number().optional(),
+  duration: z.coerce.number().optional(),
 });
 
 export const proctoringEventsSchema = z.object({
@@ -115,16 +142,6 @@ export const proctoringEventsSchema = z.object({
     metadata: z.any().optional(),
     timestamp: z.number().optional(),
   })),
-});
-
-export const assessmentSubmitSchema = z.object({
-  responses: z.array(z.object({
-    questionId: z.string(),
-    answer: z.string(),
-    timeSpent: z.number().optional(),
-  })),
-  proctoringData: z.any().optional(),
-  duration: z.number().optional(),
 });
 
 export function withZod<T extends z.ZodTypeAny>(

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Steps } from "@/components/create-drive/steps";
 import { BasicInfo } from "@/components/create-drive/basic-info";
 import { JobDescription } from "@/components/create-drive/job-description";
-import { ScreeningAssessment, ScreeningWeight } from "@/components/create-drive/screening-assessment";
+import { ScreeningSettings, ScreeningConfig } from "@/components/create-drive/screening-settings";
 import { RegistrationForm, CustomField } from "@/components/create-drive/registration-form";
 import { FinalPreview } from "@/components/create-drive/final-preview";
 import { CandidatePreview } from "@/components/create-drive/candidate-preview";
@@ -73,11 +73,12 @@ function CreateDriveForm() {
     const [creationMethod, setCreationMethod] = useState<null | 'manual' | 'scan'>(isEditMode ? 'manual' : null);
     const [published, setPublished] = useState(false);
     const [publishedDriveId, setPublishedDriveId] = useState<number | null>(null);
+    const [publishedSlug, setPublishedSlug] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
 
     // Lifted state
     const [aiEnabled, setAiEnabled] = useState(true);
-    const [weights, setWeights] = useState<ScreeningWeight>({ threshold: 60 });
+    const [weights, setWeights] = useState<ScreeningConfig>({ threshold: 60 });
     const [customFields, setCustomFields] = useState<CustomField[]>([]);
     const [isPassportRequired, setIsPassportRequired] = useState(false);
 
@@ -299,19 +300,39 @@ function CreateDriveForm() {
                         : (typeof respArr === 'string' ? respArr : (prev.responsibilities || ""));
                     
                     // ── REQUIREMENTS ────────────────────────────────
-                    // Use extracted requirements; if empty, synthesize from education + skills
+                    // Use extracted requirements; synthesize from education + skills as robust fallback
                     let reqArr: string[] = [];
-                    if (Array.isArray(extracted.requirements) && extracted.requirements.length > 0) {
-                        reqArr = extracted.requirements;
-                    } else {
-                        // Synthesize from education, experience and skills as fallback
-                        if (extracted.education?.required) reqArr.push(extracted.education.required);
-                        if (extracted.experience?.preferred_background) reqArr.push(extracted.experience.preferred_background);
-                        if (mustHaveArr.length > 0) reqArr.push(`Proficiency in: ${mustHaveArr.slice(0, 5).join(", ")}`);
-                        if (extracted.deal_breakers?.length > 0) {
-                            extracted.deal_breakers.forEach((db: any) => reqArr.push(db.condition || db));
-                        }
+                    if (Array.isArray(extracted.requirements)) {
+                         reqArr = [...extracted.requirements];
                     }
+
+                    // 1. Ensure Education is mentioned
+                    const eduReq = extracted.education?.required;
+                    if (eduReq && !reqArr.some(r => r.toLowerCase().includes(eduReq.toLowerCase().split(' ')[0]))) {
+                        reqArr.unshift(eduReq);
+                    }
+
+                    // 2. Ensure Experience is mentioned if not present
+                    if (typeof experience?.min_years === 'number' && !reqArr.some(r => r.includes(String(experience.min_years)) && r.toLowerCase().includes("year"))) {
+                        reqArr.push(`${experience.min_years}+ years of professional experience in ${extracted.job_title || 'relevant domain'}`);
+                    }
+
+                    // 3. Add Deal Breakers as requirements
+                    if (Array.isArray(extracted.deal_breakers)) {
+                        extracted.deal_breakers.forEach((db: any) => {
+                            const cond = typeof db === 'object' ? db.condition : db;
+                            if (cond && !reqArr.includes(cond)) reqArr.push(cond);
+                        });
+                    }
+
+                    // 4. Fallback: Proficiency in core skills
+                    if (reqArr.length < 3 && mustHaveArr.length > 0) {
+                        mustHaveArr.slice(0, 3).forEach((s: string) => {
+                            const skillStr = `Deep proficiency in ${s}`;
+                            if (!reqArr.includes(skillStr)) reqArr.push(skillStr);
+                        });
+                    }
+
                     const req = reqArr.length > 0 ? reqArr.join("\n") : (prev.requirements || "");
 
                     return {
@@ -457,6 +478,7 @@ function CreateDriveForm() {
 
             if (savedId) {
                 setPublishedDriveId(savedId);
+                setPublishedSlug(result?.slug || null);
                 setPublished(true);
                 showToast(isEditMode ? "Drive updated successfully!" : "Drive published successfully!");
             } else {
@@ -465,13 +487,13 @@ function CreateDriveForm() {
             }
         } catch (error: any) {
             console.error("Save process failed:", error);
-            const msg = error.details ? `${error.message}: ${error.details}` : error.message;
+            const msg = error.details ? `${error.message}: ${JSON.stringify(error.details)}` : error.message;
             showToast(msg || "Failed to save drive details. Please try again.");
         }
     };
 
     const handleCopy = () => {
-        const link = `${window.location.origin}/careers/jobs/${publishedDriveId}`;
+        const link = `${window.location.origin}/careers/jobs/${publishedSlug || publishedDriveId}`;
         navigator.clipboard.writeText(link);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -632,7 +654,7 @@ function CreateDriveForm() {
                     <div className="flex items-center gap-3 rounded-xl bg-white border border-orange-200 px-4 py-3">
                         <span className="flex-1 text-[13px] font-mono text-gray-700 text-left truncate">
                             {publishedDriveId 
-                                ? `${typeof window !== 'undefined' ? window.location.origin : ''}/careers/jobs/${publishedDriveId}`
+                                ? `${typeof window !== 'undefined' ? window.location.origin : ''}/careers/jobs/${publishedSlug || publishedDriveId}`
                                 : "Generating link..."}
                         </span>
                         <button
@@ -721,9 +743,9 @@ function CreateDriveForm() {
                         />
                     )}
                     {currentStep === 2 && (
-                        <ScreeningAssessment
-                            weights={weights}
-                            setWeights={setWeights}
+                        <ScreeningSettings
+                            config={weights}
+                            setConfig={setWeights}
                             aiEnabled={aiEnabled}
                             setAiEnabled={setAiEnabled}
                         />

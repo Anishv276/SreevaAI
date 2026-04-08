@@ -1,9 +1,9 @@
 # Phase 1: Recruitment Drive Creation
 
-This module handles the administrative setup of a hiring drive, including role definition, AI-assisted Job Description (JD) processing, and assessment configuration.
+This module handles the administrative setup of a hiring drive, including role definition, AI-assisted Job Description (JD) processing, and interview configuration.
 
 ## 1. How this works
-The **Create Drive** module allows HR/Admins to define the parameters of a recruitment cycle. It uses a multi-step form to collect basic job info, extract key requirements from JD files using AI, and configure the difficulty and proctoring settings for the subsequent assessment phases.
+The **Create Drive** module allows HR/Admins to define the parameters of a recruitment cycle. It uses a multi-step form to collect basic job info, extract key requirements from JD files using AI, and configure interview behavior and proctoring strictness for the subsequent interview phases.
 
 ## 2. Technical Flow
 1. **Administrative Setup**: Admin enters basic job details (Role, Dept, Location).
@@ -12,7 +12,7 @@ The **Create Drive** module allows HR/Admins to define the parameters of a recru
    - The system triggers `/api/extract`, which saves the file temporarily and calls a Python script.
    - The Python script (`extract_pdf.py`) uses `PyMuPDF4LLM` for markdown-first extraction and `pdfplumber` for table-aware parsing before `OpenAI GPT-4o` structures the JD into skills, responsibilities, and experience.
 3. **Screening Configuration**: AI screening is toggled, and weights (Skills vs. Experience vs. Education) are defined for the automated scoring engine.
-4. **Assessment Strategy**: Admin selects the test mode (MCQ, Coding, or Hybrid) and sets time limits and proctoring strictness.
+4. **Interview Strategy**: Admin sets interview duration, language, follow-up depth, and proctoring strictness.
 5. **Persistence**: On publish, the data is saved to the PostgreSQL database via Prisma, and a unique candidate portal link is generated.
 
 ## 3. Tech Stack
@@ -32,7 +32,7 @@ The **Create Drive** module allows HR/Admins to define the parameters of a recru
   - `app/admin/create-drive/page.tsx` [Line 42-585] - Main form controller & step state management.
   - `components/create-drive/basic-info.tsx` - UI for Step 1: Basic Info.
   - `components/create-drive/job-description.tsx` - UI for Step 2: JD upload & AI extraction trigger.
-  - `components/create-drive/screening-assessment.tsx` - UI for Step 3: AI screening weights configuration.
+  - `components/create-drive/screening-settings.tsx` - UI for Step 3: AI screening threshold configuration.
   - `components/create-drive/registration-form.tsx` - UI for Step 4: Custom registration fields.
 - **Backend / Logic**:
   - `app/api/extract/route.ts` [Line 8-104] - Primary API for JD & Resume extraction.

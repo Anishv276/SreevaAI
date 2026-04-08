@@ -47,7 +47,7 @@ def extract_text(file_path, type_="RESUME"):
             if markdown_text:
                 return markdown_text.strip()
             # fallback to plumber only if markdown failed
-            
+
         if pdfplumber is None:
             extraction_errors.append("pdfplumber is not installed")
         else:
@@ -256,7 +256,7 @@ def compute_score(jd_data, resume_data):
 
     # ── Build normalized resume skill set ─────────────────────
     all_resume_skills = resume_technical + resume_tools
-    
+
     # Add domain skills ONLY for non-technical roles as per contract
     if not has_tech:
         domain_skills = resume_skills.get("domain_skills", [])
@@ -550,7 +550,7 @@ Return ONLY valid JSON in this exact schema:
     }}
   ],
 
-  "experience_assessment": {{
+  "experience_analysis": {{
     "years": {candidate_years},
     "vs_required": "{candidate_years} years vs {jd_min_years} years required",
     "quality": "2 sentences on WHAT they built across their career, not just how long",
@@ -709,6 +709,13 @@ BEFORE YOU EXTRACT — MANDATORY PRE-CHECKS
     Never infer company name from email domains, logos, or context clues.
     Never fill in location from assumed country based on language or currency.
 
+11. REQUIREMENTS vs SKILLS
+    The 'requirements' field MUST be a flat list of actual qualifications or prerequisites.
+    Include specific years of experience, degree requirements, certifications (e.g., AWS Certified), 
+    and hard tech requirements that aren't just single-word skills.
+    Example: ["Bachelor's degree in Computer Science", "AWS Solutions Architect certificate", "5+ years experience in high-traffic Python apps"]
+    DO NOT leave 'requirements' empty if the JD mentions qualifications.
+
 ════════════════════════════════════════════════
 OUTPUT SCHEMA
 ════════════════════════════════════════════════
@@ -821,8 +828,8 @@ Job Description:
     elif type_ == "RESUME":
         prompt = f"""You are a senior technical recruiter and structured data engineer.
 Your job is to extract a precise, bias-free, machine-readable JSON object from a candidate resume.
-This output feeds a deterministic scoring engine that matches this resume against job descriptions.
 Accuracy directly affects hiring decisions — do not guess, invent, or over-interpret.
+EXTREME CAUTION: You MUST extract the full Professional Experience (Work History) and Education sections. Missing these is a fatal failure.
 
 ════════════════════════════════════════════════
 MANDATORY PRE-CHECKS — READ BEFORE EXTRACTING
@@ -873,7 +880,7 @@ MANDATORY PRE-CHECKS — READ BEFORE EXTRACTING
    For each role, if start_year = end_year (same year), duration_months must be ≤ 11.
    If is_current = true, compute duration_months up to the current extraction date.
    Flag any role where end_year < start_year as a data error in red_flags.
-   Flag overlapping roles explicitly in career_progression.assessment.
+   Flag overlapping roles explicitly in career_progression.analysis.
 
 6. IMPACT SIGNALS — EXTRACT, NEVER INVENT
    Extract only numbers, percentages, scale indicators explicitly written in the resume.
@@ -1039,7 +1046,7 @@ Return ONLY valid JSON matching this schema exactly. No markdown. No explanation
 
   "career_progression": {{
     "pattern": "growing" | "lateral" | "declining" | "mixed" | "early-career" | "unknown",
-    "assessment": string
+    "analysis": string
     // 1–2 sentences. Name actual companies and role types. Note overlaps or gaps if present.
   }},
 

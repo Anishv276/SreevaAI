@@ -9,7 +9,7 @@ const FROM_EMAIL = process.env.FROM_EMAIL || 'Lumoscale HR <vamsikrishna2536@gma
 async function sendEmail() {
     const fullName = "Vamsi";
     const jobTitle = "Senior Full Stack Engineer";
-    const assessmentLink = "http://localhost:3000/careers/interview/test-id";
+    const interviewLink = "http://localhost:3000/interview/test-id";
 
     const html = `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px; background-color: #ffffff;">
@@ -25,7 +25,7 @@ async function sendEmail() {
                 <h3 style="color: #111827; font-size: 14px; font-weight: 700; margin-top: 0; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 15px; text-align: center;">Next Step: AI Voice Interview</h3>
                 <p style="color: #6B7280; font-size: 14px; margin-bottom: 20px; text-align: center;">You have been invited to a real-time <strong>Voice AI Interview</strong>. This session will take approximately 15 minutes and will focus on your experience and technical expertise.</p>
                 <div style="text-align: center;">
-                    <a href="${assessmentLink}" style="background-color: #F97316; color: white; padding: 14px 35px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 15px; display: inline-block; box-shadow: 0 4px 12px rgba(249,115,22,0.25);">Start AI Interview</a>
+                    <a href="${interviewLink}" style="background-color: #F97316; color: white; padding: 14px 35px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 15px; display: inline-block; box-shadow: 0 4px 12px rgba(249,115,22,0.25);">Start AI Interview</a>
                 </div>
                 <p style="color: #9CA3AF; font-size: 11px; margin-top: 20px; text-align: center;">
                     Note: Please ensure you are in a quiet environment with a working camera and microphone.

@@ -66,7 +66,6 @@ export async function GET(request: Request) {
                 createdAt: app.createdAt,
                 drive: app.drive,
                 interview: interviewStage,
-                assessment: null,
             };
         });
 

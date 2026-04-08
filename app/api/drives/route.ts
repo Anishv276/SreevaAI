@@ -1,5 +1,6 @@
 
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createDriveSchema, bulkDeleteSchema, driveQuerySchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
@@ -127,8 +128,11 @@ export async function POST(request: Request) {
         const data = result.data;
         const deadline = data.deadline ? new Date(data.deadline) : null;
 
-        const drive = await prisma.drive.create({
+        const slug = crypto.randomUUID();
+
+        const drive = await (prisma.drive as any).create({
             data: {
+                slug,
                 title: data.title,
                 description: data.description || "",
                 role: data.role || null,
@@ -232,7 +236,7 @@ export async function DELETE(request: Request) {
             console.error("[DELETE_DRIVE_STORAGE_ERROR]:", storageErr);
         }
 
-        // ── CASCADE CLEANUP: Delete Interviews/Assessments first ──
+        // ── CASCADE CLEANUP: Delete Interviews first ──
         const applications = await prisma.application.findMany({
             where: { driveId: { in: validIds } },
             select: { id: true }
@@ -245,16 +249,6 @@ export async function DELETE(request: Request) {
                 await tx.interview.deleteMany({
                     where: { applicationId: { in: appIds } }
                 });
-
-                // Delete Assessments (defensive raw query as it might not be in schema)
-                try {
-                    await tx.$executeRawUnsafe(
-                        `DELETE FROM "Assessment" WHERE "applicationId" = ANY($1)`,
-                        appIds
-                    );
-                } catch (e) {
-                    // Silently fail if table doesn't exist
-                }
 
                 // Delete Applications
                 await tx.application.deleteMany({

@@ -9,7 +9,7 @@ const connection = new IORedis(process.env.REDIS_URL!, {
 });
 
 async function cleanFailedJobs() {
-    const queues = ['resume-processing', 'assessment-grading'];
+    const queues = ['resume-processing', 'interview-finalization'];
     
     for (const name of queues) {
         console.log(`\nCleaning queue: ${name}`);

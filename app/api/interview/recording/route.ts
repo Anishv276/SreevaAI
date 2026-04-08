@@ -2,66 +2,25 @@ import { NextResponse } from "next/server";
 import { putObject } from "@/lib/s3";
 import { interviewFinalizationQueue } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
+import crypto from "crypto";
 
 export const runtime = "nodejs";
 
-const INTERVIEW_RECORDINGS_PREFIX = "interviews/recordings";
+const INTERVIEW_CANDIDATES_PREFIX = "candidates";
 
 const MAX_RECORDING_BYTES = 250 * 1024 * 1024; // 250MB
 
-async function persistInterviewUpdateRaw(params: {
-    applicationId: string;
-    recordingUrl?: string;
-    transcript?: string;
-    interviewStatus?: string;
-}) {
-    const { applicationId, recordingUrl, transcript, interviewStatus } = params;
-
-    await prisma.$executeRawUnsafe(
-        `
-        INSERT INTO "Interview" ("applicationId", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "completedAt", "createdAt", "updatedAt")
-        VALUES ($1, COALESCE($2, 'IN_PROGRESS'), $3, CASE WHEN $3 IS NOT NULL THEN NOW() ELSE NULL END, $4, CASE WHEN $2 = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
-        ON CONFLICT ("applicationId")
-        DO UPDATE SET
-          status = COALESCE($2, "Interview".status),
-          "interviewRecordingUrl" = COALESCE($3, "Interview"."interviewRecordingUrl"),
-          "interviewRecordedAt" = CASE
-            WHEN $3 IS NOT NULL THEN NOW()
-            ELSE "Interview"."interviewRecordedAt"
-          END,
-          "interviewTranscript" = COALESCE($4, "Interview"."interviewTranscript"),
-          "completedAt" = CASE
-            WHEN $2 = 'COMPLETED' THEN NOW()
-            ELSE "Interview"."completedAt"
-          END,
-          "updatedAt" = NOW()
-        `,
-        applicationId,
-        interviewStatus || null,
-        recordingUrl || null,
-        transcript || null
-    );
-
-    await prisma.$executeRawUnsafe(
-        `
-        UPDATE "Assessment"
-        SET
-          "interviewRecordingUrl" = COALESCE($1, "interviewRecordingUrl"),
-          "interviewRecordedAt" = CASE WHEN $1 IS NOT NULL THEN NOW() ELSE "interviewRecordedAt" END,
-          "interviewTranscript" = COALESCE($2, "interviewTranscript"),
-          status = COALESCE($3, status),
-          "completedAt" = CASE WHEN $3 = 'COMPLETED' THEN NOW() ELSE "completedAt" END,
-          "updatedAt" = NOW()
-        WHERE "applicationId" = $4
-        `,
-        recordingUrl || null,
-        transcript || null,
-        interviewStatus || null,
-        applicationId
-    );
+function buildCandidateRoleFolder(fullName?: string | null, roleTitle?: string | null, fallbackId?: string) {
+    const raw = [fullName, roleTitle].filter(Boolean).join(" - ") || fallbackId || "candidate";
+    return raw
+        .replace(/[^a-zA-Z0-9_\- ]/g, "")
+        .trim()
+        .replace(/\s+/g, "_")
+        .toLowerCase();
 }
 
 async function uploadWithRetry(
+    bucket: string,
     key: string,
     buffer: Buffer,
     contentType: string,
@@ -71,12 +30,15 @@ async function uploadWithRetry(
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-            await putObject("resumes", key, buffer, contentType);
-            return;
-        } catch (error: any) {
+            const url = await putObject(bucket, key, buffer, contentType);
+            return url;
+        } catch (error: unknown) {
             lastError = error;
-            const code = String(error?.code || "").toUpperCase();
-            const message = String(error?.message || "").toLowerCase();
+            const code =
+                typeof error === "object" && error !== null && "code" in error
+                    ? String((error as { code?: string }).code || "").toUpperCase()
+                    : "";
+            const message = error instanceof Error ? error.message.toLowerCase() : String(error || "").toLowerCase();
             const isTransient =
                 code === "ECONNRESET" ||
                 code === "ETIMEDOUT" ||
@@ -99,13 +61,28 @@ async function uploadWithRetry(
 export async function POST(req: Request) {
     try {
         const contentType = req.headers.get("content-type") || "";
+        const contentLength = req.headers.get("content-length") || "unknown";
+        console.log(`[RECORDING_API] Incoming Request: ${contentType}, length: ${contentLength}`);
 
         let applicationId = "";
         let recordingUrl = "";
+        let recordingKey = "";
         let duration: number | null = null;
 
         if (contentType.includes("multipart/form-data")) {
-            const formData = await req.formData();
+            console.log("[RECORDING_API] Attempting to parse FormData...");
+            let formData;
+            try {
+                formData = await req.formData();
+                console.log("[RECORDING_API] FormData parsed successfully.");
+            } catch (formError: any) {
+                console.error("[RECORDING_API] FormData Parse Critical Failure:", formError);
+                return NextResponse.json({ 
+                    error: "Failed to parse body as FormData", 
+                    details: formError?.message || String(formError),
+                    headers: Object.fromEntries(req.headers.entries())
+                }, { status: 500 });
+            }
             applicationId = String(formData.get("applicationId") || "").trim();
             const recording = formData.get("recording") as File | null;
             const durationStr = formData.get("duration");
@@ -125,21 +102,35 @@ export async function POST(req: Request) {
 
             const bytes = await recording.arrayBuffer();
             const buffer = Buffer.from(bytes);
+            const candidate = await prisma.application.findUnique({
+                where: { id: applicationId },
+                select: {
+                    fullName: true,
+                    drive: { select: { title: true } },
+                },
+            });
+
+            const safeCandidate = buildCandidateRoleFolder(
+                candidate?.fullName,
+                candidate?.drive?.title,
+                applicationId
+            );
+
             const safeName = (recording.name || "interview.webm").replace(/[^a-zA-Z0-9._-]/g, "_");
-            const key = `${INTERVIEW_RECORDINGS_PREFIX}/${applicationId}/${Date.now()}-${safeName}`;
+            recordingKey = `${INTERVIEW_CANDIDATES_PREFIX}/${safeCandidate}/recordings/${Date.now()}-${safeName}`;
 
-            await uploadWithRetry(key, buffer, recording.type || "video/webm");
+            const bucket = process.env.R2_INTERVIEW_BUCKET || "interview";
+            const uploadedUrl = await uploadWithRetry(bucket, recordingKey, buffer, recording.type || "video/webm");
+            recordingUrl = typeof uploadedUrl === "string" ? uploadedUrl : "";
 
-            const publicBase = process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
-            if (!publicBase) {
-                return NextResponse.json({ error: "Missing NEXT_PUBLIC_R2_PUBLIC_URL" }, { status: 500 });
+            if (!recordingUrl) {
+                return NextResponse.json({ error: "Recording upload did not return a URL" }, { status: 500 });
             }
-
-            recordingUrl = `${publicBase.replace(/\/$/, "")}/${key}`;
         } else {
             const body = await req.json();
             applicationId = String(body?.applicationId || "").trim();
             recordingUrl = String(body?.recordingUrl || "").trim();
+            recordingKey = String(body?.recordingKey || "").trim();
             if (body?.duration) duration = parseInt(String(body.duration));
         }
 
@@ -151,50 +142,57 @@ export async function POST(req: Request) {
         const parsedDuration = duration ? parseInt(String(duration)) : null;
         console.log(`[API] Processing recording for ${applicationId}. Duration: ${parsedDuration}s`);
 
-        // ── Persist immediately, non-blocking ──
-        // We intentionally do NOT await here so the response returns fast
-        // after the file upload. The DB write runs in the background.
-        const persistInBackground = async () => {
-            try {
-                // The Interview table has NOT NULL: id, applicationId, accessToken, status
-                // id must be generated, accessToken can be a placeholder for recording updates
-                await prisma.$executeRawUnsafe(
-                    `
-                    INSERT INTO "Interview" (id, "applicationId", "accessToken", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewDuration", "completedAt", "createdAt", "updatedAt")
-                    VALUES (gen_random_uuid()::text, $1, 'recording-upload', 'COMPLETED', $2, NOW(), $3, NOW(), NOW(), NOW())
-                    ON CONFLICT ("applicationId")
-                    DO UPDATE SET
-                        status = 'COMPLETED',
-                        "interviewRecordingUrl" = EXCLUDED."interviewRecordingUrl",
-                        "interviewRecordedAt" = NOW(),
-                        "interviewDuration" = EXCLUDED."interviewDuration",
-                        "completedAt" = NOW(),
-                        "updatedAt" = NOW()
-                    `,
-                    applicationId,
-                    recordingUrl,
-                    isNaN(parsedDuration as number) ? null : parsedDuration
-                );
-                console.log("[API] Interview DB update successful. Status → COMPLETED.");
-            } catch (error) {
-                console.error("[API] Interview DB update failed, falling back to Assessment:", error);
+        // Persist DB state with a simple retry loop for database resilience
+        const persistWithRetry = async (maxRetries = 3) => {
+            const finalDuration = isNaN(parsedDuration as number) ? null : parsedDuration;
+            
+            for (let i = 0; i < maxRetries; i++) {
                 try {
-                    await prisma.$executeRawUnsafe(
-                        `UPDATE "Assessment" SET "interviewRecordingUrl" = $1, "interviewRecordedAt" = NOW(), "interviewDuration" = $2, status = 'COMPLETED', "completedAt" = NOW(), "updatedAt" = NOW() WHERE "applicationId" = $3`,
-                        recordingUrl,
-                        isNaN(parsedDuration as number) ? null : parsedDuration,
-                        applicationId
-                    );
-                    console.log("[API] Assessment fallback DB update successful.");
-                } catch (err2) {
-                    console.error("[API] Assessment fallback also failed:", err2);
+                    // Step 1: Handle Interview Record
+                    await prisma.interview.upsert({
+                        where: { applicationId },
+                        update: {
+                            status: 'COMPLETED',
+                            interviewRecordingUrl: recordingUrl,
+                            interviewRecordedAt: new Date(),
+                            interviewDuration: finalDuration,
+                            completedAt: new Date(),
+                            updatedAt: new Date(),
+                        },
+                        create: {
+                            id: crypto.randomUUID(),
+                            applicationId,
+                            accessToken: crypto.randomUUID(),
+                            status: 'COMPLETED',
+                            interviewRecordingUrl: recordingUrl,
+                            interviewRecordedAt: new Date(),
+                            interviewDuration: finalDuration,
+                            completedAt: new Date(),
+                            createdAt: new Date(),
+                            updatedAt: new Date(),
+                        },
+                    });
+
+                    // Step 2: Update Application Status
+                    await prisma.application.update({
+                        where: { id: applicationId },
+                        data: { 
+                            status: 'COMPLETED',
+                            updatedAt: new Date(),
+                        },
+                    });
+                    
+                    console.log(`[API] Interview DB update successful for ${applicationId}`);
+                    return; // Success
+                } catch (dbError) {
+                    console.error(`[DB_RETRY_${i+1}/${maxRetries}]`, dbError);
+                    if (i === maxRetries - 1) throw dbError;
+                    await new Promise(r => setTimeout(r, 500 * (i + 1))); // Exponential backoff
                 }
             }
         };
 
-        // Fire and forget — don't block the response
-        persistInBackground();
-        jobId = "persisting-in-background";
+        await persistWithRetry();
 
         // Restore the background job queuing for transcript generation
         try {
@@ -218,9 +216,12 @@ export async function POST(req: Request) {
             console.warn("[API] Background job queuing failed:", jobError);
         }
 
-        return NextResponse.json({ success: true, queued: !!jobId, jobId, recordingUrl });
-    } catch (error) {
-        console.error("Error saving recording link:", error);
-        return NextResponse.json({ error: "Failed to save recording" }, { status: 500 });
+        return NextResponse.json({ success: true, queued: !!jobId, jobId, recordingUrl, recordingKey: recordingKey || null });
+    } catch (error: any) {
+        console.error("[API_RECORD_SAVE_ERROR]:", error);
+        return NextResponse.json({ 
+            error: "Failed to save recording", 
+            details: error?.message || String(error) 
+        }, { status: 500 });
     }
 }

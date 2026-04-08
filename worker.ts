@@ -47,27 +47,12 @@ async function persistInterviewUpdateRaw(params: {
     transcript || null
   );
 
-  await prisma.$executeRawUnsafe(
-    `
-    UPDATE "Assessment"
-    SET
-      "interviewRecordingUrl" = COALESCE($1, "interviewRecordingUrl"),
-      "interviewRecordedAt" = CASE WHEN $1 IS NOT NULL THEN NOW() ELSE "interviewRecordedAt" END,
-      "interviewTranscript" = COALESCE($2, "interviewTranscript"),
-      status = COALESCE($3, status),
-      "completedAt" = CASE WHEN $3 = 'COMPLETED' THEN NOW() ELSE "completedAt" END,
-      "updatedAt" = NOW()
-    WHERE "applicationId" = $4
-    `,
-    recordingUrl || null,
-    transcript || null,
-    interviewStatus || null,
-    applicationId
-  );
 }
 
 const redisConnection = new IORedis(process.env.REDIS_URL!, {
   maxRetriesPerRequest: null,
+  enableReadyCheck: false,
+  retryStrategy: (times: number) => Math.min(times * 500, 10_000),
 });
 
 console.log('🚀 Worker started: Awaiting jobs...');
@@ -78,9 +63,33 @@ const worker = new Worker('resume-processing', async (job) => {
   console.log(`[JOB] Processing application ${applicationId} for ${applicantEmail}`);
 
   // Guard: skip if the application record was deleted
-  const appExists = await prisma.application.findUnique({ where: { id: applicationId } });
+  const appExists = await prisma.application.findUnique({
+    where: { id: applicationId },
+    select: {
+      id: true,
+      status: true,
+      aiScore: true,
+      aiReport: true,
+    },
+  });
   if (!appExists) {
     console.warn(`[JOB] Application ${applicationId} no longer exists. Discarding stale job.`);
+    return;
+  }
+
+  const normalizedExistingStatus = String(appExists.status || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "_");
+  const alreadyFinalized =
+    ["SHORTLISTED", "ACCEPTED", "REJECTED"].includes(normalizedExistingStatus) &&
+    appExists.aiScore !== null &&
+    !!appExists.aiReport;
+
+  if (alreadyFinalized) {
+    console.log(
+      `[JOB] Application ${applicationId} already finalized (${normalizedExistingStatus}). Skipping duplicate processing.`
+    );
     return;
   }
   
@@ -198,7 +207,19 @@ const worker = new Worker('resume-processing', async (job) => {
 
 
     const currentScore = Math.max(0, Math.min(100, parseInt(aiResult.score?.toString() || "0") || 0));
-    const finalStatus = aiResult.status || (currentScore >= THRESHOLD ? "Shortlisted" : "Rejected");
+    const normalizedAiStatus = String(aiResult.status || "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "_");
+
+    const finalStatus: "SHORTLISTED" | "REJECTED" | "ACCEPTED" =
+      normalizedAiStatus === "SHORTLISTED" || normalizedAiStatus === "ACCEPTED"
+        ? normalizedAiStatus
+        : normalizedAiStatus === "REJECTED"
+          ? "REJECTED"
+          : currentScore >= THRESHOLD
+            ? "SHORTLISTED"
+            : "REJECTED";
 
     // 2. Update DB
     const exists = await prisma.application.findUnique({ where: { id: applicationId } });
@@ -217,21 +238,9 @@ const worker = new Worker('resume-processing', async (job) => {
 
     console.log(`[SUCCESS] Candidate ${applicantEmail} scored ${currentScore}. Status: ${finalStatus}`);
 
-    // 3. Email & Assessment Logic (Dynamic imports because they are Next.js modules)
-    // In a worker, we often use direct imports if possible.
+    // 3. Interview invite email flow
     const { sendApplicationStatusEmail } = await import('./lib/mail');
-    if (finalStatus === 'ACCEPTED' || finalStatus === 'Shortlisted') {
-      // 3. STATIC ASSESSMENT GENERATION (DISABLED: Pivoting to purely Voice Interview)
-      /* 
-      const { generatePersonalizedAssessment } = await import('./lib/ai-assessment');
-      const questions = await generatePersonalizedAssessment({
-        resumeData: typeof structuredResume === 'string' ? JSON.parse(structuredResume) : structuredResume,
-        jdData: jdDetails,
-        count: drive.assessmentCount,
-        difficulty: drive.assessmentDifficulty,
-        types: drive.assessmentTypes
-      });
-      */
+    if (finalStatus === 'ACCEPTED' || finalStatus === 'SHORTLISTED') {
       const interview = await (prisma as any).interview.upsert({
         where: { applicationId },
         update: {
@@ -245,15 +254,15 @@ const worker = new Worker('resume-processing', async (job) => {
         },
       });
 
-      const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/careers/interview/${applicationId}?token=${interview.accessToken}`;
+      const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/interview/${applicationId}?token=${interview.accessToken}`;
 
       await sendApplicationStatusEmail({
         email: applicantEmail,
         fullName: applicantName,
         jobTitle: drive.title,
-        status: 'ACCEPTED', 
+        status: finalStatus,
         score: currentScore,
-        assessmentLink: interviewLink // Renamed to clarify it's an interview
+        interviewLink
       });
     } else {
       await sendApplicationStatusEmail({
@@ -272,73 +281,18 @@ const worker = new Worker('resume-processing', async (job) => {
 
     throw error; // Rethrow so BullMQ knows it failed and can retry
   }
-}, { 
+}, {
   connection: redisConnection,
-  concurrency: 2, // Only process 2 resumes at a time to prevent CPU spikes
-  lockDuration: 60000, // Increase lock duration to 60s for long AI tasks
+  concurrency: 1, // Keep one heavy scoring process per worker to avoid lock starvation
+  lockDuration: 15 * 60 * 1000, // Scoring + extraction can exceed 60s on slower machines
+  stalledInterval: 60 * 1000,
+  maxStalledCount: 1,
   removeOnComplete: { count: 0 }, // DELETE IMMEDIATELY ON SUCCESS
   removeOnFail: { count: 10 } // KEEP ONLY 10 FAILURES FOR DEBUGGING
 });
 
 worker.on('failed', (job, err) => {
   console.log(`[FATAL] Job ${job?.id} failed permanently: ${err.message}`);
-});
-
-/**
- * 2. ASSESSMENT GRADING WORKER
- * Triggered after a candidate submits their test.
- */
-const gradingWorker = new Worker('assessment-grading', async (job) => {
-  const { assessmentId, questions, startedAt, completedAt, jdText } = job.data;
-  const { gradeAssessment } = await import('./lib/ai-grader');
-
-  console.log(`[JOB] Grading assessment ${assessmentId}`);
-
-  // Guard: skip if the assessment record was deleted or already graded
-  const assessmentExists = await (prisma as any).assessment.findUnique({ 
-    where: { id: assessmentId },
-    select: { aiReport: true } 
-  });
-  
-  if (!assessmentExists) {
-    console.warn(`[JOB] Assessment ${assessmentId} no longer exists. Discarding stale job.`);
-    return;
-  }
-
-  if (assessmentExists.aiReport) {
-    console.log(`[JOB] Assessment ${assessmentId} already has an AI report. Skipping redundant grading.`);
-    return;
-  }
-
-  try {
-    const report = await gradeAssessment({
-      questions,
-      startedAt: new Date(startedAt),
-      completedAt: new Date(completedAt),
-      jdText
-    });
-
-    await (prisma as any).assessment.update({
-      where: { id: assessmentId },
-      data: { aiReport: JSON.stringify(report) }
-    });
-
-    console.log(`[SUCCESS] Assessment ${assessmentId} graded. Score: ${report.overallScore}`);
-    return { success: true, aiReport: report }; // Changed from result.aiReport to report
-  } catch (error) {
-    console.error(`[Grading Worker Error]:`, error);
-    throw error;
-  }
-}, { 
-  connection: redisConnection,
-  concurrency: 2,
-  lockDuration: 60000, 
-  removeOnComplete: { count: 0 },
-  removeOnFail: { count: 10 }
-});
-
-gradingWorker.on('failed', (job, err) => {
-  console.log(`[FATAL] Grading Job ${job?.id} failed permanently: ${err.message}`);
 });
 
 /**
@@ -355,7 +309,7 @@ const backupWorker = new Worker(
       const users = await prisma.user.findMany();
       const drives = await prisma.drive.findMany();
       const applications = await prisma.application.findMany();
-      const assessments = await (prisma as any).assessment.findMany(); // Using any for Phase 4 fields
+      const interviews = await prisma.interview.findMany();
 
       const backupData = {
         metadata: {
@@ -365,7 +319,7 @@ const backupWorker = new Worker(
         users,
         drives,
         applications,
-        assessments
+        interviews,
       };
 
       // 2. Upload to Cloudflare R2
@@ -386,7 +340,12 @@ const backupWorker = new Worker(
       throw error;
     }
   },
-  { connection: redisConnection }
+  {
+    connection: redisConnection,
+    lockDuration: 10 * 60 * 1000,
+    stalledInterval: 60 * 1000,
+    maxStalledCount: 1,
+  }
 );
 
 // Setup Recurring Backup Job (Daily at Midnight)
@@ -409,51 +368,6 @@ async function setupCronJobs() {
     );
     console.log("[Worker] Registered recurring daily backup job.");
 }
-/**
- * 💾 PROCTORING EVENT BATCHER
- * Receives batches of security flags and flushes them to the DB atomically.
- */
-const proctoringBatchWorker = new Worker(
-  "proctoring-events",
-  async (job) => {
-    const { assessmentId, events } = job.data;
-    console.log(`[JOB] Batching ${events.length} proctoring events for assessment ${assessmentId}`);
-
-    try {
-      // 1. Bulk insert events
-      // @ts-ignore
-      await (prisma as any).proctoringEvent.createMany({
-        data: events.map((e: any) => ({
-          assessmentId,
-          eventType: e.eventType,
-          severity: e.severity,
-          reason: e.reason,
-          durationSeconds: e.durationSeconds,
-          metadata: e.metadata,
-          timestamp: new Date(e.timestamp),
-        })),
-      });
-
-      // 2. Aggregate summary data (e.g., total tab switches in this batch)
-      const tabSwitches = events.filter((e: any) => e.eventType === "TabSwitch").length;
-      if (tabSwitches > 0) {
-        // @ts-ignore
-        await (prisma as any).assessment.update({
-          where: { id: assessmentId },
-          data: { tabSwitchCount: { increment: tabSwitches } }
-        });
-      }
-
-      console.log(`[SUCCESS] Archived ${events.length} events for ${assessmentId}`);
-      return { success: true, count: events.length };
-    } catch (error) {
-      console.error(`[Proctoring Batch Error]:`, error);
-      throw error;
-    }
-  },
-  { connection: redisConnection }
-);
-
 /**
  * INTERVIEW FINALIZATION WORKER
  * Persists recording/transcript/status updates asynchronously.
@@ -515,8 +429,10 @@ const interviewFinalizationWorker = new Worker(
   },
   { 
     connection: redisConnection, 
-    concurrency: 4, 
-    lockDuration: 60000,
+    concurrency: 2,
+    lockDuration: 5 * 60 * 1000,
+    stalledInterval: 60 * 1000,
+    maxStalledCount: 1,
     removeOnComplete: { count: 0 },
     removeOnFail: { count: 10 }
   }

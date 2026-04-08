@@ -170,6 +170,13 @@ BEFORE YOU EXTRACT — MANDATORY PRE-CHECKS
     Never infer company name from email domains, logos, or context clues.
     Never fill in location from assumed country based on language or currency.
 
+11. REQUIREMENTS vs SKILLS
+    The 'requirements' field MUST be a flat list of actual qualifications or prerequisites.
+    Include specific years of experience, degree requirements, certifications (e.g., AWS Certified), 
+    and hard tech requirements that aren't just single-word skills.
+    Example: ["Bachelor's degree in Computer Science", "AWS Solutions Architect certificate", "5+ years experience in high-traffic Python apps"]
+    DO NOT leave 'requirements' empty if the JD mentions qualifications.
+
 ════════════════════════════════════════════════
 OUTPUT SCHEMA
 ════════════════════════════════════════════════

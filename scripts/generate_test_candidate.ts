@@ -37,12 +37,12 @@ async function main() {
       phone: "+1234567890",
       resumeUrl: "https://example.com/resume.pdf",
       driveId: drive.id,
-      status: "Shortlisted",
+      status: "SHORTLISTED",
     }
   });
 
-  // 3. Create Assessment
-  const assessment = await prisma.assessment.create({
+  // 3. Create Interview
+  const interview = await prisma.interview.create({
     data: {
       applicationId: application.id,
       status: "PENDING",
@@ -51,14 +51,15 @@ async function main() {
   });
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const interviewLink = `${baseUrl}/careers/interview/${assessment.id}`;
+  const interviewLink = `${baseUrl}/interview/${application.id}?token=${interview.accessToken}`;
 
   console.log("\n✅ NEW TEST CANDIDATE CREATED");
   console.log("-----------------------------");
   console.log(`Name:  ${testName}`);
   console.log(`Email: ${testEmail}`);
   console.log(`Drive: ${drive.title}`);
-  console.log(`ID:    ${assessment.id}`);
+  console.log(`Application ID: ${application.id}`);
+  console.log(`Interview ID:   ${interview.id}`);
   console.log("-----------------------------");
   console.log(`\n👉 INTERVIEW LINK: ${interviewLink}\n`);
 }

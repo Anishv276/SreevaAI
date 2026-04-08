@@ -1,48 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { resumeQueue, gradingQueue } from "@/lib/queue";
+import { resumeQueue } from "@/lib/queue";
 import { createCandidateSchema, bulkDeleteCandidatesSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
 import { sanitizeObject } from "@/lib/utils";
 import { isRateLimited } from "@/lib/ratelimit";
-
-const TABLE_CHECK_TTL_MS = 5 * 60 * 1000;
-
-let tableCheckCache: {
-    hasAssessmentTable: boolean;
-    hasInterviewTable: boolean;
-    expiresAt: number;
-} | null = null;
-
-async function getTableAvailability() {
-    if (tableCheckCache && Date.now() < tableCheckCache.expiresAt) {
-        return tableCheckCache;
-    }
-
-    const result = await prisma.$queryRawUnsafe<Array<{ hasAssessmentTable: boolean; hasInterviewTable: boolean }>>(
-        `
-        SELECT
-            EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = 'Assessment'
-            ) AS "hasAssessmentTable",
-            EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name = 'Interview'
-            ) AS "hasInterviewTable"
-        `
-    );
-
-    tableCheckCache = {
-        hasAssessmentTable: Boolean(result?.[0]?.hasAssessmentTable),
-        hasInterviewTable: Boolean(result?.[0]?.hasInterviewTable),
-        expiresAt: Date.now() + TABLE_CHECK_TTL_MS,
-    };
-
-    return tableCheckCache;
-}
 
 export async function GET(request: Request) {
     try {
@@ -60,28 +22,11 @@ export async function GET(request: Request) {
         const limit = parseInt(searchParams.get("limit") || "10");
         const offset = (page - 1) * limit;
 
-        const { hasAssessmentTable, hasInterviewTable } = await getTableAvailability();
-
-        const assessmentSelect = hasAssessmentTable
-            ? `s.status AS "assessmentStatus"`
-            : `NULL::TEXT AS "assessmentStatus"`;
-        const interviewSelect = hasInterviewTable
-            ? `i.status AS "interviewStatusRaw"`
-            : `NULL::TEXT AS "interviewStatusRaw"`;
-
-        const assessmentJoin = hasAssessmentTable
-            ? `LEFT JOIN "Assessment" s ON s."applicationId" = a.id`
-            : ``;
-        const interviewJoin = hasInterviewTable
-            ? `LEFT JOIN "Interview" i ON i."applicationId" = a.id`
-            : ``;
-
         const baseSelect = `
-            SELECT a.*, d.title AS "driveTitle", ${assessmentSelect}, ${interviewSelect}
+            SELECT a.*, d.title AS "driveTitle", i.status AS "interviewStatusRaw"
             FROM "Application" a
             JOIN "Drive" d ON d.id = a."driveId"
-            ${assessmentJoin}
-            ${interviewJoin}
+            LEFT JOIN "Interview" i ON i."applicationId" = a.id
         `;
 
         // ── Security & Filtering ───────────────────
@@ -150,9 +95,18 @@ export async function GET(request: Request) {
         const total = countResult[0]?.count || 0;
 
         const formattedCandidates = (candidates as any[]).map((app: any) => {
-            const interviewStateRaw = String(app.interviewStatusRaw || app.assessmentStatus || "").toUpperCase();
+            const interviewStateRaw = String(app.interviewStatusRaw || "").toUpperCase();
             const appStatusUpper = String(app.status || "").toUpperCase();
-            const isInterviewStage = ["SHORTLISTED", "ACCEPTED", "INTERVIEW IN PROGRESS", "COMPLETED"].includes(appStatusUpper);
+            const isInterviewStage = [
+                "SHORTLISTED",
+                "ACCEPTED",
+                "INTERVIEW IN PROGRESS",
+                "INTERVIEWING",
+                "INTERVIEW_IN_PROGRESS",
+                "COMPLETED",
+                "INTERVIEW COMPLETED",
+                "INTERVIEW_COMPLETED",
+            ].includes(appStatusUpper);
 
             let displayStatus = app.status;
             let interviewStatus = "Not Selected";
@@ -173,12 +127,8 @@ export async function GET(request: Request) {
                 }
             }
 
-            const mainStatus =
-                displayStatus === "Rejected"
-                    ? "Rejected"
-                    : displayStatus === "Borderline"
-                        ? "Borderline"
-                        : "Shortlisted";
+            const normalizedStatus = String(displayStatus || "").toUpperCase();
+            const mainStatus = normalizedStatus === "REJECTED" ? "Rejected" : "Shortlisted";
 
             return {
                 id: app.id,
@@ -325,6 +275,7 @@ export async function POST(request: Request) {
             applicantEmail: application.email,
             applicantName: application.fullName
         }, {
+            jobId: `resume-${application.id}`,
             attempts: 3,
             backoff: { type: 'exponential', delay: 2000 },
             removeOnComplete: true, 
@@ -399,12 +350,6 @@ export async function DELETE(request: Request) {
         try {
             const waitingResume = await resumeQueue.getJobs(['waiting', 'delayed', 'active']);
             for (const job of waitingResume) {
-                if (validIds.includes(job.data.applicationId)) {
-                    await job.remove();
-                }
-            }
-            const waitingGrading = await gradingQueue.getJobs(['waiting', 'delayed', 'active']);
-            for (const job of waitingGrading) {
                 if (validIds.includes(job.data.applicationId)) {
                     await job.remove();
                 }

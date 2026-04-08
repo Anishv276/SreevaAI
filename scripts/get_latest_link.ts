@@ -13,7 +13,7 @@ async function main() {
     return;
   }
 
-  const interviewLink = `http://localhost:3000/careers/interview/${latestApplication.id}`;
+  const interviewLink = `http://localhost:3000/interview/${latestApplication.id}`;
   
   console.log("--- LATEST CANDIDATE ---");
   console.log(`Name: ${latestApplication.fullName}`);

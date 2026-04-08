@@ -26,7 +26,6 @@ export type Candidate = {
         | "Rejected"
         | "Borderline"
         | "Under Review"
-        | "Assessment"
         | "Interview"
         | "Applied";
     interviewStatus?: "Not Selected" | "Interview Pending" | "Interview In Progress" | "Interview Completed";

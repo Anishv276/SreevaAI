@@ -58,7 +58,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             });
         }
 
-        const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/careers/interview/${applicationId}?token=${newToken}`;
+        const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/interview/${applicationId}?token=${newToken}`;
 
         await sendApplicationStatusEmail({
             email: application.email,

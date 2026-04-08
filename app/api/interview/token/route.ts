@@ -3,6 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { interviewTokenSchema } from "@/lib/validation";
 import { prisma } from "@/lib/prisma";
 
+const DISPATCH_DEBOUNCE_MS = 45_000;
+const dispatchByRoom = new Map<string, number>();
+
+function looksLikeAgentParticipant(participant: { identity?: string; name?: string }) {
+    const identity = (participant.identity || "").toLowerCase();
+    const name = (participant.name || "").toLowerCase();
+    return identity.startsWith("aw_") || identity.includes("agent") || name.includes("agent");
+}
+
 function toWsUrl(rawUrl: string) {
     if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://") && !rawUrl.startsWith("ws://") && !rawUrl.startsWith("wss://")) {
         return `wss://${rawUrl}`;
@@ -36,13 +45,35 @@ export async function POST(req: NextRequest) {
         const { applicationId, participantName } = result.data;
 
         // Fetch application to get drive details (interview duration)
-        const application = await prisma.application.findUnique({
+        let application = await prisma.application.findUnique({
             where: { id: applicationId },
             include: { drive: true }
         });
 
+        // ── Dev bypass: Allow testing with any application ID in development ──
+        if (!application && process.env.NODE_ENV === "development") {
+            // Find just ANY application to make it work
+            application = await prisma.application.findFirst({
+                include: { drive: true }
+            });
+        }
+
         if (!application) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
+        }
+
+        try {
+            await prisma.interview.upsert({
+                where: { applicationId },
+                update: {},
+                create: {
+                    applicationId,
+                    status: "PENDING",
+                    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+                },
+            });
+        } catch (interviewSyncError) {
+            console.warn("[InterviewToken] Interview row sync skipped:", interviewSyncError);
         }
 
         const driveDurationMins = application.drive.interviewTime || 15;
@@ -78,15 +109,32 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            try {
-                await dispatchClient.createDispatch(roomName, agentName, {
-                    metadata: JSON.stringify({ applicationId }),
-                });
-            } catch (dispatchErr) {
-                const msg = dispatchErr instanceof Error ? dispatchErr.message.toLowerCase() : "";
-                if (!msg.includes("already") && !msg.includes("exists")) {
-                    throw dispatchErr;
+            const participants = await roomClient.listParticipants(roomName).catch(() => []);
+            const hasLiveAgent = participants.some((p) =>
+                looksLikeAgentParticipant({ identity: p.identity, name: p.name })
+            );
+
+            const now = Date.now();
+            const lastDispatchAt = dispatchByRoom.get(roomName) || 0;
+            const inDebounceWindow = now - lastDispatchAt < DISPATCH_DEBOUNCE_MS;
+
+            if (!hasLiveAgent && !inDebounceWindow) {
+                try {
+                    await dispatchClient.createDispatch(roomName, agentName, {
+                        metadata: JSON.stringify({ applicationId }),
+                    });
+                    dispatchByRoom.set(roomName, now);
+                } catch (dispatchErr) {
+                    const msg = dispatchErr instanceof Error ? dispatchErr.message.toLowerCase() : "";
+                    if (!msg.includes("already") && !msg.includes("exists")) {
+                        throw dispatchErr;
+                    }
                 }
+            } else {
+                console.log(
+                    `[InterviewToken] Skipping duplicate agent dispatch for ${roomName} ` +
+                    `(hasLiveAgent=${hasLiveAgent}, inDebounceWindow=${inDebounceWindow})`
+                );
             }
         } catch (dispatchErr) {
             console.error("Agent dispatch error:", dispatchErr);

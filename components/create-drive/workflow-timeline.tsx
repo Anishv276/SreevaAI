@@ -8,7 +8,7 @@ import { useState } from "react";
 export function WorkflowTimeline() {
     const [rounds, setRounds] = useState([
         { id: 1, name: "AI Resume Screening", type: "Automated", passCriteria: "Top 50%" },
-        { id: 2, name: "Technical Assessment", type: "Test", passCriteria: "Score > 70%" },
+        { id: 2, name: "Technical Interview", type: "Test", passCriteria: "Score > 70%" },
         { id: 3, name: "Video Interview", type: "Video", passCriteria: "AI Score > 60%" },
         { id: 4, name: "Final HR Round", type: "Manual", passCriteria: "Selection" },
     ]);

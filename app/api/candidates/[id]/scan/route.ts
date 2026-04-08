@@ -98,7 +98,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             }
         });
 
-        // Trigger Automated Email & Assessment Generation
+        // Trigger automated status email + interview invite
         const { sendApplicationStatusEmail } = await import("@/lib/mail");
         
         if (finalStatus === 'SHORTLISTED') {
@@ -116,7 +116,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 },
             });
 
-            const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/careers/interview/${id}?token=${interview.accessToken}`;
+            const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/interview/${id}?token=${interview.accessToken}`;
             
             await sendApplicationStatusEmail({
                 email: application.email,
