@@ -58,19 +58,19 @@ export default function DrivesPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
     const [isSelectionMode, setIsSelectionMode] = useState(false);
-    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     
     // Filters State
     const [statusFilter, setStatusFilter] = useState("all");
     const [typeFilter, setTypeFilter] = useState("all");
     
     // Detailed View State
-    const [previewDriveId, setPreviewDriveId] = useState<number | null>(null);
+    const [previewDriveId, setPreviewDriveId] = useState<string | null>(null);
     const [copySuccess, setCopySuccess] = useState(false);
     
     // Modal State
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-    const [driveToDelete, setDriveToDelete] = useState<number | null>(null);
+    const [driveToDelete, setDriveToDelete] = useState<string | null>(null);
     const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     
@@ -95,7 +95,6 @@ export default function DrivesPage() {
 
         const fetchFresh = async () => {
             // Only show full-screen overlay if we don't have job data yet
-            const hasExistingData = jobs.some(j => j.id === previewDriveId);
             setIsFetchingFresh(true);
             try {
                 const res = await fetch(`/api/drives/${previewDriveId}`);
@@ -111,25 +110,25 @@ export default function DrivesPage() {
         };
 
         fetchFresh();
-    }, [previewDriveId, jobs]);
+    }, [previewDriveId]);
 
     // Initial load and Filter Sync
     useEffect(() => {
         const handler = setTimeout(() => {
-            fetchJobs(1, pagination.limit, searchQuery, statusFilter).finally(() => setIsLoading(false));
+            fetchJobs(1, pagination.limit, searchQuery, statusFilter, typeFilter).finally(() => setIsLoading(false));
         }, 300); // 300ms Search Debounce
 
         return () => clearTimeout(handler);
-    }, [searchQuery, statusFilter, pagination.limit]);
+    }, [searchQuery, statusFilter, typeFilter, pagination.limit]);
 
     const handlePageChange = (newPage: number) => {
         if (newPage >= 1 && newPage <= pagination.totalPages) {
             setIsLoading(true);
-            fetchJobs(newPage, pagination.limit, searchQuery, statusFilter).finally(() => setIsLoading(false));
+            fetchJobs(newPage, pagination.limit, searchQuery, statusFilter, typeFilter).finally(() => setIsLoading(false));
         }
     };
 
-    const handleDelete = async (id: number) => {
+    const handleDelete = async (id: string) => {
         setDriveToDelete(id);
         setIsDeleteModalOpen(true);
     };
@@ -151,7 +150,7 @@ export default function DrivesPage() {
 
     const filteredDrives = jobs;
 
-    const toggleSelection = (id: number) => {
+    const toggleSelection = (id: string) => {
         const newSelected = new Set(selectedIds);
         if (newSelected.has(id)) {
             newSelected.delete(id);
@@ -340,7 +339,7 @@ export default function DrivesPage() {
                                                 </Link>
                                                 <DropdownMenuItem
                                                     className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700 font-bold"
-                                                    onClick={() => setCandidatePreviewSlug(String(drive.slug || drive.id))}
+                                                    onClick={() => setCandidatePreviewSlug(drive.slug || drive.id)}
                                                 >
                                                     <Eye className="mr-2 h-4 w-4" /> Preview as Candidate
                                                 </DropdownMenuItem>
@@ -354,7 +353,7 @@ export default function DrivesPage() {
                                                     className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700"
                                                     onClick={async (e) => {
                                                         e.stopPropagation();
-                                                        const link = `${window.location.origin}/careers/jobs/${(drive as any).slug || drive.id}`;
+                                                        const link = `${window.location.origin}/careers/jobs/${drive.slug || drive.id}`;
                                                         await navigator.clipboard.writeText(link);
                                                         toast.success("Link copied to clipboard!");
                                                     }}
@@ -531,13 +530,13 @@ export default function DrivesPage() {
                                     <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">
                                         <DollarSign className="h-3 w-3" /> Salary
                                     </div>
-                                    <p className="font-bold text-gray-900 text-sm">{(selectedDrive as any).salary || "As per policy"}</p>
+                                    <p className="font-bold text-gray-900 text-sm">{selectedDrive.salary || "As per policy"}</p>
                                 </div>
                                 <div className="space-y-1.5 relative z-10">
                                     <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">
                                         <Clock className="h-3 w-3" /> Experience
                                     </div>
-                                    <p className="font-bold text-gray-900 text-sm">{(selectedDrive as any).experience || "Not specified"}</p>
+                                    <p className="font-bold text-gray-900 text-sm">{selectedDrive.experience || "Not specified"}</p>
                                 </div>
                                 <div className="space-y-1.5 relative z-10">
                                     <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">
@@ -559,14 +558,14 @@ export default function DrivesPage() {
                                 <div className="flex gap-2">
                                     <div className="flex-1 bg-white border border-gray-100 rounded-xl px-4 py-3 flex items-center overflow-hidden">
                                         <span className="text-[12px] font-medium text-gray-500 truncate select-all">
-                                            {`${typeof window !== 'undefined' ? window.location.origin : ''}/careers/jobs/${(selectedDrive as any).slug || selectedDrive.id}`}
+                                            {`${typeof window !== 'undefined' ? window.location.origin : ''}/careers/jobs/${selectedDrive.slug || selectedDrive.id}`}
                                         </span>
                                     </div>
                                     <Button 
                                         variant="outline" 
                                         className="rounded-xl border-gray-100 hover:border-orange-200 hover:bg-orange-50 h-auto py-3 px-4 transition-all"
                                         onClick={async () => {
-                                            const link = `${window.location.origin}/careers/jobs/${(selectedDrive as any).slug || selectedDrive.id}`;
+                                            const link = `${window.location.origin}/careers/jobs/${selectedDrive.slug || selectedDrive.id}`;
                                             await navigator.clipboard.writeText(link);
                                             setCopySuccess(true);
                                             setTimeout(() => setCopySuccess(false), 2000);
@@ -597,22 +596,22 @@ export default function DrivesPage() {
 
                             {/* Detailed Points */}
                             <div className="grid grid-cols-1 gap-8">
-                                {(selectedDrive as any).skills && (
+                                {selectedDrive.skills && (
                                     <div className="space-y-4">
                                         <div className="flex items-center gap-2 text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Required Skills</div>
                                         <div className="flex flex-wrap gap-2">
-                                            {(selectedDrive as any).skills.split(',').map((s: string, i: number) => (
+                                            {selectedDrive.skills.split(',').map((s: string, i: number) => (
                                                 <Badge key={i} variant="outline" className="px-3 py-1.5 rounded-lg border-gray-100 font-bold text-gray-600 bg-gray-50/50">{s.trim()}</Badge>
                                             ))}
                                         </div>
                                     </div>
                                 )}
                                 
-                                {(selectedDrive as any).responsibilities && (
+                                {selectedDrive.responsibilities && (
                                     <div className="space-y-4">
                                         <div className="flex items-center gap-2 text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Responsibilities</div>
                                         <ul className="space-y-3">
-                                            {(selectedDrive as any).responsibilities.split('\n').map((line: string, i: number) => line.trim() && (
+                                            {selectedDrive.responsibilities.split('\n').map((line: string, i: number) => line.trim() && (
                                                 <li key={i} className="flex gap-3 text-sm text-gray-600 font-medium">
                                                     <div className="h-5 w-5 rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0 mt-0.5">
                                                         <ChevronRight className="h-3 w-3 text-[#F97316]" />
@@ -638,7 +637,7 @@ export default function DrivesPage() {
                                 variant="outline"
                                 className="h-12 px-4 rounded-xl flex items-center gap-2 border-orange-200 text-orange-500 hover:bg-orange-50 hover:text-orange-600 font-bold text-[11px] uppercase tracking-wider"
                                 title="Preview as Candidate"
-                                onClick={() => setCandidatePreviewSlug(String((selectedDrive as any).slug || selectedDrive.id))}
+                                onClick={() => setCandidatePreviewSlug(selectedDrive.slug || selectedDrive.id)}
                             >
                                 <Eye className="h-4 w-4" />
                                 Preview

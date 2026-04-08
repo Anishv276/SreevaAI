@@ -500,6 +500,84 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         </div>
                                     </div>
 
+                                    {/* Cartesia Settings */}
+                                    {form.ttsProvider === "CARTESIA" && (
+                                        <div className="grid md:grid-cols-2 gap-10 border-b border-gray-50 pb-12">
+                                            <div className="space-y-3">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Cartesia Voice Model</label>
+                                                <select
+                                                    value={form.cartesiaModel}
+                                                    onChange={e => setForm({...form, cartesiaModel: e.target.value})}
+                                                    className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50 px-4 text-xs font-black text-gray-900 focus:bg-white outline-none"
+                                                >
+                                                    <option value="sonic-english">sonic-english (English Optimised)</option>
+                                                    <option value="sonic-3">sonic-3 (Latest, Multilingual)</option>
+                                                    <option value="sonic-2-2025-03-07">sonic-2 (Speed + Emotion Controls)</option>
+                                                </select>
+                                            </div>
+                                            <div className="space-y-3">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                                                    Custom Voice ID
+                                                    <span className="text-[8px] font-bold text-[#F97316] bg-orange-50 px-2 py-0.5 rounded-full normal-case">from cartesia.ai/voices</span>
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={form.cartesiaVoiceId}
+                                                    onChange={e => setForm({...form, cartesiaVoiceId: e.target.value})}
+                                                    placeholder="e.g. 9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
+                                                    className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50/50 px-4 text-xs font-black text-gray-600 placeholder:text-gray-300 focus:bg-white focus:ring-4 focus:ring-[#F97316]/5 transition-all outline-none font-mono"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Sarvam TTS Settings */}
+                                    {form.ttsProvider === "SARVAM" && (
+                                        <div className="grid md:grid-cols-2 gap-10 border-b border-gray-50 pb-12">
+                                            <div className="space-y-3">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Sarvam TTS Model</label>
+                                                <select
+                                                    value={form.sarvamModel}
+                                                    onChange={e => setForm({...form, sarvamModel: e.target.value})}
+                                                    className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50 px-4 text-xs font-black text-gray-900 focus:bg-white outline-none"
+                                                >
+                                                    <option value="bulbul:v3">bulbul:v3 (Latest)</option>
+                                                    <option value="bulbul:v2">bulbul:v2</option>
+                                                </select>
+                                            </div>
+                                            <div className="space-y-3">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Sarvam Voice</label>
+                                                <select
+                                                    value={form.sarvamVoice}
+                                                    onChange={e => setForm({...form, sarvamVoice: e.target.value})}
+                                                    className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50 px-4 text-xs font-black text-gray-900 focus:bg-white outline-none"
+                                                >
+                                                    <option value="shubh">Shubh (Male, Hindi)</option>
+                                                    <option value="anushka">Anushka (Female, Hindi)</option>
+                                                    <option value="arvind">Arvind (Male, English)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Deepgram STT Model */}
+                                    {form.sttProvider === "DEEPGRAM" && (
+                                        <div className="grid md:grid-cols-2 gap-10 border-b border-gray-50 pb-12">
+                                            <div className="space-y-3">
+                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Deepgram STT Model</label>
+                                                <select
+                                                    value={form.deepgramModel}
+                                                    onChange={e => setForm({...form, deepgramModel: e.target.value})}
+                                                    className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50 px-4 text-xs font-black text-gray-900 focus:bg-white outline-none"
+                                                >
+                                                    <option value="nova-3-general">nova-3-general (Latest)</option>
+                                                    <option value="nova-2-general">nova-2-general (Stable)</option>
+                                                    <option value="nova-2-meeting">nova-2-meeting (Multi-speaker)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="grid md:grid-cols-2 gap-10">
                                         <div className="space-y-4">
                                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Large Language Model</label>

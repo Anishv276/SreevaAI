@@ -19,6 +19,9 @@ def load_optional_module(module_name):
 
 pdfplumber = load_optional_module("pdfplumber")
 pymupdf4llm = load_optional_module("pymupdf4llm")
+pytesseract = load_optional_module("pytesseract")
+pdf2image = load_optional_module("pdf2image")
+from PIL import Image
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -66,6 +69,19 @@ def extract_text(file_path, type_="RESUME"):
             )
 
         combined_text = "\n\n".join(extracted_parts).strip()
+        
+        # --- PDF OCR FALLBACK ---
+        if not combined_text or (len(combined_text) < 100 and type_ == "JD"):
+            if pytesseract and pdf2image:
+                try:
+                    ocr_text = extract_text_with_ocr(file_path)
+                    if ocr_text:
+                        combined_text = ocr_text
+                except Exception as e:
+                    extraction_errors.append(f"OCR failed: {str(e)}")
+            else:
+                extraction_errors.append("OCR modules (pytesseract/pdf2image) not installed for scanned PDF")
+
         if combined_text:
             return combined_text
 
@@ -156,6 +172,32 @@ def extract_tables_with_pdfplumber(file_path):
     return extracted_tables
 
 
+def extract_text_with_ocr(file_path):
+    """
+    Fallback for scanned PDFs using Tesseract OCR.
+    """
+    if not pdf2image or not pytesseract:
+        return ""
+
+    try:
+        # Convert PDF to list of images
+        images = pdf2image.convert_from_path(file_path)
+        full_text = []
+
+        for i, image in enumerate(images):
+            # Perform OCR on each page
+            page_text = pytesseract.image_to_string(image)
+            if page_text.strip():
+                full_text.append(f"## OCR Page {i+1}\n\n{page_text}")
+
+        return "\n\n".join(full_text)
+    except Exception as e:
+        # Log to stderr to avoid breaking JSON stdout
+        import sys
+        print(f"OCR Internal Error: {str(e)}", file=sys.stderr)
+        return ""
+
+
 def normalize_skill(skill):
     """
     Normalize skill names for fuzzy matching.
@@ -167,26 +209,82 @@ def normalize_skill(skill):
     s = re.sub(r"js$", "", s)
     # Remove special characters and spaces
     s = re.sub(r"[\.\-\_\s\/]", "", s)
-    # Common aliases
+    # Canonical alias map — covers common resume vs JD naming divergences
     aliases = {
+        # JS / Node ecosystem
         "nodejs": "node",
         "reactjs": "react",
         "vuejs": "vue",
         "angularjs": "angular",
-        "postgresql": "postgres",
-        "mongodb": "mongo",
-        "amazonaws": "aws",
-        "googlecloud": "gcp",
-        "googlecloudplatform": "gcp",
-        "microsoftazure": "azure",
-        "machinelearning": "ml",
-        "artificialintelligence": "ai",
         "expressjs": "express",
         "nextjs": "next",
         "nuxtjs": "nuxt",
         "tailwindcss": "tailwind",
         "typescriptlang": "typescript",
         "javascriptjs": "javascript",
+        "js": "javascript",
+        "ts": "typescript",
+        # Python ecosystem
+        "python3": "python",
+        "py": "python",
+        # Java ecosystem
+        "springboot": "spring",
+        "springframework": "spring",
+        "hibernateorm": "hibernate",
+        # Databases
+        "postgresql": "postgres",
+        "mongodb": "mongo",
+        "elasticsearchdb": "elasticsearch",
+        "mssql": "sqlserver",
+        "microsoftsqlserver": "sqlserver",
+        # Cloud
+        "amazonaws": "aws",
+        "amazonwebservices": "aws",
+        "googlecloud": "gcp",
+        "googlecloudplatform": "gcp",
+        "microsoftazure": "azure",
+        "azurecloud": "azure",
+        # DevOps / infra
+        "kubernetes": "k8s",
+        "k8": "k8s",
+        "dockercontainer": "docker",
+        "githubactions": "cicd",
+        "gitlabci": "cicd",
+        "circleci": "cicd",
+        "jenkin": "jenkins",
+        "terraformiac": "terraform",
+        # AI / ML / Data
+        "machinelearning": "ml",
+        "artificialintelligence": "ai",
+        "deeplearning": "dl",
+        "naturallanguageprocessing": "nlp",
+        "largelanguagemodel": "llm",
+        "llms": "llm",
+        "generativeai": "genai",
+        "aiml": "ml",
+        "datascience": "data science",
+        "apachespark": "spark",
+        "apachekafka": "kafka",
+        "apacheairflow": "airflow",
+        # BI / Analytics
+        "powerbi": "power bi",
+        "msexcel": "excel",
+        "microsoftexcel": "excel",
+        "googleanalytics": "ga",
+        "looker": "looker",
+        # Automation / No-code
+        "n8n": "n8n",
+        "zapier": "zapier",
+        # Mobile
+        "reactnative": "react native",
+        "flutterdev": "flutter",
+        "swiftui": "swift",
+        # Marketing / CRM / SaaS tools
+        "hubspotcrm": "hubspot",
+        "salesforcecrm": "salesforce",
+        "googleads": "google ads",
+        "metaads": "meta ads",
+        "facebookads": "meta ads",
     }
     return aliases.get(s, s)
 
@@ -254,15 +352,40 @@ def compute_score(jd_data, resume_data):
 
     has_tech = jd_data.get("has_technical_requirements", True)
 
-    # ── Build normalized resume skill set ─────────────────────
-    all_resume_skills = resume_technical + resume_tools
+    # ── Build comprehensive resume skill pool ─────────────────
+    # Source 1: explicit skills section (technical + tools)
+    all_resume_skills = list(resume_technical) + resume_tools
 
-    # Add domain skills ONLY for non-technical roles as per contract
-    if not has_tech:
-        domain_skills = resume_skills.get("domain_skills", [])
-        all_resume_skills.extend(domain_skills)
+    # Source 2: work_history[].technologies_used — candidates often list skills
+    # only in job bullets, not in a dedicated skills section.
+    for job in resume_data.get("work_history", []):
+        for tech in job.get("technologies_used", []):
+            if tech and isinstance(tech, str):
+                all_resume_skills.append(tech)
 
-    resume_normalized = {normalize_skill(str(s)): s for s in all_resume_skills}
+    # Source 3: projects[].technologies — personal/side projects frequently
+    # surface skills not in work history.
+    for proj in resume_data.get("projects", []):
+        for tech in proj.get("technologies", []):
+            if tech and isinstance(tech, str):
+                all_resume_skills.append(tech)
+
+    # Source 4: resume-level keywords (catch-all)
+    for kw in resume_data.get("keywords", []):
+        if kw and isinstance(kw, str):
+            all_resume_skills.append(kw)
+
+    # Source 5: domain_skills — always for non-tech roles, also for tech roles
+    # (e.g. a FinTech engineer may have "risk modelling" as a domain skill)
+    domain_skills = resume_skills.get("domain_skills", [])
+    all_resume_skills.extend([s for s in domain_skills if s])
+
+    # Deduplicate after normalization so we don't double-count
+    resume_normalized = {}
+    for s in all_resume_skills:
+        norm = normalize_skill(str(s))
+        if norm and norm not in resume_normalized:
+            resume_normalized[norm] = s
 
     # ── 1. Must-have skill matching (55 pts) ──────────────────
     # Weight map: critical=3, high=2, medium=1
@@ -290,8 +413,21 @@ def compute_score(jd_data, resume_data):
         # Non-technical role with no specific technical must-haves
         skills_score = 45  # Good baseline for non-tech roles
     else:
-        # Technical role but no skills extracted? That's a data gap.
-        skills_score = 30  # Baseline penalty
+        # Technical role but JD extraction produced no must_have skills.
+        # Fallback: use JD keywords as proxy must-haves (medium weight each)
+        # so candidates are scored on something meaningful rather than a flat 30.
+        jd_keywords = [k for k in jd_data.get("keywords", []) if k]
+        if jd_keywords:
+            kw_matched = sum(1 for k in jd_keywords if normalize_skill(k) in resume_normalized)
+            skills_score = round((kw_matched / len(jd_keywords)) * 55)
+            # Populate matched/missing for the report
+            for k in jd_keywords:
+                if normalize_skill(k) in resume_normalized:
+                    matched_must.append(k)
+                else:
+                    missing_must.append(k)
+        else:
+            skills_score = 30  # Last resort — truly no signal available
 
     # ── 2. Experience score (25 pts) ──────────────────────────
     exp_score = 0
@@ -363,10 +499,45 @@ def compute_score(jd_data, resume_data):
     if career_pattern == "growing":
         career_score = min(10, career_score + 1)
 
+    # Education matching (within career signals budget)
+    # Only applied when JD explicitly requires a degree/certification AND candidate has no education
+    jd_edu = jd_data.get("education", {})
+    candidate_edu = resume_data.get("education", [])
+    if jd_edu.get("required") and not candidate_edu:
+        # JD requires education but resume has none listed — small penalty
+        career_score = max(0, career_score - 2)
+
     career_score = max(0, career_score)
 
-    # ── 5. Final score ─────────────────────────────────────────
-    total = skills_score + exp_score + good_score + career_score
+    # ── 5. Scoring hints bonus (up to ±5) ─────────────────────
+    # Uses the JD's own signal hints to fine-tune beyond keyword matching.
+    hints_bonus = 0
+    scoring_hints = jd_data.get("scoring_hints", {})
+    if scoring_hints:
+        # Build a fast lookup: candidate full text for green/red scan
+        resume_all_text = " ".join(filter(None, [
+            resume_data.get("candidate_summary", ""),
+            resume_data.get("career_progression", {}).get("analysis", ""),
+            " ".join(kw for kw in resume_data.get("keywords", []) if kw),
+            " ".join(
+                " ".join(str(t) for t in job.get("technologies_used", []))
+                for job in resume_data.get("work_history", [])
+            ),
+        ])).lower()
+
+        for green in scoring_hints.get("green_flags_to_reward", []):
+            if green and (
+                normalize_skill(green) in resume_normalized
+                or green.lower() in resume_all_text
+            ):
+                hints_bonus = min(5, hints_bonus + 2)
+
+        for red in scoring_hints.get("red_flags_to_watch", []):
+            if red and red.lower() in resume_all_text:
+                hints_bonus = max(-5, hints_bonus - 2)
+
+    # ── 6. Final score ─────────────────────────────────────────
+    total = skills_score + exp_score + good_score + career_score + hints_bonus
     total = min(100, max(0, total))
 
     # ── 6. Hard rejection rules ────────────────────────────────
@@ -416,6 +587,7 @@ def compute_score(jd_data, resume_data):
             "good_max": 10,
             "career_score": career_score,
             "career_max": 10,
+            "hints_bonus": hints_bonus,
         },
         "skill_matching": {
             "matched_must": matched_must,
@@ -490,12 +662,12 @@ CANDIDATE RESUME DATA
 ═══════════════════════════════════════
 ORIGINAL JD TEXT (for context)
 ═══════════════════════════════════════
-{jd_raw_text[:2000]}
+{jd_raw_text[:4000]}
 
 ═══════════════════════════════════════
 ORIGINAL RESUME TEXT (for context)
 ═══════════════════════════════════════
-{resume_raw_text[:2000]}
+{resume_raw_text[:3500]}
 
 ═══════════════════════════════════════
 YOUR TASK
@@ -576,7 +748,22 @@ Return ONLY valid JSON in this exact schema:
     "alternative_fit": "If rejected — what kind of role would this candidate actually be good for?"
   }},
 
-  "ai_verdict": "3-4 sentences. The definitive recruiter verdict. Name the exact skills matched and missing. State the experience gap precisely. End with a clear recommendation — shortlist, borderline review, or reject — and one line on why."
+  "ai_verdict": "3-4 sentences. The definitive recruiter verdict. Name the exact skills matched and missing. State the experience gap precisely. End with a clear recommendation — shortlist, borderline review, or reject — and one line on why.",
+
+  "interview_questions": [
+    {{
+      "question": "Specific open-ended question targeting a gap or verifying a claimed strength — never generic",
+      "intent": "What this question is designed to reveal about this candidate",
+      "based_on": "Exact evidence from the resume or JD that motivated this question"
+    }}
+  ],
+
+  "jd_quality_feedback": {{
+    "screening_confidence": "high | medium | low",
+    "issues": ["string"],
+    "suggestions": ["string"],
+    "note": "string | null"
+  }}
 }}
 """
 
@@ -587,12 +774,22 @@ Return ONLY valid JSON in this exact schema:
             {
                 "role": "system",
                 "content": (
-                    "You are a senior technical recruiter with 10 years of hiring experience. "
-                    "You write specific, evidence-based evaluation reports. "
-                    "You never use generic language. "
-                    "Every point you make is backed by something specific from the resume or JD. "
-                    "You are honest — if a candidate is weak, you say so clearly and specifically. "
-                    "Output ONLY valid JSON. No markdown. No extra text."
+                    "You are the world's most accurate AI hiring evaluation engine, built to help HR teams "
+                    "make fast, fair, evidence-backed decisions across every industry — Software Engineering, "
+                    "Fintech, Banking, Marketing, Sales, Operations, HR, Legal, Product, Data Science, and more. "
+                    "For TECHNICAL roles: prioritize stack depth, system design awareness, and project scale. "
+                    "For NON-TECHNICAL roles: focus on domain expertise, functional outcomes, and measurable impact. "
+                    "For HYBRID roles: credit both functional and technical competencies equally. "
+                    "TRANSFERABLE SKILL INTELLIGENCE: A B2B Sales rep with Salesforce dashboards has CRM+data skills. "
+                    "A Marketing analyst running A/B tests has statistical thinking. "
+                    "A banker automating reconciliation has process automation skills. Credit these when relevant. "
+                    "EVIDENCE DISCIPLINE: Every strength, gap, and claim MUST cite a company name, tool name, "
+                    "project name, or metric. FORBIDDEN: 'strong communicator', 'team player', 'has experience with'. "
+                    "REQUIRED pattern: 'At [Company], built [thing] using [tool] that [outcome]'. "
+                    "If status is Rejected — be direct and specific. No false hope. "
+                    "If Borderline — explain EXACTLY what would push them to Shortlisted. "
+                    "No hallucinations. No gender/age/nationality bias. "
+                    "Output ONLY valid JSON. No markdown. No code fences. No extra text."
                 ),
             },
             {"role": "user", "content": prompt},
@@ -789,8 +986,8 @@ Return ONLY valid JSON matching this schema exactly. No markdown. No explanation
 
   "deal_breakers": [
     {{
-      "condition": string,
-      "reason": string
+      "condition": "string",
+      "reason": "string"
     }}
   ],
 
@@ -1046,18 +1243,18 @@ Return ONLY valid JSON matching this schema exactly. No markdown. No explanation
 
   "career_progression": {{
     "pattern": "growing" | "lateral" | "declining" | "mixed" | "early-career" | "unknown",
-    "analysis": string
+    "analysis": "string"
     // 1–2 sentences. Name actual companies and role types. Note overlaps or gaps if present.
   }},
 
-  "candidate_summary": string,
+  "candidate_summary": "string",
   // 2–3 sentences written like a recruiter briefing a colleague.
   // Must name: specific tools/skills, at least one company, and the domain they work in.
   // Must state their actual seniority level based on evidence — not their title.
   // Bias-neutral. No gendered language.
   // Do NOT copy their resume objective or summary section.
 
-  "keywords": [string]
+  "keywords": ["string"]
   // 10–15 keywords for JD matching. Canonical names. No categories.
 }}
 
@@ -1100,6 +1297,8 @@ Resume:
                 "candidate_years": score_result["candidate_years"],
                 "jd_min_years": score_result["jd_min_years"],
                 **report,  # Spread report to top-level for frontend
+                # Frontend reads experience_assessment; backend outputs experience_analysis
+                "experience_assessment": report.get("experience_analysis", {}),
             }
             return final_data
         except Exception as e:

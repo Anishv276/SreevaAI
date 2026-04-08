@@ -61,8 +61,10 @@ interface CandidatesContextType {
     candidates: Candidate[];
     pagination: Pagination;
     isLoading: boolean;
+    error: string | null;
     addCandidate: (candidate: Omit<Candidate, "id" | "date" | "status" | "score">) => Promise<void>;
     fetchCandidates: (page?: number, limit?: number, driveId?: string, status?: string, startDate?: string, endDate?: string, search?: string) => Promise<void>;
+    clearError: () => void;
     bulkDeleteCandidates: (ids: string[]) => Promise<void>;
 }
 
@@ -75,6 +77,7 @@ const STREAM_REFRESH_DEBOUNCE_MS = 1200;
 export function CandidatesProvider({ children }: { children: React.ReactNode }) {
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const [pagination, setPagination] = useState<Pagination>({
         total: 0,
         page: 1,
@@ -153,9 +156,27 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             return;
         }
 
+        const fetchWithRetry = async (url: string, retries = 3, backoff = 1000): Promise<Response> => {
+            try {
+                const res = await fetch(url);
+                if (!res.ok && retries > 0 && (res.status >= 500 || res.status === 429)) {
+                    await new Promise(r => setTimeout(r, backoff));
+                    return fetchWithRetry(url, retries - 1, backoff * 2);
+                }
+                return res;
+            } catch (err) {
+                if (retries > 0) {
+                    await new Promise(r => setTimeout(r, backoff));
+                    return fetchWithRetry(url, retries - 1, backoff * 2);
+                }
+                throw err;
+            }
+        };
+
         const requestPromise = (async () => {
             if (!options?.background) {
                 setIsLoading(true);
+                setError(null);
             }
 
             try {
@@ -184,8 +205,10 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                     params.set("search", search.trim());
                 }
 
-                const res = await fetch(`/api/candidates?${params.toString()}`);
+                const res = await fetchWithRetry(`/api/candidates?${params.toString()}`);
                 if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    setError(data.error || "Failed to load candidates. Partial recovery active.");
                     return;
                 }
 
@@ -223,8 +246,9 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
 
                 hasFetchedAdminDataRef.current = true;
                 lastFetchRef.current = { key, at: Date.now() };
-            } catch (error) {
+            } catch (error: any) {
                 console.error("Failed to fetch candidates:", error);
+                setError(error.message || "An unexpected error occurred during data synchronization.");
             } finally {
                 if (!options?.background) {
                     setIsLoading(false);
@@ -415,8 +439,10 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         }
     };
 
+    const clearError = useCallback(() => setError(null), []);
+
     return (
-        <CandidatesContext.Provider value={{ candidates, pagination, isLoading, addCandidate, fetchCandidates, bulkDeleteCandidates }}>
+        <CandidatesContext.Provider value={{ candidates, pagination, isLoading, error, addCandidate, fetchCandidates, bulkDeleteCandidates, clearError }}>
             {children}
         </CandidatesContext.Provider>
     );

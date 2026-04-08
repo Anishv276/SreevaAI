@@ -16,6 +16,8 @@ import {
   useParticipantInfo,
   useConnectionState,
   useRoomContext,
+  useRemoteParticipants,
+  useTranscriptions,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
 import { Track, RoomEvent } from "livekit-client";
@@ -44,12 +46,8 @@ type AttachableTrack = {
     detach: (element: HTMLMediaElement) => void;
 };
 
-type LiveTranscriptPacket = {
-    type: "live_transcript";
-    speaker: string;
-    text: string;
-    timestamp?: number;
-};
+// LiveKit TextStreamData type from @livekit/components-core
+// { text: string, participantInfo: { identity: string }, streamInfo: TextStreamInfo }
 
 /** Typewriter component: streams text character-by-character whenever text changes. */
 const StreamingText = memo(function StreamingText({ text, className }: { text: string; className?: string }) {
@@ -126,14 +124,54 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [sessionDuration, setSessionDuration] = useState(INTERVIEW_DURATION_SECONDS);
     const [remainingSeconds, setRemainingSeconds] = useState(INTERVIEW_DURATION_SECONDS);
     const [timerExpired, setTimerExpired] = useState(false);
-    const recordedChunksRef = useRef<Blob[]>([]);
-    const recordingUploadedRef = useRef(false);
     const containerRef = useRef<HTMLDivElement>(null);
-    const recordingStartTimeRef = useRef<number | null>(null);
     const allowFullscreenExitRef = useRef(false);
     const launchIntervalRef = useRef<number | null>(null);
 
     const [showSecurityToast, setShowSecurityToast] = useState(false);
+    const [isAgentReady, setIsAgentReady] = useState(false);
+    const [launchTimeoutCheck, setLaunchTimeoutCheck] = useState(0);
+
+    // Hard timeout safety net: 45 seconds total wait
+    useEffect(() => {
+        if (phase === "launching" && launchTimeoutCheck > 45) {
+            setJoinError("We're having trouble connecting to the interview room. Please check your internet and try again.");
+            setPhase("check");
+            setLaunchTimeoutCheck(0);
+        }
+    }, [launchTimeoutCheck, phase]);
+
+    // Dynamic Countdown: Jumps to 3 seconds if agent is ready
+    useEffect(() => {
+        if (phase === "launching" && isAgentReady && launchCountdown !== null && launchCountdown > 3) {
+            setLaunchCountdown(3);
+        }
+    }, [isAgentReady, phase, launchCountdown]);
+
+    // Effect 1: Countdown ticker — just ticks down, no side effects
+    useEffect(() => {
+        if (phase !== "launching") return;
+        const timer = window.setInterval(() => {
+            setLaunchTimeoutCheck((prev) => prev + 1);
+            setLaunchCountdown((prev) => Math.max(0, (prev ?? 10) - 1));
+        }, 1000);
+        return () => window.clearInterval(timer);
+    }, [phase]);
+
+    // Effect 2: Phase transition — fires whenever countdown or readiness changes
+    useEffect(() => {
+        if (phase !== "launching") return;
+        if (isAgentReady && (launchCountdown ?? 99) <= 1) {
+            setPhase("interview");
+        }
+    }, [phase, isAgentReady, launchCountdown]);
+
+    // Effect 3: Jump-cut — snap to 3 if agent joins while countdown is still counting down
+    useEffect(() => {
+        if (phase === "launching" && isAgentReady && launchCountdown !== null && launchCountdown > 3) {
+            setLaunchCountdown(3);
+        }
+    }, [isAgentReady, phase, launchCountdown]);
 
     const isExitUnlocked = phase === "completed" || timerExpired;
     const isInterviewLocked = phase === "interview" && !isExitUnlocked;
@@ -152,52 +190,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         window.setTimeout(() => setShowSecurityToast(false), 5000);
     };
 
-    const uploadRecording = async (forceDuration?: number) => {
-        if (recordingUploadedRef.current || recordedChunksRef.current.length === 0) {
-            console.log("Upload skipped: Already uploaded or no chunks.");
-            return;
-        }
-
-        const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
-        const now = Date.now();
-        const start = recordingStartTimeRef.current || now;
-        const duration = forceDuration !== undefined ? forceDuration : Math.max(0, Math.round((now - start) / 1000));
-
-        console.log(`[Browser] Uploading recording. Chunks: ${recordedChunksRef.current.length}, Size: ${blob.size}, Duration: ${duration}s, ID: ${id}`);
-        recordingUploadedRef.current = true;
-        
-        const file = new File([blob], `interview_${id}.webm`, { type: "video/webm" });
-        const formData = new FormData();
-        formData.append("applicationId", id);
-        formData.append("recording", file);
-        formData.append("duration", duration.toString());
-
-        for (let attempt = 1; attempt <= 3; attempt++) {
-            try {
-                const res = await fetch("/api/interview/recording", {
-                    method: "POST",
-                    body: formData,
-                });
-
-                if (!res.ok) {
-                    const text = await res.text().catch(() => "");
-                    throw new Error(`Upload failed (${res.status}): ${text}`);
-                }
-
-                console.log("Recording upload successful.");
-                return;
-            } catch (error) {
-                console.error(`Interview recording upload failed (attempt ${attempt}/3):`, error);
-
-                if (attempt >= 3) {
-                    recordingUploadedRef.current = false;
-                    throw error;
-                }
-
-                await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
-            }
-        }
-    };
 
     const tokenRequestRef = useRef<Promise<boolean> | null>(null);
 
@@ -286,14 +278,22 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
     };
 
-    // PRE-CONNECT: Fetch token and start connection in background during Hardware Check
-    useEffect(() => {
-        void ensureWarmConnection();
-    }, [ensureWarmConnection]);
+    // Token is fetched on demand when user clicks Start Interview.
+    // We do NOT pre-fetch here because that would dispatch the agent before the
+    // candidate is ready, and the stale token in sessionStorage would then skip
+    // dispatch on subsequent attempts.
 
     const handleHardwareComplete = async () => {
         setIsJoining(true);
         setJoinError(null);
+
+        // Always clear cached token so the API is called fresh.
+        // This ensures a new dispatch fires every time the candidate starts.
+        const cacheKey = `lk_token_${id}`;
+        sessionStorage.removeItem(cacheKey);
+        setToken(null);
+        setServerUrl(null);
+        setShouldConnect(false);
 
         await requestFullscreenMode();
 
@@ -311,27 +311,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             }
 
             setPhase("launching");
-            setLaunchCountdown(3);
-
-            if (launchIntervalRef.current) {
-                window.clearInterval(launchIntervalRef.current);
-                launchIntervalRef.current = null;
-            }
-
-            let secondsLeft = 3;
-            launchIntervalRef.current = window.setInterval(() => {
-                secondsLeft -= 1;
-                if (secondsLeft <= 0) {
-                    if (launchIntervalRef.current) {
-                        window.clearInterval(launchIntervalRef.current);
-                        launchIntervalRef.current = null;
-                    }
-                    setLaunchCountdown(null);
-                    setPhase("interview");
-                    return;
-                }
-                setLaunchCountdown(secondsLeft);
-            }, 1000);
+            setLaunchCountdown(isAgentReady ? 3 : 10);
+            
         } catch (err) {
             console.error("Phase transition failed:", err);
             setJoinError(err instanceof Error ? err.message : "Unable to start interview.");
@@ -450,14 +431,21 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         <div className="flex flex-col items-center gap-7 text-center px-6">
                             <div className="relative h-24 w-24 rounded-full border border-orange-200 bg-orange-50 flex items-center justify-center shadow-[0_12px_40px_rgba(249,115,22,0.18)]">
                                 <Loader2 className="h-10 w-10 text-orange-500 animate-spin" />
-                                <span className="absolute -bottom-3 text-lg font-black text-orange-600 bg-white border border-orange-100 rounded-full px-3 py-1 shadow-sm">
-                                    {launchCountdown ?? 1}
+                                <span className={cn(
+                                    "absolute -bottom-3 font-black text-orange-600 bg-white border border-orange-100 rounded-full py-1 shadow-sm transition-all",
+                                    launchCountdown === 0 ? "text-xs px-4" : "text-lg px-3"
+                                )}>
+                                    {launchCountdown === 0 ? "..." : (launchCountdown ?? 1)}
                                 </span>
                             </div>
                             <div className="space-y-2">
-                                <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Preparing Interviewer</h3>
-                                <p className="text-[11px] font-bold text-gray-500 uppercase tracking-[0.25em]">
-                                    Final AI warm-up in progress...
+                                <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
+                                    {launchCountdown === 0 ? "Almost Ready" : "Getting Started"}
+                                </h3>
+                                <p className="text-[11px] font-bold text-gray-500 uppercase tracking-[0.25em] min-h-[1.5rem] max-w-[280px]">
+                                    {launchCountdown === 0 
+                                        ? "Setting up your interview room. This may take a moment..." 
+                                        : !isAgentReady ? "Connecting to your interviewer..." : "Entering the room now..."}
                                 </p>
                             </div>
                         </div>
@@ -483,6 +471,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         >
                             <InterviewRoomContent 
                                 id={id} 
+                                onAgentReady={setIsAgentReady}
                                 onFinish={() => setPhase("completed")} 
                                 onFinalizing={() => setPhase("finalizing")}
                                 isInterviewActive={phase === "interview"} 
@@ -492,12 +481,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 onRemoteAgentAudioTrack={handleRemoteAgentAudioTrack}
                                 onAllowExitNow={() => {
                                     allowFullscreenExitRef.current = true;
-                                }}
-                                onRecordingComplete={(blob: Blob, duration: number) => {
-                                    recordedChunksRef.current = [blob];
-                                    void uploadRecording(duration)
-                                        .catch((err) => console.error("Recording upload final failure:", err))
-                                        .finally(() => setPhase("completed"));
                                 }}
                             />
                         </LiveKitRoom>
@@ -518,8 +501,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 <ShieldCheck className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-6 w-6 text-orange-600" />
                             </div>
                             <div className="text-center space-y-2">
-                                <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">Securing Interview</h3>
-                                <p className="text-sm font-bold text-gray-400 uppercase tracking-[0.2em]">Finalizing encrypted upload...</p>
+                                <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">Interview Complete</h3>
+                                <p className="text-sm font-bold text-gray-400 uppercase tracking-[0.2em]">Securing your session...</p>
                             </div>
                         </div>
                     </motion.div>
@@ -607,7 +590,7 @@ function InterviewRoomContent({
     onSecurityViolation,
     onRemoteAgentAudioTrack,
     onAllowExitNow,
-    onRecordingComplete,
+    onAgentReady,
 }: {
     id: string,
     onFinish: () => void,
@@ -618,12 +601,18 @@ function InterviewRoomContent({
     onSecurityViolation: () => void,
     onRemoteAgentAudioTrack: (track: MediaStreamTrack | null) => void,
     onAllowExitNow: () => void,
-    onRecordingComplete: (blob: Blob, duration: number) => void,
+    onAgentReady?: (isReady: boolean) => void,
 }) {
     const { localParticipant } = useLocalParticipant();
     const cameraTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
     const connectionState = useConnectionState();
     const lkRoom = useRoomContext();
+    const remoteParticipants = useRemoteParticipants();
+
+    useEffect(() => {
+        const hasAgent = remoteParticipants.length > 0;
+        onAgentReady?.(hasAgent);
+    }, [remoteParticipants, onAgentReady]);
 
     const remoteTracks = useTracks([Track.Source.Microphone], { onlySubscribed: false });
     // Improved: find any remote participant who has a microphone and isn't the candidate
@@ -638,16 +627,11 @@ function InterviewRoomContent({
     }, [connectionState, lkRoom]);
 
     const [strikes, setStrikes] = useState(0);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const mixerDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
-    const recordedChunksRef = useRef<Blob[]>([]);
-    const recordingStartTimeRef = useRef<number | null>(null);
     const readySignalSentRef = useRef(false);
     const finishStartedRef = useRef(false);
-    const transcriptMsgIdRef = useRef(0);
     const transcriptPanelRef = useRef<HTMLDivElement>(null);
-    const [liveTranscriptFeed, setLiveTranscriptFeed] = useState<Array<{ id: number; speaker: string; text: string }>>([]);
+    const transcriptions = useTranscriptions({ room: lkRoom });
+    const localIdentity = lkRoom?.localParticipant?.identity ?? "";
     const [remoteForceFinish, setRemoteForceFinish] = useState(false);
     const localCameraTrack =
         cameraTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera) || null;
@@ -678,62 +662,11 @@ function InterviewRoomContent({
 
     useEffect(() => {
         const mediaTrack = getMediaStreamTrack(aiParticipantTrack);
-
         if (mediaTrack && mediaTrack.kind === "audio") {
             onRemoteAgentAudioTrack(mediaTrack);
-            if (audioContextRef.current && mixerDestinationRef.current) {
-                try {
-                    const source = audioContextRef.current.createMediaStreamSource(new MediaStream([mediaTrack]));
-                    const gainNode = audioContextRef.current.createGain();
-                    gainNode.gain.value = 2.5; // BOOST AI AUDIO
-                    source.connect(gainNode);
-                    gainNode.connect(mixerDestinationRef.current);
-                } catch (e) { console.warn("Mixer sync update failed:", e); }
-            }
         }
     }, [aiParticipantTrack, onRemoteAgentAudioTrack]);
 
-    useEffect(() => {
-        if (!isInterviewActive || mediaRecorderRef.current || connectionState !== "connected" || !localParticipant) return;
-
-        const startRecording = async () => {
-            try {
-                const videoTrack = localParticipant.getTrackPublication(Track.Source.Camera)?.track?.mediaStreamTrack;
-                const audioTrack = localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack;
-
-                if (!videoTrack || !audioTrack) return;
-
-                recordedChunksRef.current = [];
-                const ctx = new AudioContext();
-                audioContextRef.current = ctx;
-                const dest = ctx.createMediaStreamDestination();
-                mixerDestinationRef.current = dest;
-
-                const localSource = ctx.createMediaStreamSource(new MediaStream([audioTrack]));
-                localSource.connect(dest);
-
-                const remoteTrack = getMediaStreamTrack(aiParticipantTrack);
-                if (remoteTrack) {
-                    const rSource = ctx.createMediaStreamSource(new MediaStream([remoteTrack]));
-                    const gainNode = ctx.createGain();
-                    gainNode.gain.value = 2.5; 
-                    rSource.connect(gainNode);
-                    gainNode.connect(dest);
-                }
-
-                const mixedStream = new MediaStream();
-                mixedStream.addTrack(videoTrack);
-                mixedStream.addTrack(dest.stream.getAudioTracks()[0]);
-
-                const recorder = new MediaRecorder(mixedStream, { mimeType: "video/webm;codecs=vp9,opus" });
-                recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
-                recorder.start(1000);
-                mediaRecorderRef.current = recorder;
-                recordingStartTimeRef.current = Date.now();
-            } catch (err) { console.error("Recording setup failed:", err); }
-        };
-        startRecording();
-    }, [isInterviewActive, connectionState, localParticipant, aiParticipantTrack]);
 
     useEffect(() => {
         if (!lkRoom) return;
@@ -741,31 +674,10 @@ function InterviewRoomContent({
         const decoder = new TextDecoder();
         const onDataReceived = (payload: Uint8Array) => {
             try {
-                const packet = JSON.parse(decoder.decode(payload)) as Partial<LiveTranscriptPacket>;
-                if ((packet as { type?: string }).type === "interview_terminated") {
+                const packet = JSON.parse(decoder.decode(payload));
+                if (packet.type === "interview_terminated") {
                     setRemoteForceFinish(true);
-                    return;
                 }
-                if (packet.type !== "live_transcript") return;
-
-                const speaker = String(packet.speaker || "Interviewer").trim();
-                const text = String(packet.text || "").trim();
-                if (!text) return;
-
-                setLiveTranscriptFeed((prev) => {
-                    const last = prev[prev.length - 1];
-                    // If same speaker, update the last block (streaming update)
-                    if (last && last.speaker === speaker) {
-                        if (last.text === text) return prev;
-                        const updated = [...prev];
-                        updated[updated.length - 1] = { ...last, text };
-                        return updated;
-                    }
-                    
-                    // New speaker or new session, add new block
-                    const id = ++transcriptMsgIdRef.current;
-                    return [...prev.slice(-29), { id, speaker, text }];
-                });
             } catch {
                 // Ignore non-JSON packets.
             }
@@ -780,27 +692,21 @@ function InterviewRoomContent({
     useEffect(() => {
         if (!transcriptPanelRef.current) return;
         transcriptPanelRef.current.scrollTop = transcriptPanelRef.current.scrollHeight;
-    }, [liveTranscriptFeed]);
+    }, [transcriptions]);
 
     const handleFinish = useCallback(async () => {
         if (finishStartedRef.current) return;
         finishStartedRef.current = true;
 
         onAllowExitNow();
-        const recorder = mediaRecorderRef.current;
-        if (recorder && recorder.state !== "inactive") {
-            recorder.onstop = () => {
-                const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
-                const duration = Math.max(1, Math.round((Date.now() - (recordingStartTimeRef.current || Date.now())) / 1000));
-                onRecordingComplete(blob, duration);
-            };
-            recorder.stop();
-        } else {
+        onFinalizing();
+        // Recording is handled server-side by LiveKit Egress.
+        // The server will receive an egress_ended webhook and save the URL automatically.
+        setTimeout(() => {
+            try { lkRoom?.disconnect(); } catch (_) {}
             onFinish();
-        }
-        onFinalizing(); 
-        setTimeout(() => { try { lkRoom?.disconnect(); } catch (_) {} }, 500);
-    }, [onAllowExitNow, onRecordingComplete, onFinalizing, lkRoom, onFinish]);
+        }, 1500);
+    }, [onAllowExitNow, onFinalizing, lkRoom, onFinish]);
 
     useEffect(() => {
         if (!timerExpired || !isInterviewActive) return;
@@ -906,11 +812,19 @@ function InterviewRoomContent({
                 </div>
                 <div ref={transcriptPanelRef} className="h-[calc(100%-64px)] overflow-y-auto px-4 py-4 space-y-3">
                     <AnimatePresence initial={false}>
-                        {liveTranscriptFeed.map((item) => {
-                            const isCandidate = item.speaker.toLowerCase().includes("candidate");
+                        {transcriptions.map((segment) => {
+                            // TextStreamData shape: { text, participantInfo: { identity }, streamInfo: TextStreamInfo }
+                            const isCandidate = segment.participantInfo.identity === localIdentity;
+                            const speakerName = isCandidate ? "You" : "Interviewer";
+                            const isFinal = segment.streamInfo.attributes?.["lk.transcription_final"] === "true";
+                            const segmentKey = segment.streamInfo.id;
+
+                            // Only render segments that actually have text
+                            if (!segment.text.trim()) return null;
+
                             return (
                                 <motion.div
-                                    key={item.id}
+                                    key={segmentKey}
                                     initial={{ opacity: 0, y: 22 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: -16 }}
@@ -920,9 +834,9 @@ function InterviewRoomContent({
                                         : "mr-auto bg-zinc-800/80 border-zinc-700/80")}
                                 >
                                     <p className={cn("text-[9px] uppercase tracking-[0.2em] font-black mb-1", isCandidate ? "text-orange-300" : "text-zinc-400")}>
-                                        {item.speaker}
+                                        {speakerName}{!isFinal && <span className="opacity-50 ml-1">•••</span>}
                                     </p>
-                                    <StreamingText text={item.text} className="text-[13px] leading-relaxed text-white font-semibold" />
+                                    <StreamingText text={segment.text} className="text-[13px] leading-relaxed text-white font-semibold" />
                                 </motion.div>
                             );
                         })}

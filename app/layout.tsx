@@ -7,7 +7,7 @@ import { CandidatesProvider } from "@/context/candidates-context";
 
 const inter = Inter({ subsets: ["latin"] });
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Hirer.ai - AI-Powered Recruitment Platform",
   description: "Automate your hiring process with AI-driven screening and interviews.",
 };

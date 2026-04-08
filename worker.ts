@@ -442,5 +442,85 @@ interviewFinalizationWorker.on("failed", (job, err) => {
   console.log(`[FATAL] Interview Finalization Job ${job?.id} failed permanently: ${err.message}`);
 });
 
+/**
+ * 📸 INTERVIEW SNAPSHOT WORKER
+ * Handles proctoring snapshot uploads to R2 and DB persistence.
+ * Optimized for low-memory Redis (32MB).
+ */
+const interviewSnapshotWorker = new Worker(
+  "interview-snapshots",
+  async (job) => {
+    const { imageDataUrl, applicationId, label, candidateName } = job.data;
+    if (!imageDataUrl || !applicationId) {
+      throw new Error("Missing required data for snapshot job");
+    }
+
+    console.log(`[JOB] Processing proctoring snapshot for App: ${applicationId}`);
+
+    try {
+      // 1. Process Image Buffer
+      const base64Data = imageDataUrl.replace(/^data:image\/\w+;base64,/, "");
+      const buffer = Buffer.from(base64Data, "base64");
+
+      // 2. Fetch Application details for folder naming
+      const application = await prisma.application.findUnique({
+        where: { id: applicationId },
+        select: {
+          fullName: true,
+          drive: { select: { title: true } },
+        },
+      });
+
+      // 3. Resolve Folder & Key
+      const rawName = [application?.fullName, application?.drive?.title].filter(Boolean).join(" - ") || candidateName || applicationId;
+      const safeName = rawName
+          .replace(/[^a-zA-Z0-9_\- ]/g, "")
+          .trim()
+          .replace(/\s+/g, "_")
+          .toLowerCase();
+
+      const timestamp = Date.now();
+      const snapshotLabel = label || "snapshot";
+      const key = `candidates/${safeName}/snapshots/${snapshotLabel}_${timestamp}.jpg`;
+      const bucket = process.env.R2_INTERVIEW_BUCKET || "interview";
+
+      // 4. Upload to R2
+      const url = await putObject(bucket, key, buffer, "image/jpeg");
+
+      // 5. Update Database (Atomic Push)
+      await prisma.interview.upsert({
+        where: { applicationId: String(applicationId) },
+        update: {
+          snapshots: {
+            push: url
+          }
+        },
+        create: {
+          applicationId: String(applicationId),
+          snapshots: [url],
+          status: "PENDING"
+        }
+      });
+
+      console.log(`[SUCCESS] Snapshot persisted for ${applicationId} -> ${url}`);
+      return { url };
+    } catch (error) {
+      console.error(`[Snapshot Worker Error]:`, error);
+      throw error;
+    }
+  },
+  { 
+    connection: redisConnection,
+    concurrency: 5, // Process snapshots in parallel to clear Redis memory fast
+    lockDuration: 30000,
+    removeOnComplete: { count: 0 }, // Handled by queue but double enforced
+    removeOnFail: { count: 1 }
+  }
+);
+
+interviewSnapshotWorker.on("failed", (job, err) => {
+  console.log(`[FATAL] Snapshot Job ${job?.id} failed: ${err.message}`);
+});
+
 console.log("🚀 Workers are running and listening for jobs...");
 setupCronJobs();

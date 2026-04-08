@@ -11,6 +11,7 @@ export async function GET(request: Request) {
         const session = await getSession();
         const { searchParams } = new URL(request.url);
         const status = searchParams.get("status");
+        const type = searchParams.get("type");
         const search = searchParams.get("search") || "";
         const page = parseInt(searchParams.get("page") || "1");
         const limit = parseInt(searchParams.get("limit") || "10");
@@ -31,6 +32,10 @@ export async function GET(request: Request) {
             if (status && status !== "all") {
                 if (status === "active") where.status = "ACTIVE";
                 if (status === "inactive") where.status = "CLOSED";
+            }
+
+            if (type && type !== "all") {
+                where.type = { equals: type, mode: "insensitive" };
             }
         } else {
             // ── PUBLIC ACCESS: Only show Active & Non-Expired ──

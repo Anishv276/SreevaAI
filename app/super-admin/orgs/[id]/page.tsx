@@ -347,8 +347,12 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                         </button>
                                     </div>
                                     <select 
-                                        value={form.cartesiaVoiceId}
-                                        onChange={e => setForm(prev => ({ ...prev, cartesiaVoiceId: e.target.value }))}
+                                        value={
+                                            ["9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", "a0e99829-1bb2-4c69-ad7d-9473235bca21", "79a125e3-4d2a-4885-8f77-50a847f0e7fe", "638385f3-3333-4f5d-85a2-3f820c64b732", "248be1fc-3d27-4452-9457-3705bf68bf8f", "custom"].includes(form.cartesiaVoiceId) 
+                                                ? form.cartesiaVoiceId 
+                                                : "custom"
+                                        }
+                                        onChange={e => setForm(prev => ({ ...prev, cartesiaVoiceId: e.target.value === "custom" ? "" : e.target.value }))}
                                         className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none"
                                     >
                                         <option value="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc">Jacqueline (Verified Agent)</option>
@@ -358,6 +362,15 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                         <option value="248be1fc-3d27-4452-9457-3705bf68bf8f">Barista (Warm Helper)</option>
                                         <option value="custom">-- Custom Voice ID --</option>
                                     </select>
+                                    {(!["9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", "a0e99829-1bb2-4c69-ad7d-9473235bca21", "79a125e3-4d2a-4885-8f77-50a847f0e7fe", "638385f3-3333-4f5d-85a2-3f820c64b732", "248be1fc-3d27-4452-9457-3705bf68bf8f"].includes(form.cartesiaVoiceId) || form.cartesiaVoiceId === "custom" || form.cartesiaVoiceId === "") && (
+                                        <input
+                                            type="text"
+                                            value={form.cartesiaVoiceId === "custom" ? "" : form.cartesiaVoiceId}
+                                            onChange={e => setForm(prev => ({ ...prev, cartesiaVoiceId: e.target.value }))}
+                                            placeholder="Paste custom ID here (e.g. 9626c3...)"
+                                            className="h-11 w-full rounded-xl border border-purple-200 bg-purple-50 shrink-0 px-3 text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none mt-2 font-mono placeholder:text-purple-300 text-purple-900"
+                                        />
+                                    )}
                                 </div>
                                 <div className="space-y-4">
                                     <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">Neural Engine (Model)</label>

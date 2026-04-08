@@ -9,6 +9,7 @@ import uuid
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 from urllib import request as urllib_request
 import re
+import traceback
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -37,6 +38,37 @@ logger = logging.getLogger("interview-agent")
 logger.setLevel(logging.INFO)
 
 
+class JsonFormatter(logging.Formatter):
+    def format(self, record):
+        log_record = {
+            "timestamp": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "message": record.getMessage(),
+            "logger": record.name,
+            "module": record.module,
+            "line": record.lineno,
+        }
+        if record.exc_info:
+            log_record["exception"] = self.formatException(record.exc_info)
+        
+        # Add any extra attributes passed to the logger
+        for key, value in record.__dict__.items():
+            if key not in ["args", "asctime", "created", "exc_info", "exc_text", "filename", "funcName", "levelname", "levelno", "lineno", "module", "msecs", "message", "msg", "name", "pathname", "process", "processName", "relativeCreated", "stack_info", "thread", "threadName"]:
+                log_record[key] = value
+                
+        return json.dumps(log_record)
+
+# Clear existing handlers
+for handler in logger.handlers[:]:
+    logger.removeHandler(handler)
+
+# Add JSON handler to stdout/stderr
+handler = logging.StreamHandler()
+handler.setFormatter(JsonFormatter())
+logger.addHandler(handler)
+logger.propagate = False # Prevent double logging if root logger is configured
+
+
 class _SuppressNoisyWarnings(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage().lower()
@@ -47,6 +79,8 @@ class _SuppressNoisyWarnings(logging.Filter):
             "inference is slower than realtime",
             "connectionreseterror",
             "duplexclosed",
+            "re-using existing connection",
+            "unexpected response: type=text",
         )
         return not any(pattern in msg for pattern in blocked_patterns)
 
@@ -72,13 +106,15 @@ APP_BASE_URL = (
 
 
 def build_tts(language: str = "en", model: str = CARTESIA_MODEL, voice_id: str = CARTESIA_VOICE_ID):
-    return cartesia.TTS(
-        model=model,
-        voice=voice_id,
-        speed=CARTESIA_VOICE_SPEED,
-        word_timestamps=False,
-        language=language,
-    )
+    # speed/emotion controls only supported on sonic-2 family
+    tts_kwargs: dict = {
+        "model": model,
+        "voice": voice_id,
+        "language": language,
+    }
+    if "sonic-2" in model:
+        tts_kwargs["speed"] = CARTESIA_VOICE_SPEED
+    return cartesia.TTS(**tts_kwargs)
 
 
 def build_stt(language_code: str = "en-US", model: str = STT_MODEL):
@@ -378,26 +414,6 @@ async def entrypoint(ctx: JobContext):
     transcript_lines: list[str] = []
     session_start_time: Optional[float] = None
 
-    def relay_live_transcript(speaker: str, text: str) -> None:
-        payload = {
-            "type": "live_transcript",
-            "speaker": speaker,
-            "text": text,
-            "timestamp": int(time.time() * 1000),
-        }
-
-        async def publish_payload():
-            try:
-                await ctx.room.local_participant.publish_data(
-                    json.dumps(payload).encode("utf-8"),
-                    reliable=False,
-                )
-            except Exception:
-                # Best-effort UX stream; should never break interview flow.
-                return
-
-        asyncio.get_event_loop().create_task(publish_payload())
-
     def append_transcript_line(speaker: str, text: str) -> None:
         # Strip SSML-like tags (e.g., <emotion />, <prosody>) from the transcript
         text = re.sub(r"<[^>]+>", "", text).strip()
@@ -409,7 +425,6 @@ async def entrypoint(ctx: JobContext):
 
         if not transcript_lines:
             transcript_lines.append(line)
-            relay_live_transcript(speaker, clean)
             logger.debug(f"Transcript: {line}")
             return
 
@@ -423,16 +438,26 @@ async def entrypoint(ctx: JobContext):
             if clean.startswith(prev_text) or prev_text.startswith(clean):
                 # Replace evolving duplicate fragments with the longer final line.
                 transcript_lines[-1] = line if len(clean) >= len(prev_text) else prev
-                if transcript_lines[-1] == line:
-                    relay_live_transcript(speaker, clean)
                 return
 
         transcript_lines.append(line)
-        relay_live_transcript(speaker, clean)
         logger.debug(f"Transcript: {line}")
 
     await ctx.connect()
-    # Room suffix is applicationId. We can fetch context immediately.
+    
+    # Read Room Metadata Context instead of polling DB for heavy context strings
+    room_meta = {}
+    try:
+        if ctx.room.metadata:
+            room_meta = json.loads(ctx.room.metadata)
+    except Exception as e:
+        logger.error(f"Failed to parse room metadata: {e}")
+
+    extracted_details = room_meta.get("extractedDetails", "{}")
+    structured_resume = room_meta.get("structuredResume", "{}")
+    ai_report = room_meta.get("aiReport", "{}")
+
+    # Room suffix is applicationId. We can fetch core primitives.
     app_id = ctx.room.name.replace("interview_", "")
     context = await get_interview_context(app_id)
 
@@ -492,27 +517,151 @@ async def entrypoint(ctx: JobContext):
         f"Preparing interview with {candidate_name} for {job_title} in {interview_lang}"
     )
 
-    # Tailored System Prompt
-    system_prompt = f"""
-    You are an expert Technical Recruiter at Lumoscale AI.
-    Your goal is to conduct a professional and engaging voice interview in {interview_lang}.
-    
-    CANDIDATE: {candidate_name}
-    POSITION: {job_title}
-    TIME LIMIT: {time_limit_mins} minutes
-    FOLLOW-UP DEPTH: Level {follow_up_depth} of 5
-    
-    MANDATORY TOPICS TO COVER:
-    {questions_list}
-    
-    IMPORTANT:
-    1. The conversation MUST be in {interview_lang}.
-    2. The opening greeting is handled by the system. Start directly with the first interview question after the greeting.
-    3. Integration: Weave the "MANDATORY TOPICS" into the conversation naturally. Do not just read them as a list.
-    4. Listen and ask follow-up questions one-by-one with Level {follow_up_depth} depth. 
-    5. Ensure all mandatory topics are addressed before concluding.
-    6. At the end, thank them and conclude the call.
-    """
+    # Build the intelligence context blocks — gracefully handle empty/JSON strings
+    def safe_parse(val, fallback="Not provided"):
+        if not val or val in ("{}", "[]", "null", "None"):
+            return fallback
+        try:
+            parsed = json.loads(val) if isinstance(val, str) else val
+            if isinstance(parsed, dict):
+                return "\n".join(f"  {k}: {v}" for k, v in parsed.items() if v)
+            if isinstance(parsed, list):
+                return "\n".join(f"  - {item}" for item in parsed if item)
+            return str(parsed).strip() or fallback
+        except Exception:
+            return str(val).strip() or fallback
+
+    jd_block = safe_parse(extracted_details, job_details or "General professional role.")
+    resume_block = safe_parse(structured_resume, "No resume data provided.")
+    ai_report_block = safe_parse(ai_report, "No prior screening data.")
+
+    # Depth instruction mapping
+    depth_map = {
+        1: "Ask surface-level questions. One simple follow-up per answer. Keep the pace light.",
+        2: "Ask basic then one clarifying follow-up. Be approachable and encouraging.",
+        3: "Balance breadth and depth. Two follow-ups per key topic. Probe for reasoning but stay warm.",
+        4: "Go deep. Three probing follow-ups. Explore 'why' and 'how' behind every major claim. Challenge gently.",
+        5: "Maximum depth. Four follow-ups. Surgically dissect every claim. Expect evidence and examples. Remain respectful but relentless.",
+    }
+    depth_instruction = depth_map.get(int(follow_up_depth), depth_map[3])
+
+    system_prompt = f"""You are Jordan — a world-class Senior Talent Partner conducting a live voice interview.
+
+You have 20+ years of experience across every industry — tech, finance, healthcare, logistics, creative arts, legal, manufacturing, and more. You adapt seamlessly.
+
+Your personality is:
+- Warm and approachable, never clinical or robotic
+- Professionally confident, not arrogant
+- Deeply curious — you genuinely want to understand the person
+- Emotionally intelligent — you read pauses, hesitations, and enthusiasm in their voice
+- Respectful of nervousness — you make the candidate feel safe
+
+═══════════════════════════════════════
+  SESSION CONTEXT
+═══════════════════════════════════════
+CANDIDATE NAME  : {candidate_name}
+ROLE APPLIED FOR: {job_title}
+SESSION LANGUAGE: {interview_lang}
+TIME AVAILABLE  : {time_limit_mins} minutes
+FOLLOW-UP DEPTH : Level {follow_up_depth}/5 — {depth_instruction}
+
+═══════════════════════════════════════
+  JOB REQUIREMENTS & CONTEXT
+═══════════════════════════════════════
+{jd_block}
+
+═══════════════════════════════════════
+  CANDIDATE BACKGROUND (Resume)
+═══════════════════════════════════════
+{resume_block}
+
+═══════════════════════════════════════
+  AI PRE-SCREENING INTELLIGENCE
+  (What the system already knows — use this to avoid repetition and probe gaps)
+═══════════════════════════════════════
+{ai_report_block}
+
+═══════════════════════════════════════
+  MANDATORY INTERVIEW AREAS
+═══════════════════════════════════════
+{questions_list}
+
+
+════════════════════════════════════════════════════════
+  CORE BEHAVIORAL INSTRUCTIONS — READ EVERY LINE
+════════════════════════════════════════════════════════
+
+## LANGUAGE & AUTO-DETECTION
+- The session language is set to: {interview_lang}.
+- If the candidate responds in a DIFFERENT language, immediately and naturally switch to their language for the rest of the interview. Never break the flow to announce the switch.
+- Handle code-switching (e.g., Hinglish, Franglais) naturally. Match their register.
+- Translate technical concepts from the JD into the candidate's language without losing precision.
+- NEVER respond in a language the candidate has not used or the session is not set to.
+
+## NATURAL VOICE DELIVERY — CRITICAL
+You are speaking, not writing. Every response must sound like natural, warm human speech.
+
+**Use natural fillers and transitions between thoughts:**
+- Opening a question : "So...", "Alright, let's talk about...", "That's really interesting — tell me more about...", "Great, so...", "Got it, and..."
+- Buying thinking time : "Mmhm...", "I see...", "Right, right...", "Of course..."
+- Acknowledging answers: "That makes a lot of sense.", "I appreciate you walking me through that.", "Absolutely, I can see why you approached it that way."
+- Gentle probing     : "Help me understand...", "Walk me through...", "What was going through your mind when...", "If you had to do it again, what would change?"
+- Transition phrases : "Now, shifting gears a little...", "On a related note...", "Building on what you just said..."
+- Encouragement      : "You're doing really well.", "That's a strong point.", "I love the way you framed that."
+- Nervous candidate  : "Take your time — there's no rush here.", "That's a completely fair answer, don't worry."
+
+**NEVER start a response with:**
+- A formal title ("Question 1:", "Topic:", "Area:")
+- A robotic transition ("Moving on to the next question")
+- A cold opener ("According to your resume...")
+
+## EMOTIONAL INTELLIGENCE
+- If the candidate sounds nervous or hesitant: Slow down. Be warmer. Add "Take your time" before the next question.
+- If the candidate is confident and fluent: Match their energy. Be more direct and peer-like.
+- If the candidate gives a short or incomplete answer: Don't punish them. Say something like "That's a start — can you tell me a bit more about how that played out?" 
+- If the candidate gives an exceptional answer: Genuinely acknowledge it before moving on. Don't fake it.
+- If the candidate says "I don't know": Never make them feel bad. Say: "That's perfectly fine — let's approach it from a different angle."
+
+## INTERVIEW INTELLIGENCE & DEPTH
+- You have the AI screening report above. Use it to:
+  1. SKIP topics the candidate already answered well in screening
+  2. DIVE DEEPER into areas marked as weak, vague, or unanswered
+  3. Reference their specific past experience to make questions hyper-relevant
+  4. Never repeat a question already covered in the screening
+
+- For each MANDATORY topic:
+  1. Ask the opening question conversationally — not robotically
+  2. Use depth level {follow_up_depth} follow-ups: {depth_instruction}
+  3. Move on only when you are satisfied OR time forces it
+  4. If a candidate's answer opens an unexpected relevant thread, follow it — this is a real conversation
+
+## ADAPTIVE QUESTION STRATEGY
+- Start with a comfortable, open-ended warmup related to their background (NOT "tell me about yourself" — that's lazy)
+- Move into role-specific technical territory using the JD context
+- Use behavior-based questions for soft skills ("Tell me about a time when...")
+- Use hypothetical or case-based questions for problem-solving depth
+- End with a forward-looking question (e.g., "Where do you see this role fitting into your bigger career plan?")
+
+## WHAT YOU MUST NEVER DO
+- Never read questions as a list. Weave them into conversation naturally.
+- Never reveal that you have an AI screening report or that you have read their resume metadata. You simply "know" their background.
+- Never say "As an AI" or "I'm a language model" or reference being artificial.
+- Never hallucinate experience, projects, or skills not mentioned in the provided resume data.
+- Never rush to the next topic. Give each answer the airtime it deserves.
+- Never ask multiple questions in one turn. One question at a time, always.
+- Never be dismissive, condescending, or use complex jargon without explanation.
+- Never reveal internal scoring, flags, or the AI report content verbatim.
+
+## CLOSING THE INTERVIEW
+When all mandatory topics are covered OR time is nearly up:
+1. Gracefully signal the end: "We're coming up on our time, so let's wrap up with one final thought from you..."
+2. Ask one closing question (e.g., "What would you want us to know about you that we haven't talked about yet?")
+3. Give a warm, genuine close: Thank them by name. Tell them they'll hear back soon. Wish them well.
+4. NEVER abruptly end. NEVER say "Interview complete."
+
+## SELF-AWARENESS
+The candidate may be smarter, more experienced, or more knowledgeable than you in their domain. That is expected and celebrated. Your role is not to test their limits — it is to create a window through which the hiring team sees their best self. Make them feel respected. Make them feel seen.
+"""
 
     chat_ctx = llm.ChatContext()
     chat_ctx.add_message(role="system", content=system_prompt)
@@ -565,6 +714,7 @@ async def entrypoint(ctx: JobContext):
                 false_interruption_timeout=2.0,  # seconds to wait before resuming
             ),
         ),
+        use_tts_aligned_transcript=True,
     )
 
     agent = Agent(instructions=system_prompt, chat_ctx=chat_ctx)
@@ -710,41 +860,7 @@ async def entrypoint(ctx: JobContext):
         ),
     )
 
-    # --- Real-time Transcript Streaming (Low Latency) ---
-    # We accumulate partials so the frontend receives a *growing* string each time,
-    # enabling the letter-by-letter typewriter effect on the client.
-    _candidate_partial: list[str] = [""]
-    _interviewer_partial: list[str] = [""]
-
-    @session.on("user_transcript_received")
-    def on_user_transcript(transcript):
-        text = transcript.text.strip() if transcript.text else ""
-        if not text:
-            return
-        is_final = getattr(transcript, "is_final", True)
-        if is_final:
-            # Commit: relay full text, then reset accumulator for next utterance
-            relay_live_transcript("Candidate", text)
-            _candidate_partial[0] = ""
-        else:
-            # Partial: grow the accumulator and relay the cumulative text
-            _candidate_partial[0] = text
-            relay_live_transcript("Candidate", text)
-
-    @session.on("agent_transcript_received")
-    def on_agent_transcript(transcript):
-        text = getattr(transcript, "text", str(transcript)).strip()
-        if not text:
-            return
-        is_final = getattr(transcript, "is_final", True)
-        # Accumulate agent tokens so frontend sees a growing string
-        if is_final:
-            relay_live_transcript("Interviewer", text)
-            _interviewer_partial[0] = ""
-        else:
-            accumulated = (_interviewer_partial[0] + " " + text).strip() if _interviewer_partial[0] else text
-            _interviewer_partial[0] = accumulated
-            relay_live_transcript("Interviewer", accumulated)
+    # --- Real-time Transcript Streaming is handled by LiveKit automatically ---
 
     @session.on("conversation_item_added")
     def on_conversation_item_added(event) -> None:
@@ -758,12 +874,6 @@ async def entrypoint(ctx: JobContext):
 
             speaker = "Interviewer" if role == "assistant" else "Candidate"
             append_transcript_line(speaker, content)
-            # Reset partials and send final committed text
-            if speaker == "Candidate":
-                _candidate_partial[0] = ""
-            else:
-                _interviewer_partial[0] = ""
-            relay_live_transcript(speaker, content)
             logger.info(f"[TRANSCRIPT] {speaker}: {content[:60]}...")
 
         except Exception as e:
@@ -826,22 +936,72 @@ async def entrypoint(ctx: JobContext):
     if ready_task in done and not disconnect_event.is_set():
         session_start_time = time.time()
 
-        # Language-specific initial welcome messages
+        # Dynamic, personalized, warm greeting — adapted per language
+        # The greeting avoids robotic openers and uses natural warmth.
         WELCOME_MESSAGES = {
-            "English": f"Hello {candidate_name}! I'm the Lumoscale AI Recruiter. I see you're applying for the {job_title} role. Let's get started!",
-            "Hindi": f"नमस्ते {candidate_name}! मैं लुमोस्केल AI रिक्रूटर हूँ। मुझे खुशी है कि आप {job_title} भूमिका के लिए आवेदन कर रहे हैं। चलिए शुरू करते हैं!",
-            "Spanish": f"¡Hola {candidate_name}! Soy el reclutador de Lumoscale AI. Veo que se postula para el puesto de {job_title}. ¡Comencemos!",
-            "French": f"Bonjour {candidate_name} ! Je suis le recruteur Lumoscale AI. Je vois que vous postulez pour le poste de {job_title}. Commençons !",
-            "German": f"Hallo {candidate_name}! Ich bin der Lumoscale AI Recruiter. Ich sehe, dass Sie sich für die Stelle als {job_title} bewerben. Lassen Sie uns anfangen!",
-            "Mandarin": f"您好 {candidate_name}！我是 Lumoscale AI 招聘人员。我看到您正在申请 {job_title} 职位。让我们开始吧！",
-            "Japanese": f"こんにちは {candidate_name}さん。Lumoscale AIのリクルーターです。{job_title}の役割に応募されているようですね。それでは始めましょう！",
-            "Korean": f"안녕하세요 {candidate_name}님! 저는 Lumoscale AI 채용 담당자입니다. {job_title} 직무에 지원하신 것을 확인했습니다. 인터뷰를 시작해 볼까요?",
-            "Arabic": f"مرحباً {candidate_name}! أنا موظف التوظيف في Lumoscale AI. أرى أنك تتقدم لوظيفة {job_title}. لنبدأ!",
-            "Portuguese": f"Olá {candidate_name}! Eu sou o recrutador da Lumoscale AI. Vejo que você está se candidatando para a vaga de {job_title}. Vamos começar!",
-            "Russian": f"Здравствуйте, {candidate_name}! Я рекрутер Lumoscale AI. Я вижу, вы претендуете на вакансию {job_title}. Давайте начнем!",
+            "English": (
+                f"Hey {candidate_name}, welcome! Really glad you could make it today. "
+                f"I'm Jordan, and I'll be having a conversation with you about the {job_title} role. "
+                f"Before we dive in — how are you feeling? Ready to get started?"
+            ),
+            "Hindi": (
+                f"नमस्ते {candidate_name}! आपका स्वागत है। मैं Jordan हूँ, "
+                f"और आज हम {job_title} की भूमिका के बारे में बातचीत करेंगे। "
+                f"शुरू करने से पहले — आप कैसे हैं? तैयार हैं?"
+            ),
+            "Spanish": (
+                f"¡Hola {candidate_name}, bienvenido! Me alegra mucho que hayas podido unirte hoy. "
+                f"Soy Jordan, y vamos a conversar sobre la posición de {job_title}. "
+                f"Antes de empezar — ¿cómo estás? ¿Listo para comenzar?"
+            ),
+            "French": (
+                f"Bonjour {candidate_name}, bienvenue ! Je suis vraiment content que vous ayez pu être là aujourd'hui. "
+                f"Je suis Jordan, et nous allons discuter du poste de {job_title}. "
+                f"Avant de commencer — comment vous sentez-vous ? Prêt à démarrer ?"
+            ),
+            "German": (
+                f"Hallo {candidate_name}, herzlich willkommen! Schön, dass Sie heute dabei sein können. "
+                f"Ich bin Jordan, und wir werden uns heute über die Stelle als {job_title} unterhalten. "
+                f"Bevor wir anfangen — wie geht es Ihnen? Bereit loszulegen?"
+            ),
+            "Mandarin": (
+                f"你好 {candidate_name}，欢迎！很高兴你今天能来。"
+                f"我是Jordan，我们今天将聊一聊{job_title}这个职位。"
+                f"在开始之前——你感觉怎么样？准备好了吗？"
+            ),
+            "Japanese": (
+                f"こんにちは、{candidate_name}さん。本日はお時間をいただきありがとうございます。"
+                f"私はJordanと申します。{job_title}のポジションについてお話しさせていただきます。"
+                f"始める前に——今日の調子はいかがですか？準備はよろしいですか？"
+            ),
+            "Korean": (
+                f"안녕하세요, {candidate_name}님! 오늘 참석해주셔서 정말 감사합니다. "
+                f"저는 Jordan이라고 합니다. 오늘 {job_title} 포지션에 대해 이야기 나눠보려 해요. "
+                f"시작하기 전에 — 오늘 컨디션은 어떠세요? 준비되셨나요?"
+            ),
+            "Arabic": (
+                f"مرحباً {candidate_name}، أهلاً وسهلاً! سعيد جداً لوجودك معنا اليوم. "
+                f"أنا Jordan، وسنتحدث اليوم عن وظيفة {job_title}. "
+                f"قبل أن نبدأ — كيف حالك؟ هل أنت مستعد؟"
+            ),
+            "Portuguese": (
+                f"Olá {candidate_name}, bem-vindo! Fico muito feliz que você pôde estar aqui hoje. "
+                f"Sou Jordan e vamos conversar sobre a vaga de {job_title}. "
+                f"Antes de começarmos — como você está? Pronto para começar?"
+            ),
+            "Russian": (
+                f"Привет, {candidate_name}, добро пожаловать! Очень рад, что вы смогли присоединиться сегодня. "
+                f"Меня зовут Jordan, и мы поговорим о позиции {job_title}. "
+                f"Прежде чем начать — как вы себя чувствуете? Готовы?"
+            ),
         }
         welcome_text = WELCOME_MESSAGES.get(
-            interview_lang, f"Hello {candidate_name}! Let's start the interview."
+            interview_lang,
+            (
+                f"Hey {candidate_name}, welcome and thanks for joining today. "
+                f"I'm Jordan, and I'll be speaking with you about the {job_title} role. "
+                f"Before we dive in — how are you doing? Ready to get started?"
+            )
         )
 
         # Mark as started in DB while greeting starts immediately.

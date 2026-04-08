@@ -8,80 +8,80 @@ const openai = new OpenAI({
     apiKey: apiKey,
 });
 
-export async function transcribeInterviewAudio(file: File) {
-    if (!process.env.OPENAI_API_KEY) {
-        return "Transcription unavailable in mock mode.";
-    }
+// Transcription logic removed as it is now handled by LiveKit / Deepgram in the candidate agent.
 
-    const transcription = await openai.audio.transcriptions.create({
-        file,
-        model: "gpt-4o-mini-transcribe",
-    });
+import { z } from "zod";
 
-    return transcription.text || "";
-}
+// JD Extraction Schema
+const JDSchema = z.object({
+    job_title: z.string().default("Unknown Role"),
+    company_name: z.string().nullable().default(null),
+    department: z.string().nullable().default(null),
+    work_type: z.enum(["Remote", "Hybrid", "On-site"]).default("On-site"),
+    employment_type: z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance"]).nullable().default(null),
+    location: z.object({
+        city: z.string().nullable(),
+        state: z.string().nullable(),
+        country: z.string().nullable(),
+        remote: z.boolean(),
+        hybrid: z.boolean(),
+        location_confidence: z.enum(["stated", "inferred", "unknown"]),
+    }).default({
+        city: null,
+        state: null,
+        country: null,
+        remote: false,
+        hybrid: false,
+        location_confidence: "unknown"
+    }),
+    experience: z.object({
+        min_years: z.number().nullable(),
+        max_years: z.number().nullable(),
+        preferred_background: z.string().default(""),
+    }).default({ min_years: null, max_years: null, preferred_background: "" }),
+    skills: z.object({
+        must_have: z.array(z.object({
+            skill: z.string(),
+            why_needed: z.string(),
+            weight: z.enum(["critical", "high", "medium"])
+        })).default([]),
+        good_to_have: z.array(z.object({
+            skill: z.string(),
+            context: z.string()
+        })).default([]),
+        soft_skills: z.array(z.string()).default([]),
+    }).default({ must_have: [], good_to_have: [], soft_skills: [] }),
+    salary: z.object({
+        min: z.number().nullable(),
+        max: z.number().nullable(),
+        currency: z.string().nullable(),
+        period: z.enum(["yearly", "monthly"]).nullable(),
+        disclosed: z.boolean(),
+    }).optional().default({ min: null, max: null, currency: null, period: null, disclosed: false }),
+    role_summary: z.string().default(""),
+    has_technical_requirements: z.boolean().default(true),
+    keywords: z.array(z.string()).default([]),
+});
 
+type JDData = z.infer<typeof JDSchema>;
 
+// Skeleton fallback for JD
+const JDSkeleton: JDData = {
+    job_title: "Manual Review Required",
+    company_name: null,
+    department: null,
+    work_type: "On-site",
+    employment_type: null,
+    location: { city: null, state: null, country: null, remote: false, hybrid: false, location_confidence: "unknown" },
+    experience: { min_years: null, max_years: null, preferred_background: "See original text" },
+    skills: { must_have: [], good_to_have: [], soft_skills: [] },
+    salary: { min: null, max: null, currency: null, period: null, disclosed: false },
+    role_summary: "AI extraction failed or text was too complex. Please review manually.",
+    has_technical_requirements: true,
+    keywords: []
+};
 
-export async function calculateScore(resumeText: string, jdText: string) {
-    const prompt = `
-        Job Description:
-        ${jdText}
-
-        Candidate Resume:
-        ${resumeText}
-
-        Task:
-        Analyze the candidate's resume against the Job Description.
-        
-        Return a JSON object with:
-        - score (number, 0-100)
-        - reasoning (string, 1-2 sentences why this score)
-        - status (string, "Shortlisted" | "Rejected" | "Borderline")
-        - skillsFound (array of strings, key technical skills from JD found in resume)
-        - missingSkills (array of strings, key technical skills from JD MISSING in resume)
-        - flags (array of strings, any red flags like "Too little experience", "Job hopping", "Misaligned location")
-        - recommendation (string, "Shortlist" | "Reject" | "Interview" | "Under Review")
-    `;
-
-    try {
-        if (!process.env.OPENAI_API_KEY) {
-            console.warn("OPENAI_API_KEY not found. Returning mock results.");
-            return { 
-                score: 85, 
-                status: "Shortlisted", 
-                reasoning: "Mock Mode: Strong candidate match.",
-                skillsFound: ["React", "TypeScript", "Node.js"],
-                missingSkills: [],
-                flags: [],
-                recommendation: "Shortlist"
-            };
-        }
-
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-                { role: "system", content: "You are a professional hiring manager AI. Be precise and objective. Return ONLY valid JSON." },
-                { role: "user", content: prompt }
-            ],
-            response_format: { type: "json_object" },
-        });
-
-        const content = completion.choices[0].message.content;
-        return content ? JSON.parse(content) : { score: 0, status: "Rejected", reasoning: "Analysis failed", skillsFound: [], missingSkills: [], flags: ["Extraction Failed"], recommendation: "Reject" };
-    } catch (error) {
-        console.error("OpenAI Scoring Error:", error);
-        return { 
-            score: 0, 
-            status: "Error", 
-            reasoning: "AI Analysis Failed",
-            skillsFound: [],
-            missingSkills: [],
-            flags: ["AI Service Unavailable"],
-            recommendation: "Manual Review"
-        };
-    }
-}
+// calculateScore is handled by the Python worker scripts/extract_pdf.py for production consistency.
 
 export async function extractJDFromText(text: string) {
     const prompt = `You are a senior technical recruiter and structured data engineer.
@@ -290,8 +290,9 @@ ${text}
 `;
 
     try {
+        console.log("[AI_JD_EXTRACT_START]: Text length:", text.length);
         const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: "gpt-4o",
             messages: [
                 { role: "system", content: "You are structured data extraction engine for hiring systems. Convert JDs into clean, consistent JSON. Output ONLY valid JSON. Follow the schema exactly. Do not add extra fields. Standardize all values. Remove duplicates." },
                 { role: "user", content: prompt }
@@ -300,9 +301,24 @@ ${text}
         });
 
         const content = completion.choices[0].message.content;
-        return content ? JSON.parse(content) : null;
-    } catch (error) {
-        console.error("OpenAI JD Extraction Error:", error);
-        return null;
+        if (!content) {
+            console.error("[AI_JD_EXTRACT_NULL]: No content received");
+            return JDSkeleton;
+        }
+
+        const rawData = JSON.parse(content);
+        const validated = JDSchema.safeParse(rawData);
+
+        if (!validated.success) {
+            console.error("[AI_JD_VALIDATION_ERROR]:", validated.error.format());
+            // Merge valid parts with skeleton if possible, but for now just return skeleton to be safe
+            return { ...JDSkeleton, ...rawData }; // Attempt partial recovery
+        }
+
+        console.log("[AI_JD_EXTRACT_SUCCESS]: Extraction complete for", validated.data.job_title);
+        return validated.data;
+    } catch (error: any) {
+        console.error("[AI_JD_EXTRACT_FATAL]:", error.message);
+        return JDSkeleton;
     }
 }

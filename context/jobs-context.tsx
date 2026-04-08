@@ -15,6 +15,11 @@ export type Job = {
     description?: string;
     salary?: string;
     type?: string;
+    experience?: string;
+    responsibilities?: string;
+    requirements?: string;
+    skills?: string;
+    workMode?: string;
     registrationFields?: string;
     slug?: string;
     createdAt: string;
@@ -32,7 +37,7 @@ interface JobsContextType {
     pagination: Pagination;
     addJob: (job: Omit<Job, "id" | "applicants" | "status" | "daysLeft" | "createdAt">) => Promise<Job>;
     deleteJob: (id: string) => Promise<void>;
-    fetchJobs: (page?: number, limit?: number, search?: string, status?: string) => Promise<void>;
+    fetchJobs: (page?: number, limit?: number, search?: string, status?: string, type?: string) => Promise<void>;
     toggleDriveStatus: (id: string, newStatus: "ACTIVE" | "INACTIVE") => Promise<void>;
     updateJob: (id: string, data: any) => Promise<Job>;
     bulkDeleteJobs: (ids: string[]) => Promise<void>;
@@ -56,7 +61,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const hasLoadedOnceRef = useRef({ admin: false, careers: false });
     const inFlightRef = useRef<Promise<void> | null>(null);
 
-    const fetchJobs = async (page: number = 1, limit: number = 10, search: string = "", status: string = "all") => {
+    const fetchJobs = async (page: number = 1, limit: number = 10, search: string = "", status: string = "all", type: string = "all") => {
         if (inFlightRef.current) {
             await inFlightRef.current;
             return;
@@ -64,7 +69,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
         const requestPromise = (async () => {
         try {
-            let url = `/api/drives?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&status=${status}`;
+            let url = `/api/drives?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&status=${status}&type=${type}`;
             if (orgIdFromUrl) {
                 url += `&orgId=${orgIdFromUrl}`;
             }

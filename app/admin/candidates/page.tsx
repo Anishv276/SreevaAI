@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, Filter, MoreHorizontal, Eye, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, RefreshCw, Briefcase, Calendar } from "lucide-react";
+import { Search, Filter, MoreHorizontal, Eye, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, RefreshCw, Briefcase, Calendar, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
@@ -32,7 +32,7 @@ import {
 import { useEffect } from "react";
 
 export default function CandidatesPage() {
-    const { candidates, pagination, isLoading, fetchCandidates, bulkDeleteCandidates } = useCandidates();
+    const { candidates, pagination, isLoading, error, fetchCandidates, bulkDeleteCandidates, clearError } = useCandidates();
     const { jobs } = useJobs();
     const [searchTerm, setSearchTerm] = useState("");
     const [statusFilter, setStatusFilter] = useState("all");
@@ -245,6 +245,23 @@ export default function CandidatesPage() {
                 </div>
             </div>
 
+            {error && (
+                <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-center justify-between animate-in slide-in-from-top-4">
+                    <div className="flex items-center gap-3">
+                        <AlertCircle className="h-4 w-4 text-red-600" />
+                        <span className="text-xs font-bold text-red-900 uppercase tracking-tighter">
+                            Sync Error: {error}
+                        </span>
+                    </div>
+                    <button 
+                        onClick={clearError}
+                        className="text-red-600 hover:text-red-800 transition-colors"
+                    >
+                        <X className="h-4 w-4" />
+                    </button>
+                </div>
+            )}
+
             <div className="group relative bg-white/80 backdrop-blur-md rounded-2xl border border-gray-100 shadow-[0_8px_30px_rgba(0,0,0,0.04)] overflow-hidden transition-all duration-500">
                 {/* Decorative top accent */}
                 <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-400/20 via-[#F97316]/40 to-orange-400/20" />
@@ -374,7 +391,7 @@ export default function CandidatesPage() {
                             filteredCandidates.map((candidate) => (
                                 (() => {
                                     const mainStatus = candidate.status;
-                                    const interviewStage = candidate.interviewStatus || "Not Selected";
+                                    const interviewStage = (candidate.interviewStatus as string) || "Not Selected";
 
                                     return (
                                 <TableRow 
@@ -450,7 +467,13 @@ export default function CandidatesPage() {
                                             interviewStage === 'Interview Completed' || interviewStage === 'COMPLETED' ? 'text-indigo-600 bg-indigo-50/20 shadow-none border-indigo-100' : 
                                             interviewStage === 'Interview Pending' || interviewStage === 'PENDING' ? 'text-amber-600 bg-amber-50/20 shadow-none border-amber-100' : 'text-gray-500 bg-gray-50'
                                         )}>
-                                            {interviewStage}
+                                            {interviewStage.length > 20 ? (
+                                                <span title={interviewStage}>
+                                                    {interviewStage.substring(0, 17)}...
+                                                </span>
+                                            ) : (
+                                                interviewStage
+                                            )}
                                         </Badge>
                                     </TableCell>
                                     <TableCell className="py-5 text-[12px] font-bold text-gray-400">

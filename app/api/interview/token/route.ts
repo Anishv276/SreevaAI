@@ -1,4 +1,4 @@
-import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
+import { AccessToken, AgentDispatchClient, EgressClient, EncodedFileOutput, EncodingOptionsPreset, RoomServiceClient } from "livekit-server-sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { interviewTokenSchema } from "@/lib/validation";
 import { prisma } from "@/lib/prisma";
@@ -97,10 +97,18 @@ export async function POST(req: NextRequest) {
             const dispatchClient = new AgentDispatchClient(host, apiKey, apiSecret);
 
             try {
+                const roomMetadata = JSON.stringify({
+                    applicationId,
+                    extractedDetails: application.drive.extractedDetails || "{}",
+                    structuredResume: application.structuredResume || "{}",
+                    aiReport: application.aiReport || "{}"
+                });
+
                 await roomClient.createRoom({
                     name: roomName,
                     emptyTimeout: 10 * 60,
                     departureTimeout: 60,
+                    metadata: roomMetadata,
                 });
             } catch (roomErr) {
                 const msg = roomErr instanceof Error ? roomErr.message.toLowerCase() : "";
@@ -109,16 +117,11 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            const participants = await roomClient.listParticipants(roomName).catch(() => []);
-            const hasLiveAgent = participants.some((p) =>
-                looksLikeAgentParticipant({ identity: p.identity, name: p.name })
-            );
-
             const now = Date.now();
             const lastDispatchAt = dispatchByRoom.get(roomName) || 0;
             const inDebounceWindow = now - lastDispatchAt < DISPATCH_DEBOUNCE_MS;
 
-            if (!hasLiveAgent && !inDebounceWindow) {
+            if (!inDebounceWindow) {
                 try {
                     await dispatchClient.createDispatch(roomName, agentName, {
                         metadata: JSON.stringify({ applicationId }),
@@ -133,7 +136,7 @@ export async function POST(req: NextRequest) {
             } else {
                 console.log(
                     `[InterviewToken] Skipping duplicate agent dispatch for ${roomName} ` +
-                    `(hasLiveAgent=${hasLiveAgent}, inDebounceWindow=${inDebounceWindow})`
+                    `(inDebounceWindow=${inDebounceWindow})`
                 );
             }
         } catch (dispatchErr) {
@@ -141,6 +144,44 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "AI interviewer could not be started" }, { status: 500 });
         }
 
+        // ── START SERVER-SIDE RECORDING (LiveKit Egress → Cloudflare R2) ──
+        try {
+            const egressClient = new EgressClient(toHttpUrl(rawUrl), apiKey, apiSecret);
+
+            const candidateName = (application.fullName || "candidate")
+                .replace(/[^a-zA-Z0-9_\- ]/g, "").trim().replace(/\s+/g, "_").toLowerCase();
+            const roleTitle = ((application.drive as { title?: string }).title || "interview")
+                .replace(/[^a-zA-Z0-9_\- ]/g, "").trim().replace(/\s+/g, "_").toLowerCase();
+            const timestamp = Date.now();
+
+            const fileOutput = new EncodedFileOutput({
+                filepath: `candidates/${candidateName}_${roleTitle}/recordings/interview_${applicationId}_${timestamp}.mp4`,
+                output: {
+                    case: "s3",
+                    value: {
+                        accessKey: process.env.R2_ACCESS_KEY_ID || "",
+                        secret: process.env.R2_SECRET_ACCESS_KEY || "",
+                        region: "auto",
+                        endpoint: process.env.R2_ENDPOINT || "",
+                        bucket: process.env.R2_INTERVIEW_BUCKET || "interviews",
+                        forcePathStyle: true,
+                    },
+                },
+            });
+
+            await egressClient.startRoomCompositeEgress(roomName, { file: fileOutput }, {
+                layout: "speaker",
+                encodingOptions: EncodingOptionsPreset.H264_720P_30,
+                audioOnly: false,
+            });
+
+            console.log(`[Egress] Started RoomComposite recording for room ${roomName}`);
+        } catch (egressErr) {
+            // Non-fatal: interview continues even if Egress service is not yet deployed
+            console.warn("[Egress] Could not start recording (non-fatal):", egressErr instanceof Error ? egressErr.message : egressErr);
+        }
+
+        // ── ISSUE CANDIDATE JWT TOKEN ──
         const at = new AccessToken(apiKey, apiSecret, {
             identity: participantName + "_" + Math.random().toString(36).substring(7),
             name: participantName,
