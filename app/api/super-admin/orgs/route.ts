@@ -64,7 +64,12 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { orgName, slug, plan, logoUrl, adminEmail, adminName, adminPassword } = body;
+        const { 
+            orgName, slug, plan, logoUrl, adminEmail, adminName, adminPassword, 
+            ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice,
+            sttProvider, deepgramModel, sarvamSttModel,
+            llmProvider, llmModel, llmTemperature
+        } = body;
 
         if (!orgName || !slug || !adminEmail || !adminPassword) {
             return NextResponse.json({ error: "orgName, slug, adminEmail, and adminPassword are required" }, { status: 400 });
@@ -78,15 +83,49 @@ export async function POST(request: Request) {
 
         const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
+        console.log("[SuperAdmin] Provisioning Org with AI Config:", { ttsProvider, sttProvider });
+
         // Create org + admin in a transaction
         const result = await prisma.$transaction(async (tx) => {
+            // Build org data explicitly to ensure exclusivity
+            const orgData: any = {
+                name: orgName,
+                slug: slug.toLowerCase().replace(/\s+/g, "-"),
+                plan: plan || "STARTER",
+                logoUrl: logoUrl || null,
+                ttsProvider: ttsProvider || "CARTESIA",
+                sttProvider: sttProvider || "DEEPGRAM",
+            };
+
+            // TTS Hierarchy
+            if (ttsProvider === "SARVAM") {
+                orgData.sarvamModel = sarvamModel || "bulbul:v3";
+                orgData.sarvamVoice = sarvamVoice || "shubh";
+                orgData.cartesiaVoiceId = null;
+                orgData.cartesiaModel = null;
+            } else {
+                orgData.cartesiaVoiceId = cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
+                orgData.cartesiaModel = cartesiaModel || "sonic-english";
+                orgData.sarvamModel = null;
+                orgData.sarvamVoice = null;
+            }
+
+            // STT Hierarchy
+            if (sttProvider === "SARVAM") {
+                orgData.sarvamSttModel = sarvamSttModel || "saaras:v3";
+                orgData.deepgramModel = null;
+            } else {
+                orgData.deepgramModel = deepgramModel || "nova-3-general";
+                orgData.sarvamSttModel = null;
+            }
+
+            // LLM Hierarchy
+            orgData.llmProvider = llmProvider || "OPENAI";
+            orgData.llmModel = llmModel || "gpt-4o";
+            orgData.llmTemperature = llmTemperature !== undefined ? Number(llmTemperature) : 0.7;
+
             const org = await tx.organization.create({
-                data: {
-                    name: orgName,
-                    slug: slug.toLowerCase().replace(/\s+/g, "-"),
-                    plan: plan || "STARTER",
-                    logoUrl: logoUrl || null,
-                },
+                data: orgData,
             });
 
             const admin = await tx.user.create({

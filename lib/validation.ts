@@ -65,7 +65,7 @@ export const createDriveSchema = z.object({
 export const updateDriveSchema = createDriveSchema.partial();
 
 export const bulkDeleteSchema = z.object({
-  ids: z.array(z.number().int().positive()).min(1, "At least one ID required"),
+  ids: z.array(z.string()).min(1, "At least one ID required"),
 });
 
 export const candidateIdSchema = z.object({
@@ -73,7 +73,7 @@ export const candidateIdSchema = z.object({
 });
 
 export const createCandidateSchema = z.object({
-  driveId: z.coerce.number().int().positive("Valid drive ID required"),
+  driveId: z.string().min(1, "Valid drive ID required"),
   fullName: z.string().min(1, "Full name is required").max(100),
   email: z.string().email("Valid email required"),
   phone: z.string().min(1, "Phone is required").max(20),
@@ -117,10 +117,7 @@ export const driveQuerySchema = z.object({
 });
 
 export const candidateQuerySchema = z.object({
-  driveId: z.preprocess(
-    v => (v === null || v === "" || v === undefined ? undefined : v),
-    z.coerce.number().int().positive().optional()
-  ),
+  driveId: z.string().optional(),
 });
 
 export const interviewFinalizeSchema = z.object({

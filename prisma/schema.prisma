@@ -28,6 +28,23 @@ model Organization {
   isDomainVerified   Boolean  @default(false)
   customSenderEmail  String?
   customSenderName   String?
+  
+  // Voice Systems (TTS)
+  ttsProvider     String?  @default("CARTESIA")
+  cartesiaVoiceId String?  @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc") // Jacqueline
+  cartesiaModel   String?  @default("sonic-english")
+  sarvamModel     String?  @default("bulbul:v3")
+  sarvamVoice     String?  @default("shubh")
+
+  // Speech Systems (STT)
+  sttProvider     String?  @default("DEEPGRAM")
+  deepgramModel   String?  @default("nova-3-general")
+  sarvamSttModel  String?  @default("saaras:v3")
+
+  // Inference Systems (LLM)
+  llmProvider     String?  @default("OPENAI")
+  llmModel        String?  @default("gpt-4o")
+  llmTemperature  Float?   @default(0.7)
   drives    Drive[]
   invites   OrgInvite[]
   users     User[]
@@ -82,7 +99,7 @@ model OrgInvite {
 }
 
 model Drive {
-  id                 Int           @id @default(autoincrement())
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   title              String
   role               String?
   description        String
@@ -134,7 +151,7 @@ model Application {
   passportUrl      String?
   aiScore          Int?
   aiReport         String?
-  driveId          Int
+  driveId          String     @db.Uuid
   userId           String?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt

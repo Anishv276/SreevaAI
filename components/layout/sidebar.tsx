@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
     LayoutDashboard, PlusCircle, Users, Settings,
     FileText, PieChart, Sparkles, ChevronDown,
     LogOut, User, SlidersHorizontal,
-    X, ShieldAlert, Loader2
+    X, ShieldAlert, Loader2, ArrowLeft, Building2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -24,10 +24,13 @@ const sidebarItems = [
 export function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const orgId = searchParams.get("orgId");
     const [menuOpen, setMenuOpen] = useState(false);
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const { logout, user } = useAuth();
+    const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
     const handleLogout = async () => {
         setIsLoggingOut(true);
@@ -109,12 +112,34 @@ export function Sidebar() {
 
                 {/* Nav Menu */}
                 <nav className="flex-1 overflow-y-auto py-8 px-4 space-y-2 select-none">
+                    {/* Super Admin Inspection Mode Banner */}
+                    {isSuperAdmin && orgId && (
+                        <div className="mb-6 px-4 py-4 rounded-2xl bg-orange-600 shadow-[0_8px_20px_rgba(249,115,22,0.3)] border border-orange-500 animate-in-zoom relative overflow-hidden group/inspect">
+                            <div className="absolute top-0 right-0 w-20 h-20 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10 group-hover/inspect:scale-150 transition-transform duration-700" />
+                            <div className="relative z-10 flex flex-col gap-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="h-6 w-6 rounded-lg bg-white/20 backdrop-blur-md flex items-center justify-center">
+                                        <Building2 className="h-3 w-3 text-white" />
+                                    </div>
+                                    <span className="text-[10px] font-black text-white uppercase tracking-widest">Inspecting Mode</span>
+                                </div>
+                                <button 
+                                    onClick={() => router.push("/super-admin/orgs")}
+                                    className="w-full h-8 bg-white text-orange-600 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-orange-50 transition-all flex items-center justify-center gap-2 shadow-sm"
+                                >
+                                    <ArrowLeft className="h-3 w-3" /> Exit Inspection
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {sidebarItems.map((item) => {
+                        const hrefWithOrg = orgId ? `${item.href}?orgId=${orgId}` : item.href;
                         const isActive = pathname === item.href;
                         return (
                             <Link
                                 key={item.href}
-                                href={item.href}
+                                href={hrefWithOrg}
                                 className={cn(
                                     "flex items-center gap-3.5 px-4 py-3 rounded-2xl text-[13px] font-bold transition-all duration-300 relative group",
                                     isActive

@@ -48,17 +48,55 @@ export async function PATCH(
 
         const { id } = await params;
         const body = await request.json();
-        const { name, plan, isActive, logoUrl, slug } = body;
+        const { 
+            name, plan, isActive, logoUrl, slug, 
+            ttsProvider, cartesiaVoiceId, sarvamModel, sarvamVoice,
+            sttProvider, deepgramModel, sarvamSttModel,
+            llmProvider, llmModel, llmTemperature,
+            cartesiaModel
+        } = body;
+
+        // Build update data with exclusivity
+        const updateData: any = {
+            ...(name !== undefined && { name }),
+            ...(plan !== undefined && { plan }),
+            ...(isActive !== undefined && { isActive }),
+            ...(logoUrl !== undefined && { logoUrl }),
+            ...(slug !== undefined && { slug }),
+            ...(ttsProvider !== undefined && { ttsProvider }),
+            ...(sttProvider !== undefined && { sttProvider }),
+        };
+
+        // TTS Hierarchy
+        if (ttsProvider === "CARTESIA") {
+            updateData.cartesiaVoiceId = cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
+            updateData.cartesiaModel = cartesiaModel || "sonic-english";
+            updateData.sarvamModel = null;
+            updateData.sarvamVoice = null;
+        } else if (ttsProvider === "SARVAM") {
+            updateData.sarvamModel = sarvamModel || "bulbul:v3";
+            updateData.sarvamVoice = sarvamVoice || "shubh";
+            updateData.cartesiaVoiceId = null;
+            updateData.cartesiaModel = null;
+        }
+
+        // STT Hierarchy
+        if (sttProvider === "DEEPGRAM") {
+            updateData.deepgramModel = deepgramModel || "nova-3-general";
+            updateData.sarvamSttModel = null;
+        } else if (sttProvider === "SARVAM") {
+            updateData.sarvamSttModel = sarvamSttModel || "saaras:v3";
+            updateData.deepgramModel = null;
+        }
+
+        // LLM Hierarchy
+        if (llmProvider !== undefined) updateData.llmProvider = llmProvider || "OPENAI";
+        if (llmModel !== undefined) updateData.llmModel = llmModel || "gpt-4o";
+        if (llmTemperature !== undefined) updateData.llmTemperature = Number(llmTemperature);
 
         const updated = await prisma.organization.update({
             where: { id },
-            data: {
-                ...(name !== undefined && { name }),
-                ...(plan !== undefined && { plan }),
-                ...(isActive !== undefined && { isActive }),
-                ...(logoUrl !== undefined && { logoUrl }),
-                ...(slug !== undefined && { slug }),
-            },
+            data: updateData,
         });
 
         return NextResponse.json(updated);

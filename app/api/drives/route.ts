@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createDriveSchema, bulkDeleteSchema, driveQuerySchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
+import { sanitizeObject } from "@/lib/utils";
 
 export async function GET(request: Request) {
     try {
@@ -107,8 +108,6 @@ export async function GET(request: Request) {
     }
 }
 
-import { sanitizeObject } from "@/lib/utils";
-
 export async function POST(request: Request) {
     try {
         const session = await getSession();
@@ -130,7 +129,7 @@ export async function POST(request: Request) {
 
         const slug = crypto.randomUUID();
 
-        const drive = await (prisma.drive as any).create({
+        const drive = await prisma.drive.create({
             data: {
                 slug,
                 title: data.title,
@@ -164,7 +163,7 @@ export async function POST(request: Request) {
 
                 orgId: (session as any).orgId,
                 creatorId: (session as any).userId,
-            } as any,
+            },
         });
 
         return NextResponse.json(drive);
@@ -197,7 +196,7 @@ export async function DELETE(request: Request) {
 
         // ── SECURITY: Ensure IDs belong to the Org ───────────
         const belongsToOrg = await prisma.drive.findMany({
-            where: { id: { in: ids }, orgId: session.orgId } as any,
+            where: { id: { in: ids }, orgId: session.orgId },
             select: { id: true },
         });
 

@@ -12,11 +12,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         redirect("/login?from=admin");
     }
 
+    // Allow Super Admins to access admin routes for "inspections"
     if (isSuperAdminRole(session.role)) {
-        redirect("/super-admin");
-    }
-
-    if (!isAdminRole(session.role)) {
+        // We skip the redirect to /super-admin here to allow viewing admin dashboards
+    } else if (!isAdminRole(session.role)) {
         redirect("/login");
     }
 

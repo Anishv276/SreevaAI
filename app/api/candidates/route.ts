@@ -12,8 +12,7 @@ export async function GET(request: Request) {
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
         const { searchParams } = new URL(request.url);
-        const driveIdStr = searchParams.get("driveId");
-        const driveId = driveIdStr ? parseInt(driveIdStr) : null;
+        const driveId = searchParams.get("driveId");
         const startDate = searchParams.get("startDate");
         const endDate = searchParams.get("endDate");
         const search = searchParams.get("search")?.trim() || "";
@@ -70,7 +69,7 @@ export async function GET(request: Request) {
         const candidates = await prisma.$queryRawUnsafe(
             `${baseSelect}
             WHERE d."orgId" = ${driveId ? "$2" : "$1"}
-            ${driveId ? 'AND a."driveId" = $1' : ""}
+            ${driveId ? 'AND a."driveId" = $1::uuid' : ""}
             ${dateClause}
             ${statusClause}
             ${searchClause}
@@ -85,7 +84,7 @@ export async function GET(request: Request) {
             FROM "Application" a 
             JOIN "Drive" d ON d.id = a."driveId" 
             WHERE d."orgId" = ${driveId ? "$2" : "$1"}
-            ${driveId ? 'AND a."driveId" = $1' : ""}
+            ${driveId ? 'AND a."driveId" = $1::uuid' : ""}
             ${dateClause}
             ${statusClause}
             ${searchClause}

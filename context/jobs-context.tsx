@@ -1,11 +1,11 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 // Define the Job type
 export type Job = {
-    id: number;
+    id: string;
     title: string;
     department: string;
     location: string;
@@ -31,11 +31,11 @@ interface JobsContextType {
     jobs: Job[];
     pagination: Pagination;
     addJob: (job: Omit<Job, "id" | "applicants" | "status" | "daysLeft" | "createdAt">) => Promise<Job>;
-    deleteJob: (id: number) => Promise<void>;
+    deleteJob: (id: string) => Promise<void>;
     fetchJobs: (page?: number, limit?: number, search?: string, status?: string) => Promise<void>;
-    toggleDriveStatus: (id: number, newStatus: "ACTIVE" | "INACTIVE") => Promise<void>;
-    updateJob: (id: number, data: any) => Promise<Job>;
-    bulkDeleteJobs: (ids: number[]) => Promise<void>;
+    toggleDriveStatus: (id: string, newStatus: "ACTIVE" | "INACTIVE") => Promise<void>;
+    updateJob: (id: string, data: any) => Promise<Job>;
+    bulkDeleteJobs: (ids: string[]) => Promise<void>;
 }
 
 const JobsContext = createContext<JobsContextType | undefined>(undefined);
@@ -49,6 +49,8 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         totalPages: 0
     });
     const pathname = usePathname();
+    const searchParams = useSearchParams();
+    const orgIdFromUrl = searchParams.get("orgId");
     const isAdminRoute = pathname.startsWith("/admin");
     const isCareersRoute = pathname.startsWith("/careers");
     const hasLoadedOnceRef = useRef({ admin: false, careers: false });
@@ -62,7 +64,11 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
         const requestPromise = (async () => {
         try {
-            const res = await fetch(`/api/drives?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&status=${status}`);
+            let url = `/api/drives?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&status=${status}`;
+            if (orgIdFromUrl) {
+                url += `&orgId=${orgIdFromUrl}`;
+            }
+            const res = await fetch(url);
             if (res.ok) {
                 const result = await res.json();
                 const { drives, pagination: pagData } = result;
@@ -131,7 +137,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const deleteJob = async (id: number) => {
+    const deleteJob = async (id: string) => {
         try {
             const res = await fetch(`/api/drives/${id}`, {
                 method: "DELETE",
@@ -149,7 +155,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const toggleDriveStatus = async (id: number, newStatus: "ACTIVE" | "INACTIVE") => {
+    const toggleDriveStatus = async (id: string, newStatus: "ACTIVE" | "INACTIVE") => {
         // Optimistic update
         setJobs((prev) =>
             prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
@@ -166,7 +172,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const updateJob = async (id: number, data: any): Promise<Job> => {
+    const updateJob = async (id: string, data: any): Promise<Job> => {
         try {
             const res = await fetch(`/api/drives/${id}`, {
                 method: "PATCH",
@@ -192,7 +198,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const bulkDeleteJobs = async (ids: number[]) => {
+    const bulkDeleteJobs = async (ids: string[]) => {
         try {
             const res = await fetch("/api/drives", {
                 method: "DELETE",

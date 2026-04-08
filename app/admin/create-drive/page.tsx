@@ -72,7 +72,7 @@ function CreateDriveForm() {
     });
     const [creationMethod, setCreationMethod] = useState<null | 'manual' | 'scan'>(isEditMode ? 'manual' : null);
     const [published, setPublished] = useState(false);
-    const [publishedDriveId, setPublishedDriveId] = useState<number | null>(null);
+    const [publishedDriveId, setPublishedDriveId] = useState<string | null>(null);
     const [publishedSlug, setPublishedSlug] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
 
@@ -93,12 +93,14 @@ function CreateDriveForm() {
     const [syncedFromAi, setSyncedFromAi] = useState(false);
     const formRef = useRef<HTMLDivElement>(null);
     const analysisAbortRef = useRef<AbortController | null>(null);
+    const hasInitialLoadedRef = useRef<string | null>(null);
 
     // Initial load for edit mode
     useEffect(() => {
-        if (isEditMode && jobs.length > 0) {
-            const drive = jobs.find(j => j.id === Number(driveId));
+        if (isEditMode && jobs.length > 0 && hasInitialLoadedRef.current !== driveId) {
+            const drive = jobs.find(j => j.id === driveId);
                 if (drive) {
+                    hasInitialLoadedRef.current = driveId;
                     setPublishedDriveId(drive.id);
                     setFormData((prev: any) => ({
                     ...prev,
@@ -458,12 +460,12 @@ function CreateDriveForm() {
         
         try {
             let result;
-            let savedId: number | null = null;
+            let savedId: string | null = null;
 
             if (isEditMode) {
                 console.log("Logic: Updating existing job", driveId);
-                result = await updateJob(Number(driveId), jobData);
-                savedId = Number(driveId);
+                result = await updateJob(driveId!, jobData);
+                savedId = driveId;
             } else {
                 console.log("Logic: Adding new job");
                 result = await addJob({

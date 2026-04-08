@@ -19,7 +19,8 @@ import {
     Loader2,
     ChevronRight,
     Layers,
-    Globe
+    Globe,
+    Settings
 } from "lucide-react";
 import { Skeleton as Shimmer } from "@/components/ui/skeleton";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
@@ -261,11 +262,32 @@ export default function OrgsPage() {
                                     {/* Actions */}
                                     <div className="flex items-center justify-end gap-3">
                                         <Link 
+                                            href={`/admin/drives?orgId=${can.id}`}
+                                            className="h-9 w-9 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-all border border-transparent hover:border-blue-100 shadow-sm"
+                                            title="View Job Drives"
+                                        >
+                                            <Briefcase className="h-4 w-4" />
+                                        </Link>
+                                        <Link 
+                                            href={`/admin/candidates?orgId=${can.id}`}
+                                            className="h-9 w-9 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all border border-transparent hover:border-indigo-100 shadow-sm"
+                                            title="View Candidates"
+                                        >
+                                            <Users className="h-4 w-4" />
+                                        </Link>
+                                        <Link 
                                             href={`/super-admin/orgs/${can.id}/view`}
-                                            className="h-9 w-9 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-[#F97316] hover:bg-orange-50 transition-all border border-transparent hover:border-orange-100 shadow-sm"
-                                            title="View Profile"
+                                            className="h-9 w-9 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all border border-transparent hover:border-emerald-100 shadow-sm"
+                                            title="View Portfolio"
                                         >
                                             <Eye className="h-4 w-4" />
+                                        </Link>
+                                        <Link 
+                                            href={`/super-admin/orgs/${can.id}`}
+                                            className="h-9 w-9 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-[#F97316] hover:bg-orange-50 transition-all border border-transparent hover:border-orange-100 shadow-sm"
+                                            title="Configuration Logic"
+                                        >
+                                            <Settings className="h-4 w-4" />
                                         </Link>
                                         
                                         <div className="relative overflow-visible" ref={(el) => {
@@ -284,11 +306,26 @@ export default function OrgsPage() {
                                             {activeMenu === can.id && (
                                                 <div className="absolute right-0 top-12 w-56 bg-white border border-gray-100 rounded-[1.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.1)] p-2 z-[100] animate-in-up duration-200">
                                                     <Link
+                                                        href={`/admin/drives?orgId=${can.id}`}
+                                                        className="flex items-center gap-3 px-4 py-3.5 rounded-xl hover:bg-blue-50 text-gray-900 transition-colors group/item"
+                                                    >
+                                                        <Briefcase className="h-4 w-4 text-gray-400 group-hover/item:text-blue-600" />
+                                                        <span className="text-[10px] font-black uppercase tracking-widest">Inspect Drives</span>
+                                                    </Link>
+                                                    <Link
+                                                        href={`/admin/candidates?orgId=${can.id}`}
+                                                        className="flex items-center gap-3 px-4 py-3.5 rounded-xl hover:bg-indigo-50 text-gray-900 transition-colors group/item"
+                                                    >
+                                                        <Users className="h-4 w-4 text-gray-400 group-hover/item:text-indigo-600" />
+                                                        <span className="text-[10px] font-black uppercase tracking-widest">Inspect Candidates</span>
+                                                    </Link>
+                                                    <div className="h-px bg-gray-50 my-1 mx-2" />
+                                                    <Link
                                                         href={`/super-admin/orgs/${can.id}`}
                                                         className="flex items-center gap-3 px-4 py-3.5 rounded-xl hover:bg-gray-50 text-gray-900 transition-colors group/item"
                                                     >
                                                         <Edit2 className="h-4 w-4 text-gray-400 group-hover/item:text-[#F97316]" />
-                                                        <span className="text-[10px] font-black uppercase tracking-widest">Edit Records</span>
+                                                        <span className="text-[10px] font-black uppercase tracking-widest">Configuration Logic</span>
                                                     </Link>
                                                     <button
                                                         onClick={() => toggleSuspend(can)}

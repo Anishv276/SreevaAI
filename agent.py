@@ -71,15 +71,27 @@ APP_BASE_URL = (
 ).rstrip("/")
 
 
-def build_tts(language: str = "en"):
-    # Language mapping for Cartesia (using ISO 639-1)
+def build_tts(language: str = "en", model: str = CARTESIA_MODEL, voice_id: str = CARTESIA_VOICE_ID):
     return cartesia.TTS(
-        model=CARTESIA_MODEL,
-        voice=CARTESIA_VOICE_ID,
+        model=model,
+        voice=voice_id,
         speed=CARTESIA_VOICE_SPEED,
         word_timestamps=False,
         language=language,
     )
+
+
+def build_stt(language_code: str = "en-US", model: str = STT_MODEL):
+    return deepgram.STT(
+        model=model,
+        smart_format=True,
+        language=language_code,
+        interim_results=True,
+    )
+
+
+def build_llm(model: str = LLM_MODEL, temperature: float = 0.7):
+    return openai.LLM(model=model, temperature=temperature)
 
 
 def build_vad():
@@ -123,10 +135,15 @@ async def get_interview_context(app_id: str):
 
         try:
             query = """
-            SELECT a."fullName", d.title, d.description, d.skills, 
-                   d."interviewLanguage", d."interviewTime", d."aiFollowUpDepth", d."interviewQuestions"
-            FROM "Application" a 
-            JOIN "Drive" d ON a."driveId" = d.id 
+            SELECT a."fullName", d.title, d.description, d.skills,
+                   d."interviewLanguage", d."interviewTime", d."aiFollowUpDepth", d."interviewQuestions",
+                   o."ttsProvider", o."cartesiaVoiceId", o."cartesiaModel",
+                   o."sarvamModel", o."sarvamVoice",
+                   o."sttProvider", o."deepgramModel", o."sarvamSttModel",
+                   o."llmProvider", o."llmModel", o."llmTemperature"
+            FROM "Application" a
+            JOIN "Drive" d ON a."driveId" = d.id
+            LEFT JOIN "Organization" o ON d."orgId" = o.id
             WHERE a.id = $1
             LIMIT 1
             """
@@ -153,6 +170,14 @@ async def get_interview_context(app_id: str):
                     "timeLimit": row["interviewTime"] or 10,
                     "followUpDepth": row["aiFollowUpDepth"] or 3,
                     "questions": questions if isinstance(questions, list) else [],
+                    # Org model settings
+                    "ttsProvider": row["ttsProvider"] or "CARTESIA",
+                    "cartesiaVoiceId": row["cartesiaVoiceId"] or CARTESIA_VOICE_ID,
+                    "cartesiaModel": row["cartesiaModel"] or CARTESIA_MODEL,
+                    "sttProvider": row["sttProvider"] or "DEEPGRAM",
+                    "deepgramModel": row["deepgramModel"] or STT_MODEL,
+                    "llmModel": row["llmModel"] or LLM_MODEL,
+                    "llmTemperature": float(row["llmTemperature"] or 0.7),
                 }
         finally:
             await conn.close()
@@ -419,6 +444,27 @@ async def entrypoint(ctx: JobContext):
     follow_up_depth = context["followUpDepth"]
     custom_questions = context["questions"]
 
+    # Org-specific model settings
+    org_tts_provider = context.get("ttsProvider", "CARTESIA")
+    org_cartesia_model = context.get("cartesiaModel") or CARTESIA_MODEL
+    org_cartesia_voice = context.get("cartesiaVoiceId") or CARTESIA_VOICE_ID
+    org_stt_provider = context.get("sttProvider", "DEEPGRAM")
+    org_deepgram_model = context.get("deepgramModel") or STT_MODEL
+    org_llm_model = context.get("llmModel") or LLM_MODEL
+    org_llm_temperature = context.get("llmTemperature", 0.7)
+
+    if org_tts_provider == "SARVAM":
+        logger.warning("Sarvam TTS not installed; falling back to Cartesia")
+        org_tts_provider = "CARTESIA"
+    if org_stt_provider == "SARVAM":
+        logger.warning("Sarvam STT not installed; falling back to Deepgram")
+        org_stt_provider = "DEEPGRAM"
+
+    logger.info(
+        f"Org models → STT: {org_deepgram_model}, TTS: {org_cartesia_model} "
+        f"voice={org_cartesia_voice}, LLM: {org_llm_model}"
+    )
+
     # Formatting custom questions for the prompt
     questions_list = (
         "\n".join([f"- {q}" for q in custom_questions])
@@ -504,13 +550,9 @@ async def entrypoint(ctx: JobContext):
 
     session = AgentSession(
         vad=vad_instance,
-        stt=deepgram.STT(
-            model=STT_MODEL,
-            smart_format=True,  # Improved punctuation and capitalization
-            language=lang_codes["stt"],
-        ),
-        llm=openai.LLM(model=LLM_MODEL),
-        tts=build_tts(language=lang_codes["tts"]),
+        stt=build_stt(language_code=lang_codes["stt"], model=org_deepgram_model),
+        llm=build_llm(model=org_llm_model, temperature=org_llm_temperature),
+        tts=build_tts(language=lang_codes["tts"], model=org_cartesia_model, voice_id=org_cartesia_voice),
         turn_handling=TurnHandlingOptions(
             endpointing=EndpointingOptions(
                 min_delay=0.3,
@@ -669,35 +711,58 @@ async def entrypoint(ctx: JobContext):
     )
 
     # --- Real-time Transcript Streaming (Low Latency) ---
+    # We accumulate partials so the frontend receives a *growing* string each time,
+    # enabling the letter-by-letter typewriter effect on the client.
+    _candidate_partial: list[str] = [""]
+    _interviewer_partial: list[str] = [""]
+
     @session.on("user_transcript_received")
     def on_user_transcript(transcript):
-        # Relay partials for instant "Candidate" feedback
-        if transcript.text.strip():
-            relay_live_transcript("Candidate", transcript.text.strip())
+        text = transcript.text.strip() if transcript.text else ""
+        if not text:
+            return
+        is_final = getattr(transcript, "is_final", True)
+        if is_final:
+            # Commit: relay full text, then reset accumulator for next utterance
+            relay_live_transcript("Candidate", text)
+            _candidate_partial[0] = ""
+        else:
+            # Partial: grow the accumulator and relay the cumulative text
+            _candidate_partial[0] = text
+            relay_live_transcript("Candidate", text)
 
     @session.on("agent_transcript_received")
     def on_agent_transcript(transcript):
-        # Relay partials for instant "Interviewer" feedback
-        # transcript in newer SDKs is often an AssistantTranscript object
-        text = getattr(transcript, "text", str(transcript))
-        if text.strip():
-            relay_live_transcript("Interviewer", text.strip())
+        text = getattr(transcript, "text", str(transcript)).strip()
+        if not text:
+            return
+        is_final = getattr(transcript, "is_final", True)
+        # Accumulate agent tokens so frontend sees a growing string
+        if is_final:
+            relay_live_transcript("Interviewer", text)
+            _interviewer_partial[0] = ""
+        else:
+            accumulated = (_interviewer_partial[0] + " " + text).strip() if _interviewer_partial[0] else text
+            _interviewer_partial[0] = accumulated
+            relay_live_transcript("Interviewer", accumulated)
 
     @session.on("conversation_item_added")
     def on_conversation_item_added(event) -> None:
         try:
             item = event.item
-            # item.role == "assistant" or "user"
             role = getattr(item, "role", None)
             content = item.text_content
-            
+
             if not content or not role:
                 return
 
             speaker = "Interviewer" if role == "assistant" else "Candidate"
             append_transcript_line(speaker, content)
-            
-            # Final relay to ensure last bit is captured and finalized
+            # Reset partials and send final committed text
+            if speaker == "Candidate":
+                _candidate_partial[0] = ""
+            else:
+                _interviewer_partial[0] = ""
             relay_live_transcript(speaker, content)
             logger.info(f"[TRANSCRIPT] {speaker}: {content[:60]}...")
 

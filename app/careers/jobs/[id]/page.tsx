@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, use } from "react";
+import { toast } from "@/components/ui/toast-custom";
 import { 
     DropdownMenu, 
     DropdownMenuContent, 
@@ -23,7 +24,7 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        fetch(`/api/drives/${id}`)
+        fetch(`/api/drives/${id}`, { cache: "no-store" })
             .then(async res => {
                 const data = await res.json();
                 if (!res.ok) {
@@ -96,7 +97,7 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
         facebook: () => window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`, '_blank'),
         copy: () => {
             navigator.clipboard.writeText(shareUrl);
-            alert("Link copied to clipboard!");
+            toast.success("Link copied to clipboard!");
         }
     };
 

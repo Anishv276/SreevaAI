@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { updateDriveSchema } from "@/lib/validation";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
-        const driveId = parseInt(id);
         
-        const drive = await (prisma.drive as any).findFirst({
+        const drive = await prisma.drive.findFirst({
             where: {
                 OR: [
-                    ...(isNaN(driveId) ? [] : [{ id: driveId }]),
+                    { id },
                     { slug: id }
                 ]
             },
@@ -61,14 +62,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-    let driveId: number = NaN;
+    let driveId: string = "";
     try {
         const { id } = await params;
-        driveId = parseInt(id);
-        
-        if (isNaN(driveId)) {
-            return NextResponse.json({ error: "Invalid drive ID" }, { status: 400 });
-        }
+        driveId = id;
 
         const body = await request.json();
 
@@ -84,7 +81,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         const deadline = data.deadline === "" || data.deadline === null ? null : 
                         (data.deadline && !isNaN(new Date(data.deadline).getTime()) ? new Date(data.deadline) : undefined);
         
-        const positions = data.positions !== undefined ? parseInt(String(data.positions)) : undefined;
+        const positions = data.positions !== undefined ? data.positions : undefined;
 
         const updateData: any = {};
         
@@ -96,7 +93,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             updateData.type = data.employmentType || data.type;
         }
         if (data.workMode !== undefined) updateData.workMode = data.workMode;
-        if (positions !== undefined && !isNaN(positions)) updateData.positions = positions;
+        if (positions !== undefined) updateData.positions = positions;
         if (deadline !== undefined) updateData.deadline = deadline;
         
         if (data.salary !== undefined) updateData.salary = data.salary;
@@ -151,11 +148,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
-        const driveId = parseInt(id);
-
-        if (isNaN(driveId)) {
-            return NextResponse.json({ error: "Invalid drive ID" }, { status: 400 });
-        }
+        const driveId = id;
 
         // ── STORAGE CLEANUP: Purge JD & Resumes from R2 ──────────
         try {

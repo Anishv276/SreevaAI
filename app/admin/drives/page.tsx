@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "@/components/ui/toast-custom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -51,6 +52,8 @@ import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 
 export default function DrivesPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const orgId = searchParams.get("orgId");
     const { jobs, pagination, deleteJob, fetchJobs, toggleDriveStatus, bulkDeleteJobs } = useJobs();
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
@@ -74,6 +77,9 @@ export default function DrivesPage() {
     // Fresh Data for Preview
     const [freshDriveDetails, setFreshDriveDetails] = useState<any>(null);
     const [isFetchingFresh, setIsFetchingFresh] = useState(false);
+
+    // Candidate Portal Preview Modal
+    const [candidatePreviewSlug, setCandidatePreviewSlug] = useState<string | null>(null);
     
     const cachedDrive = jobs.find(j => j.id === previewDriveId);
     const selectedDrive = freshDriveDetails && freshDriveDetails.id === previewDriveId 
@@ -137,7 +143,7 @@ export default function DrivesPage() {
             setDriveToDelete(null);
         } catch (error) {
             console.error("Error deleting drive:", error);
-            alert("Failed to delete drive");
+            toast.error("Failed to delete drive");
         } finally {
             setIsDeleting(false);
         }
@@ -177,7 +183,7 @@ export default function DrivesPage() {
             setIsSelectionMode(false);
             setIsBulkDeleteModalOpen(false);
         } catch (error) {
-            alert("Failed to delete drives");
+            toast.error("Failed to delete drives");
         } finally {
             setIsDeleting(false);
         }
@@ -303,7 +309,6 @@ export default function DrivesPage() {
                                     selectedIds.has(drive.id) && "ring-2 ring-[#F97316] border-[#F97316]/50 bg-orange-50/30"
                                 )}
                             >
-                                {/* ... Card content remains the same ... */}
                                 {isSelectionMode && (
                                     <div className="absolute top-4 left-4 z-20">
                                         <Checkbox 
@@ -328,14 +333,20 @@ export default function DrivesPage() {
                                                 </Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end" className="w-56 p-2 rounded-xl border-gray-100 shadow-xl">
-                                                <Link href={`/admin/candidates?driveId=${drive.id}`}>
+                                                <Link href={`/admin/candidates?driveId=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`}>
                                                     <DropdownMenuItem className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700">
                                                         <Eye className="mr-2 h-4 w-4" /> View Applicants
                                                     </DropdownMenuItem>
                                                 </Link>
                                                 <DropdownMenuItem
+                                                    className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700 font-bold"
+                                                    onClick={() => setCandidatePreviewSlug(String(drive.slug || drive.id))}
+                                                >
+                                                    <Eye className="mr-2 h-4 w-4" /> Preview as Candidate
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
                                                     className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700"
-                                                    onClick={() => router.push(`/admin/create-drive?id=${drive.id}`)}
+                                                    onClick={() => router.push(`/admin/create-drive?id=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`)}
                                                 >
                                                     <Edit className="mr-2 h-4 w-4" /> Edit Drive Details
                                                 </DropdownMenuItem>
@@ -345,7 +356,7 @@ export default function DrivesPage() {
                                                         e.stopPropagation();
                                                         const link = `${window.location.origin}/careers/jobs/${(drive as any).slug || drive.id}`;
                                                         await navigator.clipboard.writeText(link);
-                                                        alert("Link copied to clipboard!");
+                                                        toast.success("Link copied to clipboard!");
                                                     }}
                                                 >
                                                     <LinkIcon className="mr-2 h-4 w-4" /> Copy Job Link
@@ -362,7 +373,7 @@ export default function DrivesPage() {
                                     <div className="space-y-2">
                                         <h3 
                                             className="font-extrabold text-gray-900 text-xl tracking-tight leading-tight cursor-pointer hover:text-[#F97316] transition-colors"
-                                            onClick={() => router.push(`/admin/candidates?driveId=${drive.id}`)}
+                                            onClick={() => router.push(`/admin/candidates?driveId=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`)}
                                         >
                                             {drive.title}
                                         </h3>
@@ -623,30 +634,83 @@ export default function DrivesPage() {
                             >
                                 View Applicants ({selectedDrive.applicants || 0})
                             </Button>
-                            <Button 
-                                variant="outline" 
-                                className="h-12 w-12 rounded-xl flex items-center justify-center p-0 border-gray-200 text-gray-400 hover:text-gray-900 overflow-hidden"
-                                onClick={() => router.push(`/admin/create-drive?id=${selectedDrive.id}`)}
+                            <Button
+                                variant="outline"
+                                className="h-12 px-4 rounded-xl flex items-center gap-2 border-orange-200 text-orange-500 hover:bg-orange-50 hover:text-orange-600 font-bold text-[11px] uppercase tracking-wider"
+                                title="Preview as Candidate"
+                                onClick={() => setCandidatePreviewSlug(String((selectedDrive as any).slug || selectedDrive.id))}
                             >
-                                <Edit className="h-5 w-5" />
+                                <Eye className="h-4 w-4" />
+                                Preview
                             </Button>
                             <Button 
                                 variant="outline" 
-                                className="h-12 w-12 rounded-xl flex items-center justify-center p-0 border-orange-100 text-[#F97316] hover:bg-orange-50"
-                                onClick={() => {
-                                    const link = `${window.location.origin}/careers/jobs/${selectedDrive.id}`;
-                                    window.open(link, '_blank');
-                                }}
+                                className="h-12 w-12 rounded-xl flex items-center justify-center p-0 border-gray-200 text-gray-400 hover:text-gray-900 overflow-hidden"
+                                onClick={() => router.push(`/admin/create-drive?id=${selectedDrive.id}${orgId ? `&orgId=${orgId}` : ''}`)}
                             >
-                                <ExternalLink className="h-5 w-5" />
+                                <Edit className="h-5 w-5" />
                             </Button>
                         </div>
                     </div>
                 </>
             )}
 
+            {/* Candidate Portal Preview Modal */}
+            {candidatePreviewSlug && (
+                <div className="fixed inset-0 z-[200] flex flex-col bg-black/60 backdrop-blur-sm">
+                    {/* Browser-chrome header */}
+                    <div className="flex items-center gap-3 px-4 py-3 bg-gray-900 border-b border-white/10 shrink-0">
+                        {/* Traffic lights */}
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={() => setCandidatePreviewSlug(null)}
+                                className="h-3.5 w-3.5 rounded-full bg-red-500 hover:bg-red-400 transition-colors flex items-center justify-center group"
+                                title="Close preview"
+                            >
+                                <X className="h-2 w-2 text-red-900 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </button>
+                            <div className="h-3.5 w-3.5 rounded-full bg-yellow-400/60" />
+                            <div className="h-3.5 w-3.5 rounded-full bg-green-500/60" />
+                        </div>
+                        {/* URL bar */}
+                        <div className="flex-1 flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1.5 mx-2">
+                            <div className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                            <span className="text-[11px] text-gray-400 font-mono truncate select-none">
+                                {typeof window !== "undefined" ? window.location.origin : ""}/careers/jobs/{candidatePreviewSlug}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-400">
+                                Preview as Candidate
+                            </span>
+                            <button
+                                onClick={() => window.open(`/careers/jobs/${candidatePreviewSlug}`, '_blank')}
+                                className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                                title="Open in new tab"
+                            >
+                                <ExternalLink className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={() => setCandidatePreviewSlug(null)}
+                                className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                                title="Close"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                    </div>
+                    {/* iframe */}
+                    <iframe
+                        key={candidatePreviewSlug}
+                        src={`/careers/jobs/${candidatePreviewSlug}`}
+                        className="flex-1 w-full border-0 bg-white"
+                        title="Candidate Portal Preview"
+                    />
+                </div>
+            )}
+
             {/* Confirmation Modals */}
-            <ActionConfirmModal 
+            <ActionConfirmModal
                 isOpen={isDeleteModalOpen}
                 onClose={() => setIsDeleteModalOpen(false)}
                 onConfirm={confirmDelete}

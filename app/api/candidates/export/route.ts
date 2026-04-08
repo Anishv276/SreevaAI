@@ -8,8 +8,7 @@ export async function GET(request: Request) {
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
         const { searchParams } = new URL(request.url);
-        const driveIdStr = searchParams.get("driveId");
-        const driveId = driveIdStr ? parseInt(driveIdStr) : null;
+        const driveId = searchParams.get("driveId");
         const orgId = searchParams.get("orgId") || (session as any).orgId;
 
         // Fetch all candidates for the export

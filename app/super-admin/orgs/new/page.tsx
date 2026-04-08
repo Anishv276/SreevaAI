@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw } from "lucide-react";
 
 const PLANS = [
     { id: "STARTER", label: "Starter", desc: "For small teams", color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
@@ -23,6 +23,17 @@ export default function NewOrgPage() {
         adminName: "",
         adminEmail: "",
         adminPassword: "",
+        ttsProvider: "CARTESIA",
+        cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+        cartesiaModel: "sonic-english",
+        sarvamModel: "bulbul:v3",
+        sarvamVoice: "shubh",
+        sttProvider: "DEEPGRAM",
+        deepgramModel: "nova-3-general",
+        sarvamSttModel: "saaras:v3",
+        llmProvider: "OPENAI",
+        llmModel: "gpt-4o",
+        llmTemperature: 0.7,
     });
 
     const handleOrgNameChange = (name: string) => {
@@ -93,7 +104,7 @@ export default function NewOrgPage() {
 
                     <div className="flex flex-col sm:flex-row gap-4 pt-4">
                         <button
-                            onClick={() => { setSuccess(null); setForm({ orgName: "", slug: "", plan: "STARTER", adminName: "", adminEmail: "", adminPassword: "" }); }}
+                            onClick={() => { setSuccess(null); setForm({ orgName: "", slug: "", plan: "STARTER", adminName: "", adminEmail: "", adminPassword: "", ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", cartesiaModel: "sonic-english", sarvamModel: "bulbul:v3", sarvamVoice: "shubh", sttProvider: "DEEPGRAM", deepgramModel: "nova-3-general", sarvamSttModel: "saaras:v3", llmProvider: "OPENAI", llmModel: "gpt-4o", llmTemperature: 0.7 }); }}
                             className="flex-1 h-10 rounded-xl border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50"
                         >
                             Add Another
@@ -273,6 +284,347 @@ export default function NewOrgPage() {
                     </div>
                 </div>
 
+                {/* Voice Infrastructure */}
+                <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                        <span className="w-1.5 h-8 bg-purple-500 rounded-full shadow-sm" />
+                        <h3 className="text-[12px] font-bold uppercase tracking-widest text-gray-500">3. Voice Infrastructure (TTS)</h3>
+                    </div>
+
+                    <div className="bg-white border border-gray-100 rounded-xl p-8 shadow-sm space-y-10">
+                        {/* Provider Selection Dropdown */}
+                        <div className="grid md:grid-cols-2 gap-8">
+                            <div className="space-y-4">
+                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Primary TTS Engine</label>
+                                <select 
+                                    value={form.ttsProvider}
+                                    onChange={e => setForm(prev => ({ ...prev, ttsProvider: e.target.value }))}
+                                    className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none"
+                                >
+                                    <option value="CARTESIA">⚡ Cartesia (Ultra-Low Latency)</option>
+                                    <option value="SARVAM">🇮🇳 Sarvam AI (Indian Regional)</option>
+                                </select>
+                            </div>
+                            <div className="flex items-end pb-1">
+                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed">
+                                    {form.ttsProvider === "CARTESIA" 
+                                        ? "Optimized for elite conversational AI in English." 
+                                        : "Optimized for regional authenticity across 11+ Indian languages."}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Cartesia Config */}
+                        {form.ttsProvider === "CARTESIA" && (
+                            <div className="grid md:grid-cols-2 gap-8 pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Voice Selection</label>
+                                        <button 
+                                            type="button"
+                                            onClick={() => {
+                                                const id = form.cartesiaVoiceId;
+                                                const url = `https://cartesia-public-samples.s3.amazonaws.com/${id}.mp3`;
+                                                const audio = new Audio(url);
+                                                audio.play().catch(() => alert(`Cartesia Voice Sample not live for ID: ${id}`));
+                                            }}
+                                            className="text-[10px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-1.5 hover:text-purple-700 transition-colors"
+                                        >
+                                            <RefreshCw className="h-3 w-3" /> Play Sample
+                                        </button>
+                                    </div>
+                                    <select 
+                                        value={form.cartesiaVoiceId}
+                                        onChange={e => setForm(prev => ({ ...prev, cartesiaVoiceId: e.target.value }))}
+                                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none"
+                                    >
+                                        <option value="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc">Jacqueline (Verified Agent)</option>
+                                        <option value="a0e99829-1bb2-4c69-ad7d-9473235bca21">Arno (Professional Male)</option>
+                                        <option value="79a125e3-4d2a-4885-8f77-50a847f0e7fe">British Lady (Sophisticated)</option>
+                                        <option value="638385f3-3333-4f5d-85a2-3f820c64b732">California Girl (Casual)</option>
+                                        <option value="248be1fc-3d27-4452-9457-3705bf68bf8f">Barista (Warm Helper)</option>
+                                        <option value="custom">-- Custom Voice ID --</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-4">
+                                    <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Neural Engine (Model)</label>
+                                    <select 
+                                        value={form.cartesiaModel}
+                                        onChange={e => setForm(prev => ({ ...prev, cartesiaModel: e.target.value }))}
+                                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none"
+                                    >
+                                        <option value="sonic-english">sonic-english (Flagship)</option>
+                                        <option value="sonic-multilingual">sonic-multilingual</option>
+                                        <option value="sonic-3">sonic-3 (Ultra-Low Latency)</option>
+                                    </select>
+                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.15em] leading-relaxed">Sonic 3 is optimized for elite real-time responsiveness.</p>
+                                </div>
+                            </div>
+                        )}
+                        {/* Sarvam Config */}
+                        {form.ttsProvider === "SARVAM" && (
+                            <div className="pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-8">
+                                <div className="grid md:grid-cols-2 gap-8">
+                                    <div className="space-y-4">
+                                        <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Model Version (Bulbul)</label>
+                                        <select 
+                                            value={form.sarvamModel}
+                                            onChange={e => setForm(prev => ({ ...prev, sarvamModel: e.target.value }))}
+                                            className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none"
+                                        >
+                                            <option value="bulbul:v1">Bulbul v1 (Legacy)</option>
+                                            <option value="bulbul:v2">Bulbul v2 (Optimized)</option>
+                                            <option value="bulbul:v3">Bulbul v3 (Flagship)</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Neural Speaker</label>
+                                            <button 
+                                                type="button"
+                                                onClick={() => alert(`Streaming ${form.sarvamVoice} sample...`)}
+                                                className="text-[10px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-1.5 hover:text-purple-700 transition-colors"
+                                            >
+                                                <RefreshCw className="h-3 w-3" /> Preview Speaker
+                                            </button>
+                                        </div>
+                                        <select 
+                                            value={form.sarvamVoice}
+                                            onChange={e => setForm(prev => ({ ...prev, sarvamVoice: e.target.value }))}
+                                            className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none"
+                                        >
+                                            {form.sarvamModel === "bulbul:v3" ? (
+                                                 <>
+                                                     <option value="shubh">Shubh (Default Flagship)</option>
+                                                     <option value="manan">Manan (Clear Male)</option>
+                                                     <option value="ishita">Ishita (Female)</option>
+                                                     <option value="shreya">Shreya (Female)</option>
+                                                     <option value="aditya">Aditya (Male)</option>
+                                                     <option value="ritu">Ritu (Female)</option>
+                                                     <option value="priya">Priya (Female)</option>
+                                                     <option value="neha">Neha (Female)</option>
+                                                     <option value="rahul">Rahul (Deep Male)</option>
+                                                     <option value="pooja">Pooja (Female)</option>
+                                                     <option value="rohan">Rohan (Male)</option>
+                                                     <option value="simran">Simran (Female)</option>
+                                                     <option value="kavya">Kavya (Female)</option>
+                                                     <option value="amit">Amit (Male)</option>
+                                                     <option value="dev">Dev (Male)</option>
+                                                     <option value="varun">Varun (Male)</option>
+                                                     <option value="kabir">Kabir (Male)</option>
+                                                     <option value="tanya">Tanya (Female)</option>
+                                                     <option value="sunny">Sunny (Male)</option>
+                                                 </>
+                                             ) : form.sarvamModel === "bulbul:v2" ? (
+                                                 <>
+                                                     <option value="anushka">Anushka (Female)</option>
+                                                     <option value="manisha">Manisha (Female)</option>
+                                                     <option value="vidya">Vidya (Female)</option>
+                                                     <option value="arya">Arya (Male)</option>
+                                                     <option value="abhilash">Abhilash (Male)</option>
+                                                     <option value="karun">Karun (Male)</option>
+                                                     <option value="hitesh">Hitesh (Male)</option>
+                                                 </>
+                                             ) : (
+                                                 <>
+                                                     <option value="meera">Meera (Female)</option>
+                                                     <option value="pavithra">Pavithra (Female)</option>
+                                                     <option value="maitreyi">Maitreyi (Female)</option>
+                                                     <option value="amartya">Amartya (Male)</option>
+                                                     <option value="amol">Amol (Male)</option>
+                                                     <option value="arvind">Arvind (Male)</option>
+                                                 </>
+                                             )}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Speech Infrastructure */}
+                <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                        <span className="w-1.5 h-8 bg-emerald-500 rounded-full shadow-sm" />
+                        <h3 className="text-[12px] font-bold uppercase tracking-widest text-gray-500">4. Speech Recognition (STT)</h3>
+                    </div>
+
+                    <div className="bg-white border border-gray-100 rounded-xl p-8 shadow-sm space-y-10">
+                        {/* Provider Selection */}
+                        <div className="grid md:grid-cols-2 gap-8">
+                            <div className="space-y-4">
+                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Neural Listening Engine</label>
+                                <select 
+                                    value={form.sttProvider}
+                                    onChange={e => setForm(prev => ({ ...prev, sttProvider: e.target.value }))}
+                                    className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none"
+                                >
+                                    <option value="DEEPGRAM">🛸 Deepgram (Elite Latency)</option>
+                                    <option value="SARVAM">🇮🇳 Sarvam AI (Regional Saaras)</option>
+                                </select>
+                            </div>
+                            <div className="flex items-end pb-1">
+                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed">
+                                    {form.sttProvider === "DEEPGRAM" 
+                                        ? "SOTA transcription with industry-leading speed." 
+                                        : "Optimized for regional accent comprehension across India."}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Deepgram Config */}
+                        {form.sttProvider === "DEEPGRAM" && (
+                            <div className="pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                <div className="space-y-4">
+                                    <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Transcription Model</label>
+                                    <select 
+                                        value={form.deepgramModel}
+                                        onChange={e => setForm(prev => ({ ...prev, deepgramModel: e.target.value }))}
+                                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none"
+                                    >
+                                        <optgroup label="🛸 Flux (Lowest Latency)">
+                                            <option value="flux-general-en">Flux General (English)</option>
+                                        </optgroup>
+                                        <optgroup label="🧠 Nova-3 (Next Gen)">
+                                            <option value="nova-3-general">Nova-3 General</option>
+                                            <option value="nova-3">Nova-3 (Balanced)</option>
+                                            <option value="nova-3-medical">Nova-3 Medical</option>
+                                        </optgroup>
+                                        <optgroup label="⚡ Nova-2 (Standard)">
+                                            <option value="nova-2-general">Nova-2 General</option>
+                                            <option value="nova-2-phonecall">Nova-2 Phonecall</option>
+                                            <option value="nova-2-voicemail">Nova-2 Voicemail</option>
+                                            <option value="nova-2-meeting">Nova-2 Meeting</option>
+                                            <option value="nova-2-conversationalai">Nova-2 Conversational AI</option>
+                                            <option value="nova-2-video">Nova-2 Video</option>
+                                            <option value="nova-2-medical">Nova-2 Medical</option>
+                                            <option value="nova-2-finance">Nova-2 Finance</option>
+                                            <option value="nova-2-automotive">Nova-2 Automotive</option>
+                                            <option value="nova-2-drivethru">Nova-2 Drivethru</option>
+                                            <option value="nova-2-atc">Nova-2 Air Traffic Control</option>
+                                        </optgroup>
+                                        <optgroup label="🌬️ Whisper (Benchmarked)">
+                                            <option value="whisper-large">Whisper Large</option>
+                                            <option value="whisper-medium">Whisper Medium</option>
+                                            <option value="whisper-small">Whisper Small</option>
+                                            <option value="whisper-base">Whisper Base</option>
+                                            <option value="whisper-tiny">Whisper Tiny</option>
+                                        </optgroup>
+                                        <optgroup label="📂 Legacy / Enhanced">
+                                            <option value="enhanced-general">Enhanced General</option>
+                                            <option value="enhanced-phonecall">Enhanced Phonecall</option>
+                                            <option value="nova-general">Nova-1 General</option>
+                                            <option value="nova-phonecall">Nova-1 Phonecall</option>
+                                        </optgroup>
+                                    </select>
+                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed">
+                                        Select specialized neural architecture for the client's specific use case.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Sarvam STT Config */}
+                        {form.sttProvider === "SARVAM" && (
+                            <div className="pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                <div className="space-y-4">
+                                    <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Neural Transcription Model</label>
+                                    <select 
+                                        value={form.sarvamSttModel}
+                                        onChange={e => setForm(prev => ({ ...prev, sarvamSttModel: e.target.value }))}
+                                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none"
+                                    >
+                                        <optgroup label="💎 Premium">
+                                            <option value="saaras:v3">Saaras v3 (High Quality)</option>
+                                            <option value="saarika:v2.5">Saarika v2.5 (Streaming USM)</option>
+                                        </optgroup>
+                                        <optgroup label="📚 Legacy">
+                                            <option value="saaras:v2">Saaras v2 (Standard)</option>
+                                        </optgroup>
+                                    </select>
+                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed">
+                                        Optimized for multi-accent Indian regional speech recognition with sovereign accuracy.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Inference Infrastructure (Step 5) */}
+                <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                        <span className="w-1.5 h-8 bg-blue-600 rounded-full shadow-sm" />
+                        <h3 className="text-[12px] font-bold uppercase tracking-widest text-gray-500">5. Inference Infrastructure (LLM)</h3>
+                    </div>
+
+                    <div className="bg-white border border-gray-100 rounded-xl p-8 shadow-sm space-y-10">
+                        {/* LLM Selection */}
+                        <div className="grid md:grid-cols-2 gap-8">
+                            <div className="space-y-4">
+                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">LLM Provider</label>
+                                <select 
+                                    value={form.llmProvider}
+                                    onChange={e => setForm(prev => ({ ...prev, llmProvider: e.target.value }))}
+                                    className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold focus:ring-2 focus:ring-blue-100 outline-none"
+                                >
+                                    <option value="OPENAI">🤖 OpenAI (Global Standard)</option>
+                                </select>
+                            </div>
+                            <div className="space-y-4">
+                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">LLM Model</label>
+                                <select 
+                                    value={form.llmModel}
+                                    onChange={e => setForm(prev => ({ ...prev, llmModel: e.target.value }))}
+                                    className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-blue-100 outline-none"
+                                >
+                                    <option value="gpt-4o">GPT-4o (Recommended)</option>
+                                    <option value="gpt-4o-mini">GPT-4o-mini</option>
+                                    <option value="gpt-4.1">GPT-4.1 (Next Gen)</option>
+                                    <option value="o1-preview">o1-preview</option>
+                                    <option value="o1-mini">o1-mini</option>
+                                    <option value="gpt-5.1">GPT-5.1 (Research)</option>
+                                    <option value="gpt-5.0">GPT-5.0 (Frontier)</option>
+                                    <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* Temperature Control */}
+                        <div className="pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                            <div className="space-y-6">
+                                <div className="flex items-center justify-between">
+                                    <div className="space-y-1">
+                                        <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">LLM Temperature</label>
+                                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed">
+                                            {form.llmTemperature <= 0.3 ? "Deterministic / Precise" : form.llmTemperature >= 0.8 ? "Creative / Variable" : "Balanced Reasoning"}
+                                        </p>
+                                    </div>
+                                    <span className="h-8 px-3 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 text-xs font-black">
+                                        {Number(form.llmTemperature).toFixed(1)}
+                                    </span>
+                                </div>
+                                <input 
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.1"
+                                    value={form.llmTemperature}
+                                    onChange={e => setForm(prev => ({ ...prev, llmTemperature: parseFloat(e.target.value) }))}
+                                    className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                />
+                                <div className="flex justify-between text-[9px] font-black text-gray-300 uppercase tracking-widest">
+                                    <span>Focused</span>
+                                    <span>Balanced</span>
+                                    <span>Creative</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 {error && (
                     <div className="p-6 rounded-2xl bg-red-50 border border-red-100 text-red-500 text-xs font-black uppercase tracking-widest flex items-center gap-4 animate-in-up">
                         <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
@@ -289,7 +641,7 @@ export default function NewOrgPage() {
                         disabled={loading}
                         className="h-10 px-6 rounded-xl bg-gray-900 text-white font-bold text-[13px] shadow-lg hover:bg-black transition-all hover:-translate-y-0.5 active:scale-95 disabled:opacity-50"
                     >
-                        {loading ? "Provisioning..." : "PROVISION ORGANIZATION"}
+                        {loading ? "Adding Client..." : "ADD CLIENT"}
                     </button>
                 </div>
             </form>

@@ -8,7 +8,7 @@ import React, {
     useRef,
     useState,
 } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 export type Candidate = {
     id: string;
@@ -84,6 +84,8 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
 
     const [isHydrated, setIsHydrated] = useState(false);
     const pathname = usePathname();
+    const searchParams = useSearchParams();
+    const orgIdFromUrl = searchParams.get("orgId");
     const isCandidatesRoute = pathname.startsWith("/admin/candidates");
 
     const eventSourceRef = useRef<EventSource | null>(null);
@@ -161,6 +163,10 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                     page: String(page),
                     limit: String(limit),
                 });
+
+                if (orgIdFromUrl) {
+                    params.set("orgId", orgIdFromUrl);
+                }
 
                 if (driveId && driveId !== "all") {
                     params.set("driveId", driveId);
