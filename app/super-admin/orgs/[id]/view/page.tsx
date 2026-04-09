@@ -588,6 +588,8 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                             >
                                                 <option value="gpt-4o">GPT-4o (Superior Reasoning)</option>
                                                 <option value="gpt-4o-mini">GPT-4o-mini (Latency)</option>
+                                                <option value="gpt-4.1-mini">GPT-4.1-mini (Next Gen)</option>
+                                                <option value="gpt-5.1-mini">GPT-5.1-mini (Research)</option>
                                             </select>
                                         </div>
                                         <div className="space-y-4">

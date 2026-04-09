@@ -6,8 +6,15 @@ import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-const VERIFICATION_STEPS = [
-    "I am ready to start the interview"
+const VERIFICATION_PHRASES = [
+    "I am ready to start the interview",
+    "My microphone and camera are working now",
+    "I can see and hear everything clearly",
+    "The environment is quiet and well-lit",
+    "I am looking forward to this conversation",
+    "Testing testing one two three",
+    "I am in a private and stable space",
+    "Let us begin the professional assessment"
 ];
 
 interface HardwareCheckProps {
@@ -39,6 +46,7 @@ export function HardwareCheck({
 
     const [cameraStatus, setCameraStatus] = useState<CheckStatus>("idle");
     const [micStatus, setMicStatus] = useState<CheckStatus>("idle");
+    const [verifiedPhrase, setVerifiedPhrase] = useState("");
     const [micVerified, setMicVerified] = useState(false);
     const [speechSupported, setSpeechSupported] = useState(true);
     const [activeStep, setActiveStep] = useState(0);
@@ -46,6 +54,12 @@ export function HardwareCheck({
     const [error, setError] = useState<string | null>(null);
     const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
     const [snapshotUploading, setSnapshotUploading] = useState(false);
+
+    // Pick a random phrase on mount
+    useEffect(() => {
+        const randomPhrase = VERIFICATION_PHRASES[Math.floor(Math.random() * VERIFICATION_PHRASES.length)];
+        setVerifiedPhrase(randomPhrase);
+    }, []);
     
     // Device Selection
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
@@ -224,11 +238,11 @@ export function HardwareCheck({
             });
             const resBody = await r.json();
             console.log("[HardwareCheck] Snapshot upload result:", resBody);
-            if (resBody.url) {
+            if (resBody.status === "queued" || resBody.url) {
                 snapshotDoneRef.current = true;
-                console.log("[HardwareCheck] Snapshot persisted successfully.");
+                console.log("[HardwareCheck] Snapshot queued successfully.");
             } else {
-                console.error("[HardwareCheck] Snapshot upload failed - no URL in response:", resBody);
+                console.error("[HardwareCheck] Snapshot upload failed - invalid response:", resBody);
             }
         } catch (err) {
             console.error("[HardwareCheck] Snapshot upload error:", err);
@@ -256,9 +270,9 @@ export function HardwareCheck({
         r.onresult = (event: any) => {
             if (verifiedRef.current) return;
             const transcript = event.results[event.results.length - 1][0].transcript.toLowerCase();
-            const targetPhrase = VERIFICATION_STEPS[currentStepRef.current].toLowerCase();
+            const targetPhrase = verifiedPhrase.toLowerCase();
             
-            // One-step phrase matching
+            // One-step phrase matching - check if they said the last word or if transcript is long enough
             if (transcript.includes(targetPhrase.split(" ").pop() || "") || transcript.length > 5) {
                 verifiedRef.current = true;
                 setMicVerified(true);
@@ -591,7 +605,7 @@ export function HardwareCheck({
                                     )}
                                 >
                                     <p className={cn("text-xl font-black leading-tight", micVerified ? "text-green-700" : "text-gray-900")}>
-                                        "{VERIFICATION_STEPS[0]}"
+                                        "{verifiedPhrase || "Loading phrase..."}"
                                     </p>
                                 </motion.div>
                             ) : (

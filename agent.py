@@ -1,5 +1,13 @@
 import os
+import sys
 import asyncio
+import random
+
+# Windows Compatibility for LiveKit
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+
 import logging
 import json
 import time
@@ -25,12 +33,9 @@ from livekit.agents import (
 from livekit.agents.voice.events import ConversationItemAddedEvent
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
-from livekit.plugins import openai, deepgram, cartesia, silero
+from livekit.plugins import openai, deepgram, cartesia, silero, sarvam
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-# Windows Compatibility for LiveKit
-if os.name == "nt":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 load_dotenv()
 
@@ -117,6 +122,17 @@ def build_tts(language: str = "en", model: str = CARTESIA_MODEL, voice_id: str =
     return cartesia.TTS(**tts_kwargs)
 
 
+def build_sarvam_tts(language: str = "en-IN", model: str = "bulbul:v3", voice_id: str = "shubh"):
+    lang_map = {"hi": "hi-IN", "en": "en-IN"}
+    mapped_lang = lang_map.get(language, language)
+    return sarvam.TTS(
+        target_language_code=mapped_lang,
+        model=model,
+        speaker=voice_id,
+        pace=1.0,
+    )
+
+
 def build_stt(language_code: str = "en-US", model: str = STT_MODEL):
     return deepgram.STT(
         model=model,
@@ -126,8 +142,18 @@ def build_stt(language_code: str = "en-US", model: str = STT_MODEL):
     )
 
 
+def build_sarvam_stt(language: str = "en-IN", model: str = "saaras:v3"):
+    lang_map = {"hi": "hi-IN", "en": "en-IN", "en-US": "en-IN", "hi-IN": "hi-IN"}
+    mapped_lang = lang_map.get(language, language)
+    return sarvam.STT(language=mapped_lang, model=model)
+
+
 def build_llm(model: str = LLM_MODEL, temperature: float = 0.7):
     return openai.LLM(model=model, temperature=temperature)
+
+
+def build_sarvam_llm(model: str = "sarvam-30b"):
+    return sarvam.LLM(model=model)
 
 
 def build_vad():
@@ -135,7 +161,21 @@ def build_vad():
 
 
 def prewarm(proc: JobProcess):
+    # Load VAD model (ONNX) — heaviest startup cost, must be synchronous
     proc.userdata["vad"] = build_vad()
+
+    # Pre-instantiate default STT/TTS plugins so their internal HTTP sessions
+    # and model configs are warm before the first job arrives.
+    # These are cheap to build; the real win is avoiding cold-start overhead
+    # inside entrypoint when the job is already waiting.
+    try:
+        proc.userdata["default_stt"] = build_stt()
+    except Exception:
+        pass
+    try:
+        proc.userdata["default_tts"] = build_tts()
+    except Exception:
+        pass
 
 
 def normalize_postgres_dsn(conn_str: str) -> str:
@@ -210,8 +250,12 @@ async def get_interview_context(app_id: str):
                     "ttsProvider": row["ttsProvider"] or "CARTESIA",
                     "cartesiaVoiceId": row["cartesiaVoiceId"] or CARTESIA_VOICE_ID,
                     "cartesiaModel": row["cartesiaModel"] or CARTESIA_MODEL,
+                    "sarvamModel": row["sarvamModel"] or "bulbul:v3",
+                    "sarvamVoice": row["sarvamVoice"] or "shubh",
                     "sttProvider": row["sttProvider"] or "DEEPGRAM",
                     "deepgramModel": row["deepgramModel"] or STT_MODEL,
+                    "sarvamSttModel": row["sarvamSttModel"] or "saarika:v2.5",
+                    "llmProvider": row["llmProvider"] or "OPENAI",
                     "llmModel": row["llmModel"] or LLM_MODEL,
                     "llmTemperature": float(row["llmTemperature"] or 0.7),
                 }
@@ -393,9 +437,6 @@ async def generate_interview_summary(
 async def entrypoint(ctx: JobContext):
     entry_started_at = time.perf_counter()
     logger.info(f"Connecting to room {ctx.room.name}")
-    logger.info(
-        f"Using Cartesia TTS model={CARTESIA_MODEL}, voice={CARTESIA_VOICE_ID}, speed={CARTESIA_VOICE_SPEED}"
-    )
 
     # PRE-START CHECK: Do not join if another agent is already here
     for p in ctx.room.remote_participants.values():
@@ -443,9 +484,17 @@ async def entrypoint(ctx: JobContext):
         transcript_lines.append(line)
         logger.debug(f"Transcript: {line}")
 
-    await ctx.connect()
-    
-    # Read Room Metadata Context instead of polling DB for heavy context strings
+    # Room name is available before connecting — derive app_id early so we can
+    # fire the DB fetch in parallel with the room connect handshake.
+    app_id = ctx.room.name.replace("interview_", "")
+
+    # Parallelize network-bound work: room connect + DB fetch run concurrently.
+    connect_task = asyncio.create_task(ctx.connect())
+    context_task = asyncio.create_task(get_interview_context(app_id))
+    await asyncio.gather(connect_task, context_task)
+    context = context_task.result()
+
+    # Read Room Metadata Context (available after connect)
     room_meta = {}
     try:
         if ctx.room.metadata:
@@ -456,10 +505,6 @@ async def entrypoint(ctx: JobContext):
     extracted_details = room_meta.get("extractedDetails", "{}")
     structured_resume = room_meta.get("structuredResume", "{}")
     ai_report = room_meta.get("aiReport", "{}")
-
-    # Room suffix is applicationId. We can fetch core primitives.
-    app_id = ctx.room.name.replace("interview_", "")
-    context = await get_interview_context(app_id)
 
     candidate_name = context["fullName"]
     job_title = context["jobTitle"]
@@ -473,21 +518,20 @@ async def entrypoint(ctx: JobContext):
     org_tts_provider = context.get("ttsProvider", "CARTESIA")
     org_cartesia_model = context.get("cartesiaModel") or CARTESIA_MODEL
     org_cartesia_voice = context.get("cartesiaVoiceId") or CARTESIA_VOICE_ID
+    org_sarvam_model = context.get("sarvamModel") or "bulbul:v3"
+    org_sarvam_voice = context.get("sarvamVoice") or "shubh"
+    
     org_stt_provider = context.get("sttProvider", "DEEPGRAM")
     org_deepgram_model = context.get("deepgramModel") or STT_MODEL
+    org_sarvam_stt_model = context.get("sarvamSttModel") or "saarika:v2.5"
+    
+    org_llm_provider = context.get("llmProvider") or "OPENAI"
     org_llm_model = context.get("llmModel") or LLM_MODEL
     org_llm_temperature = context.get("llmTemperature", 0.7)
 
-    if org_tts_provider == "SARVAM":
-        logger.warning("Sarvam TTS not installed; falling back to Cartesia")
-        org_tts_provider = "CARTESIA"
-    if org_stt_provider == "SARVAM":
-        logger.warning("Sarvam STT not installed; falling back to Deepgram")
-        org_stt_provider = "DEEPGRAM"
-
     logger.info(
-        f"Org models → STT: {org_deepgram_model}, TTS: {org_cartesia_model} "
-        f"voice={org_cartesia_voice}, LLM: {org_llm_model}"
+        f"Org models → STT: {org_deepgram_model if org_stt_provider != 'SARVAM' else org_sarvam_stt_model}, TTS: {org_cartesia_model if org_tts_provider != 'SARVAM' else org_sarvam_model} "
+        f"voice={org_cartesia_voice if org_tts_provider != 'SARVAM' else org_sarvam_voice}, LLM: {org_llm_model} ({org_llm_provider})"
     )
 
     # Formatting custom questions for the prompt
@@ -591,24 +635,25 @@ FOLLOW-UP DEPTH : Level {follow_up_depth}/5 — {depth_instruction}
   CORE BEHAVIORAL INSTRUCTIONS — READ EVERY LINE
 ════════════════════════════════════════════════════════
 
-## LANGUAGE & AUTO-DETECTION
-- The session language is set to: {interview_lang}.
-- If the candidate responds in a DIFFERENT language, immediately and naturally switch to their language for the rest of the interview. Never break the flow to announce the switch.
-- Handle code-switching (e.g., Hinglish, Franglais) naturally. Match their register.
-- Translate technical concepts from the JD into the candidate's language without losing precision.
-- NEVER respond in a language the candidate has not used or the session is not set to.
+## LANGUAGE ENFORCEMENT — STRICT
+- The session language is STRICTLY set to: {interview_lang}.
+- You MUST conduct the entire interview in {interview_lang}.
+- Even if the candidate speaks in a different language or uses code-switching, you must remain in {interview_lang} while remaining polite and professional.
+- Do NOT auto-detect or switch languages based on the candidate's input. Stay consistent.
 
 ## NATURAL VOICE DELIVERY — CRITICAL
 You are speaking, not writing. Every response must sound like natural, warm human speech.
 
-**Use natural fillers and transitions between thoughts:**
-- Opening a question : "So...", "Alright, let's talk about...", "That's really interesting — tell me more about...", "Great, so...", "Got it, and..."
-- Buying thinking time : "Mmhm...", "I see...", "Right, right...", "Of course..."
-- Acknowledging answers: "That makes a lot of sense.", "I appreciate you walking me through that.", "Absolutely, I can see why you approached it that way."
-- Gentle probing     : "Help me understand...", "Walk me through...", "What was going through your mind when...", "If you had to do it again, what would change?"
-- Transition phrases : "Now, shifting gears a little...", "On a related note...", "Building on what you just said..."
-- Encouragement      : "You're doing really well.", "That's a strong point.", "I love the way you framed that."
-- Nervous candidate  : "Take your time — there's no rush here.", "That's a completely fair answer, don't worry."
+**Embrace natural disfluency:**
+- Use "um", "uh", or "ah" occasionally, especially when starting a complex thought or transition.
+- Use natural fillers and transitions between thoughts:
+    - Opening a question : "So...", "Um, alright, let's talk about...", "That's really interesting — ah, tell me more about...", "Great, so...", "Got it, and..."
+    - Buying thinking time : "Mmhm...", "I see...", "Right, right...", "Uh, of course..."
+    - Acknowledging answers: "That makes a lot of sense.", "I appreciate you walking me through that.", "Absolutely, I can see why you approached it that way."
+    - Gentle probing     : "Help me understand...", "Walk me through...", "What was going through your mind when...", "If you had to do it again, what would change?"
+    - Transition phrases : "Now, shifting gears a little...", "On a related note...", "Building on what you just said..."
+    - Encouragement      : "You're doing really well.", "That's a strong point.", "I love the way you framed that."
+    - Nervous candidate  : "Take your time — there's no rush here.", "That's a completely fair answer, don't worry."
 
 **NEVER start a response with:**
 - A formal title ("Question 1:", "Topic:", "Area:")
@@ -697,11 +742,32 @@ The candidate may be smarter, more experienced, or more knowledgeable than you i
                 return t
         return ""
 
+    if org_stt_provider == "SARVAM":
+        stt_plugin = build_sarvam_stt(language=lang_codes["stt"], model=org_sarvam_stt_model)
+    else:
+        stt_plugin = build_stt(language_code=lang_codes["stt"], model=org_deepgram_model)
+
+    if org_tts_provider == "SARVAM":
+        tts_plugin = build_sarvam_tts(language=lang_codes["tts"], model=org_sarvam_model, voice_id=org_sarvam_voice)
+        # Pre-open a fresh WebSocket in the pool now, so the first synthesis turn
+        # doesn't race against a stale connection returned from the pool.
+        try:
+            tts_plugin.prewarm()
+        except Exception:
+            pass
+    else:
+        tts_plugin = build_tts(language=lang_codes["tts"], model=org_cartesia_model, voice_id=org_cartesia_voice)
+
+    if org_llm_provider == "SARVAM":
+        llm_plugin = build_sarvam_llm(model=org_llm_model)
+    else:
+        llm_plugin = build_llm(model=org_llm_model, temperature=org_llm_temperature)
+
     session = AgentSession(
         vad=vad_instance,
-        stt=build_stt(language_code=lang_codes["stt"], model=org_deepgram_model),
-        llm=build_llm(model=org_llm_model, temperature=org_llm_temperature),
-        tts=build_tts(language=lang_codes["tts"], model=org_cartesia_model, voice_id=org_cartesia_voice),
+        stt=stt_plugin,
+        llm=llm_plugin,
+        tts=tts_plugin,
         turn_handling=TurnHandlingOptions(
             endpointing=EndpointingOptions(
                 min_delay=0.3,
@@ -878,6 +944,53 @@ The candidate may be smarter, more experienced, or more knowledgeable than you i
 
         except Exception as e:
             logger.warning(f"[TRANSCRIPT] Event parse error: {e}")
+
+    # --- Thinking Filler Logic ---
+    filler_task: Optional[asyncio.Task] = None
+    LANG_FILLERS = {
+        "English": ["Hmm...", "I see...", "Let's see...", "Interesting...", "Right...", "Got it...", "Okay, ah..."],
+        "Hindi": ["हम्म...", "अच्छा...", "देखते हैं...", "जी...", "ठीक है...", "समझ गया..."],
+        "Spanish": ["Hmm...", "Ya veo...", "Veamos...", "Interesante...", "Bien...", "Entiendo..."],
+        "French": ["Hmm...", "Je vois...", "Voyons...", "Intéressant...", "D'accord...", "Je comprends..."],
+        "German": ["Hmm...", "Ich verstehe...", "Mal sehen...", "Interessant...", "Richtig...", "Alles klar..."],
+        "Mandarin": ["嗯...", "我知道了...", "让我想想...", "很有趣...", "好的...", "明白了..."],
+        "Japanese": ["ふむ...", "なるほど...", "そうですね...", "興味深いですね...", "わかりました...", "ええと..."],
+        "Korean": ["흠...", "그렇군요...", "어디 보자...", "흥미롭네요...", "네...", "알겠습니다..."],
+        "Arabic": ["همم...", "أرى...", "دعنا نرى...", "مثير للاهتمام...", "حسناً...", "فهمت..."],
+        "Portuguese": ["Hmm...", "Entendo...", "Vejamos...", "Interessante...", "Certo...", "Compreendo..."],
+        "Russian": ["Хм...", "Ясно...", "Давайте посмотрим...", "Интересно...", "Хорошо...", "Понятно..."],
+    }
+
+    @session.on("user_speech_committed")
+    def on_user_speech_committed(_msg):
+        nonlocal filler_task
+        if filler_task:
+            filler_task.cancel()
+        
+        async def play_filler_after_delay():
+            try:
+                # Wait 700ms. If the agent hasn't started speaking by then, play a filler.
+                await asyncio.sleep(0.7)
+                
+                fillers = LANG_FILLERS.get(interview_lang, LANG_FILLERS["English"])
+                filler = random.choice(fillers)
+                
+                logger.info(f"[FILLER] LLM taking a moment ({interview_lang}); playing filler: {filler}")
+                await session.say(filler, allow_interruptions=True)
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"[FILLER] Failed to play filler: {e}")
+
+        filler_task = asyncio.get_event_loop().create_task(play_filler_after_delay())
+
+    @session.on("agent_speech_started")
+    def on_agent_speech_started():
+        nonlocal filler_task
+        if filler_task:
+            logger.debug("[FILLER] Agent started speaking, canceling filler task")
+            filler_task.cancel()
+            filler_task = None
 
     # Wait for participant to join so we have their identity for tracking.
     # Keep waiting during hardware check and handle room-disconnect gracefully.

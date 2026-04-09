@@ -170,7 +170,7 @@ export async function POST(req: NextRequest) {
             });
 
             await egressClient.startRoomCompositeEgress(roomName, { file: fileOutput }, {
-                layout: "speaker",
+                layout: "grid",
                 encodingOptions: EncodingOptionsPreset.H264_720P_30,
                 audioOnly: false,
             });

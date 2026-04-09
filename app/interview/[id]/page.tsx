@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useState, use, useEffect, useRef, useCallback, memo } from "react";
+import { Suspense, useState, use, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Maximize, Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -158,20 +158,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         return () => window.clearInterval(timer);
     }, [phase]);
 
-    // Effect 2: Phase transition — fires whenever countdown or readiness changes
+    // Effect 2: Phase transition — fires immediately when agent is ready
     useEffect(() => {
         if (phase !== "launching") return;
-        if (isAgentReady && (launchCountdown ?? 99) <= 1) {
+        if (isAgentReady) {
             setPhase("interview");
         }
-    }, [phase, isAgentReady, launchCountdown]);
-
-    // Effect 3: Jump-cut — snap to 3 if agent joins while countdown is still counting down
-    useEffect(() => {
-        if (phase === "launching" && isAgentReady && launchCountdown !== null && launchCountdown > 3) {
-            setLaunchCountdown(3);
-        }
-    }, [isAgentReady, phase, launchCountdown]);
+    }, [phase, isAgentReady]);
 
     const isExitUnlocked = phase === "completed" || timerExpired;
     const isInterviewLocked = phase === "interview" && !isExitUnlocked;
@@ -203,8 +196,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         const cached = sessionStorage.getItem(cacheKey);
         if (cached) {
             try {
-                const parsed = JSON.parse(cached) as { token?: string; url?: string; duration?: number };
-                if (parsed.token && parsed.url) {
+                const parsed = JSON.parse(cached) as { token?: string; url?: string; duration?: number; timestamp?: number };
+                // Only reuse cache if it's less than 5 minutes old
+                if (parsed.token && parsed.url && parsed.timestamp && (Date.now() - parsed.timestamp < 5 * 60 * 1000)) {
                     setToken(parsed.token);
                     setServerUrl(parsed.url);
                     if (typeof parsed.duration === "number" && parsed.duration > 0) {
@@ -214,6 +208,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     setShouldConnect(true);
                     console.log("Warm connection restored from cache.");
                     return true;
+                } else {
+                    sessionStorage.removeItem(cacheKey);
                 }
             } catch {
                 sessionStorage.removeItem(cacheKey);
@@ -241,6 +237,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         token: data.token,
                         url: data.serverUrl,
                         duration: data.duration,
+                        timestamp: Date.now()
                     }));
 
                     setToken(data.token);
@@ -278,22 +275,26 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
     };
 
-    // Token is fetched on demand when user clicks Start Interview.
-    // We do NOT pre-fetch here because that would dispatch the agent before the
-    // candidate is ready, and the stale token in sessionStorage would then skip
-    // dispatch on subsequent attempts.
+    // Dispatch the agent as early as possible — on initial page load,
+    // so the worker has maximum time to initialize while the user completes
+    // the hardware check. ensureWarmConnection is idempotent (deduped + cached).
+    useEffect(() => {
+        ensureWarmConnection().catch(() => {});
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // intentionally run once on mount
+
+    // Also retry if the user somehow reaches "check" phase without a token yet
+    useEffect(() => {
+        if (phase === "check") {
+            ensureWarmConnection().catch(() => {});
+        }
+    }, [phase, ensureWarmConnection]);
+
+    // Token is fetched on demand or pre-warmed.
 
     const handleHardwareComplete = async () => {
         setIsJoining(true);
         setJoinError(null);
-
-        // Always clear cached token so the API is called fresh.
-        // This ensures a new dispatch fires every time the candidate starts.
-        const cacheKey = `lk_token_${id}`;
-        sessionStorage.removeItem(cacheKey);
-        setToken(null);
-        setServerUrl(null);
-        setShouldConnect(false);
 
         await requestFullscreenMode();
 
@@ -310,13 +311,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 setTimerExpired(false);
             }
 
-            setPhase("launching");
-            setLaunchCountdown(isAgentReady ? 3 : 10);
+            setPhase("interview"); // Immediately jump to interview room
             
         } catch (err) {
             console.error("Phase transition failed:", err);
             setJoinError(err instanceof Error ? err.message : "Unable to start interview.");
-            setLaunchCountdown(null);
             setPhase("check");
         } finally {
             setIsJoining(false);
@@ -636,6 +635,39 @@ function InterviewRoomContent({
     const localCameraTrack =
         cameraTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera) || null;
 
+    const groupedTranscriptions = useMemo(() => {
+        const groups: {
+            id: string;
+            identity: string;
+            isCandidate: boolean;
+            speakerName: string;
+            segments: Array<{ text: string; isFinal: boolean; id: string }>;
+        }[] = [];
+
+        for (const segment of transcriptions) {
+            if (!segment.text.trim()) continue;
+            const identity = (segment as any).participantInfo?.identity || "";
+            const isCandidate = identity === localIdentity;
+            const isFinal = (segment as any).streamInfo?.attributes?.["lk.transcription_final"] === "true" || (segment as any).isFinal === true;
+            const id = (segment as any).streamInfo?.id || (segment as any).id || Math.random().toString();
+            
+            const lastGroup = groups[groups.length - 1];
+            if (lastGroup && lastGroup.identity === identity) {
+                // If the same speaker continues, append to group
+                lastGroup.segments.push({ text: segment.text, isFinal, id });
+            } else {
+                groups.push({
+                    id,
+                    identity,
+                    isCandidate,
+                    speakerName: isCandidate ? "You" : "Interviewer",
+                    segments: [{ text: segment.text, isFinal, id }]
+                });
+            }
+        }
+        return groups;
+    }, [transcriptions, localIdentity]);
+
     // Send one ready signal when interview becomes active and connected.
     useEffect(() => {
         if (connectionState !== "connected" || !localParticipant || !isInterviewActive) {
@@ -772,23 +804,58 @@ function InterviewRoomContent({
             <div className="flex-1 flex flex-col items-center justify-center p-8 relative">
                 <motion.div 
                     animate={{ 
-                        scale: isAiSpeaking ? [1, 1.05, 1] : [1, 1.02, 1],
+                        scale: isAiSpeaking ? [1, 1.04, 1.01, 1.06, 1] : [1, 1.01, 1],
+                        borderColor: isAiSpeaking ? "rgba(249, 115, 34, 0.6)" : "rgba(249, 115, 34, 0.2)",
                     }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                    className="w-56 h-56 rounded-full border-2 border-orange-500/20 flex items-center justify-center relative bg-black/40 backdrop-blur-3xl shadow-[0_0_120px_rgba(249,115,22,0.1)]"
+                    transition={{ 
+                        duration: isAiSpeaking ? 0.8 : 4, 
+                        repeat: Infinity,
+                        ease: "easeInOut"
+                    }}
+                    className="w-64 h-64 rounded-full border-2 flex items-center justify-center relative bg-black/40 backdrop-blur-3xl shadow-[0_0_120px_rgba(249,115,22,0.1)] group"
                 >
+                    {/* Premium Organic Voice Halos (Animated Rings) */}
                     <AnimatePresence>
-                        {isAiSpeaking ? (
-                            <div className="flex items-end gap-1.5 h-12">
-                                <SpeakingWaves color="#F97316" />
-                            </div>
-                        ) : (
-                            <Sparkles className="w-14 h-14 text-orange-500/20 animate-pulse" />
+                        {isAiSpeaking && (
+                            <>
+                                {[...Array(3)].map((_, i) => (
+                                    <motion.div
+                                        key={i}
+                                        initial={{ opacity: 0, scale: 1 }}
+                                        animate={{ opacity: [0, 0.4, 0], scale: [1, 1.5 + (i * 0.2)] }}
+                                        exit={{ opacity: 0 }}
+                                        transition={{ 
+                                            duration: 2, 
+                                            repeat: Infinity, 
+                                            delay: i * 0.6,
+                                            ease: "easeOut" 
+                                        }}
+                                        className="absolute inset-0 rounded-full border-2 border-orange-500/30 pointer-events-none"
+                                    />
+                                ))}
+                            </>
                         )}
                     </AnimatePresence>
 
+                    {/* Image Container */}
+                    <div className="absolute inset-2 rounded-full overflow-hidden border-4 border-zinc-800/50 shadow-inner">
+                        <img 
+                            src="/avatars/jordan.png" 
+                            alt="AI Interviewer" 
+                            className={cn(
+                                "w-full h-full object-cover transition-all duration-700",
+                                isAiSpeaking ? "scale-110 contrast-[1.1] brightness-[1.05]" : "scale-100 grayscale-[0.2] brightness-90"
+                            )}
+                        />
+                        {/* Gradient Overlay for Depth */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
+                    </div>
+
                     <div className="absolute -bottom-16 flex flex-col items-center gap-2">
-                        <p className="text-[10px] font-black uppercase tracking-[0.5em] text-zinc-500 transition-all">
+                        <p className={cn(
+                            "text-[10px] font-black uppercase tracking-[0.5em] transition-all duration-500",
+                            isAiSpeaking ? "text-orange-500 translate-y-1" : "text-zinc-500"
+                        )}>
                             {isAiSpeaking ? "Interviewer Speaking" : (aiParticipantTrack ? "Interviewer Listening" : "Waiting for Interviewer...")}
                         </p>
                         {isAiSpeaking && (
@@ -797,8 +864,8 @@ function InterviewRoomContent({
                                 animate={{ opacity: 1, scale: 1 }}
                                 className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full"
                             >
-                                <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
-                                <span className="text-[8px] font-black uppercase tracking-widest text-green-500">Live Voice Signal</span>
+                                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                                <span className="text-[8px] font-black uppercase tracking-widest text-green-500">Live Voice Stream</span>
                             </motion.div>
                         )}
                     </div>
@@ -812,31 +879,25 @@ function InterviewRoomContent({
                 </div>
                 <div ref={transcriptPanelRef} className="h-[calc(100%-64px)] overflow-y-auto px-4 py-4 space-y-3">
                     <AnimatePresence initial={false}>
-                        {transcriptions.map((segment) => {
-                            // TextStreamData shape: { text, participantInfo: { identity }, streamInfo: TextStreamInfo }
-                            const isCandidate = segment.participantInfo.identity === localIdentity;
-                            const speakerName = isCandidate ? "You" : "Interviewer";
-                            const isFinal = segment.streamInfo.attributes?.["lk.transcription_final"] === "true";
-                            const segmentKey = segment.streamInfo.id;
-
-                            // Only render segments that actually have text
-                            if (!segment.text.trim()) return null;
-
+                        {groupedTranscriptions.map((group) => {
+                            const isGroupFinal = group.segments.every(s => s.isFinal);
+                            const combinedText = group.segments.map(s => s.text.trim()).join(" ");
+                            
                             return (
                                 <motion.div
-                                    key={segmentKey}
+                                    key={group.id}
                                     initial={{ opacity: 0, y: 22 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: -16 }}
                                     transition={{ duration: 0.35, ease: "easeOut" }}
-                                    className={cn("max-w-[88%] rounded-2xl px-4 py-2.5 border", isCandidate
+                                    className={cn("max-w-[88%] rounded-2xl px-4 py-2.5 border", group.isCandidate
                                         ? "ml-auto bg-orange-500/12 border-orange-400/30"
                                         : "mr-auto bg-zinc-800/80 border-zinc-700/80")}
                                 >
-                                    <p className={cn("text-[9px] uppercase tracking-[0.2em] font-black mb-1", isCandidate ? "text-orange-300" : "text-zinc-400")}>
-                                        {speakerName}{!isFinal && <span className="opacity-50 ml-1">•••</span>}
+                                    <p className={cn("text-[9px] uppercase tracking-[0.2em] font-black mb-1", group.isCandidate ? "text-orange-300" : "text-zinc-400")}>
+                                        {group.speakerName}{!isGroupFinal && <span className="opacity-50 ml-1">•••</span>}
                                     </p>
-                                    <StreamingText text={segment.text} className="text-[13px] leading-relaxed text-white font-semibold" />
+                                    <StreamingText text={combinedText} className="text-[13px] leading-relaxed text-white font-semibold" />
                                 </motion.div>
                             );
                         })}
@@ -907,21 +968,6 @@ export default InterviewPage;
 
 // ── Inlined Components ────────────────────────────────────────
 
-function SpeakingWaves({ color = "#F97316" }: { color?: string }) {
-    return (
-        <>
-            {[...Array(5)].map((_, i) => (
-                <motion.div
-                    key={i}
-                    animate={{ height: [10, 40, 15, 30, 10] }}
-                    transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
-                    style={{ backgroundColor: color }}
-                    className="w-1.5 rounded-full"
-                />
-            ))}
-        </>
-    );
-}
 
 function VideoTrack({ trackRef }: { trackRef: TrackReference }) {
     const videoRef = useRef<HTMLVideoElement>(null);

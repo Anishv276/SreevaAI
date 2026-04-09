@@ -595,9 +595,11 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                     <option value="gpt-4o">GPT-4o (Recommended)</option>
                                     <option value="gpt-4o-mini">GPT-4o-mini</option>
                                     <option value="gpt-4.1">GPT-4.1 (Next Gen)</option>
+                                    <option value="gpt-4.1-mini">GPT-4.1-mini</option>
                                     <option value="o1-preview">o1-preview</option>
                                     <option value="o1-mini">o1-mini</option>
                                     <option value="gpt-5.1">GPT-5.1 (Research)</option>
+                                    <option value="gpt-5.1-mini">GPT-5.1-mini</option>
                                     <option value="gpt-5.0">GPT-5.0 (Frontier)</option>
                                     <option value="gpt-4-turbo">GPT-4 Turbo</option>
                                     <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>

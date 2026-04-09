@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
         // The applicationId is everything before the last _timestamp
         // Since cuid IDs have no underscores, we can safely extract it
         const applicationId = match[1];
-        const downloadUrl = egressInfo.fileResults?.[0]?.downloadUrl ?? "";
+        const downloadUrl = (egressInfo.fileResults?.[0] as any)?.downloadUrl ?? egressInfo.fileResults?.[0]?.location ?? "";
         const durationSeconds = Number(egressInfo.fileResults?.[0]?.duration ?? 0) / 1_000_000_000; // proto: nanoseconds
 
         if (!applicationId || !downloadUrl) {

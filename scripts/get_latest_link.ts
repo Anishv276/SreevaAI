@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 async function main() {
   const latestApplication = await prisma.application.findFirst({
     orderBy: { createdAt: "desc" },
-    include: { drive: true },
+    include: { drive: true, interview: true },
   });
 
   if (!latestApplication) {
@@ -13,7 +13,7 @@ async function main() {
     return;
   }
 
-  const interviewLink = `http://localhost:3000/interview/${latestApplication.id}`;
+  const interviewLink = `http://localhost:3000/interview/${latestApplication.id}${latestApplication.interview ? `?token=${latestApplication.interview.accessToken}` : ''}`;
   
   console.log("--- LATEST CANDIDATE ---");
   console.log(`Name: ${latestApplication.fullName}`);
