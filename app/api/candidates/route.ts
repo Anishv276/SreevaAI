@@ -16,16 +16,17 @@ export async function GET(request: Request) {
         const startDate = searchParams.get("startDate");
         const endDate = searchParams.get("endDate");
         const search = searchParams.get("search")?.trim() || "";
-        const status = searchParams.get("status") || "all";
+        const resumeStatus = searchParams.get("resumeStatus") || searchParams.get("status") || "all";
+        const interviewStatus = searchParams.get("interviewStatus") || "all";
+        const hiringStatus = searchParams.get("hiringStatus") || "all";
         const page = parseInt(searchParams.get("page") || "1");
         const limit = parseInt(searchParams.get("limit") || "10");
         const offset = (page - 1) * limit;
 
         const baseSelect = `
-            SELECT a.*, d.title AS "driveTitle", i.status AS "interviewStatusRaw"
+            SELECT a.*, d.title AS "driveTitle", d.location AS "driveLocation"
             FROM "Application" a
             JOIN "Drive" d ON d.id = a."driveId"
-            LEFT JOIN "Interview" i ON i."applicationId" = a.id
         `;
 
         // ── Security & Filtering ───────────────────
@@ -55,9 +56,19 @@ export async function GET(request: Request) {
             queryParams.push(end);
         }
 
-        if (status && status !== "all") {
-            statusClause += ` AND a."status" = $${paramIndex++}`;
-            queryParams.push(status);
+        if (resumeStatus && resumeStatus !== "all") {
+            statusClause += ` AND a."resumeStatus" = $${paramIndex++}`;
+            queryParams.push(resumeStatus.toLowerCase());
+        }
+
+        if (interviewStatus && interviewStatus !== "all") {
+            statusClause += ` AND a."interviewStatus" = $${paramIndex++}`;
+            queryParams.push(interviewStatus.toLowerCase());
+        }
+
+        if (hiringStatus && hiringStatus !== "all") {
+            statusClause += ` AND a."hiringStatus" = $${paramIndex++}`;
+            queryParams.push(hiringStatus.toLowerCase());
         }
 
         if (search) {
@@ -66,78 +77,67 @@ export async function GET(request: Request) {
             paramIndex++;
         }
 
-        const candidates = await prisma.$queryRawUnsafe(
-            `${baseSelect}
+        const dataQuery = `${baseSelect}
             WHERE d."orgId" = ${driveId ? "$2" : "$1"}
             ${driveId ? 'AND a."driveId" = $1::uuid' : ""}
             ${dateClause}
             ${statusClause}
             ${searchClause}
             ORDER BY a."createdAt" DESC
-            LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
-            ...queryParams, limit, offset
-        );
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
 
-        // Get total count for pagination
         const countQuery = `
-            SELECT COUNT(*)::INT 
-            FROM "Application" a 
-            JOIN "Drive" d ON d.id = a."driveId" 
+            SELECT COUNT(*)::INT
+            FROM "Application" a
+            JOIN "Drive" d ON d.id = a."driveId"
             WHERE d."orgId" = ${driveId ? "$2" : "$1"}
             ${driveId ? 'AND a."driveId" = $1::uuid' : ""}
             ${dateClause}
             ${statusClause}
             ${searchClause}
         `;
-        
-        const countResult = await prisma.$queryRawUnsafe<any[]>(countQuery, ...queryParams);
+
+
+        const [candidates, countResult, statsResult] = await Promise.all([
+            prisma.$queryRawUnsafe(dataQuery, ...queryParams, limit, offset),
+            prisma.$queryRawUnsafe<any[]>(countQuery, ...queryParams),
+            // Run stats as a separate simple query in parallel
+            prisma.$queryRawUnsafe<any[]>(`
+                SELECT
+                    COUNT(*) FILTER (WHERE LOWER(a."resumeStatus") = 'shortlisted')::INT AS shortlisted,
+                    COUNT(*) FILTER (WHERE LOWER(a."resumeStatus") = 'rejected')::INT AS rejected,
+                    COUNT(*) FILTER (WHERE LOWER(a."hiringStatus") = 'hired')::INT AS hired,
+                    COUNT(*) FILTER (WHERE LOWER(a."hiringStatus") = 'not hired')::INT AS not_hired,
+                    COUNT(*) FILTER (WHERE LOWER(a."interviewStatus") = 'inprogress')::INT AS "interviewRunning",
+                    COUNT(*) FILTER (WHERE LOWER(a."interviewStatus") = 'pending')::INT AS "interviewPending",
+                    COUNT(*) FILTER (WHERE LOWER(a."interviewStatus") = 'finished')::INT AS "interviewCompleted"
+                FROM "Application" a
+                JOIN "Drive" d ON d.id = a."driveId"
+                LEFT JOIN "Interview" i ON i."applicationId" = a.id
+                WHERE d."orgId" = $1
+                ${driveId && driveId !== "all" ? 'AND a."driveId" = $2::uuid' : ""}
+            `, ...(driveId && driveId !== "all" ? [orgId, driveId] : [orgId]))
+        ]);
+
         const total = countResult[0]?.count || 0;
+        const statsRow = (statsResult as any[])[0] ?? {};
+
+        if ((candidates as any[]).length > 0) {
+            console.log("[candidates] first row keys:", Object.keys((candidates as any[])[0]));
+        }
 
         const formattedCandidates = (candidates as any[]).map((app: any) => {
-            const interviewStateRaw = String(app.interviewStatusRaw || "").toUpperCase();
-            const appStatusUpper = String(app.status || "").toUpperCase();
-            const isInterviewStage = [
-                "SHORTLISTED",
-                "ACCEPTED",
-                "INTERVIEW IN PROGRESS",
-                "INTERVIEWING",
-                "INTERVIEW_IN_PROGRESS",
-                "COMPLETED",
-                "INTERVIEW COMPLETED",
-                "INTERVIEW_COMPLETED",
-            ].includes(appStatusUpper);
-
-            let displayStatus = app.status;
-            let interviewStatus = "Not Selected";
-            
-            if (isInterviewStage) {
-                if (!interviewStateRaw || interviewStateRaw === "PENDING") {
-                    displayStatus = "Interview Pending";
-                    interviewStatus = "Interview Pending";
-                } else if (interviewStateRaw === "IN_PROGRESS" || interviewStateRaw === "STARTED") {
-                    displayStatus = "Interview In Progress";
-                    interviewStatus = "Interview In Progress";
-                } else if (interviewStateRaw === "COMPLETED") {
-                    displayStatus = "Interview Completed";
-                    interviewStatus = "Interview Completed";
-                } else {
-                    displayStatus = "Shortlisted";
-                    interviewStatus = "Interview Pending";
-                }
-            }
-
-            const normalizedStatus = String(displayStatus || "").toUpperCase();
-            const mainStatus = normalizedStatus === "REJECTED" ? "Rejected" : "Shortlisted";
-
             return {
                 id: app.id,
                 driveId: app.driveId,
                 name: app.fullName,
                 email: app.email,
-                role: app.driveTitle || "Unknown Role",
+                role: app.driveTitle || app.drivetitle || "Unknown Role",
+                location: app.driveLocation || app.drivelocation || "-",
                 score: app.aiScore || 0,
-                status: mainStatus,
-                interviewStatus,
+                status: app.resumeStatus,
+                interviewStatus: app.interviewStatus,
+                hiringStatus: app.hiringStatus,
                 date: new Date(app.createdAt).toLocaleDateString(),
                 experienceYears: app.experienceYears,
                 relevantYears: app.relevantYears,
@@ -152,6 +152,14 @@ export async function GET(request: Request) {
                 page,
                 limit,
                 totalPages: Math.ceil(total / limit)
+            },
+            stats: {
+                shortlisted: Number(statsRow.shortlisted ?? 0),
+                rejected: Number(statsRow.rejected ?? 0),
+                hired: Number(statsRow.hired ?? 0),
+                interviewRunning: Number(statsRow.interviewRunning ?? 0),
+                interviewPending: Number(statsRow.interviewPending ?? 0),
+                interviewCompleted: Number(statsRow.interviewCompleted ?? 0),
             }
         });
     } catch (error) {
@@ -258,7 +266,9 @@ export async function POST(request: Request) {
                 relevantYears: relevantYears || null,
                 structuredResume: structuredResume ? JSON.stringify(structuredResume) : null,
                 submissionData: submissionData as any,
-                status: "Pending",
+                resumeStatus: "pending",
+                interviewStatus: "pending",
+                hiringStatus: "pending",
                 aiScore: null,
                 aiReport: null,
             },

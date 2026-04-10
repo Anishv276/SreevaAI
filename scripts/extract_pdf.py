@@ -289,23 +289,24 @@ def normalize_skill(skill):
     return aliases.get(s, s)
 
 
-def compute_score(jd_data, resume_data):
+def compute_score(jd_data, resume_data, threshold=70):
     """
-    100% deterministic scoring.
-    Same input = same score. Every single time.
+    Deterministic scoring engine. Same input = same score, every time.
     LLM never touches this function.
 
-    Score breakdown:
-      Must-have skills    : 55 pts
-      Experience          : 25 pts
+    Score breakdown (100 pts total):
+      Must-have skills    : 45 pts  (depth-weighted: keyword + evidence quality)
+      Experience          : 25 pts  (years + seniority alignment)
       Good-to-have skills : 10 pts
-      Career signals      : 10 pts
+      Career quality      : 10 pts  (progression, red flags, impact signals)
+      Domain fit          : 10 pts  (JD scoring hints, domain skills, non-tech roles)
+
+    threshold: per-drive value from DB. Scores >= threshold = Shortlisted.
     """
 
-    # ── Pull data ──────────────────────────────────────────────
+    # ── Pull JD data ───────────────────────────────────────────
     jd_skills = jd_data.get("skills", {})
 
-    # Handle both old format (list of strings) and new format (list of objects)
     raw_must = jd_skills.get("must_have", [])
     if raw_must and isinstance(raw_must[0], dict):
         jd_must_have = [(s["skill"], s.get("weight", "high")) for s in raw_must]
@@ -321,13 +322,24 @@ def compute_score(jd_data, resume_data):
     jd_min_years = jd_data.get("experience", {}).get("min_years")
     jd_max_years = jd_data.get("experience", {}).get("max_years")
     jd_seniority = jd_data.get("role_context", {}).get("seniority")
-    jd_deal_breakers = jd_data.get("deal_breakers", [])
+    has_tech = jd_data.get("has_technical_requirements", True)
+    scoring_hints = jd_data.get("scoring_hints", {})
 
+    # ── Pull resume data ───────────────────────────────────────
     resume_skills = resume_data.get("skills", {})
 
-    # Handle both old format (strings) and new format (objects)
     raw_tech = resume_skills.get("technical", [])
+    # Build skill → evidence map for depth scoring
+    skill_evidence_map = {}
     if raw_tech and isinstance(raw_tech[0], dict):
+        for s in raw_tech:
+            name = s.get("skill", "")
+            evidence = s.get("evidence", "mentioned in resume")
+            yrs = s.get("years_of_use")
+            if name:
+                skill_evidence_map[normalize_skill(name)] = {
+                    "evidence": evidence, "years": yrs, "confidence": "high"
+                }
         resume_technical = [s["skill"] for s in raw_tech]
     else:
         resume_technical = raw_tech
@@ -336,11 +348,18 @@ def compute_score(jd_data, resume_data):
     resume_tools = []
     if raw_tools and isinstance(raw_tools[0], dict):
         for s in raw_tools:
-            # CONTRACT: tools with confidence="low" or tool=null are EXCLUDED
             tool_name = s.get("tool")
             confidence = s.get("confidence", "high")
+            evidence = s.get("evidence", "mentioned in resume")
             if tool_name and confidence != "low":
                 resume_tools.append(tool_name)
+                norm = normalize_skill(tool_name)
+                if norm not in skill_evidence_map:
+                    skill_evidence_map[norm] = {
+                        "evidence": evidence,
+                        "years": None,
+                        "confidence": confidence
+                    }
     else:
         resume_tools = raw_tools
 
@@ -349,46 +368,65 @@ def compute_score(jd_data, resume_data):
     candidate_seniority = cv_exp.get("seniority_level")
     career_pattern = resume_data.get("career_progression", {}).get("pattern", "unknown")
     resume_red_flags = resume_data.get("red_flags", [])
+    work_history = resume_data.get("work_history", [])
 
-    has_tech = jd_data.get("has_technical_requirements", True)
-
-    # ── Build comprehensive resume skill pool ─────────────────
-    # Source 1: explicit skills section (technical + tools)
+    # ── Build comprehensive resume skill pool ──────────────────
     all_resume_skills = list(resume_technical) + resume_tools
 
-    # Source 2: work_history[].technologies_used — candidates often list skills
-    # only in job bullets, not in a dedicated skills section.
-    for job in resume_data.get("work_history", []):
+    for job in work_history:
         for tech in job.get("technologies_used", []):
             if tech and isinstance(tech, str):
                 all_resume_skills.append(tech)
+                # Work history evidence = stronger signal
+                norm = normalize_skill(tech)
+                if norm not in skill_evidence_map:
+                    skill_evidence_map[norm] = {
+                        "evidence": job.get("company", "work history"),
+                        "years": None,
+                        "confidence": "high"
+                    }
 
-    # Source 3: projects[].technologies — personal/side projects frequently
-    # surface skills not in work history.
     for proj in resume_data.get("projects", []):
         for tech in proj.get("technologies", []):
             if tech and isinstance(tech, str):
                 all_resume_skills.append(tech)
+                norm = normalize_skill(tech)
+                if norm not in skill_evidence_map:
+                    skill_evidence_map[norm] = {
+                        "evidence": proj.get("name", "project"),
+                        "years": None,
+                        "confidence": "medium"
+                    }
 
-    # Source 4: resume-level keywords (catch-all)
     for kw in resume_data.get("keywords", []):
         if kw and isinstance(kw, str):
             all_resume_skills.append(kw)
 
-    # Source 5: domain_skills — always for non-tech roles, also for tech roles
-    # (e.g. a FinTech engineer may have "risk modelling" as a domain skill)
     domain_skills = resume_skills.get("domain_skills", [])
     all_resume_skills.extend([s for s in domain_skills if s])
 
-    # Deduplicate after normalization so we don't double-count
+    # Deduplicate
     resume_normalized = {}
     for s in all_resume_skills:
         norm = normalize_skill(str(s))
         if norm and norm not in resume_normalized:
             resume_normalized[norm] = s
 
-    # ── 1. Must-have skill matching (55 pts) ──────────────────
-    # Weight map: critical=3, high=2, medium=1
+    # Full resume text for text-based matching
+    resume_all_text = " ".join(filter(None, [
+        resume_data.get("candidate_summary", ""),
+        resume_data.get("career_progression", {}).get("analysis", ""),
+        " ".join(kw for kw in resume_data.get("keywords", []) if kw),
+        " ".join(
+            " ".join(str(t) for t in job.get("technologies_used", []))
+            for job in work_history
+        ),
+        " ".join(s for s in domain_skills if s),
+    ])).lower()
+
+    # ── 1. Must-have skill matching (45 pts) ──────────────────
+    # Weight: critical=3, high=2, medium=1
+    # Depth multiplier: skill backed by work history evidence gets 1.2x
     weight_map = {"critical": 3, "high": 2, "medium": 1}
 
     matched_must = []
@@ -396,67 +434,106 @@ def compute_score(jd_data, resume_data):
     total_weight = 0
     matched_weight = 0
 
-    has_tech = jd_data.get("has_technical_requirements", True)
-
     for skill, weight in jd_must_have:
         w = weight_map.get(weight, 2)
         total_weight += w
-        if normalize_skill(str(skill)) in resume_normalized:
+        norm = normalize_skill(str(skill))
+        if norm in resume_normalized:
             matched_must.append(skill)
-            matched_weight += w
+            # Depth bonus: if evidenced in work history = 1.2x, project = 1.1x, medium confidence = 1.0x
+            ev = skill_evidence_map.get(norm, {})
+            if ev.get("confidence") == "high" and ev.get("evidence", "") not in ("mentioned in resume", ""):
+                matched_weight += w * 1.2
+            elif ev.get("confidence") == "medium":
+                matched_weight += w * 1.0
+            else:
+                matched_weight += w * 0.85  # mentioned only, no context
         else:
             missing_must.append(skill)
 
     if total_weight > 0:
-        skills_score = round((matched_weight / total_weight) * 55)
+        skills_score = round((matched_weight / total_weight) * 45)
     elif not has_tech:
-        # Non-technical role with no specific technical must-haves
-        skills_score = 45  # Good baseline for non-tech roles
+        # Non-tech role: score domain_skills against JD keywords instead of flat baseline
+        jd_keywords = [k for k in jd_data.get("keywords", []) if k]
+        if jd_keywords:
+            kw_matched = sum(1 for k in jd_keywords if normalize_skill(k) in resume_normalized or k.lower() in resume_all_text)
+            skills_score = round((kw_matched / len(jd_keywords)) * 45)
+            for k in jd_keywords:
+                if normalize_skill(k) in resume_normalized or k.lower() in resume_all_text:
+                    matched_must.append(k)
+                else:
+                    missing_must.append(k)
+        else:
+            skills_score = 25  # no signal at all
     else:
-        # Technical role but JD extraction produced no must_have skills.
-        # Fallback: use JD keywords as proxy must-haves (medium weight each)
-        # so candidates are scored on something meaningful rather than a flat 30.
+        # Tech role but JD produced no must_have — use keywords as proxy
         jd_keywords = [k for k in jd_data.get("keywords", []) if k]
         if jd_keywords:
             kw_matched = sum(1 for k in jd_keywords if normalize_skill(k) in resume_normalized)
-            skills_score = round((kw_matched / len(jd_keywords)) * 55)
-            # Populate matched/missing for the report
+            skills_score = round((kw_matched / len(jd_keywords)) * 45)
             for k in jd_keywords:
                 if normalize_skill(k) in resume_normalized:
                     matched_must.append(k)
                 else:
                     missing_must.append(k)
         else:
-            skills_score = 30  # Last resort — truly no signal available
+            skills_score = 20  # last resort
+
+    skills_score = min(45, skills_score)
 
     # ── 2. Experience score (25 pts) ──────────────────────────
     exp_score = 0
     exp_status = "unknown"
+    seniority_map = {"intern": 0, "junior": 1, "mid": 2, "senior": 3, "lead": 4, "manager": 5}
 
     if jd_min_years is None and candidate_years is None:
-        exp_score = 18  # both unknown — neutral
+        exp_score = 17
         exp_status = "neutral"
     elif jd_min_years is None:
-        exp_score = 18
+        # No requirement — give credit proportionally to seniority match
+        exp_score = 17
         exp_status = "neutral"
     elif candidate_years is None:
-        exp_score = 12  # candidate years unknown — slight penalty
+        exp_score = 10
         exp_status = "unknown"
     elif candidate_years >= jd_min_years:
-        exp_score = 25
-        exp_status = "meets"
-        # Bonus if significantly over-qualified check
         if jd_max_years and candidate_years > jd_max_years + 3:
+            exp_score = 20  # overqualified — slight reduction
             exp_status = "overqualified"
+        else:
+            exp_score = 25
+            exp_status = "meets"
     elif candidate_years >= jd_min_years - 1:
-        exp_score = 18  # within 1 year — partial credit
+        exp_score = 19  # 1 year short — very close
         exp_status = "close"
     elif candidate_years >= jd_min_years - 2:
-        exp_score = 10
+        exp_score = 13
         exp_status = "below"
-    else:
-        exp_score = max(0, 25 - (jd_min_years - candidate_years) * 5)
+    elif candidate_years >= jd_min_years - 3:
+        exp_score = 7
         exp_status = "significantly_below"
+    else:
+        exp_score = max(0, 5 - (jd_min_years - candidate_years - 3))
+        exp_status = "significantly_below"
+
+    # Seniority alignment adjustment (±4 pts within exp budget)
+    if jd_seniority and candidate_seniority:
+        jd_level = seniority_map.get(jd_seniority, 0)
+        cand_level = seniority_map.get(candidate_seniority, 0)
+        gap = cand_level - jd_level  # positive = overqualified, negative = underqualified
+        if gap == 0:
+            exp_score = min(25, exp_score + 2)   # perfect seniority match bonus
+        elif gap == -1:
+            pass  # 1 level below: no change
+        elif gap == 1:
+            exp_score = max(0, exp_score - 1)    # 1 level above: slight penalty
+        elif gap <= -2:
+            exp_score = max(0, exp_score - 4)    # significantly under-leveled
+        elif gap >= 2:
+            exp_score = max(0, exp_score - 3)    # significantly over-leveled
+
+    exp_score = max(0, min(25, exp_score))
 
     # ── 3. Good-to-have skills (10 pts) ───────────────────────
     matched_good = []
@@ -467,97 +544,100 @@ def compute_score(jd_data, resume_data):
     if jd_good_to_have:
         good_score = round((len(matched_good) / len(jd_good_to_have)) * 10)
     else:
-        good_score = 5  # neutral
+        good_score = 5
 
-    # ── 4. Career signals (10 pts) ────────────────────────────
-    career_score = 10  # start full, deduct for issues
+    # ── 4. Career quality (10 pts) ────────────────────────────
+    # Starts at 5, can go up to 10 or down to 0
+    career_score = 5
 
-    # Deduct for red flags
+    # Impact signals are a strong positive — shows candidates deliver measurable outcomes
+    total_impact_signals = sum(len(job.get("impact_signals", [])) for job in work_history)
+    if total_impact_signals >= 3:
+        career_score += 3
+    elif total_impact_signals >= 1:
+        career_score += 1
+
+    # Career progression
+    if career_pattern == "growing":
+        career_score += 2
+    elif career_pattern == "lateral":
+        career_score += 1
+    elif career_pattern == "declining":
+        career_score -= 2
+
+    # Red flags deductions
     for flag in resume_red_flags:
         severity = flag.get("severity", "low")
         if severity == "high":
-            career_score -= 4
-        elif severity == "medium":
-            career_score -= 2
-        elif severity == "low":
-            career_score -= 1
-
-    # Seniority match bonus/penalty
-    seniority_map = {"junior": 1, "mid": 2, "senior": 3, "lead": 4, "manager": 5}
-    if jd_seniority and candidate_seniority:
-        jd_level = seniority_map.get(jd_seniority, 0)
-        cand_level = seniority_map.get(candidate_seniority, 0)
-        gap = abs(jd_level - cand_level)
-        if gap == 0:
-            pass  # perfect match
-        elif gap == 1:
-            career_score -= 1
-        elif gap >= 2:
             career_score -= 3
+        elif severity == "medium":
+            career_score -= 1
+        # low severity: no deduction (minor, not disqualifying)
 
-    # Career progression bonus
-    if career_pattern == "growing":
-        career_score = min(10, career_score + 1)
-
-    # Education matching (within career signals budget)
-    # Only applied when JD explicitly requires a degree/certification AND candidate has no education
+    # Education when explicitly required
     jd_edu = jd_data.get("education", {})
     candidate_edu = resume_data.get("education", [])
     if jd_edu.get("required") and not candidate_edu:
-        # JD requires education but resume has none listed — small penalty
-        career_score = max(0, career_score - 2)
+        career_score -= 2
 
-    career_score = max(0, career_score)
+    career_score = max(0, min(10, career_score))
 
-    # ── 5. Scoring hints bonus (up to ±5) ─────────────────────
-    # Uses the JD's own signal hints to fine-tune beyond keyword matching.
-    hints_bonus = 0
-    scoring_hints = jd_data.get("scoring_hints", {})
+    # ── 5. Domain fit (10 pts) ────────────────────────────────
+    # Uses JD scoring hints + domain skills match
+    domain_score = 5  # neutral baseline
+
     if scoring_hints:
-        # Build a fast lookup: candidate full text for green/red scan
-        resume_all_text = " ".join(filter(None, [
-            resume_data.get("candidate_summary", ""),
-            resume_data.get("career_progression", {}).get("analysis", ""),
-            " ".join(kw for kw in resume_data.get("keywords", []) if kw),
-            " ".join(
-                " ".join(str(t) for t in job.get("technologies_used", []))
-                for job in resume_data.get("work_history", [])
-            ),
-        ])).lower()
-
         for green in scoring_hints.get("green_flags_to_reward", []):
             if green and (
                 normalize_skill(green) in resume_normalized
                 or green.lower() in resume_all_text
             ):
-                hints_bonus = min(5, hints_bonus + 2)
+                domain_score = min(10, domain_score + 2)
 
         for red in scoring_hints.get("red_flags_to_watch", []):
             if red and red.lower() in resume_all_text:
-                hints_bonus = max(-5, hints_bonus - 2)
+                domain_score = max(0, domain_score - 2)
 
-    # ── 6. Final score ─────────────────────────────────────────
-    total = skills_score + exp_score + good_score + career_score + hints_bonus
+    # For non-tech roles: domain_skills match against JD preferred background
+    if not has_tech:
+        jd_background = jd_data.get("experience", {}).get("preferred_background", "").lower()
+        if jd_background:
+            domain_matches = sum(
+                1 for s in domain_skills
+                if s and (normalize_skill(s) in resume_normalized or s.lower() in jd_background)
+            )
+            if domain_matches >= 3:
+                domain_score = min(10, domain_score + 2)
+            elif domain_matches >= 1:
+                domain_score = min(10, domain_score + 1)
+
+    domain_score = max(0, min(10, domain_score))
+
+    # ── 6. Final score ────────────────────────────────────────
+    total = skills_score + exp_score + good_score + career_score + domain_score
     total = min(100, max(0, total))
 
-    # ── 6. Hard rejection rules ────────────────────────────────
+    # ── 7. Hard rejection rules ───────────────────────────────
     hard_rejected = False
     rejection_reasons = []
 
     if jd_must_have:
         missing_ratio = len(missing_must) / len(jd_must_have)
-        if missing_ratio > 0.5:
+        # Reject if missing >60% of must-haves (raised from 50% to reduce false rejections)
+        if missing_ratio > 0.60:
             hard_rejected = True
             rejection_reasons.append(
                 f"Missing {len(missing_must)} of {len(jd_must_have)} must-have skills ({round(missing_ratio * 100)}%)"
             )
 
-    if exp_status == "significantly_below" and jd_min_years:
-        hard_rejected = True
-        rejection_reasons.append(
-            f"Experience {candidate_years}y is significantly below minimum {jd_min_years}y required"
-        )
+    if exp_status == "significantly_below" and jd_min_years and candidate_years is not None:
+        if (jd_min_years - candidate_years) >= 3:
+            hard_rejected = True
+            rejection_reasons.append(
+                f"Experience {candidate_years}y is {jd_min_years - candidate_years}y below minimum {jd_min_years}y required"
+            )
 
+    # Only hard-reject for 2+ HIGH severity flags (single high flag = deduction, not rejection)
     high_flags = [f for f in resume_red_flags if f.get("severity") == "high"]
     if len(high_flags) >= 2:
         hard_rejected = True
@@ -565,12 +645,13 @@ def compute_score(jd_data, resume_data):
             f"Multiple high-severity red flags: {', '.join([f.get('flag', 'Unknown') for f in high_flags])}"
         )
 
-    # ── 7. Status determination ────────────────────────────────
+    # ── 8. Status determination ───────────────────────────────
+    borderline_floor = max(0, threshold - 10)
     if hard_rejected:
         status = "Rejected"
-    elif total >= 78:
+    elif total >= threshold:
         status = "Shortlisted"
-    elif total >= 55:
+    elif total >= borderline_floor:
         status = "Borderline"
     else:
         status = "Rejected"
@@ -580,14 +661,15 @@ def compute_score(jd_data, resume_data):
         "status": status,
         "breakdown": {
             "skills_score": skills_score,
-            "skills_max": 55,
+            "skills_max": 45,
             "exp_score": exp_score,
             "exp_max": 25,
             "good_score": good_score,
             "good_max": 10,
             "career_score": career_score,
             "career_max": 10,
-            "hints_bonus": hints_bonus,
+            "domain_score": domain_score,
+            "domain_max": 10,
         },
         "skill_matching": {
             "matched_must": matched_must,
@@ -639,8 +721,9 @@ Final Score     : {total}/100
 Status          : {status}
 Skills Score    : {breakdown["skills_score"]}/{breakdown["skills_max"]}
 Experience Score: {breakdown["exp_score"]}/{breakdown["exp_max"]}
-Bonus Score     : {breakdown["good_score"]}/{breakdown["good_max"]}
-Career Score    : {breakdown["career_score"]}/{breakdown["career_max"]}
+Good-to-have    : {breakdown["good_score"]}/{breakdown["good_max"]}
+Career Quality  : {breakdown["career_score"]}/{breakdown["career_max"]}
+Domain Fit      : {breakdown.get("domain_score", 0)}/{breakdown.get("domain_max", 10)}
 
 Must-have matched : {json.dumps(matched)}
 Must-have missing : {json.dumps(missing)}
@@ -1271,9 +1354,10 @@ Resume:
         resume_data = raw.get("resume", {})
         jd_raw_text = raw.get("jd_raw_text", "")
         resume_raw_text = raw.get("resume_raw_text", "")
+        threshold = int(raw.get("threshold", 70))
 
         # ── 1. DETERMINISTIC SCORING (Python) ────────────────
-        score_result = compute_score(jd_data, resume_data)
+        score_result = compute_score(jd_data, resume_data, threshold)
 
         # ── 2. HIGH-FIDELITY AI EVALUATION ───────────────────
         print(
@@ -1309,8 +1393,8 @@ Resume:
                 "ai_verdict": f"Status: {score_result['status']}. Score: {score_result['score']}.",
             }
 
-    # Model and temperature based on type
-    model = "gpt-4o-mini" if type_ in ["JD", "RESUME"] else "gpt-4o"
+    # gpt-4o for all types — resume extraction quality is the foundation of scoring accuracy
+    model = "gpt-4o"
     temperature = 0
 
     system_prompt = (

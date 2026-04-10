@@ -77,6 +77,24 @@ export default function OnboardingPage() {
                         const step = Math.min(Math.max(data.onboardingStep, 0), STEPS.length - 1);
                         setCurrentStep(step);
                     }
+
+                    // DOMAIN STATUS: If org already has a domain registered, check its verification status
+                    if (data.customDomain && data.resendDomainId) {
+                        try {
+                            const domainRes = await fetch("/api/admin/setup/domain");
+                            if (domainRes.ok) {
+                                const domainData = await domainRes.json();
+                                if (domainData.records) setEmailRecords(domainData.records);
+                                if (domainData.status === "verified") {
+                                    setEmailSubStep(2); // Already verified → go to sender identity
+                                } else {
+                                    setEmailSubStep(1); // Registered but not verified → show DNS records
+                                }
+                            }
+                        } catch {
+                            // Non-critical: silently fall back to step 0
+                        }
+                    }
                 }
                 
                 // LOCAL RECOVERY: Restore draft if server data is newer or identical
@@ -303,13 +321,15 @@ export default function OnboardingPage() {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-white py-12 px-6">
-            <div className="w-full max-w-4xl mx-auto">
-                <div className="mb-10 animate-in-fade">
-                    <div className="flex items-center gap-4 mb-3">
-                        <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full" />
+            <div className="w-full max-w-4xl mx-auto animate-fade-slide">
+                <div className="mb-12">
+                    <div className="flex items-center gap-6 mb-10">
+                        <div className="h-14 w-14 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#F97316] shadow-sm">
+                            <Rocket className="h-8 w-8" />
+                        </div>
                         <div>
-                            <h1 className="text-3xl font-extrabold text-gray-900 uppercase tracking-tighter">Workspace Onboarding</h1>
-                            <p className="text-gray-500 font-medium">Step {currentStep + 1} Protocol: {STEPS[currentStep]}</p>
+                            <h1 className="text-3xl font-bold text-gray-900 tracking-tight leading-none">Workspace Onboarding</h1>
+                            <p className="text-gray-500 font-medium text-sm mt-2">Deploy your organization on the platform.</p>
                         </div>
                     </div>
                 </div>
@@ -324,7 +344,7 @@ export default function OnboardingPage() {
                     </div>
                 )}
 
-                <div className="relative flex justify-between w-full mb-10">
+                <div className="relative flex justify-between w-full mb-8">
                     <div className="absolute top-4 left-0 h-[2px] w-full bg-gray-200 rounded-full" />
                     <div
                         className="absolute top-4 left-0 h-[2px] bg-[#F97316] rounded-full transition-all duration-500"
@@ -340,14 +360,14 @@ export default function OnboardingPage() {
                                     isCompleted
                                         ? "border-[#F97316] bg-[#F97316] text-white"
                                         : isCurrent
-                                            ? "border-[#F97316] text-[#F97316] shadow-[0_0_0_4px_rgba(249,115,22,0.15)]"
+                                            ? "border-[#F97316] text-[#F97316]"
                                             : "border-gray-300 text-gray-400"
                                 )}>
                                     {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : <span className="text-xs font-bold">{i + 1}</span>}
                                 </div>
                                 <span className={cn(
                                     "text-[11px] font-semibold transition-colors whitespace-nowrap",
-                                    isCurrent ? "text-[#F97316]" : isCompleted ? "text-gray-600" : "text-gray-400"
+                                    isCurrent ? "text-gray-900" : isCompleted ? "text-gray-600" : "text-gray-400"
                                 )}>
                                     {step}
                                 </span>
@@ -361,12 +381,9 @@ export default function OnboardingPage() {
                         {/* ═══ STEP 0: SECURITY ═══ */}
                         {currentStep === 0 && (
                             <div className="space-y-12 animate-in-slide">
-                                <div className="flex items-center gap-8 p-8 rounded-[2.5rem] bg-orange-50/40 border border-orange-100/50">
-                                    <div className="h-20 w-20 bg-white rounded-3xl flex items-center justify-center text-[#F97316] shadow-sm"><ShieldCheck className="h-10 w-10" /></div>
-                                    <div className="flex-1">
-                                        <h3 className="font-bold text-gray-900 uppercase italic text-2xl leading-none tracking-tight">Security Encryption</h3>
-                                        <p className="text-[11px] text-gray-500 font-bold uppercase mt-3 tracking-widest">PRIVATE ADMINISTRATION KEY SYNC</p>
-                                    </div>
+                                <div className="flex items-center gap-4 mb-8">
+                                    <span className="w-1.5 h-8 bg-[#F97316] rounded-full shadow-sm" />
+                                    <h3 className="text-[12px] font-bold uppercase tracking-widest text-gray-500">1. Security Encryption</h3>
                                 </div>
                                 <div className="max-w-xl grid md:grid-cols-2 gap-8">
                                     <div className="space-y-3">
@@ -470,12 +487,9 @@ export default function OnboardingPage() {
                         {/* ═══ STEP 2: TEAM ═══ */}
                         {currentStep === 2 && (
                             <div className="space-y-10 animate-in-slide">
-                                <div className="flex items-center gap-8 p-8 rounded-[2.5rem] bg-orange-50/40 border border-orange-100/50">
-                                    <div className="h-20 w-20 bg-white rounded-3xl flex items-center justify-center text-[#F97316] shadow-sm"><Users className="h-10 w-10" /></div>
-                                    <div className="flex-1">
-                                        <h3 className="font-bold text-gray-900 uppercase italic text-2xl leading-none tracking-tight">Recruitment Force</h3>
-                                        <p className="text-[11px] text-gray-500 font-bold uppercase mt-3 tracking-widest">DEPLOY TEAM INVITATIONS</p>
-                                    </div>
+                                <div className="flex items-center gap-4 mb-8">
+                                    <span className="w-1.5 h-8 bg-[#F97316] rounded-full shadow-sm" />
+                                    <h3 className="text-[12px] font-bold uppercase tracking-widest text-gray-500">2. Recruitment Force Deployment</h3>
                                 </div>
                                 <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 flex flex-col gap-6">
                                     <div className="flex flex-col md:flex-row items-end gap-4 w-full">
@@ -503,7 +517,7 @@ export default function OnboardingPage() {
                                     </div>
                                     <button 
                                         onClick={handleInvite} 
-                                        className="h-11 px-8 bg-black text-white rounded-xl font-bold text-[13px] shadow-lg hover:scale-102 active:scale-95 transition-all w-full md:ml-auto md:w-fit"
+                                        className="h-11 px-8 bg-gray-950 text-white rounded-xl font-bold text-[13px] shadow-lg hover:bg-black transition-all w-full md:ml-auto md:w-fit"
                                     >
                                         Send Team Invite
                                     </button>
@@ -530,12 +544,9 @@ export default function OnboardingPage() {
                             <div className="space-y-10 animate-in-slide">
                                 {emailSubStep === 0 && (
                                     <div className="space-y-10">
-                                        <div className="flex items-center gap-8 p-8 rounded-[2.5rem] bg-orange-50/40 border border-orange-100/50">
-                                            <div className="h-20 w-20 bg-white rounded-3xl flex items-center justify-center text-[#F97316] shadow-sm"><Globe className="h-10 w-10" /></div>
-                                            <div className="flex-1">
-                                                <h3 className="font-bold text-gray-900 uppercase italic text-2xl leading-none tracking-tight">Email Identity</h3>
-                                                <p className="text-[11px] text-gray-500 font-bold uppercase mt-3 tracking-widest">ESTABLISH SENDER REPUTATION</p>
-                                            </div>
+                                        <div className="flex items-center gap-4 mb-8">
+                                            <span className="w-1.5 h-8 bg-[#F97316] rounded-full shadow-sm" />
+                                            <h3 className="text-[12px] font-bold uppercase tracking-widest text-gray-500">4. Email Identity Protocol</h3>
                                         </div>
                                         <div className="max-w-md space-y-6">
                                             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed">Enter your business domain to send from your own address. This is <span className="text-[#F97316]">optional</span>.</p>
@@ -552,7 +563,7 @@ export default function OnboardingPage() {
                                                             const data = await res.json();
                                                             if (res.ok) { setEmailRecords(data.records); setEmailSubStep(1); } else { setError(data.error); }
                                                         } catch (err) { setError("Link failed."); } finally { setIsSaving(false); }
-                                                    }} className="h-11 px-8 bg-black text-white rounded-xl font-bold text-[13px] shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-30">Link Domain</button>
+                                                    }} className="h-11 px-8 bg-gray-950 text-white rounded-xl font-bold text-[13px] shadow-lg hover:bg-black transition-all disabled:opacity-30">Link Domain</button>
                                                     <button onClick={() => setCurrentStep(4)} className="text-[11px] font-bold uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors">Skip for now</button>
                                                 </div>
                                             </div>
@@ -566,18 +577,18 @@ export default function OnboardingPage() {
                                             <h4 className="text-[14px] font-bold text-gray-900 uppercase italic tracking-tight">Verification Handshake Required</h4>
                                             <p className="text-[11px] text-gray-400 font-bold uppercase tracking-widest leading-none">Add these records to your DNS provider</p>
                                         </div>
-                                        <div className="border border-gray-100 rounded-[2rem] overflow-hidden bg-white shadow-[0_8px_32px_rgba(0,0,0,0.04)]">
+                                        <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
                                             <table className="w-full border-collapse">
                                                 <thead>
-                                                    <tr className="bg-gray-50/50 border-b border-gray-100 italic">
-                                                        <th className="px-6 py-4 text-left text-[10px] font-bold uppercase text-gray-400 tracking-[0.2em] w-[80px]">Type</th>
-                                                        <th className="px-6 py-4 text-left text-[10px] font-bold uppercase text-gray-400 tracking-[0.2em]">Host</th>
-                                                        <th className="px-6 py-4 text-left text-[10px] font-bold uppercase text-gray-400 tracking-[0.2em]">Value</th>
-                                                        <th className="px-6 py-4 text-center text-[10px] font-bold uppercase text-gray-400 tracking-[0.2em] w-[70px]">TTL</th>
-                                                        <th className="px-6 py-4 text-center text-[10px] font-bold uppercase text-gray-400 tracking-[0.2em] w-[100px]">Status</th>
+                                                    <tr className="bg-gray-50 border-b border-gray-100">
+                                                        <th className="px-6 py-4 text-left text-[10px] font-bold uppercase text-gray-500 tracking-widest w-[80px]">Type</th>
+                                                        <th className="px-6 py-4 text-left text-[10px] font-bold uppercase text-gray-500 tracking-widest">Host</th>
+                                                        <th className="px-6 py-4 text-left text-[10px] font-bold uppercase text-gray-500 tracking-widest">Value</th>
+                                                        <th className="px-6 py-4 text-center text-[10px] font-bold uppercase text-gray-500 tracking-widest w-[70px]">TTL</th>
+                                                        <th className="px-6 py-4 text-center text-[10px] font-bold uppercase text-gray-500 tracking-widest w-[110px]">Status</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-gray-100 italic">
+                                                <tbody className="divide-y divide-gray-100">
                                                     {emailRecords.map((rec, i) => (
                                                         <tr key={i} className="hover:bg-orange-50/10 transition-all">
                                                             <td className="px-6 py-4"><span className="h-8 w-11 bg-gray-900 rounded-lg flex items-center justify-center text-[10px] font-bold text-white italic">{rec.type}</span></td>
@@ -611,8 +622,8 @@ export default function OnboardingPage() {
                                                     if (data.records) setEmailRecords(data.records);
                                                     if (data.status === "verified") { setEmailSubStep(2); } else { setError("DNS propagation in progress. Please wait."); }
                                                 } catch (err) { setError("Verification failed."); } finally { setIsVerifying(false); }
-                                            }} className="h-12 px-10 bg-gradient-to-r from-[#F97316] to-orange-600 text-white rounded-xl font-bold text-[13px] shadow-lg hover:from-orange-600 transition-all flex items-center justify-center gap-2">
-                                                {isVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Rocket className="h-4 w-4" /> Verify Handshake</>}
+                                            }} className="h-12 px-10 bg-gray-950 text-white rounded-xl font-bold text-[13px] shadow-lg hover:bg-black transition-all flex items-center justify-center gap-2">
+                                                {isVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Rocket className="h-4 w-4" /> Verify Records</>}
                                             </button>
                                         </div>
                                     </div>
@@ -678,7 +689,7 @@ export default function OnboardingPage() {
 
                     <div className="bg-gray-50/70 px-8 py-5 flex justify-between items-center border-t border-gray-100">
                         <button disabled={currentStep === 0 || isSaving} onClick={() => setCurrentStep(prev => prev - 1)} className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-gray-400 hover:text-[#F97316] disabled:opacity-0 transition-all"><ChevronLeft className="h-3 w-3" /> Back</button>
-                        <button onClick={handleNext} disabled={isSaving || isUploading} className={cn("flex items-center gap-2 px-10 h-11 rounded-xl font-bold text-[13px] transition-all active:scale-95", currentStep === STEPS.length - 1 ? "bg-black text-white hover:bg-gray-900 shadow-lg px-12" : "bg-gradient-to-r from-[#F97316] to-orange-500 text-white shadow-lg")}>
+                        <button onClick={handleNext} disabled={isSaving || isUploading} className={cn("flex items-center gap-2 px-10 h-11 rounded-xl font-bold text-[13px] transition-all hover:-translate-y-0.5 active:scale-95 disabled:opacity-50 shadow-lg", "bg-gray-900 text-white hover:bg-black")}>
                             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : (currentStep === STEPS.length - 1 ? "Initialize" : "Continue")} <ChevronRight className="h-3.5 w-3.5" />
                         </button>
                     </div>

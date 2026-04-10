@@ -18,17 +18,9 @@ export type Candidate = {
     location: string;
     role: string; // derived from Drive title
     driveId: string; // to link to specific drive
-    status:
-        | "Shortlisted"
-        | "Interview Pending"
-        | "Interview In Progress"
-        | "Interview Completed"
-        | "Rejected"
-        | "Borderline"
-        | "Under Review"
-        | "Interview"
-        | "Applied";
-    interviewStatus?: "Not Selected" | "Interview Pending" | "Interview In Progress" | "Interview Completed";
+    status: string;
+    interviewStatus?: string;
+    hiringStatus?: string;
     score: number;
     date: string;
     experienceYears?: number;
@@ -57,13 +49,33 @@ interface Pagination {
     totalPages: number;
 }
 
+export interface CandidateStats {
+    shortlisted: number;
+    rejected: number;
+    hired: number;
+    interviewRunning: number;
+    interviewPending: number;
+    interviewCompleted: number;
+}
+
 interface CandidatesContextType {
     candidates: Candidate[];
     pagination: Pagination;
+    stats: CandidateStats;
     isLoading: boolean;
     error: string | null;
     addCandidate: (candidate: Omit<Candidate, "id" | "date" | "status" | "score">) => Promise<void>;
-    fetchCandidates: (page?: number, limit?: number, driveId?: string, status?: string, startDate?: string, endDate?: string, search?: string) => Promise<void>;
+    fetchCandidates: (
+        page?: number, 
+        limit?: number, 
+        driveId?: string, 
+        resumeStatus?: string, 
+        interviewStatus?: string, 
+        hiringStatus?: string, 
+        startDate?: string, 
+        endDate?: string, 
+        search?: string
+    ) => Promise<void>;
     clearError: () => void;
     bulkDeleteCandidates: (ids: string[]) => Promise<void>;
 }
@@ -83,6 +95,14 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         page: 1,
         limit: DEFAULT_LIMIT,
         totalPages: 0
+    });
+    const [stats, setStats] = useState<CandidateStats>({
+        shortlisted: 0,
+        rejected: 0,
+        hired: 0,
+        interviewRunning: 0,
+        interviewPending: 0,
+        interviewCompleted: 0
     });
 
     const [isHydrated, setIsHydrated] = useState(false);
@@ -110,7 +130,9 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         page: number,
         limit: number,
         driveId?: string,
-        status?: string,
+        resumeStatus?: string,
+        interviewStatus?: string,
+        hiringStatus?: string,
         startDate?: string,
         endDate?: string,
         search?: string
@@ -119,7 +141,9 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             page,
             limit,
             driveId || "all",
-            status || "all",
+            resumeStatus || "all",
+            interviewStatus || "all",
+            hiringStatus || "all",
             startDate || "none",
             endDate || "none",
             search || ""
@@ -130,13 +154,15 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         page: number = 1,
         limit: number = DEFAULT_LIMIT,
         driveId?: string,
-        status?: string,
+        resumeStatus?: string,
+        interviewStatus?: string,
+        hiringStatus?: string,
         startDate?: string,
         endDate?: string,
         search?: string,
         options?: { force?: boolean; background?: boolean }
     ) => {
-        const key = buildFetchKey(page, limit, driveId, status, startDate, endDate, search);
+        const key = buildFetchKey(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search);
         const now = Date.now();
 
         const inFlight = inFlightRequestsRef.current.get(key);
@@ -192,8 +218,14 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 if (driveId && driveId !== "all") {
                     params.set("driveId", driveId);
                 }
-                if (status && status !== "all") {
-                    params.set("status", status);
+                if (resumeStatus && resumeStatus !== "all") {
+                    params.set("resumeStatus", resumeStatus);
+                }
+                if (interviewStatus && interviewStatus !== "all") {
+                    params.set("interviewStatus", interviewStatus);
+                }
+                if (hiringStatus && hiringStatus !== "all") {
+                    params.set("hiringStatus", hiringStatus);
                 }
                 if (startDate) {
                     params.set("startDate", startDate);
@@ -213,7 +245,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 }
 
                 const result = await res.json();
-                const { candidates: rawCandidates, pagination: pagData } = result;
+                const { candidates: rawCandidates, pagination: pagData, stats: statsData } = result;
 
                 const mappedCandidates = Array.isArray(rawCandidates)
                     ? rawCandidates.map((c: any) => ({
@@ -222,10 +254,11 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                         email: c.email || "",
                         phone: c.phone || "",
                         location: c.location || "-",
-                        role: c.role || "Unknown Role",
+                        role: c.jobRole || c.jobrole || c.driveTitle || c.drivetitle || "Unknown Role",
                         driveId: c.driveId?.toString(),
                         status: c.status,
                         interviewStatus: c.interviewStatus,
+                        hiringStatus: c.hiringStatus,
                         score: c.score || 0,
                         date: c.date,
                         resumeUrl: c.resumeUrl,
@@ -242,6 +275,9 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                         limit: Number(pagData.limit ?? limit),
                         totalPages: Number(pagData.totalPages ?? 0),
                     });
+                }
+                if (statsData) {
+                    setStats(statsData);
                 }
 
                 hasFetchedAdminDataRef.current = true;
@@ -269,12 +305,14 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         page: number = 1,
         limit: number = DEFAULT_LIMIT,
         driveId?: string,
-        status?: string,
+        resumeStatus?: string,
+        interviewStatus?: string,
+        hiringStatus?: string,
         startDate?: string,
         endDate?: string,
         search?: string
     ) => {
-        await fetchCandidatesInternal(page, limit, driveId, status, startDate, endDate, search);
+        await fetchCandidatesInternal(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search);
     }, [fetchCandidatesInternal]);
 
     const scheduleStreamRefresh = useCallback(() => {
@@ -289,6 +327,8 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             void fetchCandidatesInternal(
                 current.page,
                 current.limit,
+                undefined,
+                undefined,
                 undefined,
                 undefined,
                 undefined,
@@ -408,7 +448,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
 
             // Refetch to ensure we have the correct paginated state
             const current = paginationRef.current;
-            await fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, {
+            await fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, undefined, undefined, {
                 force: true,
             });
         } catch (error) {
@@ -427,7 +467,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             if (response.ok) {
                 // Refetch to ensure we have the correct paginated state after deletion
                 const current = paginationRef.current;
-                await fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, {
+                await fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, undefined, undefined, {
                     force: true,
                 });
             } else {
@@ -442,7 +482,17 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     const clearError = useCallback(() => setError(null), []);
 
     return (
-        <CandidatesContext.Provider value={{ candidates, pagination, isLoading, error, addCandidate, fetchCandidates, bulkDeleteCandidates, clearError }}>
+        <CandidatesContext.Provider value={{
+            candidates,
+            pagination,
+            stats,
+            isLoading,
+            error,
+            addCandidate,
+            fetchCandidates,
+            bulkDeleteCandidates,
+            clearError
+        }}>
             {children}
         </CandidatesContext.Provider>
     );

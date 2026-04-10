@@ -16,8 +16,15 @@ export async function GET() {
                 industry: true,
                 size: true,
                 website: true,
-                logoUrl: true
-            }
+                location: true,
+                logoUrl: true,
+                customDomain: true,
+                resendDomainId: true,
+                isDomainVerified: true,
+                customSenderEmail: true,
+                customSenderName: true,
+                onboardingStep: true
+            } as any
         });
 
         if (!org) {

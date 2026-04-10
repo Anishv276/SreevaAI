@@ -2,11 +2,15 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 async function find() {
-  const c = await prisma.application.findMany({
-    where: { fullName: { contains: 'Vadla Vamsi Krishna', mode: 'insensitive' } },
-    take: 1
+  const a = await prisma.application.findFirst({
+    orderBy: { createdAt: 'desc' },
+    select: { id: true }
   });
-  console.log(JSON.stringify(c, null, 2));
+  if (a) {
+    console.log(a.id);
+  } else {
+    console.log('No application found');
+  }
 }
 
 find().finally(() => prisma.$disconnect());

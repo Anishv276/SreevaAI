@@ -228,7 +228,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     </div>
                                 )}
                             </div>
-                            <p className="text-xl font-bold text-gray-400">{candidate.drive?.title || "Role N/A"}</p>
+                            <p className="text-xl font-bold text-gray-400">{candidate.drive?.role || candidate.drive?.title || "Role N/A"}</p>
                             <div className="flex flex-wrap gap-6 pt-1">
                                 {[
                                     { icon: Mail,     value: candidate.email },
@@ -320,12 +320,13 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <div className="h-4 w-[1px] bg-gray-700" />
                                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Data-driven metric assessment</p>
                                     </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
                                         {[
-                                            { label: "Must-Have Skills", score: breakdown.skills_score, max: breakdown.skills_max, desc: "Tech stack match" },
-                                            { label: "Exp Relevance", score: breakdown.exp_score, max: breakdown.exp_max, desc: "Domain depth score" },
-                                            { label: "Good-to-Have", score: breakdown.good_score, max: breakdown.good_max, desc: "Bonus tool match" },
-                                            { label: "Career signals", score: breakdown.career_score, max: breakdown.career_max, desc: "Growth trajectory" },
+                                            { label: "Must-Have Skills", score: breakdown.skills_score, max: breakdown.skills_max ?? 45, desc: "Tech stack match" },
+                                            { label: "Experience", score: breakdown.exp_score, max: breakdown.exp_max ?? 25, desc: "Years & seniority fit" },
+                                            { label: "Good-to-Have", score: breakdown.good_score, max: breakdown.good_max ?? 10, desc: "Bonus tool match" },
+                                            { label: "Career Quality", score: breakdown.career_score, max: breakdown.career_max ?? 10, desc: "Impact & progression" },
+                                            { label: "Domain Fit", score: breakdown.domain_score ?? 0, max: breakdown.domain_max ?? 10, desc: "Role alignment" },
                                         ].map((item, idx) => {
                                             const percent = (item.score / item.max) * 100;
                                             return (
@@ -685,7 +686,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                                 ref={plyrRef}
                                                             source={{
                                                                 type: "video",
-                                                                sources: [{ src: interviewRecordingUrl, type: "video/webm" }],
+                                                                sources: [{ src: interviewRecordingUrl, type: "video/mp4" }],
                                                             }}
                                                             options={{
                                                                 duration: recordingDurationSec || undefined,
@@ -704,21 +705,25 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     
                                                     <div className="bg-white rounded-[32px] border border-gray-100 h-[500px] overflow-y-auto custom-scrollbar p-6 space-y-4">
                                                         {interviewTranscript ? interviewTranscript.split('\n').filter((line: string) => line.trim()).map((line: string, idx: number) => {
-                                                            const isAI = line.toLowerCase().startsWith('ai:') || line.toLowerCase().startsWith('system:');
-                                                            const isUser = line.toLowerCase().startsWith('candidate:') || line.toLowerCase().startsWith('user:');
-                                                            const cleanLine = line.replace(/^(ai:|candidate:|user:|system:)\s*/i, '');
+                                                            // Our agent writes "Interviewer: ..." and "Candidate: ..."
+                                                            const isAI = line.startsWith('Interviewer:');
+                                                            const isUser = line.startsWith('Candidate:');
+                                                            const cleanLine = line.replace(/^(Interviewer:|Candidate:|ai:|user:|system:)\s*/i, '').trim();
+                                                            const label = isAI ? "Jordan (AI Interviewer)" : isUser ? "Candidate" : "System";
                                                             
                                                             return (
-                                                                <div key={idx} className="py-6 space-y-3">
-                                                                    <div className="flex flex-col gap-1">
-                                                                        <p className="text-[11px] font-black uppercase tracking-widest text-gray-900 flex items-center gap-3">
-                                                                            {isAI ? "AI Synthesizer" : isUser ? "Candidate" : "System Log"}
-                                                                            <span className="h-[1px] flex-1 bg-gray-100" />
-                                                                        </p>
+                                                                <div key={idx} className={`flex gap-4 py-3 ${idx > 0 ? 'border-t border-gray-50' : ''}`}>
+                                                                    <div className={`flex-shrink-0 h-8 w-8 rounded-xl flex items-center justify-center text-[10px] font-black ${
+                                                                        isAI ? 'bg-indigo-100 text-indigo-600' : isUser ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-500'
+                                                                    }`}>
+                                                                        {isAI ? 'AI' : isUser ? 'C' : 'S'}
                                                                     </div>
-                                                                    <p className="text-gray-700 leading-relaxed font-bold italic text-sm">
-                                                                        &ldquo;{cleanLine}&rdquo;
-                                                                    </p>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${
+                                                                            isAI ? 'text-indigo-500' : isUser ? 'text-orange-500' : 'text-gray-400'
+                                                                        }`}>{label}</p>
+                                                                        <p className="text-gray-700 leading-relaxed font-medium text-sm">{cleanLine}</p>
+                                                                    </div>
                                                                 </div>
                                                             );
                                                         }) : (

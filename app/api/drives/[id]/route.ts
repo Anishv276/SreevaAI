@@ -119,6 +119,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.interviewQuestions !== undefined) updateData.interviewQuestions = JSON.stringify(data.interviewQuestions);
         if (data.requirements !== undefined) updateData.requirements = data.requirements;
         if ((data as any).isPassportRequired !== undefined) updateData.isPassportRequired = (data as any).isPassportRequired;
+        if (data.status !== undefined) updateData.status = data.status;
         
         if (data.aiScreening?.enabled !== undefined) updateData.aiScreeningEnabled = data.aiScreening.enabled;
         

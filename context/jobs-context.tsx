@@ -22,6 +22,8 @@ export type Job = {
     workMode?: string;
     registrationFields?: string;
     slug?: string;
+    role?: string;
+    deadline?: string;
     createdAt: string;
 };
 
@@ -37,8 +39,8 @@ interface JobsContextType {
     pagination: Pagination;
     addJob: (job: Omit<Job, "id" | "applicants" | "status" | "daysLeft" | "createdAt">) => Promise<Job>;
     deleteJob: (id: string) => Promise<void>;
-    fetchJobs: (page?: number, limit?: number, search?: string, status?: string, type?: string) => Promise<void>;
-    toggleDriveStatus: (id: string, newStatus: "ACTIVE" | "INACTIVE") => Promise<void>;
+    fetchJobs: (page?: number, limit?: number, search?: string, status?: string, type?: string, startDate?: string, endDate?: string) => Promise<void>;
+    toggleDriveStatus: (id: string, newStatus: "ACTIVE" | "CLOSED" | "DISABLED") => Promise<void>;
     updateJob: (id: string, data: any) => Promise<Job>;
     bulkDeleteJobs: (ids: string[]) => Promise<void>;
 }
@@ -61,7 +63,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const hasLoadedOnceRef = useRef({ admin: false, careers: false });
     const inFlightRef = useRef<Promise<void> | null>(null);
 
-    const fetchJobs = async (page: number = 1, limit: number = 10, search: string = "", status: string = "all", type: string = "all") => {
+    const fetchJobs = async (page: number = 1, limit: number = 10, search: string = "", status: string = "all", type: string = "all", startDate: string = "", endDate: string = "") => {
         if (inFlightRef.current) {
             await inFlightRef.current;
             return;
@@ -69,7 +71,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
         const requestPromise = (async () => {
         try {
-            let url = `/api/drives?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&status=${status}&type=${type}`;
+            let url = `/api/drives?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&status=${status}&type=${type}&startDate=${startDate}&endDate=${endDate}`;
             if (orgIdFromUrl) {
                 url += `&orgId=${orgIdFromUrl}`;
             }
@@ -160,7 +162,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const toggleDriveStatus = async (id: string, newStatus: "ACTIVE" | "INACTIVE") => {
+    const toggleDriveStatus = async (id: string, newStatus: "ACTIVE" | "CLOSED" | "DISABLED") => {
         // Optimistic update
         setJobs((prev) =>
             prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))

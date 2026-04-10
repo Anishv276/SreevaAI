@@ -175,6 +175,19 @@ export async function POST(req: NextRequest) {
                 audioOnly: false,
             });
 
+            // ── Persist the recording URL to DB so profile page can display it ──
+            const r2InterviewUrl = process.env.NEXT_PUBLIC_R2_INTERVIEW_URL || "https://pub-e4a8b24775c741f6a650def856cfec9f.r2.dev";
+            const recordingUrl = `${r2InterviewUrl.replace(/\/$/, "")}/candidates/${candidateName}_${roleTitle}/recordings/interview_${applicationId}_${timestamp}.mp4`;
+            try {
+                await prisma.interview.update({
+                    where: { applicationId },
+                    data: { interviewRecordingUrl: recordingUrl, interviewRecordedAt: new Date() }
+                });
+                console.log(`[Egress] Recording URL saved to DB: ${recordingUrl}`);
+            } catch (dbErr) {
+                console.warn("[Egress] Could not save recording URL to DB:", dbErr);
+            }
+
             console.log(`[Egress] Started RoomComposite recording for room ${roomName}`);
         } catch (egressErr) {
             // Non-fatal: interview continues even if Egress service is not yet deployed

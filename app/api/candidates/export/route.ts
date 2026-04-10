@@ -26,7 +26,7 @@ export async function GET(request: Request) {
         });
 
         // Convert to CSV
-        const headers = ["Candidate ID", "Name", "Email", "Phone", "Role", "AI Score", "Status", "Applied Date"];
+        const headers = ["Candidate ID", "Name", "Email", "Phone", "Role", "AI Score", "Resume Status", "Interview Status", "Hiring Status", "Applied Date"];
         const rows = candidates.map(c => [
             c.id,
             `"${c.fullName}"`,
@@ -34,7 +34,9 @@ export async function GET(request: Request) {
             `"${c.phone}"`,
             `"${c.drive?.title || "Unknown"}"`,
             c.aiScore || 0,
-            `"${c.status}"`,
+            `"${c.resumeStatus || "pending"}"`,
+            `"${c.interviewStatus || "pending"}"`,
+            `"${c.hiringStatus || "pending"}"`,
             `"${new Date(c.createdAt).toLocaleDateString()}"`
         ]);
 

@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
+import { motion, AnimatePresence } from "framer-motion";
 
 type Message = {
     id: string;
@@ -46,7 +47,7 @@ export default function AiChatJdPage() {
                 {
                     id: "1",
                     role: "assistant" as const,
-                    content: "<strong>WELCOME TO THE AI JOB ARCHITECT:</strong> I'm designed to help you synthesize 100% complete hiring drives instantly.\n\n<strong>REQUIRED SPECIFICATIONS:</strong> To architect a precise Job Description, please ensure your prompt includes:\n\n1. ROLE NAME (e.g., Senior React Dev)\n2. SALARY RANGE (e.g., 12-15 LPA)\n3. EXPERIENCE (e.g., 4+ Years)\n4. WORK MODE (Remote, Hybrid, or On-site)\n5. DEPARTMENT (e.g., Engineering, Sales)\n\nTell me these details, and I'll build the full requirements, responsibilities, and technical skills for you.",
+                    content: "Hey! Tell me about the role you're hiring for — the title, what kind of experience you're looking for, compensation range, and whether it's remote or in-office. The more context you give me upfront, the sharper the JD will be. I'll ask if anything's missing.",
                 }
             ]);
         }
@@ -149,17 +150,31 @@ export default function AiChatJdPage() {
 
         const formattedData = {
            title: jd.job_title,
-           role: jd.role_name,
+           role: jd.role_name || jd.job_title,
            department: jd.department,
            workMode: jd.work_mode,
-           employmentType: jd.employment_type,
+           employmentType: jd.employment_type || "Full-time",
+           location: jd.location,
            description: jd.description,
            salary: jd.salary,
            experience: jd.experience,
-           skills: Array.isArray(jd.technical_skills) ? jd.technical_skills.join(", ") : jd.technical_skills,
-           responsibilities: Array.isArray(jd.responsibilities) ? jd.responsibilities.join("\n") : jd.responsibilities,
-           requirements: Array.isArray(jd.candidate_requirements) ? jd.candidate_requirements.join("\n") : jd.candidate_requirements,
-           extractedDetails: jd
+           // Skills: keep as comma-separated string for the form field
+           skills: Array.isArray(jd.technical_skills)
+               ? jd.technical_skills.join(", ")
+               : (jd.technical_skills || ""),
+           // Responsibilities: newline-separated for the textarea
+           responsibilities: Array.isArray(jd.responsibilities)
+               ? jd.responsibilities.join("\n")
+               : (jd.responsibilities || ""),
+           // Requirements: newline-separated for the textarea
+           requirements: Array.isArray(jd.candidate_requirements)
+               ? jd.candidate_requirements.join("\n")
+               : (jd.candidate_requirements || ""),
+           // Perks stored in extractedDetails for reference
+           extractedDetails: {
+               ...jd,
+               perks: Array.isArray(jd.perks) ? jd.perks : [],
+           },
         };
 
         localStorage.setItem("jd_draft", JSON.stringify(formattedData));
@@ -244,117 +259,156 @@ export default function AiChatJdPage() {
 
     return (
         <div className="fixed inset-0 md:left-[220px] z-40 flex flex-col bg-white overflow-hidden border-l border-gray-100 font-sans animate-entry-flow">
-            {/* Header - Transparent Modern Glassmorphism */}
-            <header className="shrink-0 px-8 py-5 bg-white/80 backdrop-blur-md border-b border-gray-100 z-30 relative shadow-sm">
-                <div className="max-w-5xl mx-auto w-full flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#F97316] to-orange-600 flex items-center justify-center text-white shadow-lg shadow-orange-500/20 transform hover:scale-105 transition-all">
-                            <Bot className="h-6 w-6" />
-                        </div>
-                        <div>
-                            <h1 className="text-xl font-black text-gray-900 tracking-tight leading-none mb-1">
-                                Hirer AI Architect
-                            </h1>
-                            <div className="flex items-center gap-2">
-                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest leading-none"> Neural Engine V2 </p>
+            {/* Header - Transparent Modern Glassmorphism (Only show during conversation) */}
+            <AnimatePresence>
+                {messages.length > 0 && (
+                    <motion.header 
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="shrink-0 px-8 py-5 bg-white/80 backdrop-blur-md border-b border-gray-100 z-30 relative shadow-sm"
+                    >
+                        <div className="max-w-5xl mx-auto w-full flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#F97316] to-orange-600 flex items-center justify-center text-white shadow-lg shadow-orange-500/20 transform hover:scale-105 transition-all">
+                                    <Bot className="h-6 w-6" />
+                                </div>
+                                <div>
+                                    <h1 className="text-xl font-black text-gray-900 tracking-tight leading-none mb-1">
+                                        Hirer AI Architect
+                                    </h1>
+                                    <div className="flex items-center gap-2">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                        <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest leading-none"> Neural Engine V2 </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                                <button 
+                                    onClick={clearChat}
+                                    className="group flex items-center gap-2 px-4 py-2 rounded-xl text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-all duration-300"
+                                >
+                                    <RefreshCcw className="h-4 w-4 transition-transform group-hover:rotate-180" />
+                                    <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">Reset</span>
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                        clearChat();
+                                        router.push("/admin/create-drive");
+                                    }}
+                                    className="group flex items-center gap-3 px-8 py-3 rounded-xl border-2 border-gray-900 text-gray-900 font-bold hover:bg-gray-900 hover:text-white transition-all duration-500 shadow-xl shadow-gray-200/20 active:scale-95"
+                                >
+                                    <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+                                    <span className="text-[10px] font-black uppercase tracking-widest leading-none">Exit Architect</span>
+                                </button>
                             </div>
                         </div>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                        <button 
-                            onClick={clearChat}
-                            className="group flex items-center gap-2 px-4 py-2 rounded-xl text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-all duration-300"
-                        >
-                            <RefreshCcw className="h-4 w-4 transition-transform group-hover:rotate-180" />
-                            <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">Reset</span>
-                        </button>
-                        <button 
-                            onClick={() => {
-                                clearChat();
-                                router.push("/admin/create-drive");
-                            }}
-                            className="group flex items-center gap-3 px-8 py-3 rounded-xl border-2 border-gray-900 text-gray-900 font-bold hover:bg-gray-900 hover:text-white transition-all duration-500 shadow-xl shadow-gray-200/20 active:scale-95"
-                        >
-                            <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
-                            <span className="text-[10px] font-black uppercase tracking-widest leading-none">Exit Architect</span>
-                        </button>
-                    </div>
-                </div>
-            </header>
+                    </motion.header>
+                )}
+            </AnimatePresence>
 
             {/* Chat Scroll Sanctuary */}
             <main 
                 ref={scrollRef}
-                className="flex-1 overflow-y-auto px-6 pt-10 pb-32 space-y-12 bg-[#FDFDFF] custom-scrollbar scroll-smooth"
+                className="flex-1 overflow-y-auto px-6 pb-32 bg-[#FDFDFF] custom-scrollbar scroll-smooth"
             >
+                <AnimatePresence>
                 {messages.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center -mt-20 px-8 animate-in-fade text-center max-w-2xl mx-auto">
-                        <div className="h-24 w-24 rounded-[2.5rem] bg-gradient-to-br from-[#F97316] to-orange-600 flex items-center justify-center text-white shadow-2xl shadow-orange-500/20 mb-10 transform scale-125">
-                            <Bot className="h-12 w-12" />
-                        </div>
-                        <h2 className="text-5xl font-black text-gray-900 tracking-tighter leading-none mb-8">
-                            Architect Your Vision
-                        </h2>
-                        <p className="text-gray-400 font-bold text-[11px] mb-16 uppercase tracking-[0.6em]">
-                            Hirer Neural Synthesis Engine Online
-                        </p>
-                        <div className="w-full max-w-4xl group scale-110">
-                            <div className="relative bg-white rounded-[3rem] p-3 shadow-[0_40px_100px_rgba(0,0,0,0.07)] border border-orange-100/40 flex items-center transition-all duration-700 hover:shadow-[0_40px_120px_rgba(249,115,22,0.1)] focus-within:border-orange-400 focus-within:shadow-[0_40px_120px_rgba(249,115,22,0.15)]">
-                                <div className="pl-8 text-orange-400">
-                                    <MessageSquare className="h-8 w-8" />
+                    <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="min-h-[85vh] flex flex-col items-center justify-center px-8 text-center max-w-5xl mx-auto"
+                    >
+                        <motion.div 
+                            initial={{ opacity: 0, y: 30 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                            className="w-full flex flex-col items-center"
+                        >
+                            <div className="mb-10 group">
+                                <div className="flex flex-col items-center gap-4">
+                                    <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-14" />
+                                    <h1 className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tighter leading-none mb-2">
+                                        Architect Your Vision
+                                    </h1>
+                                    <p className="text-gray-400 font-bold text-[11px] uppercase tracking-[0.6em]">
+                                        Hirer AI Neural Synthesis Online
+                                    </p>
                                 </div>
-                                <input 
-                                    className="flex-1 bg-transparent border-none outline-none ring-0 focus:ring-0 focus:outline-none px-7 h-20 text-[20px] font-bold text-gray-900 placeholder:text-gray-300"
-                                    placeholder="Brief your high-impact requirements..."
-                                    value={input}
-                                    onChange={e => setInput(e.target.value)}
-                                    onKeyPress={e => e.key === "Enter" && handleSend()}
-                                />
-                                <button 
-                                    disabled={!input.trim() || isGenerating}
-                                    onClick={() => handleSend()}
-                                    className="h-20 px-14 rounded-full text-white font-bold shadow-2xl transition-all duration-300 flex items-center justify-center gap-4 overflow-hidden hover:scale-[1.02] active:scale-95 shrink-0"
-                                    style={{
-                                        background: "linear-gradient(135deg, #F97316, #ea6608)",
-                                    }}
-                                >
-                                    <span className="text-[12px] font-black uppercase tracking-[0.3em]">Architect</span>
-                                    <Zap className="h-6 w-6" />
-                                </button>
                             </div>
-                        </div>
-
-                        {/* High-Fidelity Suggestion Chips */}
-                        <div className="w-full flex flex-col items-center gap-8 mt-24 animate-in-fade">
-                            <div className="flex items-center gap-6 w-full max-w-2xl">
-                                <div className="h-px bg-gray-100 flex-1" />
-                                <p className="text-[11px] font-bold text-gray-300 uppercase tracking-[0.6em] whitespace-nowrap">Try a Blueprint</p>
-                                <div className="h-px bg-gray-100 flex-1" />
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-5xl px-8">
-                                {[
-                                    "Senior React Developer, 4yrs exp, 12-15 LPA",
-                                    "Product Manager for Fintech, Remote, Engineering",
-                                    "Backend Engineer (Node.js), 5yrs, Bangalore Office",
-                                    "HR Generalist, Hybrid, 3+ Years exp, Operations",
-                                    "DevOps Specialist, AWS Infrastructure, $140k Range",
-                                    "Sales Executive, B2B SaaS, 2yrs exp, Growth"
-                                ].map(s => (
+                            
+                            <div className="w-full max-w-4xl group mt-6">
+                                <div className="relative bg-white rounded-[2rem] p-1.5 shadow-[0_30px_100px_rgba(0,0,0,0.04)] border border-gray-100 flex items-center transition-all duration-700 hover:shadow-[0_40px_120px_rgba(249,115,22,0.08)] focus-within:border-orange-200 focus-within:shadow-[0_40px_120px_rgba(249,115,22,0.12)]">
+                                    <div className="pl-6 text-orange-400">
+                                        <Sparkles className="h-5 w-5" />
+                                    </div>
+                                    <input 
+                                        className="flex-1 bg-transparent border-none outline-none ring-0 focus:ring-0 focus:outline-none px-5 h-14 text-[18px] font-bold text-gray-900 placeholder:text-gray-300"
+                                        placeholder="Brief your high-impact requirements..."
+                                        value={input}
+                                        onChange={e => setInput(e.target.value)}
+                                        onKeyPress={e => e.key === "Enter" && handleSend()}
+                                    />
                                     <button 
-                                        key={s} 
-                                        onClick={() => handleSend(s)}
-                                        className="px-8 py-5 rounded-3xl border border-gray-50 bg-white text-[14px] font-bold text-gray-400 hover:text-[#F97316] hover:border-orange-200 hover:shadow-[0_20px_40px_rgba(249,115,22,0.1)] transition-all duration-500 text-left flex items-center group/card shadow-sm"
+                                        disabled={!input.trim() || isGenerating}
+                                        onClick={() => handleSend()}
+                                        className="h-12 px-10 rounded-[1.25rem] text-white font-bold shadow-xl transition-all duration-300 flex items-center justify-center gap-3 overflow-hidden hover:scale-[1.02] active:scale-95 shrink-0"
+                                        style={{
+                                            background: "linear-gradient(135deg, #F97316, #ea6608)",
+                                        }}
                                     >
-                                        <div className="h-2 w-2 rounded-full bg-gray-100 group-hover/card:bg-orange-400 mr-4 transition-colors" />
-                                        <span className="flex-1">{s}</span>
-                                        <ArrowLeft className="h-4 w-4 rotate-180 opacity-0 group-hover/card:opacity-100 transition-all translate-x-[-10px] group-hover/card:translate-x-0" />
+                                        <span className="text-[11px] font-black uppercase tracking-widest">Architect</span>
+                                        <Zap className="h-4 w-4" />
                                     </button>
-                                ))}
+                                </div>
                             </div>
-                        </div>
-                    </div>
+
+                            {/* Sequential Suggestions: Rect and Circle Layout */}
+                            <motion.div 
+                                initial="hidden"
+                                animate="visible"
+                                variants={{
+                                    hidden: { opacity: 0 },
+                                    visible: {
+                                        opacity: 1,
+                                        transition: { staggerChildren: 0.1, delayChildren: 0.5 }
+                                    }
+                                }}
+                                className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-4xl mt-20"
+                            >
+                                {[
+                                    { text: "Senior React Developer, 4yrs exp, 12-15 LPA", icon: "⚛️" },
+                                    { text: "Backend Engineer, Node.js + Postgre, 20 LPA", icon: "⚡" },
+                                    { text: "Product Manager, B2B SaaS, Hybrid", icon: "📦" },
+                                    { text: "UX Architect, Figma Pro, 5+ years", icon: "🎨" },
+                                ].map((s, idx) => (
+                                    <motion.button 
+                                        key={idx}
+                                        variants={{
+                                            hidden: { opacity: 0, y: 15 },
+                                            visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } }
+                                        }}
+                                        onClick={() => handleSend(s.text)}
+                                        className="group flex items-center gap-4 p-4 rounded-2xl bg-white border border-gray-50 shadow-sm hover:border-orange-200 hover:shadow-[0_15px_30px_rgba(249,115,22,0.06)] transition-all duration-500 text-left"
+                                    >
+                                        {/* Circle Layout */}
+                                        <div className="h-11 w-11 shrink-0 rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center text-[20px] group-hover:scale-110 group-hover:rotate-6 transition-all duration-500 shadow-sm">
+                                            {s.icon}
+                                        </div>
+                                        {/* Rect Layout */}
+                                        <div className="flex-1">
+                                            <p className="text-[13px] font-bold text-gray-500 group-hover:text-gray-900 transition-colors leading-snug">
+                                                {s.text}
+                                            </p>
+                                        </div>
+                                        <ChevronRight className="h-4 w-4 text-gray-200 group-hover:text-orange-400 group-hover:translate-x-1 transition-all" />
+                                    </motion.button>
+                                ))}
+                            </motion.div>
+                        </motion.div>
+                    </motion.div>
                 ) : (
                     <div className="max-w-4xl mx-auto w-full space-y-12">
                         {messages.map((m) => (
@@ -530,6 +584,7 @@ export default function AiChatJdPage() {
                     ))}
                     </div>
                 )}
+                </AnimatePresence>
             </main>
 
             {/* Floating Interaction Sanctuary */}

@@ -58,15 +58,17 @@
   html {
     color-scheme: light;
     scrollbar-gutter: stable;
+    --font-sans: var(--font-jakarta), system-ui, -apple-system, sans-serif;
   }
 
   body {
-    background-color: #F7F6F3;
+    background-color: #F8F9FB; /* Subtly cooler/cleaner background */
     color: #111827;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: var(--font-sans);
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1, "cv01" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    tracking: -0.01em;
   }
 
   input, textarea, select {
@@ -90,8 +92,14 @@
 
 /* ── Animations ─────────────────────────────────────── */
 @keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes aurora-float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%       { transform: translate(4%, 6%) scale(1.1); }
+  66%       { transform: translate(-3%, 4%) scale(0.95); }
 }
 
 @keyframes pulseOrange {
@@ -114,17 +122,36 @@
   50%       { opacity: 0.4; }
 }
 
+@keyframes float-gentle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
 /* ── Utilities ──────────────────────────────────────── */
 @utility animate-fade-slide {
-  animation: fadeSlideIn 0.3s ease forwards;
+  animation: fadeSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@utility glass-card {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04);
+}
+
+@utility glass-border {
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
 @utility btn-glow-orange {
   box-shadow: 0 0 0 0 rgba(249,115,22,0);
-  transition: box-shadow 150ms ease, background-color 150ms ease;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 
   &:hover {
     box-shadow: 0 0 12px rgba(249,115,22,0.25), 0 2px 6px rgba(249,115,22,0.15);
+    transform: translateY(-1px);
   }
 }
 
@@ -148,12 +175,28 @@
   animation: shimmer 0.6s ease forwards;
 }
 
-/* Active nav row pulse */
-.nav-active-dot {
-  animation: pulseDot 2s ease infinite;
+/* Premium Typography Helper */
+.text-premium {
+  letter-spacing: -0.02em;
+  font-feature-settings: "ss01", "cv01";
 }
 
-/* Green pulsing dot on active drives */
-.drive-active-dot {
-  animation: greenPulse 2s ease infinite;
+/* Smooth Scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom Scrollbar Premium */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #E2E8F0;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #CBD5E1;
 }

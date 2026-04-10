@@ -6,7 +6,7 @@ import {
     Monitor, Smartphone, X, MapPin, Briefcase, FileText, 
     UserCircle2, Bot, ArrowLeft, Upload, 
     ShieldCheck, Plus, Sparkles, Building2, Globe, Users2,
-    Clock, MessageSquare, Facebook, Send, Link as LinkIcon, Info
+    Clock, Send, Link as LinkIcon, Info
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

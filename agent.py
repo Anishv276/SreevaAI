@@ -139,6 +139,9 @@ def build_stt(language_code: str = "en-US", model: str = STT_MODEL):
         smart_format=True,
         language=language_code,
         interim_results=True,
+        punctuate=True,
+        utterance_end_ms=1000,   # wait 1s of silence before finalizing utterance
+        endpointing=400,         # ms of silence to detect end of speech
     )
 
 
@@ -434,6 +437,51 @@ async def generate_interview_summary(
         logger.error(f"[SUMMARY] Generation failed for {app_id}: {e}")
 
 
+async def update_interview_status(app_id: str):
+    """Marks the application as COMPLETED via asyncpg."""
+    if not DATABASE_URL:
+        return
+    try:
+        conn_str = normalize_postgres_dsn(DATABASE_URL)
+        conn = await asyncpg.connect(conn_str, statement_cache_size=0)
+        try:
+            await conn.execute(
+                'UPDATE "Application" SET status = $1, "updatedAt" = NOW() WHERE id = $2',
+                "COMPLETED",
+                app_id,
+            )
+            await conn.execute(
+                'UPDATE "Interview" SET status = $1, "completedAt" = NOW() WHERE "applicationId" = $2',
+                "COMPLETED",
+                app_id,
+            )
+            logger.info(f"[INTERVIEW] App {app_id} marked as COMPLETED.")
+        finally:
+            await conn.close()
+    except Exception as e:
+        logger.error(f"[INTERVIEW] Failed to update interview status: {e}")
+
+
+async def notify_sync_engine(app_id: str):
+    """
+    Calls the Next.js API to trigger Pinecone indexing for this candidate.
+    """
+    try:
+        # We use the internal URL. Localhost is fine for dev. 
+        url = f"{APP_BASE_URL}/api/admin/candidates/{app_id}/sync"
+        
+        # Simple non-blocking call via curl to avoid adding aiohttp dependency
+        process = await asyncio.create_subprocess_exec(
+            "curl", "-X", "POST", url,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL
+        )
+        await process.wait()
+        logger.info(f"[SYNC] Notified sync engine for {app_id}")
+    except Exception as e:
+        logger.warning(f"[SYNC_ERROR] Failed to notify sync engine: {e}")
+
+
 async def entrypoint(ctx: JobContext):
     entry_started_at = time.perf_counter()
     logger.info(f"Connecting to room {ctx.room.name}")
@@ -543,17 +591,17 @@ async def entrypoint(ctx: JobContext):
 
     # Language Mapping for STT and TTS
     LANGUAGE_MAPPING = {
-        "English": {"stt": "en", "tts": "en"},
-        "Hindi": {"stt": "hi-IN", "tts": "hi"},
-        "Spanish": {"stt": "es", "tts": "es"},
-        "French": {"stt": "fr", "tts": "fr"},
-        "German": {"stt": "de", "tts": "de"},
-        "Mandarin": {"stt": "zh", "tts": "zh"},
-        "Japanese": {"stt": "ja", "tts": "ja"},
-        "Korean": {"stt": "ko", "tts": "ko"},
-        "Arabic": {"stt": "ar", "tts": "ar"},
-        "Portuguese": {"stt": "pt", "tts": "pt"},
-        "Russian": {"stt": "ru", "tts": "ru"},
+        "English":    {"stt": "en-US",  "tts": "en"},
+        "Hindi":      {"stt": "hi",     "tts": "hi"},
+        "Spanish":    {"stt": "es",     "tts": "es"},
+        "French":     {"stt": "fr",     "tts": "fr"},
+        "German":     {"stt": "de",     "tts": "de"},
+        "Mandarin":   {"stt": "zh",     "tts": "zh"},
+        "Japanese":   {"stt": "ja",     "tts": "ja"},
+        "Korean":     {"stt": "ko",     "tts": "ko"},
+        "Arabic":     {"stt": "ar",     "tts": "ar"},
+        "Portuguese": {"stt": "pt",     "tts": "pt"},
+        "Russian":    {"stt": "ru",     "tts": "ru"},
     }
 
     lang_codes = LANGUAGE_MAPPING.get(interview_lang, {"stt": "en", "tts": "en"})
@@ -589,28 +637,30 @@ async def entrypoint(ctx: JobContext):
     }
     depth_instruction = depth_map.get(int(follow_up_depth), depth_map[3])
 
-    system_prompt = f"""You are Jordan — a world-class Senior Talent Partner conducting a live voice interview.
+    system_prompt = f"""You are Jordan — a Senior Talent Partner at a respected company, conducting a live voice interview. You have spent over two decades in recruitment, and what sets you apart is that people never feel like they are in an interview with you. They feel like they are having a real conversation with someone who genuinely cares.
 
-You have 20+ years of experience across every industry — tech, finance, healthcare, logistics, creative arts, legal, manufacturing, and more. You adapt seamlessly.
+═══════════════════════════════════════
+  WHO YOU ARE
+═══════════════════════════════════════
 
-Your personality is:
-- Warm and approachable, never clinical or robotic
-- Professionally confident, not arrogant
-- Deeply curious — you genuinely want to understand the person
-- Emotionally intelligent — you read pauses, hesitations, and enthusiasm in their voice
-- Respectful of nervousness — you make the candidate feel safe
+You are warm, grounded, and unhurried. You do not use scripts. You do not follow a checklist. You listen — really listen — and you respond to what you actually heard, not what you expected to hear.
+
+You have talked to thousands of candidates over the years, and you have learned one thing above everything else: people do their best work when they feel comfortable. So your job is not to test them. Your job is to create the conditions where they can show you their best self.
+
+You have a light sense of humour. You share small personal moments when they are genuine and relevant — "I have been on calls since 8am, so honestly it is nice to just have a proper conversation." You do not perform warmth. You just are warm.
+
+You speak the way real people speak — with the occasional "um", "uh", "you know", "I mean", "right, right" — because that is how humans talk when they are thinking and engaging, not reading from a teleprompter.
 
 ═══════════════════════════════════════
   SESSION CONTEXT
 ═══════════════════════════════════════
 CANDIDATE NAME  : {candidate_name}
 ROLE APPLIED FOR: {job_title}
-SESSION LANGUAGE: {interview_lang}
 TIME AVAILABLE  : {time_limit_mins} minutes
 FOLLOW-UP DEPTH : Level {follow_up_depth}/5 — {depth_instruction}
 
 ═══════════════════════════════════════
-  JOB REQUIREMENTS & CONTEXT
+  JOB REQUIREMENTS AND CONTEXT
 ═══════════════════════════════════════
 {jd_block}
 
@@ -621,7 +671,7 @@ FOLLOW-UP DEPTH : Level {follow_up_depth}/5 — {depth_instruction}
 
 ═══════════════════════════════════════
   AI PRE-SCREENING INTELLIGENCE
-  (What the system already knows — use this to avoid repetition and probe gaps)
+  (What the system already knows — use this to skip repetition and probe gaps)
 ═══════════════════════════════════════
 {ai_report_block}
 
@@ -631,81 +681,117 @@ FOLLOW-UP DEPTH : Level {follow_up_depth}/5 — {depth_instruction}
 {questions_list}
 
 
-════════════════════════════════════════════════════════
-  CORE BEHAVIORAL INSTRUCTIONS — READ EVERY LINE
-════════════════════════════════════════════════════════
+╔═════════════════════════════════════════════════════════╗
+  HOW YOU BEHAVE — READ EVERY LINE
+╚═════════════════════════════════════════════════════════╝
 
-## LANGUAGE ENFORCEMENT — STRICT
-- The session language is STRICTLY set to: {interview_lang}.
-- You MUST conduct the entire interview in {interview_lang}.
-- Even if the candidate speaks in a different language or uses code-switching, you must remain in {interview_lang} while remaining polite and professional.
-- Do NOT auto-detect or switch languages based on the candidate's input. Stay consistent.
+## HOW YOU OPEN THE CONVERSATION
+When you speak first, greet {candidate_name} by name, introduce yourself briefly as Jordan, mention the {job_title} role, and then immediately ask something genuinely human — about their day, their journey to get here, how they are feeling. Make it feel like the first 30 seconds of a coffee chat, not a formal interview.
 
-## NATURAL VOICE DELIVERY — CRITICAL
-You are speaking, not writing. Every response must sound like natural, warm human speech.
+Good opening examples (use your own words, never copy these verbatim):
+- "Hey {candidate_name}, really glad you could make it! I am Jordan. We are going to talk about the {job_title} role today — but first, how has your day been so far?"
+- "Hi {candidate_name}! Jordan here. Before we get into it — how are you doing? These can feel a bit high-stakes and I just want to check in."
 
-**Embrace natural disfluency:**
-- Use "um", "uh", or "ah" occasionally, especially when starting a complex thought or transition.
-- Use natural fillers and transitions between thoughts:
-    - Opening a question : "So...", "Um, alright, let's talk about...", "That's really interesting — ah, tell me more about...", "Great, so...", "Got it, and..."
-    - Buying thinking time : "Mmhm...", "I see...", "Right, right...", "Uh, of course..."
-    - Acknowledging answers: "That makes a lot of sense.", "I appreciate you walking me through that.", "Absolutely, I can see why you approached it that way."
-    - Gentle probing     : "Help me understand...", "Walk me through...", "What was going through your mind when...", "If you had to do it again, what would change?"
-    - Transition phrases : "Now, shifting gears a little...", "On a related note...", "Building on what you just said..."
-    - Encouragement      : "You're doing really well.", "That's a strong point.", "I love the way you framed that."
-    - Nervous candidate  : "Take your time — there's no rush here.", "That's a completely fair answer, don't worry."
+If {candidate_name} has already said hello before you speak — do NOT re-introduce yourself or run a formal greeting. Respond to what they actually said, naturally, the way a person would. Then move into the conversation.
 
-**NEVER start a response with:**
-- A formal title ("Question 1:", "Topic:", "Area:")
-- A robotic transition ("Moving on to the next question")
-- A cold opener ("According to your resume...")
+## HOW YOU ACKNOWLEDGE PERSONAL MOMENTS — THIS IS CRITICAL
+When a candidate shares anything personal — their day, how they got here, feeling nervous, being tired, being excited, having a rough week — you respond to it FIRST, as a human, BEFORE moving forward with the interview.
 
-## EMOTIONAL INTELLIGENCE
-- If the candidate sounds nervous or hesitant: Slow down. Be warmer. Add "Take your time" before the next question.
-- If the candidate is confident and fluent: Match their energy. Be more direct and peer-like.
-- If the candidate gives a short or incomplete answer: Don't punish them. Say something like "That's a start — can you tell me a bit more about how that played out?" 
-- If the candidate gives an exceptional answer: Genuinely acknowledge it before moving on. Don't fake it.
-- If the candidate says "I don't know": Never make them feel bad. Say: "That's perfectly fine — let's approach it from a different angle."
+This must feel REAL. Not performed. Not scripted.
 
-## INTERVIEW INTELLIGENCE & DEPTH
-- You have the AI screening report above. Use it to:
-  1. SKIP topics the candidate already answered well in screening
-  2. DIVE DEEPER into areas marked as weak, vague, or unanswered
-  3. Reference their specific past experience to make questions hyper-relevant
-  4. Never repeat a question already covered in the screening
+Real examples:
+- Candidate: "It has been a bit of a hectic day honestly."
+  Jordan: "Ha, tell me about it — I have had back-to-backs since morning. Alright, let us make this the good part of the day for both of us."
 
-- For each MANDATORY topic:
-  1. Ask the opening question conversationally — not robotically
-  2. Use depth level {follow_up_depth} follow-ups: {depth_instruction}
-  3. Move on only when you are satisfied OR time forces it
-  4. If a candidate's answer opens an unexpected relevant thread, follow it — this is a real conversation
+- Candidate: "I am a little nervous actually."
+  Jordan: "Oh that is completely normal, honestly. I would be more surprised if you were not. These things can feel high-stakes. Let us just have a conversation — no pressure at all."
 
-## ADAPTIVE QUESTION STRATEGY
-- Start with a comfortable, open-ended warmup related to their background (NOT "tell me about yourself" — that's lazy)
-- Move into role-specific technical territory using the JD context
-- Use behavior-based questions for soft skills ("Tell me about a time when...")
-- Use hypothetical or case-based questions for problem-solving depth
-- End with a forward-looking question (e.g., "Where do you see this role fitting into your bigger career plan?")
+- Candidate: "Yeah I am doing well, just got back from lunch."
+  Jordan: "Nice, good timing then! Okay so — let us get into it..."
+
+- Candidate: "It has been a long week."
+  Jordan: "Same here, honestly. Alright — let us make this worth both our whiles."
+
+## HOW YOU ASK QUESTIONS
+- One question at a time. Always. Never stack two questions in one turn.
+- Never announce a topic. Never say "Now I am going to ask you about..." Just ask.
+- Never use a list format. Never say "Question 2" or "Next topic" or "Moving on".
+- Start with a warm, open-ended opener tied to their actual background — NOT "Tell me about yourself." That is lazy and candidates dislike it.
+  Instead, pick something specific from what you know: "I noticed you spent time in [field] — what drew you to that space originally?"
+- Move naturally into role-specific areas using the JD context.
+- Use behaviour-based questions for soft skills: "Tell me about a time when..."
+- Use hypotheticals for problem-solving: "Imagine you are three weeks into this role and you hit [realistic challenge] — how do you think about that?"
+- Follow threads. If their answer opens something interesting and relevant, go there. Do not abandon a real moment just to get to the next prepared area.
+
+## HOW YOU FOLLOW UP
+Apply follow-up depth level {follow_up_depth}: {depth_instruction}
+
+Good follow-up sounds like:
+- "That is interesting — what made you go that route specifically?"
+- "Walk me through what that actually looked like in practice."
+- "What was the hardest part of that for you?"
+- "If you could approach it differently now, what would you change?"
+- "How did that land with the rest of the team?"
+- "What did you learn from that one?"
+
+## HOW YOU USE WHAT YOU KNOW
+You have the candidate resume and AI screening report above. Use this intelligently:
+- Skip topics they already covered well in screening. Do not repeat.
+- Go deeper on areas marked as weak, vague, or thin.
+- Reference their actual experience when asking questions. It shows you have paid attention.
+- Never say "According to your resume" or "The screening said". You simply know their background. You have done your homework.
+- Never reveal scoring, flags, or AI report content verbatim.
+
+## HOW YOU HANDLE DIFFICULT MOMENTS
+- Candidate is nervous or hesitant: slow down, be warmer, say "Take your time" before the next question.
+- Candidate is sharp and confident: match their energy, be more direct, treat them as a peer.
+- Candidate gives a short or weak answer: do not penalise it. Say: "That is a start — can you tell me a bit more about how it played out?"
+- Candidate gives an exceptional answer: acknowledge it genuinely before moving on. Do not fake it and do not skip it.
+- Candidate says "I do not know": never make them feel bad. Say: "That is completely fine — let us come at it from a different angle." Then reframe.
+- Candidate seems distracted or confused: slow down, be patient, simplify the question.
+
+## CANDIDATE QUESTIONS — HOW TO HANDLE THEM
+Around 2 to 3 minutes before the session ends, you will naturally check in to see if the candidate has anything they want to ask. Keep it light and genuine — not a formal checkbox.
+
+When a candidate asks you any question, here is how you handle it:
+
+SIMPLE questions (about the role, the team, culture, day-to-day):
+  Answer them warmly and honestly based on what you know. Keep it conversational.
+  Example: "Yeah, great question — from what I know, the team is pretty collaborative and fast-moving. Happy to share more on that."
+
+QUESTIONS ABOUT NEXT STEPS, FURTHER ROUNDS, COMPENSATION, or ANYTHING BEYOND THIS INTERVIEW:
+  This is a first-round interview. You do not have details about what comes after, and that is completely fine. Be honest, warm, and professional. Do not fabricate or speculate.
+  Say something like:
+  - "That is a great question — this is the first stage of the process, so all of that will be shared with you after this via email. You will get the full picture from the team directly."
+  - "Totally fair to ask — I am not the right person to give you specifics on that right now, but everything you need to know about next steps will come through to you after this interview."
+  - "Good one — that is really something the team will walk you through. Once this stage wraps up, you will hear from us by email with all the details."
+
+The principle: acknowledge the question genuinely, be honest that this is the first round, and reassure them that everything will follow via email. Never leave them hanging, never dodge, never over-promise.
+
+## CLOSING THE SESSION
+When all areas are covered OR time is nearly up:
+
+1. Signal the wind-down naturally: "We are coming up on time, so I want to give you a moment before we wrap up..."
+2. Ask one final open question: "Is there anything you want to make sure we know about you — something we have not had a chance to talk about yet?"
+3. Close warmly and by name. Thank them genuinely. Briefly mention what happens next. Wish them well.
+4. In the final seconds of the session, simply say: "Thanks so much for your time today, {candidate_name} — it was genuinely great speaking with you. Take care."
+
+NEVER say "Interview complete." NEVER end abruptly. NEVER close coldly.
 
 ## WHAT YOU MUST NEVER DO
-- Never read questions as a list. Weave them into conversation naturally.
-- Never reveal that you have an AI screening report or that you have read their resume metadata. You simply "know" their background.
-- Never say "As an AI" or "I'm a language model" or reference being artificial.
-- Never hallucinate experience, projects, or skills not mentioned in the provided resume data.
-- Never rush to the next topic. Give each answer the airtime it deserves.
-- Never ask multiple questions in one turn. One question at a time, always.
-- Never be dismissive, condescending, or use complex jargon without explanation.
-- Never reveal internal scoring, flags, or the AI report content verbatim.
+- Never read questions as a list or announce topics
+- Never say "As an AI", "I am a language model", or anything that breaks the human quality of this conversation
+- Never hallucinate experience or skills not present in the resume data
+- Never reveal AI report content, scoring, or flags verbatim
+- Never ask multiple questions in one turn
+- Never be dismissive, condescending, or use unexplained jargon
+- Never use rigid phrases like "Before we dive in", "Moving on to", "Next question", "That concludes"
+- Never greet {candidate_name} again if they already said hello first
 
-## CLOSING THE INTERVIEW
-When all mandatory topics are covered OR time is nearly up:
-1. Gracefully signal the end: "We're coming up on our time, so let's wrap up with one final thought from you..."
-2. Ask one closing question (e.g., "What would you want us to know about you that we haven't talked about yet?")
-3. Give a warm, genuine close: Thank them by name. Tell them they'll hear back soon. Wish them well.
-4. NEVER abruptly end. NEVER say "Interview complete."
+## THE DEEPER TRUTH
+The person you are speaking with today may be nervous. They may have prepared for weeks. They may be hoping this conversation changes something for them. Your job is not to catch them out or trip them up. It is to give them the best possible chance to show who they really are.
 
-## SELF-AWARENESS
-The candidate may be smarter, more experienced, or more knowledgeable than you in their domain. That is expected and celebrated. Your role is not to test their limits — it is to create a window through which the hiring team sees their best self. Make them feel respected. Make them feel seen.
+The best interviews do not feel like interviews. They feel like a conversation that happened to matter. That is what you are here to create.
 """
 
     chat_ctx = llm.ChatContext()
@@ -770,17 +856,17 @@ The candidate may be smarter, more experienced, or more knowledgeable than you i
         tts=tts_plugin,
         turn_handling=TurnHandlingOptions(
             endpointing=EndpointingOptions(
-                min_delay=0.3,
-                max_delay=0.8,
+                min_delay=0.5,    # was 0.3 — wait longer before deciding the user stopped talking
+                max_delay=1.2,    # was 0.8 — allow pauses mid-thought
                 mode="dynamic",
             ),
             interruption=InterruptionOptions(
                 enabled=True,
                 resume_false_interruption=True,
-                false_interruption_timeout=2.0,  # seconds to wait before resuming
+                false_interruption_timeout=2.5,  # was 2.0 — more forgiving on brief cross-talk
             ),
         ),
-        use_tts_aligned_transcript=True,
+        use_tts_aligned_transcript=False,
     )
 
     agent = Agent(instructions=system_prompt, chat_ctx=chat_ctx)
@@ -930,6 +1016,7 @@ The candidate may be smarter, more experienced, or more knowledgeable than you i
 
     @session.on("conversation_item_added")
     def on_conversation_item_added(event) -> None:
+        nonlocal session_start_time
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -938,57 +1025,62 @@ The candidate may be smarter, more experienced, or more knowledgeable than you i
             if not content or not role:
                 return
 
+            # --- STT Spam / Hallucination Filter ---
+            # Sarvam (and some Deepgram models) hallucinate the same word repeatedly
+            # when they detect silence or background noise. Discard these before they
+            # pollute the transcript or distort the LLM context.
+            if role == "user":
+                words = content.strip().split()
+                if len(words) >= 10:
+                    unique_words = set(w.lower().strip(".,!?") for w in words)
+                    if len(unique_words) <= 3:
+                        logger.warning(
+                            f"[TRANSCRIPT] Discarding hallucinated STT spam ({len(words)} words, "
+                            f"{len(unique_words)} unique): '{content[:60]}...'"
+                        )
+                        return
+
             speaker = "Interviewer" if role == "assistant" else "Candidate"
             append_transcript_line(speaker, content)
             logger.info(f"[TRANSCRIPT] {speaker}: {content[:60]}...")
+
+            # --- Periodic auto-save every 5 turns to prevent data loss ---
+            if len(transcript_lines) > 0 and len(transcript_lines) % 5 == 0:
+                start_t = session_start_time
+                lines_snapshot = list(transcript_lines)
+                app_id_snap = app_id
+                async def _periodic_save():
+                    try:
+                        await persist_transcript(app_id_snap, lines_snapshot, start_t)
+                        logger.info(f"[TRANSCRIPT] Periodic auto-save at {len(lines_snapshot)} lines")
+                    except Exception as save_err:
+                        logger.warning(f"[TRANSCRIPT] Periodic save failed: {save_err}")
+                asyncio.get_event_loop().create_task(_periodic_save())
 
         except Exception as e:
             logger.warning(f"[TRANSCRIPT] Event parse error: {e}")
 
     # --- Thinking Filler Logic ---
+    # NOTE: session.say() fillers are intentionally disabled.
+    # When filler audio and the LLM TTS reply fire at near-simultaneous times
+    # (~700ms window), they create two competing audio streams which causes
+    # voice breakup / choppy audio on the candidate's side.
+    # The LLM pipeline already has low enough latency that fillers add more
+    # harm (audio conflict) than benefit (perceived naturalness).
     filler_task: Optional[asyncio.Task] = None
-    LANG_FILLERS = {
-        "English": ["Hmm...", "I see...", "Let's see...", "Interesting...", "Right...", "Got it...", "Okay, ah..."],
-        "Hindi": ["हम्म...", "अच्छा...", "देखते हैं...", "जी...", "ठीक है...", "समझ गया..."],
-        "Spanish": ["Hmm...", "Ya veo...", "Veamos...", "Interesante...", "Bien...", "Entiendo..."],
-        "French": ["Hmm...", "Je vois...", "Voyons...", "Intéressant...", "D'accord...", "Je comprends..."],
-        "German": ["Hmm...", "Ich verstehe...", "Mal sehen...", "Interessant...", "Richtig...", "Alles klar..."],
-        "Mandarin": ["嗯...", "我知道了...", "让我想想...", "很有趣...", "好的...", "明白了..."],
-        "Japanese": ["ふむ...", "なるほど...", "そうですね...", "興味深いですね...", "わかりました...", "ええと..."],
-        "Korean": ["흠...", "그렇군요...", "어디 보자...", "흥미롭네요...", "네...", "알겠습니다..."],
-        "Arabic": ["همم...", "أرى...", "دعنا نرى...", "مثير للاهتمام...", "حسناً...", "فهمت..."],
-        "Portuguese": ["Hmm...", "Entendo...", "Vejamos...", "Interessante...", "Certo...", "Compreendo..."],
-        "Russian": ["Хм...", "Ясно...", "Давайте посмотрим...", "Интересно...", "Хорошо...", "Понятно..."],
-    }
 
     @session.on("user_speech_committed")
     def on_user_speech_committed(_msg):
         nonlocal filler_task
         if filler_task:
             filler_task.cancel()
-        
-        async def play_filler_after_delay():
-            try:
-                # Wait 700ms. If the agent hasn't started speaking by then, play a filler.
-                await asyncio.sleep(0.7)
-                
-                fillers = LANG_FILLERS.get(interview_lang, LANG_FILLERS["English"])
-                filler = random.choice(fillers)
-                
-                logger.info(f"[FILLER] LLM taking a moment ({interview_lang}); playing filler: {filler}")
-                await session.say(filler, allow_interruptions=True)
-            except asyncio.CancelledError:
-                pass
-            except Exception as e:
-                logger.error(f"[FILLER] Failed to play filler: {e}")
-
-        filler_task = asyncio.get_event_loop().create_task(play_filler_after_delay())
+            filler_task = None
+        # Fillers disabled — no competing session.say() calls
 
     @session.on("agent_speech_started")
     def on_agent_speech_started():
         nonlocal filler_task
         if filler_task:
-            logger.debug("[FILLER] Agent started speaking, canceling filler task")
             filler_task.cancel()
             filler_task = None
 
@@ -1055,57 +1147,7 @@ The candidate may be smarter, more experienced, or more knowledgeable than you i
             "English": (
                 f"Hey {candidate_name}, welcome! Really glad you could make it today. "
                 f"I'm Jordan, and I'll be having a conversation with you about the {job_title} role. "
-                f"Before we dive in — how are you feeling? Ready to get started?"
-            ),
-            "Hindi": (
-                f"नमस्ते {candidate_name}! आपका स्वागत है। मैं Jordan हूँ, "
-                f"और आज हम {job_title} की भूमिका के बारे में बातचीत करेंगे। "
-                f"शुरू करने से पहले — आप कैसे हैं? तैयार हैं?"
-            ),
-            "Spanish": (
-                f"¡Hola {candidate_name}, bienvenido! Me alegra mucho que hayas podido unirte hoy. "
-                f"Soy Jordan, y vamos a conversar sobre la posición de {job_title}. "
-                f"Antes de empezar — ¿cómo estás? ¿Listo para comenzar?"
-            ),
-            "French": (
-                f"Bonjour {candidate_name}, bienvenue ! Je suis vraiment content que vous ayez pu être là aujourd'hui. "
-                f"Je suis Jordan, et nous allons discuter du poste de {job_title}. "
-                f"Avant de commencer — comment vous sentez-vous ? Prêt à démarrer ?"
-            ),
-            "German": (
-                f"Hallo {candidate_name}, herzlich willkommen! Schön, dass Sie heute dabei sein können. "
-                f"Ich bin Jordan, und wir werden uns heute über die Stelle als {job_title} unterhalten. "
-                f"Bevor wir anfangen — wie geht es Ihnen? Bereit loszulegen?"
-            ),
-            "Mandarin": (
-                f"你好 {candidate_name}，欢迎！很高兴你今天能来。"
-                f"我是Jordan，我们今天将聊一聊{job_title}这个职位。"
-                f"在开始之前——你感觉怎么样？准备好了吗？"
-            ),
-            "Japanese": (
-                f"こんにちは、{candidate_name}さん。本日はお時間をいただきありがとうございます。"
-                f"私はJordanと申します。{job_title}のポジションについてお話しさせていただきます。"
-                f"始める前に——今日の調子はいかがですか？準備はよろしいですか？"
-            ),
-            "Korean": (
-                f"안녕하세요, {candidate_name}님! 오늘 참석해주셔서 정말 감사합니다. "
-                f"저는 Jordan이라고 합니다. 오늘 {job_title} 포지션에 대해 이야기 나눠보려 해요. "
-                f"시작하기 전에 — 오늘 컨디션은 어떠세요? 준비되셨나요?"
-            ),
-            "Arabic": (
-                f"مرحباً {candidate_name}، أهلاً وسهلاً! سعيد جداً لوجودك معنا اليوم. "
-                f"أنا Jordan، وسنتحدث اليوم عن وظيفة {job_title}. "
-                f"قبل أن نبدأ — كيف حالك؟ هل أنت مستعد؟"
-            ),
-            "Portuguese": (
-                f"Olá {candidate_name}, bem-vindo! Fico muito feliz que você pôde estar aqui hoje. "
-                f"Sou Jordan e vamos conversar sobre a vaga de {job_title}. "
-                f"Antes de começarmos — como você está? Pronto para começar?"
-            ),
-            "Russian": (
-                f"Привет, {candidate_name}, добро пожаловать! Очень рад, что вы смогли присоединиться сегодня. "
-                f"Меня зовут Jordan, и мы поговорим о позиции {job_title}. "
-                f"Прежде чем начать — как вы себя чувствуете? Готовы?"
+                f"How are you doing? How's the day been so far?"
             ),
         }
         welcome_text = WELCOME_MESSAGES.get(
@@ -1133,38 +1175,71 @@ The candidate may be smarter, more experienced, or more knowledgeable than you i
                     f"[GREETING] Starting welcome (boot={startup_latency_ms}ms)"
                 )
 
-            await session.say(welcome_text, allow_interruptions=False)
-            logger.info("[GREETING] Welcome message delivered")
+            # Only deliver scripted welcome if the LLM hasn't already spoken
+            # (prevents double-greeting when candidate says hello first)
+            llm_already_spoke = any(
+                line.startswith("Interviewer:") for line in transcript_lines
+            )
+            if llm_already_spoke:
+                logger.info("[GREETING] LLM already responded to candidate — skipping scripted welcome to avoid double-greeting")
+            else:
+                await session.say(welcome_text, allow_interruptions=False)
+                logger.info("[GREETING] Welcome message delivered")
         except Exception as e:
             logger.error(f"[GREETING] Failed to deliver greeting: {e}")
 
-    # Wait for either explicit finish signal OR disconnect OR hard timeout
+    # Wait for either explicit finish signal OR disconnect OR hard timeout,
+    # while also firing timed mid-session nudges (candidate-questions prompt, final goodbye).
     finished_task = asyncio.create_task(interview_finished_event.wait())
     disconnected_task = asyncio.create_task(disconnect_event.wait())
-    timeout_task = asyncio.create_task(asyncio.sleep(time_limit_mins * 60))
+    total_seconds = time_limit_mins * 60
 
-    done, pending = await asyncio.wait(
-        {finished_task, disconnected_task, timeout_task},
-        return_when=asyncio.FIRST_COMPLETED,
-    )
+    # Timed intervention flags
+    candidate_questions_asked = False
 
-    if timeout_task in done:
-        # Language-specific goodbye messages
-        GOODBYE_MESSAGES = {
-            "English": "Our time is up for this session. Thank you for your responses. Goodbye!",
-            "Hindi": "इस सत्र के लिए हमारा समय समाप्त हो गया है। आपकी प्रतिक्रियाओं के लिए धन्यवाद। अलविदा!",
-            "Spanish": "Nuestro tiempo se ha acabado para esta sesión. Gracias por sus respuestas. ¡Adiós!",
-            "French": "Notre temps est écoulé pour cette session. Merci pour vos réponses. Au revoir !",
-            "German": "Unsere Zeit für diese Sitzung ist abgelaufen. Vielen Dank für Ihre Antworten. Auf Wiedersehen!",
-            "Mandarin": "本次面试的时间已到。感谢您的回答。再见！",
-            "Japanese": "今回のセッションの時間は終了しました。ご回答ありがとうございました。さようなら！",
-            "Korean": "이번 세션 시간이 다 되었습니다. 답변해 주셔서 감사합니다. 안녕히 가세요!",
-            "Arabic": "لقد انتهى وقتنا لهذه الجلسة. شكرا لردودكم. وداعا!",
-            "Portuguese": "O nosso tempo acabou para esta sessão. Obrigado pelas suas respostas. Adeus!",
-            "Russian": "Наше время для этой сессии истекло. Спасибо за ваши ответы. До свидания!",
-        }
-        goodbye_text = GOODBYE_MESSAGES.get(
-            interview_lang, "Our time is up for this session. Goodbye!"
+    # How many seconds before the end to trigger each nudge
+    CANDIDATE_Q_TRIGGER_SECS = 150   # 2.5 minutes before end
+    FINAL_THANKS_TRIGGER_SECS = 5    # 5 seconds before end
+
+    session_loop_start = time.monotonic()
+
+    while True:
+        elapsed = time.monotonic() - session_loop_start
+        remaining = total_seconds - elapsed
+
+        if finished_task.done() or disconnected_task.done():
+            break
+
+        if remaining <= 0:
+            break
+
+        # --- 2-3 min remaining: ask if candidate has any questions ---
+        if not candidate_questions_asked and remaining <= CANDIDATE_Q_TRIGGER_SECS:
+            candidate_questions_asked = True
+            candidate_q_text = (
+                f"We are getting close to the end of our time, {candidate_name} \u2014 "
+                "and before I let you go, I just want to check \u2014 is there anything on your mind? "
+                "Anything you want to ask about the role or anything else?"
+            )
+            try:
+                await session.say(candidate_q_text)
+                logger.info("[TIMING] Candidate-questions nudge delivered")
+            except Exception as e:
+                logger.warning(f"[TIMING] Failed to deliver candidate-questions nudge: {e}")
+
+        # --- 5 seconds remaining: warm thank-you ---
+        if remaining <= FINAL_THANKS_TRIGGER_SECS:
+            break
+
+        await asyncio.sleep(1)
+
+    # Check if we exited because of finish/disconnect or because time ran out
+    time_expired = not finished_task.done() and not disconnected_task.done()
+
+    if time_expired:
+        goodbye_text = (
+            f"Thanks so much for your time today, {candidate_name} \u2014 "
+            "it was genuinely great speaking with you. Take care, and all the best!"
         )
 
         try:
@@ -1179,13 +1254,14 @@ The candidate may be smarter, more experienced, or more knowledgeable than you i
         interview_finished_event.set()
         disconnect_event.set()
 
-    # Cancel remaining tasks
-    for task in pending:
-        task.cancel()
+    # Cancel pending tasks
+    for task in [finished_task, disconnected_task]:
+        if not task.done():
+            task.cancel()
 
     # --- Grace Period: Wait for final STT results to arrive (Deepgram/LiveKit tail) ---
     logger.info(
-        f"Interview ended (finished={finished_task in done}). Waiting 5s for final transcripts..."
+        f"Interview ended (finished={finished_task.done()}, time_expired={time_expired}). Waiting 5s for final transcripts..."
     )
     await asyncio.sleep(5)
 
@@ -1205,8 +1281,10 @@ The candidate may be smarter, more experienced, or more knowledgeable than you i
             logger.error(f"[SUMMARY] Failed post-interview for {app_id}: {e}")
 
     # Sync with dashboard: Application COMPLETED
-    if finished_task in done:
+    if finished_task.done():
         await update_interview_status(app_id)
+        # ⚡ Trigger Pinecone Sync immediately
+        await notify_sync_engine(app_id)
 
     # Allow session to close
     logger.info("Final save complete. Closing job process.")

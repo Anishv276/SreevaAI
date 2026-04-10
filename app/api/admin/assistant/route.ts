@@ -211,7 +211,8 @@ async function searchCandidates(message: string, orgId: string) {
                 fullName: true,
                 email: true,
                 aiScore: true,
-                status: true,
+                resumeStatus: true,
+                hiringStatus: true,
                 createdAt: true,
                 drive: { select: { title: true } }
             }
@@ -222,7 +223,7 @@ async function searchCandidates(message: string, orgId: string) {
         }
         
         const list = candidates.map(c => 
-            `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - ${c.status} - ${c.drive.title}`
+            `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - ${c.hiringStatus !== 'pending' ? c.hiringStatus : c.resumeStatus} - ${c.drive.title}`
         ).join('\n');
         
         return {
@@ -249,7 +250,8 @@ async function searchCandidates(message: string, orgId: string) {
                 fullName: true,
                 email: true,
                 aiScore: true,
-                status: true,
+                resumeStatus: true,
+                hiringStatus: true,
                 createdAt: true,
                 structuredResume: true,
                 drive: { select: { title: true } }
@@ -284,7 +286,7 @@ async function searchCandidates(message: string, orgId: string) {
         }
         
         const list = filtered.slice(0, 10).map(c => 
-            `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - ${c.status} - ${c.drive.title}`
+            `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - ${c.hiringStatus !== 'pending' ? c.hiringStatus : c.resumeStatus} - ${c.drive.title}`
         ).join('\n');
         
         return {
@@ -304,7 +306,8 @@ async function searchCandidates(message: string, orgId: string) {
             fullName: true,
             email: true,
             aiScore: true,
-            status: true,
+            resumeStatus: true,
+            hiringStatus: true,
             createdAt: true,
             drive: { select: { title: true } }
         }
@@ -316,7 +319,7 @@ async function searchCandidates(message: string, orgId: string) {
     
     const list = candidates.map(c => {
         const time = new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        return `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - ${c.status} - ${c.drive.title} (${time})`;
+        return `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - ${c.hiringStatus !== 'pending' ? c.hiringStatus : c.resumeStatus} - ${c.drive.title} (${time})`;
     }).join('\n');
     
     return {
@@ -347,7 +350,8 @@ async function filterByScore(message: string, orgId: string) {
             id: true,
             fullName: true,
             aiScore: true,
-            status: true,
+            resumeStatus: true,
+            hiringStatus: true,
             drive: { select: { title: true } }
         }
     });
@@ -376,14 +380,17 @@ async function filterByStatus(message: string, orgId: string) {
         return { type: 'general', message: "I couldn't understand the status. Try 'shortlisted', 'rejected', or 'pending'." };
     }
     
+    const field = (status.toLowerCase().includes('hired') || status.toLowerCase().includes('not')) ? 'hiringStatus' : 'resumeStatus';
+    
     const candidates = await prisma.application.findMany({
-        where: { drive: { orgId }, status },
+        where: { drive: { orgId }, [field]: { equals: status, mode: 'insensitive' } },
         take: 15,
         orderBy: { aiScore: 'desc' },
         select: {
             fullName: true,
             aiScore: true,
-            status: true,
+            resumeStatus: true,
+            hiringStatus: true,
             createdAt: true,
             drive: { select: { title: true } }
         }
@@ -418,7 +425,8 @@ async function filterByDate(message: string, orgId: string) {
         select: {
             fullName: true,
             aiScore: true,
-            status: true,
+            resumeStatus: true,
+            hiringStatus: true,
             createdAt: true,
             drive: { select: { title: true } }
         }
@@ -518,7 +526,8 @@ async function filterByDrive(message: string, orgId: string) {
         select: {
             fullName: true,
             aiScore: true,
-            status: true,
+            resumeStatus: true,
+            hiringStatus: true,
             createdAt: true
         }
     });
@@ -530,7 +539,7 @@ async function filterByDrive(message: string, orgId: string) {
     }
     
     const list = candidates.map(c => 
-        `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - ${c.status}`
+        `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - ${c.hiringStatus !== 'pending' ? c.hiringStatus : c.resumeStatus}`
     ).join('\n');
     
     return {
@@ -581,7 +590,7 @@ async function summarizeCandidate(message: string, orgId: string, history: any[]
     summary += `📧 ${candidate.email}\n`;
     summary += `💼 Applied for: ${candidate.drive.title}\n`;
     summary += `📊 AI Score: ${candidate.aiScore || 'N/A'}/100\n`;
-    summary += `📌 Status: ${candidate.status}\n`;
+    summary += `📌 Status: ${candidate.hiringStatus !== 'pending' ? candidate.hiringStatus : candidate.resumeStatus}\n`;
     summary += `📅 Applied: ${new Date(candidate.createdAt).toLocaleDateString()} at ${new Date(candidate.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}\n`;
     
     if (skills.length > 0) {
@@ -629,9 +638,10 @@ async function countQuery(message: string, orgId: string) {
         return { type: 'count', message: `📊 **${count}** total applications in your organization.` };
     }
     
-    const status = extractStatus(message);
+    const status = extractStatus(lower);
     if (status) {
-        const count = await prisma.application.count({ where: { drive: { orgId }, status } });
+        const field = (status.toLowerCase().includes('hired') || status.toLowerCase().includes('not')) ? 'hiringStatus' : 'resumeStatus';
+        const count = await prisma.application.count({ where: { drive: { orgId }, [field]: { equals: status, mode: 'insensitive' } } });
         return { type: 'count', message: `📊 **${count}** candidates with status: ${status}` };
     }
     
@@ -659,11 +669,11 @@ async function compareCandidates(message: string, orgId: string) {
     const [c1, c2] = await Promise.all([
         prisma.application.findFirst({
             where: { drive: { orgId }, fullName: { contains: name1, mode: 'insensitive' } },
-            select: { fullName: true, aiScore: true, status: true, drive: { select: { title: true } } }
+            select: { fullName: true, aiScore: true, resumeStatus: true, hiringStatus: true, drive: { select: { title: true } } }
         }),
         prisma.application.findFirst({
             where: { drive: { orgId }, fullName: { contains: name2, mode: 'insensitive' } },
-            select: { fullName: true, aiScore: true, status: true, drive: { select: { title: true } } }
+            select: { fullName: true, aiScore: true, resumeStatus: true, hiringStatus: true, drive: { select: { title: true } } }
         })
     ]);
     
@@ -679,7 +689,7 @@ async function compareCandidates(message: string, orgId: string) {
     comparison += `| Metric | ${c1.fullName} | ${c2.fullName} |\n`;
     comparison += `|--------|---------------|\n`;
     comparison += `| **AI Score** | ${score1}/100 | ${score2}/100 |\n`;
-    comparison += `| **Status** | ${c1.status} | ${c2.status} |\n`;
+    comparison += `| **Status** | ${c1.hiringStatus !== 'pending' ? c1.hiringStatus : c1.resumeStatus} | ${c2.hiringStatus !== 'pending' ? c2.hiringStatus : c2.resumeStatus} |\n`;
     comparison += `| **Applied For** | ${c1.drive.title} | ${c2.drive.title} |\n`;
     comparison += `\n🏆 **Winner:** ${winner}`;
     
@@ -828,12 +838,12 @@ Keep responses concise and use bold for important info. Always sign off as Lumo.
         ] = await Promise.all([
             prisma.application.count({ where: { drive: { orgId } } }),
             prisma.drive.count({ where: { orgId, status: 'ACTIVE' } }),
-            prisma.application.count({ where: { status: 'Hired', drive: { orgId } } }),
+            prisma.application.count({ where: { hiringStatus: 'hired', drive: { orgId } } }),
             prisma.application.findMany({
                 where: { drive: { orgId } },
                 take: 5,
                 orderBy: { createdAt: 'desc' },
-                select: { fullName: true, aiScore: true, status: true, createdAt: true, drive: { select: { title: true } } }
+                select: { fullName: true, aiScore: true, resumeStatus: true, hiringStatus: true, createdAt: true, drive: { select: { title: true } } }
             })
         ]);
 
@@ -847,7 +857,7 @@ CURRENT PLATFORM STATUS:
 - Hired This Month: ${hiredThisMonth}
 
 RECENT APPLICATIONS:
-${recentApps.map(a => `- ${a.fullName}: Score ${a.aiScore || 'N/A'}, Status: ${a.status}, Applied: ${new Date(a.createdAt).toLocaleString()}, Drive: ${a.drive.title}`).join('\n')}
+${recentApps.map(a => `- ${a.fullName}: Score ${a.aiScore || 'N/A'}, Status: ${a.hiringStatus !== 'pending' ? a.hiringStatus : a.resumeStatus}, Applied: ${new Date(a.createdAt).toLocaleString()}, Drive: ${a.drive.title}`).join('\n')}
 
 Be concise and helpful. Use bold for names and scores. Always provide exact times if available in context.
         `;

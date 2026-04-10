@@ -61,7 +61,7 @@ export async function GET(request: Request) {
 
             return {
                 id: app.id,
-                status: app.status,
+                status: app.hiringStatus,
                 score: app.aiScore,
                 createdAt: app.createdAt,
                 drive: app.drive,

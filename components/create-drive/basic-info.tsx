@@ -411,21 +411,21 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                     <PremiumInput
-                        label="Drive Title"
-                        icon={Briefcase}
-                        id="title"
-                        value={formData.title || ""}
-                        onChange={(e) => handleChange("title", e.target.value)}
-                        placeholder="e.g. Senior Backend Engineer Drive"
-                        required
-                    />
-                    <PremiumInput
                         label="Job Role"
                         icon={Layers}
                         id="role"
                         value={formData.role || ""}
                         onChange={(e) => handleChange("role", e.target.value)}
                         placeholder="e.g. Backend Engineer"
+                        required
+                    />
+                    <PremiumInput
+                        label="Drive Title"
+                        icon={Briefcase}
+                        id="title"
+                        value={formData.title || ""}
+                        onChange={(e) => handleChange("title", e.target.value)}
+                        placeholder="e.g. Senior Backend Engineer Drive"
                         required
                     />
                 </div>

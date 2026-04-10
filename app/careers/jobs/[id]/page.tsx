@@ -4,7 +4,7 @@ import { PortalHeader } from "@/components/careers/portal-header";
 import { Button } from "@/components/ui/button";
 import { 
     ArrowLeft, Clock, MapPin, Share2, Briefcase, FileText, 
-    UserCircle2, CheckCircle2, MessageSquare, Facebook, 
+    UserCircle2, 
     Link as LinkIcon, Send, Globe, Building2, Users2, Info, Sparkles, AlertCircle
 } from "lucide-react";
 import Link from "next/link";
@@ -100,6 +100,9 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
             toast.success("Link copied to clipboard!");
         }
     };
+
+    const isExpired = job.deadline && new Date(job.deadline) < new Date();
+    const isActuallyClosed = job.status === "CLOSED" || isExpired;
 
     return (
         <div className="min-h-screen bg-[#FDFCFB] selection:bg-orange-100 selection:text-orange-900">
@@ -284,7 +287,7 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
                             </div>
 
                             <div className="space-y-4 relative z-10">
-                                {job.status === "CLOSED" ? (
+                                {isActuallyClosed ? (
                                     <Button disabled className="w-full h-16 bg-gray-100 text-gray-400 font-black text-lg rounded-2xl cursor-not-allowed uppercase tracking-widest italic border-gray-100">
                                         APPLICATIONS CLOSED
                                     </Button>
@@ -308,9 +311,9 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
 
                             <div className="pt-6 border-t border-gray-50 flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <div className={`h-2 w-2 rounded-full ${job.status === 'CLOSED' ? 'bg-red-500' : 'bg-green-500 animate-pulse'}`} />
+                                    <div className={`h-2 w-2 rounded-full ${isActuallyClosed ? 'bg-red-500' : 'bg-green-500 animate-pulse'}`} />
                                     <span className="text-[10px] font-black text-gray-900 uppercase tracking-widest">
-                                        {job.status === 'CLOSED' ? 'Applications Closed' : 'Accepting Applications'}
+                                        {isActuallyClosed ? (isExpired ? 'Applications Expired' : 'Applications Closed') : 'Accepting Applications'}
                                     </span>
                                 </div>
                                 <span className="text-[10px] font-black text-gray-900 uppercase tracking-widest">

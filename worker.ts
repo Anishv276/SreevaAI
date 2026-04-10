@@ -171,11 +171,12 @@ const worker = new Worker('resume-processing', async (job) => {
       ? JSON.parse((drive as any).extractedDetails) 
       : (drive as any).extractedDetails || {};
 
-    const scoringInput = { 
-        resume: structuredResume, 
+    const scoringInput = {
+        resume: structuredResume,
         jd: jdDetails,
         resume_raw_text: resumeText,
-        jd_raw_text: jdText || (drive as any).description || ""
+        jd_raw_text: jdText || (drive as any).description || "",
+        threshold: THRESHOLD
     };
 
     tempInputPath = join(tmpdir(), `scoring_${Date.now()}_${Math.random().toString(36).substring(7)}.json`);
@@ -212,14 +213,19 @@ const worker = new Worker('resume-processing', async (job) => {
       .toUpperCase()
       .replace(/\s+/g, "_");
 
+    // Python computes status using the threshold we passed.
+    // "Borderline" = score is between Python's floor (55) and threshold — treat with threshold.
+    // Hard rejections from Python always win regardless of threshold.
     const finalStatus: "SHORTLISTED" | "REJECTED" | "ACCEPTED" =
-      normalizedAiStatus === "SHORTLISTED" || normalizedAiStatus === "ACCEPTED"
-        ? normalizedAiStatus
-        : normalizedAiStatus === "REJECTED"
-          ? "REJECTED"
-          : currentScore >= THRESHOLD
-            ? "SHORTLISTED"
-            : "REJECTED";
+      aiResult.hard_rejected
+        ? "REJECTED"
+        : normalizedAiStatus === "SHORTLISTED" || normalizedAiStatus === "ACCEPTED"
+          ? normalizedAiStatus
+          : normalizedAiStatus === "REJECTED"
+            ? "REJECTED"
+            : currentScore >= THRESHOLD   // Borderline or unknown: use DB threshold
+              ? "SHORTLISTED"
+              : "REJECTED";
 
     // 2. Update DB
     const exists = await prisma.application.findUnique({ where: { id: applicationId } });
@@ -238,7 +244,13 @@ const worker = new Worker('resume-processing', async (job) => {
 
     console.log(`[SUCCESS] Candidate ${applicantEmail} scored ${currentScore}. Status: ${finalStatus}`);
 
-    // 3. Interview invite email flow
+    // 3. Sync to Pinecone (fire-and-forget, non-blocking)
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    fetch(`${appUrl}/api/admin/candidates/${applicationId}/sync`, { method: 'POST' })
+        .then(() => console.log(`[SYNC] Pinecone sync triggered for ${applicationId}`))
+        .catch((err: Error) => console.warn(`[SYNC] Pinecone sync failed (non-fatal): ${err.message}`));
+
+    // 4. Interview invite email flow
     const { sendApplicationStatusEmail } = await import('./lib/mail');
     if (finalStatus === 'ACCEPTED' || finalStatus === 'SHORTLISTED') {
       const interview = await (prisma as any).interview.upsert({

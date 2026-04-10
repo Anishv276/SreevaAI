@@ -87,7 +87,8 @@ export async function POST(request: Request) {
         const prefix = type === "JD" ? "jds/" : type === "PASSPORT" ? "passport/" : "resumes/";
         const fileName = `${prefix}${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
 
-        // Primary bottleneck: Java/Python Extraction
+        let fileUrl: string | null = null;
+
         console.log("[PYTHON_EXEC]: Starting scripts/extract_pdf.py for", file.name);
         const pythonCommand = process.platform === "win32" ? "python" : "python3";
         const pythonProcess = spawn(pythonCommand, ["scripts/extract_pdf.py", tempFilePath, type]);
@@ -95,31 +96,44 @@ export async function POST(request: Request) {
         pythonProcess.stdout.on("data", (data) => { outputData += data.toString(); });
         pythonProcess.stderr.on("data", (data) => { errorData += data.toString(); });
 
-        const exitCode = await new Promise((resolve) => {
-            pythonProcess.on("close", (code) => {
-                console.log("[PYTHON_EXTRACT_END]: Exit code", code);
-                resolve(code);
-            });
-        });
+        // R2 upload and Python extraction run in parallel — they don't depend on each other
+        const [exitCode] = await Promise.all([
+            // Python PDF/LLM extraction
+            new Promise<number>((resolve) => {
+                let settled = false;
 
-        // 7. SYNC UPLOAD: Handle R2 persistence
-        let fileUrl = null;
-        try {
-            console.log("[STORAGE_PUSH]: Uploading to R2", fileName);
-            const { putObject } = await import("@/lib/s3");
-            fileUrl = await putObject(bucket, fileName, buffer, file.type);
-            console.log("[STORAGE_SUCCESS]:", { type, fileName, url: fileUrl });
-        } catch (storageErr: any) {
-            console.error("[STORAGE_FATAL_ERROR]:", { type, fileName, error: storageErr.message });
-            // For JD, it's critical we have a persistent link
-            if (type === "JD") {
-                return NextResponse.json({ 
-                    error: "Could not persist JD to cloud storage. Please check bucket permissions.", 
-                    code: "STORAGE_VULNERABILITY",
-                    details: storageErr.message 
-                }, { status: 507 });
-            }
-        }
+                // Safety timeout: 120s — OpenAI itself can take 30-40s on large prompts
+                const timeout = setTimeout(() => {
+                    if (settled) return;
+                    settled = true;
+                    console.error("[PYTHON_TIMEOUT]: Process exceeded 120s, killing.");
+                    pythonProcess.kill();
+                    resolve(-1);
+                }, 120000);
+
+                pythonProcess.on("close", (code) => {
+                    if (settled) return; // Timeout already resolved — ignore late close event
+                    settled = true;
+                    clearTimeout(timeout);
+                    console.log("[PYTHON_EXTRACT_END]: Exit code", code);
+                    resolve(code ?? 1);
+                });
+            }),
+            // R2 upload (runs concurrently)
+            (async () => {
+                try {
+                    console.log("[STORAGE_PUSH]: Uploading to R2", fileName);
+                    const { putObject } = await import("@/lib/s3");
+                    fileUrl = await putObject(bucket, fileName, buffer, file.type);
+                    console.log("[STORAGE_SUCCESS]:", { type, fileName, url: fileUrl });
+                } catch (storageErr: any) {
+                    console.error("[STORAGE_FATAL_ERROR]:", { type, fileName, error: storageErr.message });
+                    if (type === "JD") {
+                        throw { code: "STORAGE_VULNERABILITY", message: storageErr.message };
+                    }
+                }
+            })(),
+        ]);
 
         // Cleanup temp file (after upload is attempted)
         await unlink(tempFilePath).catch(() => { });

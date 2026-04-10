@@ -25,22 +25,22 @@ export async function GET() {
         ] = await Promise.all([
             prisma.application.count({ where: { drive: { orgId } } }),
             prisma.drive.count({ where: { orgId, status: 'ACTIVE' } }),
-            prisma.application.count({ where: { drive: { orgId }, status: 'APPLIED' } }),
-            prisma.application.count({ where: { drive: { orgId }, status: 'REJECTED' } }),
+            prisma.application.count({ where: { drive: { orgId }, resumeStatus: 'pending' } }),
+            prisma.application.count({ where: { drive: { orgId }, resumeStatus: 'rejected' } }),
             prisma.interview.count({ where: { application: { drive: { orgId } }, status: { in: ['SCHEDULED', 'PENDING', 'IN_PROGRESS'] } } }),
             prisma.interview.count({ where: { application: { drive: { orgId } }, status: 'COMPLETED' } }),
             prisma.application.count({
-                where: { status: 'Hired', updatedAt: { gte: monthStart }, drive: { orgId } }
+                where: { hiringStatus: 'hired', updatedAt: { gte: monthStart }, drive: { orgId } }
             })
         ]);
 
         // Funnel - Using actual Application statuses
         const [statusApplied, statusShortlisted, statusInterview, statusOffer, statusHired] = await Promise.all([
-            prisma.application.count({ where: { drive: { orgId }, status: 'APPLIED' } }),
-            prisma.application.count({ where: { drive: { orgId }, status: 'SHORTLISTED' } }),
-            prisma.application.count({ where: { drive: { orgId }, status: { in: ['INTERVIEW', 'INTERVIEW_COMPLETED', 'Interview Completed'] } } }),
-            prisma.application.count({ where: { drive: { orgId }, status: { in: ['OFFER', 'OFFER_SENT', 'Offer Sent'] } } }),
-            prisma.application.count({ where: { drive: { orgId }, status: 'Hired' } })
+            prisma.application.count({ where: { drive: { orgId }, resumeStatus: 'pending' } }),
+            prisma.application.count({ where: { drive: { orgId }, resumeStatus: 'shortlisted' } }),
+            prisma.application.count({ where: { drive: { orgId }, interviewStatus: { in: ['inprogress', 'finished'] } } }),
+            prisma.application.count({ where: { drive: { orgId }, hiringStatus: 'pending' } }),
+            prisma.application.count({ where: { drive: { orgId }, hiringStatus: 'hired' } })
         ]);
 
         // Interview Stats
@@ -89,7 +89,7 @@ export async function GET() {
             trendsApplications.push(dayApps);
 
             const dayHired = await prisma.application.count({
-                where: { drive: { orgId }, status: 'Hired', updatedAt: { gte: dayStart, lt: dayEnd } }
+                where: { drive: { orgId }, hiringStatus: 'hired', updatedAt: { gte: dayStart, lt: dayEnd } }
             });
             trendsHired.push(dayHired);
         }
@@ -113,11 +113,11 @@ export async function GET() {
 
         const drivePerformance = await Promise.all(drives.map(async (drive) => {
             const apps = drive._count.applications;
-            const hired = await prisma.application.count({ where: { driveId: drive.id, status: 'Hired' } });
+            const hired = await prisma.application.count({ where: { driveId: drive.id, hiringStatus: 'hired' } });
             const interviewComplete = await prisma.application.count({ 
-                where: { driveId: drive.id, status: { in: ['INTERVIEW_COMPLETED', 'Interview Completed'] } } 
+                where: { driveId: drive.id, interviewStatus: 'finished' } 
             });
-            const pending = await prisma.application.count({ where: { driveId: drive.id, status: 'APPLIED' } });
+            const pending = await prisma.application.count({ where: { driveId: drive.id, resumeStatus: 'pending' } });
             const conversion = apps > 0 ? Math.round((hired / apps) * 100 * 10) / 10 : 0;
             
             return {
@@ -138,9 +138,9 @@ export async function GET() {
 
         // Status Breakdown
         const statusBreakdown = await prisma.application.groupBy({
-            by: ['status'],
+            by: ['resumeStatus'],
             where: { drive: { orgId } },
-            _count: { status: true }
+            _count: { resumeStatus: true }
         });
 
         // Interview-specific metrics (from Interview table)
@@ -155,12 +155,12 @@ export async function GET() {
         // Time-based metrics (from Application createdAt/updatedAt)
         const recentApps = await prisma.application.findMany({
             where: { drive: { orgId } },
-            select: { status: true, createdAt: true, updatedAt: true, aiScore: true }
+            select: { resumeStatus: true, createdAt: true, updatedAt: true, aiScore: true }
         });
 
         // Avg time from application to first response
         let avgResponseTime = 0;
-        const respondedApps = recentApps.filter(a => a.status !== 'APPLIED');
+        const respondedApps = recentApps.filter(a => a.resumeStatus !== 'pending');
         if (respondedApps.length > 0) {
             const totalDays = respondedApps.reduce((acc, app) => {
                 const diff = new Date(app.updatedAt).getTime() - new Date(app.createdAt).getTime();
@@ -234,7 +234,7 @@ export async function GET() {
             },
             scores: scoreRanges,
             drives: drivePerformance,
-            statusBreakdown: statusBreakdown.map(s => ({ status: s.status, count: s._count.status })),
+            statusBreakdown: statusBreakdown.map(s => ({ status: s.resumeStatus, count: s._count.resumeStatus })),
             departments: departmentStats,
             deadlines: upcomingDeadlines
         });

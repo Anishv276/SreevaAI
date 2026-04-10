@@ -17,9 +17,26 @@ export async function GET(request: Request) {
         const limit = parseInt(searchParams.get("limit") || "10");
         const skip = (page - 1) * limit;
         const orgId = searchParams.get("orgId");
+        const startDate = searchParams.get("startDate");
+        const endDate = searchParams.get("endDate");
         const now = new Date();
 
         let where: any = {};
+
+        if (startDate) {
+            where.createdAt = {
+                ...where.createdAt,
+                gte: new Date(startDate)
+            };
+        }
+        if (endDate) {
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+            where.createdAt = {
+                ...where.createdAt,
+                lte: end
+            };
+        }
 
         if (session) {
             // ── ADMIN ACCESS: Filter by Role & Org ───────────
@@ -30,8 +47,18 @@ export async function GET(request: Request) {
             }
 
             if (status && status !== "all") {
-                if (status === "active") where.status = "ACTIVE";
-                if (status === "inactive") where.status = "CLOSED";
+                if (status === "ACTIVE") {
+                    where.status = "ACTIVE";
+                    where.AND = [
+                        ...(where.AND || []),
+                        { OR: [{ deadline: null }, { deadline: { gte: now } }] }
+                    ];
+                } else if (status === "CLOSED") {
+                    where.status = "CLOSED";
+                } else if (status === "EXPIRED") {
+                    where.status = "ACTIVE";
+                    where.deadline = { lt: now };
+                }
             }
 
             if (type && type !== "all") {
@@ -78,16 +105,18 @@ export async function GET(request: Request) {
         const formattedDrives = drives.map((drive: any) => {
             const now = new Date();
             const deadline = drive.deadline ? new Date(drive.deadline) : null;
-            const isClosed = (deadline && deadline < now) || drive.status === "CLOSED";
-            
+            const isExpired = drive.status !== "CLOSED" && deadline && deadline < now;
+
             // Calculate real days left based on the specific deadline or fallback to 30 days
             const targetDate = deadline || new Date(new Date(drive.createdAt).getTime() + 30 * 24 * 60 * 60 * 1000);
             const diffTime = Math.max(0, targetDate.getTime() - now.getTime());
             const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
+            const effectiveStatus = drive.status === "CLOSED" ? "CLOSED" : isExpired ? "EXPIRED" : "ACTIVE";
+
             return {
                 ...drive,
-                status: isClosed ? "CLOSED" : "ACTIVE",
+                status: effectiveStatus,
                 applicants: drive._count?.applications || 0,
                 daysLeft,
                 aiScreening: {

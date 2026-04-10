@@ -21,13 +21,31 @@ export async function sendApplicationStatusEmail({
     score: number;
     interviewLink?: string;
 }) {
-    const isAccepted = status === 'SHORTLISTED' || status === 'ACCEPTED' || status === 'INTERVIEW' || status === 'Hired';
-    
-    const subject = isAccepted 
+    const isHired = status === 'Hired';
+    const isAccepted = status === 'SHORTLISTED' || status === 'ACCEPTED' || status === 'INTERVIEW' || isHired;
+
+    const subject = isHired
+        ? `Offer Letter: You've been selected for ${jobTitle}!`
+        : isAccepted
         ? `Congratulations! You've been shortlisted for the ${jobTitle} AI Interview`
         : `Update regarding your application for ${jobTitle}`;
 
-    const html = isAccepted ? `
+    const html = isHired ? `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px; background-color: #ffffff;">
+            <div style="text-align: center; margin-bottom: 25px;">
+                <div style="display: inline-block; background-color: #ECFDF5; padding: 12px; border-radius: 16px;">
+                    <span style="font-size: 32px;">🎉</span>
+                </div>
+            </div>
+            <h1 style="color: #111827; text-align: center; font-size: 24px; font-weight: 800; margin-bottom: 10px;">You're Hired, ${fullName}!</h1>
+            <p style="color: #4B5563; text-align: center; font-size: 16px; line-height: 1.5;">We are delighted to inform you that you have been <strong>selected</strong> for the <strong>${jobTitle}</strong> position. Welcome to the team!</p>
+            <div style="background-color: #F0FDF4; border-radius: 16px; padding: 20px; margin: 30px 0; border: 1px solid #D1FAE5; text-align: center;">
+                <p style="color: #065F46; font-size: 14px; font-weight: 600; margin: 0;">Our team will reach out to you shortly with the next steps including your offer letter and onboarding details.</p>
+            </div>
+            <p style="color: #9CA3AF; font-size: 12px; margin-bottom: 5px;">Best Regards,</p>
+            <p style="color: #374151; font-weight: 700; margin-top: 0;">Recruitment Team</p>
+        </div>
+    ` : isAccepted ? `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px; background-color: #ffffff;">
             <div style="text-align: center; margin-bottom: 25px;">
                 <div style="display: inline-block; background-color: #FFF7ED; padding: 12px; border-radius: 16px;">

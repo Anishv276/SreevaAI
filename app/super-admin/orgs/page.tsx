@@ -3,24 +3,14 @@
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { 
-    MoreVertical, 
     Edit2, 
-    PauseCircle, 
-    PlayCircle, 
-    Trash2, 
     Plus, 
     Users, 
     Briefcase, 
-    UserCheck,
     Search,
     Eye,
-    Building2,
-    ArrowRight,
     Loader2,
-    ChevronRight,
     Layers,
-    Globe,
-    Settings
 } from "lucide-react";
 import { Skeleton as Shimmer } from "@/components/ui/skeleton";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
@@ -260,36 +250,8 @@ export default function OrgsPage() {
                                     </div>
 
                                     {/* Actions */}
-                                    <div className="flex items-center justify-end gap-3">
-                                        <Link 
-                                            href={`/admin/drives?orgId=${can.id}`}
-                                            className="h-9 w-9 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-all border border-transparent hover:border-blue-100 shadow-sm"
-                                            title="View Job Drives"
-                                        >
-                                            <Briefcase className="h-4 w-4" />
-                                        </Link>
-                                        <Link 
-                                            href={`/admin/candidates?orgId=${can.id}`}
-                                            className="h-9 w-9 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all border border-transparent hover:border-indigo-100 shadow-sm"
-                                            title="View Candidates"
-                                        >
-                                            <Users className="h-4 w-4" />
-                                        </Link>
-                                        <Link 
-                                            href={`/super-admin/orgs/${can.id}/view`}
-                                            className="h-9 w-9 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-all border border-transparent hover:border-emerald-100 shadow-sm"
-                                            title="View Portfolio"
-                                        >
-                                            <Eye className="h-4 w-4" />
-                                        </Link>
-                                        <Link 
-                                            href={`/super-admin/orgs/${can.id}`}
-                                            className="h-9 w-9 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-[#F97316] hover:bg-orange-50 transition-all border border-transparent hover:border-orange-100 shadow-sm"
-                                            title="Configuration Logic"
-                                        >
-                                            <Settings className="h-4 w-4" />
-                                        </Link>
-                                        
+                                    <div className="flex items-center justify-end gap-2">
+                                        {/* View Dropdown */}
                                         <div className="relative overflow-visible" ref={(el) => {
                                             if (el && activeMenu === can.id) {
                                                 // @ts-ignore
@@ -298,53 +260,43 @@ export default function OrgsPage() {
                                         }}>
                                             <button 
                                                 onClick={() => setActiveMenu(activeMenu === can.id ? null : can.id)}
-                                                className="h-10 w-10 flex items-center justify-center rounded-xl bg-gray-50 text-gray-300 hover:text-gray-950 hover:bg-gray-100 transition-all active:scale-90"
+                                                className="h-9 flex items-center gap-2 px-4 rounded-lg bg-gray-50 text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-all border border-transparent hover:border-gray-200 shadow-sm text-[11px] font-bold uppercase tracking-widest active:scale-95"
                                             >
-                                                <MoreVertical className="h-4.5 w-4.5" />
+                                                <Eye className="h-3.5 w-3.5" />
+                                                View
                                             </button>
 
                                             {activeMenu === can.id && (
-                                                <div className="absolute right-0 top-12 w-56 bg-white border border-gray-100 rounded-[1.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.1)] p-2 z-[100] animate-in-up duration-200">
+                                                <div className="absolute right-0 top-11 w-52 bg-white border border-gray-100 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.1)] p-2 z-[100] animate-in-up duration-200">
                                                     <Link
                                                         href={`/admin/drives?orgId=${can.id}`}
+                                                        onClick={() => setActiveMenu(null)}
                                                         className="flex items-center gap-3 px-4 py-3.5 rounded-xl hover:bg-blue-50 text-gray-900 transition-colors group/item"
                                                     >
                                                         <Briefcase className="h-4 w-4 text-gray-400 group-hover/item:text-blue-600" />
-                                                        <span className="text-[10px] font-black uppercase tracking-widest">Inspect Drives</span>
+                                                        <span className="text-[10px] font-bold uppercase tracking-widest">Drives</span>
                                                     </Link>
                                                     <Link
                                                         href={`/admin/candidates?orgId=${can.id}`}
+                                                        onClick={() => setActiveMenu(null)}
                                                         className="flex items-center gap-3 px-4 py-3.5 rounded-xl hover:bg-indigo-50 text-gray-900 transition-colors group/item"
                                                     >
                                                         <Users className="h-4 w-4 text-gray-400 group-hover/item:text-indigo-600" />
-                                                        <span className="text-[10px] font-black uppercase tracking-widest">Inspect Candidates</span>
+                                                        <span className="text-[10px] font-bold uppercase tracking-widest">Candidates</span>
                                                     </Link>
-                                                    <div className="h-px bg-gray-50 my-1 mx-2" />
-                                                    <Link
-                                                        href={`/super-admin/orgs/${can.id}`}
-                                                        className="flex items-center gap-3 px-4 py-3.5 rounded-xl hover:bg-gray-50 text-gray-900 transition-colors group/item"
-                                                    >
-                                                        <Edit2 className="h-4 w-4 text-gray-400 group-hover/item:text-[#F97316]" />
-                                                        <span className="text-[10px] font-black uppercase tracking-widest">Configuration Logic</span>
-                                                    </Link>
-                                                    <button
-                                                        onClick={() => toggleSuspend(can)}
-                                                        className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all text-left ${can.isActive ? 'text-red-600 hover:bg-red-50' : 'text-emerald-600 hover:bg-emerald-50'}`}
-                                                    >
-                                                        {can.isActive ? <PauseCircle className="h-4 w-4" /> : <PlayCircle className="h-4 w-4" />}
-                                                        <span className="text-[10px] font-black uppercase tracking-widest">{can.isActive ? "Force Suspend" : "Restore Access"}</span>
-                                                    </button>
-                                                    <div className="h-px bg-gray-50 my-1 mx-2" />
-                                                    <button
-                                                        onClick={() => deleteOrg(can)}
-                                                        className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl hover:bg-red-50 text-red-600 transition-all text-left"
-                                                    >
-                                                        <Trash2 className="h-4 w-4 opacity-70" />
-                                                        <span className="text-[10px] font-black uppercase tracking-widest">Terminate Org</span>
-                                                    </button>
                                                 </div>
                                             )}
                                         </div>
+
+                                        {/* Edit Button */}
+                                        <Link 
+                                            href={`/super-admin/orgs/${can.id}`}
+                                            className="h-9 flex items-center gap-2 px-4 rounded-lg bg-gray-50 text-gray-500 hover:text-[#F97316] hover:bg-orange-50 transition-all border border-transparent hover:border-orange-100 shadow-sm text-[11px] font-bold uppercase tracking-widest"
+                                            title="Edit Configuration"
+                                        >
+                                            <Edit2 className="h-3.5 w-3.5" />
+                                            Edit
+                                        </Link>
                                     </div>
                                 </div>
                             ))}

@@ -127,6 +127,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const containerRef = useRef<HTMLDivElement>(null);
     const allowFullscreenExitRef = useRef(false);
     const launchIntervalRef = useRef<number | null>(null);
+    const agentReadyCommittedRef = useRef(false);
 
     const [showSecurityToast, setShowSecurityToast] = useState(false);
     const [isAgentReady, setIsAgentReady] = useState(false);
@@ -136,15 +137,23 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     useEffect(() => {
         if (phase === "launching" && launchTimeoutCheck > 45) {
             setJoinError("We're having trouble connecting to the interview room. Please check your internet and try again.");
+            agentReadyCommittedRef.current = false;
             setPhase("check");
             setLaunchTimeoutCheck(0);
         }
     }, [launchTimeoutCheck, phase]);
 
-    // Dynamic Countdown: Jumps to 3 seconds if agent is ready
+    // Dynamic Countdown: Jumps to 3 seconds if agent is ready.
+    // Also forces transition when countdown hits 0 while agent is ready (belt-and-suspenders).
     useEffect(() => {
-        if (phase === "launching" && isAgentReady && launchCountdown !== null && launchCountdown > 3) {
+        if (phase !== "launching") return;
+        if (isAgentReady && launchCountdown !== null && launchCountdown > 3) {
             setLaunchCountdown(3);
+        }
+        // Fallback: if countdown expired and agent is ready, force transition regardless
+        if (isAgentReady && launchCountdown !== null && launchCountdown <= 0) {
+            agentReadyCommittedRef.current = true;
+            setPhase("interview");
         }
     }, [isAgentReady, phase, launchCountdown]);
 
@@ -158,12 +167,17 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         return () => window.clearInterval(timer);
     }, [phase]);
 
-    // Effect 2: Phase transition — fires immediately when agent is ready
+    // Effect 2: Phase transition — fires when agent joins the room (from launching state only).
+    // Once committed, the timer is stored in a ref so React cleanup cannot cancel it on re-render.
     useEffect(() => {
         if (phase !== "launching") return;
-        if (isAgentReady) {
-            setPhase("interview");
+        if (isAgentReady && !agentReadyCommittedRef.current) {
+            agentReadyCommittedRef.current = true;
+            // Store timer in ref so cleanup on re-render doesn't cancel it
+            const t = window.setTimeout(() => setPhase("interview"), 800);
+            launchIntervalRef.current = t;
         }
+        // No cleanup return — intentional. Once committed we never cancel.
     }, [phase, isAgentReady]);
 
     const isExitUnlocked = phase === "completed" || timerExpired;
@@ -304,15 +318,17 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 throw new Error("Interview connection could not be prepared. Please retry.");
             }
 
-            // Sync timing if not already set
             if (!interviewEndsAt) {
                 setInterviewEndsAt(Date.now() + sessionDuration * 1000);
                 setRemainingSeconds(sessionDuration);
                 setTimerExpired(false);
             }
 
-            setPhase("interview"); // Immediately jump to interview room
-            
+            // Show the "Setting up..." screen and wait for the AI agent to join
+            agentReadyCommittedRef.current = false;
+            setLaunchCountdown(15);
+            setPhase("launching");
+
         } catch (err) {
             console.error("Phase transition failed:", err);
             setJoinError(err instanceof Error ? err.message : "Unable to start interview.");
@@ -425,27 +441,43 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="flex-1 min-h-screen w-full flex items-center justify-center bg-white z-[120] absolute inset-0"
+                        className="flex-1 min-h-screen w-full flex items-center justify-center bg-[#0e0e10] z-[120] absolute inset-0"
                     >
-                        <div className="flex flex-col items-center gap-7 text-center px-6">
-                            <div className="relative h-24 w-24 rounded-full border border-orange-200 bg-orange-50 flex items-center justify-center shadow-[0_12px_40px_rgba(249,115,22,0.18)]">
-                                <Loader2 className="h-10 w-10 text-orange-500 animate-spin" />
-                                <span className={cn(
-                                    "absolute -bottom-3 font-black text-orange-600 bg-white border border-orange-100 rounded-full py-1 shadow-sm transition-all",
-                                    launchCountdown === 0 ? "text-xs px-4" : "text-lg px-3"
-                                )}>
-                                    {launchCountdown === 0 ? "..." : (launchCountdown ?? 1)}
-                                </span>
+                        <div className="flex flex-col items-center gap-8 text-center px-6">
+                            <div className="relative h-32 w-32">
+                                <div className="absolute inset-0 rounded-full border-2 border-orange-500/20 animate-ping" />
+                                <div className="absolute inset-2 rounded-full border-2 border-orange-500/30 animate-ping" style={{ animationDelay: "0.3s" }} />
+                                <div className="relative h-full w-full rounded-full border-2 border-orange-500/40 bg-zinc-900/80 backdrop-blur-xl flex items-center justify-center shadow-[0_0_60px_rgba(249,115,22,0.2)]">
+                                    <Sparkles className="h-10 w-10 text-orange-500 animate-pulse" />
+                                </div>
                             </div>
-                            <div className="space-y-2">
-                                <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tight">
-                                    {launchCountdown === 0 ? "Almost Ready" : "Getting Started"}
+                            <div className="space-y-3">
+                                <h3 className="text-2xl font-black text-white uppercase tracking-tight">
+                                    {isAgentReady ? "Your Interviewer is Ready" : "Setting Up Interview Room"}
                                 </h3>
-                                <p className="text-[11px] font-bold text-gray-500 uppercase tracking-[0.25em] min-h-[1.5rem] max-w-[280px]">
-                                    {launchCountdown === 0 
-                                        ? "Setting up your interview room. This may take a moment..." 
-                                        : !isAgentReady ? "Connecting to your interviewer..." : "Entering the room now..."}
+                                <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.25em] max-w-[300px]">
+                                    {isAgentReady
+                                        ? "Starting session in a moment..."
+                                        : "Please wait — connecting your AI interviewer."}
                                 </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {(["Mic & Camera", "Room Link", "AI Agent"] as const).map((step, i) => {
+                                    const done = i === 0 ? true : i === 1 ? !!token : isAgentReady;
+                                    return (
+                                        <div key={step} className="flex items-center gap-2">
+                                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${
+                                                done
+                                                    ? "bg-green-500/10 border-green-500/30 text-green-400"
+                                                    : "bg-zinc-800 border-zinc-700 text-zinc-500"
+                                            }`}>
+                                                {done ? <CheckCircle2 className="w-3 h-3" /> : <Loader2 className="w-3 h-3 animate-spin" />}
+                                                {step}
+                                            </div>
+                                            {i < 2 && <div className="w-4 h-px bg-zinc-700" />}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
                     </motion.div>
@@ -460,8 +492,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         )}
                     >
                         <LiveKitRoom
-                            video={phase === "interview"}
-                            audio={phase === "interview"}
+                            video={phase === "interview" || phase === "launching"}
+                            audio={phase === "interview" || phase === "launching"}
                             token={token}
                             serverUrl={serverUrl}
                             connect={shouldConnect}
@@ -514,7 +546,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         animate={{ opacity: 1, scale: 1 }}
                         className="flex-1 min-h-screen w-full flex items-center justify-center bg-white z-[100] absolute inset-0"
                     >
-                        <CompletionView />
+                        <CompletionView id={id} />
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -1024,21 +1056,155 @@ function AudioTrack({ trackRef }: { trackRef: TrackReference }) {
     return <audio ref={audioRef} autoPlay />;
 }
 
-function CompletionView() {
+function CompletionView({ id }: { id: string }) {
+    const [step, setStep] = useState<"sync" | "feedback" | "thanks">("sync");
+    const [rating, setRating] = useState(0);
+    const [hoverRating, setHoverRating] = useState(0);
+    const [feedback, setFeedback] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleSubmit = async () => {
+        if (rating === 0) return;
+        setIsSubmitting(true);
+        try {
+            await fetch(`/api/interview/${id}/feedback`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ rating, feedback }),
+            });
+            setStep("thanks");
+        } catch (err) {
+            console.error("Feedback submission failed:", err);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     return (
-        <div className="text-center px-4 max-w-sm">
-            <div className="w-20 h-20 bg-orange-500/10 rounded-3xl flex items-center justify-center mx-auto mb-10">
-                <CheckCircle2 className="w-10 h-10 text-orange-500" />
-            </div>
-            <h2 className="text-4xl font-black text-gray-900 uppercase italic tracking-tighter mb-4">Sync Complete</h2>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest leading-relaxed mb-12">Your interview session has been encrypted and secured for review.</p>
-            <Button 
-                onClick={() => window.location.href = "/careers"}
-                className="w-full h-16 rounded-2xl bg-gray-900 text-white font-black uppercase tracking-widest text-xs hover:bg-black transition-all shadow-xl shadow-gray-200"
-            >
-                Return Home
-                <ArrowRight className="ml-3 w-4 h-4" />
-            </Button>
+        <div className="w-full max-w-xl mx-auto px-6">
+            <AnimatePresence mode="wait">
+                {step === "sync" && (
+                    <motion.div 
+                        key="sync"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        className="text-center"
+                    >
+                        <div className="w-24 h-24 bg-gradient-to-br from-orange-500 to-orange-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 shadow-[0_20px_40px_rgba(249,115,22,0.3)] rotate-3">
+                            <CheckCircle2 className="w-12 h-12 text-white" />
+                        </div>
+                        <h2 className="text-5xl font-black text-gray-900 uppercase italic tracking-tighter mb-6">Sync Complete</h2>
+                        <p className="text-sm font-bold text-gray-400 uppercase tracking-[0.2em] leading-relaxed mb-12 max-w-sm mx-auto">
+                            Your interview session has been encrypted and secured for review.
+                        </p>
+                        <Button 
+                            onClick={() => setStep("feedback")}
+                            className="w-full h-20 rounded-[2rem] bg-gray-900 text-white font-black uppercase tracking-[0.3em] text-[13px] hover:bg-black transition-all shadow-2xl group"
+                        >
+                            Next Step
+                            <ArrowRight className="ml-4 w-5 h-5 group-hover:translate-x-2 transition-transform" />
+                        </Button>
+                    </motion.div>
+                )}
+
+                {step === "feedback" && (
+                    <motion.div 
+                        key="feedback"
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        className="bg-white/40 backdrop-blur-3xl p-10 rounded-[3rem] border border-white border-b-gray-100 shadow-[0_40px_80px_rgba(0,0,0,0.06)]"
+                    >
+                        <div className="mb-10 text-center">
+                            <p className="text-[10px] font-black uppercase tracking-[0.4em] text-orange-500 mb-2">Anonymous Feedback</p>
+                            <h2 className="text-3xl font-black text-gray-900 tracking-tight">How was your session?</h2>
+                        </div>
+
+                        <div className="flex justify-center gap-3 mb-12">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                                <button
+                                    key={star}
+                                    onMouseEnter={() => setHoverRating(star)}
+                                    onMouseLeave={() => setHoverRating(0)}
+                                    onClick={() => setRating(star)}
+                                    className="transition-all duration-300 transform active:scale-90"
+                                >
+                                    <Sparkles 
+                                        className={cn(
+                                            "w-12 h-12 transition-all duration-300",
+                                            (hoverRating || rating) >= star 
+                                                ? "text-orange-500 fill-orange-500 scale-110 drop-shadow-[0_0_15px_rgba(249,115,22,0.4)]" 
+                                                : "text-gray-200"
+                                        )}
+                                    />
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="space-y-6">
+                            <div className="relative group">
+                                <textarea
+                                    value={feedback}
+                                    onChange={(e) => setFeedback(e.target.value)}
+                                    placeholder="What did you like about Ishita? (Optional)"
+                                    className="w-full h-40 bg-white/60 border-2 border-transparent focus:border-orange-500/20 focus:bg-white rounded-[2rem] p-6 text-sm font-bold text-gray-700 placeholder:text-gray-300 outline-none transition-all resize-none shadow-inner"
+                                />
+                                <div className="absolute top-6 right-6 opacity-20">
+                                    <Zap className="w-5 h-5 text-orange-500" />
+                                </div>
+                            </div>
+
+                            <Button 
+                                onClick={handleSubmit}
+                                disabled={rating === 0 || isSubmitting}
+                                className={cn(
+                                    "w-full h-20 rounded-[2rem] font-black uppercase tracking-[0.3em] text-[13px] transition-all shadow-2xl",
+                                    rating > 0 
+                                        ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:scale-[1.02] active:scale-95 shadow-orange-500/20" 
+                                        : "bg-gray-100 text-gray-400 cursor-not-allowed border-none shadow-none"
+                                )}
+                            >
+                                {isSubmitting ? (
+                                    <Loader2 className="w-6 h-6 animate-spin" />
+                                ) : (
+                                    <span className="flex items-center gap-3">
+                                        Submit Review <Send className="w-4 h-4" />
+                                    </span>
+                                )}
+                            </Button>
+                        </div>
+                    </motion.div>
+                )}
+
+                {step === "thanks" && (
+                    <motion.div 
+                        key="thanks"
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="text-center"
+                    >
+                        <motion.div 
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1, rotate: [0, 10, -10, 0] }}
+                            transition={{ type: "spring", stiffness: 200, damping: 10 }}
+                            className="w-24 h-24 bg-gradient-to-tr from-green-400 to-green-500 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 shadow-[0_20px_40px_rgba(34,197,94,0.3)]"
+                        >
+                            <ShieldCheck className="w-12 h-12 text-white" />
+                        </motion.div>
+                        <h2 className="text-5xl font-black text-gray-900 uppercase italic tracking-tighter mb-6">Thank You</h2>
+                        <p className="text-sm font-bold text-gray-400 uppercase tracking-[0.2em] leading-relaxed mb-12 max-w-sm mx-auto">
+                            Your feedback helps us build the best recruitment experience in the world.
+                        </p>
+                        <Button 
+                            onClick={() => window.location.href = "/careers"}
+                            className="w-full h-20 rounded-[2rem] bg-gray-900 text-white font-black uppercase tracking-[0.3em] text-[13px] hover:bg-black transition-all shadow-2xl"
+                        >
+                            Back to Careers
+                        </Button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

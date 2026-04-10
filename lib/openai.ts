@@ -10,6 +10,31 @@ const openai = new OpenAI({
 
 // Transcription logic removed as it is now handled by LiveKit / Deepgram in the candidate agent.
 
+/**
+ * Generate a vector embedding for a piece of text using OpenAI.
+ * Uses text-embedding-3-small by default (1536 dimensions).
+ */
+export async function getEmbedding(text: string): Promise<number[]> {
+    if (!text || text.trim().length === 0) {
+        throw new Error("Text is required for embedding generation");
+    }
+    
+    // Clean text: remove newlines and extra spaces
+    const cleanText = text.replace(/\n/g, " ").trim();
+    
+    try {
+        const response = await openai.embeddings.create({
+            model: "text-embedding-3-small",
+            input: cleanText,
+        });
+        
+        return response.data[0].embedding;
+    } catch (error: any) {
+        console.error("[OPENAI_EMBEDDING_ERROR]:", error.message);
+        throw error;
+    }
+}
+
 import { z } from "zod";
 
 // JD Extraction Schema

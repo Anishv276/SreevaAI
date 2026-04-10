@@ -58,6 +58,7 @@ export const createDriveSchema = z.object({
   aiScreening: z.object({
     enabled: z.boolean().optional()
   }).optional(),
+  status: z.enum(["ACTIVE", "CLOSED", "DISABLED"]).optional(),
   location: z.string().optional(),
   isPassportRequired: z.boolean().optional(),
 });

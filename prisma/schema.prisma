@@ -143,7 +143,9 @@ model Drive {
 
 model Application {
   id               String     @id @default(cuid())
-  status           String     @default("APPLIED")
+  resumeStatus     String     @default("pending")
+  interviewStatus  String     @default("pending")
+  hiringStatus     String     @default("pending")
   fullName         String
   email            String
   phone            String
@@ -164,7 +166,7 @@ model Application {
   user             User?      @relation(fields: [userId], references: [id])
   interview        Interview?
 
-  @@index([driveId, status, updatedAt])
+  @@index([driveId, resumeStatus, hiringStatus, updatedAt])
 }
 
 model Interview {
@@ -183,6 +185,9 @@ model Interview {
   interviewDuration     Int?
   aiSummary             String?
   snapshots             String[]    @default([])
+  proctoringEvents      Json?       @default("[]")
+  candidateRating       Int?
+  candidateFeedback     String?
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 }
 

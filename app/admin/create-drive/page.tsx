@@ -585,17 +585,16 @@ function CreateDriveForm() {
                 
                 <div className="bg-white p-12 rounded-[2.5rem] border-2 border-dashed border-gray-200 hover:border-orange-300 transition-all duration-500">
                     <div className="text-center space-y-6">
-                        {!formData.jdFileName && (
-                            <>
-                                <div className="h-16 w-16 bg-orange-100 rounded-2xl flex items-center justify-center text-[#F97316] mx-auto">
-                                    <Upload className="h-8 w-8" />
-                                </div>
-                                <div className="space-y-2">
-                                    <h2 className="text-2xl font-bold text-gray-900">Upload Job Description</h2>
-                                    <p className="text-gray-500">Our AI will scan all fields end-to-end to pre-fill your hiring drive.</p>
-                                </div>
-                            </>
-                        )}
+                        <>
+                            <div className="h-16 w-16 bg-orange-100 rounded-2xl flex items-center justify-center text-[#F97316] mx-auto">
+                                <Upload className="h-8 w-8" />
+                            </div>
+                            <div className="space-y-2">
+                                <h2 className="text-2xl font-bold text-gray-900">Upload Job Description</h2>
+                                <p className="text-gray-500">Our AI will scan all fields end-to-end to pre-fill your hiring drive.</p>
+                            </div>
+                        </>
+
                         <JobDescription 
                             formData={formData} 
                             updateFormData={setFormData} 
