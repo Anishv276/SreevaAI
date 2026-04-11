@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { StatsGrid } from "@/components/admin/stats-grid";
 import { HiringFunnel } from "@/components/admin/hiring-funnel";
 import { ScoreDistribution } from "@/components/admin/score-distribution";
@@ -14,6 +14,11 @@ import Link from "next/link";
 
 export default function DashboardPage() {
     const [dateRange, setDateRange] = useState<DateRange>({ type: "month" });
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     return (
         <div className="space-y-8 pb-12">
@@ -28,7 +33,7 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-3">
                             <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
                             <p className="text-gray-400 font-bold text-[13px] uppercase tracking-[0.2em]">
-                                Hiring Pulse · {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })}
+                                Hiring Pulse · {mounted ? new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" }) : ""}
                             </p>
                         </div>
                     </div>

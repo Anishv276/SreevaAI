@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { writeFile, unlink } from "fs/promises";
@@ -9,8 +8,8 @@ import { tmpdir } from "os";
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
-        
-        // 1. Fetch Application & Drive logic
+
+        // 1. Fetch Application & Drive
         const application = await prisma.application.findUnique({
             where: { id },
             include: { drive: true }
@@ -24,15 +23,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: "Drive not found for this application" }, { status: 404 });
         }
 
-        // 2. We need resume text. 
-        // If it's missing, we either need to extract it now from resumeUrl 
-        // (but extraction usually happens on upload).
-        // For now, let's assume the user wants to re-run scoring with whatever text we can get.
-        
+        // 2. Get resume text
         let resumeText = (application as any).resumeText || "";
-        
-        // If missing, try extraction from URL if possible (requires downloading first)
-        // For simplicity, let's look if we can find extracted text in aiReport if it was partially set
+
         if (!resumeText && application.aiReport) {
             try {
                 const report = JSON.parse(application.aiReport);
@@ -41,18 +34,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
 
         if (!resumeText) {
-             // We can't score without text. In a real system, we'd download the PDF from resumeUrl here.
-             // But let's try to be helpful - maybe use a placeholder if we really have nothing? 
-             // Or fail with a clear message.
-             return NextResponse.json({ error: "No resume text found to scan. Please re-upload resume." }, { status: 400 });
+            return NextResponse.json({ error: "No resume text found to scan. Please re-upload resume." }, { status: 400 });
         }
 
-        const jdText = application.drive.description;
-        const scoringInput = { 
-            resume: JSON.parse(application.structuredResume || "{}"), 
+        // 3. Build scoring input — pass threshold so Python's report reflects what we decided
+        const threshold = Number(application.drive.screeningThreshold ?? 0);
+        const scoringInput = {
+            resume: JSON.parse(application.structuredResume || "{}"),
             jd: JSON.parse(application.drive.extractedDetails || "{}"),
             resume_raw_text: resumeText,
-            jd_raw_text: jdText
+            jd_raw_text: application.drive.description || "",
+            threshold,
         };
 
         const tempInputPath = join(tmpdir(), `rescan_${Date.now()}.json`);
@@ -60,49 +52,52 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         let aiResult: any = { score: 0, status: "Pending", reasoning: "Processing failed" };
 
-        const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-        console.log(`[AI RE-SCAN] Executing for ${application.email}`);
-        
+        const pythonCmd = process.platform === "win32" ? "python" : "python3";
+        console.log(`[AI RE-SCAN] Executing for ${application.email} | threshold=${threshold}`);
+
         const pythonProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempInputPath, "SCORE"]);
 
         let outputData = "";
         let errorData = "";
 
         await new Promise((resolve, reject) => {
-            pythonProcess.stdout.on("data", (data) => outputData += data.toString());
-            pythonProcess.stderr.on("data", (data) => errorData += data.toString());
+            pythonProcess.stdout.on("data", (data) => (outputData += data.toString()));
+            pythonProcess.stderr.on("data", (data) => (errorData += data.toString()));
             pythonProcess.on("close", (code) => {
                 if (code !== 0) reject(new Error(errorData));
                 else resolve(null);
             });
         });
 
-        console.log(`[AI RE-SCAN] Raw Output: ${outputData}`);
+        await unlink(tempInputPath).catch(() => {});
+
         const parsed = JSON.parse(outputData);
         aiResult = parsed.data || parsed;
 
-        await unlink(tempInputPath).catch(() => {});
+        // 4. DB threshold is the ONLY pass/fail criterion — Python's status is ignored
+        const score: number = typeof aiResult.score === "number" ? aiResult.score : parseInt(aiResult.score || "0") || 0;
+        const resumeStatus: "SHORTLISTED" | "REJECTED" = score >= threshold ? "SHORTLISTED" : "REJECTED";
 
-        // 3. Determine Selection & Send Email
-        const score = aiResult.score || 0;
-        const threshold = application.drive.screeningThreshold || 60;
-        const finalStatus: 'SHORTLISTED' | 'REJECTED' = score >= threshold ? 'SHORTLISTED' : 'REJECTED';
+        console.log(`[AI RE-SCAN] score=${score}, threshold=${threshold}, resumeStatus=${resumeStatus}`);
 
-        // Update Application with new score and final status
+        // 5. Update DB
         const updated = await prisma.application.update({
             where: { id },
             data: {
-                status: finalStatus,
+                resumeStatus: resumeStatus,
                 aiScore: score,
-                aiReport: JSON.stringify(aiResult)
-            }
+                aiReport: JSON.stringify(aiResult),
+                ...(resumeStatus === "REJECTED" && {
+                    interviewStatus: "Not Qualified",
+                    hiringStatus: "Not Shortlisted",
+                }),
+            },
         });
 
-        // Trigger automated status email + interview invite
+        // 6. Email & interview invite
         const { sendApplicationStatusEmail } = await import("@/lib/mail");
-        
-        if (finalStatus === 'SHORTLISTED') {
-            // 3. Create or update Interview record
+
+        if (resumeStatus === "SHORTLISTED") {
             const interview = await (prisma as any).interview.upsert({
                 where: { applicationId: id },
                 update: {
@@ -116,24 +111,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 },
             });
 
-            const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/interview/${id}?token=${interview.accessToken}`;
-            
+            const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${id}?token=${interview.accessToken}`;
+
             await sendApplicationStatusEmail({
                 email: application.email,
                 fullName: application.fullName,
                 jobTitle: application.drive.title,
-                status: finalStatus, 
-                score: score,
-                interviewLink: interviewLink
-            }).catch(err => console.error("[SCAN API] Email trigger failed:", err));
+                status: resumeStatus,
+                score,
+                interviewLink,
+            }).catch((err) => console.error("[SCAN API] Email trigger failed:", err));
         } else {
             await sendApplicationStatusEmail({
                 email: application.email,
                 fullName: application.fullName,
                 jobTitle: application.drive.title,
-                status: 'REJECTED',
-                score: score
-            }).catch(err => console.error("[SCAN API] Email trigger failed:", err));
+                status: "REJECTED",
+                score,
+            }).catch((err) => console.error("[SCAN API] Email trigger failed:", err));
         }
 
         return NextResponse.json(updated);

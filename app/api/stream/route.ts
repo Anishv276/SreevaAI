@@ -20,26 +20,34 @@ export async function GET(request: Request) {
                 if (closed) return;
                 
                 try {
-                    // Optimization: Performance take limit
+                    // Check for NEW applications
                     const newApps = await prisma.application.findMany({
                         where: { createdAt: { gt: lastCheck } },
-                        include: { drive: { select: { title: true } } },
+                        select: { id: true, fullName: true, email: true, createdAt: true },
                         orderBy: { createdAt: "desc" },
                         take: 5
                     });
 
+                    // Check for UPDATED applications (status changes by AI worker etc.)
+                    const updatedApps = await prisma.application.findMany({
+                        where: {
+                            updatedAt: { gt: lastCheck },
+                            createdAt: { lte: lastCheck } // exclude newly created (already caught above)
+                        },
+                        select: { id: true, resumeStatus: true, interviewStatus: true, hiringStatus: true, updatedAt: true },
+                        orderBy: { updatedAt: "desc" },
+                        take: 10
+                    });
+
                     if (newApps.length > 0) {
-                        send({
-                            type: "NEW_APPLICATIONS",
-                            data: newApps.map(app => ({
-                                id: app.id,
-                                name: app.fullName,
-                                email: app.email,
-                                role: app.drive?.title || "Unknown",
-                                status: app.status,
-                                date: app.createdAt
-                            }))
-                        });
+                        send({ type: "NEW_APPLICATIONS", count: newApps.length });
+                    }
+
+                    if (updatedApps.length > 0) {
+                        send({ type: "UPDATED_APPLICATIONS", count: updatedApps.length });
+                    }
+
+                    if (newApps.length > 0 || updatedApps.length > 0) {
                         lastCheck = new Date();
                     }
                 } catch (e) {
@@ -50,8 +58,8 @@ export async function GET(request: Request) {
             // START: Fire and forget initial check to avoid blocking the stream response
             checkForUpdates();
             
-            // Poll every 30 seconds
-            const interval = setInterval(checkForUpdates, 30000);
+            // Poll every 15 seconds
+            const interval = setInterval(checkForUpdates, 15000);
 
             request.signal.addEventListener("abort", () => {
                 closed = true;

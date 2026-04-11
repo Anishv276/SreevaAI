@@ -16,6 +16,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useCandidates } from "@/context/candidates-context";
 import { useJobs } from "@/context/jobs-context";
 
+
+function formatExtractedLocation(location: any): string {
+    if (!location) return "";
+    if (typeof location === "string") return location.trim();
+    const parts = [location.city, location.state, location.country]
+        .map((p: any) => (typeof p === "string" ? p.trim() : ""))
+        .filter(Boolean);
+    return parts.join(", ");
+}
+
 export default function ApplicationPage() {
     const params = useParams();
     const searchParams = useSearchParams();
@@ -45,6 +55,7 @@ export default function ApplicationPage() {
         location: "",
         portfolio: "",
         experience: "",
+        experienceYears: null as number | null,
         currentCompany: "",
         ctc: "",
         noticePeriod: "",
@@ -117,7 +128,7 @@ export default function ApplicationPage() {
                             fullName: extractedData?.full_name || "",
                             email: extractedData?.email || "",
                             phone: extractedData?.phone || "",
-                            location: extractedData?.location?.city || (typeof extractedData?.location === 'string' ? extractedData?.location : ""),
+                            location: formatExtractedLocation(extractedData?.location),
                             experience: (() => {
                                 const yrs = extractedData?.experience?.total_years;
                                 return (typeof yrs === 'number' && yrs >= 0) ? String(yrs) : "";
@@ -271,7 +282,10 @@ export default function ApplicationPage() {
                 portfolio: formData.portfolio,
                 role: jobTitle,
                 driveId: String(job?.id || id),
-                experience: formData.experience,
+                experience: formData.experience || (formData.experienceYears != null ? String(formData.experienceYears) : ""),
+                experienceYears: (formData.experienceYears != null && !isNaN(formData.experienceYears))
+                    ? formData.experienceYears
+                    : (formData.experience ? parseFloat(formData.experience) : undefined),
                 currentCompany: formData.currentCompany,
                 currentCtc: formData.ctc,
                 expectedCtc: formData.expectedCtc,

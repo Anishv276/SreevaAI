@@ -104,7 +104,6 @@ function ApplicationContent() {
                     location: formData.location,
                     qualification: formData.qualification,
                     organization: formData.organization,
-                    experience: formData.experience,
                     currentCtc: formData.currentCtc,
                     expectedCtc: formData.expectedCtc,
                     noticePeriod: formData.noticePeriod,
@@ -244,11 +243,11 @@ function ApplicationContent() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
                                     <Label htmlFor="currentCtc">Current CTC</Label>
-                                    <Input id="currentCtc" name="currentCtc" placeholder="e.g. 15 LPA" value={formData.currentCtc} onChange={handleInputChange} />
+                                    <Input id="currentCtc" name="currentCtc" placeholder="e.g. 15 LPA INR" value={formData.currentCtc} onChange={handleInputChange} />
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="expectedCtc">Expected CTC *</Label>
-                                    <Input id="expectedCtc" name="expectedCtc" placeholder="e.g. 20 LPA" value={formData.expectedCtc} onChange={handleInputChange} />
+                                    <Input id="expectedCtc" name="expectedCtc" placeholder="e.g. 20 LPA INR" value={formData.expectedCtc} onChange={handleInputChange} />
                                 </div>
                             </div>
 

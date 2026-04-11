@@ -51,9 +51,6 @@ export function ApplyModal({ drive }: ApplyModalProps) {
                 fullName: extracted?.full_name || "",
                 email: extracted?.email || "",
                 phone: extracted?.phone || "",
-                location: extracted?.location 
-                    ? [extracted.location.city, extracted.location.state].filter(Boolean).join(", ")
-                    : "",
                 resumeUrl: resumeUrl,
                 resumeText: text,
                 structuredResume: extracted,

@@ -16,7 +16,6 @@ export async function GET() {
                 industry: true,
                 size: true,
                 website: true,
-                location: true,
                 logoUrl: true,
                 customDomain: true,
                 resendDomainId: true,

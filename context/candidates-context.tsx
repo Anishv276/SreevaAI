@@ -24,7 +24,6 @@ export type Candidate = {
     score: number;
     date: string;
     experienceYears?: number;
-    relevantYears?: number;
     resumeUrl?: string;
     resumeText?: string; // extracted text for AI scoring
     // Submission fields
@@ -109,7 +108,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const orgIdFromUrl = searchParams.get("orgId");
-    const isCandidatesRoute = pathname.startsWith("/admin/candidates");
+    const isCandidatesRoute = pathname.startsWith("/admin") || pathname.startsWith("/super-admin");
 
     const eventSourceRef = useRef<EventSource | null>(null);
     const paginationRef = useRef<Pagination>(pagination);
@@ -254,7 +253,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                         email: c.email || "",
                         phone: c.phone || "",
                         location: c.location || "-",
-                        role: c.jobRole || c.jobrole || c.driveTitle || c.drivetitle || "Unknown Role",
+                        role: c.jobRole || c.jobrole || c.role || c.driveTitle || c.drivetitle || "Unknown Role",
                         driveId: c.driveId?.toString(),
                         status: c.status,
                         interviewStatus: c.interviewStatus,
@@ -369,8 +368,16 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             // Connection lost - SSE will auto-retry
         };
 
+        // Refresh immediately when user switches back to this tab
+        const handleVisibility = () => {
+            if (document.visibilityState === "visible") {
+                scheduleStreamRefresh();
+            }
+        };
+        document.addEventListener("visibilitychange", handleVisibility);
+
         return () => {
-            // Secure cleanup on unmount
+            document.removeEventListener("visibilitychange", handleVisibility);
             if (eventSourceRef.current) {
                 eventSourceRef.current.close();
                 eventSourceRef.current = null;

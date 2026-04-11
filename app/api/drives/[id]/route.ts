@@ -24,7 +24,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                         industry: true,
                         size: true,
                         website: true,
-                        location: true
                     }
                 },
                 _count: {

@@ -9,10 +9,9 @@ import { JobDescription } from "@/components/create-drive/job-description";
 import { ScreeningSettings, ScreeningConfig } from "@/components/create-drive/screening-settings";
 import { RegistrationForm, CustomField } from "@/components/create-drive/registration-form";
 import { FinalPreview } from "@/components/create-drive/final-preview";
-import { CandidatePreview } from "@/components/create-drive/candidate-preview";
 import { InterviewSetup } from "@/components/create-drive/interview-setup";
 import { useJobs } from "@/context/jobs-context";
-import { Copy, CheckCircle2, Rocket, AlertCircle, X, Eye, PenLine, Sparkles, ChevronLeft, ChevronRight, Upload, Bot } from "lucide-react";
+import { Copy, CheckCircle2, Rocket, AlertCircle, X, Eye, PenLine, Sparkles, ChevronLeft, ChevronRight, Upload, Bot, ExternalLink } from "lucide-react";
 
 const STEPS = [
     "Basic Info",
@@ -28,10 +27,16 @@ const STEPS = [
 // Per-step validation messages shown when fields appear incomplete
 const STEP_VALIDATION_HINTS: Record<number, string> = {
     0: "Please fill all required fields.",
-    1: "Please fill all required fields.",
+    1: "Job description is too short. Please add more details before continuing.",
     2: "Please set an AI match threshold before continuing.",
     3: "Please add at least one registration field before continuing.",
 };
+
+const MIN_JD_WORDS = 30;
+
+function countWords(text: string): number {
+    return text.trim().split(/\s+/).filter(Boolean).length;
+}
 
 export default function CreateDrivePage() {
     return (
@@ -85,7 +90,7 @@ function CreateDriveForm() {
     // AI Analysis State
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysisError, setAnalysisError] = useState<string | null>(null);
-    const [showCandidatePreview, setShowCandidatePreview] = useState(false);
+    const [candidatePreviewSlug, setCandidatePreviewSlug] = useState<string | null>(null);
 
     // Track which steps have been explicitly completed
     const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
@@ -291,7 +296,7 @@ function CreateDriveForm() {
                         // Convert to LPA if it's a large number, or keep if already small
                         const minLPA = salaryMin > 1000 ? (salaryMin / 100000).toFixed(1).replace(/\.0$/, "") : salaryMin;
                         const maxLPA = salaryMax ? (salaryMax > 1000 ? (salaryMax / 100000).toFixed(1).replace(/\.0$/, "") : salaryMax) : null;
-                        salaryText = `${minLPA}${maxLPA ? `–${maxLPA}` : ""} ${currency} LPA`;
+                        salaryText = `${minLPA}${maxLPA ? `–${maxLPA}` : ""} LPA ${currency}`;
                     }
 
                     // ── RESPONSIBILITIES & REQUIREMENTS ──────────
@@ -384,7 +389,10 @@ function CreateDriveForm() {
         }
         if (step === 1) {
             // Allow proceeding if analyzing OR if description is filled
-            return !!(formData.description?.trim() || isAnalyzing || formData.jdFileName);
+            if (isAnalyzing || formData.jdFileName) return true;
+            const description = formData.description?.trim() || "";
+            if (!description) return false;
+            return countWords(description) >= MIN_JD_WORDS;
         }
         if (step === 2 && aiEnabled) {
             return (weights?.threshold ?? 0) > 0;
@@ -421,6 +429,14 @@ function CreateDriveForm() {
     const prevStep = () => setCurrentStep(prev => Math.max(prev - 1, 0));
 
     const handlePublish = async () => {
+        const description = formData.description?.trim() || "";
+        const jdWordCount = countWords(description);
+        if (jdWordCount < MIN_JD_WORDS) {
+            showToast(`Job description must be at least ${MIN_JD_WORDS} words before publishing.`);
+            setCurrentStep(1);
+            return;
+        }
+
         // Safely parse interviewQuestions — DB returns it as a JSON string, Zod expects an array
         let parsedQuestions = formData.interviewQuestions || [];
         if (typeof parsedQuestions === "string") {
@@ -500,6 +516,8 @@ function CreateDriveForm() {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
+
+    const previewTarget = publishedSlug || publishedDriveId || (isEditMode ? driveId : null);
 
     // ── Choice Gate (Selection Screen) ───────────────────────
     if (!isEditMode && creationMethod === null) {
@@ -811,7 +829,29 @@ function CreateDriveForm() {
                             <Button 
                                 type="button"
                                 variant="outline"
-                                onClick={() => setShowCandidatePreview(true)}
+                                onClick={() => {
+                                    // Map current form data to a structure compatible with JobDetailsView
+                                    const previewPayload = {
+                                        ...formData,
+                                        id: "preview",
+                                        applicants: 0,
+                                        status: "ACTIVE",
+                                        // Ensure split-able strings are present
+                                        responsibilities: formData.responsibilities || "",
+                                        requirements: formData.requirements || "",
+                                        skills: formData.skills || "",
+                                        location: formData.workMode || "Remote",
+                                        type: formData.employmentType || "Full-time"
+                                    };
+                                    
+                                    localStorage.setItem("candidate_preview_data", JSON.stringify(previewPayload));
+                                    
+                                    if (!previewTarget) {
+                                        setCandidatePreviewSlug("preview");
+                                    } else {
+                                        setCandidatePreviewSlug(previewTarget);
+                                    }
+                                }}
                                 className="flex items-center gap-2 rounded-xl px-4 py-3 border-gray-200 text-gray-500 font-bold hover:bg-gray-50 h-auto"
                             >
                                 <Eye className="h-4 w-4" />
@@ -846,13 +886,53 @@ function CreateDriveForm() {
                 }
             `}</style>
 
-            {showCandidatePreview && (
-                <CandidatePreview 
-                    formData={formData} 
-                    customFields={customFields}
-                    regFieldCount={customFields.length + 6}
-                    onClose={() => setShowCandidatePreview(false)}
-                />
+            {candidatePreviewSlug && (
+                <div className="fixed inset-0 z-[200] flex flex-col bg-black/60 backdrop-blur-sm">
+                    <div className="flex items-center gap-3 px-4 py-3 bg-gray-900 border-b border-white/10 shrink-0">
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={() => setCandidatePreviewSlug(null)}
+                                className="h-3.5 w-3.5 rounded-full bg-red-500 hover:bg-red-400 transition-colors flex items-center justify-center group"
+                                title="Close preview"
+                            >
+                                <X className="h-2 w-2 text-red-900 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </button>
+                            <div className="h-3.5 w-3.5 rounded-full bg-yellow-400/60" />
+                            <div className="h-3.5 w-3.5 rounded-full bg-green-500/60" />
+                        </div>
+                        <div className="flex-1 flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1.5 mx-2">
+                            <div className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                            <span className="text-[11px] text-gray-400 font-mono truncate select-none">
+                                {typeof window !== "undefined" ? window.location.origin : ""}/careers/jobs/{candidatePreviewSlug}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-400">
+                                Preview as Candidate
+                            </span>
+                            <button
+                                onClick={() => window.open(`/careers/jobs/${candidatePreviewSlug}`, "_blank")}
+                                className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                                title="Open in new tab"
+                            >
+                                <ExternalLink className="h-4 w-4" />
+                            </button>
+                            <button
+                                onClick={() => setCandidatePreviewSlug(null)}
+                                className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                                title="Close"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                    </div>
+                    <iframe
+                        key={candidatePreviewSlug}
+                        src={`/careers/jobs/${candidatePreviewSlug}`}
+                        className="flex-1 w-full border-0 bg-white"
+                        title="Candidate Portal Preview"
+                    />
+                </div>
             )}
         </div>
     );

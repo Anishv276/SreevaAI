@@ -63,7 +63,11 @@ export async function POST(request: Request) {
             } else {
                 await prisma.application.updateMany({
                     where: { id: { in: validIds } },
-                    data: { resumeStatus: "rejected" },
+                    data: { 
+                        resumeStatus: "rejected",
+                        interviewStatus: "Not Qualified",
+                        hiringStatus: "Not Shortlisted"
+                    },
                 });
             }
 

@@ -289,6 +289,23 @@ def normalize_skill(skill):
     return aliases.get(s, s)
 
 
+def _as_dict(value):
+    """
+    Safely coerce a value to a dict.
+    If it's already a dict, return it. If it's a string, try to parse as JSON.
+    Otherwise return {}.
+    """
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
 def compute_score(jd_data, resume_data, threshold=70):
     """
     Deterministic scoring engine. Same input = same score, every time.
@@ -319,11 +336,12 @@ def compute_score(jd_data, resume_data, threshold=70):
     else:
         jd_good_to_have = raw_good
 
-    jd_min_years = jd_data.get("experience", {}).get("min_years")
-    jd_max_years = jd_data.get("experience", {}).get("max_years")
-    jd_seniority = jd_data.get("role_context", {}).get("seniority")
+    jd_experience = _as_dict(jd_data.get("experience", {}))
+    jd_min_years = jd_experience.get("min_years")
+    jd_max_years = jd_experience.get("max_years")
+    jd_seniority = _as_dict(jd_data.get("role_context", {})).get("seniority")
     has_tech = jd_data.get("has_technical_requirements", True)
-    scoring_hints = jd_data.get("scoring_hints", {})
+    scoring_hints = _as_dict(jd_data.get("scoring_hints", {}))
 
     # ── Pull resume data ───────────────────────────────────────
     resume_skills = resume_data.get("skills", {})
@@ -575,7 +593,7 @@ def compute_score(jd_data, resume_data, threshold=70):
         # low severity: no deduction (minor, not disqualifying)
 
     # Education when explicitly required
-    jd_edu = jd_data.get("education", {})
+    jd_edu = _as_dict(jd_data.get("education", {}))
     candidate_edu = resume_data.get("education", [])
     if jd_edu.get("required") and not candidate_edu:
         career_score -= 2
@@ -600,7 +618,7 @@ def compute_score(jd_data, resume_data, threshold=70):
 
     # For non-tech roles: domain_skills match against JD preferred background
     if not has_tech:
-        jd_background = jd_data.get("experience", {}).get("preferred_background", "").lower()
+        jd_background = jd_experience.get("preferred_background", "").lower()
         if jd_background:
             domain_matches = sum(
                 1 for s in domain_skills
@@ -966,7 +984,7 @@ BEFORE YOU EXTRACT — MANDATORY PRE-CHECKS
 
 7. SALARY STANDARDIZATION
    Always convert to annual base numbers in the local currency:
-     "5-10 LPA" → min: 500000, max: 1000000, currency: "INR", period: "yearly"
+     "5-10 LPA INR" → min: 500000, max: 1000000, currency: "INR", period: "yearly"
      "50-70k USD" → min: 50000, max: 70000, currency: "USD", period: "yearly"
      "₹30,000/month" → min: 360000, max: null, currency: "INR", period: "yearly"
    If salary not mentioned → min: null, max: null, currency: null, period: null, disclosed: false
@@ -1352,6 +1370,23 @@ Resume:
 
         jd_data = raw.get("jd", {})
         resume_data = raw.get("resume", {})
+
+        # Defensive: if jd_data or resume_data came as a JSON string, parse them
+        if isinstance(jd_data, str):
+            try:
+                jd_data = json.loads(jd_data)
+            except Exception:
+                jd_data = {}
+        if not isinstance(jd_data, dict):
+            jd_data = {}
+
+        if isinstance(resume_data, str):
+            try:
+                resume_data = json.loads(resume_data)
+            except Exception:
+                resume_data = {}
+        if not isinstance(resume_data, dict):
+            resume_data = {}
         jd_raw_text = raw.get("jd_raw_text", "")
         resume_raw_text = raw.get("resume_raw_text", "")
         threshold = int(raw.get("threshold", 70))

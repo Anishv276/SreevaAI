@@ -29,7 +29,6 @@ export default function OnboardingPage() {
         industry: "", 
         size: "", 
         website: "", 
-        location: "",
         logoUrl: "",
         customDomain: "",
         customSenderEmail: "",
@@ -264,7 +263,7 @@ export default function OnboardingPage() {
             }
             if (currentStep === 1) { // IDENTITY (STEP 2)
                 const urlRegex = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,63})([/\w .-]*)*\/?$/;
-                if (!company.name || !company.website || !company.location || !company.industry || !company.size) { 
+                if (!company.name || !company.website || !company.industry || !company.size) { 
                     setError("Operational profile incomplete: All identification fields are mandatory."); 
                     setIsSaving(false); 
                     return; 
@@ -455,15 +454,9 @@ export default function OnboardingPage() {
                                             <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Organization Name <span className="text-[#F97316]">*</span></label>
                                             <input className="h-11 w-full rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 transition-all" value={company.name || ""} onChange={e => setCompany({...company, name: e.target.value})} />
                                         </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="space-y-2">
-                                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Official Website <span className="text-[#F97316]">*</span></label>
-                                                <input className="h-11 w-full rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 transition-all" value={company.website || ""} onChange={e => setCompany({...company, website: e.target.value})} />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Headquarters <span className="text-[#F97316]">*</span></label>
-                                                <input className="h-11 w-full rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 transition-all" value={company.location || ""} onChange={e => setCompany({...company, location: e.target.value})} />
-                                            </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Official Website <span className="text-[#F97316]">*</span></label>
+                                            <input className="h-11 w-full rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 transition-all" value={company.website || ""} onChange={e => setCompany({...company, website: e.target.value})} />
                                         </div>
                                     </div>
                                 </div>

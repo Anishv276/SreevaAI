@@ -61,8 +61,6 @@ export async function POST(req: Request) {
                         industry: data.industry,
                         size: data.size,
                         website: data.website,
-                        // @ts-ignore
-                        location: data.location,
                         logoUrl: data.logoUrl,
                         onboardingStep: 2
                     }

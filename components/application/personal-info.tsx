@@ -20,12 +20,12 @@ interface PersonalInfoProps {
     passportUrl: string;
 }
 
-export function PersonalInfo({ 
-    formData, 
-    updateFormData, 
-    isAnalyzing, 
-    analysisError, 
-    startAnalysis, 
+export function PersonalInfo({
+    formData,
+    updateFormData,
+    isAnalyzing,
+    analysisError,
+    startAnalysis,
     clearResume,
     mode,
     isPassportRequired,
@@ -51,12 +51,12 @@ export function PersonalInfo({
                     mode === "manual" ? "bg-gray-50/50 border-gray-100" : "bg-orange-50/30 border-orange-100/50"
                 )}>
                     <p className="text-sm font-bold text-gray-900 mb-4">
-                        {mode === "manual" 
-                            ? "Please attach your resume to complete your application." 
+                        {mode === "manual"
+                            ? "Please attach your resume to complete your application."
                             : "Upload your resume to let Hirer.AI auto-fill your details."
                         }
                     </p>
-                    <ResumeUpload 
+                    <ResumeUpload
                         formData={formData}
                         isAnalyzing={isAnalyzing}
                         analysisError={analysisError}
@@ -78,18 +78,18 @@ export function PersonalInfo({
                         <p className="text-sm font-bold text-gray-900 mb-4">
                             Please upload a clear passport-sized photo for identity verification.
                         </p>
-                        
+
                         <div className="space-y-4">
                             {!passportUploaded ? (
-                                <div 
+                                <div
                                     onClick={() => !isUploadingPassport && (document.getElementById('passport-input') as HTMLInputElement).click()}
                                     className="relative border-2 border-dashed rounded-2xl p-6 text-center transition-all cursor-pointer border-gray-200 bg-gray-50/50 hover:bg-white hover:border-[#F97316]"
                                 >
-                                    <input 
+                                    <input
                                         id="passport-input"
-                                        type="file" 
-                                        accept="image/*" 
-                                        className="hidden" 
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
                                         onChange={(e) => {
                                             const file = e.target.files?.[0];
                                             if (file) startPassportUpload(file);
@@ -113,7 +113,7 @@ export function PersonalInfo({
                                         <p className="text-[14px] font-bold text-gray-800">Photo Uploaded</p>
                                         <p className="text-[12px] text-gray-500 font-medium">Identity verification ready</p>
                                     </div>
-                                    <button 
+                                    <button
                                         type="button"
                                         onClick={() => updateFormData({ passportUploaded: false, passportUrl: "" })}
                                         className="h-10 w-10 flex items-center justify-center rounded-xl text-gray-400 hover:text-red-500 hover:bg-white transition-all shadow-sm border border-transparent"

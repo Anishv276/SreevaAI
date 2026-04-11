@@ -20,7 +20,6 @@ model Organization {
   industry  String?
   size      String?
   website   String?
-  location  String?
   onboardingStep     Int      @default(0)
   onboardingComplete Boolean  @default(false)
   customDomain       String?
@@ -128,7 +127,6 @@ model Drive {
   jdFileName         String?
   jdPreviewUrl       String?
   orgId              String?
-  location           String        @default("Remote")
   status             String        @default("ACTIVE")
   isPassportRequired Boolean       @default(false)
   aiScreeningEnabled Boolean       @default(true)
@@ -159,7 +157,6 @@ model Application {
   updatedAt        DateTime   @updatedAt
   resumeText       String?
   experienceYears  Float?
-  relevantYears    Float?
   structuredResume String?    @default("{}")
   submissionData   Json?      @default("{}")
   drive            Drive      @relation(fields: [driveId], references: [id], onDelete: Cascade)

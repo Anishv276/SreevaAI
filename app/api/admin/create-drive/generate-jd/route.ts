@@ -11,7 +11,7 @@ const openai = new OpenAI({
 const DISCOVERY_PROMPT = `
 You are a senior talent acquisition consultant with 15 years of experience hiring across tech, product, operations, and business functions. You've helped companies from early-stage startups to public enterprises build precise, high-converting job descriptions.
 
-Your job right now: have a short, natural conversation to collect the inputs needed before writing the JD. The company's profile (name, industry, size, location) is already available to you — do NOT ask for it.
+Your job right now: have a short, natural conversation to collect the inputs needed before writing the JD. The company's profile (name, industry, size) is already available to you — do NOT ask for it.
 
 FIELDS YOU MUST COLLECT (all 7 required before generating):
 1. ROLE — The exact job title they're hiring for
@@ -19,12 +19,10 @@ FIELDS YOU MUST COLLECT (all 7 required before generating):
 3. EXPERIENCE — Years of experience required (e.g., "3+ years", "5-8 years")
 4. WORK MODE — Remote / Hybrid / On-site
 5. EMPLOYMENT TYPE — Full-time / Contract / Part-time (default to Full-time if obvious from context)
-6. SALARY — Compensation range or budget (e.g., "12-18 LPA", "$90k-$110k", "₹8-12 LPA")
-7. LOCATION — City/country or "Global Remote" (can infer from company profile if on-site)
+6. SALARY — Compensation range or budget (e.g., "12-18 LPA INR", "$90k-$110k", "₹8-12 LPA INR")
 
 IMPORTANT EXTRACTION RULES:
 - Read the ENTIRE conversation carefully. Fields are often given across multiple messages — do not ask for something already provided.
-- If work mode is "Remote" and no location is given, location = "Global Remote" — do not ask.
 - If employment type is obvious from context (e.g., "full-time engineer"), mark it collected.
 - Only ask for fields that are genuinely missing. Never ask for something you already have.
 - If the user gives vague experience like "senior" or "junior", map it: junior=1-2yrs, mid=3-5yrs, senior=6-9yrs, lead=10+yrs — and confirm with them briefly.
@@ -56,7 +54,6 @@ OUTPUT FORMAT — strict JSON, no markdown:
   "work_mode": "Remote | Hybrid | On-site | null",
   "employment_type": "Full-time | Contract | Part-time | null",
   "salary": "string or null",
-  "location": "string or null",
   "message": "your conversational response when ready is false — max 4 lines"
 }
 `;
@@ -128,7 +125,6 @@ OUTPUT SCHEMA — all fields required
   "department": "Team or business unit",
   "work_mode": "Remote | Hybrid | On-site",
   "employment_type": "Full-time | Contract | Part-time",
-  "location": "City, Country — or Global Remote",
   "description": "3-4 sentence role overview — hook the right candidate immediately",
   "responsibilities": ["8-10 specific, action-verb-led items calibrated to seniority and role function"],
   "technical_skills": ["6-10 specific tools, technologies, frameworks ordered by criticality"],
@@ -159,7 +155,6 @@ export async function POST(req: Request) {
                         industry: true,
                         size: true,
                         website: true,
-                        location: true,
                     },
                 });
 
@@ -168,7 +163,6 @@ export async function POST(req: Request) {
                         `Company Name: ${org.name}`,
                         org.industry ? `Industry: ${org.industry}` : null,
                         org.size ? `Company Size: ${org.size} employees` : null,
-                        org.location ? `HQ Location: ${org.location}` : null,
                         org.website ? `Website: ${org.website}` : null,
                     ].filter(Boolean);
                     orgContext = parts.join("\n");
@@ -230,7 +224,6 @@ Experience Required: ${discovery.experience}
 Work Mode: ${discovery.work_mode}
 Employment Type: ${discovery.employment_type || "Full-time"}
 Salary / Compensation: ${discovery.salary}
-Location: ${discovery.location || (discovery.work_mode === "Remote" ? "Global Remote" : "As per company HQ")}
 
 === COMPANY CONTEXT (use this to make the JD specific and authentic) ===
 ${orgContext || "No company profile available — write a professional JD focused on the role without fabricating company details."}

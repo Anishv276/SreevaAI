@@ -55,15 +55,70 @@ function formatCTC(amount: string, currency: string): string {
     return amount ? `${amount}||${currency}` : "";
 }
 
+function ExperienceCounter({
+    value,
+    onChange,
+    inputClass,
+}: {
+    value: string | number;
+    onChange: (v: string) => void;
+    inputClass: string;
+}) {
+    const numericValue = Number.parseFloat(String(value));
+    const safeValue = Number.isNaN(numericValue) ? 0 : Math.max(0, numericValue);
+
+    const adjust = (delta: number) => {
+        const next = Math.max(0, safeValue + delta);
+        onChange(Number.isInteger(next) ? String(next) : String(next));
+    };
+
+    return (
+        <div className="flex h-12 items-center rounded-2xl border border-gray-100 bg-gray-50/30 shadow-sm hover:border-orange-300 hover:shadow-md transition-all duration-150 overflow-hidden">
+            <button
+                type="button"
+                onClick={() => adjust(-1)}
+                className="flex h-full w-12 items-center justify-center text-gray-500 hover:bg-orange-50 hover:text-[#F97316] transition-colors duration-100 text-xl font-light flex-shrink-0 border-r border-gray-100"
+                aria-label="Decrease experience"
+            >
+                -
+            </button>
+            <Input
+                id="experience"
+                type="number"
+                min={0}
+                step="any"
+                placeholder="e.g. 5"
+                value={value || ""}
+                onChange={(e) => onChange(e.target.value)}
+                onWheel={(e) => {
+                    e.currentTarget.blur();
+                }}
+                className={cn(
+                    inputClass,
+                    "h-full rounded-none border-0 bg-transparent text-center text-[15px] font-bold focus:ring-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                )}
+            />
+            <button
+                type="button"
+                onClick={() => adjust(1)}
+                className="flex h-full w-12 items-center justify-center text-gray-500 hover:bg-orange-50 hover:text-[#F97316] transition-colors duration-100 text-xl font-light flex-shrink-0 border-l border-gray-100"
+                aria-label="Increase experience"
+            >
+                +
+            </button>
+        </div>
+    );
+}
+
 function CTCInput({ label, id, value, onChange, inputClass }: { label: string; id: string; value: string; onChange: (v: string) => void; inputClass: string; }) {
     const { amount, currency } = parseCTC(value);
-    const placeholder = currency === "INR" ? "e.g. 12 LPA" : `e.g. 120,000`;
-    const suffix = currency === "INR" ? "LPA" : currency;
+    const placeholder = currency === "INR" ? "e.g. 12 LPA INR" : `e.g. 120,000`;
+    const suffix = currency === "INR" ? "LPA INR" : currency;
 
     return (
         <div className="space-y-3">
             <Label htmlFor={id} className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">
-                {label} <span className="text-[#F97316] font-black text-[9px] ml-1 normal-case tracking-normal">{currency === "INR" ? "LPA" : currency}</span>
+                {label} <span className="text-[#F97316] font-black text-[9px] ml-1 normal-case tracking-normal">{currency === "INR" ? "LPA INR" : currency}</span>
             </Label>
             <div className="flex gap-2 items-center">
                 <div className="relative flex-1">
@@ -100,14 +155,13 @@ export function ProfessionalDetails({
         <div className="space-y-10 animate-in-fade">
             <div className="space-y-3">
                 <Label htmlFor="experience" className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">Total Experience (Years) *</Label>
-                <Input
-                    id="experience"
-                    type="number"
-                    min={0}
-                    placeholder="e.g. 5"
-                    value={formData.experience || ""}
-                    onChange={(e) => updateFormData({ experience: e.target.value, experienceYears: parseFloat(e.target.value) || 0 })}
-                    className={cn(inputClass, isAnalyzing && !formData.experience && "bg-orange-50/50")}
+                <ExperienceCounter
+                    value={formData.experience || formData.experienceYears?.toString() || ""}
+                    onChange={(val) => {
+                        const parsed = parseFloat(val);
+                        updateFormData({ experience: val, experienceYears: isNaN(parsed) ? null : parsed });
+                    }}
+                    inputClass={cn(inputClass, isAnalyzing && !formData.experience && "bg-orange-50/50")}
                 />
             </div>
 

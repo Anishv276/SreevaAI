@@ -67,7 +67,7 @@ const worker = new Worker('resume-processing', async (job) => {
     where: { id: applicationId },
     select: {
       id: true,
-      status: true,
+      resumeStatus: true,
       aiScore: true,
       aiReport: true,
     },
@@ -77,7 +77,7 @@ const worker = new Worker('resume-processing', async (job) => {
     return;
   }
 
-  const normalizedExistingStatus = String(appExists.status || "")
+  const normalizedExistingStatus = String(appExists.resumeStatus || "")
     .trim()
     .toUpperCase()
     .replace(/\s+/g, "_");
@@ -157,25 +157,48 @@ const worker = new Worker('resume-processing', async (job) => {
         resumeText: resumeText || "",
         structuredResume: JSON.stringify(structuredResume || {}),
         experienceYears: (structuredResume as any)?.experience?.total_years || null,
-        relevantYears: (structuredResume as any)?.experience?.relevant_years || null,
       }
     });
 
     // 2. SCORING (Structured JD vs Structured Resume)
     console.log(`[JOB] Scoring candidate ${applicantEmail} using Structured Data...`);
-    let aiResult = { score: 0, status: "Pending", reasoning: "No resume data" };
-    const THRESHOLD = drive.screeningThreshold || 70;
+    let aiResult: { score: number; status: string; reasoning: string; hard_rejected?: boolean } = { score: 0, status: "Pending", reasoning: "No resume data" };
+
+    // Always read the latest drive settings from DB (never trust queued snapshot).
+    const latestDrive = await prisma.drive.findUnique({
+      where: { id: drive.id },
+      select: {
+        title: true,
+        description: true,
+        extractedDetails: true,
+        screeningThreshold: true,
+        interviewEnabled: true,
+      },
+    });
+
+    // Threshold source of truth: DB value; fallback must be 0 (not 70).
+    const THRESHOLD = Number(latestDrive?.screeningThreshold ?? 0) || 0;
     
     // Parse JD details if stored as string
-    const jdDetails = typeof (drive as any).extractedDetails === 'string' 
-      ? JSON.parse((drive as any).extractedDetails) 
-      : (drive as any).extractedDetails || {};
+    let jdDetails: Record<string, any> = {};
+    try {
+      jdDetails = typeof latestDrive?.extractedDetails === 'string'
+        ? JSON.parse(latestDrive.extractedDetails)
+        : (latestDrive?.extractedDetails as unknown as Record<string, any>) || {};
+      if (typeof jdDetails !== 'object' || Array.isArray(jdDetails) || jdDetails === null) {
+        console.warn(`[JOB] extractedDetails is not a plain object after parsing — resetting to {}`);
+        jdDetails = {};
+      }
+    } catch (e) {
+      console.warn(`[JOB] Failed to parse extractedDetails for drive ${drive.id}:`, e);
+      jdDetails = {};
+    }
 
     const scoringInput = {
         resume: structuredResume,
         jd: jdDetails,
         resume_raw_text: resumeText,
-        jd_raw_text: jdText || (drive as any).description || "",
+        jd_raw_text: jdText || latestDrive?.description || (drive as any).description || "",
         threshold: THRESHOLD
     };
 
@@ -213,36 +236,51 @@ const worker = new Worker('resume-processing', async (job) => {
       .toUpperCase()
       .replace(/\s+/g, "_");
 
-    // Python computes status using the threshold we passed.
-    // "Borderline" = score is between Python's floor (55) and threshold — treat with threshold.
-    // Hard rejections from Python always win regardless of threshold.
-    const finalStatus: "SHORTLISTED" | "REJECTED" | "ACCEPTED" =
-      aiResult.hard_rejected
-        ? "REJECTED"
-        : normalizedAiStatus === "SHORTLISTED" || normalizedAiStatus === "ACCEPTED"
-          ? normalizedAiStatus
-          : normalizedAiStatus === "REJECTED"
-            ? "REJECTED"
-            : currentScore >= THRESHOLD   // Borderline or unknown: use DB threshold
-              ? "SHORTLISTED"
-              : "REJECTED";
+    // The DB screeningThreshold is the ONLY source of truth for pass/fail.
+    // hard_rejected from Python is purely informational (shown in report to HR)
+    // but can NEVER override the admin-configured threshold.
+    // If admin sets threshold=1%, a score of 26 MUST shortlist — no exceptions.
+    const resumeStatus: "SHORTLISTED" | "REJECTED" =
+      currentScore >= THRESHOLD ? "SHORTLISTED" : "REJECTED";
 
     // 2. Update DB
-    const exists = await prisma.application.findUnique({ where: { id: applicationId } });
+    const exists = await prisma.application.findUnique({
+      where: { id: applicationId },
+      select: { id: true, submissionData: true, experienceYears: true }
+    });
     if (!exists) {
       console.warn(`[JOB] Application ${applicationId} no longer exists. Skipping update.`);
       return;
     }
+
+    // Restore experienceYears from submissionData if not already set in DB column
+    const submissionData = (exists.submissionData as any) || {};
+    const savedExpYears = exists.experienceYears;
+    const expFromSubmission =
+      submissionData.experienceYears != null
+        ? parseFloat(String(submissionData.experienceYears))
+        : submissionData.experience != null && submissionData.experience !== ""
+          ? parseFloat(String(submissionData.experience))
+          : null;
+    const resolvedExperienceYears = (savedExpYears != null && !isNaN(savedExpYears))
+      ? savedExpYears
+      : (!isNaN(expFromSubmission as number) ? expFromSubmission : null);
+
     await prisma.application.update({
       where: { id: applicationId },
       data: {
-        status: finalStatus,
+        resumeStatus: resumeStatus,
         aiScore: currentScore,
         aiReport: JSON.stringify(aiResult),
+        ...(resolvedExperienceYears != null && { experienceYears: resolvedExperienceYears }),
+        ...(resumeStatus === "REJECTED" && {
+          interviewStatus: "Not Qualified",
+          hiringStatus: "Not Shortlisted",
+        }),
       }
     });
 
-    console.log(`[SUCCESS] Candidate ${applicantEmail} scored ${currentScore}. Status: ${finalStatus}`);
+    console.log(`[SUCCESS] Candidate ${applicantEmail} scored ${currentScore}. Status: ${resumeStatus}`);
 
     // 3. Sync to Pinecone (fire-and-forget, non-blocking)
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
@@ -250,9 +288,13 @@ const worker = new Worker('resume-processing', async (job) => {
         .then(() => console.log(`[SYNC] Pinecone sync triggered for ${applicationId}`))
         .catch((err: Error) => console.warn(`[SYNC] Pinecone sync failed (non-fatal): ${err.message}`));
 
-    // 4. Interview invite email flow
+    // 4. Interview invite / status email flow
     const { sendApplicationStatusEmail } = await import('./lib/mail');
-    if (finalStatus === 'ACCEPTED' || finalStatus === 'SHORTLISTED') {
+    // Read interviewEnabled from DB (already fetched above); default true for backward compat.
+    const isInterviewEnabled = latestDrive?.interviewEnabled ?? true;
+
+    if (resumeStatus === 'SHORTLISTED' && isInterviewEnabled) {
+      // Voice interview is ENABLED -> create interview record and send link
       const interview = await (prisma as any).interview.upsert({
         where: { applicationId },
         update: {
@@ -271,19 +313,23 @@ const worker = new Worker('resume-processing', async (job) => {
       await sendApplicationStatusEmail({
         email: applicantEmail,
         fullName: applicantName,
-        jobTitle: drive.title,
-        status: finalStatus,
+        jobTitle: latestDrive?.title || drive.title,
+        status: resumeStatus,
         score: currentScore,
         interviewLink
       });
+      console.log(`[EMAIL] Interview invite sent to ${applicantEmail} (voice interview enabled)`);
     } else {
+      // Voice interview DISABLED or candidate REJECTED -> plain status email only, no interview link
       await sendApplicationStatusEmail({
         email: applicantEmail,
         fullName: applicantName,
-        jobTitle: drive.title,
-        status: 'REJECTED',
+        jobTitle: latestDrive?.title || drive.title,
+        status: resumeStatus === 'SHORTLISTED' ? 'SHORTLISTED' : 'REJECTED',
         score: currentScore
+        // No interviewLink -- email reflects resume status only
       });
+      console.log(`[EMAIL] Status-only email sent to ${applicantEmail} -- interview disabled: ${!isInterviewEnabled}, status: ${resumeStatus}`);
     }
 
   } catch (error) {
@@ -426,7 +472,7 @@ const interviewFinalizationWorker = new Worker(
 
       if (appStatus) {
         await prisma.$executeRawUnsafe(
-          'UPDATE "Application" SET status = $1, "updatedAt" = NOW() WHERE id = $2',
+          'UPDATE "Application" SET "resumeStatus" = $1, "updatedAt" = NOW() WHERE id = $2',
           appStatus,
           applicationId
         );

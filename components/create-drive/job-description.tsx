@@ -307,7 +307,7 @@ export function JobDescription({
                         {/* Top Row: Description & Responsibilities */}
                         <div className="grid md:grid-cols-2 gap-6 items-start">
                             <div>
-                                <FieldLabel>Job Description {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
+                                <FieldLabel required>Job Description {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
                                 <div className="relative">
                                     <PenLine className="absolute left-3 top-3 h-3.5 w-3.5 text-gray-300 pointer-events-none" />
                                     <textarea
@@ -320,7 +320,7 @@ export function JobDescription({
                                 </div>
                             </div>
                             <div>
-                                <FieldLabel>Key Responsibilities {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
+                                <FieldLabel required>Key Responsibilities {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
                                 <textarea
                                     rows={6}
                                     placeholder="• Define clear objectives&#10;• Collaborate with cross-functional teams&#10;• ..."
@@ -345,7 +345,7 @@ export function JobDescription({
                                 <p className="text-[10px] text-gray-400 font-medium mt-1.5 ml-1">Write skills as bullet points for better AI matching</p>
                             </div>
                             <div>
-                                <FieldLabel>Requirements {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
+                                <FieldLabel required>Requirements {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
                                 <textarea
                                     rows={4}
                                     placeholder="• Bachelor's degree in CS or related field&#10;• 3+ years of experience in...&#10;• ..."
@@ -359,7 +359,7 @@ export function JobDescription({
                         {/* Bottom Row: Experience & Salary */}
                         <div className="grid md:grid-cols-2 gap-6 items-end">
                             <div>
-                                <FieldLabel>Experience (Yrs)</FieldLabel>
+                                <FieldLabel required>Experience (Yrs)</FieldLabel>
                                 <input
                                     type="text"
                                     placeholder="e.g. 2–5 years"
@@ -370,9 +370,9 @@ export function JobDescription({
                             </div>
                             <div>
                                 {(() => {
-                                    const curr = (formData.salary || "").split(" ")[1] || "INR";
+                                    const curr = (formData.salary || "").split(" ")[2] || (formData.salary || "").split(" ")[1] || "INR";
                                     const label = curr === "INR" ? "Salary Range (LPA · INR)" : `Salary Range (${curr})`;
-                                    return <FieldLabel>{label}</FieldLabel>;
+                                    return <FieldLabel required>{label}</FieldLabel>;
                                 })()}
                                 <div className="flex items-center gap-2">
                                     <div className="relative flex-1">
@@ -383,21 +383,21 @@ export function JobDescription({
                                             onChange={(e) => {
                                                 const val = e.target.value;
                                                 const parts = (formData.salary || "").split(" ");
-                                                const curr = parts[1] || "INR";
-                                                updateFormData((prev: any) => ({ ...prev, salary: `${val} ${curr} LPA` }));
+                                                const curr = parts[2] || parts[1] || "INR";
+                                                updateFormData((prev: any) => ({ ...prev, salary: `${val} LPA ${curr}` }));
                                             }}
                                             className={inputClass}
                                         />
                                         <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-gray-300 uppercase tracking-widest pointer-events-none">
-                                            {((formData.salary || "").split(" ")[1] || "INR") === "INR" ? "LPA" : (formData.salary || "").split(" ")[1] || ""}
+                                            {((formData.salary || "").split(" ")[1] === "LPA" && (formData.salary || "").split(" ")[2] === "INR") ? "LPA INR" : (formData.salary || "").split(" ")[1] || ""}
                                         </div>
                                     </div>
                                     <CurrencySelector 
-                                        value={(formData.salary || "").split(" ")[1] || "INR"}
+                                        value={(formData.salary || "").split(" ")[2] || (formData.salary || "").split(" ")[1] || "INR"}
                                         onChange={(code) => {
                                             const parts = (formData.salary || "").split(" ");
                                             const amount = parts[0] || "";
-                                            updateFormData((prev: any) => ({ ...prev, salary: `${amount} ${code} LPA` }));
+                                            updateFormData((prev: any) => ({ ...prev, salary: `${amount} LPA ${code}` }));
                                         }}
                                     />
                                 </div>

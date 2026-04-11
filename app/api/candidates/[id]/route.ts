@@ -122,13 +122,20 @@ export async function PATCH(
         }
 
         // ── UPDATE ─────────────────────────────────────────
+        let dataToUpdate: any = {
+            ...(body.resumeStatus !== undefined && { resumeStatus: body.resumeStatus }),
+            ...(body.interviewStatus !== undefined && { interviewStatus: body.interviewStatus }),
+            ...(body.hiringStatus !== undefined && { hiringStatus: body.hiringStatus }),
+        };
+
+        if (body.resumeStatus === "rejected" || body.resumeStatus === "REJECTED") {
+            dataToUpdate.interviewStatus = "Not Qualified";
+            dataToUpdate.hiringStatus = "Not Shortlisted";
+        }
+
         const updated = await prisma.application.update({
             where: { id },
-            data: {
-                ...(body.resumeStatus !== undefined && { resumeStatus: body.resumeStatus }),
-                ...(body.interviewStatus !== undefined && { interviewStatus: body.interviewStatus }),
-                ...(body.hiringStatus !== undefined && { hiringStatus: body.hiringStatus }),
-            },
+            data: dataToUpdate,
             include: { drive: { select: { title: true, orgId: true } } },
         });
 

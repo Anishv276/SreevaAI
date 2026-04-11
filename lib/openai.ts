@@ -172,7 +172,7 @@ BEFORE YOU EXTRACT — MANDATORY PRE-CHECKS
 
 7. SALARY STANDARDIZATION
    Always convert to annual base numbers in the local currency:
-     "5-10 LPA" → min: 500000, max: 1000000, currency: "INR", period: "yearly"
+     "5-10 LPA INR" → min: 500000, max: 1000000, currency: "INR", period: "yearly"
      "50-70k USD" → min: 50000, max: 70000, currency: "USD", period: "yearly"
      "₹30,000/month" → min: 360000, max: null, currency: "INR", period: "yearly"
    If salary not mentioned → min: null, max: null, currency: null, period: null, disclosed: false

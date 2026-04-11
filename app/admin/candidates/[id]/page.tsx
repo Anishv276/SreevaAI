@@ -25,7 +25,7 @@ function ScoreIndicator({ score, status }: { score: number, status: string }) {
     const isMid = score >= 50;
     const colorClass = isHigh ? "text-green-600 bg-green-50 border-green-100" : isMid ? "text-orange-600 bg-orange-50 border-orange-100" : "text-red-600 bg-red-50 border-red-100";
     const label = isHigh ? "Executive Match" : isMid ? "Strong Candidate" : "Mixed Alignment";
-    
+
     return (
         <div className="flex items-center gap-4 animate-in fade-in zoom-in duration-700" style={{ fontFamily: 'Inter, sans-serif' }}>
             <div className="flex flex-col items-end gap-1">
@@ -100,17 +100,20 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
     const aiData = candidate?.aiReport ? JSON.parse(candidate.aiReport) : {};
     const structuredResume = candidate?.structuredResume ? (typeof candidate.structuredResume === 'string' ? JSON.parse(candidate.structuredResume) : candidate.structuredResume) : {};
-    
+
     const summary = structuredResume.candidate_summary || aiData.summary || structuredResume.summary || aiData.reasoning || "AI analysis pending for this candidate.";
     const strengths = aiData.strengths || [];
     const weaknesses = aiData.weaknesses || [];
     const score = candidate?.aiScore || 0;
+    const rawResumeStatus = String(candidate?.resumeStatus || "pending").toLowerCase();
     const normalizedStatus =
-        candidate?.status === "Rejected"
+        rawResumeStatus === "rejected"
             ? "Rejected"
-            : candidate?.status === "Borderline"
-                ? "Borderline"
-                : "Shortlisted";
+            : rawResumeStatus === "shortlisted"
+                ? "Shortlisted"
+                : rawResumeStatus === "borderline"
+                    ? "Borderline"
+                    : "Pending";
 
     const interviewRecordingUrl = candidate?.interview?.interviewRecordingUrl || candidate?.assessment?.interviewRecordingUrl || "";
     const interviewAiSummary = candidate?.interview?.aiSummary || candidate?.assessment?.aiSummary || "";
@@ -131,11 +134,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
         try {
             const parsed = JSON.parse(snapshots);
             if (Array.isArray(parsed) && parsed.length > 0) interviewSnapshot = parsed[parsed.length - 1];
-        } catch {}
+        } catch { }
     } else if (typeof snapshots === 'string' && snapshots.length > 10) {
         interviewSnapshot = snapshots;
     }
-    
+
     if (loading) {
         return (
             <div className="flex justify-center items-center min-h-[60vh]">
@@ -166,11 +169,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
     const displayAvatar = interviewSnapshot || candidate.passportUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${candidate.fullName}`;
     console.log("[Dossier] Snapshot Data:", { snapshots, interviewSnapshot, displayAvatar });
 
-    const techSkills = Array.isArray(structuredResume.skills?.technical) 
-        ? structuredResume.skills.technical.map((s: any) => typeof s === 'object' ? s.skill : s) 
+    const techSkills = Array.isArray(structuredResume.skills?.technical)
+        ? structuredResume.skills.technical.map((s: any) => typeof s === 'object' ? s.skill : s)
         : [];
-    const toolSkills = Array.isArray(structuredResume.skills?.tools) 
-        ? structuredResume.skills.tools.map((s: any) => (typeof s === 'object' ? s.tool : s)).filter(Boolean) 
+    const toolSkills = Array.isArray(structuredResume.skills?.tools)
+        ? structuredResume.skills.tools.map((s: any) => (typeof s === 'object' ? s.tool : s)).filter(Boolean)
         : [];
     const softSkills = Array.isArray(structuredResume.skills?.soft_skills) ? structuredResume.skills.soft_skills : [];
     const domainSkills = Array.isArray(structuredResume.skills?.domain_skills) ? structuredResume.skills.domain_skills : [];
@@ -178,12 +181,6 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
     const careerProgression = structuredResume.career_progression || null;
     const workHistory = Array.isArray(structuredResume.work_history) ? structuredResume.work_history : [];
     const breakdown = aiData.breakdown || null;
-
-    const statusColors: Record<string, string> = {
-        Shortlisted: "bg-green-50 text-green-700",
-        Borderline:  "bg-amber-50 text-amber-700",
-        Rejected:    "bg-red-50 text-red-600",
-    };
 
     const formatDuration = (totalSeconds: number) => {
         const m = Math.floor(totalSeconds / 60);
@@ -231,8 +228,8 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                             <p className="text-xl font-bold text-gray-400">{candidate.drive?.role || candidate.drive?.title || "Role N/A"}</p>
                             <div className="flex flex-wrap gap-6 pt-1">
                                 {[
-                                    { icon: Mail,     value: candidate.email },
-                                    { icon: Phone,    value: candidate.phone || "N/A" },
+                                    { icon: Mail, value: candidate.email },
+                                    { icon: Phone, value: candidate.phone || "N/A" },
                                     { icon: MapPin, value: structuredResume.location?.city ? `${structuredResume.location.city}, ${structuredResume.location.country || ""}` : (candidate.location || "N/A") },
                                     { icon: Calendar, value: mounted ? `Applied ${new Date(candidate.createdAt).toLocaleDateString()}` : "Applied --/--/----" },
                                 ].filter(item => item.value !== "N/A" && item.value !== "N/A, ").map(({ icon: Icon, value }) => (
@@ -249,11 +246,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                     <div className="flex items-center gap-6 relative z-10">
                         <div className="flex flex-col items-end gap-6 h-full justify-between">
                             <ScoreIndicator score={score} status={normalizedStatus} />
-                            
+
                             <div className="flex items-center gap-2">
-                                <Button 
+                                <Button
                                     onClick={() => setShowSubmissionPreview(true)}
-                                    variant="outline" 
+                                    variant="outline"
                                     className="h-10 px-5 rounded-2xl font-black text-[10px] uppercase tracking-widest border-gray-100 text-gray-500 hover:bg-gray-50 hover:text-gray-900 shadow-sm transition-all bg-white/50 backdrop-blur-sm"
                                 >
                                     <UserSearch className="h-3.5 w-3.5 mr-2" /> View Profile
@@ -271,7 +268,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
             </div>
 
             <div className="flex items-center gap-1 p-1 bg-gray-100/50 rounded-2xl w-fit">
-                <button 
+                <button
                     onClick={() => setActiveTab("analysis")}
                     className={cn(
                         "px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
@@ -295,8 +292,8 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                 <div className="space-y-6">
                     {activeTab === "analysis" && (
                         <div className="space-y-16 animate-in fade-in slide-in-from-bottom-2 duration-500 pb-20">
-                             {/* 🎯 Recruiter Snapshot */}
-                             <div className="space-y-8">
+                            {/* 🎯 Recruiter Snapshot */}
+                            <div className="space-y-8">
                                 <div className="inline-flex items-center gap-4 bg-black rounded-2xl px-8 py-4 shadow-xl border border-gray-800">
                                     <h3 className="text-xl font-black text-white tracking-tight">Recruiter Snapshot</h3>
                                     <div className="h-4 w-[1px] bg-gray-700" />
@@ -368,25 +365,29 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                 </div>
                                 <div className={cn(
                                     "bg-white rounded-[32px] border shadow-[0_8px_32px_rgba(0,0,0,0.03)] p-10 relative overflow-hidden",
-                                    normalizedStatus === "Shortlisted" ? "border-green-200 bg-green-50/20" : 
-                                    normalizedStatus === "Borderline" ? "border-orange-200 bg-orange-50/20" : "border-red-200 bg-red-50/20"
+                                    normalizedStatus === "Shortlisted" ? "border-green-200 bg-green-50/20" :
+                                        normalizedStatus === "Borderline" ? "border-orange-200 bg-orange-50/20" :
+                                            normalizedStatus === "Rejected" ? "border-red-200 bg-red-50/20" : "border-blue-200 bg-blue-50/20"
                                 )}>
                                     <div className="flex items-center gap-6 mb-8">
                                         <div className={cn(
                                             "h-14 w-14 rounded-2xl flex items-center justify-center shadow-lg",
-                                            normalizedStatus === "Shortlisted" ? "bg-green-100 text-green-600" : 
-                                            normalizedStatus === "Borderline" ? "bg-orange-100 text-orange-600" : "bg-red-100 text-red-600"
+                                            normalizedStatus === "Shortlisted" ? "bg-green-100 text-green-600" :
+                                                normalizedStatus === "Borderline" ? "bg-orange-100 text-orange-600" :
+                                                    normalizedStatus === "Rejected" ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"
                                         )}>
                                             {normalizedStatus === "Shortlisted" ? <CheckCircle2 className="h-7 w-7" /> : <AlertTriangle className="h-7 w-7" />}
                                         </div>
                                         <div>
-                                            <p className={cn("text-[10px] font-black uppercase tracking-[0.3em] mb-1.5", 
-                                                normalizedStatus === "Shortlisted" ? "text-green-600" : 
-                                                normalizedStatus === "Borderline" ? "text-orange-600" : "text-red-600"
+                                            <p className={cn("text-[10px] font-black uppercase tracking-[0.3em] mb-1.5",
+                                                normalizedStatus === "Shortlisted" ? "text-green-600" :
+                                                    normalizedStatus === "Borderline" ? "text-orange-600" :
+                                                        normalizedStatus === "Rejected" ? "text-red-600" : "text-blue-600"
                                             )}>Decision Consensus</p>
-                                            <h3 className={cn("text-3xl font-black tracking-tighter uppercase", 
-                                                normalizedStatus === "Shortlisted" ? "text-green-800" : 
-                                                normalizedStatus === "Borderline" ? "text-orange-800" : "text-red-800"
+                                            <h3 className={cn("text-3xl font-black tracking-tighter uppercase",
+                                                normalizedStatus === "Shortlisted" ? "text-green-800" :
+                                                    normalizedStatus === "Borderline" ? "text-orange-800" :
+                                                        normalizedStatus === "Rejected" ? "text-red-800" : "text-blue-800"
                                             )}>{normalizedStatus}</h3>
                                         </div>
                                     </div>
@@ -423,8 +424,8 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <div className="space-y-6">
                                             {aiData.concerns && aiData.concerns.length > 0 ? aiData.concerns.map((c: any, i: number) => (
                                                 <div key={i} className="p-7 rounded-[28px] bg-red-50/30 border border-red-100 transition-all hover:bg-red-50/50">
-                                                   <p className="text-sm font-black text-red-700 mb-2 uppercase tracking-wide">{c.point}</p>
-                                                   <p className="text-[14px] font-bold text-gray-500 leading-relaxed italic">&ldquo;{c.impact}&rdquo;</p>
+                                                    <p className="text-sm font-black text-red-700 mb-2 uppercase tracking-wide">{c.point}</p>
+                                                    <p className="text-[14px] font-bold text-gray-500 leading-relaxed italic">&ldquo;{c.impact}&rdquo;</p>
                                                 </div>
                                             )) : weaknesses.map((s: string, i: number) => (
                                                 <li key={i} className="flex items-start gap-4 text-[16px]">
@@ -472,11 +473,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     </div>
                                     <div className="bg-white rounded-[32px] border border-gray-200 shadow-[0_4px_24px_rgba(0,0,0,0.03)] p-10 h-[calc(100%-80px)]">
                                         {aiData.project_relevance ? (
-                                           <div className="p-8 rounded-[28px] bg-emerald-50/40 border border-emerald-100 flex items-center justify-center min-h-[160px]">
+                                            <div className="p-8 rounded-[28px] bg-emerald-50/40 border border-emerald-100 flex items-center justify-center min-h-[160px]">
                                                 <p className="text-[17px] font-bold text-gray-800 leading-relaxed text-center">
                                                     &ldquo;{aiData.project_relevance.reasoning}&rdquo;
                                                 </p>
-                                           </div>
+                                            </div>
                                         ) : (
                                             <p className="text-sm text-gray-400 font-bold italic text-center py-10 opacity-60">Spectrum check unavailable.</p>
                                         )}
@@ -490,7 +491,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     <div className="inline-flex items-center gap-4 bg-red-950 rounded-2xl px-8 py-4 shadow-xl border border-red-900/40">
                                         <h3 className="text-xl font-black text-white tracking-tight uppercase">Integrity Risk Signals</h3>
                                     </div>
-                                    
+
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                         {redFlags.map((flag: any, i: number) => {
                                             const isHigh = flag.severity === 'High';
@@ -536,7 +537,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     <div className="h-4 w-[1px] bg-gray-700" />
                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Multi-factor depth assessment</p>
                                 </div>
-                                
+
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                                     {[
                                         { title: "Core Technical", skills: techSkills, bg: "bg-indigo-50/50", text: "text-indigo-700", border: "border-indigo-100" },
@@ -577,23 +578,23 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <div className="h-4 w-[1px] bg-gray-700" />
                                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Talent trajectory analysis</p>
                                     </div>
-                                    
+
                                     <div className={cn(
                                         "bg-white rounded-[32px] border shadow-[0_8px_32px_rgba(0,0,0,0.03)] overflow-hidden",
                                         aiData.candidate_potential.for_this_role === 'High' ? "border-green-200 ring-2 ring-green-50/50" :
-                                        aiData.candidate_potential.for_this_role === 'Medium' ? "border-amber-200 ring-2 ring-amber-50/50" : "border-gray-200"
+                                            aiData.candidate_potential.for_this_role === 'Medium' ? "border-amber-200 ring-2 ring-amber-50/50" : "border-gray-200"
                                     )}>
                                         <div className="flex flex-col lg:flex-row divide-y lg:divide-y-0 lg:divide-x divide-gray-100">
                                             <div className={cn(
                                                 "lg:w-1/3 p-12 flex flex-col items-center justify-center text-center gap-2",
-                                                aiData.candidate_potential.for_this_role === 'High' ? "bg-green-50/30" : 
-                                                aiData.candidate_potential.for_this_role === 'Medium' ? "bg-amber-50/30" : "bg-gray-50/30"
+                                                aiData.candidate_potential.for_this_role === 'High' ? "bg-green-50/30" :
+                                                    aiData.candidate_potential.for_this_role === 'Medium' ? "bg-amber-50/30" : "bg-gray-50/30"
                                             )}>
                                                 <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.3em]">Trajectory</p>
                                                 <h4 className={cn(
                                                     "text-6xl font-black tracking-tighter",
-                                                    aiData.candidate_potential.for_this_role === 'High' ? "text-green-600" : 
-                                                    aiData.candidate_potential.for_this_role === 'Medium' ? "text-amber-600" : "text-gray-900"
+                                                    aiData.candidate_potential.for_this_role === 'High' ? "text-green-600" :
+                                                        aiData.candidate_potential.for_this_role === 'Medium' ? "text-amber-600" : "text-gray-900"
                                                 )}>
                                                     {aiData.candidate_potential.for_this_role}
                                                 </h4>
@@ -654,7 +655,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                                 &ldquo;{interviewAiSummary ? (interviewAiSummary.split(' ').slice(0, 60).join(' ') + (interviewAiSummary.split(' ').length > 60 ? '...' : '')) : "AI is synthesizing..."}&rdquo;
                                                             </p>
                                                         </div>
-                                                        
+
                                                         <div className="pt-6 border-t border-indigo-100/50 flex flex-wrap gap-4">
                                                             <div className="flex flex-col gap-1">
                                                                 <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Duration</p>
@@ -681,9 +682,9 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                                 --plyr-color-main: #F97316;
                                                             }
                                                         `}</style>
-                                                            <Plyr
-                                                                key={interviewRecordingUrl}
-                                                                ref={plyrRef}
+                                                        <Plyr
+                                                            key={interviewRecordingUrl}
+                                                            ref={plyrRef}
                                                             source={{
                                                                 type: "video",
                                                                 sources: [{ src: interviewRecordingUrl, type: "video/mp4" }],
@@ -702,7 +703,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                         <h3 className="text-xs font-black uppercase tracking-widest text-gray-900 flex-shrink-0">Full Session Log</h3>
                                                         <div className="h-[1px] flex-1 bg-gray-100" />
                                                     </div>
-                                                    
+
                                                     <div className="bg-white rounded-[32px] border border-gray-100 h-[500px] overflow-y-auto custom-scrollbar p-6 space-y-4">
                                                         {interviewTranscript ? interviewTranscript.split('\n').filter((line: string) => line.trim()).map((line: string, idx: number) => {
                                                             // Our agent writes "Interviewer: ..." and "Candidate: ..."
@@ -710,18 +711,16 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                             const isUser = line.startsWith('Candidate:');
                                                             const cleanLine = line.replace(/^(Interviewer:|Candidate:|ai:|user:|system:)\s*/i, '').trim();
                                                             const label = isAI ? "Jordan (AI Interviewer)" : isUser ? "Candidate" : "System";
-                                                            
+
                                                             return (
                                                                 <div key={idx} className={`flex gap-4 py-3 ${idx > 0 ? 'border-t border-gray-50' : ''}`}>
-                                                                    <div className={`flex-shrink-0 h-8 w-8 rounded-xl flex items-center justify-center text-[10px] font-black ${
-                                                                        isAI ? 'bg-indigo-100 text-indigo-600' : isUser ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-500'
-                                                                    }`}>
+                                                                    <div className={`flex-shrink-0 h-8 w-8 rounded-xl flex items-center justify-center text-[10px] font-black ${isAI ? 'bg-indigo-100 text-indigo-600' : isUser ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-500'
+                                                                        }`}>
                                                                         {isAI ? 'AI' : isUser ? 'C' : 'S'}
                                                                     </div>
                                                                     <div className="flex-1 min-w-0">
-                                                                        <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${
-                                                                            isAI ? 'text-indigo-500' : isUser ? 'text-orange-500' : 'text-gray-400'
-                                                                        }`}>{label}</p>
+                                                                        <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isAI ? 'text-indigo-500' : isUser ? 'text-orange-500' : 'text-gray-400'
+                                                                            }`}>{label}</p>
                                                                         <p className="text-gray-700 leading-relaxed font-medium text-sm">{cleanLine}</p>
                                                                     </div>
                                                                 </div>
@@ -740,7 +739,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                 ) : (
                                     <div className="py-20 flex flex-col items-center gap-4 bg-gray-50/50 rounded-3xl border border-dashed border-gray-200">
                                         <div className="h-14 w-14 rounded-2xl bg-gray-100 flex items-center justify-center"><EyeOff className="h-6 w-6 text-gray-300" /></div>
-                                        <p className="text-sm font-black text-gray-400 uppercase tracking-widest text-center">Interview not yet completed <br/><span className="text-[10px] font-bold lowercase italic opacity-60">Wait for candidate submission</span></p>
+                                        <p className="text-sm font-black text-gray-400 uppercase tracking-widest text-center">Interview not yet completed <br /><span className="text-[10px] font-bold lowercase italic opacity-60">Wait for candidate submission</span></p>
                                     </div>
                                 )}
                             </div>

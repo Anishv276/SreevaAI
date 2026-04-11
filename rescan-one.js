@@ -52,18 +52,18 @@ async function rescan(id) {
     // Update DB
     const score = aiResult.score || 0;
     const threshold = application.drive.screeningThreshold || 60;
-    const finalStatus = score >= threshold ? 'ACCEPTED' : 'REJECTED';
+    const resumeStatus = score >= threshold ? 'ACCEPTED' : 'REJECTED';
 
     await prisma.application.update({
       where: { id },
       data: {
-        status: finalStatus,
+        status: resumeStatus,
         aiScore: score,
         aiReport: JSON.stringify(aiResult)
       }
     });
 
-    console.log(`[SUCCESS] Candidate updated. Score: ${score}, Status: ${finalStatus}`);
+    console.log(`[SUCCESS] Candidate updated. Score: ${score}, Status: ${resumeStatus}`);
     console.log(`[INFO] Report data: ${JSON.stringify(aiResult, null, 2).substring(0, 500)}...`);
 
   } catch (err) {

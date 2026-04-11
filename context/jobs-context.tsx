@@ -8,7 +8,6 @@ export type Job = {
     id: string;
     title: string;
     department: string;
-    location: string;
     applicants: number;
     status: string;
     daysLeft: number;

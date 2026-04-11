@@ -507,7 +507,7 @@ export default function CandidatesPage() {
                             Sync Error: {error}
                         </span>
                     </div>
-                    <button 
+                    <button
                         onClick={clearError}
                         className="text-red-600 hover:text-red-800 transition-colors"
                     >
@@ -531,7 +531,7 @@ export default function CandidatesPage() {
                             />
                         </div>
                         <div className="flex items-center gap-4 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 no-scrollbar">
-                            <DateFilter 
+                            <DateFilter
                                 value={timeline}
                                 onChange={setTimeline}
                             />
@@ -605,7 +605,7 @@ export default function CandidatesPage() {
                             <TableRow className="border-b border-gray-50 hover:bg-transparent">
                                 {isSelectionMode && (
                                     <TableHead className="w-[50px] pl-8">
-                                        <Checkbox 
+                                        <Checkbox
                                             checked={selectedIds.size === filteredCandidates.length && filteredCandidates.length > 0}
                                             onCheckedChange={toggleSelectAll}
                                         />
@@ -635,173 +635,177 @@ export default function CandidatesPage() {
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                            filteredCandidates.map((candidate: any) => {
+                                filteredCandidates.map((candidate: any) => {
                                     const mainStatus = candidate.status?.toLowerCase() || "pending";
                                     const interviewStage = candidate.interviewStatus?.toLowerCase() || "pending";
                                     const hiringDecision = candidate.hiringStatus?.toLowerCase() || "pending";
-                                    
+
                                     const isHiredResult = hiringDecision === 'hired';
                                     const isNotHiredResult = hiringDecision === 'not hired';
 
                                     return (
-                                <tr
-                                    key={candidate.id}
-                                    onClick={() => isSelectionMode && toggleSelection(candidate.id)}
-                                    className={cn(
-                                        "group border-b border-white/20 hover:bg-white/40 transition-all duration-500",
-                                        isSelectionMode && "cursor-pointer",
-                                        selectedIds.has(candidate.id) && "bg-orange-50/30"
-                                    )}
-                                >
-                                    {isSelectionMode && (
-                                        <TableCell className="pl-8 py-5">
-                                            <Checkbox 
-                                                checked={selectedIds.has(candidate.id)}
-                                                onCheckedChange={() => toggleSelection(candidate.id)}
-                                            />
-                                        </TableCell>
-                                    )}
-                                    <TableCell className={cn("py-5", !isSelectionMode && "pl-8")}>
-                                        <div className="flex items-center gap-4">
-                                            <div className="relative group/avatar">
-                                                <Avatar className="h-11 w-11 border-2 border-white shadow-sm ring-1 ring-gray-100 group-hover/avatar:scale-105 transition-transform duration-300">
-                                                    <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${candidate.name}`} />
-                                                    <AvatarFallback>{candidate.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                                                </Avatar>
-                                                <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-green-500" />
-                                            </div>
-                                            <div className="flex flex-col">
-                                                <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{candidate.name}</span>
-                                                <span className="text-[11px] text-gray-400 font-bold mt-0.5">{candidate.email}</span>
-                                            </div>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="py-5">
-                                        <div className="flex flex-col">
-                                            <span className="text-sm font-bold text-gray-700">{candidate.role}</span>
-                                            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tighter mt-0.5">{candidate.location}</span>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="py-5 text-center">
-                                        <div className="flex justify-center items-center h-full">
-                                            <Badge variant="secondary" className={cn(
-                                                "rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border-0 shadow-sm",
-                                                mainStatus === 'rejected' ? 'bg-rose-50 text-rose-700' : 
-                                                mainStatus === 'shortlisted' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'
-                                            )}>
-                                                {mainStatus}
-                                            </Badge>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="py-5 text-center">
-                                        <div className="flex justify-center items-center h-full">
-                                            <Badge variant="outline" className={cn(
-                                                "rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border-gray-100 shadow-sm transition-all",
-                                                interviewStage === 'finished' ? 'text-indigo-600 bg-indigo-50/20 shadow-none border-indigo-100' : 
-                                                interviewStage === 'inprogress' ? 'text-blue-600 bg-blue-50/20 shadow-none border-blue-100' : 
-                                                interviewStage === 'pending' ? 'text-amber-600 bg-amber-50/20 shadow-none border-amber-100' : 'text-gray-500 bg-gray-50'
-                                            )}>
-                                                {interviewStage.length > 20 ? (
-                                                    <span title={interviewStage}>
-                                                        {interviewStage.substring(0, 17)}...
-                                                    </span>
-                                                ) : (
-                                                    interviewStage
-                                                )}
-                                            </Badge>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="py-5 text-center">
-                                        <div className="flex justify-center items-center h-full">
-                                            {isHiredResult ? (
-                                                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
-                                                    Hired
-                                                </Badge>
-                                            ) : isNotHiredResult ? (
-                                                <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
-                                                    Not Hired
-                                                </Badge>
-                                            ) : (
-                                                <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest italic">Pending</span>
+                                        <tr
+                                            key={candidate.id}
+                                            onClick={() => isSelectionMode && toggleSelection(candidate.id)}
+                                            className={cn(
+                                                "group border-b border-white/20 hover:bg-white/40 transition-all duration-500",
+                                                isSelectionMode && "cursor-pointer",
+                                                selectedIds.has(candidate.id) && "bg-orange-50/30"
                                             )}
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="py-5 text-[12px] font-bold text-gray-400 text-center">
-                                        {candidate.date}
-                                    </TableCell>
-                                    <TableCell className="py-5 text-center">
-                                        <Link href={`/admin/candidates/${candidate.id}`} onClick={(e) => isSelectionMode && e.stopPropagation()}>
-                                            <Button 
-                                                size="sm" 
-                                                variant="ghost" 
-                                                className="h-9 px-4 rounded-lg text-[#F97316] font-extrabold hover:bg-orange-50 transition-all mx-auto flex"
-                                            >
-                                                View Reports
-                                            </Button>
-                                        </Link>
-                                    </TableCell>
-                                    <TableCell className="py-5 pr-8 text-right">
-                                        <div onClick={(e) => isSelectionMode && e.stopPropagation()}>
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg hover:bg-gray-50 transition-colors">
-                                                        <MoreHorizontal className="h-4 w-4 text-gray-400" />
+                                        >
+                                            {isSelectionMode && (
+                                                <TableCell className="pl-8 py-5">
+                                                    <Checkbox
+                                                        checked={selectedIds.has(candidate.id)}
+                                                        onCheckedChange={() => toggleSelection(candidate.id)}
+                                                    />
+                                                </TableCell>
+                                            )}
+                                            <TableCell className={cn("py-5", !isSelectionMode && "pl-8")}>
+                                                <div className="flex items-center gap-4">
+                                                    <div className="relative group/avatar">
+                                                        <Avatar className="h-11 w-11 border-2 border-white shadow-sm ring-1 ring-gray-100 group-hover/avatar:scale-105 transition-transform duration-300">
+                                                            <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${candidate.name}`} />
+                                                            <AvatarFallback>{candidate.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                                                        </Avatar>
+                                                        <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-green-500" />
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{candidate.name}</span>
+                                                        <span className="text-[11px] text-gray-400 font-bold mt-0.5">{candidate.email}</span>
+                                                    </div>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="py-5">
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm font-bold text-gray-700">{candidate.role}</span>
+                                                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tighter mt-0.5">{candidate.location}</span>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="py-5 text-center">
+                                                <div className="flex justify-center items-center h-full">
+                                                    <Badge variant="secondary" className={cn(
+                                                        "rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border-0 shadow-sm",
+                                                        mainStatus === 'rejected' ? 'bg-rose-50 text-rose-700' :
+                                                            mainStatus === 'shortlisted' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'
+                                                    )}>
+                                                        {mainStatus}
+                                                    </Badge>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="py-5 text-center">
+                                                <div className="flex justify-center items-center h-full">
+                                                    <Badge variant="outline" className={cn(
+                                                        "rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border-gray-100 shadow-sm transition-all",
+                                                        interviewStage === 'finished' ? 'text-indigo-600 bg-indigo-50/20 shadow-none border-indigo-100' :
+                                                            interviewStage === 'inprogress' ? 'text-blue-600 bg-blue-50/20 shadow-none border-blue-100' :
+                                                                interviewStage === 'pending' ? 'text-amber-600 bg-amber-50/20 shadow-none border-amber-100' : 'text-gray-500 bg-gray-50'
+                                                    )}>
+                                                        {interviewStage.length > 20 ? (
+                                                            <span title={interviewStage}>
+                                                                {interviewStage.substring(0, 17)}...
+                                                            </span>
+                                                        ) : (
+                                                            interviewStage
+                                                        )}
+                                                    </Badge>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="py-5 text-center">
+                                                <div className="flex justify-center items-center h-full">
+                                                    {isHiredResult ? (
+                                                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
+                                                            Hired
+                                                        </Badge>
+                                                    ) : isNotHiredResult ? (
+                                                        <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
+                                                            Not Hired
+                                                        </Badge>
+                                                    ) : hiringDecision === 'not shortlisted' ? (
+                                                        <Badge variant="outline" className="bg-rose-50 text-rose-600 border-rose-200 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
+                                                            Not Shortlisted
+                                                        </Badge>
+                                                    ) : (
+                                                        <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest italic">Pending</span>
+                                                    )}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="py-5 text-[12px] font-bold text-gray-400 text-center">
+                                                {candidate.date}
+                                            </TableCell>
+                                            <TableCell className="py-5 text-center">
+                                                <Link href={`/admin/candidates/${candidate.id}`} onClick={(e) => isSelectionMode && e.stopPropagation()}>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="h-9 px-4 rounded-lg text-[#F97316] font-extrabold hover:bg-orange-50 transition-all mx-auto flex"
+                                                    >
+                                                        View Reports
                                                     </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="w-56 p-2 rounded-xl shadow-xl border-gray-100">
-                                                    <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Quick Actions</DropdownMenuLabel>
-                                                    
-                                                    <DropdownMenuItem
-                                                        onClick={() => handleResendInterview({ id: candidate.id, interviewStatus: candidate.interviewStatus })}
-                                                        disabled={resendingId === candidate.id}
-                                                        className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors"
-                                                    >
-                                                        <RefreshCw className={cn("h-4 w-4 mr-2", resendingId === candidate.id && "animate-spin")} />
-                                                        {resendingId === candidate.id ? "Sending..." : "Resend Interview Link"}
-                                                    </DropdownMenuItem>
+                                                </Link>
+                                            </TableCell>
+                                            <TableCell className="py-5 pr-8 text-right">
+                                                <div onClick={(e) => isSelectionMode && e.stopPropagation()}>
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg hover:bg-gray-50 transition-colors">
+                                                                <MoreHorizontal className="h-4 w-4 text-gray-400" />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end" className="w-56 p-2 rounded-xl shadow-xl border-gray-100">
+                                                            <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Quick Actions</DropdownMenuLabel>
 
-                                                    <DropdownMenuItem
-                                                        onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${candidate.name} hired — confirmation email sent`)}
-                                                        className="rounded-lg px-3 py-2 font-bold cursor-pointer text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
-                                                    >
-                                                        <Award className="h-4 w-4 mr-2" />
-                                                        Hire this person
-                                                    </DropdownMenuItem>
+                                                            <DropdownMenuItem
+                                                                onClick={() => handleResendInterview({ id: candidate.id, interviewStatus: candidate.interviewStatus })}
+                                                                disabled={resendingId === candidate.id}
+                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors"
+                                                            >
+                                                                <RefreshCw className={cn("h-4 w-4 mr-2", resendingId === candidate.id && "animate-spin")} />
+                                                                {resendingId === candidate.id ? "Sending..." : "Resend Interview Link"}
+                                                            </DropdownMenuItem>
 
-                                                    <DropdownMenuItem
-                                                        onClick={() => setEmailCandidate({ id: candidate.id, name: candidate.name, email: candidate.email, role: candidate.role })}
-                                                        className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-blue-600 focus:text-blue-700 focus:bg-blue-50"
-                                                    >
-                                                        <Mail className="h-4 w-4 mr-2" />
-                                                        Send Email
-                                                    </DropdownMenuItem>
+                                                            <DropdownMenuItem
+                                                                onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${candidate.name} hired — confirmation email sent`)}
+                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
+                                                            >
+                                                                <Award className="h-4 w-4 mr-2" />
+                                                                Hire this person
+                                                            </DropdownMenuItem>
 
-                                                    <DropdownMenuItem
-                                                        onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "not hired" }, `${candidate.name} marked as Not Hired — email sent`)}
-                                                        className="rounded-lg px-3 py-2 font-bold cursor-pointer text-gray-600 focus:text-gray-900 focus:bg-gray-50 transition-colors"
-                                                    >
-                                                        <UserX className="h-4 w-4 mr-2" />
-                                                        Mark as Not Hired
-                                                    </DropdownMenuItem>
+                                                            <DropdownMenuItem
+                                                                onClick={() => setEmailCandidate({ id: candidate.id, name: candidate.name, email: candidate.email, role: candidate.role })}
+                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-blue-600 focus:text-blue-700 focus:bg-blue-50"
+                                                            >
+                                                                <Mail className="h-4 w-4 mr-2" />
+                                                                Send Email
+                                                            </DropdownMenuItem>
 
-                                                    <DropdownMenuSeparator className="my-1 bg-gray-50" />
-                                                    <DropdownMenuItem
-                                                        onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${candidate.name} rejected`)}
-                                                        className="rounded-lg px-3 py-2 font-bold text-red-600 cursor-pointer focus:text-red-700 focus:bg-red-50 transition-colors"
-                                                    >
-                                                        Reject Candidate
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem
-                                                        onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${candidate.name} shortlisted`)}
-                                                        className="rounded-lg px-3 py-2 font-bold text-emerald-600 cursor-pointer focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
-                                                    >
-                                                        Shortlist Candidate
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                        </div>
-                                    </TableCell>
-                                </tr>
+                                                            <DropdownMenuItem
+                                                                onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "not hired" }, `${candidate.name} marked as Not Hired — email sent`)}
+                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer text-gray-600 focus:text-gray-900 focus:bg-gray-50 transition-colors"
+                                                            >
+                                                                <UserX className="h-4 w-4 mr-2" />
+                                                                Mark as Not Hired
+                                                            </DropdownMenuItem>
+
+                                                            <DropdownMenuSeparator className="my-1 bg-gray-50" />
+                                                            <DropdownMenuItem
+                                                                onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${candidate.name} rejected`)}
+                                                                className="rounded-lg px-3 py-2 font-bold text-red-600 cursor-pointer focus:text-red-700 focus:bg-red-50 transition-colors"
+                                                            >
+                                                                Reject Candidate
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem
+                                                                onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${candidate.name} shortlisted`)}
+                                                                className="rounded-lg px-3 py-2 font-bold text-emerald-600 cursor-pointer focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
+                                                            >
+                                                                Shortlist Candidate
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                </div>
+                                            </TableCell>
+                                        </tr>
                                     );
                                 }))}
                         </tbody>
@@ -814,19 +818,19 @@ export default function CandidatesPage() {
                     Showing <span className="text-gray-900">{pagination.total > 0 ? (pagination.page - 1) * pagination.limit + 1 : 0}</span> to <span className="text-gray-900">{Math.min(pagination.page * pagination.limit, pagination.total || 0)}</span> of <span className="text-gray-900">{pagination.total || 0}</span> candidates
                 </p>
                 <div className="flex gap-3">
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="h-10 px-4 rounded-xl border-gray-200 text-gray-400 font-bold hover:text-gray-600 transition-all" 
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-10 px-4 rounded-xl border-gray-200 text-gray-400 font-bold hover:text-gray-600 transition-all"
                         disabled={pagination.page <= 1}
                         onClick={() => handlePageChange(pagination.page - 1)}
                     >
                         <ChevronLeft className="h-4 w-4 mr-2" /> Previous
                     </Button>
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="h-10 px-4 rounded-xl border-gray-200 text-gray-400 font-bold hover:text-gray-600 transition-all" 
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-10 px-4 rounded-xl border-gray-200 text-gray-400 font-bold hover:text-gray-600 transition-all"
                         disabled={pagination.page >= pagination.totalPages}
                         onClick={() => handlePageChange(pagination.page + 1)}
                     >
@@ -841,20 +845,20 @@ export default function CandidatesPage() {
                 onConfirm={confirmBulkAction}
                 title={
                     pendingAction === "hire" ? "Hire Candidates" :
-                    pendingAction === "reject" ? "Reject Candidates" :
-                    "Delete Candidates"
+                        pendingAction === "reject" ? "Reject Candidates" :
+                            "Delete Candidates"
                 }
                 description={
                     pendingAction === "hire"
                         ? `Hire ${selectedIds.size} selected candidate(s)? A hire confirmation email will be sent to each.`
                         : pendingAction === "reject"
-                        ? `Reject ${selectedIds.size} selected candidate(s)? A rejection email with careers page link will be sent to each.`
-                        : `Permanently delete ${selectedIds.size} selected candidate(s)? This cannot be undone.`
+                            ? `Reject ${selectedIds.size} selected candidate(s)? A rejection email with careers page link will be sent to each.`
+                            : `Permanently delete ${selectedIds.size} selected candidate(s)? This cannot be undone.`
                 }
                 confirmText={
                     pendingAction === "hire" ? `Confirm Hire (${selectedIds.size})` :
-                    pendingAction === "reject" ? `Confirm Reject (${selectedIds.size})` :
-                    `Confirm Delete (${selectedIds.size})`
+                        pendingAction === "reject" ? `Confirm Reject (${selectedIds.size})` :
+                            `Confirm Delete (${selectedIds.size})`
                 }
                 isLoading={isBulkLoading}
             />

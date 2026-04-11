@@ -4,10 +4,8 @@ import Link from "next/link";
 
 export default async function BrandedApplyPage({ params }: { params: Promise<{ slug: string; jobId: string }> }) {
     const { slug, jobId } = await params;
-    const id = parseInt(jobId);
-
-    const job = await prisma.drive.findUnique({
-        where: { id },
+    const job = await prisma.drive.findFirst({
+        where: { id: jobId, organization: { slug } },
         include: { organization: true }
     });
 
@@ -46,7 +44,7 @@ export default async function BrandedApplyPage({ params }: { params: Promise<{ s
                         <span className="text-[10px] font-black text-orange-600 uppercase tracking-[0.2em]">Applying for</span>
                         <h2 className="text-4xl font-black text-gray-900 tracking-tight">{job.title}</h2>
                         <div className="flex items-center justify-center gap-4 text-sm text-gray-500 font-bold">
-                            <span>{job.location}</span>
+                            <span>{job.workMode ?? "—"}</span>
                             <span>•</span>
                             <span>{job.type}</span>
                         </div>

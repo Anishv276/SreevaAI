@@ -8,6 +8,74 @@ import { PortalHeader } from "@/components/careers/portal-header"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 
+function formatExtractedLocation(location: any): string {
+    if (!location) return "";
+
+    if (typeof location === "string") {
+        return location
+            .split(",")
+            .map((part) => part.trim())
+            .filter(Boolean)
+            .join(", ");
+    }
+
+    const parts = [location.city, location.state, location.country]
+        .map((part) => (typeof part === "string" ? part.trim() : ""))
+        .filter(Boolean);
+
+    return parts.join(", ");
+}
+
+function mapEducationList(education: any[] = []) {
+    return education.map((edu: any) => ({
+        id: Math.random().toString(36).substr(2, 9),
+        institution: edu?.institution || "",
+        degree: edu?.degree || "",
+        fieldOfStudy: edu?.field || "",
+        startDate: edu?.start_year ? String(edu.start_year) : "",
+        endDate: edu?.year || edu?.end_year ? String(edu.year || edu.end_year) : "",
+        grade: "",
+    }));
+}
+
+function mapWorkHistoryList(workHistory: any[] = []) {
+    return workHistory.map((job: any) => ({
+        id: Math.random().toString(36).substr(2, 9),
+        title: job?.role || "",
+        company: job?.company || "",
+        location: formatExtractedLocation(job?.location),
+        startDate: job?.start_year ? String(job.start_year) : "",
+        endDate: job?.end_year ? String(job.end_year) : "",
+        current: !!job?.is_current,
+        description:
+            (Array.isArray(job?.what_they_built) ? job.what_they_built.join("\n") : "") +
+            (Array.isArray(job?.technologies_used) && job.technologies_used.length
+                ? `\n\nStack: ${job.technologies_used.join(", ")}`
+                : ""),
+    }));
+}
+
+function deriveProfessionalExperienceYears(extractedData: any): number | null {
+    const workHistory = Array.isArray(extractedData?.work_history) ? extractedData.work_history : [];
+    if (!workHistory.length) return null;
+
+    const internshipPattern = /\b(intern|internship|trainee|apprentice|fellow)\b/i;
+    let totalMonths = 0;
+
+    for (const job of workHistory) {
+        const role = String(job?.role || "");
+        if (internshipPattern.test(role)) continue;
+
+        const months = Number(job?.duration_months);
+        if (!Number.isNaN(months) && months > 0) {
+            totalMonths += months;
+        }
+    }
+
+    if (totalMonths <= 0) return null;
+    return Math.round((totalMonths / 12) * 10) / 10;
+}
+
 export default function ApplyStartPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params)
     const router = useRouter()
@@ -60,17 +128,20 @@ export default function ApplyStartPage({ params }: { params: Promise<{ id: strin
             if (!response.ok) throw new Error("Failed to extract details")
             
             const { data: extracted, text, url: resumeUrl } = await response.json()
+            const professionalYears = deriveProfessionalExperienceYears(extracted)
 
             const prefillData = {
                 fullName: extracted?.full_name || "",
                 email: extracted?.email || "",
                 phone: extracted?.phone || "",
-                location: extracted?.location ? [extracted.location.city, extracted.location.state].filter(Boolean).join(", ") : "",
+                location: formatExtractedLocation(extracted?.location),
                 resumeUrl: resumeUrl,
                 resumeText: text,
                 structuredResume: extracted,
-                experience: extracted?.experience?.total_years !== undefined ? String(extracted.experience.total_years) : "",
-                currentCompany: extracted?.current_company || ""
+                experienceYears: professionalYears,
+                currentCompany: extracted?.current_company || "",
+                education: Array.isArray(extracted?.education) ? mapEducationList(extracted.education) : [],
+                experience_list: Array.isArray(extracted?.work_history) ? mapWorkHistoryList(extracted.work_history) : [],
             }
 
             localStorage.setItem(`prefill_${drive.id}`, JSON.stringify(prefillData))

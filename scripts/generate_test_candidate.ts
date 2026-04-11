@@ -18,7 +18,7 @@ async function main() {
         title: "Senior AI Engineer",
         description: "Looking for someone to build next-gen AI agents.",
         department: "Engineering",
-        location: "Remote",
+        workMode: "Remote",
         creatorId: creator.id,
         skills: "Python, LiveKit, OpenAI, TypeScript",
       }
@@ -37,7 +37,7 @@ async function main() {
       phone: "+1234567890",
       resumeUrl: "https://example.com/resume.pdf",
       driveId: drive.id,
-      status: "SHORTLISTED",
+      resumeStatus: "shortlisted",
     }
   });
 

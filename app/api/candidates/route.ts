@@ -4,7 +4,6 @@ import { resumeQueue } from "@/lib/queue";
 import { createCandidateSchema, bulkDeleteCandidatesSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
 import { sanitizeObject } from "@/lib/utils";
-import { isRateLimited } from "@/lib/ratelimit";
 
 export async function GET(request: Request) {
     try {
@@ -24,7 +23,7 @@ export async function GET(request: Request) {
         const offset = (page - 1) * limit;
 
         const baseSelect = `
-            SELECT a.*, d.title AS "driveTitle", d.location AS "driveLocation"
+            SELECT a.*, d.title AS "driveTitle"
             FROM "Application" a
             JOIN "Drive" d ON d.id = a."driveId"
         `;
@@ -133,7 +132,6 @@ export async function GET(request: Request) {
                 name: app.fullName,
                 email: app.email,
                 role: app.driveTitle || app.drivetitle || "Unknown Role",
-                location: app.driveLocation || app.drivelocation || "-",
                 score: app.aiScore || 0,
                 status: app.resumeStatus,
                 interviewStatus: app.interviewStatus,
@@ -182,15 +180,6 @@ export async function POST(request: Request) {
         }
 
         const data = result.data;
-
-        // ── RATE LIMITING ───────────────────────────────────
-        const isLimited = await isRateLimited(`apply:${data.email.toLowerCase().trim()}`, 5, 3600);
-        if (isLimited) {
-            return NextResponse.json({ 
-                error: "You've submitted too many applications recently. Please try again in an hour.", 
-                code: "RATE_LIMIT_EXCEEDED" 
-            }, { status: 429 });
-        }
 
         const drive = await prisma.drive.findUnique({
             where: { id: data.driveId }, include: { organization: { select: { isActive: true } } },
@@ -246,7 +235,7 @@ export async function POST(request: Request) {
 
         const { 
             driveId, fullName, email, phone, resumeUrl, passportUrl, structuredResume, 
-            experienceYears, relevantYears, ...submissionData 
+            experienceYears, ...submissionData 
         } = data;
 
         // EMERGENCY GUARD: Never save blob URLs to the database
@@ -262,8 +251,7 @@ export async function POST(request: Request) {
                 resumeUrl: finalResumeUrl || "https://example.com/resume.pdf",
                 passportUrl: finalPassportUrl,
                 resumeText: resumeText,
-                experienceYears: experienceYears || (structuredResume as any)?.experience?.total_years || null,
-                relevantYears: relevantYears || null,
+                experienceYears: experienceYears ?? (structuredResume as any)?.experience?.total_years ?? null,
                 structuredResume: structuredResume ? JSON.stringify(structuredResume) : null,
                 submissionData: submissionData as any,
                 resumeStatus: "pending",

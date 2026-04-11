@@ -379,8 +379,8 @@ export default function AiChatJdPage() {
                                 className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-4xl mt-20"
                             >
                                 {[
-                                    { text: "Senior React Developer, 4yrs exp, 12-15 LPA", icon: "⚛️" },
-                                    { text: "Backend Engineer, Node.js + Postgre, 20 LPA", icon: "⚡" },
+                                    { text: "Senior React Developer, 4yrs exp, 12-15 LPA INR", icon: "⚛️" },
+                                    { text: "Backend Engineer, Node.js + Postgre, 20 LPA INR", icon: "⚡" },
                                     { text: "Product Manager, B2B SaaS, Hybrid", icon: "📦" },
                                     { text: "UX Architect, Figma Pro, 5+ years", icon: "🎨" },
                                 ].map((s, idx) => (

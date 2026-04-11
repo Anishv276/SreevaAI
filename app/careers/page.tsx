@@ -12,53 +12,20 @@ import { useState, useMemo, useRef, useEffect } from "react";
 export default function PortalPage() {
     const { jobs } = useJobs();
     const [searchQuery, setSearchQuery] = useState("");
-    const [locationQuery, setLocationQuery] = useState("");
     const [activeCategory, setActiveCategory] = useState("All Jobs");
     const [showSuggestions, setShowSuggestions] = useState(false);
-    const locationRef = useRef<HTMLDivElement>(null);
 
-    // Extract unique locations from current jobs
-    const uniqueLocations = useMemo(() => {
-        const locations = jobs.map(j => (j as any).workMode).filter(Boolean);
-        return Array.from(new Set(locations)).sort();
-    }, [jobs]);
-
-    const filteredLocations = useMemo(() => {
-        if (!locationQuery) return uniqueLocations;
-        const query = locationQuery.toLowerCase();
-        return uniqueLocations
-            .filter(loc => loc.toLowerCase().includes(query))
-            .sort((a, b) => {
-                const aStarts = a.toLowerCase().startsWith(query);
-                const bStarts = b.toLowerCase().startsWith(query);
-                if (aStarts && !bStarts) return -1;
-                if (!aStarts && bStarts) return 1;
-                return a.localeCompare(b);
-            });
-    }, [uniqueLocations, locationQuery]);
-
-    // Handle clicking outside of the location suggestions
-    useEffect(() => {
-        function handleClickOutside(event: MouseEvent) {
-            if (locationRef.current && !locationRef.current.contains(event.target as Node)) {
-                setShowSuggestions(false);
-            }
-        }
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
 
     const filteredJobs = useMemo(() => {
         return jobs.filter(job => {
             const matchesSearch = job.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                                  job.department.toLowerCase().includes(searchQuery.toLowerCase());
-            const matchesLocation = ((job as any).workMode || "").toLowerCase().includes(locationQuery.toLowerCase());
             const matchesCategory = activeCategory === "All Jobs" || 
                                    job.department.toLowerCase() === activeCategory.toLowerCase();
             
-            return matchesSearch && matchesLocation && matchesCategory;
+            return matchesSearch && matchesCategory;
         });
-    }, [jobs, searchQuery, locationQuery, activeCategory]);
+    }, [jobs, searchQuery, activeCategory]);
 
     return (
         <div className="min-h-screen bg-[#FDFCFB] selection:bg-orange-100 selection:text-orange-900">
@@ -96,41 +63,6 @@ export default function PortalPage() {
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                             />
-                        </div>
-                        <div className="flex-1 flex items-center px-8 gap-4 transition-colors focus-within:bg-gray-50/50 relative" ref={locationRef}>
-                            <MapPin className="h-5 w-5 text-[#F97316]" />
-                            <input
-                                className="w-full h-16 bg-transparent outline-none text-base font-bold text-gray-900 placeholder:text-gray-300"
-                                placeholder="Location or Remote"
-                                value={locationQuery}
-                                onChange={(e) => {
-                                    setLocationQuery(e.target.value);
-                                    setShowSuggestions(true);
-                                }}
-                                onFocus={() => setShowSuggestions(true)}
-                            />
-
-                            {/* Location Suggestions Dropdown */}
-                            {showSuggestions && filteredLocations.length > 0 && (
-                                <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-white/95 backdrop-blur-2xl rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-orange-100/50 p-3 z-50 animate-in-up duration-300 overflow-hidden">
-                                    <div className="max-h-60 overflow-y-auto custom-scrollbar">
-                                        <p className="px-4 py-2 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-50">Suggestions</p>
-                                        {filteredLocations.map((loc) => (
-                                            <button
-                                                key={loc}
-                                                onClick={() => {
-                                                    setLocationQuery(loc);
-                                                    setShowSuggestions(false);
-                                                }}
-                                                className="w-full text-left px-5 py-3.5 rounded-2xl hover:bg-orange-50 hover:text-[#F97316] transition-all text-sm font-bold text-gray-700 flex items-center justify-between group"
-                                            >
-                                                {loc}
-                                                <div className="h-2 w-2 rounded-full bg-[#F97316] opacity-0 group-hover:opacity-100 transition-opacity shadow-[0_0_10px_rgba(249,115,22,0.4)]" />
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
                         </div>
                         <div className="p-1">
                             <Button className="h-14 px-10 rounded-[2rem] bg-gray-900 hover:bg-black text-white font-black text-base shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98]">
