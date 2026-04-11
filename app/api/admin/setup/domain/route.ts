@@ -13,24 +13,46 @@ export async function POST(request: Request) {
         const { domain } = await request.json();
         if (!domain) return NextResponse.json({ error: "Domain is required" }, { status: 400 });
 
-        // 1. Create domain in Resend
+        // 1. Check if this org already registered this domain through our platform
+        const org = await prisma.organization.findUnique({
+            where: { id: session.orgId as string },
+            select: { customDomain: true, resendDomainId: true, isDomainVerified: true }
+        });
+
+        if (org?.customDomain === domain && org?.resendDomainId) {
+            // Registered through our platform — just return current status so UI can resume
+            return NextResponse.json({
+                registeredOnPlatform: true,
+                isVerified: org.isDomainVerified
+            });
+        }
+
+        // 2. Check if domain exists in Resend (registered outside our platform)
+        const { data: listData } = await resend.domains.list();
+        const existing = (listData as any)?.data?.find((d: any) => d.name === domain);
+
+        if (existing) {
+            // Exists in Resend but NOT through our platform — block, do not save
+            return NextResponse.json({
+                registeredElsewhere: true,
+                isVerified: existing.status === "verified"
+            });
+        }
+
+        // 3. Brand new — create in Resend and save to DB
         const { data, error } = await resend.domains.create({ name: domain });
         if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-        // 2. Update Organization in Prisma
         await prisma.organization.update({
             where: { id: session.orgId as string },
             data: {
                 customDomain: domain,
-                resendDomainId: data?.id,
+                resendDomainId: data!.id,
                 isDomainVerified: false
             } as any
         });
 
-        return NextResponse.json({ 
-            id: data?.id, 
-            records: data?.records 
-        });
+        return NextResponse.json({ fresh: true });
     } catch (err: any) {
         return NextResponse.json({ error: err.message }, { status: 500 });
     }

@@ -86,7 +86,7 @@ const worker = new Worker('resume-processing', async (job) => {
     appExists.aiScore !== null &&
     !!appExists.aiReport;
 
-  if (alreadyFinalized) {
+  if (alreadyFinalized && !job.data.force) {
     console.log(
       `[JOB] Application ${applicationId} already finalized (${normalizedExistingStatus}). Skipping duplicate processing.`
     );

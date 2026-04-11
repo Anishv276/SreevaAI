@@ -9,44 +9,38 @@ datasource db {
 }
 
 model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  logoUrl   String?
-  plan      String   @default("STARTER")
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  industry  String?
-  size      String?
-  website   String?
-  onboardingStep     Int      @default(0)
-  onboardingComplete Boolean  @default(false)
+  id                 String      @id @default(cuid())
+  name               String
+  slug               String      @unique
+  logoUrl            String?
+  plan               String      @default("STARTER")
+  isActive           Boolean     @default(true)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  industry           String?
+  size               String?
+  website            String?
+  onboardingStep     Int         @default(0)
+  onboardingComplete Boolean     @default(false)
   customDomain       String?
   resendDomainId     String?
-  isDomainVerified   Boolean  @default(false)
+  isDomainVerified   Boolean     @default(false)
   customSenderEmail  String?
   customSenderName   String?
-  
-  // Voice Systems (TTS)
-  ttsProvider     String?  @default("CARTESIA")
-  cartesiaVoiceId String?  @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc") // Jacqueline
-  cartesiaModel   String?  @default("sonic-english")
-  sarvamModel     String?  @default("bulbul:v3")
-  sarvamVoice     String?  @default("shubh")
-
-  // Speech Systems (STT)
-  sttProvider     String?  @default("DEEPGRAM")
-  deepgramModel   String?  @default("nova-3-general")
-  sarvamSttModel  String?  @default("saaras:v3")
-
-  // Inference Systems (LLM)
-  llmProvider     String?  @default("OPENAI")
-  llmModel        String?  @default("gpt-4o")
-  llmTemperature  Float?   @default(0.7)
-  drives    Drive[]
-  invites   OrgInvite[]
-  users     User[]
+  ttsProvider        String?     @default("CARTESIA")
+  cartesiaVoiceId    String?     @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
+  sarvamModel        String?     @default("bulbul:v3")
+  sarvamVoice        String?     @default("shubh")
+  deepgramModel      String?     @default("nova-3-general")
+  sarvamSttModel     String?     @default("saaras:v3")
+  sttProvider        String?     @default("DEEPGRAM")
+  llmModel           String?     @default("gpt-4o")
+  llmProvider        String?     @default("OPENAI")
+  llmTemperature     Float?      @default(0.7)
+  cartesiaModel      String?     @default("sonic-english")
+  drives             Drive[]
+  invites            OrgInvite[]
+  users              User[]
 }
 
 model SuperAdmin {
@@ -60,45 +54,45 @@ model SuperAdmin {
 }
 
 model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
-  name         String?
-  role         String        @default("CANDIDATE")
-  orgRole      String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  password     String?
-  orgId        String?
-  applications Application[]
-  drives       Drive[]       @relation("CreatedDrives")
-  acceptedInvites OrgInvite[] @relation("AcceptedInvites")
-  sentInvites     OrgInvite[] @relation("SentInvites")
-  organization Organization? @relation(fields: [orgId], references: [id])
+  id              String        @id @default(cuid())
+  email           String        @unique
+  name            String?
+  role            String        @default("CANDIDATE")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  password        String?
+  orgId           String?
+  orgRole         String?
+  applications    Application[]
+  drives          Drive[]       @relation("CreatedDrives")
+  acceptedInvites OrgInvite[]   @relation("AcceptedInvites")
+  sentInvites     OrgInvite[]   @relation("SentInvites")
+  organization    Organization? @relation(fields: [orgId], references: [id])
 }
 
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model OrgInvite {
-  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  orgId          String
-  email          String
-  orgRole        String
-  tokenHash      String       @unique
-  status         String       @default("PENDING")
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId           String
+  email           String
+  orgRole         String
+  tokenHash       String       @unique
+  status          String       @default("PENDING")
   invitedByUserId String
-  acceptedUserId String?
-  expiresAt      DateTime
-  respondedAt    DateTime?
-  acceptedAt     DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  organization   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  acceptedUser   User?        @relation("AcceptedInvites", fields: [acceptedUserId], references: [id], onDelete: SetNull)
-  invitedByUser  User         @relation("SentInvites", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+  acceptedUserId  String?
+  expiresAt       DateTime
+  respondedAt     DateTime?
+  acceptedAt      DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  acceptedUser    User?        @relation("AcceptedInvites", fields: [acceptedUserId], references: [id])
+  invitedByUser   User         @relation("SentInvites", fields: [invitedByUserId], references: [id])
+  organization    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId, status])
 }
 
 model Drive {
-  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   title              String
   role               String?
   description        String
@@ -128,10 +122,12 @@ model Drive {
   jdPreviewUrl       String?
   orgId              String?
   status             String        @default("ACTIVE")
-  isPassportRequired Boolean       @default(false)
   aiScreeningEnabled Boolean       @default(true)
-  applications       Application[]
+  isPassportRequired Boolean       @default(false)
   slug               String?       @unique
+  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shortlistMode      String        @default("automatic")
+  applications       Application[]
   creator            User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
   organization       Organization? @relation(fields: [orgId], references: [id])
 
@@ -141,17 +137,12 @@ model Drive {
 
 model Application {
   id               String     @id @default(cuid())
-  resumeStatus     String     @default("pending")
-  interviewStatus  String     @default("pending")
-  hiringStatus     String     @default("pending")
   fullName         String
   email            String
   phone            String
   resumeUrl        String
-  passportUrl      String?
   aiScore          Int?
   aiReport         String?
-  driveId          String     @db.Uuid
   userId           String?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
@@ -159,6 +150,11 @@ model Application {
   experienceYears  Float?
   structuredResume String?    @default("{}")
   submissionData   Json?      @default("{}")
+  passportUrl      String?
+  driveId          String     @db.Uuid
+  resumeStatus     String     @default("pending")
+  interviewStatus  String     @default("pending")
+  hiringStatus     String     @default("pending")
   drive            Drive      @relation(fields: [driveId], references: [id], onDelete: Cascade)
   user             User?      @relation(fields: [userId], references: [id])
   interview        Interview?
@@ -182,9 +178,9 @@ model Interview {
   interviewDuration     Int?
   aiSummary             String?
   snapshots             String[]    @default([])
-  proctoringEvents      Json?       @default("[]")
-  candidateRating       Int?
   candidateFeedback     String?
+  candidateRating       Int?
+  proctoringEvents      Json?       @default("[]")
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 }
 

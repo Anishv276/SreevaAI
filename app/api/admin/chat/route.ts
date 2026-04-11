@@ -259,7 +259,6 @@ ${context || "No direct semantic matches found for this query."}
                             hiringStatus: true,
                             interviewStatus: true,
                             experienceYears: true,
-                            relevantYears: true,
                             createdAt: true,
                             drive: { select: { title: true, orgId: true } },
                             interview: {

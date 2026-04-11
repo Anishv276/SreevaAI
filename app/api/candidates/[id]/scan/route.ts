@@ -94,8 +94,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             },
         });
 
-        // 6. Email & interview invite
-        const { sendApplicationStatusEmail } = await import("@/lib/mail");
+        // 6. Email & interview invite (only in automatic mode)
+        const isAutomatic = ((application.drive as any).shortlistMode || "automatic") === "automatic";
 
         if (resumeStatus === "SHORTLISTED") {
             const interview = await (prisma as any).interview.upsert({
@@ -111,17 +111,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 },
             });
 
-            const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${id}?token=${interview.accessToken}`;
-
-            await sendApplicationStatusEmail({
-                email: application.email,
-                fullName: application.fullName,
-                jobTitle: application.drive.title,
-                status: resumeStatus,
-                score,
-                interviewLink,
-            }).catch((err) => console.error("[SCAN API] Email trigger failed:", err));
-        } else {
+            if (isAutomatic) {
+                const { sendApplicationStatusEmail } = await import("@/lib/mail");
+                const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${id}?token=${interview.accessToken}`;
+                await sendApplicationStatusEmail({
+                    email: application.email,
+                    fullName: application.fullName,
+                    jobTitle: application.drive.title,
+                    status: resumeStatus,
+                    score,
+                    interviewLink,
+                }).catch((err) => console.error("[SCAN API] Email trigger failed:", err));
+            }
+        } else if (isAutomatic) {
+            const { sendApplicationStatusEmail } = await import("@/lib/mail");
             await sendApplicationStatusEmail({
                 email: application.email,
                 fullName: application.fullName,

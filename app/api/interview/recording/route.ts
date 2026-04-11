@@ -177,7 +177,7 @@ export async function POST(req: Request) {
                     await prisma.application.update({
                         where: { id: applicationId },
                         data: { 
-                            status: 'COMPLETED',
+                            interviewStatus: 'finished',
                             updatedAt: new Date(),
                         },
                     });

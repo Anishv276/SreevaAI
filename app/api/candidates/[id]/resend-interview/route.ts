@@ -25,11 +25,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
 
-        const appStatus = (application.status || "").toUpperCase();
-        if (appStatus !== "SHORTLISTED" && appStatus !== "ACCEPTED") {
-            console.error(`[RESEND] Status mismatch. Expected SHORTLISTED/ACCEPTED, got: ${appStatus}`);
+        const resumeStatus = (application.resumeStatus || "").toUpperCase();
+        const hiringStatus = (application.hiringStatus || "").toUpperCase();
+        const canResend = ["SHORTLISTED", "ACCEPTED"].includes(resumeStatus) || ["SHORTLISTED", "ACCEPTED"].includes(hiringStatus);
+
+        if (!canResend) {
+            console.error(`[RESEND] Status mismatch. Resume: ${resumeStatus}, Hiring: ${hiringStatus}`);
             return NextResponse.json({ 
-                error: `Only shortlisted candidates can have their interview link resent. Current status is "${application.status}"` 
+                error: `Only shortlisted candidates can have their interview link resent. Current statuses are resume="${application.resumeStatus}" and hiring="${application.hiringStatus}".` 
             }, { status: 400 });
         }
 

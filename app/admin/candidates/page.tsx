@@ -211,7 +211,7 @@ export default function CandidatesPage() {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [resendingId, setResendingId] = useState<string | null>(null);
     const [isActionModalOpen, setIsActionModalOpen] = useState(false);
-    const [pendingAction, setPendingAction] = useState<"hire" | "reject" | "delete" | null>(null);
+    const [pendingAction, setPendingAction] = useState<"hire" | "reject" | "delete" | "shortlist" | "not_hired" | null>(null);
     const [isBulkLoading, setIsBulkLoading] = useState(false);
     const [emailCandidate, setEmailCandidate] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
@@ -349,7 +349,7 @@ export default function CandidatesPage() {
         }
     };
 
-    const handleBulkAction = (action: "hire" | "reject" | "delete") => {
+    const handleBulkAction = (action: "hire" | "reject" | "delete" | "shortlist" | "not_hired") => {
         if (selectedIds.size === 0) return;
         setPendingAction(action);
         setIsActionModalOpen(true);
@@ -388,7 +388,11 @@ export default function CandidatesPage() {
             }
 
             fetchCandidates(pagination.page, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
-            const msg = pendingAction === "hire" ? `${count} candidate(s) hired — emails sent` : pendingAction === "reject" ? `${count} candidate(s) rejected — emails sent` : `${count} candidate(s) deleted`;
+            const msg = pendingAction === "hire" ? `${count} candidate(s) hired — emails sent`
+                : pendingAction === "reject" ? `${count} candidate(s) marked as not hired — emails sent`
+                : pendingAction === "shortlist" ? `${count} candidate(s) shortlisted — interview emails sent`
+                : pendingAction === "not_hired" ? `${count} candidate(s) marked as not hired`
+                : `${count} candidate(s) deleted`;
             toast.success(msg);
         } catch {
             toast.error(`Failed to ${pendingAction} candidates`);
@@ -471,6 +475,13 @@ export default function CandidatesPage() {
                             <div className="h-4 w-px bg-gray-200 mx-1" />
                             <Button
                                 size="sm"
+                                onClick={() => handleBulkAction("shortlist")}
+                                className="h-9 px-4 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center gap-1.5"
+                            >
+                                <Target className="h-3.5 w-3.5" /> Shortlist ({selectedIds.size})
+                            </Button>
+                            <Button
+                                size="sm"
                                 onClick={() => handleBulkAction("hire")}
                                 className="h-9 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs flex items-center gap-1.5"
                             >
@@ -478,10 +489,10 @@ export default function CandidatesPage() {
                             </Button>
                             <Button
                                 size="sm"
-                                onClick={() => handleBulkAction("reject")}
+                                onClick={() => handleBulkAction("not_hired")}
                                 className="h-9 px-4 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5"
                             >
-                                <UserX className="h-3.5 w-3.5" /> Reject ({selectedIds.size})
+                                <UserX className="h-3.5 w-3.5" /> Not Hired ({selectedIds.size})
                             </Button>
                             <Button
                                 size="sm"
@@ -679,13 +690,15 @@ export default function CandidatesPage() {
                                             <TableCell className="py-5">
                                                 <div className="flex flex-col">
                                                     <span className="text-sm font-bold text-gray-700">{candidate.role}</span>
-                                                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tighter mt-0.5">{candidate.location}</span>
+                                                    {candidate.location && candidate.location !== "-" && (
+                                                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tighter mt-0.5">{candidate.location}</span>
+                                                    )}
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center">
                                                 <div className="flex justify-center items-center h-full">
                                                     <Badge variant="secondary" className={cn(
-                                                        "rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border-0 shadow-sm",
+                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all",
                                                         mainStatus === 'rejected' ? 'bg-rose-50 text-rose-700' :
                                                             mainStatus === 'shortlisted' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'
                                                     )}>
@@ -696,7 +709,7 @@ export default function CandidatesPage() {
                                             <TableCell className="py-5 text-center">
                                                 <div className="flex justify-center items-center h-full">
                                                     <Badge variant="outline" className={cn(
-                                                        "rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border-gray-100 shadow-sm transition-all",
+                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-gray-100 shadow-sm transition-all",
                                                         interviewStage === 'finished' ? 'text-indigo-600 bg-indigo-50/20 shadow-none border-indigo-100' :
                                                             interviewStage === 'inprogress' ? 'text-blue-600 bg-blue-50/20 shadow-none border-blue-100' :
                                                                 interviewStage === 'pending' ? 'text-amber-600 bg-amber-50/20 shadow-none border-amber-100' : 'text-gray-500 bg-gray-50'
@@ -752,18 +765,52 @@ export default function CandidatesPage() {
                                                                 <MoreHorizontal className="h-4 w-4 text-gray-400" />
                                                             </Button>
                                                         </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="end" className="w-56 p-2 rounded-xl shadow-xl border-gray-100">
-                                                            <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Quick Actions</DropdownMenuLabel>
-
+                                                        <DropdownMenuContent align="end" className="w-64 p-2 rounded-xl shadow-xl border-gray-100 bg-white">
+                                                            {/* Shortlist Group */}
+                                                            <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Shortlist</DropdownMenuLabel>
                                                             <DropdownMenuItem
-                                                                onClick={() => handleResendInterview({ id: candidate.id, interviewStatus: candidate.interviewStatus })}
+                                                                onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${candidate.name} shortlisted`)}
+                                                                className="rounded-lg px-3 py-2 font-bold text-emerald-600 cursor-pointer focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
+                                                            >
+                                                                <Target className="h-4 w-4 mr-2" />
+                                                                Shortlist Candidate
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem
+                                                                onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${candidate.name} rejected`)}
+                                                                className="rounded-lg px-3 py-2 font-bold text-rose-600 cursor-pointer focus:text-rose-700 focus:bg-rose-50 transition-colors"
+                                                            >
+                                                                <UserX className="h-4 w-4 mr-2" />
+                                                                Reject Candidate
+                                                            </DropdownMenuItem>
+
+                                                            <DropdownMenuSeparator className="my-1 bg-gray-50" />
+
+                                                            {/* Email Group */}
+                                                            <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Email</DropdownMenuLabel>
+                                                            <DropdownMenuItem
+                                                                onClick={() => {
+                                                                    if (window.confirm("Resend interview link? This will deliver a fresh access token to the candidate.")) {
+                                                                        handleResendInterview({ id: candidate.id, interviewStatus: candidate.interviewStatus });
+                                                                    }
+                                                                }}
                                                                 disabled={resendingId === candidate.id}
-                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors"
+                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-blue-600 focus:bg-blue-50"
                                                             >
                                                                 <RefreshCw className={cn("h-4 w-4 mr-2", resendingId === candidate.id && "animate-spin")} />
                                                                 {resendingId === candidate.id ? "Sending..." : "Resend Interview Link"}
                                                             </DropdownMenuItem>
+                                                            <DropdownMenuItem
+                                                                onClick={() => setEmailCandidate({ id: candidate.id, name: candidate.name, email: candidate.email, role: candidate.role })}
+                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-blue-600 focus:text-blue-700 focus:bg-blue-50"
+                                                            >
+                                                                <Mail className="h-4 w-4 mr-2" />
+                                                                Send Mail
+                                                            </DropdownMenuItem>
 
+                                                            <DropdownMenuSeparator className="my-1 bg-gray-50" />
+
+                                                            {/* Hire Group */}
+                                                            <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Hire</DropdownMenuLabel>
                                                             <DropdownMenuItem
                                                                 onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${candidate.name} hired — confirmation email sent`)}
                                                                 className="rounded-lg px-3 py-2 font-bold cursor-pointer text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
@@ -771,35 +818,12 @@ export default function CandidatesPage() {
                                                                 <Award className="h-4 w-4 mr-2" />
                                                                 Hire this person
                                                             </DropdownMenuItem>
-
-                                                            <DropdownMenuItem
-                                                                onClick={() => setEmailCandidate({ id: candidate.id, name: candidate.name, email: candidate.email, role: candidate.role })}
-                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-blue-600 focus:text-blue-700 focus:bg-blue-50"
-                                                            >
-                                                                <Mail className="h-4 w-4 mr-2" />
-                                                                Send Email
-                                                            </DropdownMenuItem>
-
                                                             <DropdownMenuItem
                                                                 onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "not hired" }, `${candidate.name} marked as Not Hired — email sent`)}
                                                                 className="rounded-lg px-3 py-2 font-bold cursor-pointer text-gray-600 focus:text-gray-900 focus:bg-gray-50 transition-colors"
                                                             >
                                                                 <UserX className="h-4 w-4 mr-2" />
-                                                                Mark as Not Hired
-                                                            </DropdownMenuItem>
-
-                                                            <DropdownMenuSeparator className="my-1 bg-gray-50" />
-                                                            <DropdownMenuItem
-                                                                onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${candidate.name} rejected`)}
-                                                                className="rounded-lg px-3 py-2 font-bold text-red-600 cursor-pointer focus:text-red-700 focus:bg-red-50 transition-colors"
-                                                            >
-                                                                Reject Candidate
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem
-                                                                onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${candidate.name} shortlisted`)}
-                                                                className="rounded-lg px-3 py-2 font-bold text-emerald-600 cursor-pointer focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
-                                                            >
-                                                                Shortlist Candidate
+                                                                Mark as not hired
                                                             </DropdownMenuItem>
                                                         </DropdownMenuContent>
                                                     </DropdownMenu>
@@ -845,20 +869,25 @@ export default function CandidatesPage() {
                 onConfirm={confirmBulkAction}
                 title={
                     pendingAction === "hire" ? "Hire Candidates" :
-                        pendingAction === "reject" ? "Reject Candidates" :
-                            "Delete Candidates"
+                    pendingAction === "shortlist" ? "Shortlist Candidates" :
+                    pendingAction === "not_hired" ? "Mark as Not Hired" :
+                    pendingAction === "reject" ? "Mark as Not Hired" :
+                    "Delete Candidates"
                 }
                 description={
                     pendingAction === "hire"
                         ? `Hire ${selectedIds.size} selected candidate(s)? A hire confirmation email will be sent to each.`
-                        : pendingAction === "reject"
-                            ? `Reject ${selectedIds.size} selected candidate(s)? A rejection email with careers page link will be sent to each.`
-                            : `Permanently delete ${selectedIds.size} selected candidate(s)? This cannot be undone.`
+                        : pendingAction === "shortlist"
+                            ? `Shortlist ${selectedIds.size} selected candidate(s)? An interview invitation email will be sent to each.`
+                        : pendingAction === "not_hired" || pendingAction === "reject"
+                            ? `Mark ${selectedIds.size} selected candidate(s) as Not Hired? A rejection email will be sent to each.`
+                        : `Permanently delete ${selectedIds.size} selected candidate(s)? This cannot be undone.`
                 }
                 confirmText={
                     pendingAction === "hire" ? `Confirm Hire (${selectedIds.size})` :
-                        pendingAction === "reject" ? `Confirm Reject (${selectedIds.size})` :
-                            `Confirm Delete (${selectedIds.size})`
+                    pendingAction === "shortlist" ? `Shortlist (${selectedIds.size})` :
+                    pendingAction === "not_hired" || pendingAction === "reject" ? `Not Hired (${selectedIds.size})` :
+                    `Confirm Delete (${selectedIds.size})`
                 }
                 isLoading={isBulkLoading}
             />

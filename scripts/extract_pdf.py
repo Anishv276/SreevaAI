@@ -697,6 +697,15 @@ def compute_score(jd_data, resume_data, threshold=70):
             "match_ratio": round(len(matched_must) / len(jd_must_have) * 100)
             if jd_must_have
             else 100,
+            "must_have_details": [
+                {
+                    "name": s[0],
+                    "weight": s[1],
+                    "status": "found" if normalize_skill(s[0]) in resume_normalized and skill_evidence_map.get(normalize_skill(s[0]), {}).get("confidence") == "high" and skill_evidence_map.get(normalize_skill(s[0]), {}).get("evidence", "") not in ("mentioned in resume", "") 
+                              else "mentioned" if normalize_skill(s[0]) in resume_normalized 
+                              else "not_found"
+                } for s in jd_must_have
+            ]
         },
         "exp_status": exp_status,
         "hard_rejected": hard_rejected,
@@ -753,118 +762,75 @@ Experience status : {exp_status}
 ═══════════════════════════════════════
 JOB DESCRIPTION DATA
 ═══════════════════════════════════════
-{json.dumps(jd_data, indent=2)}
+JD Requirements : {jd_min_years}y min | Must-have: {", ".join(matched + missing)}
+Candidate Stats : {candidate_years}y total | Matches: {", ".join(matched)} | Missing: {", ".join(missing)}
 
 ═══════════════════════════════════════
-CANDIDATE RESUME DATA
-═══════════════════════════════════════
-{json.dumps(resume_data, indent=2)}
-
-═══════════════════════════════════════
-ORIGINAL JD TEXT (for context)
-═══════════════════════════════════════
-{jd_raw_text[:4000]}
-
-═══════════════════════════════════════
-ORIGINAL RESUME TEXT (for context)
-═══════════════════════════════════════
-{resume_raw_text[:3500]}
-
-═══════════════════════════════════════
-YOUR TASK
+INSTRUCTIONS FOR HIGH-FIDELITY INSIGHTS
 ═══════════════════════════════════════
 
-Write the evaluation report sections below.
+1. integrity_signals — DATE MATH & CONTEXT DISCIPLINE:
+   - Identify every role overlap. Do NOT just say "overlapping roles".
+   - You MUST calculate or estimate the overlap duration. Format: "Overlaps with [Company] by ~[N] months".
+   - For short tenures or junior roles, provide a recruiter's justification.
+   - Example 1: "Medium risk — Overlapping roles: Niti AI and Social Rises overlap by ~5 months"
+   - Example 2: "Low — All roles are intern/junior level — consistent with 1.5 yr career, not inflation"
 
-STRICT RULES — violating these makes the report useless:
-1. Every sentence must contain at least one specific noun — a skill name, company name, tool name, or number.
-   BAD: "The candidate lacks relevant experience."
-   GOOD: "The candidate has 2 years of experience vs the required 5, with no test engineering roles found."
+2. suitability_analysis — HYPER-SPECIFIC UPSKILLING:
+   - Do NOT give generic advice like "learn CRM" or "build projects".
+   - You MUST name specific platforms, tools, or types of projects.
+   - Example 1: "Get hands-on with a CRM — HubSpot Free or Salesforce trial + at least 1 live pipeline managed end-to-end"
+   - Example 2: "Build 1 API integration project — even a personal project connecting two tools via REST API qualifies"
+   - readiness_timeline: provide a realistic period like "6-12 months" or "12-18 months".
 
-2. Never mention a skill, company, or project that does not appear in the data above.
+3. recruiter_snapshot:
+   - 2 sentences max. Direct and professional. Name actual skills and companies.
 
-3. If status is Rejected — be honest and direct. Do not soften with false hope.
-   If status is Shortlisted — highlight genuine strengths, still note real gaps.
-   If status is Borderline — explain EXACTLY what would push them to Shortlisted.
-
-4. strengths must have evidence. If you cannot find evidence → do not include that strength.
-
-5. concerns must name specific missing skills or gaps — not generic statements.
-
-6. if_you_interview_anyway must be specific probing questions, not generic interview advice.
+4. separator:
+   - Return ONLY valid JSON in this exact schema.
 
 Return ONLY valid JSON in this exact schema:
 
 {{
-  "recruiter_snapshot": "2 sentences max. Written like a recruiter briefing a colleague in 10 seconds. Name actual skills, role, company. Example: 'Vamsi is a Python/data-ops profile with 2 years at ABC Corp applying for an SDET role. Strong in workflow automation but missing core test engineering stack — Selenium, Java, CI/CD.'",
-
+  "recruiter_snapshot": "string",
   "decision_breakdown": [
     {{
-      "criteria": "skill or requirement name",
+      "criteria": "string",
       "required": "Must-have | Good-to-have | Experience",
-      "candidate_has": "Yes — with evidence" | "No" | "Partial — explain",
+      "candidate_has": "Yes — with evidence" | "No" | "Partial",
       "result": "pass" | "fail" | "partial",
-      "note": "one line — why this matters or what was found"
+      "note": "string"
     }}
   ],
-
-  "strengths": [
-    {{
-      "point": "specific strength title",
-      "evidence": "exact evidence from resume — company, project, or tool name"
-    }}
-  ],
-
-  "concerns": [
-    {{
-      "point": "specific concern title",
-      "missing_skills": [string],
-      "impact": "why this gap matters for THIS role specifically"
-    }}
-  ],
-
+  "strengths": [{{ "point": "string", "evidence": "string" }}],
+  "concerns": [{{ "point": "string", "missing_skills": [string], "impact": "string" }}],
   "experience_analysis": {{
     "years": {candidate_years},
     "vs_required": "{candidate_years} years vs {jd_min_years} years required",
-    "quality": "2 sentences on WHAT they built across their career, not just how long",
-    "relevance": "1 sentence on how their past work maps to this specific JD"
+    "quality": "string",
+    "relevance": "string"
   }},
-
-  "project_relevance": {{
-    "rating": "High" | "Medium" | "Low" | "None",
-    "reasoning": "Specific projects from resume that relate or don't relate to JD requirements"
-  }},
-
-  "red_flags": [
+  "project_relevance": {{ "rating": "High" | "Medium" | "Low", "reasoning": "string" }},
+  "integrity_signals": [
     {{
-      "flag": string,
-      "severity": "High" | "Medium" | "Low",
-      "detail": "specific detail from resume"
+      "level": "Low" | "Medium" | "High",
+      "label": "string",
+      "summary": "string",
+      "details": "string"
     }}
   ],
-
-  "candidate_potential": {{
-    "for_this_role": "Low" | "Medium" | "High",
-    "reasoning": "1-2 sentences specific to this candidate and this JD",
-    "alternative_fit": "If rejected — what kind of role would this candidate actually be good for?"
+  "suitability_analysis": {{
+    "suggestions": [string],
+    "readiness_timeline": string
   }},
-
-  "ai_verdict": "3-4 sentences. The definitive recruiter verdict. Name the exact skills matched and missing. State the experience gap precisely. End with a clear recommendation — shortlist, borderline review, or reject — and one line on why.",
-
-  "interview_questions": [
-    {{
-      "question": "Specific open-ended question targeting a gap or verifying a claimed strength — never generic",
-      "intent": "What this question is designed to reveal about this candidate",
-      "based_on": "Exact evidence from the resume or JD that motivated this question"
-    }}
-  ],
-
-  "jd_quality_feedback": {{
-    "screening_confidence": "high | medium | low",
-    "issues": ["string"],
-    "suggestions": ["string"],
-    "note": "string | null"
-  }}
+  "candidate_potential": {{ "for_this_role": "Low" | "Medium" | "High", "reasoning": "string" }},
+  "seniority_alignment": {{ "candidate_level": 0|1|2|3|4, "jd_level": 0|1|2|3|4, "candidate_label": "string", "jd_label": "string" }},
+  "career_progression_details": {{ 
+    "pattern": "string", "role_flow": "string", "company_types": "string", 
+    "tenure_avg": "string", "pattern_note": "string", "company_note": "string", "tenure_note": "string" 
+  }},
+  "ai_verdict": "string",
+  "interview_questions": [{{ "question": "string", "intent": "string", "based_on": "string" }}]
 }}
 """
 
@@ -875,13 +841,6 @@ Return ONLY valid JSON in this exact schema:
             {
                 "role": "system",
                 "content": (
-                    "You are the world's most accurate AI hiring evaluation engine, built to help HR teams "
-                    "make fast, fair, evidence-backed decisions across every industry — Software Engineering, "
-                    "Fintech, Banking, Marketing, Sales, Operations, HR, Legal, Product, Data Science, and more. "
-                    "For TECHNICAL roles: prioritize stack depth, system design awareness, and project scale. "
-                    "For NON-TECHNICAL roles: focus on domain expertise, functional outcomes, and measurable impact. "
-                    "For HYBRID roles: credit both functional and technical competencies equally. "
-                    "TRANSFERABLE SKILL INTELLIGENCE: A B2B Sales rep with Salesforce dashboards has CRM+data skills. "
                     "A Marketing analyst running A/B tests has statistical thinking. "
                     "A banker automating reconciliation has process automation skills. Credit these when relevant. "
                     "EVIDENCE DISCIPLINE: Every strength, gap, and claim MUST cite a company name, tool name, "
@@ -1255,27 +1214,28 @@ Return ONLY valid JSON matching this schema exactly. No markdown. No explanation
     // Describe which roles overlap and by how many months, if applicable
   }},
 
-  "work_history": [
-    {{
+    "work_history": [
+    {
       "company": string,
       "role": string,
       "company_type": "startup" | "enterprise" | "agency" | "freelance" | "unknown",
       // Infer from context. "unknown" if insufficient signal.
       "duration_months": number | null,
-      "start_year": number | null,
-      "end_year": number | null,
+      "start_date": string | null, // e.g. "Jan 2024"
+      "end_date": string | null,   // e.g. "present" or "Dec 2023"
       "is_current": boolean,
+      "recruiter_summary": string, 
+      // A cohesive 1-2 sentence summary of "what they actually did". 
+      // Outcome-focused. Like a recruiter explaining the role in 10 seconds.
+      "overlap_note": string | null,
+      // If this role overlaps with any other role in the timeline, 
+      // state: "Overlaps with [Company] role by ~[months] months"
       "what_they_built": [string],
       // OUTCOMES and DELIVERABLES — not tool lists.
-      // Bad:  "built systems using Notion and CRM tools"
-      // Good: "built automated lead qualification pipeline", "created Slack reporting dashboard"
       "technologies_used": [string],
-      // Specific tool and tech names only. Canonical form. No categories.
       "impact_signals": [string],
-      // Only numbers and outcomes explicitly stated. [] if none found.
       "seniority_signal": "intern" | "junior" | "mid" | "senior" | null
-      // Does the WORK DESCRIBED match this level — not the job title.
-    }}
+    }
   ],
 
   "skills": {{
@@ -1462,11 +1422,6 @@ Resume:
             response_format={"type": "json_object"},
         )
         content = completion.choices[0].message.content
-
-        # Merge deterministic results with AI reasoning if it was a score request
-        if type_ == "SCORE":
-            # SCORE now returns enriched data directly from the if/elif block
-            return content
 
         if content is None:
             raise ValueError("OpenAI returned empty content")

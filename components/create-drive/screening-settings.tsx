@@ -2,7 +2,8 @@
 
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
-import { Brain, Sparkles } from "lucide-react";
+import { Brain, Sparkles, Zap, Hand } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface ScreeningConfig {
     threshold: number;
@@ -13,69 +14,125 @@ interface ScreeningSettingsProps {
     setConfig: (w: ScreeningConfig | ((prev: ScreeningConfig) => ScreeningConfig)) => void;
     aiEnabled: boolean;
     setAiEnabled: (v: boolean) => void;
+    shortlistMode: "automatic" | "manual";
+    setShortlistMode: (v: "automatic" | "manual") => void;
 }
 
-export function ScreeningSettings({ config, setConfig, aiEnabled, setAiEnabled }: ScreeningSettingsProps) {
+export function ScreeningSettings({ config, setConfig, aiEnabled, setAiEnabled, shortlistMode, setShortlistMode }: ScreeningSettingsProps) {
     const threshold = config?.threshold ?? 60;
 
     return (
-        <div className="space-y-10 animate-in-fade">
-            <div className={`space-y-6 border p-8 rounded-3xl transition-all duration-300 ${aiEnabled ? "bg-white shadow-xl border-purple-100" : "bg-gray-50/50 border-gray-100 opacity-80"}`}>
+        <div className="space-y-8 animate-in-up duration-500 max-w-2xl mx-auto">
+            {/* AI Resume Screening Section */}
+            <section className="space-y-6">
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className={`p-3 rounded-2xl transition-colors duration-300 ${aiEnabled ? "bg-purple-100 text-purple-600" : "bg-gray-200 text-gray-400"}`}>
-                            <Brain className="h-7 w-7" />
-                        </div>
+                    <div className="flex items-center gap-3">
+                        <span className="h-6 w-1 rounded-full bg-[#F97316]" />
                         <div>
-                            <h3 className="text-xl font-bold text-gray-900">AI Resume Screening</h3>
-                            <p className="text-sm text-gray-500 font-medium">Auto-score candidates and shortlist only top matches.</p>
+                            <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest flex items-center gap-2">
+                                <Brain className="h-4 w-4 text-[#F97316]" />
+                                AI Resume Screening
+                            </p>
                         </div>
                     </div>
-                    <Switch
-                        checked={aiEnabled}
-                        onCheckedChange={setAiEnabled}
-                        className="data-[state=checked]:bg-purple-600"
-                    />
+                    <div className="flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-100">
+                        <span className={`text-[12px] font-bold ${aiEnabled ? "text-gray-900" : "text-gray-400"}`}>
+                            {aiEnabled ? "Enabled" : "Disabled"}
+                        </span>
+                        <Switch
+                            checked={aiEnabled}
+                            onCheckedChange={setAiEnabled}
+                            className="data-[state=checked]:bg-[#F97316]"
+                        />
+                    </div>
                 </div>
 
                 {aiEnabled && (
-                    <div className="pt-6 border-t border-gray-50 space-y-8 animate-in-slide-up">
-                        <div className="bg-purple-50/50 rounded-2xl p-8 border border-purple-100/50">
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-10">
-                                <div className="space-y-2 flex-1 max-w-md">
-                                    <div className="flex items-center gap-2 text-purple-700">
-                                        <Sparkles className="h-4 w-4" />
-                                        <span className="text-[13px] font-bold uppercase tracking-widest">Match Threshold</span>
-                                    </div>
-                                    <p className="text-[14px] text-purple-600/70 font-medium leading-relaxed">
-                                        Candidates below this AI match score are automatically filtered out.
+                    <div className="pl-4 space-y-6 animate-in-fade">
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <p className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                                        <Sparkles className="h-3.5 w-3.5 text-[#F97316]" />
+                                        Match Threshold
+                                    </p>
+                                    <p className="text-[12px] text-gray-500 font-medium italic">
+                                        Minimum AI score required to pass initial screening.
                                     </p>
                                 </div>
-
-                                <div className="flex flex-col items-center gap-6 min-w-[280px]">
-                                    <div className="flex items-baseline gap-1 text-purple-700">
-                                        <span className="text-5xl font-black tracking-tighter">{threshold}</span>
-                                        <span className="text-xl font-bold">%</span>
-                                    </div>
-                                    <Slider
-                                        value={[threshold]}
-                                        onValueChange={([v]) => setConfig({ threshold: v })}
-                                        max={100}
-                                        min={1}
-                                        step={1}
-                                        className="w-full cursor-pointer [&_[data-radix-slider-track]]:h-3 [&_[data-radix-slider-track]]:bg-purple-100 [&_[data-radix-slider-range]]:bg-purple-600 [&_[data-radix-slider-thumb]]:h-7 [&_[data-radix-slider-thumb]]:w-7 [&_[data-radix-slider-thumb]]:border-4 [&_[data-radix-slider-thumb]]:border-white [&_[data-radix-slider-thumb]]:bg-purple-600 [&_[data-radix-slider-thumb]]:shadow-xl [&_[data-radix-slider-thumb]]:cursor-pointer [&_[data-radix-slider-thumb]]:transition-transform active:[&_[data-radix-slider-thumb]]:scale-110"
-                                    />
-                                    <div className="flex justify-between w-full px-1 text-[10px] font-bold text-purple-300 uppercase tracking-widest">
-                                        <span>1%</span>
-                                        <span>Strictness</span>
-                                        <span>100%</span>
-                                    </div>
+                                <div className="flex items-baseline gap-1 text-[#F97316]">
+                                    <span className="text-3xl font-black tracking-tighter">{threshold}</span>
+                                    <span className="text-sm font-bold">%</span>
+                                </div>
+                            </div>
+                            
+                            <div className="px-1">
+                                <Slider
+                                    value={[threshold]}
+                                    onValueChange={([v]) => setConfig({ threshold: v })}
+                                    max={100}
+                                    min={1}
+                                    step={1}
+                                    className="cursor-pointer"
+                                />
+                                <div className="flex justify-between w-full mt-2 text-[10px] font-bold text-gray-300 uppercase tracking-widest">
+                                    <span>Selective</span>
+                                    <span>Balanced</span>
+                                    <span>Strict</span>
                                 </div>
                             </div>
                         </div>
                     </div>
                 )}
-            </div>
+            </section>
+
+            {/* Shortlist Mode Section */}
+            <section className="space-y-6 pt-4 border-t border-gray-50">
+                <div className="flex items-center gap-3">
+                    <span className="h-6 w-1 rounded-full bg-[#F97316]" />
+                    <div>
+                        <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest flex items-center gap-2">
+                            <Zap className="h-4 w-4 text-[#F97316]" />
+                            Shortlist Mode
+                        </p>
+                    </div>
+                </div>
+
+                <div className="pl-4 space-y-4">
+                    <div className="flex p-1 bg-gray-100 rounded-xl w-fit">
+                        <button
+                            type="button"
+                            onClick={() => setShortlistMode("automatic")}
+                            className={cn(
+                                "px-6 py-2 rounded-lg text-sm font-black transition-all duration-200",
+                                shortlistMode === "automatic"
+                                    ? "bg-white text-gray-900 shadow-sm"
+                                    : "text-gray-400 hover:text-gray-600"
+                            )}
+                        >
+                            Automatic
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setShortlistMode("manual")}
+                            className={cn(
+                                "px-6 py-2 rounded-lg text-sm font-black transition-all duration-200",
+                                shortlistMode === "manual"
+                                    ? "bg-white text-gray-900 shadow-sm"
+                                    : "text-gray-400 hover:text-gray-600"
+                            )}
+                        >
+                            Manual
+                        </button>
+                    </div>
+                    <p className="text-[12px] text-gray-400 font-medium leading-relaxed max-w-md italic">
+                        {shortlistMode === "automatic" 
+                            ? "AI will auto-send interview links to matching candidates immediately."
+                            : "You will manually review and approve candidates before any invitations are sent."
+                        }
+                    </p>
+                </div>
+            </section>
         </div>
     );
 }

@@ -15,9 +15,10 @@ import {
   ControlBar,
   useParticipantInfo,
   useConnectionState,
-  useRoomContext,
   useRemoteParticipants,
+  useRoomContext,
   useTranscriptions,
+  useVoiceAssistant,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
 import { Track, RoomEvent } from "livekit-client";
@@ -119,7 +120,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [isJoining, setIsJoining] = useState(false);
     const [joinError, setJoinError] = useState<string | null>(null);
     const [shouldConnect, setShouldConnect] = useState(false);
-    const [launchCountdown, setLaunchCountdown] = useState<number | null>(null);
     const [interviewEndsAt, setInterviewEndsAt] = useState<number | null>(null);
     const [sessionDuration, setSessionDuration] = useState(INTERVIEW_DURATION_SECONDS);
     const [remainingSeconds, setRemainingSeconds] = useState(INTERVIEW_DURATION_SECONDS);
@@ -128,57 +128,97 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const allowFullscreenExitRef = useRef(false);
     const launchIntervalRef = useRef<number | null>(null);
     const agentReadyCommittedRef = useRef(false);
+    const launchStartedAtRef = useRef<number | null>(null);
+    const lkRoomRef = useRef<any>(null);
+    const readySignalSentFromParentRef = useRef(false);
 
     const [showSecurityToast, setShowSecurityToast] = useState(false);
     const [isAgentReady, setIsAgentReady] = useState(false);
+    const [agentReadyLatencyMs, setAgentReadyLatencyMs] = useState<number | null>(null);
     const [launchTimeoutCheck, setLaunchTimeoutCheck] = useState(0);
 
-    // Hard timeout safety net: 45 seconds total wait
-    useEffect(() => {
-        if (phase === "launching" && launchTimeoutCheck > 45) {
-            setJoinError("We're having trouble connecting to the interview room. Please check your internet and try again.");
-            agentReadyCommittedRef.current = false;
-            setPhase("check");
-            setLaunchTimeoutCheck(0);
-        }
-    }, [launchTimeoutCheck, phase]);
-
-    // Dynamic Countdown: Jumps to 3 seconds if agent is ready.
-    // Also forces transition when countdown hits 0 while agent is ready (belt-and-suspenders).
+    // Countdown ticker — purely visual, counts up for display purposes
     useEffect(() => {
         if (phase !== "launching") return;
-        if (isAgentReady && launchCountdown !== null && launchCountdown > 3) {
-            setLaunchCountdown(3);
-        }
-        // Fallback: if countdown expired and agent is ready, force transition regardless
-        if (isAgentReady && launchCountdown !== null && launchCountdown <= 0) {
-            agentReadyCommittedRef.current = true;
-            setPhase("interview");
-        }
-    }, [isAgentReady, phase, launchCountdown]);
-
-    // Effect 1: Countdown ticker — just ticks down, no side effects
-    useEffect(() => {
-        if (phase !== "launching") return;
+        setLaunchTimeoutCheck(0);
         const timer = window.setInterval(() => {
             setLaunchTimeoutCheck((prev) => prev + 1);
-            setLaunchCountdown((prev) => Math.max(0, (prev ?? 10) - 1));
         }, 1000);
         return () => window.clearInterval(timer);
     }, [phase]);
 
-    // Effect 2: Phase transition — fires when agent joins the room (from launching state only).
-    // Once committed, the timer is stored in a ref so React cleanup cannot cancel it on re-render.
+    // Hard timeout: if agent never becomes ready within 45s, go back to check with error
     useEffect(() => {
         if (phase !== "launching") return;
-        if (isAgentReady && !agentReadyCommittedRef.current) {
-            agentReadyCommittedRef.current = true;
-            // Store timer in ref so cleanup on re-render doesn't cancel it
-            const t = window.setTimeout(() => setPhase("interview"), 800);
-            launchIntervalRef.current = t;
+        if (launchTimeoutCheck >= 45 && !agentReadyCommittedRef.current) {
+            setJoinError("AI interviewer didn't respond in time. Please check your connection and try again.");
+            agentReadyCommittedRef.current = false;
+            setIsAgentReady(false);
+            setAgentReadyLatencyMs(null);
+            setPhase("check");
         }
-        // No cleanup return — intentional. Once committed we never cancel.
+    }, [launchTimeoutCheck, phase]);
+
+    // Phase transition — switch immediately once agent is ready
+    useEffect(() => {
+        if (phase !== "launching") return;
+        if (!isAgentReady || agentReadyCommittedRef.current) return;
+
+        agentReadyCommittedRef.current = true;
+        setPhase("interview");
     }, [phase, isAgentReady]);
+
+    // Parent-level ready signal fallback to guarantee backend receives user_ready.
+    useEffect(() => {
+        if (phase !== "interview") {
+            readySignalSentFromParentRef.current = false;
+            return;
+        }
+        if (readySignalSentFromParentRef.current) return;
+
+        readySignalSentFromParentRef.current = true;
+        const encoder = new TextEncoder();
+        let cancelled = false;
+        let attempts = 0;
+
+        const sendReady = async () => {
+            if (cancelled) return;
+            const room = lkRoomRef.current;
+            const localParticipant = room?.localParticipant;
+            if (!localParticipant) {
+                return;
+            }
+            attempts += 1;
+            const data = encoder.encode(
+                JSON.stringify({ type: "user_ready", timestamp: Date.now(), source: "parent", attempt: attempts })
+            );
+            try {
+                await localParticipant.publishData(data, { reliable: true });
+                console.log("SENT READY SIGNAL (parent)", { attempt: attempts });
+            } catch {
+                try {
+                    await localParticipant.publishData(data, true);
+                    console.log("SENT READY SIGNAL (parent legacy)", { attempt: attempts });
+                } catch (err) {
+                    console.warn("[READY][parent] failed to publish user_ready", err);
+                }
+            }
+        };
+
+        void sendReady();
+        const retryTimer = window.setInterval(() => {
+            if (attempts >= 6) {
+                window.clearInterval(retryTimer);
+                return;
+            }
+            void sendReady();
+        }, 700);
+
+        return () => {
+            cancelled = true;
+            window.clearInterval(retryTimer);
+        };
+    }, [phase]);
 
     const isExitUnlocked = phase === "completed" || timerExpired;
     const isInterviewLocked = phase === "interview" && !isExitUnlocked;
@@ -202,7 +242,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
     const ensureWarmConnection = useCallback(async (): Promise<boolean> => {
         if (token && serverUrl) {
-            if (!shouldConnect) setShouldConnect(true);
             return true;
         }
 
@@ -219,7 +258,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         setSessionDuration(parsed.duration);
                         setRemainingSeconds(parsed.duration);
                     }
-                    setShouldConnect(true);
                     console.log("Warm connection restored from cache.");
                     return true;
                 } else {
@@ -260,7 +298,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         setSessionDuration(data.duration);
                         setRemainingSeconds(data.duration);
                     }
-                    setShouldConnect(true);
                     console.log("Warm connection preloaded.");
                     return true;
                 }
@@ -276,7 +313,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         })();
 
         return tokenRequestRef.current;
-    }, [id, token, serverUrl, shouldConnect]);
+    }, [id, token, serverUrl]);
 
     const requestFullscreenMode = async () => {
         try {
@@ -306,6 +343,19 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
     // Token is fetched on demand or pre-warmed.
 
+    const handleAgentReady = useCallback((ready: boolean) => {
+        setIsAgentReady(ready);
+
+        if (!ready || launchStartedAtRef.current === null) {
+            return;
+        }
+
+        setAgentReadyLatencyMs((prev) => {
+            if (prev !== null) return prev;
+            return Math.max(0, Math.round(performance.now() - launchStartedAtRef.current!));
+        });
+    }, []);
+
     const handleHardwareComplete = async () => {
         setIsJoining(true);
         setJoinError(null);
@@ -324,10 +374,18 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 setTimerExpired(false);
             }
 
-            // Show the "Setting up..." screen and wait for the AI agent to join
+            setShouldConnect(true);
+
+            // Unlock audio context on user gesture — must happen here, not in useEffect
+            if (lkRoomRef.current) {
+                lkRoomRef.current.startAudio().catch(() => {});
+            }
+
+            // If agent is already ready, go directly to interview.
             agentReadyCommittedRef.current = false;
-            setLaunchCountdown(15);
-            setPhase("launching");
+            launchStartedAtRef.current = performance.now();
+            setAgentReadyLatencyMs(null);
+            setPhase(isAgentReady ? "interview" : "launching");
 
         } catch (err) {
             console.error("Phase transition failed:", err);
@@ -341,7 +399,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     useEffect(() => {
         return () => {
             if (launchIntervalRef.current) {
-                window.clearInterval(launchIntervalRef.current);
+                window.clearTimeout(launchIntervalRef.current);
                 launchIntervalRef.current = null;
             }
         };
@@ -457,7 +515,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 </h3>
                                 <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.25em] max-w-[300px]">
                                     {isAgentReady
-                                        ? "Starting session in a moment..."
+                                        ? `Agent ready in ${agentReadyLatencyMs ?? 0}ms. Starting interview...`
                                         : "Please wait — connecting your AI interviewer."}
                                 </p>
                             </div>
@@ -492,7 +550,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         )}
                     >
                         <LiveKitRoom
-                            video={phase === "interview" || phase === "launching"}
+                            video={phase === "interview"}
                             audio={phase === "interview" || phase === "launching"}
                             token={token}
                             serverUrl={serverUrl}
@@ -500,16 +558,18 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             data-lk-theme="default"
                             className="flex-1 flex flex-col w-full h-full"
                         >
-                            <InterviewRoomContent 
-                                id={id} 
-                                onAgentReady={setIsAgentReady}
-                                onFinish={() => setPhase("completed")} 
+                            <InterviewRoomContent
+                                id={id}
+                                onAgentReady={handleAgentReady}
+                                onFinish={() => setPhase("completed")}
                                 onFinalizing={() => setPhase("finalizing")}
-                                isInterviewActive={phase === "interview"} 
+                                isInterviewActive={phase === "interview"}
+                                isLaunchingActive={phase === "launching"}
                                 timeLabel={formatDuration(remainingSeconds)}
                                 timerExpired={timerExpired}
                                 onSecurityViolation={triggerSecurityWarning}
                                 onRemoteAgentAudioTrack={handleRemoteAgentAudioTrack}
+                                onRoomReady={(room) => { lkRoomRef.current = room; }}
                                 onAllowExitNow={() => {
                                     allowFullscreenExitRef.current = true;
                                 }}
@@ -616,53 +676,93 @@ function InterviewRoomContent({
     onFinish,
     onFinalizing,
     isInterviewActive,
+    isLaunchingActive,
     timeLabel,
     timerExpired,
     onSecurityViolation,
     onRemoteAgentAudioTrack,
     onAllowExitNow,
     onAgentReady,
+    onRoomReady,
 }: {
     id: string,
     onFinish: () => void,
     onFinalizing: () => void,
     isInterviewActive: boolean,
+    isLaunchingActive: boolean,
     timeLabel: string,
     timerExpired: boolean,
     onSecurityViolation: () => void,
     onRemoteAgentAudioTrack: (track: MediaStreamTrack | null) => void,
     onAllowExitNow: () => void,
     onAgentReady?: (isReady: boolean) => void,
+    onRoomReady?: (room: any) => void,
 }) {
     const { localParticipant } = useLocalParticipant();
     const cameraTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
     const connectionState = useConnectionState();
-    const lkRoom = useRoomContext();
     const remoteParticipants = useRemoteParticipants();
+    const lkRoom = useRoomContext();
 
+    // Give parent a ref to the room so it can call startAudio() on user gesture
     useEffect(() => {
-        const hasAgent = remoteParticipants.length > 0;
-        onAgentReady?.(hasAgent);
-    }, [remoteParticipants, onAgentReady]);
+        if (lkRoom) onRoomReady?.(lkRoom);
+    }, [lkRoom, onRoomReady]);
 
-    const remoteTracks = useTracks([Track.Source.Microphone], { onlySubscribed: false });
-    // Improved: find any remote participant who has a microphone and isn't the candidate
-    const aiParticipantTrack = remoteTracks.find(t => !t.participant.isLocal) ?? null;
-    const isAiSpeaking = aiParticipantTrack?.participant.isSpeaking;
-    
-    // Official LiveKit Audio Handshake
+    const { state: agentState, audioTrack: agentAudioTrack } = useVoiceAssistant();
+    const isAiSpeaking = agentState === "speaking";
+    const aiParticipantTrack = agentAudioTrack;
+    const hasAgentPresence = remoteParticipants.length > 0;
+
+    // startAudio is now called from handleHardwareComplete (user gesture) in the parent.
+    // This useEffect is a fallback only — if the room reconnects mid-interview.
     useEffect(() => {
         if (connectionState === "connected" && lkRoom) {
-            lkRoom.startAudio().catch(err => console.warn("Audio start failed:", err));
+            lkRoom.startAudio().catch(() => {});
         }
     }, [connectionState, lkRoom]);
 
-    const [strikes, setStrikes] = useState(0);
     const readySignalSentRef = useRef(false);
+    const launchReadySignalSentRef = useRef(false);
     const finishStartedRef = useRef(false);
+    const recordingStartedRef = useRef(false);
     const transcriptPanelRef = useRef<HTMLDivElement>(null);
     const transcriptions = useTranscriptions({ room: lkRoom });
     const localIdentity = lkRoom?.localParticipant?.identity ?? "";
+
+    // Agent readiness is based on room connection + remote agent presence.
+    useEffect(() => {
+        const readyNow = connectionState === "connected" && hasAgentPresence;
+        onAgentReady?.(readyNow);
+
+        if (!isLaunchingActive) {
+            launchReadySignalSentRef.current = false;
+            return;
+        }
+
+        if (readyNow && !launchReadySignalSentRef.current) {
+            launchReadySignalSentRef.current = true;
+            console.log("[Agent] Ready in launching phase");
+        }
+    }, [isLaunchingActive, connectionState, hasAgentPresence, onAgentReady]);
+
+    // Start recording only after interview phase starts and agent actually begins speaking.
+    useEffect(() => {
+        if (!isInterviewActive || agentState !== "speaking") return;
+
+        console.log("[Agent] State=speaking during interview");
+
+        // Start recording the moment audio flows
+        if (!recordingStartedRef.current) {
+            recordingStartedRef.current = true;
+            console.log("[Recording] Agent speaking — starting recording");
+            fetch("/api/interview/start-recording", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ applicationId: id }),
+            }).catch((err) => console.warn("[Recording] start-recording request failed:", err));
+        }
+    }, [agentState, id, isInterviewActive]);
     const [remoteForceFinish, setRemoteForceFinish] = useState(false);
     const localCameraTrack =
         cameraTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera) || null;
@@ -713,23 +813,44 @@ function InterviewRoomContent({
         readySignalSentRef.current = true;
 
         const encoder = new TextEncoder();
-        const sendReady = () => {
-            const data = encoder.encode(JSON.stringify({ type: "user_ready", timestamp: Date.now() }));
-            localParticipant.publishData(data, { reliable: true });
-            console.log("SENT READY SIGNAL");
+        let cancelled = false;
+        let attempts = 0;
+
+        const sendReady = async () => {
+            if (cancelled) return;
+            attempts += 1;
+            const data = encoder.encode(
+                JSON.stringify({ type: "user_ready", timestamp: Date.now(), attempt: attempts })
+            );
+            try {
+                await localParticipant.publishData(data, { reliable: true });
+                console.log("SENT READY SIGNAL", { attempt: attempts });
+            } catch (err) {
+                console.warn("[READY] failed to publish user_ready", err);
+            }
         };
 
-        sendReady();
-        const retryTimer = window.setTimeout(sendReady, 400);
-        return () => window.clearTimeout(retryTimer);
+        void sendReady();
+        const retryTimer = window.setInterval(() => {
+            if (attempts >= 6) {
+                window.clearInterval(retryTimer);
+                return;
+            }
+            void sendReady();
+        }, 700);
+
+        return () => {
+            cancelled = true;
+            window.clearInterval(retryTimer);
+        };
     }, [connectionState, localParticipant, isInterviewActive]);
 
     useEffect(() => {
-        const mediaTrack = getMediaStreamTrack(aiParticipantTrack);
+        const mediaTrack = getMediaStreamTrack(agentAudioTrack ?? null);
         if (mediaTrack && mediaTrack.kind === "audio") {
             onRemoteAgentAudioTrack(mediaTrack);
         }
-    }, [aiParticipantTrack, onRemoteAgentAudioTrack]);
+    }, [agentAudioTrack, onRemoteAgentAudioTrack]);
 
 
     useEffect(() => {
@@ -787,9 +908,9 @@ function InterviewRoomContent({
             {/* Ambient Background Glow */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,_rgba(249,115,22,0.04)_0%,_transparent_50%)] pointer-events-none" />
             
-            <RoomAudioRenderer />
+            {isInterviewActive && <RoomAudioRenderer />}
             {/* FORCE AUDIO TRACK ATTACHMENT */}
-            {aiParticipantTrack && <AudioTrack trackRef={aiParticipantTrack} />}
+            {isInterviewActive && aiParticipantTrack && <AudioTrack trackRef={aiParticipantTrack} />}
             
             {/* Role Context - TOP LEFT */}
             <div className="absolute top-10 left-10 z-[60]">
@@ -902,38 +1023,70 @@ function InterviewRoomContent({
                         )}
                     </div>
                 </motion.div>
-            </div>
-
-            <div className="hidden lg:block absolute left-8 top-32 bottom-52 z-[65] w-[360px] rounded-[2rem] border border-white/10 bg-zinc-900/55 backdrop-blur-xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
-                <div className="px-5 pt-5 pb-3 border-b border-white/10">
-                    <p className="text-[9px] uppercase tracking-[0.28em] font-black text-zinc-400">Live Transcript</p>
-                    <p className="text-[11px] font-bold text-zinc-500 mt-1">Messages flow in real time</p>
-                </div>
-                <div ref={transcriptPanelRef} className="h-[calc(100%-64px)] overflow-y-auto px-4 py-4 space-y-3">
-                    <AnimatePresence initial={false}>
-                        {groupedTranscriptions.map((group) => {
-                            const isGroupFinal = group.segments.every(s => s.isFinal);
-                            const combinedText = group.segments.map(s => s.text.trim()).join(" ");
-                            
-                            return (
-                                <motion.div
-                                    key={group.id}
-                                    initial={{ opacity: 0, y: 22 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: -16 }}
-                                    transition={{ duration: 0.35, ease: "easeOut" }}
-                                    className={cn("max-w-[88%] rounded-2xl px-4 py-2.5 border", group.isCandidate
-                                        ? "ml-auto bg-orange-500/12 border-orange-400/30"
-                                        : "mr-auto bg-zinc-800/80 border-zinc-700/80")}
-                                >
-                                    <p className={cn("text-[9px] uppercase tracking-[0.2em] font-black mb-1", group.isCandidate ? "text-orange-300" : "text-zinc-400")}>
-                                        {group.speakerName}{!isGroupFinal && <span className="opacity-50 ml-1">•••</span>}
-                                    </p>
-                                    <StreamingText text={combinedText} className="text-[13px] leading-relaxed text-white font-semibold" />
-                                </motion.div>
-                            );
-                        })}
-                    </AnimatePresence>
+                {/* Floating Vanishing Transcript - Bottom Left Anchor */}
+                <div className="absolute left-16 bottom-24 z-[65] w-[450px] pointer-events-none">
+                    <div 
+                        className="flex flex-col-reverse gap-1.5 max-h-[500px] overflow-hidden py-10"
+                        style={{ 
+                            maskImage: 'linear-gradient(to top, black 30%, transparent 95%)',
+                            WebkitMaskImage: 'linear-gradient(to top, black 30%, transparent 95%)'
+                        }}
+                    >
+                        <AnimatePresence mode="popLayout">
+                            {groupedTranscriptions.slice(-8).reverse().map((group, idx) => {
+                                const isGroupFinal = group.segments.every(s => s.isFinal);
+                                const combinedText = group.segments.map(s => s.text.trim()).join(" ");
+                                
+                                return (
+                                    <motion.div
+                                        key={group.id}
+                                        initial={{ opacity: 0, x: group.isCandidate ? 20 : -20, scale: 0.95 }}
+                                        animate={{ 
+                                            opacity: Math.max(0.1, 1 - (idx * 0.15)),
+                                            x: 0, 
+                                            scale: 1 
+                                        }}
+                                        exit={{ 
+                                            opacity: 0, 
+                                            y: -60, 
+                                            scale: 0.9, 
+                                            transition: { duration: 0.5 } 
+                                        }}
+                                        transition={{ 
+                                            type: "spring",
+                                            stiffness: 150,
+                                            damping: 20
+                                        }}
+                                        className={cn(
+                                            "flex flex-col gap-0.5 max-w-[90%]",
+                                            group.isCandidate ? "self-end items-end" : "self-start items-start"
+                                        )}
+                                    >
+                                        <p className={cn(
+                                            "text-[8px] font-black uppercase tracking-[0.2em] opacity-30 mx-2",
+                                            group.isCandidate ? "text-orange-500" : "text-zinc-500"
+                                        )}>
+                                            {group.isCandidate ? "You" : "Ishita"}{!isGroupFinal && " •••"}
+                                        </p>
+                                        <div className={cn(
+                                            "px-3 py-1.5 rounded-[1.2rem] backdrop-blur-md relative",
+                                            group.isCandidate 
+                                                ? "bg-orange-500/10 border border-orange-500/20 rounded-tr-[0.25rem] text-right" 
+                                                : "bg-zinc-800/40 border border-white/5 rounded-tl-[0.25rem] text-left"
+                                        )}>
+                                            <StreamingText 
+                                                text={combinedText} 
+                                                className={cn(
+                                                    "text-sm font-bold italic tracking-tight leading-snug",
+                                                    group.isCandidate ? "text-orange-100" : "text-white"
+                                                )} 
+                                            />
+                                        </div>
+                                    </motion.div>
+                                );
+                            })}
+                        </AnimatePresence>
+                    </div>
                 </div>
             </div>
 
@@ -1187,7 +1340,10 @@ function CompletionView({ id }: { id: string }) {
                         <motion.div 
                             initial={{ scale: 0 }}
                             animate={{ scale: 1, rotate: [0, 10, -10, 0] }}
-                            transition={{ type: "spring", stiffness: 200, damping: 10 }}
+                            transition={{ 
+                                scale: { type: "spring", stiffness: 200, damping: 10 },
+                                rotate: { duration: 1, times: [0, 0.3, 0.7, 1], ease: "easeInOut" }
+                            }}
                             className="w-24 h-24 bg-gradient-to-tr from-green-400 to-green-500 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 shadow-[0_20px_40px_rgba(34,197,94,0.3)]"
                         >
                             <ShieldCheck className="w-12 h-12 text-white" />

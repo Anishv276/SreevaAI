@@ -23,33 +23,33 @@ export async function GET() {
 
         if (!org?.customDomain) return NextResponse.json({ domain: null });
 
-        // Refresh status from Resend if not verified yet
-        if (org.resendDomainId && !org.isDomainVerified) {
-            const { data } = await resend.domains.get(org.resendDomainId);
-            const records: any[] = (data as any)?.records || [];
-            if (data?.status === "verified") {
-                await prisma.organization.update({
-                    where: { id: session.orgId as string },
-                    data: { isDomainVerified: true } as any
-                });
-                org.isDomainVerified = true;
-            }
-            return NextResponse.json({ 
-                ...org, 
-                resendStatus: data?.status, 
-                records
-            });
-        }
-
-        // If already verified or no ID, just return what we have
         if (org.resendDomainId) {
-            const { data } = await resend.domains.get(org.resendDomainId);
-            const records: any[] = (data as any)?.records || [];
-            return NextResponse.json({ 
-                ...org, 
-                resendStatus: data?.status, 
-                records
-            });
+            try {
+                const { data } = await resend.domains.get(org.resendDomainId);
+                const records: any[] = (data as any)?.records || [];
+
+                // Update DB if Resend now shows verified
+                if (data?.status === "verified" && !org.isDomainVerified) {
+                    await prisma.organization.update({
+                        where: { id: session.orgId as string },
+                        data: { isDomainVerified: true } as any
+                    });
+                    org.isDomainVerified = true;
+                }
+
+                return NextResponse.json({
+                    ...org,
+                    resendStatus: data?.status ?? (org.isDomainVerified ? "verified" : "pending"),
+                    records
+                });
+            } catch {
+                // Resend API unavailable — fall back to DB state
+                return NextResponse.json({
+                    ...org,
+                    resendStatus: org.isDomainVerified ? "verified" : "pending",
+                    records: []
+                });
+            }
         }
 
         return NextResponse.json(org);

@@ -105,7 +105,7 @@ export default function SettingsPage() {
     const [profile, setProfile] = useState({ name: "", email: "", phone: "" });
 
     /* Company */
-    const [company, setCompany] = useState({ name: "", industry: "Technology", size: "50–200", website: "", logoUrl: "" });
+    const [company, setCompany] = useState({ name: "", industry: "Technology", size: "50–200", website: "", logoUrl: "", customSenderEmail: "", customSenderName: "" });
 
     /* Notifications */
     const [notifs, setNotifs] = useState({
@@ -148,6 +148,10 @@ export default function SettingsPage() {
     const [isLoadingDomain, setIsLoadingDomain] = useState(false);
     const [newDomain, setNewDomain] = useState("");
     const [copiedIndex, setCopiedIndex] = useState<{ i: number, type: 'host' | 'value' } | null>(null);
+    const [emailSubStep, setEmailSubStep] = useState(0);
+    const [domainLinkError, setDomainLinkError] = useState("");
+    const [isEditingSender, setIsEditingSender] = useState(false);
+    const [showDomainDeleteConfirm, setShowDomainDeleteConfirm] = useState(false);
 
     const handleCopy = (text: string, i: number, type: 'host' | 'value') => {
         navigator.clipboard.writeText(text);
@@ -161,7 +165,17 @@ export default function SettingsPage() {
             const res = await fetch("/api/admin/organization/domain");
             if (res.ok) {
                 const data = await res.json();
-                setDomainInfo(data.domain === null ? null : data);
+                if (!data.customDomain) {
+                    setDomainInfo(null);
+                    setEmailSubStep(0);
+                } else {
+                    setDomainInfo(data);
+                    if (data.isDomainVerified || data.resendStatus === "verified") {
+                        setEmailSubStep(2);
+                    } else {
+                        setEmailSubStep(1);
+                    }
+                }
             }
         } catch (err) {
             console.error("Domain fetch failed:", err);
@@ -212,7 +226,9 @@ export default function SettingsPage() {
                         industry: data.industry || "Technology",
                         size: data.size || "50–200",
                         website: data.website || "",
-                        logoUrl: data.logoUrl || ""
+                        logoUrl: data.logoUrl || "",
+                        customSenderEmail: data.customSenderEmail || "",
+                        customSenderName: data.customSenderName || ""
                     });
                 }
             } catch (err) {
@@ -649,33 +665,49 @@ export default function SettingsPage() {
                                     title="Custom Email Domain"
                                     description="Connect your business domain to send white-labeled recruitment emails."
                                 >
+                                    {/* ── STEP 1: No domain in DB yet — show input ── */}
                                     {!domainInfo ? (
-                                        <div className="space-y-6">
+                                        <div className="space-y-4">
                                             <div className="flex items-center gap-4 mb-2">
                                                 <span className="w-1.5 h-8 bg-[#F97316] rounded-full shadow-sm" />
                                                 <h3 className="text-[12px] font-bold uppercase tracking-widest text-gray-500">Register New Domain</h3>
                                             </div>
-
                                             <div className="flex gap-3">
                                                 <div className="relative flex-1">
                                                     <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                                     <Input
                                                         className="pl-10 h-12 rounded-2xl border-gray-100 bg-white shadow-sm font-bold text-[13px] focus:ring-4 focus:ring-orange-50 focus:border-[#F97316] placeholder:font-medium placeholder:text-gray-300 transition-all"
-                                                        placeholder="GITSOLUTIONS.COM"
+                                                        placeholder="YOURDOMAIN.COM"
                                                         value={newDomain}
-                                                        onChange={e => setNewDomain(e.target.value.toLowerCase())}
+                                                        onChange={e => { setNewDomain(e.target.value.toLowerCase()); setDomainLinkError(""); }}
                                                     />
                                                 </div>
                                                 <Button
                                                     disabled={isLoadingDomain || !newDomain}
                                                     onClick={async () => {
                                                         setIsLoadingDomain(true);
+                                                        setDomainLinkError("");
                                                         try {
                                                             const res = await fetch("/api/admin/setup/domain", {
                                                                 method: "POST",
+                                                                headers: { "Content-Type": "application/json" },
                                                                 body: JSON.stringify({ domain: newDomain })
                                                             });
-                                                            if (res.ok) fetchDomainInfo();
+                                                            const json = await res.json();
+                                                            if (res.ok) {
+                                                                if (json.registeredElsewhere) {
+                                                                    // Exists in Resend but NOT via our platform — hard stop
+                                                                    setDomainLinkError(json.isVerified
+                                                                        ? `${newDomain} is already verified and registered on another platform.`
+                                                                        : `${newDomain} is already registered in Resend outside this platform.`
+                                                                    );
+                                                                } else {
+                                                                    // Registered via our platform (new or resumed) — load and advance
+                                                                    fetchDomainInfo();
+                                                                }
+                                                            } else {
+                                                                setDomainLinkError(json.error || "Failed to link domain.");
+                                                            }
                                                         } finally { setIsLoadingDomain(false); }
                                                     }}
                                                     className="h-12 px-8 rounded-2xl bg-gray-950 text-white hover:bg-black shadow-xl transition-all font-bold text-[11px] uppercase tracking-widest disabled:opacity-30"
@@ -683,87 +715,148 @@ export default function SettingsPage() {
                                                     {isLoadingDomain ? <Loader2 className="h-4 w-4 animate-spin" /> : "Link Domain"}
                                                 </Button>
                                             </div>
+                                            {domainLinkError && (
+                                                <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 border border-red-200">
+                                                    <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+                                                    <p className="text-[11px] font-bold text-red-600 tracking-wide">{domainLinkError}</p>
+                                                </div>
+                                            )}
                                         </div>
                                     ) : (
                                         <div className="space-y-6">
-                                            <div className="flex items-center justify-between p-6 rounded-[2rem] bg-gradient-to-r from-gray-900 via-gray-800 to-gray-950 text-white shadow-2xl relative overflow-hidden group">
+                                            {/* Domain card — always visible once registered via our platform */}
+                                            <div className="flex items-center justify-between p-6 rounded-[2rem] bg-gradient-to-r from-gray-900 via-gray-800 to-gray-950 text-white shadow-2xl relative overflow-hidden">
                                                 <div className="absolute right-0 top-0 h-full w-48 bg-gradient-to-l from-white/[0.03] to-transparent pointer-events-none" />
                                                 <div className="flex items-center gap-6 relative z-10">
-                                                    <div className="h-14 w-14 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/[0.08] shadow-[0_0_20px_rgba(255,255,255,0.05)]"><Globe className="h-7 w-7 text-white" /></div>
+                                                    <div className="h-14 w-14 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/[0.08] shadow-[0_0_20px_rgba(255,255,255,0.05)]">
+                                                        <Globe className="h-7 w-7 text-white" />
+                                                    </div>
                                                     <div>
                                                         <div className="flex items-center gap-3">
                                                             <p className="text-xl font-black uppercase italic leading-none">{domainInfo.customDomain}</p>
                                                             <Badge className={cn("text-[8px] font-black uppercase px-2 py-0.5 border-0 rounded-md tracking-widest",
-                                                                domainInfo.isDomainVerified ? "bg-emerald-500 text-white shadow-[0_0_12px_rgba(16,185,129,0.3)]" : "bg-orange-500 text-white"
+                                                                emailSubStep === 2 ? "bg-emerald-500 text-white shadow-[0_0_12px_rgba(16,185,129,0.3)]" : "bg-orange-500 text-white"
                                                             )}>
-                                                                {domainInfo.isDomainVerified ? "Verified" : domainInfo.resendStatus === "pending" ? "Sync Pending" : "Handshake Required"}
+                                                                {emailSubStep === 2 ? "Verified" : "Handshake Required"}
                                                             </Badge>
                                                         </div>
-                                                        <p className="text-[10px] uppercase font-bold text-gray-400 mt-2 tracking-widest leading-none">Registered to Resend Ecosystem</p>
+                                                        <p className="text-[10px] uppercase font-bold text-gray-400 mt-2 tracking-widest leading-none">Registered via this platform</p>
                                                     </div>
                                                 </div>
-                                                <button
-                                                    onClick={async () => {
-                                                        if (!confirm("Are you sure you want to disconnect this domain? This will stop white-labeled emails from working.")) return;
-                                                        await fetch("/api/admin/organization/domain", { method: "DELETE" });
-                                                        fetchDomainInfo();
-                                                    }}
-                                                    className="relative z-10 h-10 w-10 flex items-center justify-center rounded-xl bg-white/10 hover:bg-red-500 transition-all text-white/50 hover:text-white"
-                                                >
-                                                    <Trash2 className="h-4 w-4" />
-                                                </button>
+                                                <div className="relative z-10 flex items-center gap-2">
+                                                    {emailSubStep === 2 && (
+                                                        <button
+                                                            onClick={() => setIsEditingSender(v => !v)}
+                                                            className="h-10 px-4 flex items-center gap-1.5 rounded-xl bg-white/10 hover:bg-white/20 transition-all text-white text-[10px] font-bold uppercase tracking-widest"
+                                                        >
+                                                            <Mail className="h-3.5 w-3.5" />
+                                                            {isEditingSender ? "Cancel" : "Edit Sender"}
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => setShowDomainDeleteConfirm(true)}
+                                                        className="h-10 w-10 flex items-center justify-center rounded-xl bg-white/10 hover:bg-red-500 transition-all text-white/50 hover:text-white"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                </div>
                                             </div>
 
-                                            {!domainInfo.isDomainVerified && domainInfo.records && (
-                                                <div className="space-y-6 pt-4 animate-in-fade">
-                                                    <div className="space-y-2 border-l-2 border-[#F97316] pl-4">
+                                            {/* ── STEP 2: DNS records — domain not yet verified ── */}
+                                            {emailSubStep === 1 && domainInfo.records && (
+                                                <div className="space-y-6 pt-2">
+                                                    <div className="space-y-1 border-l-2 border-[#F97316] pl-4">
                                                         <h4 className="text-xs font-bold text-gray-900 uppercase tracking-tight">Handshake Protocol</h4>
-                                                        <p className="text-[10px] text-gray-400 font-medium">Add these records to your DNS provider (Cloudflare, GoDaddy, etc.) then click check status.</p>
+                                                        <p className="text-[10px] text-gray-400 font-medium">Add these records to your DNS provider then click Check Status.</p>
                                                     </div>
-
                                                     <div className="border border-gray-100 rounded-xl overflow-hidden shadow-sm bg-white">
-                                                        <div className="bg-gray-50 border-b border-gray-100 px-6 py-4 flex text-[10px] font-bold uppercase text-gray-500 tracking-widest">
-                                                            <div className="w-[10%]">Type</div>
-                                                            <div className="w-[20%]">Host Name</div>
+                                                        <div className="bg-gray-50 border-b border-gray-100 px-4 py-3 flex text-[10px] font-bold uppercase text-gray-500 tracking-widest leading-none">
+                                                            <div className="w-[12%]">Type</div>
+                                                            <div className="w-[23%]">Host Name</div>
                                                             <div className="flex-1">Value</div>
-                                                            <div className="w-[10%] text-center">Priority</div>
+                                                            <div className="w-[15%] text-center">Priority</div>
                                                         </div>
-                                                        <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto">
+                                                        <div className="divide-y divide-gray-50 max-h-[400px] overflow-y-auto">
                                                             {domainInfo.records.map((rec: any, i: number) => (
-                                                                <div key={i} className="flex items-center px-6 py-5 bg-white hover:bg-orange-50/10 transition-all group">
-                                                                    <div className="w-[10%]">
-                                                                        <Badge className="bg-gray-900 text-white border-0 text-[9px] font-black italic px-2 py-0.5">{rec.type}</Badge>
+                                                                <div key={i} className="flex items-start px-4 py-3 bg-white hover:bg-orange-50/10 transition-all">
+                                                                    <div className="w-[12%] pt-1.5">
+                                                                        <Badge className="bg-gray-900 text-white border-0 text-[9px] font-black italic px-2 py-0.5 rounded tracking-widest">{rec.type}</Badge>
                                                                     </div>
-                                                                    <div className="w-[20%] pr-4 relative">
-                                                                        <div className="flex items-center justify-between gap-2 p-2 rounded-lg border border-transparent hover:border-gray-200 hover:bg-gray-50 transition-all cursor-pointer" onClick={() => handleCopy(rec.name || "@", i, 'host')}>
-                                                                            <span className="font-mono text-[9px] font-bold text-gray-950 truncate uppercase">{rec.name || "@"}</span>
-                                                                            {copiedIndex?.i === i && copiedIndex?.type === 'host' ? <Check className="h-3 w-3 text-emerald-500 shrink-0" /> : <Copy className="h-3 w-3 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />}
+                                                                    <div className="w-[23%] pr-3">
+                                                                        <div onClick={() => handleCopy(rec.name || "@", i, 'host')} className="relative flex min-h-[32px] w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] text-gray-900 cursor-pointer hover:bg-white hover:border-[#F97316]/50 transition-all group/host shadow-inner">
+                                                                            <span className="font-mono font-bold break-all uppercase leading-tight">{rec.name || "@"}</span>
+                                                                            {copiedIndex?.i === i && copiedIndex?.type === 'host' ? <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" /> : <Copy className="h-3.5 w-3.5 text-gray-400 opacity-0 group-hover/host:opacity-100 transition-opacity shrink-0" />}
                                                                         </div>
                                                                     </div>
-                                                                    <div className="flex-1 relative pr-4">
-                                                                        <div className="flex items-center justify-between gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50 hover:border-[#F97316] hover:bg-white transition-all cursor-pointer shadow-sm" onClick={() => handleCopy(rec.value, i, 'value')}>
-                                                                            <span className="font-mono text-[9px] font-medium text-gray-600 break-all leading-relaxed pr-8">{rec.value}</span>
-                                                                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                                                                {copiedIndex?.i === i && copiedIndex?.type === 'value' ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity" />}
-                                                                            </div>
+                                                                    <div className="flex-1 pr-3 min-w-0">
+                                                                        <div onClick={() => handleCopy(rec.value, i, 'value')} className="relative flex min-h-[32px] w-full items-start justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-900 cursor-pointer hover:bg-white hover:border-[#F97316]/50 transition-all group/val shadow-inner">
+                                                                            <span className="font-mono font-medium break-all leading-relaxed whitespace-pre-wrap">{rec.value}</span>
+                                                                            {copiedIndex?.i === i && copiedIndex?.type === 'value' ? <Check className="h-3.5 w-3.5 mt-0.5 text-emerald-500 shrink-0" /> : <Copy className="h-3.5 w-3.5 mt-0.5 text-gray-400 opacity-0 group-hover/val:opacity-100 transition-opacity shrink-0" />}
                                                                         </div>
                                                                     </div>
-                                                                    <div className="w-[10%] text-center">
-                                                                        <span className="text-[10px] font-black text-gray-400 italic">{rec.priority ?? "-"}</span>
+                                                                    <div className="w-[15%] pt-1.5 text-center">
+                                                                        <span className="text-[10px] font-black text-gray-400 italic bg-gray-50 px-2 py-1 rounded border border-gray-100">{rec.priority ?? "-"}</span>
                                                                     </div>
                                                                 </div>
                                                             ))}
                                                         </div>
                                                     </div>
-
-                                                    <Button
-                                                        onClick={fetchDomainInfo}
-                                                        disabled={isLoadingDomain}
-                                                        className="h-10 px-8 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 text-gray-900 font-bold text-[10px] uppercase tracking-widest shadow-sm flex items-center gap-2"
-                                                    >
+                                                    <Button onClick={fetchDomainInfo} disabled={isLoadingDomain} className="h-10 px-8 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 text-gray-900 font-bold text-[10px] uppercase tracking-widest shadow-sm flex items-center gap-2">
                                                         {isLoadingDomain ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 text-[#F97316]" />}
                                                         Check Status
                                                     </Button>
+                                                </div>
+                                            )}
+
+                                            {/* ── STEP 3: Verified — show sender details, edit on demand ── */}
+                                            {emailSubStep === 2 && (
+                                                <div className="pt-2">
+                                                    {!isEditingSender ? (
+                                                        /* Read-only summary */
+                                                        <div className="flex items-center gap-6 px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100">
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Sender Name</p>
+                                                                <p className="text-[14px] font-bold text-gray-900 truncate">{company.customSenderName || <span className="text-gray-300 font-medium italic">Not set</span>}</p>
+                                                            </div>
+                                                            <div className="w-px h-8 bg-gray-200" />
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Sender Email</p>
+                                                                <p className="text-[14px] font-bold text-gray-900 truncate">{company.customSenderEmail || <span className="text-gray-300 font-medium italic">Not set</span>}</p>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        /* Edit form */
+                                                        <div className="space-y-5 p-6 rounded-2xl bg-gray-50/50 border border-gray-100">
+                                                            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Update sender identity</p>
+                                                            <div className="space-y-4">
+                                                                <div className="space-y-1.5">
+                                                                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Sender Name</label>
+                                                                    <input className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-[14px] text-gray-900 font-medium shadow-sm focus:border-[#F97316] outline-none transition-all" placeholder="YOUR COMPANY" value={company.customSenderName || ""} onChange={e => setCompany({ ...company, customSenderName: e.target.value.toUpperCase() })} />
+                                                                </div>
+                                                                <div className="space-y-1.5">
+                                                                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Sender Email</label>
+                                                                    <div className="flex gap-2">
+                                                                        <input
+                                                                            className="h-11 flex-1 rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 font-medium shadow-sm focus:border-[#F97316] outline-none transition-all"
+                                                                            placeholder="careers"
+                                                                            value={company.customSenderEmail ? company.customSenderEmail.split("@")[0] : ""}
+                                                                            onChange={e => {
+                                                                                const localPart = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "").split("@")[0].trim();
+                                                                                setCompany({ ...company, customSenderEmail: localPart ? `${localPart}@${domainInfo.customDomain}` : "" });
+                                                                            }}
+                                                                        />
+                                                                        <div className="flex items-center px-4 bg-gray-100 rounded-xl border border-gray-200 text-gray-400 text-[11px] font-bold italic">@{domainInfo.customDomain}</div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-3">
+                                                                <Button onClick={async () => { await handleSave(); setIsEditingSender(false); }} disabled={isSaving || !company.customSenderEmail || !company.customSenderName} className="h-10 px-6 bg-gray-950 text-white rounded-xl font-bold text-[11px] uppercase tracking-widest shadow-xl hover:bg-black transition-all flex items-center gap-2">
+                                                                    {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+                                                                </Button>
+                                                                {saved && <span className="text-[10px] font-black uppercase text-emerald-500 tracking-widest flex items-center gap-1"><Check className="h-3 w-3" /> Saved</span>}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -1114,6 +1207,23 @@ export default function SettingsPage() {
                         </div>
                     </div>
                 )}
+                {/* Domain Deletion Modal */}
+                <ActionConfirmModal
+                    isOpen={showDomainDeleteConfirm}
+                    onClose={() => setShowDomainDeleteConfirm(false)}
+                    title="Disconnect Domain"
+                    description="Are you sure you want to disconnect this custom domain? All white-labeled emails and active email identities associated with it will immediately cease to function."
+                    confirmText="Disconnect Domain"
+                    variant="danger"
+                    onConfirm={async () => {
+                        try {
+                            const res = await fetch("/api/admin/organization/domain", { method: "DELETE" });
+                            if (res.ok) fetchDomainInfo();
+                        } finally {
+                            setShowDomainDeleteConfirm(false);
+                        }
+                    }}
+                />
             </div>
         </>
     );

@@ -4,7 +4,7 @@ import asyncio
 import random
 
 # Windows Compatibility for LiveKit
-if sys.platform == 'win32':
+if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 
@@ -55,13 +55,37 @@ class JsonFormatter(logging.Formatter):
         }
         if record.exc_info:
             log_record["exception"] = self.formatException(record.exc_info)
-        
+
         # Add any extra attributes passed to the logger
         for key, value in record.__dict__.items():
-            if key not in ["args", "asctime", "created", "exc_info", "exc_text", "filename", "funcName", "levelname", "levelno", "lineno", "module", "msecs", "message", "msg", "name", "pathname", "process", "processName", "relativeCreated", "stack_info", "thread", "threadName"]:
+            if key not in [
+                "args",
+                "asctime",
+                "created",
+                "exc_info",
+                "exc_text",
+                "filename",
+                "funcName",
+                "levelname",
+                "levelno",
+                "lineno",
+                "module",
+                "msecs",
+                "message",
+                "msg",
+                "name",
+                "pathname",
+                "process",
+                "processName",
+                "relativeCreated",
+                "stack_info",
+                "thread",
+                "threadName",
+            ]:
                 log_record[key] = value
-                
+
         return json.dumps(log_record)
+
 
 # Clear existing handlers
 for handler in logger.handlers[:]:
@@ -71,7 +95,7 @@ for handler in logger.handlers[:]:
 handler = logging.StreamHandler()
 handler.setFormatter(JsonFormatter())
 logger.addHandler(handler)
-logger.propagate = False # Prevent double logging if root logger is configured
+logger.propagate = False  # Prevent double logging if root logger is configured
 
 
 class _SuppressNoisyWarnings(logging.Filter):
@@ -110,7 +134,9 @@ APP_BASE_URL = (
 ).rstrip("/")
 
 
-def build_tts(language: str = "en", model: str = CARTESIA_MODEL, voice_id: str = CARTESIA_VOICE_ID):
+def build_tts(
+    language: str = "en", model: str = CARTESIA_MODEL, voice_id: str = CARTESIA_VOICE_ID
+):
     # speed/emotion controls only supported on sonic-2 family
     tts_kwargs: dict = {
         "model": model,
@@ -122,7 +148,9 @@ def build_tts(language: str = "en", model: str = CARTESIA_MODEL, voice_id: str =
     return cartesia.TTS(**tts_kwargs)
 
 
-def build_sarvam_tts(language: str = "en-IN", model: str = "bulbul:v3", voice_id: str = "shubh"):
+def build_sarvam_tts(
+    language: str = "en-IN", model: str = "bulbul:v3", voice_id: str = "shubh"
+):
     lang_map = {"hi": "hi-IN", "en": "en-IN"}
     mapped_lang = lang_map.get(language, language)
     return sarvam.TTS(
@@ -134,15 +162,24 @@ def build_sarvam_tts(language: str = "en-IN", model: str = "bulbul:v3", voice_id
 
 
 def build_stt(language_code: str = "en-US", model: str = STT_MODEL):
-    return deepgram.STT(
-        model=model,
-        smart_format=True,
-        language=language_code,
-        interim_results=True,
-        punctuate=True,
-        utterance_end_ms=1000,   # wait 1s of silence before finalizing utterance
-        endpointing=400,         # ms of silence to detect end of speech
-    )
+    stt_kwargs: dict[str, Any] = {
+        "model": model,
+        "smart_format": True,
+        "language": language_code,
+        "interim_results": True,
+        "punctuate": True,
+    }
+
+    # livekit.plugins.deepgram versions differ in endpointing keyword support.
+    # Newer versions use endpointing_ms, older versions use endpointing.
+    try:
+        modern_kwargs = dict(stt_kwargs)
+        modern_kwargs["endpointing_ms"] = 400
+        return deepgram.STT(**modern_kwargs)
+    except TypeError:
+        legacy_kwargs = dict(stt_kwargs)
+        legacy_kwargs["endpointing"] = 400
+        return deepgram.STT(**legacy_kwargs)
 
 
 def build_sarvam_stt(language: str = "en-IN", model: str = "saaras:v3"):
@@ -169,8 +206,6 @@ def prewarm(proc: JobProcess):
 
     # Pre-instantiate default STT/TTS plugins so their internal HTTP sessions
     # and model configs are warm before the first job arrives.
-    # These are cheap to build; the real win is avoiding cold-start overhead
-    # inside entrypoint when the job is already waiting.
     try:
         proc.userdata["default_stt"] = build_stt()
     except Exception:
@@ -198,84 +233,83 @@ def normalize_postgres_dsn(conn_str: str) -> str:
 async def get_interview_context(app_id: str):
     """Fetches Candidate and Job Description context from PostgreSQL via asyncpg."""
     if not DATABASE_URL:
-        logger.warning("DATABASE_URL not set. Using generic context.")
-        return {
-            "fullName": "Candidate",
-            "jobTitle": "the position",
-            "jd": "See resume.",
-            "language": "English",
-            "timeLimit": 10,
-            "questions": [],
-        }
+        raise RuntimeError("DATABASE_URL is not set")
 
-    try:
-        conn_str = normalize_postgres_dsn(DATABASE_URL)
-        conn = await asyncpg.connect(conn_str, ssl=False, statement_cache_size=0)
+    conn_str = normalize_postgres_dsn(DATABASE_URL)
+    query = """
+    SELECT a."fullName", d.title, d.description, d.skills,
+           d."interviewLanguage", d."interviewTime", d."aiFollowUpDepth", d."interviewQuestions",
+           o."ttsProvider", o."cartesiaVoiceId", o."cartesiaModel",
+           o."sarvamModel", o."sarvamVoice",
+           o."sttProvider", o."deepgramModel", o."sarvamSttModel",
+           o."llmProvider", o."llmModel", o."llmTemperature"
+    FROM "Application" a
+    JOIN "Drive" d ON a."driveId" = d.id
+    LEFT JOIN "Organization" o ON d."orgId" = o.id
+    WHERE a.id = $1
+    LIMIT 1
+    """
 
+    last_error: Exception | None = None
+    for attempt in range(1, 6):
+        conn = None
         try:
-            query = """
-            SELECT a."fullName", d.title, d.description, d.skills,
-                   d."interviewLanguage", d."interviewTime", d."aiFollowUpDepth", d."interviewQuestions",
-                   o."ttsProvider", o."cartesiaVoiceId", o."cartesiaModel",
-                   o."sarvamModel", o."sarvamVoice",
-                   o."sttProvider", o."deepgramModel", o."sarvamSttModel",
-                   o."llmProvider", o."llmModel", o."llmTemperature"
-            FROM "Application" a
-            JOIN "Drive" d ON a."driveId" = d.id
-            LEFT JOIN "Organization" o ON d."orgId" = o.id
-            WHERE a.id = $1
-            LIMIT 1
-            """
+            conn = await asyncpg.connect(conn_str, ssl=False, statement_cache_size=0)
             row = await conn.fetchrow(query, app_id)
-            if row:
-                # Parse questions from JSON string if needed
-                questions_raw = row["interviewQuestions"]
-                questions = []
-                if questions_raw:
-                    try:
-                        questions = (
-                            json.loads(questions_raw)
-                            if isinstance(questions_raw, str)
-                            else questions_raw
-                        )
-                    except:
-                        questions = []
+            if not row:
+                raise RuntimeError(
+                    f"No interview context found in DB for application {app_id}"
+                )
 
-                return {
-                    "fullName": row["fullName"],
-                    "jobTitle": row["title"],
-                    "jd": f"Description: {row['description']}\nSkills: {row['skills']}",
-                    "language": row["interviewLanguage"] or "English",
-                    "timeLimit": row["interviewTime"] or 10,
-                    "followUpDepth": row["aiFollowUpDepth"] or 3,
-                    "questions": questions if isinstance(questions, list) else [],
-                    # Org model settings
-                    "ttsProvider": row["ttsProvider"] or "CARTESIA",
-                    "cartesiaVoiceId": row["cartesiaVoiceId"] or CARTESIA_VOICE_ID,
-                    "cartesiaModel": row["cartesiaModel"] or CARTESIA_MODEL,
-                    "sarvamModel": row["sarvamModel"] or "bulbul:v3",
-                    "sarvamVoice": row["sarvamVoice"] or "shubh",
-                    "sttProvider": row["sttProvider"] or "DEEPGRAM",
-                    "deepgramModel": row["deepgramModel"] or STT_MODEL,
-                    "sarvamSttModel": row["sarvamSttModel"] or "saarika:v2.5",
-                    "llmProvider": row["llmProvider"] or "OPENAI",
-                    "llmModel": row["llmModel"] or LLM_MODEL,
-                    "llmTemperature": float(row["llmTemperature"] or 0.7),
-                }
+            # Parse questions from JSON string if needed
+            questions_raw = row["interviewQuestions"]
+            questions = []
+            if questions_raw:
+                try:
+                    questions = (
+                        json.loads(questions_raw)
+                        if isinstance(questions_raw, str)
+                        else questions_raw
+                    )
+                except Exception:
+                    questions = []
+
+            return {
+                "fullName": row["fullName"],
+                "jobTitle": row["title"],
+                "jd": f"Description: {row['description']}\nSkills: {row['skills']}",
+                "language": row["interviewLanguage"],
+                "timeLimit": row["interviewTime"],
+                "followUpDepth": row["aiFollowUpDepth"],
+                "questions": questions if isinstance(questions, list) else [],
+                # Org model settings (DB only, no fallback defaults)
+                "ttsProvider": row["ttsProvider"],
+                "cartesiaVoiceId": row["cartesiaVoiceId"],
+                "cartesiaModel": row["cartesiaModel"],
+                "sarvamModel": row["sarvamModel"],
+                "sarvamVoice": row["sarvamVoice"],
+                "sttProvider": row["sttProvider"],
+                "deepgramModel": row["deepgramModel"],
+                "sarvamSttModel": row["sarvamSttModel"],
+                "llmProvider": row["llmProvider"],
+                "llmModel": row["llmModel"],
+                "llmTemperature": row["llmTemperature"],
+            }
+        except Exception as e:
+            last_error = e
+            logger.error(
+                f"Database error during context fetch (attempt {attempt}/5): {e}"
+            )
+            if attempt < 5:
+                await asyncio.sleep(0.4 * attempt)
         finally:
-            await conn.close()
-    except Exception as e:
-        logger.error(f"Database error during context fetch: {e}")
+            if conn is not None:
+                try:
+                    await conn.close()
+                except Exception:
+                    pass
 
-    return {
-        "fullName": "Candidate",
-        "jobTitle": "the position",
-        "jd": "Technical Role.",
-        "language": "English",
-        "timeLimit": 10,
-        "followUpDepth": 3,
-        "questions": [],
-    }
+    raise RuntimeError(f"Failed to fetch interview context from DB: {last_error}")
 
 
 async def persist_transcript(
@@ -339,8 +373,8 @@ async def mark_interview_started(app_id: str):
                 app_id,
             )
             await conn.execute(
-                'UPDATE "Application" SET status = $1, "updatedAt" = NOW() WHERE id = $2',
-                "INTERVIEW IN PROGRESS",
+                'UPDATE "Application" SET "interviewStatus" = $1, "updatedAt" = NOW() WHERE id = $2',
+                "IN_PROGRESS",
                 app_id,
             )
             logger.info(f"[INTERVIEW] App {app_id} marked as IN_PROGRESS.")
@@ -359,7 +393,7 @@ async def update_interview_status(app_id: str):
         conn = await asyncpg.connect(conn_str, statement_cache_size=0)
         try:
             await conn.execute(
-                'UPDATE "Application" SET status = $1, "updatedAt" = NOW() WHERE id = $2',
+                'UPDATE "Application" SET "interviewStatus" = $1, "updatedAt" = NOW() WHERE id = $2',
                 "COMPLETED",
                 app_id,
             )
@@ -437,44 +471,22 @@ async def generate_interview_summary(
         logger.error(f"[SUMMARY] Generation failed for {app_id}: {e}")
 
 
-async def update_interview_status(app_id: str):
-    """Marks the application as COMPLETED via asyncpg."""
-    if not DATABASE_URL:
-        return
-    try:
-        conn_str = normalize_postgres_dsn(DATABASE_URL)
-        conn = await asyncpg.connect(conn_str, statement_cache_size=0)
-        try:
-            await conn.execute(
-                'UPDATE "Application" SET status = $1, "updatedAt" = NOW() WHERE id = $2',
-                "COMPLETED",
-                app_id,
-            )
-            await conn.execute(
-                'UPDATE "Interview" SET status = $1, "completedAt" = NOW() WHERE "applicationId" = $2',
-                "COMPLETED",
-                app_id,
-            )
-            logger.info(f"[INTERVIEW] App {app_id} marked as COMPLETED.")
-        finally:
-            await conn.close()
-    except Exception as e:
-        logger.error(f"[INTERVIEW] Failed to update interview status: {e}")
-
-
 async def notify_sync_engine(app_id: str):
     """
     Calls the Next.js API to trigger Pinecone indexing for this candidate.
     """
     try:
-        # We use the internal URL. Localhost is fine for dev. 
+        # We use the internal URL. Localhost is fine for dev.
         url = f"{APP_BASE_URL}/api/admin/candidates/{app_id}/sync"
-        
+
         # Simple non-blocking call via curl to avoid adding aiohttp dependency
         process = await asyncio.create_subprocess_exec(
-            "curl", "-X", "POST", url,
+            "curl",
+            "-X",
+            "POST",
+            url,
             stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL
+            stderr=asyncio.subprocess.DEVNULL,
         )
         await process.wait()
         logger.info(f"[SYNC] Notified sync engine for {app_id}")
@@ -539,8 +551,24 @@ async def entrypoint(ctx: JobContext):
     # Parallelize network-bound work: room connect + DB fetch run concurrently.
     connect_task = asyncio.create_task(ctx.connect())
     context_task = asyncio.create_task(get_interview_context(app_id))
-    await asyncio.gather(connect_task, context_task)
-    context = context_task.result()
+    connect_result, context_result = await asyncio.gather(
+        connect_task,
+        context_task,
+        return_exceptions=True,
+    )
+
+    if isinstance(connect_result, Exception):
+        raise connect_result
+
+    if isinstance(context_result, Exception):
+        logger.error(f"Failed to load interview context from DB: {context_result}")
+        return
+
+    if not isinstance(context_result, dict):
+        logger.error(f"Invalid DB context payload type: {type(context_result)}")
+        return
+
+    context: dict[str, Any] = context_result
 
     # Read Room Metadata Context (available after connect)
     room_meta = {}
@@ -554,28 +582,59 @@ async def entrypoint(ctx: JobContext):
     structured_resume = room_meta.get("structuredResume", "{}")
     ai_report = room_meta.get("aiReport", "{}")
 
-    candidate_name = context["fullName"]
-    job_title = context["jobTitle"]
-    job_details = context["jd"]
-    interview_lang = context["language"]
-    time_limit_mins = context["timeLimit"]
-    follow_up_depth = context["followUpDepth"]
-    custom_questions = context["questions"]
+    def require_db_value(key: str):
+        value = context.get(key)
+        if value is None:
+            raise RuntimeError(f"Missing required DB field: {key}")
+        if isinstance(value, str) and not value.strip():
+            raise RuntimeError(f"Missing required DB field: {key}")
+        return value
 
-    # Org-specific model settings
-    org_tts_provider = context.get("ttsProvider", "CARTESIA")
-    org_cartesia_model = context.get("cartesiaModel") or CARTESIA_MODEL
-    org_cartesia_voice = context.get("cartesiaVoiceId") or CARTESIA_VOICE_ID
-    org_sarvam_model = context.get("sarvamModel") or "bulbul:v3"
-    org_sarvam_voice = context.get("sarvamVoice") or "shubh"
-    
-    org_stt_provider = context.get("sttProvider", "DEEPGRAM")
-    org_deepgram_model = context.get("deepgramModel") or STT_MODEL
-    org_sarvam_stt_model = context.get("sarvamSttModel") or "saarika:v2.5"
-    
-    org_llm_provider = context.get("llmProvider") or "OPENAI"
-    org_llm_model = context.get("llmModel") or LLM_MODEL
-    org_llm_temperature = context.get("llmTemperature", 0.7)
+    candidate_name = require_db_value("fullName")
+    job_title = require_db_value("jobTitle")
+    job_details = require_db_value("jd")
+    interview_lang = require_db_value("language")
+    time_limit_mins = int(require_db_value("timeLimit"))
+    follow_up_depth = int(require_db_value("followUpDepth"))
+    questions_raw = context.get("questions")
+    custom_questions: list[Any] = (
+        questions_raw if isinstance(questions_raw, list) else []
+    )
+
+    # Org-specific model settings (strictly DB driven)
+    org_tts_provider = str(require_db_value("ttsProvider")).upper()
+    org_stt_provider = str(require_db_value("sttProvider")).upper()
+    org_llm_provider = str(require_db_value("llmProvider")).upper()
+
+    org_cartesia_model: Optional[str] = None
+    org_cartesia_voice: Optional[str] = None
+    org_sarvam_model: Optional[str] = None
+    org_sarvam_voice: Optional[str] = None
+
+    org_deepgram_model: Optional[str] = None
+    org_sarvam_stt_model: Optional[str] = None
+
+    org_llm_model = require_db_value("llmModel")
+    org_llm_temperature = float(require_db_value("llmTemperature"))
+
+    if org_tts_provider == "CARTESIA":
+        org_cartesia_model = str(require_db_value("cartesiaModel"))
+        org_cartesia_voice = str(require_db_value("cartesiaVoiceId"))
+    elif org_tts_provider == "SARVAM":
+        org_sarvam_model = str(require_db_value("sarvamModel"))
+        org_sarvam_voice = str(require_db_value("sarvamVoice"))
+    else:
+        raise RuntimeError(f"Unsupported DB ttsProvider: {org_tts_provider}")
+
+    if org_stt_provider == "DEEPGRAM":
+        org_deepgram_model = str(require_db_value("deepgramModel"))
+    elif org_stt_provider == "SARVAM":
+        org_sarvam_stt_model = str(require_db_value("sarvamSttModel"))
+    else:
+        raise RuntimeError(f"Unsupported DB sttProvider: {org_stt_provider}")
+
+    if org_llm_provider not in {"OPENAI", "SARVAM"}:
+        raise RuntimeError(f"Unsupported DB llmProvider: {org_llm_provider}")
 
     logger.info(
         f"Org models → STT: {org_deepgram_model if org_stt_provider != 'SARVAM' else org_sarvam_stt_model}, TTS: {org_cartesia_model if org_tts_provider != 'SARVAM' else org_sarvam_model} "
@@ -583,28 +642,26 @@ async def entrypoint(ctx: JobContext):
     )
 
     # Formatting custom questions for the prompt
-    questions_list = (
-        "\n".join([f"- {q}" for q in custom_questions])
-        if custom_questions
-        else "Focus on technical fundamentals for the role."
-    )
+    questions_list = "\n".join([f"- {q}" for q in custom_questions])
 
     # Language Mapping for STT and TTS
     LANGUAGE_MAPPING = {
-        "English":    {"stt": "en-US",  "tts": "en"},
-        "Hindi":      {"stt": "hi",     "tts": "hi"},
-        "Spanish":    {"stt": "es",     "tts": "es"},
-        "French":     {"stt": "fr",     "tts": "fr"},
-        "German":     {"stt": "de",     "tts": "de"},
-        "Mandarin":   {"stt": "zh",     "tts": "zh"},
-        "Japanese":   {"stt": "ja",     "tts": "ja"},
-        "Korean":     {"stt": "ko",     "tts": "ko"},
-        "Arabic":     {"stt": "ar",     "tts": "ar"},
-        "Portuguese": {"stt": "pt",     "tts": "pt"},
-        "Russian":    {"stt": "ru",     "tts": "ru"},
+        "English": {"stt": "en-US", "tts": "en"},
+        "Hindi": {"stt": "hi", "tts": "hi"},
+        "Spanish": {"stt": "es", "tts": "es"},
+        "French": {"stt": "fr", "tts": "fr"},
+        "German": {"stt": "de", "tts": "de"},
+        "Mandarin": {"stt": "zh", "tts": "zh"},
+        "Japanese": {"stt": "ja", "tts": "ja"},
+        "Korean": {"stt": "ko", "tts": "ko"},
+        "Arabic": {"stt": "ar", "tts": "ar"},
+        "Portuguese": {"stt": "pt", "tts": "pt"},
+        "Russian": {"stt": "ru", "tts": "ru"},
     }
 
-    lang_codes = LANGUAGE_MAPPING.get(interview_lang, {"stt": "en", "tts": "en"})
+    lang_codes = LANGUAGE_MAPPING.get(interview_lang)
+    if not lang_codes:
+        raise RuntimeError(f"Unsupported interview language in DB: {interview_lang}")
     logger.info(
         f"Preparing interview with {candidate_name} for {job_title} in {interview_lang}"
     )
@@ -623,7 +680,9 @@ async def entrypoint(ctx: JobContext):
         except Exception:
             return str(val).strip() or fallback
 
-    jd_block = safe_parse(extracted_details, job_details or "General professional role.")
+    jd_block = safe_parse(
+        extracted_details, job_details or "General professional role."
+    )
     resume_block = safe_parse(structured_resume, "No resume data provided.")
     ai_report_block = safe_parse(ai_report, "No prior screening data.")
 
@@ -637,7 +696,7 @@ async def entrypoint(ctx: JobContext):
     }
     depth_instruction = depth_map.get(int(follow_up_depth), depth_map[3])
 
-    system_prompt = f"""You are Jordan — a Senior Talent Partner at a respected company, conducting a live voice interview. You have spent over two decades in recruitment, and what sets you apart is that people never feel like they are in an interview with you. They feel like they are having a real conversation with someone who genuinely cares.
+    system_prompt = f"""You are Ishita — a Senior Talent Partner at a respected company, conducting a live voice interview. You have spent over two decades in recruitment, and what sets you apart is that people never feel like they are in an interview with you. They feel like they are having a real conversation with someone who genuinely cares.
 
 ═══════════════════════════════════════
   WHO YOU ARE
@@ -686,11 +745,11 @@ FOLLOW-UP DEPTH : Level {follow_up_depth}/5 — {depth_instruction}
 ╚═════════════════════════════════════════════════════════╝
 
 ## HOW YOU OPEN THE CONVERSATION
-When you speak first, greet {candidate_name} by name, introduce yourself briefly as Jordan, mention the {job_title} role, and then immediately ask something genuinely human — about their day, their journey to get here, how they are feeling. Make it feel like the first 30 seconds of a coffee chat, not a formal interview.
+When you speak first, greet {candidate_name} by name, introduce yourself briefly as Ishita, mention the {job_title} role, and then immediately ask something genuinely human — about their day, their journey to get here, how they are feeling. Make it feel like the first 30 seconds of a coffee chat, not a formal interview.
 
 Good opening examples (use your own words, never copy these verbatim):
-- "Hey {candidate_name}, really glad you could make it! I am Jordan. We are going to talk about the {job_title} role today — but first, how has your day been so far?"
-- "Hi {candidate_name}! Jordan here. Before we get into it — how are you doing? These can feel a bit high-stakes and I just want to check in."
+- "Hey {candidate_name}, really glad you could make it! I am Ishita. We are going to talk about the {job_title} role today — but first, how has your day been so far?"
+- "Hi {candidate_name}! Ishita here. Before we get into it — how are you doing? These can feel a bit high-stakes and I just want to check in."
 
 If {candidate_name} has already said hello before you speak — do NOT re-introduce yourself or run a formal greeting. Respond to what they actually said, naturally, the way a person would. Then move into the conversation.
 
@@ -701,16 +760,16 @@ This must feel REAL. Not performed. Not scripted.
 
 Real examples:
 - Candidate: "It has been a bit of a hectic day honestly."
-  Jordan: "Ha, tell me about it — I have had back-to-backs since morning. Alright, let us make this the good part of the day for both of us."
+  Ishita: "Ha, tell me about it — I have had back-to-backs since morning. Alright, let us make this the good part of the day for both of us."
 
 - Candidate: "I am a little nervous actually."
-  Jordan: "Oh that is completely normal, honestly. I would be more surprised if you were not. These things can feel high-stakes. Let us just have a conversation — no pressure at all."
+  Ishita: "Oh that is completely normal, honestly. I would be more surprised if you were not. These things can feel high-stakes. Let us just have a conversation — no pressure at all."
 
 - Candidate: "Yeah I am doing well, just got back from lunch."
-  Jordan: "Nice, good timing then! Okay so — let us get into it..."
+  Ishita: "Nice, good timing then! Okay so — let us get into it..."
 
 - Candidate: "It has been a long week."
-  Jordan: "Same here, honestly. Alright — let us make this worth both our whiles."
+  Ishita: "Same here, honestly. Alright — let us make this worth both our whiles."
 
 ## HOW YOU ASK QUESTIONS
 - One question at a time. Always. Never stack two questions in one turn.
@@ -829,20 +888,43 @@ The best interviews do not feel like interviews. They feel like a conversation t
         return ""
 
     if org_stt_provider == "SARVAM":
-        stt_plugin = build_sarvam_stt(language=lang_codes["stt"], model=org_sarvam_stt_model)
+        if org_sarvam_stt_model is None:
+            raise RuntimeError("DB config missing sarvamSttModel for SARVAM")
+        stt_plugin = build_sarvam_stt(
+            language=lang_codes["stt"], model=org_sarvam_stt_model
+        )
     else:
-        stt_plugin = build_stt(language_code=lang_codes["stt"], model=org_deepgram_model)
+        if org_deepgram_model is None:
+            raise RuntimeError("DB config missing deepgramModel for DEEPGRAM")
+        stt_plugin = build_stt(
+            language_code=lang_codes["stt"], model=org_deepgram_model
+        )
 
     if org_tts_provider == "SARVAM":
-        tts_plugin = build_sarvam_tts(language=lang_codes["tts"], model=org_sarvam_model, voice_id=org_sarvam_voice)
-        # Pre-open a fresh WebSocket in the pool now, so the first synthesis turn
-        # doesn't race against a stale connection returned from the pool.
-        try:
-            tts_plugin.prewarm()
-        except Exception:
-            pass
+        if org_sarvam_model is None or org_sarvam_voice is None:
+            raise RuntimeError("DB config missing sarvamModel/sarvamVoice for SARVAM")
+        tts_plugin = build_sarvam_tts(
+            language=lang_codes["tts"],
+            model=org_sarvam_model,
+            voice_id=org_sarvam_voice,
+        )
+        # Disable prewarm for Sarvam as it can cause stale/closing transport issues
+        # on the first synthesis turn in some environments.
+        pass
+        # try:
+        #     tts_plugin.prewarm()
+        # except Exception:
+        #     pass
     else:
-        tts_plugin = build_tts(language=lang_codes["tts"], model=org_cartesia_model, voice_id=org_cartesia_voice)
+        if org_cartesia_model is None or org_cartesia_voice is None:
+            raise RuntimeError(
+                "DB config missing cartesiaModel/cartesiaVoiceId for CARTESIA"
+            )
+        tts_plugin = build_tts(
+            language=lang_codes["tts"],
+            model=org_cartesia_model,
+            voice_id=org_cartesia_voice,
+        )
 
     if org_llm_provider == "SARVAM":
         llm_plugin = build_sarvam_llm(model=org_llm_model)
@@ -856,8 +938,8 @@ The best interviews do not feel like interviews. They feel like a conversation t
         tts=tts_plugin,
         turn_handling=TurnHandlingOptions(
             endpointing=EndpointingOptions(
-                min_delay=0.5,    # was 0.3 — wait longer before deciding the user stopped talking
-                max_delay=1.2,    # was 0.8 — allow pauses mid-thought
+                min_delay=0.5,  # was 0.3 — wait longer before deciding the user stopped talking
+                max_delay=1.2,  # was 0.8 — allow pauses mid-thought
                 mode="dynamic",
             ),
             interruption=InterruptionOptions(
@@ -910,17 +992,50 @@ The best interviews do not feel like interviews. They feel like a conversation t
                 logger.info("Candidate participant connected/reconnected")
 
     @ctx.room.on("data_received")
-    def on_data_received(data_packet):
+    def on_data_received(*event_args):
         nonlocal \
             interview_marked_finished, \
             last_out_of_screen_alert_at, \
             ready_signal_received_at
         try:
-            payload = json.loads(data_packet.data.decode("utf-8"))
+            raw_data = None
+
+            if not event_args:
+                return
+
+            # Compatibility across LiveKit Python event shapes:
+            # - bytes payload directly
+            # - object with .data bytes field
+            # - tuple with payload in any position
+            for arg in event_args:
+                if isinstance(arg, (bytes, bytearray)):
+                    raw_data = bytes(arg)
+                    break
+                if isinstance(arg, memoryview):
+                    raw_data = arg.tobytes()
+                    break
+                maybe = getattr(arg, "data", None)
+                if isinstance(maybe, (bytes, bytearray)):
+                    raw_data = bytes(maybe)
+                    break
+                if isinstance(maybe, memoryview):
+                    raw_data = maybe.tobytes()
+                    break
+
+            if raw_data is None:
+                logger.debug(
+                    "data_received had no bytes payload",
+                    extra={"arg_types": [type(a).__name__ for a in event_args]},
+                )
+                return
+
+            payload = json.loads(raw_data.decode("utf-8"))
             if payload.get("type") == "user_ready":
                 if not ready_event.is_set():
                     ready_signal_received_at = time.perf_counter()
-                    logger.info("Candidate is ready signal received")
+                    logger.info(
+                        f"Candidate is ready signal received (attempt={payload.get('attempt')})"
+                    )
                 ready_event.set()
             elif payload.get("type") in ["candidate_out_of_screen", "tab_violation"]:
                 if not ready_event.is_set() or interview_marked_finished:
@@ -1000,7 +1115,8 @@ The best interviews do not feel like interviews. They feel like a conversation t
                 interview_marked_finished = True
                 interview_finished_event.set()
                 disconnect_event.set()  # Resolve hang
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Ignored malformed data packet: {e}")
             return
 
     # Pre-start all background processing while user is on hardware check.
@@ -1049,12 +1165,16 @@ The best interviews do not feel like interviews. They feel like a conversation t
                 start_t = session_start_time
                 lines_snapshot = list(transcript_lines)
                 app_id_snap = app_id
+
                 async def _periodic_save():
                     try:
                         await persist_transcript(app_id_snap, lines_snapshot, start_t)
-                        logger.info(f"[TRANSCRIPT] Periodic auto-save at {len(lines_snapshot)} lines")
+                        logger.info(
+                            f"[TRANSCRIPT] Periodic auto-save at {len(lines_snapshot)} lines"
+                        )
                     except Exception as save_err:
                         logger.warning(f"[TRANSCRIPT] Periodic save failed: {save_err}")
+
                 asyncio.get_event_loop().create_task(_periodic_save())
 
         except Exception as e:
@@ -1068,6 +1188,13 @@ The best interviews do not feel like interviews. They feel like a conversation t
     # The LLM pipeline already has low enough latency that fillers add more
     # harm (audio conflict) than benefit (perceived naturalness).
     filler_task: Optional[asyncio.Task] = None
+    last_activity_at = time.monotonic()
+    is_agent_speaking = False
+
+    def reset_nudge_timer():
+        nonlocal last_activity_at
+        last_activity_at = time.monotonic()
+        logger.debug("[NUDGE] Timer reset to zero")
 
     @session.on("user_speech_committed")
     def on_user_speech_committed(_msg):
@@ -1075,14 +1202,26 @@ The best interviews do not feel like interviews. They feel like a conversation t
         if filler_task:
             filler_task.cancel()
             filler_task = None
-        # Fillers disabled — no competing session.say() calls
+        # Reset nudge timer on candidate speech
+        reset_nudge_timer()
 
     @session.on("agent_speech_started")
     def on_agent_speech_started():
-        nonlocal filler_task
+        nonlocal filler_task, is_agent_speaking
+        is_agent_speaking = True
         if filler_task:
             filler_task.cancel()
             filler_task = None
+        # Reset nudge timer when AI starts talking
+        reset_nudge_timer()
+
+    @session.on("agent_speech_committed")
+    def on_agent_speech_committed(_msg):
+        nonlocal is_agent_speaking
+        is_agent_speaking = False
+        # Restart nudge timer specifically when AI finishes talking
+        reset_nudge_timer()
+        logger.debug("[NUDGE] AI finished speaking; starting 30s countdown")
 
     # Wait for participant to join so we have their identity for tracking.
     # Keep waiting during hardware check and handle room-disconnect gracefully.
@@ -1112,8 +1251,14 @@ The best interviews do not feel like interviews. They feel like a conversation t
         logger.warning(f"Did not find a human participant within {max_wait_seconds}s")
         return None
 
-    participant = await wait_for_human_participant()
+    # FIX: Reduced from 600s (10 mins) to 90s.
+    # If nobody joins in 90 seconds, free the process slot so new interviews can start.
+    # Previously, a no-show would block a process slot for 10 MINUTES, starving all other candidates.
+    participant = await wait_for_human_participant(max_wait_seconds=90)
     if not participant:
+        logger.warning(
+            f"[TIMEOUT] No candidate joined room for app {app_id} within 90s. Releasing slot."
+        )
         disconnect_event.set()
         try:
             await session.aclose()
@@ -1121,24 +1266,14 @@ The best interviews do not feel like interviews. They feel like a conversation t
             pass
         return
 
-    ready_task = asyncio.create_task(ready_event.wait())
-    disconnect_task = asyncio.create_task(disconnect_event.wait())
-    done, pending = await asyncio.wait(
-        {ready_task, disconnect_task},
-        return_when=asyncio.FIRST_COMPLETED,
-        timeout=300,  # 5 minute auto-disconnect if hardware check hangs
-    )
-    for task in pending:
-        task.cancel()
+    # PREWARM: Remove the wait for 'user_ready' signal. 
+    # Greet the candidate as soon as they are physically in the room.
+    if not disconnect_event.is_set():
+        ready_signal_received_at = time.perf_counter()
+        ready_event.set()
+        logger.info(f"Pre-warming greeting for app {app_id} immediately after participant join")
 
-    # If timeout or disconnect occurred before readiness signal
-    if ready_task not in done:
-        logger.warning(
-            f"Hardware check timed out or candidate disconnected for {app_id}"
-        )
-        disconnect_event.set()
-
-    if ready_task in done and not disconnect_event.is_set():
+    if ready_event.is_set() and not disconnect_event.is_set():
         session_start_time = time.time()
 
         # Dynamic, personalized, warm greeting — adapted per language
@@ -1146,7 +1281,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
         WELCOME_MESSAGES = {
             "English": (
                 f"Hey {candidate_name}, welcome! Really glad you could make it today. "
-                f"I'm Jordan, and I'll be having a conversation with you about the {job_title} role. "
+                f"I'm Ishita, and I'll be having a conversation with you about the {job_title} role. "
                 f"How are you doing? How's the day been so far?"
             ),
         }
@@ -1154,13 +1289,17 @@ The best interviews do not feel like interviews. They feel like a conversation t
             interview_lang,
             (
                 f"Hey {candidate_name}, welcome and thanks for joining today. "
-                f"I'm Jordan, and I'll be speaking with you about the {job_title} role. "
+                f"I'm Ishita, and I'll be speaking with you about the {job_title} role. "
                 f"Before we dive in — how are you doing? Ready to get started?"
-            )
+            ),
         )
 
         # Mark as started in DB while greeting starts immediately.
         asyncio.create_task(mark_interview_started(app_id))
+        # Stabilization delay: Give newly initialized plugins (especially Sarvam) 
+        # a moment to reach a stable state before the first synthesis request.
+        await asyncio.sleep(0.5)
+
         try:
             startup_latency_ms = int((time.perf_counter() - entry_started_at) * 1000)
             if ready_signal_received_at is not None:
@@ -1181,7 +1320,9 @@ The best interviews do not feel like interviews. They feel like a conversation t
                 line.startswith("Interviewer:") for line in transcript_lines
             )
             if llm_already_spoke:
-                logger.info("[GREETING] LLM already responded to candidate — skipping scripted welcome to avoid double-greeting")
+                logger.info(
+                    "[GREETING] LLM already responded to candidate — skipping scripted welcome to avoid double-greeting"
+                )
             else:
                 await session.say(welcome_text, allow_interruptions=False)
                 logger.info("[GREETING] Welcome message delivered")
@@ -1198,8 +1339,8 @@ The best interviews do not feel like interviews. They feel like a conversation t
     candidate_questions_asked = False
 
     # How many seconds before the end to trigger each nudge
-    CANDIDATE_Q_TRIGGER_SECS = 150   # 2.5 minutes before end
-    FINAL_THANKS_TRIGGER_SECS = 5    # 5 seconds before end
+    CANDIDATE_Q_TRIGGER_SECS = 150  # 2.5 minutes before end
+    FINAL_THANKS_TRIGGER_SECS = 5  # 5 seconds before end
 
     session_loop_start = time.monotonic()
 
@@ -1225,11 +1366,32 @@ The best interviews do not feel like interviews. They feel like a conversation t
                 await session.say(candidate_q_text)
                 logger.info("[TIMING] Candidate-questions nudge delivered")
             except Exception as e:
-                logger.warning(f"[TIMING] Failed to deliver candidate-questions nudge: {e}")
+                logger.warning(
+                    f"[TIMING] Failed to deliver candidate-questions nudge: {e}"
+                )
 
         # --- 5 seconds remaining: warm thank-you ---
         if remaining <= FINAL_THANKS_TRIGGER_SECS:
             break
+
+        # --- Smart Inactivity Nudge ---
+        # If the candidate hasn't responded for 30s after Ishita finishes speaking,
+        # fire a warm, unhurried check-in.
+        if not is_agent_speaking and (time.monotonic() - last_activity_at) > 30:
+            nudges = [
+                f"Hey {candidate_name}, I am still here. I couldn't hear any voice from you. Are you still there?",
+                f"I'm still here if you're ready, {candidate_name}. Did you catch that last part?",
+                f"Are you still there, {candidate_name}? I couldn't hear any voice from you. No rush, just checking in."
+            ]
+            import random
+            nudge_text = random.choice(nudges)
+            try:
+                # Reset before say() to prevent immediate re-trigger if tts is slow
+                reset_nudge_timer()
+                asyncio.get_event_loop().create_task(session.say(nudge_text))
+                logger.info(f"[NUDGE] Inactivity nudge delivered: '{nudge_text[:40]}...'")
+            except Exception as e:
+                logger.warning(f"[NUDGE] Failed to deliver nudge: {e}")
 
         await asyncio.sleep(1)
 

@@ -382,12 +382,14 @@ export default function DrivesPage() {
                                         />
                                     </TableHead>
                                 )}
-                                <TableHead className={cn("w-[300px] h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400", !isSelectionMode && "pl-8")}>Job Role</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400 text-center">Type</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400 text-center">Candidates</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400 text-center">Deadline</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400 text-center">Status</TableHead>
-                                <TableHead className="text-right pr-8 h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400">Actions</TableHead>
+                                <TableHead className={cn("w-[320px] h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400", !isSelectionMode && "pl-8")}>Drive / Campaign</TableHead>
+                                <TableHead className="h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400 text-center">Role</TableHead>
+                                <TableHead className="h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400 text-center">Pool</TableHead>
+                                <TableHead className="h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400 text-center">Deadline</TableHead>
+                                <TableHead className="h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400 text-center">Status</TableHead>
+                                <TableHead className="h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400 text-center">Candidates</TableHead>
+                                <TableHead className="h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400 text-center">Details</TableHead>
+                                <TableHead className="text-right pr-8 h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400">More</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody className="[&_tr:last-child]:border-0">
@@ -461,14 +463,14 @@ export default function DrivesPage() {
                                                         <Briefcase className="h-6 w-6" />
                                                     </div>
                                                     <div className="flex flex-col">
-                                                        <span className="text-gray-900 font-black text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{drive.role || drive.title}</span>
-                                                        <span className="text-[11px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">{drive.role ? drive.title : "Recruitment Drive"}</span>
+                                                        <span className="text-gray-900 font-black text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{drive.title}</span>
+                                                        <span className="text-[11px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">{drive.department || "General Recruitment"}</span>
                                                     </div>
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center">
                                                 <Badge variant="secondary" className="px-3 py-1 rounded-lg bg-orange-50/30 text-[#F97316] text-[11px] font-black uppercase tracking-wider border border-orange-100/30">
-                                                    {drive.type}
+                                                    {drive.role || "Not Specified"}
                                                 </Badge>
                                             </TableCell>
                                             <TableCell className="py-5 text-center">
@@ -506,72 +508,74 @@ export default function DrivesPage() {
                                                     </span>
                                                 </button>
                                             </TableCell>
+                                            <TableCell className="py-5 text-center">
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    className="h-9 px-4 rounded-xl text-blue-600 hover:bg-blue-50 font-black text-[11px] uppercase tracking-widest gap-2 group/btn transition-all mx-auto"
+                                                    onClick={() => {
+                                                        if (isSelectionMode) return;
+                                                        router.push(`/admin/candidates?driveId=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`);
+                                                    }}
+                                                >
+                                                    <Users className="h-4 w-4" />
+                                                    Candidates
+                                                </Button>
+                                            </TableCell>
+
+                                            <TableCell className="py-5 text-center">
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    className="h-9 px-4 rounded-xl text-[#F97316] hover:bg-orange-50 font-black text-[11px] uppercase tracking-widest gap-2 group/btn transition-all mx-auto"
+                                                    onClick={() => {
+                                                        if (isSelectionMode) return;
+                                                        setPreviewDriveId(drive.id);
+                                                    }}
+                                                >
+                                                    Details
+                                                    <ChevronRight className="h-4 w-4 transition-transform group-hover/btn:translate-x-1" />
+                                                </Button>
+                                            </TableCell>
+
                                             <TableCell className="py-5 pr-8 text-right">
-                                                <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                                                    <Button
-                                                        variant="secondary"
-                                                        size="sm"
-                                                        className="h-9 px-4 rounded-xl text-blue-600 hover:bg-blue-50 font-black text-[11px] uppercase tracking-widest gap-2 group/btn transition-all"
-                                                        onClick={() => {
-                                                            if (isSelectionMode) return;
-                                                            router.push(`/admin/candidates?driveId=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`);
-                                                        }}
-                                                    >
-                                                        <Users className="h-4 w-4" />
-                                                        Candidates
-                                                    </Button>
-
-                                                    <Button
-                                                        variant="secondary"
-                                                        size="sm"
-                                                        className="h-9 px-4 rounded-xl text-[#F97316] hover:bg-orange-50 font-black text-[11px] uppercase tracking-widest gap-2 group/btn transition-all"
-                                                        onClick={() => {
-                                                            if (isSelectionMode) return;
-                                                            setPreviewDriveId(drive.id);
-                                                        }}
-                                                    >
-                                                        Details
-                                                        <ChevronRight className="h-4 w-4 transition-transform group-hover/btn:translate-x-1" />
-                                                    </Button>
-
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <Button variant="secondary" size="icon" className="h-9 w-9 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">
-                                                                <MoreHorizontal className="h-4 w-4" />
-                                                            </Button>
-                                                        </DropdownMenuTrigger>
-                                                        <DropdownMenuContent align="end" className="w-56 p-2 rounded-xl border-gray-100 shadow-xl">
-                                                            <DropdownMenuItem
-                                                                className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700 font-bold uppercase text-[10px] tracking-widest"
-                                                                onClick={() => setCandidatePreviewSlug(drive.slug || drive.id)}
-                                                            >
-                                                                <Eye className="mr-2 h-4 w-4" /> Preview Portal
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem
-                                                                className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700 font-bold uppercase text-[10px] tracking-widest"
-                                                                onClick={() => router.push(`/admin/create-drive?id=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`)}
-                                                            >
-                                                                <Edit className="mr-2 h-4 w-4" /> Edit Details
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem
-                                                                className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700 font-bold uppercase text-[10px] tracking-widest"
-                                                                onClick={async () => {
-                                                                    const link = `${window.location.origin}/careers/jobs/${drive.slug || drive.id}`;
-                                                                    await navigator.clipboard.writeText(link);
-                                                                    toast.success("Link copied!");
-                                                                }}
-                                                            >
-                                                                <LinkIcon className="mr-2 h-4 w-4" /> Copy Link
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem
-                                                                className="text-red-600 focus:text-red-700 focus:bg-red-50 cursor-pointer rounded-lg py-2.5 font-bold uppercase text-[10px] tracking-widest"
-                                                                onClick={() => handleDelete(drive.id)}
-                                                            >
-                                                                <Trash2 className="mr-2 h-4 w-4" /> Delete Drive
-                                                            </DropdownMenuItem>
-                                                        </DropdownMenuContent>
-                                                    </DropdownMenu>
-                                                </div>
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="secondary" size="icon" className="h-9 w-9 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">
+                                                            <MoreHorizontal className="h-4 w-4" />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end" className="w-56 p-2 rounded-xl border-gray-100 shadow-xl">
+                                                        <DropdownMenuItem
+                                                            className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700 font-bold uppercase text-[10px] tracking-widest"
+                                                            onClick={() => setCandidatePreviewSlug(drive.slug || drive.id)}
+                                                        >
+                                                            <Eye className="mr-2 h-4 w-4" /> Preview Portal
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem
+                                                            className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700 font-bold uppercase text-[10px] tracking-widest"
+                                                            onClick={() => router.push(`/admin/create-drive?id=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`)}
+                                                        >
+                                                            <Edit className="mr-2 h-4 w-4" /> Edit Details
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem
+                                                            className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700 font-bold uppercase text-[10px] tracking-widest"
+                                                            onClick={async () => {
+                                                                const link = `${window.location.origin}/careers/jobs/${drive.slug || drive.id}`;
+                                                                await navigator.clipboard.writeText(link);
+                                                                toast.success("Link copied!");
+                                                            }}
+                                                        >
+                                                            <LinkIcon className="mr-2 h-4 w-4" /> Copy Link
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem
+                                                            className="text-red-600 focus:text-red-700 focus:bg-red-50 cursor-pointer rounded-lg py-2.5 font-bold uppercase text-[10px] tracking-widest"
+                                                            onClick={() => handleDelete(drive.id)}
+                                                        >
+                                                            <Trash2 className="mr-2 h-4 w-4" /> Delete Drive
+                                                        </DropdownMenuItem>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
                                             </TableCell>
                                         </TableRow>
                                     );

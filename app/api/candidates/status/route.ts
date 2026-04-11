@@ -25,7 +25,6 @@ export async function GET(request: Request) {
                         id: true,
                         title: true,
                         department: true,
-                        location: true,
                         workMode: true,
                         type: true,
                         salary: true,

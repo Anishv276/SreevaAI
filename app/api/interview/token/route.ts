@@ -1,7 +1,8 @@
-import { AccessToken, AgentDispatchClient, EgressClient, EncodedFileOutput, EncodingOptionsPreset, RoomServiceClient } from "livekit-server-sdk";
+import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { interviewTokenSchema } from "@/lib/validation";
 import { prisma } from "@/lib/prisma";
+import crypto from "crypto";
 
 const DISPATCH_DEBOUNCE_MS = 45_000;
 const dispatchByRoom = new Map<string, number>();
@@ -49,14 +50,6 @@ export async function POST(req: NextRequest) {
             where: { id: applicationId },
             include: { drive: true }
         });
-
-        // ── Dev bypass: Allow testing with any application ID in development ──
-        if (!application && process.env.NODE_ENV === "development") {
-            // Find just ANY application to make it work
-            application = await prisma.application.findFirst({
-                include: { drive: true }
-            });
-        }
 
         if (!application) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
@@ -144,61 +137,17 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "AI interviewer could not be started" }, { status: 500 });
         }
 
-        // ── START SERVER-SIDE RECORDING (LiveKit Egress → Cloudflare R2) ──
-        try {
-            const egressClient = new EgressClient(toHttpUrl(rawUrl), apiKey, apiSecret);
-
-            const candidateName = (application.fullName || "candidate")
-                .replace(/[^a-zA-Z0-9_\- ]/g, "").trim().replace(/\s+/g, "_").toLowerCase();
-            const roleTitle = ((application.drive as { title?: string }).title || "interview")
-                .replace(/[^a-zA-Z0-9_\- ]/g, "").trim().replace(/\s+/g, "_").toLowerCase();
-            const timestamp = Date.now();
-
-            const fileOutput = new EncodedFileOutput({
-                filepath: `candidates/${candidateName}_${roleTitle}/recordings/interview_${applicationId}_${timestamp}.mp4`,
-                output: {
-                    case: "s3",
-                    value: {
-                        accessKey: process.env.R2_ACCESS_KEY_ID || "",
-                        secret: process.env.R2_SECRET_ACCESS_KEY || "",
-                        region: "auto",
-                        endpoint: process.env.R2_ENDPOINT || "",
-                        bucket: process.env.R2_INTERVIEW_BUCKET || "interviews",
-                        forcePathStyle: true,
-                    },
-                },
-            });
-
-            await egressClient.startRoomCompositeEgress(roomName, { file: fileOutput }, {
-                layout: "grid",
-                encodingOptions: EncodingOptionsPreset.H264_720P_30,
-                audioOnly: false,
-            });
-
-            // ── Persist the recording URL to DB so profile page can display it ──
-            const r2InterviewUrl = process.env.NEXT_PUBLIC_R2_INTERVIEW_URL || "https://pub-e4a8b24775c741f6a650def856cfec9f.r2.dev";
-            const recordingUrl = `${r2InterviewUrl.replace(/\/$/, "")}/candidates/${candidateName}_${roleTitle}/recordings/interview_${applicationId}_${timestamp}.mp4`;
-            try {
-                await prisma.interview.update({
-                    where: { applicationId },
-                    data: { interviewRecordingUrl: recordingUrl, interviewRecordedAt: new Date() }
-                });
-                console.log(`[Egress] Recording URL saved to DB: ${recordingUrl}`);
-            } catch (dbErr) {
-                console.warn("[Egress] Could not save recording URL to DB:", dbErr);
-            }
-
-            console.log(`[Egress] Started RoomComposite recording for room ${roomName}`);
-        } catch (egressErr) {
-            // Non-fatal: interview continues even if Egress service is not yet deployed
-            console.warn("[Egress] Could not start recording (non-fatal):", egressErr instanceof Error ? egressErr.message : egressErr);
-        }
+        // Recording is now started from the frontend when the agent's first greeting fires.
+        // See /api/interview/start-recording
 
         // ── ISSUE CANDIDATE JWT TOKEN ──
+        // TTL = interview duration + 30 min buffer, minimum 1h
+        const ttlSeconds = Math.max(3600, durationSeconds + 1800);
+
         const at = new AccessToken(apiKey, apiSecret, {
-            identity: participantName + "_" + Math.random().toString(36).substring(7),
+            identity: participantName + "_" + crypto.randomUUID().slice(0, 8),
             name: participantName,
-            ttl: "1h",
+            ttl: ttlSeconds,
         });
 
         at.addGrant({
@@ -206,7 +155,7 @@ export async function POST(req: NextRequest) {
             room: roomName,
             canPublish: true,
             canSubscribe: true,
-            canPublishData: true,
+            canPublishData: false,
         });
 
         const token = await at.toJwt();

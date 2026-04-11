@@ -83,6 +83,7 @@ function CreateDriveForm() {
 
     // Lifted state
     const [aiEnabled, setAiEnabled] = useState(true);
+    const [shortlistMode, setShortlistMode] = useState<"automatic" | "manual">("automatic");
     const [weights, setWeights] = useState<ScreeningConfig>({ threshold: 60 });
     const [customFields, setCustomFields] = useState<CustomField[]>([]);
     const [isPassportRequired, setIsPassportRequired] = useState(false);
@@ -154,6 +155,9 @@ function CreateDriveForm() {
                     } catch (e) { console.error("Failed to parse reg fields", e); }
                 }
                 setIsPassportRequired((drive as any).isPassportRequired || false);
+                if ((drive as any).shortlistMode) {
+                    setShortlistMode((drive as any).shortlistMode as "automatic" | "manual");
+                }
             }
         }
     }, [isEditMode, driveId, jobs]);
@@ -470,6 +474,7 @@ function CreateDriveForm() {
             extractedDetails: formData.extractedDetails || {},
             screeningThreshold: weights?.threshold || 0,
             isPassportRequired: isPassportRequired,
+            shortlistMode: shortlistMode,
         };
         
         console.log("handlePublish called. isEditMode:", isEditMode, "Data:", jobData);
@@ -767,6 +772,8 @@ function CreateDriveForm() {
                             setConfig={setWeights}
                             aiEnabled={aiEnabled}
                             setAiEnabled={setAiEnabled}
+                            shortlistMode={shortlistMode}
+                            setShortlistMode={setShortlistMode}
                         />
                     )}
                     {currentStep === 3 && (

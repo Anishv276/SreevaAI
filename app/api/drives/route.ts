@@ -194,6 +194,7 @@ export async function POST(request: Request) {
                 aiFollowUpDepth: data.interviewFollowUp || 3,
                 interviewQuestions: JSON.stringify(data.interviewQuestions || []),
                 isPassportRequired: data.isPassportRequired || false,
+                shortlistMode: data.shortlistMode || "automatic",
 
                 orgId: (session as any).orgId,
                 creatorId: (session as any).userId,

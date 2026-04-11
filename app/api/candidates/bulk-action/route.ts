@@ -11,7 +11,7 @@ export async function POST(request: Request) {
         const orgId = session.orgId;
         if (!orgId) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
-        const { ids, action }: { ids: string[]; action: "hire" | "reject" | "delete" } = await request.json();
+        const { ids, action }: { ids: string[]; action: "hire" | "reject" | "delete" | "shortlist" | "not_hired" } = await request.json();
 
         if (!ids?.length || !action) {
             return NextResponse.json({ error: "ids and action are required" }, { status: 400 });
@@ -52,29 +52,48 @@ export async function POST(request: Request) {
             return NextResponse.json({ message: `${validIds.length} candidates deleted` });
         }
 
-        if (action === "hire" || action === "reject") {
-            const emailStatus = action === "hire" ? "Hired" : "REJECTED";
+        const careersUrl = process.env.NEXT_PUBLIC_APP_URL
+            ? `${process.env.NEXT_PUBLIC_APP_URL}/careers`
+            : "https://lumoscale.co/careers";
 
-            if (action === "hire") {
-                await prisma.application.updateMany({
-                    where: { id: { in: validIds } },
-                    data: { hiringStatus: "hired", resumeStatus: "shortlisted", interviewStatus: "finished" },
-                });
-            } else {
-                await prisma.application.updateMany({
-                    where: { id: { in: validIds } },
-                    data: { 
-                        resumeStatus: "rejected",
-                        interviewStatus: "Not Qualified",
-                        hiringStatus: "Not Shortlisted"
-                    },
-                });
-            }
+        if (action === "shortlist") {
+            // Shortlist: set resumeStatus to shortlisted, create interview invites, send emails
+            await prisma.application.updateMany({
+                where: { id: { in: validIds } },
+                data: { resumeStatus: "shortlisted" },
+            });
 
-            // Send emails in parallel (fire and forget — don't block response)
-            const careersUrl = process.env.NEXT_PUBLIC_APP_URL
-                ? `${process.env.NEXT_PUBLIC_APP_URL}/careers`
-                : "https://lumoscale.co/careers";
+            // Create interview records and send emails
+            await Promise.allSettled(applications.map(async (app) => {
+                const interview = await (prisma as any).interview.upsert({
+                    where: { applicationId: app.id },
+                    update: { expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000), status: "PENDING" },
+                    create: { applicationId: app.id, expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000), status: "PENDING" },
+                });
+                const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${app.id}?token=${interview.accessToken}`;
+                return sendApplicationStatusEmail({
+                    email: app.email,
+                    fullName: app.fullName,
+                    jobTitle: app.drive.title,
+                    orgId: app.drive.orgId ?? undefined,
+                    status: "SHORTLISTED",
+                    score: 0,
+                    interviewLink,
+                });
+            }));
+
+            return NextResponse.json({ message: `${validIds.length} candidates shortlisted` });
+        }
+
+        if (action === "not_hired" || action === "reject") {
+            await prisma.application.updateMany({
+                where: { id: { in: validIds } },
+                data: {
+                    resumeStatus: "rejected",
+                    interviewStatus: "Not Qualified",
+                    hiringStatus: "Not Shortlisted",
+                },
+            });
 
             Promise.allSettled(
                 applications.map(app =>
@@ -83,14 +102,36 @@ export async function POST(request: Request) {
                         fullName: app.fullName,
                         jobTitle: app.drive.title,
                         orgId: app.drive.orgId ?? undefined,
-                        status: emailStatus as any,
+                        status: "REJECTED",
                         score: 0,
-                        ...(action === "reject" ? { interviewLink: careersUrl } : {}),
+                        interviewLink: careersUrl,
                     })
                 )
             ).catch(() => {});
 
-            return NextResponse.json({ message: `${validIds.length} candidates ${action.toLowerCase()}` });
+            return NextResponse.json({ message: `${validIds.length} candidates marked as not hired` });
+        }
+
+        if (action === "hire") {
+            await prisma.application.updateMany({
+                where: { id: { in: validIds } },
+                data: { hiringStatus: "hired", resumeStatus: "shortlisted", interviewStatus: "finished" },
+            });
+
+            Promise.allSettled(
+                applications.map(app =>
+                    sendApplicationStatusEmail({
+                        email: app.email,
+                        fullName: app.fullName,
+                        jobTitle: app.drive.title,
+                        orgId: app.drive.orgId ?? undefined,
+                        status: "Hired",
+                        score: 0,
+                    })
+                )
+            ).catch(() => {});
+
+            return NextResponse.json({ message: `${validIds.length} candidates hired` });
         }
 
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
