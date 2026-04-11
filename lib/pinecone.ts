@@ -50,7 +50,7 @@ export async function upsertCandidateEmbedding(
                 values: vector,
                 metadata: metadata as any,
             },
-        ]);
+        ] as any);
         console.log(`[PINECONE_UPSERT_SUCCESS]: ${metadata.fullName} (${metadata.type})`);
     } catch (error: any) {
         console.error("[PINECONE_UPSERT_ERROR]:", error.message);
@@ -86,8 +86,10 @@ export async function queryCandidates(
  */
 export async function deleteCandidateEmbeddings(applicationId: string) {
     try {
-        // We use a filter to delete all chunks (resume, transcript, etc.) for this app
-        await pineconeIndex.deleteMany({ applicationId: { "$eq": applicationId } });
+        // Delete all chunks (resume, transcript, etc.) for this application
+        // Use deleteMany with a filter — cast to any to handle SDK version differences
+        await (pineconeIndex as any).deleteMany({ filter: { applicationId: { "$eq": applicationId } } })
+            .catch(() => pineconeIndex.deleteMany({ applicationId: { "$eq": applicationId } } as any));
         console.log(`[PINECONE_DELETE_SUCCESS]: ${applicationId}`);
     } catch (error: any) {
         console.error("[PINECONE_DELETE_ERROR]:", error.message);

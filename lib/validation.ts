@@ -60,6 +60,7 @@ export const createDriveSchema = z.object({
   }).optional(),
   status: z.enum(["ACTIVE", "CLOSED", "DISABLED"]).optional(),
   isPassportRequired: z.boolean().optional(),
+  shortlistMode: z.enum(["automatic", "manual"]).optional(),
 });
 
 export const updateDriveSchema = createDriveSchema.partial();

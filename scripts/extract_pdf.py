@@ -835,20 +835,35 @@ Return ONLY valid JSON in this exact schema:
 """
 
     completion = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         temperature=0,
         messages=[
             {
                 "role": "system",
                 "content": (
+                    # Transferable skills — credit non-obvious domain competencies
                     "A Marketing analyst running A/B tests has statistical thinking. "
                     "A banker automating reconciliation has process automation skills. Credit these when relevant. "
+
+                    # Evidence discipline — no vague adjectives, only concrete facts
                     "EVIDENCE DISCIPLINE: Every strength, gap, and claim MUST cite a company name, tool name, "
-                    "project name, or metric. FORBIDDEN: 'strong communicator', 'team player', 'has experience with'. "
+                    "project name, or metric. FORBIDDEN: 'strong communicator', 'team player', 'has experience with', "
+                    "'passionate', 'motivated'. "
                     "REQUIRED pattern: 'At [Company], built [thing] using [tool] that [outcome]'. "
-                    "If status is Rejected — be direct and specific. No false hope. "
-                    "If Borderline — explain EXACTLY what would push them to Shortlisted. "
-                    "No hallucinations. No gender/age/nationality bias. "
+
+                    # Tone standards — professional, respectful, constructive
+                    "TONE STANDARDS (NON-NEGOTIABLE): "
+                    "Write in professional, respectful, and constructive language at all times. "
+                    "If status is Rejected — be specific and factual about what is missing, but never dismissive or unkind. "
+                    "Frame gaps as 'requires development in X' or 'no evidence of Y found' — NOT as personal failures. "
+                    "If status is Borderline — explain PRECISELY what skills or experience would move them to Shortlisted. "
+                    "Every candidate, regardless of outcome, deserves a report that is fair, accurate, and professional. "
+
+                    # Bias prohibition
+                    "No hallucinations. No gender, age, nationality, or name-based bias. "
+                    "Do not infer personality, attitude, or cultural fit from resume alone. "
+
+                    # Output format
                     "Output ONLY valid JSON. No markdown. No code fences. No extra text."
                 ),
             },
@@ -1388,8 +1403,8 @@ Resume:
                 "ai_verdict": f"Status: {score_result['status']}. Score: {score_result['score']}.",
             }
 
-    # gpt-4o for all types — resume extraction quality is the foundation of scoring accuracy
-    model = "gpt-4o"
+    # gpt-4o-mini for all types
+    model = "gpt-4o-mini"
     temperature = 0
 
     system_prompt = (

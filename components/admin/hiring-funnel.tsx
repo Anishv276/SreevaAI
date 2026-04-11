@@ -23,7 +23,7 @@ interface HiringFunnelProps {
 
 function buildUrl(range: DateRange) {
     const base = "/api/admin/stats";
-    if (range.type === "custom") return `${base}?range=custom&from=${range.from}&to=${range.to}`;
+    if (range.type === "custom" && "from" in range) return `${base}?range=custom&from=${(range as any).from}&to=${(range as any).to}`;
     return `${base}?range=${range.type}`;
 }
 
@@ -31,7 +31,7 @@ function rangeLabel(range: DateRange) {
     if (range.type === "today") return "Today";
     if (range.type === "week") return "This week";
     if (range.type === "month") return "This month";
-    return `${range.from} – ${range.to}`;
+    return "from" in range ? `${(range as any).from} – ${(range as any).to}` : "Custom";
 }
 
 const STAGES = [

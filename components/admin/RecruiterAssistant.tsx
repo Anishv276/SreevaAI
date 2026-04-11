@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { 
     X, 
     Send, 
@@ -65,13 +65,29 @@ export function RecruiterAssistant() {
         }
     }, [messages, isLoading]);
 
-    const renderBoldText = (text: string) => {
-        const parts = text.split(/(\*\*.*?\*\*)/g);
+    // Renders inline markdown: **bold** and [text](url) links
+    const renderInlineMarkdown = (text: string): React.ReactNode[] => {
+        // Split on bold markers and markdown links
+        const parts = text.split(/(\*\*.*?\*\*|\[[^\]]+\]\([^)]+\))/g);
         return parts.map((part, i) => {
             if (part.startsWith("**") && part.endsWith("**")) {
                 return <strong key={i} className="font-black text-gray-950">{part.slice(2, -2)}</strong>;
             }
-            return part;
+            const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+            if (linkMatch) {
+                return (
+                    <a
+                        key={i}
+                        href={linkMatch[2]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-orange-500 underline underline-offset-2 hover:text-orange-700 font-semibold break-all transition-colors"
+                    >
+                        {linkMatch[1]}
+                    </a>
+                );
+            }
+            return <span key={i}>{part}</span>;
         });
     };
 
@@ -226,26 +242,47 @@ export function RecruiterAssistant() {
                                                         : "bg-[#F97316] border-orange-400 text-white font-medium"
                                                 )}>
                                                     {msg.content.split("\n").map((line, linIdx) => {
-                                                        // Handle Headings
-                                                        if (line.startsWith("### ")) {
-                                                            return <h4 key={linIdx} className="text-base font-extrabold mt-2 mb-2 text-gray-900 tracking-tight break-words">{line.replace("### ", "")}</h4>;
-                                                        }
-                                                        
-                                                        // Handle Bullet Points
-                                                        if (line.trim().startsWith("- ") || line.trim().startsWith("* ")) {
-                                                            const cleanLine = line.trim().replace(/^[-*]\s+/, "");
-                                                            return (
-                                                                <div key={linIdx} className="flex gap-3 ml-2 mb-2 items-start">
-                                                                    <div className="h-4 w-4 rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0 mt-1">
-                                                                        <ChevronRight className="h-2.5 w-2.5 text-[#F97316]" />
-                                                                    </div>
-                                                                    <span className="font-medium text-gray-700">{renderBoldText(cleanLine)}</span>
-                                                                </div>
-                                                            );
-                                                        }
+                                        // Handle Headings (### and ##)
+                                        if (line.startsWith("### ")) {
+                                            return <h4 key={linIdx} className="text-base font-extrabold mt-2 mb-2 text-gray-900 tracking-tight break-words">{line.replace("### ", "")}</h4>;
+                                        }
+                                        if (line.startsWith("## ")) {
+                                            return <h3 key={linIdx} className="text-lg font-extrabold mt-3 mb-2 text-gray-900 tracking-tight break-words">{line.replace("## ", "")}</h3>;
+                                        }
 
-                                                        return <p key={linIdx} className="mb-3 last:mb-0 whitespace-pre-wrap">{renderBoldText(line)}</p>;
-                                                    })}
+                                        // Skip markdown table separator rows (|---|---)
+                                        if (/^\|[-| :]+\|$/.test(line.trim())) return null;
+
+                                        // Handle table rows (| col | col |)
+                                        if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
+                                            const cells = line.trim().slice(1, -1).split("|").map(c => c.trim());
+                                            return (
+                                                <div key={linIdx} className="flex gap-2 text-[12px] font-medium text-gray-700 border-b border-gray-50 py-1">
+                                                    {cells.map((cell, ci) => (
+                                                        <span key={ci} className="flex-1">{renderInlineMarkdown(cell)}</span>
+                                                    ))}
+                                                </div>
+                                            );
+                                        }
+
+                                        // Handle Bullet Points
+                                        if (line.trim().startsWith("- ") || line.trim().startsWith("* ")) {
+                                            const cleanLine = line.trim().replace(/^[-*]\s+/, "");
+                                            return (
+                                                <div key={linIdx} className="flex gap-3 ml-2 mb-2 items-start">
+                                                    <div className="h-4 w-4 rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0 mt-1">
+                                                        <ChevronRight className="h-2.5 w-2.5 text-[#F97316]" />
+                                                    </div>
+                                                    <span className="font-medium text-gray-700 break-words min-w-0">{renderInlineMarkdown(cleanLine)}</span>
+                                                </div>
+                                            );
+                                        }
+
+                                        // Skip empty lines (just add spacing via mb-3 on p)
+                                        if (!line.trim()) return <div key={linIdx} className="h-2" />;
+
+                                        return <p key={linIdx} className="mb-2 last:mb-0 whitespace-pre-wrap break-words">{renderInlineMarkdown(line)}</p>;
+                                    })}
                                                 </div>
                                             </div>
                                         </motion.div>
