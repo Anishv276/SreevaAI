@@ -40,14 +40,27 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
             setRect(triggerRef.current.getBoundingClientRect());
         }
         setOpen(o => !o);
-        if (!open) setView("presets");
+        if (!open) setView(value.type === "custom" ? "custom" : "presets");
     };
+
+    useEffect(() => {
+        if (value.type === "custom") {
+            setCustomFrom(value.from);
+            setCustomTo(value.to);
+        }
+    }, [value]);
 
     useEffect(() => {
         if (!open) return;
         const h = (e: MouseEvent) => {
-            if (!triggerRef.current?.contains(e.target as Node) &&
-                !menuRef.current?.contains(e.target as Node)) setOpen(false);
+            const target = e.target as HTMLElement;
+            const isInsidePicker = target.closest('[data-picker-portal="true"]');
+            
+            if (!triggerRef.current?.contains(target) &&
+                !menuRef.current?.contains(target) &&
+                !isInsidePicker) {
+                setOpen(false);
+            }
         };
         document.addEventListener("mousedown", h);
         return () => document.removeEventListener("mousedown", h);

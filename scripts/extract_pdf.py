@@ -735,11 +735,14 @@ def generate_report(
     jd_min_years = score_result["jd_min_years"]
     exp_status = score_result["exp_status"]
 
-    prompt = f"""You are a senior technical recruiter writing a candidate evaluation report.
+    # Build work history context for the LLM to annotate
+    work_history_raw = resume_data.get("work_history", [])
+    work_history_str = json.dumps(work_history_raw, indent=2) if work_history_raw else "[]"
+
+    prompt = f"""You are a senior technical recruiter writing a world-class candidate evaluation report.
 
 The scoring engine has ALREADY computed the final score and status.
-Your ONLY job is to write the human-readable sections of the report.
-You CANNOT change the score or status. Work with what you are given.
+Your ONLY job is to write the human-readable sections. You CANNOT change the score or status.
 
 ═══════════════════════════════════════
 LOCKED RESULTS — DO NOT CHANGE THESE
@@ -755,41 +758,94 @@ Domain Fit      : {breakdown.get("domain_score", 0)}/{breakdown.get("domain_max"
 Must-have matched : {json.dumps(matched)}
 Must-have missing : {json.dumps(missing)}
 Good-to-have matched: {json.dumps(matched_good)}
-Experience status : {exp_status} 
+Experience status : {exp_status}
   (Candidate: {candidate_years} yrs | Required: {jd_min_years} yrs)
 {f"Hard rejection reasons: {json.dumps(score_result['rejection_reasons'])}" if score_result["hard_rejected"] else ""}
 
 ═══════════════════════════════════════
-JOB DESCRIPTION DATA
+JOB DESCRIPTION RAW TEXT
 ═══════════════════════════════════════
-JD Requirements : {jd_min_years}y min | Must-have: {", ".join(matched + missing)}
-Candidate Stats : {candidate_years}y total | Matches: {", ".join(matched)} | Missing: {", ".join(missing)}
+{jd_raw_text[:3000]}
 
 ═══════════════════════════════════════
-INSTRUCTIONS FOR HIGH-FIDELITY INSIGHTS
+RESUME RAW TEXT
+═══════════════════════════════════════
+{resume_raw_text[:4000]}
+
+═══════════════════════════════════════
+WORK HISTORY (structured — annotate each role)
+═══════════════════════════════════════
+{work_history_str}
+
+═══════════════════════════════════════
+FIELD-BY-FIELD INSTRUCTIONS — READ EVERY LINE
 ═══════════════════════════════════════
 
-1. integrity_signals — DATE MATH & CONTEXT DISCIPLINE:
-   - Identify every role overlap. Do NOT just say "overlapping roles".
-   - You MUST calculate or estimate the overlap duration. Format: "Overlaps with [Company] by ~[N] months".
-   - For short tenures or junior roles, provide a recruiter's justification.
-   - Example 1: "Medium risk — Overlapping roles: Niti AI and Social Rises overlap by ~5 months"
-   - Example 2: "Low — All roles are intern/junior level — consistent with 1.5 yr career, not inflation"
+1. recruiter_snapshot:
+   - EXACTLY 2-3 sentences. Start with the candidate's name if known, otherwise "This candidate".
+   - Name actual companies and skills. Be direct. No vague adjectives.
+   - Example: "Aditya brings 4 years of Python and React experience across two product startups (Zepto, Groww). Strong backend depth with measurable delivery but no enterprise-scale exposure, which is the primary gap for this role."
 
-2. suitability_analysis — HYPER-SPECIFIC UPSKILLING:
-   - Do NOT give generic advice like "learn CRM" or "build projects".
-   - You MUST name specific platforms, tools, or types of projects.
-   - Example 1: "Get hands-on with a CRM — HubSpot Free or Salesforce trial + at least 1 live pipeline managed end-to-end"
-   - Example 2: "Build 1 API integration project — even a personal project connecting two tools via REST API qualifies"
-   - readiness_timeline: provide a realistic period like "6-12 months" or "12-18 months".
+2. strengths (MUST return MINIMUM 3, MAXIMUM 5):
+   - Each strength must be a distinct, specific capability with hard evidence.
+   - "point": headline (e.g., "Proven Python backend at scale")
+   - "evidence": cite company, project, tool, or metric. Pattern: "At [Company], [built/led/shipped] [thing] using [tool] — [outcome or scale]."
+   - FORBIDDEN: "strong communicator", "team player", "passionate", "has experience with"
 
-3. recruiter_snapshot:
-   - 2 sentences max. Direct and professional. Name actual skills and companies.
+3. concerns (MUST return MINIMUM 3, MAXIMUM 5):
+   - Each concern must be a concrete, role-specific gap — not a vague statement.
+   - "point": the gap headline (e.g., "No enterprise AWS deployment experience")
+   - "missing_skills": list the exact skill names missing (use same normalized names as JD must-haves)
+   - "impact": explain precisely WHY this gap matters for THIS role. Name what they'd fail to do on day 1.
 
-4. separator:
-   - Return ONLY valid JSON in this exact schema.
+4. work_history_annotated — ANNOTATE EVERY ROLE:
+   For EACH role in the WORK HISTORY section above, produce one entry:
+   - "company": exact company name from the resume
+   - "role": exact job title from the resume
+   - "start_date": formatted as "MMM YYYY" (e.g., "Jan 2022") — extract from resume text
+   - "end_date": "MMM YYYY" or "Present" if current
+   - "duration_months": integer
+   - "is_current": true/false
+   - "company_type": classify as one of: "Product Startup", "Service Company", "Fortune 500", "MNC", "Agency", "Freelance/Contract", "Research/Academia", "Early Stage Startup", "Government/PSU"
+   - "recruiter_summary": 2-3 sentences. What did they actually BUILD or DO here? Name tools, scope, outcomes. Pattern: "Built X using Y for Z users/clients. Led/Contributed to [initiative]. Key outcome: [metric or impact]."
+   - "technologies_used": list of tech/tools actually used in this role (from resume context)
+   - "overlap_note": if this role's dates overlap with another role, flag it. Format: "Overlaps with [Company] by ~N months." Otherwise null.
 
-Return ONLY valid JSON in this exact schema:
+5. integrity_signals — DATE MATH & EVIDENCE:
+   - Calculate ALL role overlaps from start/end dates. Do NOT skip any.
+   - For each signal: "level" = Low/Medium/High, "label" = short title, "summary" = 1 line, "details" = specific evidence.
+   - Short tenures (<8 months) get a Low or Medium flag with context (intern/contract/layoff = Low; unexplained exit = Medium).
+   - If resume has no anomalies → return ONE Low signal: {{ "level": "Low", "label": "No anomalies detected", "summary": "All dates consistent and verifiable", "details": "No gaps, overlaps, or title inflation identified." }}
+
+6. suitability_analysis — HYPER-SPECIFIC:
+   - suggestions: 3-5 items. Each must name a SPECIFIC tool, platform, or project type.
+     BAD: "Learn cloud computing"
+     GOOD: "Get AWS Solutions Architect Associate certified — this role requires independent infra ownership"
+   - readiness_timeline: realistic range like "Immediately — strong match", "3-6 months", "6-12 months", "12-18 months"
+
+7. seniority_alignment:
+   - candidate_level and jd_level: 0=Intern, 1=Junior, 2=Mid, 3=Senior, 4=Lead/Principal
+   - candidate_label and jd_label: human-readable e.g., "Mid-level", "Senior", "Lead"
+
+8. career_progression_details:
+   - pattern: e.g., "Linear Upward", "Cross-functional Pivot", "Lateral (same level)", "Declining", "Freelance/Portfolio"
+   - role_flow: one sentence describing the career arc (e.g., "SDE → Senior SDE → Tech Lead at increasing company sizes")
+   - company_types: comma-separated summary (e.g., "Early Stage Startup, Product Startup, MNC")
+   - tenure_avg: e.g., "14 months average" — calculate from actual durations
+   - pattern_note, company_note, tenure_note: one-line recruiter commentary on each dimension
+
+9. decision_reason — THE SHARP LINE:
+   - EXACTLY 1 sentence. The single most decisive reason for the status verdict.
+   - If Shortlisted: "What clinches it." e.g., "5 of 6 must-haves confirmed with direct project evidence across 3 companies."
+   - If Borderline: "What tips it." e.g., "Strong Python depth but zero cloud deployment experience in a role that requires day-1 AWS ownership."
+   - If Rejected: "The hard stopper." e.g., "Missing 4 of 5 must-have skills with no transferable evidence across any role."
+   - No hedging. No softening. One precise, recruiter-grade sentence.
+
+10. ai_verdict:
+    - 3-5 sentences. Executive summary combining score, key strengths, critical gaps, and recommendation.
+    - Name companies and skills. Ground every claim in evidence from the resume.
+
+Return ONLY valid JSON in this EXACT schema (no markdown, no code fences):
 
 {{
   "recruiter_snapshot": "string",
@@ -797,45 +853,76 @@ Return ONLY valid JSON in this exact schema:
     {{
       "criteria": "string",
       "required": "Must-have | Good-to-have | Experience",
-      "candidate_has": "Yes — with evidence" | "No" | "Partial",
-      "result": "pass" | "fail" | "partial",
+      "candidate_has": "Yes — with evidence | No | Partial",
+      "result": "pass | fail | partial",
       "note": "string"
     }}
   ],
-  "strengths": [{{ "point": "string", "evidence": "string" }}],
-  "concerns": [{{ "point": "string", "missing_skills": [string], "impact": "string" }}],
-  "experience_analysis": {{
+  "strengths": [
+    {{ "point": "string", "evidence": "string" }}
+  ],
+  "concerns": [
+    {{ "point": "string", "missing_skills": ["string"], "impact": "string" }}
+  ],
+  "experience_assessment": {{
     "years": {candidate_years},
     "vs_required": "{candidate_years} years vs {jd_min_years} years required",
     "quality": "string",
     "relevance": "string"
   }},
-  "project_relevance": {{ "rating": "High" | "Medium" | "Low", "reasoning": "string" }},
+  "work_history_annotated": [
+    {{
+      "company": "string",
+      "role": "string",
+      "start_date": "string",
+      "end_date": "string",
+      "duration_months": 0,
+      "is_current": false,
+      "company_type": "string",
+      "recruiter_summary": "string",
+      "technologies_used": ["string"],
+      "overlap_note": "string | null"
+    }}
+  ],
+  "project_relevance": {{ "rating": "High | Medium | Low", "reasoning": "string" }},
   "integrity_signals": [
     {{
-      "level": "Low" | "Medium" | "High",
+      "level": "Low | Medium | High",
       "label": "string",
       "summary": "string",
       "details": "string"
     }}
   ],
   "suitability_analysis": {{
-    "suggestions": [string],
-    "readiness_timeline": string
+    "suggestions": ["string"],
+    "readiness_timeline": "string"
   }},
-  "candidate_potential": {{ "for_this_role": "Low" | "Medium" | "High", "reasoning": "string" }},
-  "seniority_alignment": {{ "candidate_level": 0|1|2|3|4, "jd_level": 0|1|2|3|4, "candidate_label": "string", "jd_label": "string" }},
-  "career_progression_details": {{ 
-    "pattern": "string", "role_flow": "string", "company_types": "string", 
-    "tenure_avg": "string", "pattern_note": "string", "company_note": "string", "tenure_note": "string" 
+  "candidate_potential": {{ "for_this_role": "Low | Medium | High", "reasoning": "string" }},
+  "seniority_alignment": {{
+    "candidate_level": 0,
+    "jd_level": 0,
+    "candidate_label": "string",
+    "jd_label": "string"
   }},
+  "career_progression_details": {{
+    "pattern": "string",
+    "role_flow": "string",
+    "company_types": "string",
+    "tenure_avg": "string",
+    "pattern_note": "string",
+    "company_note": "string",
+    "tenure_note": "string"
+  }},
+  "decision_reason": "string",
   "ai_verdict": "string",
-  "interview_questions": [{{ "question": "string", "intent": "string", "based_on": "string" }}]
+  "interview_questions": [
+    {{ "question": "string", "intent": "string", "based_on": "string" }}
+  ]
 }}
 """
 
     completion = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-4o",
         temperature=0,
         messages=[
             {

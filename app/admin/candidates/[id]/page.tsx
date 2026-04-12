@@ -988,7 +988,8 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                 <div className="absolute left-0 top-3 bottom-3 w-[2px] bg-gray-100 ml-[5px]" />
 
                                                 {(() => {
-                                                    const history = aiData.work_history || workHistory || [];
+                                                    // Prefer annotated history (new scans) over raw work_history (old scans)
+                                                    const history = aiData.work_history_annotated || aiData.work_history || workHistory || [];
                                                     if (history.length === 0) return (
                                                         <div className="py-10 text-center opacity-30 italic font-bold">
                                                             No career history extracted yet.
@@ -1057,46 +1058,64 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
 
 
-                                    {/* ✅ Section: INTEGRITY SIGNALS & SUITABILITY Checklist */}
+                                    {/* ✅ Section: INTEGRITY SIGNALS & SUITABILITY */}
                                     <div className="space-y-12 py-8">
-                                        {/* Integrity Signals Pills */}
+                                        {/* Integrity Signals — redesigned card layout */}
                                         <div className="space-y-5">
-                                            <p className="text-[#94A3B8] font-black tracking-[0.2em] text-[11px] uppercase ml-1">
-                                                Integrity Signals
+                                            <p className="text-gray-500 font-black tracking-widest text-[11px] uppercase opacity-70">
+                                                Integrity Signals &amp; Risk Assessment
                                             </p>
-                                            <div className="flex flex-col gap-3">
+                                            <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm overflow-hidden">
                                                 {(() => {
-                                                    const signals = aiData.integrity_signals || (redFlags.map((f: any) => ({
-                                                        level: f.severity,
-                                                        label: f.flag?.replace('_', ' ') || "Concern",
-                                                        summary: f.detail
-                                                    }))) || [];
+                                                    const signals: any[] = aiData.integrity_signals || (redFlags.map((f: any) => ({
+                                                        level: f.severity || "Low",
+                                                        label: f.flag?.replace(/_/g, ' ') || "Concern",
+                                                        summary: f.detail || "",
+                                                        details: ""
+                                                    })));
 
                                                     if (signals.length === 0) return (
-                                                        <div className="px-6 py-3 rounded-2xl bg-gray-50 text-gray-400 text-[12px] font-black uppercase tracking-widest border border-gray-100 italic shadow-sm">
-                                                            No specific integrity signals detected
+                                                        <div className="px-10 py-8 flex items-center gap-4">
+                                                            <div className="h-8 w-8 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                                                                <ShieldCheck className="h-4 w-4 text-emerald-500" />
+                                                            </div>
+                                                            <p className="text-[13px] font-bold text-gray-400 italic">No integrity concerns detected — resume dates and claims are consistent.</p>
                                                         </div>
                                                     );
 
-                                                    return signals.map((signal: any, i: number) => {
-                                                        const isMedium = signal.level?.toLowerCase() === 'medium';
-                                                        const isHigh = signal.level?.toLowerCase() === 'high';
+                                                    return (
+                                                        <div className="divide-y divide-gray-50">
+                                                            {signals.map((signal: any, i: number) => {
+                                                                const lvl = (signal.level || "low").toLowerCase();
+                                                                const isHigh = lvl === 'high';
+                                                                const isMedium = lvl === 'medium';
 
-                                                        return (
-                                                            <div
-                                                                key={i}
-                                                                className={cn(
-                                                                    "w-fit px-6 py-2.5 rounded-[20px] text-[15px] font-bold transition-all shadow-md border bg-white-40 border-slate-200",
-                                                                    isHigh ? "bg-red-500 text-white shadow-red-200" :
-                                                                        isMedium ? "bg-[#FFB02E] text-slate-900 shadow-[0_4px_12px_rgba(255,176,46,0.25)]" :
-                                                                            "bg-[#F1F5F9] text-[#475569] shadow-slate-100"
-                                                                )}
-                                                            >
-                                                                <span className="font-black capitalize">{signal.level} {isHigh || isMedium ? "risk" : ""}</span> — {signal.summary || signal.label}
-                                                                {signal.details && <span className="opacity-70 ml-1.5 font-medium text-[13px]">: {signal.details}</span>}
-                                                            </div>
-                                                        );
-                                                    });
+                                                                const riskColor = isHigh
+                                                                    ? { bg: "bg-red-50", border: "border-red-100", dot: "bg-red-500", badge: "bg-red-100 text-red-700 border-red-200", text: "text-red-700" }
+                                                                    : isMedium
+                                                                        ? { bg: "bg-amber-50", border: "border-amber-100", dot: "bg-amber-400", badge: "bg-amber-100 text-amber-700 border-amber-200", text: "text-amber-700" }
+                                                                        : { bg: "bg-gray-50", border: "border-gray-100", dot: "bg-emerald-400", badge: "bg-emerald-50 text-emerald-700 border-emerald-100", text: "text-gray-600" };
+
+                                                                return (
+                                                                    <div key={i} className={cn("flex items-start gap-5 px-8 py-6", riskColor.bg)}>
+                                                                        <div className={cn("h-2.5 w-2.5 rounded-full mt-1.5 flex-shrink-0", riskColor.dot)} />
+                                                                        <div className="flex-1 space-y-1.5">
+                                                                            <div className="flex items-center gap-3 flex-wrap">
+                                                                                <span className={cn("px-2.5 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border", riskColor.badge)}>
+                                                                                    {signal.level} risk
+                                                                                </span>
+                                                                                <span className="text-[14px] font-black text-gray-800 tracking-tight">{signal.label}</span>
+                                                                            </div>
+                                                                            <p className={cn("text-[13px] font-bold leading-relaxed", riskColor.text)}>{signal.summary}</p>
+                                                                            {signal.details && (
+                                                                                <p className="text-[12px] font-medium text-gray-400 leading-relaxed">{signal.details}</p>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    );
                                                 })()}
                                             </div>
                                         </div>
@@ -1185,9 +1204,9 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                 normalizedStatus === "Borderline" ? "border-orange-200 bg-orange-50" :
                                                     normalizedStatus === "Rejected" ? "border-red-200 bg-red-50" : "border-blue-200 bg-blue-50"
                                         )}>
-                                            <div className="flex items-center gap-6 mb-8">
+                                            <div className="flex items-center gap-6 mb-6">
                                                 <div className={cn(
-                                                    "h-14 w-14 rounded-2xl flex items-center justify-center shadow-lg",
+                                                    "h-14 w-14 rounded-2xl flex items-center justify-center shadow-lg flex-shrink-0",
                                                     normalizedStatus === "Shortlisted" ? "bg-green-100 text-green-600" :
                                                         normalizedStatus === "Borderline" ? "bg-orange-100 text-orange-600" :
                                                             normalizedStatus === "Rejected" ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"
@@ -1207,6 +1226,28 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     )}>{normalizedStatus}</h3>
                                                 </div>
                                             </div>
+                                            {/* Sharp one-line reason */}
+                                            {aiData.decision_reason && (
+                                                <div className={cn(
+                                                    "flex items-start gap-3 pt-5 border-t",
+                                                    normalizedStatus === "Shortlisted" ? "border-green-200" :
+                                                        normalizedStatus === "Borderline" ? "border-orange-200" :
+                                                            normalizedStatus === "Rejected" ? "border-red-200" : "border-blue-200"
+                                                )}>
+                                                    <div className={cn(
+                                                        "h-1 w-6 rounded-full mt-[10px] flex-shrink-0",
+                                                        normalizedStatus === "Shortlisted" ? "bg-green-500" :
+                                                            normalizedStatus === "Borderline" ? "bg-orange-500" :
+                                                                normalizedStatus === "Rejected" ? "bg-red-500" : "bg-blue-500"
+                                                    )} />
+                                                    <p className={cn(
+                                                        "text-[15px] font-bold leading-relaxed",
+                                                        normalizedStatus === "Shortlisted" ? "text-green-800" :
+                                                            normalizedStatus === "Borderline" ? "text-orange-800" :
+                                                                normalizedStatus === "Rejected" ? "text-red-800" : "text-blue-800"
+                                                    )}>{aiData.decision_reason}</p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 

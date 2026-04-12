@@ -110,6 +110,7 @@ export function PremiumDatePicker({
                 width: 288,
                 zIndex: 9999,
             }}
+            data-picker-portal="true"
             className="rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
         >
             <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 bg-white">
