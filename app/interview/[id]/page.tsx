@@ -482,7 +482,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0, scale: 1.1, filter: "blur(20px)" }}
                         transition={{ duration: 0.8 }}
-                        className="flex-1 min-h-screen w-full flex items-center justify-center bg-white z-50 absolute inset-0"
+                        className="flex-1 w-full bg-white z-50 absolute inset-0 overflow-y-auto"
                     >
                         <HardwareCheck
                             onComplete={handleHardwareComplete}
@@ -541,42 +541,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     </motion.div>
                 )}
 
-                {token && serverUrl && phase !== "completed" && (
-                    <div 
-                        key="interview-room"
-                        className={cn(
-                            "flex-1 flex flex-col w-full h-full absolute inset-0 transition-opacity duration-1000 bg-white",
-                            phase === "interview" ? "opacity-100 z-40 pointer-events-auto" : "opacity-0 z-0 pointer-events-none"
-                        )}
-                    >
-                        <LiveKitRoom
-                            video={phase === "interview"}
-                            audio={phase === "interview" || phase === "launching"}
-                            token={token}
-                            serverUrl={serverUrl}
-                            connect={shouldConnect}
-                            data-lk-theme="default"
-                            className="flex-1 flex flex-col w-full h-full"
-                        >
-                            <InterviewRoomContent
-                                id={id}
-                                onAgentReady={handleAgentReady}
-                                onFinish={() => setPhase("completed")}
-                                onFinalizing={() => setPhase("finalizing")}
-                                isInterviewActive={phase === "interview"}
-                                isLaunchingActive={phase === "launching"}
-                                timeLabel={formatDuration(remainingSeconds)}
-                                timerExpired={timerExpired}
-                                onSecurityViolation={triggerSecurityWarning}
-                                onRemoteAgentAudioTrack={handleRemoteAgentAudioTrack}
-                                onRoomReady={(room) => { lkRoomRef.current = room; }}
-                                onAllowExitNow={() => {
-                                    allowFullscreenExitRef.current = true;
-                                }}
-                            />
-                        </LiveKitRoom>
-                    </div>
-                )}
+
 
                 {phase === "finalizing" && (
                     <motion.div 
@@ -610,6 +575,46 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {/* Interview room — outside AnimatePresence intentionally.
+                It pre-renders as soon as token is available (warm connection during hardware check)
+                and controls its own visibility via opacity/z-index/pointer-events. */}
+            {token && serverUrl && phase !== "completed" && (
+                <div 
+                    key="interview-room"
+                    className={cn(
+                        "flex-1 flex flex-col w-full h-full absolute inset-0 transition-opacity duration-1000 bg-white",
+                        phase === "interview" ? "opacity-100 z-40 pointer-events-auto" : "opacity-0 z-0 pointer-events-none"
+                    )}
+                >
+                    <LiveKitRoom
+                        video={phase === "interview"}
+                        audio={phase === "interview" || phase === "launching"}
+                        token={token}
+                        serverUrl={serverUrl}
+                        connect={shouldConnect}
+                        data-lk-theme="default"
+                        className="flex-1 flex flex-col w-full h-full"
+                    >
+                        <InterviewRoomContent
+                            id={id}
+                            onAgentReady={handleAgentReady}
+                            onFinish={() => setPhase("completed")}
+                            onFinalizing={() => setPhase("finalizing")}
+                            isInterviewActive={phase === "interview"}
+                            isLaunchingActive={phase === "launching"}
+                            timeLabel={formatDuration(remainingSeconds)}
+                            timerExpired={timerExpired}
+                            onSecurityViolation={triggerSecurityWarning}
+                            onRemoteAgentAudioTrack={handleRemoteAgentAudioTrack}
+                            onRoomReady={(room) => { lkRoomRef.current = room; }}
+                            onAllowExitNow={() => {
+                                allowFullscreenExitRef.current = true;
+                            }}
+                        />
+                    </LiveKitRoom>
+                </div>
+            )}
 
             {/* Connection Bridge Status - Stable outside loop */}
             {phase === "check" && shouldConnect && (

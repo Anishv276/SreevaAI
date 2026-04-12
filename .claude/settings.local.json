@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node -)"
+      "Bash(node -)",
+      "Bash(head -100 /c/Users/vamsi/OneDrive/Desktop/HR-updates/app/interview/[id]/page.tsx)"
     ]
   }
 }
