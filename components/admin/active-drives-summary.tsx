@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Loader2, ChevronRight } from "lucide-react";
+import { ErrorState } from "./error-state";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { type DateRange } from "./date-filter";
 
 interface DriveSummary {
     id: string;
@@ -30,17 +32,46 @@ function barColor(pct: number, threshold: number) {
     return "#F59E0B";                              // amber – behind
 }
 
-export function ActiveDrivesSummary() {
+interface ActiveDrivesSummaryProps {
+    dateRange: DateRange;
+}
+
+export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
     const [drives, setDrives] = useState<DriveSummary[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const router = useRouter();
 
+    const fetchDrives = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const params = new URLSearchParams();
+            if (dateRange.type === "custom") {
+                params.set("range", "custom");
+                params.set("from", dateRange.from);
+                params.set("to", dateRange.to);
+            } else {
+                params.set("range", dateRange.type);
+            }
+
+            const res = await fetch(`/api/admin/drives-summary?${params.toString()}`);
+            if (res.ok) {
+                const data = await res.json();
+                setDrives(data.drives ?? []);
+            } else {
+                setError("Neural pipeline sync failed.");
+            }
+        } catch (err) {
+            setError("Network connectivity issue.");
+        } finally {
+            setLoading(false);
+        }
+    }, [dateRange]);
+
     useEffect(() => {
-        fetch("/api/admin/drives-summary")
-            .then((r) => r.json())
-            .then((d) => setDrives(d.drives ?? []))
-            .finally(() => setLoading(false));
-    }, []);
+        fetchDrives();
+    }, [fetchDrives]);
 
     return (
         <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-full overflow-hidden hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)] transition-all duration-700">
@@ -62,6 +93,15 @@ export function ActiveDrivesSummary() {
                 {loading ? (
                     <div className="flex items-center justify-center h-48">
                         <Loader2 className="h-8 w-8 text-orange-200 animate-spin" />
+                    </div>
+                ) : error ? (
+                    <div className="flex items-center justify-center h-48 py-8">
+                        <ErrorState 
+                            message={error} 
+                            onRetry={fetchDrives} 
+                            compact 
+                            className="bg-transparent border-none shadow-none"
+                        />
                     </div>
                 ) : drives.length === 0 ? (
                     <div className="flex items-center justify-center h-48 text-[12px] font-bold text-gray-300 uppercase tracking-widest">

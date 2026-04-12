@@ -22,8 +22,15 @@ export async function GET() {
                 isDomainVerified: true,
                 customSenderEmail: true,
                 customSenderName: true,
-                onboardingStep: true
-            } as any
+                onboardingStep: true,
+                onboardingComplete: true,
+                location: true,
+                phone: true,
+                jobTitle: true,
+                expectedDrives: true,
+                expectedCandidates: true,
+                expectedInterviews: true,
+            }
         });
 
         if (!org) {
@@ -45,7 +52,7 @@ export async function PATCH(req: Request) {
         }
 
         const body = await req.json();
-        const { name, industry, size, website, logoUrl } = body;
+        const { name, industry, size, website, location, logoUrl } = body;
 
         // Cleanup old logo if it's being replaced or removed
         if (logoUrl !== undefined) {
@@ -86,6 +93,7 @@ export async function PATCH(req: Request) {
                 industry,
                 size,
                 website,
+                location,
                 logoUrl: logoUrl?.startsWith("blob:") ? undefined : logoUrl
             }
         });

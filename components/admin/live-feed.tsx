@@ -7,6 +7,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
+import { ErrorState } from "./error-state";
+import { type DateRange } from "./date-filter";
 
 /* ── Activity types ──────────────────────────────────── */
 type ActivityType = "application" | "interview_completed" | "rejection";
@@ -18,6 +20,7 @@ interface FeedItem {
     drive: string;
     time: string;
     timestamp: number;
+    isDemo?: boolean;
 }
 
 function getIconProps(type: ActivityType) {
@@ -31,19 +34,32 @@ function getIconProps(type: ActivityType) {
     }
 }
 
-function useActivityFeed() {
+function useActivityFeed(dateRange: DateRange) {
     const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     async function fetchFeed() {
+        setError(null);
         try {
-            const res = await fetch("/api/admin/activity");
+            const params = new URLSearchParams();
+            if (dateRange.type === "custom") {
+                params.set("range", "custom");
+                params.set("from", dateRange.from);
+                params.set("to", dateRange.to);
+            } else {
+                params.set("range", dateRange.type);
+            }
+
+            const res = await fetch(`/api/admin/activity?${params.toString()}`);
             if (res.ok) {
                 const data = await res.json();
                 setFeedItems(data.feed ?? []);
+            } else {
+                setError("Activity sync failed.");
             }
         } catch {
-            // silently keep stale data
+            setError("Network protocol failure.");
         } finally {
             setLoading(false);
         }
@@ -53,9 +69,9 @@ function useActivityFeed() {
         fetchFeed();
         const interval = setInterval(fetchFeed, 30_000); // refresh every 30s
         return () => clearInterval(interval);
-    }, []);
+    }, [dateRange]);
 
-    return { feedItems, loading };
+    return { feedItems, loading, error, fetchFeed };
 }
 
 const insights = [
@@ -100,8 +116,12 @@ const alerts = [
     },
 ];
 
-export function LiveFeed() {
-    const { feedItems, loading } = useActivityFeed();
+interface LiveFeedProps {
+    dateRange: DateRange;
+}
+
+export function LiveFeed({ dateRange }: LiveFeedProps) {
+    const { feedItems, loading, error, fetchFeed } = useActivityFeed(dateRange);
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-12">
@@ -120,7 +140,16 @@ export function LiveFeed() {
                     {loading && <Loader2 className="h-4 w-4 text-orange-400 animate-spin" />}
                 </div>
                 <div className="flex-1 overflow-y-auto px-6 py-4 custom-scrollbar">
-                    {!loading && feedItems.length === 0 ? (
+                    {error ? (
+                        <div className="flex items-center justify-center h-full">
+                            <ErrorState 
+                                message={error} 
+                                onRetry={fetchFeed} 
+                                compact 
+                                className="bg-transparent border-none shadow-none"
+                            />
+                        </div>
+                    ) : !loading && feedItems.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full text-gray-300 gap-3">
                             <div className="h-12 w-12 rounded-full bg-gray-50 flex items-center justify-center">
                                 <UserPlus className="h-6 w-6" />
@@ -143,7 +172,14 @@ export function LiveFeed() {
                                             <Icon className="h-4 w-4" style={{ color }} />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-[13px] font-black text-gray-900 truncate leading-none mb-1.5">{item.action}</p>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <p className="text-[13px] font-black text-gray-900 truncate leading-none">{item.action}</p>
+                                                {item.isDemo && (
+                                                    <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-gray-100 text-[8px] font-black text-gray-400 uppercase tracking-widest border border-gray-200/50">
+                                                        System
+                                                    </span>
+                                                )}
+                                            </div>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight truncate">{item.drive}</span>
                                                 <span className="h-1 w-1 rounded-full bg-gray-200" />

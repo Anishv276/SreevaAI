@@ -395,7 +395,7 @@ export default function DrivesPage() {
                         <TableBody className="[&_tr:last-child]:border-0">
                             {isLoading ? (
                                 <TableRow>
-                                    <TableCell colSpan={isSelectionMode ? 7 : 6} className="py-20 text-center">
+                                    <TableCell colSpan={isSelectionMode ? 9 : 8} className="py-20 text-center">
                                         <div className="flex flex-col items-center gap-3">
                                             <Loader2 className="h-10 w-10 text-orange-500 animate-spin" />
                                             <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Synchronizing recruitment drives...</p>
@@ -404,7 +404,7 @@ export default function DrivesPage() {
                                 </TableRow>
                             ) : filteredDrives.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={isSelectionMode ? 7 : 6} className="py-20 text-center">
+                                    <TableCell colSpan={isSelectionMode ? 9 : 8} className="py-20 text-center">
                                         <div className="flex flex-col items-center gap-4">
                                             <div className="h-16 w-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
                                                 <Briefcase className="h-8 w-8 text-gray-400" />

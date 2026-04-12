@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { getRangeStart } from "@/lib/date-utils";
 
-export async function GET() {
+export async function GET(req: Request) {
     try {
         const session = await getSession();
         if (!session?.orgId) {
@@ -10,14 +11,17 @@ export async function GET() {
         }
 
         const orgId = session.orgId;
-        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const { searchParams } = new URL(req.url);
+        const range = searchParams.get("range") ?? "month";
+        const from = searchParams.get("from") ?? undefined;
+        const start = getRangeStart(range, from);
 
-        // Top candidates this week = recently completed interviews with highest AI score
+        // Top candidates this period = recently completed interviews with highest AI score
         const applications = await prisma.application.findMany({
             where: {
                 drive: { orgId },
                 aiScore: { not: null },
-                updatedAt: { gte: weekAgo },
+                updatedAt: { gte: start },
                 interview: { status: "COMPLETED" },
             },
             select: {
@@ -30,7 +34,6 @@ export async function GET() {
                 interview: {
                     select: {
                         status: true,
-                        application: { select: { aiScore: true } },
                     },
                 },
                 structuredResume: true,

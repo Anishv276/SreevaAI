@@ -68,13 +68,30 @@ export async function POST(request: Request) {
             return response;
         }
 
-        const userProfile = await prisma.user.findUnique({ 
+        const userProfile = (await prisma.user.findUnique({ 
             where: { email: normalizedEmail },
-            include: { organization: { select: { onboardingComplete: true } } }
-        });
+            include: { organization: { select: { onboardingComplete: true, status: true } } }
+        } as any)) as any;
 
         if (!userProfile || !userProfile.password) {
             return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+        }
+
+        // ── ORGANIZATION STATUS CHECKS ───────────────────────
+        if (userProfile.organization) {
+            const org = userProfile.organization;
+            if (org.status === "SUSPENDED") {
+                return NextResponse.json({ 
+                    error: "Please recharge credits for service to continue",
+                    code: "ORG_SUSPENDED"
+                }, { status: 403 });
+            }
+            if (org.status === "CLOSED") {
+                return NextResponse.json({ 
+                    error: "Your login has been closed, please contact administrator to this",
+                    code: "ORG_CLOSED"
+                }, { status: 403 });
+            }
         }
 
         const valid = await bcrypt.compare(password, userProfile.password);

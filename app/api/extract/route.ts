@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import os from "os";
 import { extractJDFromText } from "@/lib/openai";
 import { z } from "zod";
+import { extractionLimiter } from "@/lib/rate-limit";
 
 const extractQuerySchema = z.object({
     type: z.enum(["JD", "RESUME", "PASSPORT"]),
@@ -14,6 +15,25 @@ const extractQuerySchema = z.object({
 
 export async function POST(request: Request) {
     try {
+        // ── RATE LIMITING ───────────────────
+        const ip = request.headers.get("x-forwarded-for") || "unknown";
+        const { success, remaining, reset } = await extractionLimiter.check(ip);
+        
+        if (!success) {
+            return NextResponse.json({ 
+                error: "Too many extraction attempts. Please try again later.",
+                code: "RATE_LIMIT_EXCEEDED",
+                resetAt: new Date(reset).toISOString()
+            }, { 
+                status: 429,
+                headers: {
+                    'X-RateLimit-Limit': '10000',
+                    'X-RateLimit-Remaining': remaining.toString(),
+                    'X-RateLimit-Reset': reset.toString()
+                }
+            });
+        }
+
         const formData = await request.formData();
         const file = formData.get("file") as File | null;
         const url = formData.get("url") as string | null;
@@ -151,27 +171,45 @@ export async function POST(request: Request) {
 
         if (exitCode !== 0) {
             console.error("[EXTRACTION_FAILED]: Python script returned non-zero exit code", { exitCode, errorData });
-            return NextResponse.json({ 
+            return NextResponse.json({
                 error: "Document processing failed. The file format might be unsupported or corrupted.",
                 code: "EXTRACTION_PROCESS_ERROR",
-                details: errorData 
-                }, { status: 502 });
-            }
-    
-            try {
-                const result = JSON.parse(outputData);
-                console.log("[EXTRACTION_PARSE_SUCCESS]: Data parsed for", type);
+                details: errorData
+            }, { status: 502 });
+        }
+
+        try {
+            const result = JSON.parse(outputData);
+
+            // Check if Python returned an error object
+            if (result.error) {
+                console.error("[EXTRACTION_PYTHON_ERROR]:", result);
                 return NextResponse.json({
-                    ...result,
-                    url: fileUrl || null  // null if R2 upload failed (only for non-critical assets)
-                });
-            } catch (e: any) {
-                console.error("[EXTRACTION_PARSE_FATAL]: Received invalid data format", { outputData: outputData.slice(0, 500), error: e.message });
-                return NextResponse.json({ 
-                    error: "Received invalid data format from processing engine.",
-                    code: "MALFORMED_RESPONSE_ERROR"
-                }, { status: 502 });
+                    error: result.error,
+                    code: result.code || "EXTRACTION_ERROR"
+                }, { status: 422 });
             }
+
+            // Guard: ensure we got meaningful text back for JD/RESUME types
+            if (type !== "PASSPORT" && result.text && result.text.length < 100) {
+                return NextResponse.json({
+                    error: "Could not extract sufficient text from this document. Please ensure the file is not empty or a scanned image.",
+                    code: "EXTRACTION_INSUFFICIENT_DATA"
+                }, { status: 422 });
+            }
+
+            return NextResponse.json({
+                ...result,
+                url: fileUrl || null  // null if R2 upload failed (only for non-critical assets)
+            });
+        } catch (e: any) {
+            const preview = outputData.length > 200 ? outputData.slice(0, 200) + "..." : outputData;
+            console.error("[EXTRACTION_PARSE_FATAL]: Received invalid JSON from Python", { preview, error: e.message });
+            return NextResponse.json({
+                error: "Received invalid data format from processing engine.",
+                code: "MALFORMED_RESPONSE_ERROR"
+            }, { status: 502 });
+        }
 
     } catch (error: any) {
         console.error("General Extraction Error:", error);

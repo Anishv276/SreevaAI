@@ -18,7 +18,48 @@ export async function POST(req: Request) {
         let response = NextResponse.json({ success: true });
 
         switch (phase) {
-            case "security":
+            case "profile": {
+                const { name, phone, jobTitle, password, currentPassword } = data;
+
+                // Handle password update (stays on User — it's an auth concern)
+                if (password) {
+                    if (password.length < 8) {
+                        return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
+                    }
+                    const user = await prisma.user.findUnique({
+                        where: { id: session.userId },
+                        select: { password: true }
+                    });
+                    if (user?.password) {
+                        if (!currentPassword) {
+                            return NextResponse.json({ error: "Current password is required." }, { status: 400 });
+                        }
+                        const isMatch = await bcrypt.compare(currentPassword, user.password);
+                        if (!isMatch) {
+                            return NextResponse.json({ error: "Current password is incorrect." }, { status: 403 });
+                        }
+                    }
+                    const hashed = await bcrypt.hash(password, 10);
+                    await prisma.user.update({
+                        where: { id: session.userId },
+                        data: { password: hashed }
+                    });
+                }
+
+                // Save name/phone/jobTitle to Organization table
+                await prisma.organization.update({
+                    where: { id: session.orgId },
+                    data: {
+                        ...(name !== undefined && { name }),
+                        phone: phone || undefined,
+                        jobTitle: jobTitle || undefined,
+                        onboardingStep: 1
+                    }
+                });
+                break;
+            }
+
+            case "security": {
                 const { password, currentPassword } = data;
                 if (!password || password.length < 8) {
                     return NextResponse.json({ error: "Invalid password format." }, { status: 400 });
@@ -45,12 +86,12 @@ export async function POST(req: Request) {
                     where: { id: session.userId },
                     data: { password: hashedPassword }
                 });
-                // PROGRESS TRACKING
                 await prisma.organization.update({
                     where: { id: session.orgId },
                     data: { onboardingStep: 1 }
                 });
                 break;
+            }
 
             case "branding":
                 // PERSISTENCE FIX: Save Name, Industry, Size, Website, Location, and Logo
@@ -61,20 +102,42 @@ export async function POST(req: Request) {
                         industry: data.industry,
                         size: data.size,
                         website: data.website,
+                        location: data.location,
                         logoUrl: data.logoUrl,
-                        onboardingStep: 2
+                        onboardingStep: 3
+                    }
+                });
+                break;
+
+            case "goals":
+                await prisma.organization.update({
+                    where: { id: session.orgId },
+                    data: {
+                        expectedDrives: data.expectedDrives ? parseInt(data.expectedDrives) : null,
+                        expectedCandidates: data.expectedCandidates ? parseInt(data.expectedCandidates) : null,
+                        expectedInterviews: data.expectedInterviews ? parseInt(data.expectedInterviews) : null,
+                        onboardingStep: 4
+                    }
+                });
+                break;
+
+            case "team":
+                await prisma.organization.update({
+                    where: { id: session.orgId },
+                    data: {
+                        onboardingStep: 3
                     }
                 });
                 break;
 
             case "email":
+                // Legacy compatibility or fallback
                 await prisma.organization.update({
                     where: { id: session.orgId },
                     data: {
                         customSenderEmail: data.senderEmail,
-                        customSenderName: data.senderName,
-                        onboardingStep: 4
-                    } as any
+                        customSenderName: data.senderName
+                    }
                 });
                 break;
 
@@ -83,10 +146,8 @@ export async function POST(req: Request) {
                 await prisma.organization.update({
                     where: { id: session.orgId },
                     data: { 
-                        // @ts-ignore
                         onboardingComplete: true,
-                        // @ts-ignore
-                        onboardingStep: 6 
+                        onboardingStep: 5
                     }
                 });
 

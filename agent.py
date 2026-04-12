@@ -153,12 +153,30 @@ def build_sarvam_tts(
 ):
     lang_map = {"hi": "hi-IN", "en": "en-IN"}
     mapped_lang = lang_map.get(language, language)
-    return sarvam.TTS(
-        target_language_code=mapped_lang,
-        model=model,
-        speaker=voice_id,
-        pace=1.0,
-    )
+
+    tts_kwargs: dict = {
+        "target_language_code": mapped_lang,
+        "model": model,
+        "speaker": voice_id,
+        # pace: valid for both v2 (0.3–3.0) and v3 (0.5–2.0). 1.0 = natural speed.
+        "pace": 1.0,
+        # Streaming quality controls (WebSocket only, supported by livekit sarvam plugin)
+        # output_audio_bitrate: "32k"|"64k"|"96k"|"128k"|"192k". 128k = good quality/size balance.
+        "output_audio_bitrate": "128k",
+        # max_chunk_length: 50–500 chars per sentence chunk. 150 = default natural splits.
+        "max_chunk_length": 150,
+    }
+
+    # bulbul:v2-only parameters — DO NOT pass these to v3, they will cause errors
+    if "v2" in model:
+        # pitch: -0.75 (deeper) to 0.75 (sharper). 0.0 = neutral.
+        tts_kwargs["pitch"] = 0.0
+        # loudness: 0.1 (quietest) to 3.0 (loudest). 1.0 = normal volume.
+        tts_kwargs["loudness"] = 1.0
+        # enable_preprocessing: expands numbers, dates, currencies for natural pronunciation.
+        tts_kwargs["enable_preprocessing"] = True
+
+    return sarvam.TTS(**tts_kwargs)
 
 
 def build_stt(language_code: str = "en-US", model: str = STT_MODEL):

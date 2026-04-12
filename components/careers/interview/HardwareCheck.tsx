@@ -23,6 +23,7 @@ interface HardwareCheckProps {
     errorMessage?: string | null;
     candidateName?: string;
     applicationId?: string;
+    title?: string;
 }
 
 type CheckStatus = "idle" | "requesting" | "granted" | "denied";
@@ -33,6 +34,7 @@ export function HardwareCheck({
     errorMessage = null,
     candidateName = "candidate",
     applicationId = "unknown",
+    title = "Environment Check",
 }: HardwareCheckProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -70,7 +72,11 @@ export function HardwareCheck({
     
     // Network Speed
     const [uploadSpeedMbps, setUploadSpeedMbps] = useState<number | null>(null);
+    const [downloadSpeedMbps, setDownloadSpeedMbps] = useState<number | null>(null);
+    const [latencyMs, setLatencyMs] = useState<number | null>(null);
+    const [jitterMs, setJitterMs] = useState<number | null>(null);
     const [speedTestRunning, setSpeedTestRunning] = useState(false);
+    const [bypassSpeedTest, setBypassSpeedTest] = useState(false);
 
     // Face Detection State
     const [faceWarning, setFaceWarning] = useState<string | null>(null);
@@ -78,7 +84,15 @@ export function HardwareCheck({
     const faceDetectionAnimRef = useRef<number | null>(null);
     const lastVideoTimeRef = useRef(-1);
 
-    const allReady = cameraStatus === "granted" && micStatus === "granted" && micVerified && !faceWarning && (uploadSpeedMbps !== null && uploadSpeedMbps >= 1);
+    const allReady = cameraStatus === "granted" && 
+                     micStatus === "granted" && 
+                     micVerified && 
+                     !faceWarning && 
+                     (bypassSpeedTest || (
+                        (uploadSpeedMbps !== null && uploadSpeedMbps >= 1.5) &&
+                        (jitterMs !== null && jitterMs < 100) &&
+                        (latencyMs !== null && latencyMs < 500)
+                     ));
 
 
     // ── Suppress noisy TF Lite / MediaPipe internal logs ─────────────────────
@@ -318,15 +332,58 @@ export function HardwareCheck({
     const testNetworkSpeed = useCallback(async () => {
         setSpeedTestRunning(true);
         try {
-            const payload = new Blob([new ArrayBuffer(1024 * 1024)]); // 1MB payload
-            const start = performance.now();
-            await fetch("/api/speedtest", { method: "POST", body: payload });
-            const end = performance.now();
-            const durationSec = (end - start) / 1000;
-            const mbps = 8 / durationSec; // 1MB = 8 Megabits
-            setUploadSpeedMbps(Number(mbps.toFixed(2)));
+            // PHASE 1: Latency & Jitter (10 samples)
+            const pings = [];
+            for (let i = 0; i < 10; i++) {
+                const start = performance.now();
+                await fetch("/api/speedtest", { method: "POST", headers: { "Content-Length": "0" } });
+                pings.push(performance.now() - start);
+                // Tiny delay between pings to avoid TCP burst interference
+                await new Promise(r => setTimeout(r, 50));
+            }
+            const avgLatency = pings.reduce((a, b) => a + b, 0) / pings.length;
+            
+            // Industry Standard Jitter: Average of absolute differences between successive samples
+            let totalDiff = 0;
+            for (let i = 1; i < pings.length; i++) {
+                totalDiff += Math.abs(pings[i] - pings[i-1]);
+            }
+            const jitter = totalDiff / (pings.length - 1);
+            
+            setLatencyMs(Math.round(avgLatency));
+            setJitterMs(Math.round(jitter));
+
+            // PHASE 2: Sustained Upload (4MB payload)
+            const uploadSize = 4 * 1024 * 1024; // 4MB
+            const payload = new Uint8Array(uploadSize);
+            crypto.getRandomValues(payload);
+
+            const upStart = performance.now();
+            const upRes = await fetch("/api/speedtest", { method: "POST", body: payload });
+            if (!upRes.ok) throw new Error("Upload failed");
+            const upEnd = performance.now();
+            
+            const upDurationSec = (upEnd - upStart) / 1000;
+            const upMbps = (uploadSize * 8) / (upDurationSec * 1000000);
+            setUploadSpeedMbps(Number(upMbps.toFixed(2)));
+
+            // PHASE 3: Sustained Download
+            const downStart = performance.now();
+            const downRes = await fetch("/api/speedtest", { method: "GET" });
+            if (!downRes.ok) throw new Error("Download failed");
+            const blob = await downRes.blob();
+            const downEnd = performance.now();
+
+            const downDurationSec = (downEnd - downStart) / 1000;
+            const downMbps = (blob.size * 8) / (downDurationSec * 1000000);
+            setDownloadSpeedMbps(Number(downMbps.toFixed(2)));
+
         } catch (e) {
+            console.error("[NetworkTestFail]:", e);
             setUploadSpeedMbps(0);
+            setDownloadSpeedMbps(0);
+            setLatencyMs(null);
+            setJitterMs(null);
         } finally {
             setSpeedTestRunning(false);
         }
@@ -412,7 +469,7 @@ export function HardwareCheck({
                     <div className="inline-flex p-3 bg-orange-50 rounded-2xl mb-1 border border-orange-100">
                         <Sparkles className="w-7 h-7 text-[#F97316]" />
                     </div>
-                    <h1 className="text-3xl font-black text-gray-900 tracking-tight">Environment Check</h1>
+                    <h1 className="text-3xl font-black text-gray-900 tracking-tight">{title}</h1>
                     <p className="text-gray-500 font-medium">Verify your camera and microphone before the interview begins</p>
                 </div>
 
@@ -758,31 +815,75 @@ export function HardwareCheck({
                                 )}
                             </div>
                             <h4 className={cn("text-lg font-black tracking-tight", speedTestRunning ? "text-gray-400" : uploadSpeedMbps !== null && uploadSpeedMbps >= 1 ? "text-gray-900" : "text-red-700")}>
-                                {speedTestRunning ? "Analyzing network..." : uploadSpeedMbps !== null ? `${uploadSpeedMbps} Mbps Upload` : "Test Failed"}
+                                {speedTestRunning ? "Analyzing stability..." : uploadSpeedMbps !== null ? "Network Ready" : "Test Failed"}
                             </h4>
+
+                            {!speedTestRunning && (
+                                <div className="flex items-center gap-3 pt-2">
+                                     <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        onClick={testNetworkSpeed}
+                                        className="h-8 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest border-gray-100 hover:bg-orange-50 hover:text-[#F97316] hover:border-orange-100 transition-all"
+                                    >
+                                        <RefreshCw className="w-3 h-3 mr-2" />
+                                        Retry Speed Test
+                                    </Button>
+                                    {uploadSpeedMbps !== null && uploadSpeedMbps >= 1.5 && latencyMs !== null && latencyMs < 500 && (
+                                        <span className="flex items-center gap-1.5 px-3 py-1 bg-green-500 text-white rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg shadow-green-500/20 animate-in fade-in zoom-in duration-500">
+                                            <CheckCircle2 className="w-3 h-3" />
+                                            System Verified
+                                        </span>
+                                    )}
+                                    {/* SOFT BYPASS: Allow candidates with suboptimal but working bandwidth to proceed */}
+                                    {!bypassSpeedTest && uploadSpeedMbps !== null && (uploadSpeedMbps < 1.5 || (latencyMs || 0) > 500) && uploadSpeedMbps > 0.5 && (
+                                        <Button 
+                                            variant="outline" 
+                                            size="sm" 
+                                            onClick={() => setBypassSpeedTest(true)}
+                                            className="h-8 px-3 rounded-xl text-[9px] font-black uppercase tracking-widest bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 hover:border-amber-300 transition-all border-dashed"
+                                        >
+                                            <AlertCircle className="w-3 h-3 mr-2" />
+                                            Proceed Anyway (Risk of Lag)
+                                        </Button>
+                                    )}
+                                    {bypassSpeedTest && (
+                                        <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-500 text-white rounded-full text-[9px] font-black uppercase tracking-widest shadow-lg shadow-amber-500/10">
+                                            <Activity className="w-3 h-3" />
+                                            Bypass Active
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+
+                            {!speedTestRunning && uploadSpeedMbps !== null && (
+                                <div className="flex flex-wrap gap-4 mt-2">
+                                    <div className="flex flex-col">
+                                        <p className="text-[9px] font-black uppercase text-gray-400">Download</p>
+                                        <p className="text-xs font-bold text-gray-700">{downloadSpeedMbps} Mbps</p>
+                                    </div>
+                                    <div className="w-[1px] h-6 bg-gray-100" />
+                                    <div className="flex flex-col">
+                                        <p className="text-[9px] font-black uppercase text-gray-400">Upload</p>
+                                        <p className="text-xs font-bold text-gray-700">{uploadSpeedMbps} Mbps</p>
+                                    </div>
+                                    <div className="w-[1px] h-6 bg-gray-100" />
+                                    <div className="flex flex-col">
+                                        <p className="text-[9px] font-black uppercase text-gray-400">Latency</p>
+                                        <p className="text-xs font-bold text-gray-700">{latencyMs} ms</p>
+                                    </div>
+                                    <div className="w-[1px] h-6 bg-gray-100" />
+                                    <div className="flex flex-col relative group cursor-help">
+                                        <p className="text-[9px] font-black uppercase text-gray-400">Jitter</p>
+                                        <p className={cn("text-xs font-bold", (jitterMs || 0) > 30 ? "text-orange-500" : "text-gray-700")}>{jitterMs} ms</p>
+                                        <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-48 p-2 bg-gray-900 text-white text-[10px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                                            Jitter measures connection stability. High jitter can cause audio/video lag even on fast speeds.
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
-                        {!speedTestRunning && uploadSpeedMbps !== null && (
-                            <div className="flex items-center gap-3">
-                                {uploadSpeedMbps < 1 && (
-                                    <div className="hidden sm:flex flex-col items-end">
-                                        <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">Action Required</p>
-                                        <p className="text-[9px] font-medium text-red-400">Find a stronger signal</p>
-                                    </div>
-                                )}
-                                <button 
-                                    onClick={testNetworkSpeed}
-                                    className="p-3 rounded-xl bg-white border border-gray-100 text-gray-400 hover:text-orange-500 hover:border-orange-100 hover:shadow-lg transition-all active:scale-95"
-                                >
-                                    <RefreshCw className="w-4 h-4" />
-                                </button>
-                                {uploadSpeedMbps >= 1 && (
-                                    <div className="h-10 w-10 bg-green-500 rounded-full flex items-center justify-center text-white shadow-lg shadow-green-500/20">
-                                        <CheckCircle2 className="w-5 h-5" />
-                                    </div>
-                                )}
-                            </div>
-                        )}
                     </div>
 
                     {/* Error banner */}

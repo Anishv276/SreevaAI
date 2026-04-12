@@ -1230,7 +1230,7 @@ Return ONLY valid JSON matching this schema exactly. No markdown. No explanation
   }},
 
     "work_history": [
-    {
+    {{
       "company": string,
       "role": string,
       "company_type": "startup" | "enterprise" | "agency" | "freelance" | "unknown",
@@ -1250,7 +1250,7 @@ Return ONLY valid JSON matching this schema exactly. No markdown. No explanation
       "technologies_used": [string],
       "impact_signals": [string],
       "seniority_signal": "intern" | "junior" | "mid" | "senior" | null
-    }
+    }}
   ],
 
   "skills": {{
@@ -1390,6 +1390,8 @@ Resume:
                 "rejection_reasons": score_result["rejection_reasons"],
                 "candidate_years": score_result["candidate_years"],
                 "jd_min_years": score_result["jd_min_years"],
+                # Include work_history from resume so frontend can read it from aiReport
+                "work_history": resume_data.get("work_history", []),
                 **report,  # Spread report to top-level for frontend
                 # Frontend reads experience_assessment; backend outputs experience_analysis
                 "experience_assessment": report.get("experience_analysis", {}),
@@ -1472,6 +1474,15 @@ if __name__ == "__main__":
     else:
         # For JD or RESUME, file_path is a PDF/text file
         text = extract_text(file_path, type_)
+        
+        # Guard against zero text extraction (prevents wasting AI credits/scoring errors)
+        if not text or len(text.strip()) < 50:
+             print(json.dumps({
+                 "error": "The document appears to be empty or contains unreadable content. Please ensure the file is not a low-quality scanned image.",
+                 "code": "EMPTY_DOCUMENT_ERROR"
+             }))
+             sys.exit(1)
+
         data = extract_data(text, type_)
 
         # Output to stdout for the backend

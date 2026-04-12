@@ -9,16 +9,24 @@ import { ActiveDrivesSummary } from "@/components/admin/active-drives-summary";
 import { TopCandidates } from "@/components/admin/top-candidates";
 import { LiveFeed } from "@/components/admin/live-feed";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
-import { Plus } from "lucide-react";
+import { Plus, Archive } from "lucide-react";
 import Link from "next/link";
 
 export default function DashboardPage() {
     const [dateRange, setDateRange] = useState<DateRange>({ type: "month" });
     const [mounted, setMounted] = useState(false);
+    const [ready, setReady] = useState(false);
 
     useEffect(() => {
         setMounted(true);
+        // Simulate initial fold readiness or just wait for next tick
+        const timer = setTimeout(() => setReady(true), 1200); 
+        return () => clearTimeout(timer);
     }, []);
+
+    if (!mounted || !ready) {
+        return <DashboardSkeleton />;
+    }
 
     return (
         <div className="space-y-8 pb-12">
@@ -71,14 +79,45 @@ export default function DashboardPage() {
                 {/* Section 4: Active Drives Summary + Top Candidates */}
                 <section className="animate-fade-slide [animation-delay:300ms]">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                        <ActiveDrivesSummary />
-                        <TopCandidates />
+                        <ActiveDrivesSummary dateRange={dateRange} />
+                        <TopCandidates dateRange={dateRange} />
                     </div>
                 </section>
 
                 <div className="animate-fade-slide [animation-delay:400ms]">
-                    <LiveFeed />
+                    <LiveFeed dateRange={dateRange} />
                 </div>
+            </div>
+        </div>
+    );
+}
+
+function DashboardSkeleton() {
+    return (
+        <div className="space-y-8 pb-12 animate-pulse">
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+                <div className="space-y-3">
+                    <div className="h-10 w-48 bg-gray-100 rounded-xl" />
+                    <div className="h-4 w-32 bg-gray-50 rounded-lg" />
+                </div>
+                <div className="flex gap-3">
+                    <div className="h-12 w-40 bg-gray-100 rounded-2xl" />
+                    <div className="h-12 w-48 bg-gray-200 rounded-lg" />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {[1, 2, 3, 4].map(i => (
+                    <div key={i} className="h-32 bg-white/60 border border-white/80 rounded-[2rem]" />
+                ))}
+            </div>
+
+            <div className="space-y-12">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="h-[400px] bg-white/40 border border-white/60 rounded-[2.5rem]" />
+                    <div className="h-[400px] bg-white/40 border border-white/60 rounded-[2.5rem]" />
+                </div>
+                <div className="h-80 bg-white/40 border border-white/60 rounded-[2.5rem]" />
             </div>
         </div>
     );

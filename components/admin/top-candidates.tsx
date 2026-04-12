@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Loader2, ChevronRight } from "lucide-react";
+import { ErrorState } from "./error-state";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { type DateRange } from "./date-filter";
 
 interface TopCandidate {
     id: string;
@@ -33,17 +35,46 @@ const STATUS_GLOW: Record<string, string> = {
     "In progress":"bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.3)]",
 };
 
-export function TopCandidates() {
+interface TopCandidatesProps {
+    dateRange: DateRange;
+}
+
+export function TopCandidates({ dateRange }: TopCandidatesProps) {
     const [candidates, setCandidates] = useState<TopCandidate[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const router = useRouter();
 
+    const fetchCandidates = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const params = new URLSearchParams();
+            if (dateRange.type === "custom") {
+                params.set("range", "custom");
+                params.set("from", dateRange.from);
+                params.set("to", dateRange.to);
+            } else {
+                params.set("range", dateRange.type);
+            }
+
+            const res = await fetch(`/api/admin/top-candidates?${params.toString()}`);
+            if (res.ok) {
+                const data = await res.json();
+                setCandidates(data.candidates ?? []);
+            } else {
+                setError("Talent synchronization failed.");
+            }
+        } catch (err) {
+            setError("Network connectivity issue.");
+        } finally {
+            setLoading(false);
+        }
+    }, [dateRange]);
+
     useEffect(() => {
-        fetch("/api/admin/top-candidates")
-            .then((r) => r.json())
-            .then((d) => setCandidates(d.candidates ?? []))
-            .finally(() => setLoading(false));
-    }, []);
+        fetchCandidates();
+    }, [fetchCandidates]);
 
     return (
         <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-full overflow-hidden hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)] transition-all duration-700">
@@ -65,6 +96,15 @@ export function TopCandidates() {
                 {loading ? (
                     <div className="flex items-center justify-center h-48">
                         <Loader2 className="h-8 w-8 text-orange-200 animate-spin" />
+                    </div>
+                ) : error ? (
+                    <div className="flex items-center justify-center h-48 py-8">
+                        <ErrorState 
+                            message={error} 
+                            onRetry={fetchCandidates} 
+                            compact 
+                            className="bg-transparent border-none shadow-none"
+                        />
                     </div>
                 ) : candidates.length === 0 ? (
                     <div className="flex items-center justify-center h-48 text-[12px] font-bold text-gray-300 uppercase tracking-widest">

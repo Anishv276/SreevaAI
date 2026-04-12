@@ -2,7 +2,8 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Building2, ShieldCheck, Globe, Loader2, User, Mail, ShieldAlert, RefreshCw, Lock } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Building2, ShieldCheck, Globe, Loader2, User, Mail, ShieldAlert, RefreshCw, Lock, MapPin as MapPinIcon } from "lucide-react";
+
 
 const PLANS = [
     { id: "STARTER", label: "Starter", desc: "For small teams", color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
@@ -17,8 +18,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
     const [saved, setSaved] = useState(false);
-    const [resetLoading, setResetLoading] = useState(false);
-    const [resetSuccess, setResetSuccess] = useState(false);
+
 
     const [form, setForm] = useState({
         name: "",
@@ -35,7 +35,9 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         llmProvider: "OPENAI",
         llmModel: "gpt-4o",
         llmTemperature: 0.7,
+        location: ""
     });
+
     
     const [adminInfo, setAdminInfo] = useState<{name: string, email: string} | null>(null);
 
@@ -60,7 +62,9 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         llmProvider: data.llmProvider || "OPENAI",
                         llmModel: data.llmModel || "gpt-4o",
                         llmTemperature: data.llmTemperature !== undefined ? data.llmTemperature : 0.7,
+                        location: data.location || ""
                     });
+
                     if (data.users && data.users.length > 0) {
                         setAdminInfo({ name: data.users[0].name, email: data.users[0].email });
                     }
@@ -104,30 +108,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         }
     };
 
-    const handleResetPassword = async () => {
-        setResetLoading(true);
-        setResetSuccess(false);
-        setError("");
 
-        try {
-            const res = await fetch(`/api/super-admin/orgs/${id}/reset-password`, {
-                method: "POST"
-            });
-
-            if (!res.ok) {
-                const data = await res.json();
-                setError(data.error || "Failed to initialize reset flow");
-                return;
-            }
-
-            setResetSuccess(true);
-            setTimeout(() => setResetSuccess(false), 5000);
-        } catch {
-            setError("Reset service unreachable. Try again.");
-        } finally {
-            setResetLoading(false);
-        }
-    };
 
     if (loading) {
         return (
@@ -210,11 +191,24 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                         className="h-10 w-full pl-6 pr-3 rounded-xl border border-gray-200 bg-white text-sm font-medium focus:ring-2 focus:ring-[#F97316]/30"
                                     />
                                 </div>
-                                <p className="text-[9px] font-bold text-red-400 uppercase tracking-widest mt-1 italic">Warning: Modifying slug breaks active recruitment links.</p>
                             </div>
                         </div>
 
-                        <div className="space-y-4">
+                        <div className="space-y-6">
+                             <div className="space-y-2">
+                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2 leading-none">
+                                    <MapPinIcon className="h-3 w-3" /> Physical Headquarters
+                                </label>
+                                <input
+                                    value={form.location}
+                                    onChange={e => setForm(prev => ({ ...prev, location: e.target.value }))}
+                                    placeholder="e.g. Bangalore, India"
+                                    className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium focus:ring-2 focus:ring-[#F97316]/30"
+                                />
+                            </div>
+
+                            <div className="space-y-4">
+
                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 block">Active Service Plan</label>
                             <div className="grid gap-3">
                                 {PLANS.map(plan => (
@@ -242,6 +236,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         </div>
                     </div>
                 </div>
+            </div>
 
                 {/* Primary HR Controller */}
                 <div className="space-y-6">
@@ -269,33 +264,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                             </div>
                         </div>
 
-                        <div className="md:col-span-2 pt-2">
-                            <button
-                                type="button"
-                                onClick={handleResetPassword}
-                                disabled={resetLoading || resetSuccess}
-                                className={`w-full h-11 rounded-xl border border-dashed transition-all flex items-center justify-center gap-3 group/btn ${
-                                    resetSuccess
-                                        ? "bg-emerald-50 border-emerald-200 text-emerald-600 font-bold"
-                                        : "border-gray-200 text-gray-500 font-bold hover:border-[#F97316] hover:text-[#F97316] hover:bg-orange-50/30"
-                                }`}
-                            >
-                                {resetLoading ? (
-                                    <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" />
-                                ) : resetSuccess ? (
-                                    <CheckCircle2 className="h-4 w-4" />
-                                ) : (
-                                    <RefreshCw className="h-4 w-4 group-hover/btn:rotate-12 transition-transform" />
-                                )}
-                                <span className="text-[10px] uppercase tracking-[0.2em]">
-                                    {resetLoading 
-                                        ? "Disrupting Access..." 
-                                        : resetSuccess 
-                                            ? "Neural Link Sent for Password Reset" 
-                                            : "Initiate Primary Access Reset"}
-                                </span>
-                            </button>
-                        </div>
+
                     </div>
                 </div>
 

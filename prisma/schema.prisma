@@ -14,12 +14,18 @@ model Organization {
   slug               String      @unique
   logoUrl            String?
   plan               String      @default("STARTER")
-  isActive           Boolean     @default(true)
+  status             String      @default("ACTIVE")
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
   industry           String?
   size               String?
   website            String?
+  location           String?
+  phone              String?
+  jobTitle           String?
+  expectedDrives     Int?
+  expectedCandidates Int?
+  expectedInterviews Int?
   onboardingStep     Int         @default(0)
   onboardingComplete Boolean     @default(false)
   customDomain       String?

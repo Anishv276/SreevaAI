@@ -9,6 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import type { DateRange } from "./date-filter";
+import { ErrorState } from "./error-state";
 
 interface StatsData {
     activeDrives: number;
@@ -67,6 +68,19 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
     }, [dateRange]);
 
     useEffect(() => { fetchStats(); }, [fetchStats]);
+
+    if (error) {
+        return (
+            <div className="col-span-full">
+                <ErrorState 
+                    message={error} 
+                    onRetry={fetchStats} 
+                    compact 
+                    className="bg-red-50/10 border-red-100"
+                />
+            </div>
+        );
+    }
 
     if (loading || !stats) {
         return (

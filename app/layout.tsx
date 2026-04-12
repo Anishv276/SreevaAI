@@ -23,9 +23,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning className={jakarta.variable}>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: `document.documentElement.style.zoom='0.9';` }} />
-      </head>
+
       <body className="font-sans antialiased" suppressHydrationWarning>
         <AuthProvider>
           <JobsProvider>

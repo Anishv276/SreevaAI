@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { updateDriveSchema } from "@/lib/validation";
+import { deleteDriveEmbeddings } from "@/lib/pinecone";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             include: {
                 organization: {
                     select: { 
-                        isActive: true,
+                        status: true,
                         name: true,
                         logoUrl: true,
                         industry: true,
@@ -30,20 +31,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                     select: { applications: true },
                 },
             },
-        });
+        } as any);
 
         if (!drive) {
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
         }
 
-        if (drive.organization && !drive.organization.isActive) {
+        if ((drive as any).organization && (drive as any).organization.status !== "ACTIVE") {
             return NextResponse.json({ error: "This organization is currently suspended. Access is restricted." }, { status: 403 });
         }
 
         return NextResponse.json({
             ...drive,
-            applicants: drive._count?.applications || 0,
-            daysLeft: Math.max(0, Math.ceil((new Date(drive.createdAt).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24))),
+            applicants: (drive as any)._count?.applications || 0,
+            daysLeft: Math.max(0, Math.ceil((new Date((drive as any).createdAt).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24))),
             aiScreening: {
                 enabled: (drive as any).aiScreeningEnabled ?? true,
                 weights: {} // Schema doesn't have a weights field yet
@@ -183,6 +184,13 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
             }
         } catch (storageErr) {
             console.error("[DELETE_SINGLE_DRIVE_STORAGE_ERROR]:", storageErr);
+        }
+
+        // ── VECTOR DB CLEANUP: Purge all Drive candidates from Pinecone ──────────
+        try {
+            await deleteDriveEmbeddings(driveId);
+        } catch (pineconeErr) {
+            console.error("[DELETE_SINGLE_DRIVE_PINECONE_ERROR]:", pineconeErr);
         }
 
         await prisma.$transaction([

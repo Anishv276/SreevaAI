@@ -131,6 +131,26 @@ export async function POST(request: Request) {
                 )
             ).catch(() => {});
 
+            try {
+                const driveIds = [...new Set(applications.map(a => a.drive.id))];
+                for (const dId of driveIds) {
+                    const driveStats = await prisma.drive.findUnique({
+                        where: { id: dId },
+                        include: {
+                            _count: { select: { applications: { where: { hiringStatus: { equals: "hired", mode: "insensitive" } } } } }
+                        }
+                    });
+                    if (driveStats && driveStats.positions && driveStats._count.applications >= driveStats.positions) {
+                        await prisma.drive.update({
+                            where: { id: dId },
+                            data: { status: "CLOSED" }
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error("Auto-close bulk drive error:", err);
+            }
+
             return NextResponse.json({ message: `${validIds.length} candidates hired` });
         }
 

@@ -10,8 +10,9 @@ import {
     Camera, Check, ChevronRight, Plus, Trash2, Crown,
     MessageSquare, Calendar, Globe, Mail, Phone, Shield,
     BarChart3, AlertCircle, Zap, ExternalLink, Upload, Lock, Eye, EyeOff,
-    Loader2, Copy, X
+    Loader2, Copy, X, MapPin as MapPinIcon
 } from "lucide-react";
+import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/auth-context";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
@@ -33,7 +34,6 @@ type TeamMember = {
     name: string | null;
     email: string;
     role: "ADMIN" | "HR" | "TEAM";
-    isActive: boolean;
 };
 
 type PendingInvite = {
@@ -105,7 +105,16 @@ export default function SettingsPage() {
     const [profile, setProfile] = useState({ name: "", email: "", phone: "" });
 
     /* Company */
-    const [company, setCompany] = useState({ name: "", industry: "Technology", size: "50–200", website: "", logoUrl: "", customSenderEmail: "", customSenderName: "" });
+    const [company, setCompany] = useState({ 
+        name: "", 
+        industry: "SAAS / TECHNOLOGY", 
+        size: "51–250 EMPLOYEES", 
+        website: "", 
+        location: "",
+        logoUrl: "", 
+        customSenderEmail: "", 
+        customSenderName: "" 
+    });
 
     /* Notifications */
     const [notifs, setNotifs] = useState({
@@ -223,9 +232,10 @@ export default function SettingsPage() {
                     const data = await orgRes.json();
                     setCompany({
                         name: data.name || "",
-                        industry: data.industry || "Technology",
-                        size: data.size || "50–200",
+                        industry: data.industry || "SAAS / TECHNOLOGY",
+                        size: data.size || "1–50 EMPLOYEES",
                         website: data.website || "",
+                        location: data.location || "",
                         logoUrl: data.logoUrl || "",
                         customSenderEmail: data.customSenderEmail || "",
                         customSenderName: data.customSenderName || ""
@@ -261,12 +271,15 @@ export default function SettingsPage() {
             const res = await fetch("/api/upload/logo", { method: "POST", body: formData });
             if (res.ok) {
                 const { url } = await res.json();
-                setCompany(prev => ({ ...prev, logoUrl: url }));
-                // Auto-save the logo change?
-                await fetch("/api/admin/organization", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ ...company, logoUrl: url })
+                setCompany(prev => {
+                    const updated = { ...prev, logoUrl: url };
+                    // Auto-save the logo change?
+                    fetch("/api/admin/organization", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(updated)
+                    }).catch(err => console.error("Logo auto-save failed:", err));
+                    return updated;
                 });
             }
         } catch (err) {
@@ -290,11 +303,14 @@ export default function SettingsPage() {
             });
 
             // 2. Clear from Organization Record
-            setCompany(prev => ({ ...prev, logoUrl: "" }));
-            await fetch("/api/admin/organization", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ...company, logoUrl: "" })
+            setCompany(prev => {
+                const updated = { ...prev, logoUrl: "" };
+                fetch("/api/admin/organization", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(updated)
+                }).catch(err => console.error("Logo delete auto-save failed:", err));
+                return updated;
             });
 
             setIsLogoModalOpen(false);
@@ -599,18 +615,29 @@ export default function SettingsPage() {
                                                 <select
                                                     value={company.industry}
                                                     onChange={e => setCompany(c => ({ ...c, industry: e.target.value }))}
-                                                    className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white font-medium text-sm text-gray-900 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
+                                                    className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white font-medium text-sm text-gray-900 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all font-sans"
                                                 >
-                                                    {["Technology", "Finance", "Healthcare", "Education", "Retail", "Other"].map(i => <option key={i}>{i}</option>)}
+                                                    {[
+                                                        "SAAS / TECHNOLOGY",
+                                                        "FINANCIAL SERVICES",
+                                                        "LOGISTICS & SUPPLY CHAIN",
+                                                        "RETAIL & E-COMMERCE",
+                                                        "HEALTHCARE & PHARMA",
+                                                        "REAL ESTATE",
+                                                        "MEDIA & ENTERTAINMENT",
+                                                        "EDUCATION / EDTECH",
+                                                        "MANUFACTURING",
+                                                        "HOSPITALITY & TRAVEL"
+                                                    ].map(i => <option key={i}>{i}</option>)}
                                                 </select>
                                             </Field>
                                             <Field label="Company Size">
                                                 <select
                                                     value={company.size}
                                                     onChange={e => setCompany(c => ({ ...c, size: e.target.value }))}
-                                                    className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white font-medium text-sm text-gray-900 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
+                                                    className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white font-medium text-sm text-gray-900 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all font-sans"
                                                 >
-                                                    {["1–10", "11–50", "50–200", "200–500", "500+"].map(s => <option key={s}>{s}</option>)}
+                                                    {["1–50 EMPLOYEES", "51–250 EMPLOYEES", "251–1000 EMPLOYEES", "1001+"].map(s => <option key={s}>{s}</option>)}
                                                 </select>
                                             </Field>
                                         </div>
@@ -618,8 +645,16 @@ export default function SettingsPage() {
                                             <div className="relative">
                                                 <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                                 <Input className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
+                                                    placeholder="https://company.com"
                                                     value={company.website} onChange={e => setCompany(c => ({ ...c, website: e.target.value }))} />
                                             </div>
+                                        </Field>
+                                        <Field label="Headquarters / Location">
+                                            <LocationAutocomplete
+                                                value={company.location}
+                                                onChange={val => setCompany(c => ({ ...c, location: val }))}
+                                                placeholder="Bangalore, India"
+                                            />
                                         </Field>
                                     </div>
                                 </SettingsCard>
@@ -831,7 +866,8 @@ export default function SettingsPage() {
                                                             <div className="space-y-4">
                                                                 <div className="space-y-1.5">
                                                                     <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Sender Name</label>
-                                                                    <input className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-[14px] text-gray-900 font-medium shadow-sm focus:border-[#F97316] outline-none transition-all" placeholder="YOUR COMPANY" value={company.customSenderName || ""} onChange={e => setCompany({ ...company, customSenderName: e.target.value.toUpperCase() })} />
+                                                                    <input className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-[14px] text-gray-900 font-medium shadow-sm focus:border-[#F97316] outline-none transition-all" placeholder="YOUR COMPANY" value={company.customSenderName || ""} 
+                                                                        onChange={e => setCompany(prev => ({ ...prev, customSenderName: e.target.value.toUpperCase() }))} />
                                                                 </div>
                                                                 <div className="space-y-1.5">
                                                                     <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Sender Email</label>
@@ -841,8 +877,10 @@ export default function SettingsPage() {
                                                                             placeholder="careers"
                                                                             value={company.customSenderEmail ? company.customSenderEmail.split("@")[0] : ""}
                                                                             onChange={e => {
-                                                                                const localPart = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "").split("@")[0].trim();
-                                                                                setCompany({ ...company, customSenderEmail: localPart ? `${localPart}@${domainInfo.customDomain}` : "" });
+                                                                                setCompany(prev => {
+                                                                                    const localPart = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "").split("@")[0].trim();
+                                                                                    return { ...prev, customSenderEmail: localPart ? `${localPart}@${domainInfo.customDomain}` : "" };
+                                                                                });
                                                                             }}
                                                                         />
                                                                         <div className="flex items-center px-4 bg-gray-100 rounded-xl border border-gray-200 text-gray-400 text-[11px] font-bold italic">@{domainInfo.customDomain}</div>

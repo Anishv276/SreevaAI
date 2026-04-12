@@ -43,15 +43,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             {/* Real-time State Synchronization */}
             <OnboardingRedirect needsOnboarding={needsOnboarding} />
             
-            <div className="relative z-10 flex w-full">
+             <div className="relative z-10 flex w-full">
                 {showSidebar && <Sidebar />}
                 
-                <div className={cn(
+                <div id="admin-main-wrapper" className={cn(
                     "flex-1 min-w-0 transition-all duration-500 ease-in-out", 
                     showSidebar && "md:pl-[220px]"
                 )}>
+                    <style dangerouslySetInnerHTML={{ __html: `
+                        body.reports-mode #global-admin-sidebar { display: none !important; }
+                        body.reports-mode #admin-main-wrapper { padding-left: 0 !important; }
+                        body.reports-mode .recruiter-assistant-btn { display: none !important; }
+                    ` }} />
                     <main className="min-h-screen">
-                        <div className="max-w-[1600px] mx-auto p-8 md:p-12 lg:p-14">
+                        <div className="max-w-full mx-auto p-4 md:p-8 lg:p-10">
                             {children}
                         </div>
                     </main>

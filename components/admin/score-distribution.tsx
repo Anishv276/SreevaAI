@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import type { DateRange } from "./date-filter";
+import { ErrorState } from "./error-state";
 
 interface Band {
     label: string;
@@ -39,12 +40,20 @@ const TIER_COLORS: Record<string, string> = {
 export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
     const [data, setData] = useState<DistributionData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
+        setError(null);
         try {
             const res = await fetch(buildUrl(dateRange));
-            if (res.ok) setData(await res.json());
+            if (res.ok) {
+                setData(await res.json());
+            } else {
+                setError("Score data synchronization failed.");
+            }
+        } catch (err) {
+            setError("Network connectivity issue.");
         } finally {
             setLoading(false);
         }
@@ -81,6 +90,15 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
             {loading ? (
                 <div className="flex-1 flex items-center justify-center min-h-[250px]">
                     <Loader2 className="h-8 w-8 text-orange-200 animate-spin" />
+                </div>
+            ) : error ? (
+                <div className="flex-1 flex items-center justify-center">
+                    <ErrorState 
+                        message={error} 
+                        onRetry={fetchData} 
+                        compact 
+                        className="bg-transparent border-none shadow-none"
+                    />
                 </div>
             ) : (
                 <div className="flex-1 flex flex-col">

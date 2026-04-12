@@ -27,14 +27,14 @@ async function getStats() {
         }]>`
             SELECT
                 (SELECT COUNT(*) FROM "Organization") AS org_count,
-                (SELECT COUNT(*) FROM "Organization" WHERE "isActive" = true) AS active_org_count,
+                (SELECT COUNT(*) FROM "Organization" WHERE "status" = 'ACTIVE') AS active_org_count,
                 (SELECT COUNT(*) FROM "Drive") AS drive_count,
                 (SELECT COUNT(*) FROM "Application") AS candidate_count,
                 (SELECT COUNT(*) FROM "Application" WHERE "createdAt" >= ${oneWeekAgo}) AS new_candidates_this_week,
                 (SELECT COUNT(*) FROM "Interview") AS total_interviews
         `,
         prisma.organization.findMany({
-            where: { isActive: true },
+            where: { status: 'ACTIVE' },
             orderBy: { createdAt: "desc" },
             take: 3,
             include: { 
@@ -45,7 +45,7 @@ async function getStats() {
                     } 
                 } 
             }
-        })
+        } as any)
     ]);
 
     const s = statsResult[0];

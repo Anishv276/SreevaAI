@@ -1,24 +1,25 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
-// Define User type
-export type UserRole = "candidate" | "hr" | "SUPER_ADMIN" | "ADMIN";
+// Define User type based on server SessionUser
+export type UserRole = "SUPER_ADMIN" | "ADMIN" | "CANDIDATE";
 
 export interface User {
     id: string;
     name: string;
     email: string;
     role: UserRole;
+    orgId: string | null;
     avatar?: string;
 }
 
 interface AuthContextType {
     user: User | null;
     isAuthenticated: boolean;
-    login: (email: string, role: UserRole) => void;
-    signup: (name: string, email: string) => void;
+    isLoading: boolean;
+    refreshUser: () => Promise<void>;
     logout: () => Promise<void>;
 }
 
@@ -26,44 +27,44 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
 
-    // Check for persisted user on mount
-    useEffect(() => {
-        const storedUser = localStorage.getItem("auth_user");
-        if (storedUser) {
-            setUser(JSON.parse(storedUser));
+    const refreshUser = useCallback(async () => {
+        try {
+            const res = await fetch("/api/auth/me");
+            if (res.ok) {
+                const session = await res.json();
+                if (session) {
+                    setUser({
+                        id: session.userId,
+                        name: session.name,
+                        email: session.email,
+                        role: session.role as UserRole,
+                        orgId: session.orgId,
+                    });
+                } else {
+                    setUser(null);
+                }
+            } else {
+                setUser(null);
+            }
+        } catch (error) {
+            console.error("Auth refresh failed:", error);
+            setUser(null);
+        } finally {
+            setIsLoading(false);
         }
     }, []);
 
-    const login = (email: string, role: UserRole) => {
-        // Mock login
-        const mockUser: User = {
-            id: Date.now().toString(),
-            name: email.split("@")[0].charAt(0).toUpperCase() + email.split("@")[0].slice(1), // Mock name from email
-            email,
-            role,
-        };
-        setUser(mockUser);
-        localStorage.setItem("auth_user", JSON.stringify(mockUser));
-    };
-
-    const signup = (name: string, email: string) => {
-        // Mock signup
-        const newUser: User = {
-            id: Date.now().toString(),
-            name,
-            email,
-            role: "candidate",
-        };
-        setUser(newUser);
-        localStorage.setItem("auth_user", JSON.stringify(newUser));
-    };
+    // Initial check on mount
+    useEffect(() => {
+        refreshUser();
+    }, [refreshUser]);
 
     const logout = async () => {
         // Clear local state first for instant UI response
         setUser(null);
-        localStorage.removeItem("auth_user");
         
         try {
             await fetch("/api/auth/logout", { method: "POST" });
@@ -80,8 +81,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         <AuthContext.Provider value={{
             user,
             isAuthenticated: !!user,
-            login,
-            signup,
+            isLoading,
+            refreshUser,
             logout
         }}>
             {children}

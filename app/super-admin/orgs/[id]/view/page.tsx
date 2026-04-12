@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { 
     ArrowLeft, 
     Briefcase, 
@@ -41,7 +41,7 @@ interface OrgDetail {
     name: string;
     slug: string;
     plan: string;
-    isActive: boolean;
+    status: string;
     industry: string | null;
     ttsProvider?: string;
     cartesiaVoiceId?: string;
@@ -77,7 +77,17 @@ const PLANS = [
 export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const router = useRouter();
-    const [view, setView] = useState<"drives" | "candidates" | "settings">("candidates");
+    const searchParams = useSearchParams();
+    const tab = searchParams.get("tab");
+
+    const [view, setView] = useState<"drives" | "candidates">("candidates");
+
+    // Sync tab from URL to state
+    useEffect(() => {
+        if (tab === "drives" || tab === "candidates") {
+            setView(tab as any);
+        }
+    }, [tab]);
     const [org, setOrg] = useState<OrgDetail | null>(null);
     const [drives, setDrives] = useState<Job[]>([]);
     const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -88,10 +98,6 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
 
-    // Form State (for Settings tab)
-    const [form, setForm] = useState<any>(null);
-    const [saving, setSaving] = useState(false);
-    const [saved, setSaved] = useState(false);
 
     // Pagination & Search state
     const [page, setPage] = useState(1);
@@ -122,24 +128,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                 
                 setOrg(orgData);
                 setDrives(drivesData.drives || []);
-                
-                // Initialize settings form
-                setForm({
-                    name: orgData.name,
-                    slug: orgData.slug,
-                    plan: orgData.plan,
-                    ttsProvider: orgData.ttsProvider || "CARTESIA",
-                    cartesiaVoiceId: orgData.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-                    cartesiaModel: orgData.cartesiaModel || "sonic-english",
-                    sarvamModel: orgData.sarvamModel || "bulbul:v3",
-                    sarvamVoice: orgData.sarvamVoice || "shubh",
-                    sttProvider: orgData.sttProvider || "DEEPGRAM",
-                    deepgramModel: orgData.deepgramModel || "nova-3-general",
-                    sarvamSttModel: orgData.sarvamSttModel || "saaras:v3",
-                    llmProvider: orgData.llmProvider || "OPENAI",
-                    llmModel: orgData.llmModel || "gpt-4o",
-                    llmTemperature: orgData.llmTemperature !== undefined ? orgData.llmTemperature : 0.7,
-                });
+
             } catch {
                 setError("Network error. Could not connect to the server.");
             } finally {
@@ -188,30 +177,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
         }
     }, [page, search, id, view]);
 
-    const handleSettingsSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setSaving(true);
-        setSaved(false);
-        try {
-            const res = await fetch(`/api/super-admin/orgs/${id}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(form),
-            });
-            if (res.ok) {
-                setOrg({ ...org!, ...form });
-                setSaved(true);
-                toast.success("Organization settings updated successfully");
-                setTimeout(() => setSaved(false), 3000);
-            } else {
-                toast.error("Failed to update organization settings");
-            }
-        } catch {
-            toast.error("Network error. Could not save settings.");
-        } finally {
-            setSaving(false);
-        }
-    };
+
 
     if (loading) {
         return (
@@ -246,7 +212,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 <div className="h-10 w-1 bg-[#F97316] rounded-full" />
                                 <div>
                                     <h1 className="text-4xl font-black text-gray-900 tracking-tighter leading-none uppercase italic">
-                                        {view === "drives" ? "Drives" : view === "candidates" ? "Candidates" : "Settings"}
+                                        {view === "drives" ? "Drives" : "Candidates"}
                                     </h1>
                                     <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name} · Enterprise Panel</p>
                                 </div>
@@ -292,17 +258,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                             <Briefcase className={`h-4 w-4 ${view === "drives" ? "text-[#F97316]" : "text-gray-300"}`} />
                             Drives
                         </button>
-                        <button
-                            onClick={() => setView("settings")}
-                            className={`flex items-center gap-3 px-8 py-3 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
-                                view === "settings" 
-                                ? "bg-white text-gray-900 shadow-md shadow-gray-200/50" 
-                                : "text-gray-400 hover:text-gray-600 hover:bg-white/50"
-                            }`}
-                        >
-                            <Settings className={`h-4 w-4 ${view === "settings" ? "text-blue-500" : "text-gray-300"}`} />
-                            Advanced Configuration
-                        </button>
+
                     </div>
                 </div>
             </header>
@@ -402,232 +358,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                     </div>
                 )}
 
-                {view === "settings" && form && (
-                    <div className="max-w-4xl mx-auto animate-fade-slide">
-                         <form onSubmit={handleSettingsSubmit} className="space-y-12">
-                            {/* General Details */}
-                            <div className="space-y-8">
-                                <div className="flex items-center gap-5">
-                                    <div className="h-12 w-12 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#F97316] shadow-sm">
-                                        <Building2 className="h-6 w-6" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">Organization Blueprint</h3>
-                                        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Foundational credentials and routing</p>
-                                    </div>
-                                </div>
 
-                                <div className="grid md:grid-cols-2 gap-8 bg-white border border-gray-100 rounded-[2rem] p-8 shadow-sm group hover:border-[#F97316]/20 transition-all duration-300">
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">Organization Identity</label>
-                                        <input
-                                            value={form.name}
-                                            onChange={e => setForm({...form, name: e.target.value})}
-                                            className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50/50 px-4 text-sm font-black text-gray-900 focus:bg-white focus:ring-4 focus:ring-[#F97316]/5 transition-all outline-none"
-                                        />
-                                    </div>
-                                    <div className="space-y-3">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">Resource Slug</label>
-                                        <div className="relative">
-                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 font-black text-sm">/</span>
-                                            <input
-                                                value={form.slug}
-                                                onChange={e => setForm({...form, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "")})}
-                                                className="h-12 w-full pl-8 pr-4 rounded-xl border border-gray-100 bg-gray-50/50 text-sm font-black text-gray-900 focus:bg-white focus:ring-4 focus:ring-[#F97316]/5 transition-all outline-none"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="md:col-span-2 space-y-4">
-                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">Service Tier Selection</label>
-                                        <div className="grid grid-cols-3 gap-4">
-                                            {PLANS.map(p => (
-                                                <button
-                                                    key={p.id}
-                                                    type="button"
-                                                    onClick={() => setForm({...form, plan: p.id})}
-                                                    className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden group/plan ${
-                                                        form.plan === p.id 
-                                                        ? `${p.border} ${p.bg} shadow-lg shadow-gray-200/20` 
-                                                        : "border-gray-100 opacity-60 hover:opacity-100"
-                                                    }`}
-                                                >
-                                                    <div className={`h-1.5 w-1.5 rounded-full mb-3 ${form.plan === p.id ? "bg-[#F97316] animate-pulse" : "bg-gray-200"}`} />
-                                                    <p className="text-[10px] font-black text-gray-900 uppercase tracking-widest">{p.label}</p>
-                                                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">{p.desc}</p>
-                                                    {form.plan === p.id && <ShieldCheck className="absolute top-4 right-4 h-4 w-4 text-[#F97316]" />}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Infrastructure Stack */}
-                            <div className="space-y-8">
-                                <div className="flex items-center gap-5">
-                                    <div className="h-12 w-12 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600 shadow-sm">
-                                        <Globe className="h-6 w-6" />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">Intelligence Stack</h3>
-                                        <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mt-1">Inference models and neural infrastructure</p>
-                                    </div>
-                                </div>
-
-                                <div className="bg-white border border-gray-100 rounded-[2.5rem] p-10 shadow-sm space-y-12">
-                                    <div className="grid md:grid-cols-2 gap-10 border-b border-gray-50 pb-12">
-                                        <div className="space-y-4">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Primary TTS Engine</label>
-                                            <select 
-                                                value={form.ttsProvider}
-                                                onChange={e => setForm({...form, ttsProvider: e.target.value})}
-                                                className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50 px-4 text-xs font-black text-gray-900 focus:bg-white outline-none"
-                                            >
-                                                <option value="CARTESIA">⚡ Cartesia (Ultra-Low Latency)</option>
-                                                <option value="SARVAM">🇮🇳 Sarvam AI (Indian)</option>
-                                            </select>
-                                        </div>
-                                        <div className="space-y-4">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Neural Transcription</label>
-                                            <select 
-                                                value={form.sttProvider}
-                                                onChange={e => setForm({...form, sttProvider: e.target.value})}
-                                                className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50 px-4 text-xs font-black text-gray-900 focus:bg-white outline-none"
-                                            >
-                                                <option value="DEEPGRAM">🛸 Deepgram (Elite Speed)</option>
-                                                <option value="SARVAM">🇮🇳 Sarvam Saaras</option>
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    {/* Cartesia Settings */}
-                                    {form.ttsProvider === "CARTESIA" && (
-                                        <div className="grid md:grid-cols-2 gap-10 border-b border-gray-50 pb-12">
-                                            <div className="space-y-3">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Cartesia Voice Model</label>
-                                                <select
-                                                    value={form.cartesiaModel}
-                                                    onChange={e => setForm({...form, cartesiaModel: e.target.value})}
-                                                    className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50 px-4 text-xs font-black text-gray-900 focus:bg-white outline-none"
-                                                >
-                                                    <option value="sonic-english">sonic-english (English Optimised)</option>
-                                                    <option value="sonic-3">sonic-3 (Latest, Multilingual)</option>
-                                                    <option value="sonic-2-2025-03-07">sonic-2 (Speed + Emotion Controls)</option>
-                                                </select>
-                                            </div>
-                                            <div className="space-y-3">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                                                    Custom Voice ID
-                                                    <span className="text-[8px] font-bold text-[#F97316] bg-orange-50 px-2 py-0.5 rounded-full normal-case">from cartesia.ai/voices</span>
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={form.cartesiaVoiceId}
-                                                    onChange={e => setForm({...form, cartesiaVoiceId: e.target.value})}
-                                                    placeholder="e.g. 9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
-                                                    className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50/50 px-4 text-xs font-black text-gray-600 placeholder:text-gray-300 focus:bg-white focus:ring-4 focus:ring-[#F97316]/5 transition-all outline-none font-mono"
-                                                />
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Sarvam TTS Settings */}
-                                    {form.ttsProvider === "SARVAM" && (
-                                        <div className="grid md:grid-cols-2 gap-10 border-b border-gray-50 pb-12">
-                                            <div className="space-y-3">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Sarvam TTS Model</label>
-                                                <select
-                                                    value={form.sarvamModel}
-                                                    onChange={e => setForm({...form, sarvamModel: e.target.value})}
-                                                    className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50 px-4 text-xs font-black text-gray-900 focus:bg-white outline-none"
-                                                >
-                                                    <option value="bulbul:v3">bulbul:v3 (Latest)</option>
-                                                    <option value="bulbul:v2">bulbul:v2</option>
-                                                </select>
-                                            </div>
-                                            <div className="space-y-3">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Sarvam Voice</label>
-                                                <select
-                                                    value={form.sarvamVoice}
-                                                    onChange={e => setForm({...form, sarvamVoice: e.target.value})}
-                                                    className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50 px-4 text-xs font-black text-gray-900 focus:bg-white outline-none"
-                                                >
-                                                    <option value="shubh">Shubh (Male, Hindi)</option>
-                                                    <option value="anushka">Anushka (Female, Hindi)</option>
-                                                    <option value="arvind">Arvind (Male, English)</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Deepgram STT Model */}
-                                    {form.sttProvider === "DEEPGRAM" && (
-                                        <div className="grid md:grid-cols-2 gap-10 border-b border-gray-50 pb-12">
-                                            <div className="space-y-3">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Deepgram STT Model</label>
-                                                <select
-                                                    value={form.deepgramModel}
-                                                    onChange={e => setForm({...form, deepgramModel: e.target.value})}
-                                                    className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50 px-4 text-xs font-black text-gray-900 focus:bg-white outline-none"
-                                                >
-                                                    <option value="nova-3-general">nova-3-general (Latest)</option>
-                                                    <option value="nova-2-general">nova-2-general (Stable)</option>
-                                                    <option value="nova-2-meeting">nova-2-meeting (Multi-speaker)</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div className="grid md:grid-cols-2 gap-10">
-                                        <div className="space-y-4">
-                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Large Language Model</label>
-                                            <select 
-                                                value={form.llmModel}
-                                                onChange={e => setForm({...form, llmModel: e.target.value})}
-                                                className="h-12 w-full rounded-xl border border-gray-100 bg-gray-50 px-4 text-xs font-black text-gray-900 focus:bg-white outline-none"
-                                            >
-                                                <option value="gpt-4o">GPT-4o (Superior Reasoning)</option>
-                                                <option value="gpt-4o-mini">GPT-4o-mini (Latency)</option>
-                                                <option value="gpt-4.1-mini">GPT-4.1-mini (Next Gen)</option>
-                                                <option value="gpt-5.1-mini">GPT-5.1-mini (Research)</option>
-                                            </select>
-                                        </div>
-                                        <div className="space-y-4">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Inference Temperature</label>
-                                                <span className="text-[10px] font-black text-[#F97316] bg-orange-50 px-2 py-1 rounded-lg">{form.llmTemperature}</span>
-                                            </div>
-                                            <input 
-                                                type="range" min="0" max="1" step="0.1"
-                                                value={form.llmTemperature}
-                                                onChange={e => setForm({...form, llmTemperature: parseFloat(e.target.value)})}
-                                                className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-[#F97316]"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="pt-8 flex items-center justify-between border-t border-gray-50 flex-col sm:flex-row gap-6">
-                                <p className="text-[10px] font-bold text-gray-300 uppercase tracking-[0.15em] max-w-xs leading-relaxed italic">Synchronizing these changes affects all child threads and active interview sessions across this portal.</p>
-                                <div className="flex items-center gap-6">
-                                     {saved && (
-                                        <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase tracking-widest animate-in-up">
-                                            <ShieldCheck className="h-4 w-4" /> SECURELY SYNCED
-                                        </div>
-                                    )}
-                                    <button
-                                        type="submit"
-                                        disabled={saving}
-                                        className="h-12 px-12 bg-gray-900 text-white font-black text-[11px] uppercase tracking-[0.2em] rounded-xl shadow-xl hover:bg-black transition-all hover:-translate-y-1 active:scale-95 disabled:opacity-50 flex items-center gap-2"
-                                    >
-                                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "COMMIT CHANGES →"}
-                                    </button>
-                                </div>
-                            </div>
-                         </form>
-                    </div>
-                )}
             </main>
 
             <ActionConfirmModal 

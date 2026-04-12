@@ -4,6 +4,8 @@ import { resumeQueue } from "@/lib/queue";
 import { createCandidateSchema, bulkDeleteCandidatesSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
 import { sanitizeObject } from "@/lib/utils";
+import { deleteCandidateEmbeddings } from "@/lib/pinecone";
+import { submissionLimiter } from "@/lib/rate-limit";
 
 export async function GET(request: Request) {
     try {
@@ -168,6 +170,25 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
     try {
+        // ── RATE LIMITING ───────────────────
+        const ip = request.headers.get("x-forwarded-for") || "unknown";
+        const { success, remaining, reset } = await submissionLimiter.check(ip);
+        
+        if (!success) {
+            return NextResponse.json({ 
+                error: "Too many application attempts. Please try again later.",
+                code: "RATE_LIMIT_EXCEEDED",
+                resetAt: new Date(reset).toISOString()
+            }, { 
+                status: 429,
+                headers: {
+                    'X-RateLimit-Limit': '2000',
+                    'X-RateLimit-Remaining': remaining.toString(),
+                    'X-RateLimit-Reset': reset.toString()
+                }
+            });
+        }
+
         const rawBody = await request.json();
         const body = sanitizeObject(rawBody);
 
@@ -182,8 +203,8 @@ export async function POST(request: Request) {
         const data = result.data;
 
         const drive = await prisma.drive.findUnique({
-            where: { id: data.driveId }, include: { organization: { select: { isActive: true } } },
-        });
+            where: { id: data.driveId }, include: { organization: { select: { status: true } } },
+        } as any);
 
         if (!drive) {
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
@@ -200,7 +221,7 @@ export async function POST(request: Request) {
             }, { status: 410 });
         }
 
-        if (drive.organization && !drive.organization.isActive) {
+        if ((drive as any).organization && (drive as any).organization.status !== "ACTIVE") {
             return NextResponse.json({ error: "Access Denied: This organization's recruitment portal is currently suspended." }, { status: 403 });
         }
 
@@ -342,6 +363,15 @@ export async function DELETE(request: Request) {
             }
         } catch (storageErr) {
             console.error("[DELETE_CANDIDATE_STORAGE_ERROR]:", storageErr);
+        }
+
+        // ── VECTOR DB CLEANUP: Purge from Pinecone ──────────
+        try {
+            for (const cId of validIds) {
+                await deleteCandidateEmbeddings(cId);
+            }
+        } catch (pineconeErr) {
+             console.error("[BULK_DELETE_PINECONE_ERROR]:", pineconeErr);
         }
 
         try {

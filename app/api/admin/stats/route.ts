@@ -5,6 +5,13 @@ import { getSession } from "@/lib/auth";
 function getRangeWindow(range: string, from?: string, to?: string): { start: Date; prevStart: Date; prevEnd: Date } {
     const now = new Date();
 
+    if (range === "all") {
+        return { 
+            start: new Date(0), 
+            prevStart: new Date(0), 
+            prevEnd: new Date(0) 
+        };
+    }
     if (range === "today") {
         const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const prevStart = new Date(start);

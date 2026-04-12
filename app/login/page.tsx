@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/auth-context";
 
 export default function LoginPage() {
     const router = useRouter();
+    const { refreshUser } = useAuth();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
@@ -30,6 +32,8 @@ export default function LoginPage() {
                 return;
             }
 
+            // Sync user state to AuthContext before redirecting
+            await refreshUser();
             router.push(data.redirectTo);
         } catch {
             setError("Connection error. Please try again.");

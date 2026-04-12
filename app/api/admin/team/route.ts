@@ -102,7 +102,6 @@ export async function GET() {
                 name: member.name,
                 email: member.email,
                 role: normalizeOrgRole(member.orgRole || member.role),
-                isActive: true,
             }));
 
         return NextResponse.json({

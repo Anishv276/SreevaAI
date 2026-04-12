@@ -8,10 +8,10 @@ export async function GET() {
     if (session && session.orgId) {
         const org = await prisma.organization.findUnique({
             where: { id: session.orgId },
-            select: { isActive: true }
-        });
+            select: { status: true }
+        } as any);
         
-        if (!org || !org.isActive) {
+        if (!org || org.status !== 'ACTIVE') {
             // Org is suspended or deleted, session is invalid
             return NextResponse.json(null);
         }

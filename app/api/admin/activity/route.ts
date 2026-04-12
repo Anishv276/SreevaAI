@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { getRangeStart } from "@/lib/date-utils";
 
 function timeAgo(date: Date): string {
     const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -13,7 +14,7 @@ function timeAgo(date: Date): string {
     return `${days}d ago`;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
     try {
         const session = await getSession();
         if (!session?.orgId) {
@@ -21,7 +22,10 @@ export async function GET() {
         }
 
         const orgId = session.orgId;
-        const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const { searchParams } = new URL(req.url);
+        const range = searchParams.get("range") ?? "month";
+        const from = searchParams.get("from") ?? undefined;
+        const start = getRangeStart(range, from);
 
         // --- Core Fetcher Function ---
         async function fetchActivity(dateCutoff: Date | null) {
@@ -70,7 +74,7 @@ export async function GET() {
         }
 
         // Try recent first
-        let [recentApplications, recentInterviews, recentRejections] = await fetchActivity(since);
+        let [recentApplications, recentInterviews, recentRejections] = await fetchActivity(start);
 
         // Fallback to all-time if empty
         if (recentApplications.length === 0 && recentInterviews.length === 0 && recentRejections.length === 0) {
@@ -174,6 +178,7 @@ export async function GET() {
                     drive: "Backend Engineer",
                     time: "10m ago",
                     timestamp: now - 10 * 60 * 1000,
+                    isDemo: true,
                 },
                 {
                     id: "demo_2",
@@ -182,6 +187,7 @@ export async function GET() {
                     drive: "Product Designer",
                     time: "2h ago",
                     timestamp: now - 2 * 60 * 60 * 1000,
+                    isDemo: true,
                 },
                 {
                     id: "demo_3",
@@ -190,6 +196,7 @@ export async function GET() {
                     drive: "Frontend Intern",
                     time: "5h ago",
                     timestamp: now - 5 * 60 * 60 * 1000,
+                    isDemo: true,
                 }
             );
         }

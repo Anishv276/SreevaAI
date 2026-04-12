@@ -7,6 +7,7 @@ import Link from "next/link";
 import type { DateRange } from "./date-filter";
 
 import { motion, AnimatePresence } from "framer-motion";
+import { ErrorState } from "./error-state";
 
 interface Violation {
     key: string;
@@ -88,12 +89,20 @@ const SEVERITY_COLORS: Record<string, { bg: string, bar: string, text: string }>
 export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
     const [data, setData] = useState<IntegrityData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
+        setError(null);
         try {
             const res = await fetch(buildUrl(dateRange));
-            if (res.ok) setData(await res.json());
+            if (res.ok) {
+                setData(await res.json());
+            } else {
+                setError("Integrity data synchronization failed.");
+            }
+        } catch (err) {
+            setError("Network connectivity issue.");
         } finally {
             setLoading(false);
         }
@@ -129,6 +138,15 @@ export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
             {loading ? (
                 <div className="flex-1 flex items-center justify-center min-h-[300px]">
                     <Loader2 className="h-8 w-8 text-orange-200 animate-spin" />
+                </div>
+            ) : error ? (
+                <div className="flex-1 flex items-center justify-center p-8">
+                    <ErrorState 
+                        message={error} 
+                        onRetry={fetchData} 
+                        compact 
+                        className="bg-transparent border-none shadow-none"
+                    />
                 </div>
             ) : !data ? null : (
                 <div className="p-8 space-y-10 flex-1 flex flex-col">

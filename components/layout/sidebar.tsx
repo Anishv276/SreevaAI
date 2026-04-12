@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { useAuth } from "@/context/auth-context";
+import { useEffect } from "react";
 
 const sidebarItems = [
     { icon: LayoutDashboard, label: "Dashboard",    href: "/admin" },
@@ -30,7 +31,35 @@ export function Sidebar() {
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const { logout, user } = useAuth();
+    const [orgInfo, setOrgInfo] = useState<{ name: string; logoUrl: string | null } | null>(null);
     const isSuperAdmin = user?.role === "SUPER_ADMIN";
+
+    useEffect(() => {
+        const fetchOrg = async () => {
+            try {
+                // If super admin is inspecting a specific org, fetch that org's details
+                if (isSuperAdmin && orgId) {
+                    const res = await fetch(`/api/super-admin/orgs/${orgId}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        setOrgInfo({ name: data.name, logoUrl: data.logoUrl });
+                        return;
+                    }
+                }
+                
+                // For regular admins or super admins in their own dashboard, fetch default org
+                const res = await fetch("/api/admin/organization");
+                if (res.ok) {
+                    const data = await res.json();
+                    setOrgInfo({ name: data.name, logoUrl: data.logoUrl });
+                }
+            } catch (err) {
+                console.error("Failed to sync branding:", err);
+            }
+        };
+
+        if (user) fetchOrg();
+    }, [user, orgId, isSuperAdmin]);
 
     const handleLogout = async () => {
         setIsLoggingOut(true);
@@ -97,16 +126,29 @@ export function Sidebar() {
             )}
 
             <aside
+                id="global-admin-sidebar"
                 className="hidden md:flex h-screen w-[220px] flex-col fixed left-0 top-0 z-50 bg-white border-r border-gray-100 shadow-[4px_0_24px_rgba(0,0,0,0.02)]"
             >
                 {/* Logo Section */}
-                <div className="flex items-center gap-3 px-6 h-20 border-b border-gray-50">
-                    <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#F97316] to-orange-600 flex items-center justify-center flex-shrink-0 shadow-[0_4px_15px_rgba(249,115,22,0.3)] group cursor-pointer hover:scale-110 transition-transform">
-                        <Sparkles className="h-5 w-5 text-white" />
+                <div className="flex items-center gap-3 px-6 h-20 border-b border-gray-50 overflow-hidden">
+                    <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#F97316] to-orange-600 flex items-center justify-center flex-shrink-0 shadow-[0_2px_10px_rgba(249,115,22,0.2)] group cursor-pointer hover:scale-105 transition-transform overflow-hidden">
+                        {orgInfo?.logoUrl ? (
+                            <img 
+                                src={orgInfo.logoUrl} 
+                                alt={orgInfo.name} 
+                                className="h-full w-full object-contain p-1.5 bg-white" 
+                            />
+                        ) : (
+                            <Sparkles className="h-5 w-5 text-white" />
+                        )}
                     </div>
-                    <div className="flex flex-col">
-                        <span className="text-lg font-black text-gray-900 leading-none tracking-tight">Hirer.AI</span>
-                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Premium Admin</span>
+                    <div className="flex flex-col min-w-0">
+                        <span className="text-sm font-black text-gray-900 leading-none tracking-tight truncate uppercase">
+                            {orgInfo?.name || "Hirer.AI"}
+                        </span>
+                        <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1 truncate">
+                            {orgInfo ? "Workspace" : "Premium Admin"}
+                        </span>
                     </div>
                 </div>
 

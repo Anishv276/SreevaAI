@@ -96,3 +96,17 @@ export async function deleteCandidateEmbeddings(applicationId: string) {
         throw error;
     }
 }
+
+/**
+ * Delete all embeddings associated with a specific Drive
+ */
+export async function deleteDriveEmbeddings(driveId: string) {
+    try {
+        await (pineconeIndex as any).deleteMany({ filter: { driveId: { "$eq": driveId } } })
+            .catch(() => pineconeIndex.deleteMany({ driveId: { "$eq": driveId } } as any));
+        console.log(`[PINECONE_DRIVE_DELETE_SUCCESS]: ${driveId}`);
+    } catch (error: any) {
+        console.error("[PINECONE_DRIVE_DELETE_ERROR]:", error.message);
+        throw error;
+    }
+}

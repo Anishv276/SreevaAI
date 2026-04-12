@@ -9,7 +9,7 @@ export default async function BrandedApplyPage({ params }: { params: Promise<{ s
         include: { organization: true }
     });
 
-    if (!job || !job.organization || job.organization.slug !== slug || !job.organization.isActive) {
+    if (!job || !job.organization || job.organization.slug !== slug || job.organization.status !== "ACTIVE") {
         notFound();
     }
 

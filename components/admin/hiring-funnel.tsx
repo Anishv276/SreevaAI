@@ -5,11 +5,11 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import type { DateRange } from "./date-filter";
+import { ErrorState } from "./error-state";
 
 interface FunnelData {
     activeDrives: number;
     totalCandidates: number;
-    screened: number;
     invited: number;
     interviewed: number;
     shortlisted: number;
@@ -36,7 +36,6 @@ function rangeLabel(range: DateRange) {
 
 const STAGES = [
     { key: "applied",      label: "Applied",      color: "#3B82F6", darkColor: "#2563EB" },
-    { key: "screened",     label: "Screened",      color: "#60A5FA", darkColor: "#3B82F6" },
     { key: "invited",      label: "Invited",       color: "#1D4ED8", darkColor: "#1E40AF" },
     { key: "interviewed",  label: "Interviewed",   color: "#16A34A", darkColor: "#15803D" },
     { key: "shortlisted",  label: "Shortlisted",   color: "#15803D", darkColor: "#166534" },
@@ -46,12 +45,20 @@ const STAGES = [
 export function HiringFunnel({ dateRange }: HiringFunnelProps) {
     const [data, setData] = useState<FunnelData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
+        setError(null);
         try {
             const res = await fetch(buildUrl(dateRange));
-            if (res.ok) setData(await res.json());
+            if (res.ok) {
+                setData(await res.json());
+            } else {
+                setError("Analytics synchronization failed.");
+            }
+        } catch (err) {
+            setError("Network connectivity issue.");
         } finally {
             setLoading(false);
         }
@@ -61,7 +68,6 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
 
     const stages = data ? [
         { key: "applied",     label: "Applied",     value: data.totalCandidates },
-        { key: "screened",    label: "Screened",     value: data.screened },
         { key: "invited",     label: "Invited",      value: data.invited },
         { key: "interviewed", label: "Interviewed",  value: data.interviewed },
         { key: "shortlisted", label: "Shortlisted",  value: data.shortlisted },
@@ -102,6 +108,15 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
             {loading ? (
                 <div className="flex-1 flex items-center justify-center">
                     <Loader2 className="h-8 w-8 text-gray-200 animate-spin" />
+                </div>
+            ) : error ? (
+                <div className="flex-1 flex items-center justify-center">
+                    <ErrorState 
+                        message={error} 
+                        onRetry={fetchData} 
+                        compact 
+                        className="bg-transparent border-none shadow-none"
+                    />
                 </div>
             ) : (
                 <div className="flex-1 space-y-4">

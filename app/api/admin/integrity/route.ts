@@ -35,6 +35,7 @@ const EVENT_MAP: Record<string, string> = {
 
 function getRangeStart(range: string, from?: string, to?: string): Date {
     const now = new Date();
+    if (range === "all") return new Date(0);
     if (range === "today") return new Date(now.getFullYear(), now.getMonth(), now.getDate());
     if (range === "week") {
         const d = new Date(now);

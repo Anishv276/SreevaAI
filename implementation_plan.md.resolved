@@ -1,0 +1,52 @@
+# Implementation Plan: AI Usage Tracking & Cost Attribution
+
+This plan outlines how we will track and measure costs for AI services (GPT, Deepgram, Cartesia) and expose them to the Super Admin dashboard.
+
+## User Review Required
+> [!IMPORTANT]
+> To track costs per organization, we will add a new `AILog` table to the database. Every AI operation (resume scan, JD generation, interview summary) will now record its token/unit usage and estimated USD cost.
+
+## Proposed Changes
+
+### [Database]
+#### [MODIFY] [prisma/schema.prisma](file:///c:/Users/vamsi/OneDrive/Desktop/HR-updates/prisma/schema.prisma)
+- Add `AILog` model:
+  - `id`, `organizationId`, `service` (OPENAI, DEEPGRAM, etc.), `model`, `action` (JD_EXTRACTION, RESUME_SCORING, etc.), `inputUnits`, `outputUnits`, `cost`, `createdAt`.
+
+### [Core Utilities]
+#### [NEW] [lib/usage.ts](file:///c:/Users/vamsi/OneDrive/Desktop/HR-updates/lib/usage.ts)
+- Create a `recordUsage` function that calculates costs based on current API pricing and saves to the database.
+
+#### [MODIFY] [lib/openai.ts](file:///c:/Users/vamsi/OneDrive/Desktop/HR-updates/lib/openai.ts)
+- Update `extractJDFromText` to include token usage in its response.
+
+### [AI Workers & Scripts]
+#### [MODIFY] [scripts/extract_pdf.py](file:///c:/Users/vamsi/OneDrive/Desktop/HR-updates/scripts/extract_pdf.py)
+- Update Python logic to capture OpenAI token usage (input/output) from responses and include it in the JSON output.
+
+#### [MODIFY] [worker.ts](file:///c:/Users/vamsi/OneDrive/Desktop/HR-updates/worker.ts)
+- Update resume processing jobs to:
+  1. Fetch the `orgId` for the current drive.
+  2. Parse token usage from the Python script's output.
+  3. Call `recordUsage` to log costs for both extraction and scoring.
+
+#### [MODIFY] [agent.py](file:///c:/Users/vamsi/OneDrive/Desktop/HR-updates/agent.py)
+- Update `get_interview_context` to return `orgId`.
+- Log usage for the **Interview Summary** generation.
+- (Optional) Estimate and log Deepgram/Cartesia usage based on transcript/audio duration.
+
+### [Frontend - Super Admin]
+#### [NEW] [Organization Usage Component](file:///c:/Users/vamsi/OneDrive/Desktop/HR-updates/app/super-admin/orgs/%5Bid%5D/usage/page.tsx)
+- Create a new tab or section in the Org detail view to show a breakdown of AI consumption and costs.
+
+## Pricing Reference (Estimated)
+| Service | Model | Input Cost | Output Cost | Unit |
+| :--- | :--- | :--- | :--- | :--- |
+| OpenAI | gpt-4o | $5.00 / 1M | $15.00 / 1M | Tokens |
+| OpenAI | gpt-4o-mini | $0.15 / 1M | $0.60 / 1M | Tokens |
+| Deepgram | Nova-2 | $0.0043 | - | Minute |
+| Cartesia | Sonic | $0.05 | - | 1K Characters |
+
+## Open Questions
+- Do you want the cost displayed to the Super Admin to be the **Raw API Cost** (what you pay) or a **Billed Cost** (what you charge the client, e.g., with a 2x markup)?
+- Should we also track cost for Pinecone or other infrastructure services?

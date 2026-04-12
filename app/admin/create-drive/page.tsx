@@ -29,7 +29,7 @@ const STEP_VALIDATION_HINTS: Record<number, string> = {
     0: "Please fill all required fields.",
     1: "Job description is too short. Please add more details before continuing.",
     2: "Please set an AI match threshold before continuing.",
-    3: "Please add at least one registration field before continuing.",
+    3: "Configure registration form fields (optional).",
 };
 
 const MIN_JD_WORDS = 30;

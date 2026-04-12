@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, RefreshCw, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, CheckSquare, Square, Send } from "lucide-react";
+import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, RefreshCw, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, CheckSquare, Square, Send, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
@@ -147,7 +147,7 @@ function EmailComposer({
 }
 
 function CandidateStatsRow() {
-    const { stats, isLoading } = useCandidates();
+    const { stats, isLoading, error } = useCandidates();
 
     const kpis = [
         { label: "Shortlisted", value: stats.shortlisted, icon: Target, color: "text-blue-600", bg: "bg-blue-50" },
@@ -157,6 +157,18 @@ function CandidateStatsRow() {
         { label: "Pending", value: stats.interviewPending, icon: Clock, color: "text-amber-600", bg: "bg-amber-50" },
         { label: "Completed", value: stats.interviewCompleted, icon: ShieldCheck, color: "text-indigo-600", bg: "bg-indigo-50" },
     ];
+
+    if (error) {
+        return (
+            <div className="w-full h-24 rounded-2xl bg-red-50/50 border border-red-100/50 flex flex-col items-center justify-center gap-1.5 animate-in fade-in">
+                <div className="flex items-center gap-2 text-red-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <span className="text-sm font-bold">Failed to load statistics</span>
+                </div>
+                <p className="text-xs text-red-500 font-medium">{error}</p>
+            </div>
+        );
+    }
 
     if (isLoading && stats.shortlisted === 0) {
         return (
@@ -211,6 +223,7 @@ export default function CandidatesPage() {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [resendingId, setResendingId] = useState<string | null>(null);
     const [isActionModalOpen, setIsActionModalOpen] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
     const [pendingAction, setPendingAction] = useState<"hire" | "reject" | "delete" | "shortlist" | "not_hired" | null>(null);
     const [isBulkLoading, setIsBulkLoading] = useState(false);
     const [emailCandidate, setEmailCandidate] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
@@ -414,7 +427,7 @@ export default function CandidatesPage() {
                         <div className="flex items-center gap-3">
                             <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
                             <p className="text-gray-400 font-bold text-[13px] uppercase tracking-[0.2em]">
-                                {pagination.total ?? 0} Global Applicants
+                                {pagination.total ?? 0} Total Candidates
                             </p>
                         </div>
                     </div>
@@ -440,17 +453,43 @@ export default function CandidatesPage() {
                     </Button>
                     <Button
                         variant="outline"
-                        onClick={() => {
-                            let url = `/api/candidates/export?page=1&limit=1000`;
-                            if (roleFilter !== "all") url += `&driveId=${roleFilter}`;
-                            if (resumeFilter !== "all") url += `&resumeStatus=${resumeFilter}`;
-                            if (interviewFilter !== "all") url += `&interviewStatus=${interviewFilter}`;
-                            if (hiringFilter !== "all") url += `&hiringStatus=${hiringFilter}`;
-                            window.location.href = url;
+                        disabled={isExporting}
+                        onClick={async () => {
+                            try {
+                                setIsExporting(true);
+                                let url = `/api/candidates/export?page=1&limit=1000`;
+                                if (roleFilter !== "all") url += `&driveId=${roleFilter}`;
+                                if (resumeFilter !== "all") url += `&resumeStatus=${resumeFilter}`;
+                                if (interviewFilter !== "all") url += `&interviewStatus=${interviewFilter}`;
+                                if (hiringFilter !== "all") url += `&hiringStatus=${hiringFilter}`;
+                                
+                                const res = await fetch(url);
+                                if (!res.ok) {
+                                    const errData = await res.json().catch(() => null);
+                                    throw new Error(errData?.error || "Failed to export candidates");
+                                }
+                                
+                                const blob = await res.blob();
+                                const downloadUrl = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = downloadUrl;
+                                a.download = `candidates_export_${new Date().toISOString().split('T')[0]}.csv`;
+                                document.body.appendChild(a);
+                                a.click();
+                                a.remove();
+                                window.URL.revokeObjectURL(downloadUrl);
+                                toast.success("Export successful", "Your CSV file has been downloaded.");
+                            } catch (err: any) {
+                                console.error("Export error:", err);
+                                toast.error("Export Failed", err.message || "Failed to download export.");
+                            } finally {
+                                setIsExporting(false);
+                            }
                         }}
                         className="h-12 px-6 rounded-2xl border-white/40 bg-white/40 backdrop-blur-md text-gray-600 font-bold hover:bg-white hover:text-[#F97316] transition-all shadow-sm"
                     >
-                        <Download className="h-4 w-4 mr-2" /> Export
+                        {isExporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+                        {isExporting ? "Exporting..." : "Export"}
                     </Button>
                 </div>
             </div>

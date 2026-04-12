@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { sendApplicationStatusEmail } from "@/lib/mail";
+import { deleteCandidateEmbeddings } from "@/lib/pinecone";
 
 export async function GET(
     request: Request,
@@ -88,6 +89,13 @@ export async function DELETE(
             console.error("[DELETE_SINGLE_CANDIDATE_STORAGE_ERROR]:", storageErr);
         }
 
+        // ── VECTOR DB CLEANUP: Purge from Pinecone ──────────
+        try {
+            await deleteCandidateEmbeddings(id);
+        } catch (pineconeErr) {
+             console.error("[DELETE_SINGLE_CANDIDATE_PINECONE_ERROR]:", pineconeErr);
+        }
+
         // ── DATABASE DELETION ─────────────────────────────
         await prisma.application.delete({
             where: { id }
@@ -149,6 +157,26 @@ export async function PATCH(
                 status: "Hired",
                 score: updated.aiScore || 0,
             }).catch(() => {});
+
+            try {
+                const driveStats = await prisma.drive.findUnique({
+                    where: { id: candidate.driveId },
+                    include: {
+                        _count: {
+                            select: { applications: { where: { hiringStatus: { equals: "hired", mode: "insensitive" } } } }
+                        }
+                    }
+                });
+
+                if (driveStats && driveStats.positions && driveStats._count.applications >= driveStats.positions) {
+                    await prisma.drive.update({
+                        where: { id: candidate.driveId },
+                        data: { status: "CLOSED" }
+                    });
+                }
+            } catch (err) {
+                console.error("Auto-close drive error:", err);
+            }
         } else if (body.hiringStatus === "not hired") {
             sendApplicationStatusEmail({
                 email: updated.email,

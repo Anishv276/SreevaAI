@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { getRangeStart } from "@/lib/date-utils";
 
-export async function GET() {
+export async function GET(req: Request) {
     try {
         const session = await getSession();
         if (!session?.orgId) {
@@ -10,6 +11,11 @@ export async function GET() {
         }
 
         const orgId = session.orgId;
+        const { searchParams } = new URL(req.url);
+        const range = searchParams.get("range") ?? "month";
+        const from = searchParams.get("from") ?? undefined;
+        const start = getRangeStart(range, from);
+
         const now = new Date();
         const closingSoonCutoff = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
@@ -23,6 +29,7 @@ export async function GET() {
                 deadline: true,
                 screeningThreshold: true,
                 applications: {
+                    where: { createdAt: { gte: start } },
                     select: {
                         id: true,
                         resumeStatus: true,
@@ -32,7 +39,7 @@ export async function GET() {
                 },
             },
             orderBy: { createdAt: "desc" },
-            take: 5,
+            take: 20,
         });
 
         const result = drives.map((drive) => {

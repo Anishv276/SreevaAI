@@ -49,22 +49,23 @@ export async function PATCH(
         const { id } = await params;
         const body = await request.json();
         const { 
-            name, plan, isActive, logoUrl, slug, 
+            name, plan, status, logoUrl, slug, 
             ttsProvider, cartesiaVoiceId, sarvamModel, sarvamVoice,
             sttProvider, deepgramModel, sarvamSttModel,
             llmProvider, llmModel, llmTemperature,
-            cartesiaModel
+            cartesiaModel, location
         } = body;
 
         // Build update data with exclusivity
         const updateData: any = {
             ...(name !== undefined && { name }),
             ...(plan !== undefined && { plan }),
-            ...(isActive !== undefined && { isActive }),
+            ...(status !== undefined && { status }),
             ...(logoUrl !== undefined && { logoUrl }),
             ...(slug !== undefined && { slug }),
             ...(ttsProvider !== undefined && { ttsProvider }),
             ...(sttProvider !== undefined && { sttProvider }),
+            ...(location !== undefined && { location }),
         };
 
         // TTS Hierarchy
@@ -119,14 +120,30 @@ export async function DELETE(
 
         const { id } = await params;
 
-        // Get all drives for this org to cascade delete applications
+        // 1. Get all drives to find associated applications and interviews
         const drives = await prisma.drive.findMany({ where: { orgId: id }, select: { id: true } });
         const driveIds = drives.map(d => d.id);
 
+        // 2. Get all application IDs for these drives
+        const applications = await prisma.application.findMany({
+            where: { driveId: { in: driveIds } },
+            select: { id: true }
+        });
+        const appIds = applications.map(app => app.id);
+
+        // 3. Perform manual cascade deletion in the correct order
         await prisma.$transaction([
+            // Delete interviews linked to these applications
+            prisma.interview.deleteMany({ where: { applicationId: { in: appIds } } }),
+            // Delete applications linked to these drives
             prisma.application.deleteMany({ where: { driveId: { in: driveIds } } }),
+            // Delete drives
             prisma.drive.deleteMany({ where: { orgId: id } }),
+            // Delete org invites (references BOTH User and Organization — must go before users)
+            prisma.orgInvite.deleteMany({ where: { orgId: id } }),
+            // Delete users linked to this org
             prisma.user.deleteMany({ where: { orgId: id } }),
+            // Finally delete the organization itself
             prisma.organization.delete({ where: { id } }),
         ]);
 
