@@ -733,7 +733,7 @@ export function HardwareCheck({
                     </div>
 
                     {/* Video preview */}
-                    <div className="relative bg-gray-950 flex-1 min-h-[300px] overflow-hidden">
+                    <div className="relative bg-gray-950 flex-1 h-[320px] overflow-hidden">
                         <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
                         {cameraStatus !== "granted" && (
                             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
@@ -818,63 +818,56 @@ export function HardwareCheck({
                         <StatusIcon ok={micStatus === "granted" && micVerified} loading={micStatus === "requesting"} />
                     </div>
 
-                    <div className="px-5 py-4 flex flex-col gap-4 flex-1">
+                    <div className="px-5 py-5 flex flex-col gap-5 flex-1 h-[320px] justify-between">
                         {/* Waveform visualizer */}
-                        <div className="flex items-end justify-center gap-0.5 h-12 bg-gray-50 rounded-xl px-3">
-                            {frequencies.map((v, i) => (
-                                <motion.div
-                                    key={i}
-                                    className={cn("w-1 rounded-full", micVerified ? "bg-green-400" : "bg-orange-400")}
-                                    animate={{ height: `${Math.max(3, v * 44)}px` }}
-                                    transition={{ duration: 0.05 }}
-                                />
-                            ))}
+                        <div className="flex flex-col items-center justify-center gap-3">
+                            <div className="flex items-end justify-center gap-1 h-14 bg-gray-50/50 w-full rounded-2xl px-6 border border-gray-100/50">
+                                {frequencies.slice(0, 30).map((v, i) => (
+                                    <motion.div
+                                        key={i}
+                                        className={cn(
+                                            "w-1 rounded-full bg-gradient-to-t", 
+                                            micVerified ? "from-green-500 to-green-300" : "from-orange-500 to-orange-300"
+                                        )}
+                                        animate={{ height: `${Math.max(4, v * 48)}px` }}
+                                        transition={{ duration: 0.05 }}
+                                    />
+                                ))}
+                            </div>
                         </div>
 
-                        {/* Verification phrase */}
-                        <div className="bg-orange-50 border border-orange-100 rounded-xl px-4 py-3 relative group">
-                            <div className="flex items-center justify-between mb-2">
-                                <p className="text-xs text-orange-600 font-medium uppercase tracking-wide">Say aloud:</p>
-                                <div className="flex items-center gap-2">
-                                    <button 
-                                        onClick={retryMic}
-                                        className="flex items-center gap-1.5 px-2 py-1 bg-white/50 hover:bg-white rounded-md border border-orange-200 text-[10px] font-bold text-orange-600 transition-all"
-                                        title="Clear and try again"
-                                    >
-                                        <RefreshCw className="w-2.5 h-2.5" />
-                                        RETRY
-                                    </button>
-                                    <button 
-                                        onClick={refreshPhrase}
-                                        className="p-1 hover:bg-orange-100 rounded-full transition-colors text-orange-400 hover:text-orange-600"
-                                        title="Try a different phrase"
-                                    >
-                                        <Activity className="w-3 h-3" />
+                        {/* Verification phrase - Redesigned to be more subtle and premium */}
+                        <div className="relative">
+                            <div className="absolute -top-2.5 left-4 px-2 bg-white text-[10px] font-bold text-orange-600 uppercase tracking-widest z-10">
+                                Just say aloud
+                            </div>
+                            <div className="bg-white border border-orange-100 rounded-2xl px-4 py-4 pt-5 shadow-sm shadow-orange-50/50 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-2 flex items-center gap-1.5">
+                                    <button onClick={retryMic} className="p-1.5 hover:bg-orange-50 rounded-lg text-orange-400 transition-colors" title="Retry">
+                                        <RefreshCw className="w-3 h-3" />
                                     </button>
                                 </div>
+                                <p className="text-lg font-bold text-gray-900 leading-tight text-center">&ldquo;{verifiedPhrase}&rdquo;</p>
                             </div>
-                            <p className="text-sm font-medium text-gray-800 leading-relaxed pr-6 italic">&ldquo;{verifiedPhrase}&rdquo;</p>
                         </div>
 
-                        {/* Live transcript */}
-                        <div className="flex-1 min-h-[80px] bg-gray-50 border border-gray-100 rounded-xl px-4 py-3">
+                        {/* Live transcript - Sleeker design */}
+                        <div className="bg-gray-50/50 border border-gray-100 rounded-2xl px-4 py-3 min-h-[70px] flex flex-col justify-center">
                             {micVerified ? (
-                                <div className="flex items-center gap-2 h-full">
-                                    <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
-                                    <span className="text-sm text-green-600 font-medium">Microphone verified!</span>
+                                <div className="flex items-center justify-center gap-2 text-green-600">
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    <span className="text-sm font-bold tracking-tight">Perfect — clear audio 👍</span>
                                 </div>
                             ) : !speechSupported ? (
-                                <p className="text-xs text-red-500">Speech recognition not supported in this browser.</p>
+                                <p className="text-[10px] text-red-500 text-center uppercase font-bold">Transcription unsupported</p>
                             ) : micStatus !== "granted" ? (
-                                <p className="text-xs text-gray-400">Waiting for microphone access…</p>
+                                <p className="text-[10px] text-gray-400 text-center uppercase font-bold tracking-widest">Awaiting access…</p>
                             ) : (
-                                <div className="flex flex-col gap-1 h-full justify-center">
-                                    <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Hearing you:</p>
-                                    <p className="text-sm text-gray-700 leading-relaxed min-h-[1.5rem]">
-                                        {liveTranscript || <span className="text-gray-300 italic">Start speaking…</span>}
-                                        {interimTranscript && (
-                                            <span className="text-gray-400 italic"> {interimTranscript}</span>
-                                        )}
+                                <div className="text-center">
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1.5">Hearing you</p>
+                                    <p className="text-sm text-gray-700 leading-snug font-medium italic">
+                                        {liveTranscript || <span className="text-gray-300">Wait for cue…</span>}
+                                        {interimTranscript && <span className="text-gray-400"> {interimTranscript}</span>}
                                     </p>
                                 </div>
                             )}
@@ -909,7 +902,7 @@ export function HardwareCheck({
                 </div>
 
                 {/* ── Column 3: Noise + Speaker + Network ──────────────────── */}
-                <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-[18px]">
 
                     {/* Background Noise */}
                     <div className="bg-white border border-gray-200 shadow-sm rounded-2xl px-5 py-4">
