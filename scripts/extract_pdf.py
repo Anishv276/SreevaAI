@@ -1477,11 +1477,11 @@ Resume:
                 "rejection_reasons": score_result["rejection_reasons"],
                 "candidate_years": score_result["candidate_years"],
                 "jd_min_years": score_result["jd_min_years"],
-                # Include work_history from resume so frontend can read it from aiReport
+                # Include raw work_history from resume as fallback for older UI reads
                 "work_history": resume_data.get("work_history", []),
-                **report,  # Spread report to top-level for frontend
-                # Frontend reads experience_assessment; backend outputs experience_analysis
-                "experience_assessment": report.get("experience_analysis", {}),
+                **report,  # Spread all LLM report fields (includes experience_assessment, work_history_annotated, decision_reason, etc.)
+                # Backward-compat: if LLM still emits old key, promote it
+                "experience_assessment": report.get("experience_assessment") or report.get("experience_analysis") or {},
             }
             return final_data
         except Exception as e:

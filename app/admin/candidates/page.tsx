@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, RefreshCw, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, CheckSquare, Square, Send, Loader2 } from "lucide-react";
+import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, XCircle, RefreshCw, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, CheckSquare, Square, Send, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
@@ -478,10 +478,10 @@ export default function CandidatesPage() {
                                 a.click();
                                 a.remove();
                                 window.URL.revokeObjectURL(downloadUrl);
-                                toast.success("Export successful", "Your CSV file has been downloaded.");
+                                toast.success("Export successful — Your CSV file has been downloaded.");
                             } catch (err: any) {
                                 console.error("Export error:", err);
-                                toast.error("Export Failed", err.message || "Failed to download export.");
+                                toast.error(`Export Failed: ${err.message || "Failed to download export."}`);
                             } finally {
                                 setIsExporting(false);
                             }
@@ -512,34 +512,56 @@ export default function CandidatesPage() {
                     {selectedIds.size > 0 && (
                         <>
                             <div className="h-4 w-px bg-gray-200 mx-1" />
-                            <Button
-                                size="sm"
-                                onClick={() => handleBulkAction("shortlist")}
-                                className="h-9 px-4 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center gap-1.5"
-                            >
-                                <Target className="h-3.5 w-3.5" /> Shortlist ({selectedIds.size})
-                            </Button>
-                            <Button
-                                size="sm"
-                                onClick={() => handleBulkAction("hire")}
-                                className="h-9 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs flex items-center gap-1.5"
-                            >
-                                <Award className="h-3.5 w-3.5" /> Hire ({selectedIds.size})
-                            </Button>
-                            <Button
-                                size="sm"
-                                onClick={() => handleBulkAction("not_hired")}
-                                className="h-9 px-4 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5"
-                            >
-                                <UserX className="h-3.5 w-3.5" /> Not Hired ({selectedIds.size})
-                            </Button>
+                            
+                            {/* Resume Status Group */}
+                            <div className="flex items-center gap-2 px-1">
+                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest mr-1">Resume Status:</span>
+                                <Button
+                                    size="sm"
+                                    onClick={() => handleBulkAction("shortlist")}
+                                    className="h-9 px-4 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                                >
+                                    <Target className="h-3.5 w-3.5" /> Shortlisted
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    onClick={() => handleBulkAction("reject")}
+                                    className="h-9 px-4 rounded-xl bg-gray-500 hover:bg-gray-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                                >
+                                    <XCircle className="h-3.5 w-3.5" /> Reject
+                                </Button>
+                            </div>
+
+                            <div className="h-4 w-px bg-gray-200 mx-1" />
+
+                            {/* Hiring Status Group */}
+                            <div className="flex items-center gap-2 px-1">
+                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest mr-1">Hiring Status:</span>
+                                <Button
+                                    size="sm"
+                                    onClick={() => handleBulkAction("hire")}
+                                    className="h-9 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                                >
+                                    <Award className="h-3.5 w-3.5" /> Hire
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    onClick={() => handleBulkAction("not_hired")}
+                                    className="h-9 px-4 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                                >
+                                    <UserX className="h-3.5 w-3.5" /> Not Hired
+                                </Button>
+                            </div>
+
+                            <div className="h-4 w-px bg-gray-200 ml-auto" />
+                            
                             <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => handleBulkAction("delete")}
                                 className="h-9 px-4 rounded-xl border-red-200 text-red-600 hover:bg-red-50 font-bold text-xs flex items-center gap-1.5"
                             >
-                                <Trash2 className="h-3.5 w-3.5" /> Delete ({selectedIds.size})
+                                <Trash2 className="h-3.5 w-3.5" /> Delete
                             </Button>
                         </>
                     )}

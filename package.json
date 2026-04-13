@@ -41,6 +41,7 @@
     "framer-motion": "^12.34.2",
     "html2canvas": "^1.4.1",
     "ioredis": "^5.10.1",
+    "isomorphic-dompurify": "^3.8.0",
     "jose": "^6.2.2",
     "jspdf": "^4.2.1",
     "livekit-client": "^2.18.0",

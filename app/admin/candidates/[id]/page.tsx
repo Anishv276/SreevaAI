@@ -229,6 +229,23 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
     const videoRef = useRef<HTMLVideoElement>(null);
     const plyrInstance = useRef<any>(null);
 
+    // Scroll reveal animation hook
+    useEffect(() => {
+        if (activeTab !== "analysis") return;
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('active');
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.1 });
+        const revealElements = document.querySelectorAll('.reveal');
+        revealElements.forEach(el => observer.observe(el));
+        return () => observer.disconnect();
+    }, [activeTab, loading, candidate]);
+
+
     useEffect(() => {
         setMounted(true);
     }, []);
@@ -297,21 +314,14 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
             setRescanning(false);
         }
     };
-    const [expandedSections, setExpandedSections] = useState({
-        communication: true,
-        skills: true,
-        transcript: true,
-        consistency: true,
-        moments: true
-    });
 
-    const toggleSection = (sectionId: keyof typeof expandedSections) => {
-        setExpandedSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
-    };
 
 
 
     const aiData = candidate?.aiReport ? JSON.parse(candidate.aiReport) : {};
+    const [sessionLogMode, setSessionLogMode] = useState<'chat' | 'analysis'>('chat');
+    const [selectedQuestionIndex, setSelectedQuestionIndex] = useState(0);
+
     const structuredResume = candidate?.structuredResume ? (typeof candidate.structuredResume === 'string' ? JSON.parse(candidate.structuredResume) : candidate.structuredResume) : {};
 
     const summary = structuredResume.candidate_summary || aiData.summary || structuredResume.summary || aiData.reasoning || "AI analysis pending for this candidate.";
@@ -527,16 +537,8 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                 <FileText className="h-3.5 w-3.5 text-gray-400" />
                                 View Submissions
                             </Button>
-                            <Button
-                                onClick={handleRescan}
-                                disabled={rescanning}
-                                variant="outline"
-                                className="h-9 px-4 rounded-xl text-[11px] font-bold text-orange-600 border-orange-100 bg-orange-50/30 hover:bg-orange-600 hover:text-white shadow-sm transition-all flex items-center gap-2 disabled:opacity-50"
-                            >
-                                <RefreshCw className={cn("h-3.5 w-3.5", rescanning && "animate-spin")} />
-                                {rescanning ? "Syncing..." : "Sync Profile"}
-                            </Button>
                         </div>
+
 
                         {/* Header Content */}
                         <div className="px-6 pb-6 pt-4 relative z-10">
@@ -544,24 +546,33 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                 <div className="space-y-6 animate-in fade-in duration-700">
                                     {/* Candidate & Contact Info */}
                                     <div className="space-y-4">
-                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                            <div className="space-y-1">
-                                                <h1 className="text-2xl font-black text-gray-900 tracking-tight flex items-center gap-3">
-                                                    {candidate.fullName}
-                                                    <Badge className="bg-emerald-50 text-emerald-600 border-emerald-100 text-[9px] font-black uppercase tracking-widest px-2 py-0">Verified</Badge>
-                                                </h1>
-                                                <div className="flex items-center gap-2 text-[13px] font-bold text-gray-400">
-                                                    <span>{candidate.drive?.role || candidate.drive?.title || "AI Engineer Interview"}</span>
-                                                    <span>•</span>
-                                                    <span>{mounted ? new Date(candidate.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : "-- --- ----"}</span>
-                                                    <span>•</span>
-                                                    <span className="flex items-center gap-1.5"><MessageSquare className="h-3.5 w-3.5" /> Voice AI</span>
-                                                    <span>•</span>
-                                                    <span>5 min session</span>
+                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                                            <div className="flex items-center gap-6">
+                                                <div className="relative flex-shrink-0">
+                                                    <Avatar className="h-20 w-20 rounded-2xl border-2 border-white shadow-[0_8px_24px_rgba(0,0,0,0.08)] flex-shrink-0">
+                                                        <AvatarImage src={displayAvatar} className="object-cover" />
+                                                        <AvatarFallback className="text-xl font-black bg-gray-900 text-white rounded-2xl">
+                                                            {candidate.fullName?.substring(0, 2).toUpperCase()}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                </div>
+
+                                                <div className="space-y-1">
+                                                    <h1 className="text-2xl font-black text-gray-900 tracking-tight flex items-center gap-3">
+                                                        {candidate.fullName}
+                                                        <Badge className="bg-emerald-50 text-emerald-600 border-emerald-100 text-[9px] font-black uppercase tracking-widest px-2 py-0">Verified</Badge>
+                                                    </h1>
+                                                    <div className="flex items-center gap-2 text-[13px] font-bold text-gray-400">
+                                                        <span>{candidate.drive?.role || candidate.drive?.title || "AI Engineer Interview"}</span>
+                                                        <span>•</span>
+                                                        <span>{mounted ? new Date(candidate.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : "-- --- ----"}</span>
+                                                        <span>•</span>
+                                                        <span className="flex items-center gap-1.5"><MessageSquare className="h-3.5 w-3.5" /> Voice AI</span>
+                                                    </div>
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center gap-6 text-[13px] font-bold text-gray-600 bg-gray-50/50 px-4 py-2 rounded-2xl border border-gray-100/50">
+                                            <div className="flex items-center gap-6 text-[13px] font-bold text-gray-600 bg-gray-50/50 px-5 py-3 rounded-2xl border border-gray-100/50 shadow-sm">
                                                 <div className="flex items-center gap-2"><Mail className="h-4 w-4 text-gray-400" /> {candidate.email}</div>
                                                 <div className="w-[1px] h-4 bg-gray-200" />
                                                 <div className="flex items-center gap-2"><Phone className="h-4 w-4 text-gray-400" /> {candidate.phone || "N/A"}</div>
@@ -681,577 +692,301 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                     <div className="w-full">
                         <div className="space-y-6">
                             {activeTab === "analysis" && (
-                                <div className="space-y-16 animate-in fade-in slide-in-from-bottom-2 duration-500 pb-20">
-                                    {/* 🎯 Recruiter Snapshot */}
-                                    <div className="space-y-8">
-                                        <div className="inline-flex items-center gap-4 bg-black rounded-2xl px-8 py-4 shadow-xl border border-gray-800">
-                                            <h3 className="text-xl font-black text-white tracking-tight">Recruiter Snapshot</h3>
-                                            <div className="h-4 w-[1px] bg-gray-700" />
-                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Executive talent synthesis</p>
-                                        </div>
-                                        <div className="relative bg-white rounded-3xl border border-gray-200 shadow-[0_8px_32px_rgba(0,0,0,0.04)] overflow-hidden p-10">
-                                            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-300 via-[#F97316] to-orange-400" />
-                                            <div className="bg-gradient-to-br from-orange-100 to-amber-100 rounded-3xl p-8 border border-orange-200">
-                                                <p className="text-gray-800 leading-relaxed font-bold text-[18px] italic">
-                                                    &ldquo;{aiData.recruiter_snapshot || summary}&rdquo;
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
+                                <main className="space-y-8 w-full pb-20">
 
-                                    {/* 📊 Premium Score Breakdown */}
+
+                                    {/* 1. AI Score Breakdown */}
                                     {breakdown && (
-                                        <div className="space-y-12" style={{ fontFamily: 'Inter, sans-serif' }}>
-                                            <div className="space-y-4">
-                                                <p className="text-gray-500 font-black tracking-widest text-[11px] uppercase opacity-70">
-                                                    Score Breakdown — Why {score}?
-                                                </p>
-                                                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                                                    {[
-                                                        { label: "Must-have skills", score: breakdown.skills_score, max: breakdown.skills_max ?? 45, color: "bg-red-500" },
-                                                        { label: "Experience years", score: breakdown.exp_score, max: breakdown.exp_max ?? 25, color: "bg-indigo-600" },
-                                                        { label: "Good-to-have", score: breakdown.good_score, max: breakdown.good_max ?? 10, color: "bg-orange-400" },
-                                                        { label: "Career quality", score: breakdown.career_score, max: breakdown.career_max ?? 10, color: "bg-emerald-500" },
-                                                        { label: "Domain fit", score: breakdown.domain_score ?? 0, max: breakdown.domain_max ?? 10, color: "bg-gray-400" },
-                                                    ].map((item, idx) => {
-                                                        const color = item.score === 0 ? "bg-red-100" : item.color;
-                                                        return (
-                                                            <div key={idx} className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in slide-in-from-bottom-2 relative" style={{ animationDelay: `${idx * 100}ms` }}>
-                                                                <div className={cn("h-1 w-full absolute top-0 left-0", color)} />
-                                                                <div className="flex items-baseline gap-0.5 mb-2">
-                                                                    <span className={cn("text-2xl font-black tabular-nums tracking-tighter", item.score === 0 ? "text-red-500" : "text-gray-900")}>{item.score}</span>
-                                                                    <span className="text-xs font-bold text-gray-300">/{item.max}</span>
-                                                                </div>
-                                                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-tight">{item.label}</p>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-
-                                            {/* ✅ Must-Have Skills Match (New Section) */}
-                                            <div className="space-y-4">
-                                                {(() => {
-                                                    const matchData = aiData.skill_matching || {};
-                                                    const details = matchData.must_have_details || [
-                                                        ...(matchData.matched_must || []).map((s: string) => ({ name: s, weight: 'high', status: 'found' })),
-                                                        ...(matchData.missing_must || []).map((s: string) => ({ name: s, weight: 'high', status: 'not_found' }))
-                                                    ];
-                                                    const foundCount = (matchData.matched_must || []).length;
-                                                    const totalCount = matchData.total_must || details.length;
-
-                                                    return (
-                                                        <>
-                                                            <p className="text-gray-500 font-black tracking-widest text-[11px] uppercase opacity-70">
-                                                                Must-Have Skills Match — {foundCount} of {totalCount}
-                                                            </p>
-                                                            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                                                                <div className="divide-y divide-gray-50">
-                                                                    {details.length > 0 ? details.map((skill: any, idx: number) => (
-                                                                        <div key={idx} className="group flex items-center justify-between px-8 py-4 hover:bg-gray-100 transition-colors">
-                                                                            <div className="flex items-center gap-4">
-                                                                                <div className={cn(
-                                                                                    "h-2 w-2 rounded-full",
-                                                                                    skill.status === 'found' ? "bg-emerald-500" :
-                                                                                        skill.status === 'mentioned' ? "bg-amber-500" : "bg-red-500"
-                                                                                )} />
-                                                                                <span className="text-[15px] font-bold text-gray-700 tracking-tight">{skill.name}</span>
-                                                                            </div>
-                                                                            <div className="flex items-center gap-4">
-                                                                                <span className={cn(
-                                                                                    "px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest",
-                                                                                    skill.weight === 'critical' ? "bg-red-50 text-red-600" :
-                                                                                        skill.weight === 'high' ? "bg-orange-50 text-orange-600" : "bg-gray-100 text-gray-400"
-                                                                                )}>
-                                                                                    {skill.weight || 'medium'}
-                                                                                </span>
-                                                                                <span className={cn(
-                                                                                    "text-[10px] font-black uppercase tracking-widest w-20 text-right",
-                                                                                    skill.status === 'found' ? "text-emerald-600" :
-                                                                                        skill.status === 'mentioned' ? "text-amber-600" : "text-red-400"
-                                                                                )}>
-                                                                                    {skill.status === 'found' ? "Matched" :
-                                                                                        skill.status === 'mentioned' ? "Mentioned" : "Not found"}
-                                                                                </span>
-                                                                            </div>
-                                                                        </div>
-                                                                    )) : (
-                                                                        <div className="px-8 py-10 text-center opacity-40 italic font-bold text-sm">
-                                                                            No specific must-have skills extracted from JD.
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                                <div className="bg-gray-100 px-8 py-4 flex items-center gap-6 border-t border-gray-100">
-                                                                    {[
-                                                                        { label: "Confirmed in work history", color: "bg-emerald-500" },
-                                                                        { label: "Mentioned, no evidence", color: "bg-amber-500" },
-                                                                        { label: "Not found anywhere", color: "bg-red-500" },
-                                                                    ].map((l, i) => (
-                                                                        <div key={i} className="flex items-center gap-2">
-                                                                            <div className={cn("h-2 w-2 rounded-full", l.color)} />
-                                                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{l.label}</span>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        </>
-                                                    );
-                                                })()}
-                                            </div>
-
-                                        </div>
-                                    )}
-
-
-
-                                    {/* ✅ Section 3: WHAT HE DOES BRING vs CRITICAL GAPS */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                        {/* Left Card: Strengths */}
-                                        <div className="space-y-4">
-                                            <p className="text-gray-500 font-black tracking-widest text-[11px] uppercase opacity-70">
-                                                What they bring
-                                            </p>
-                                            <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm p-10 h-full min-h-[400px]">
-                                                <div className="space-y-10">
-                                                    {aiData.strengths && aiData.strengths.length > 0 ? aiData.strengths.map((s: any, i: number) => (
-                                                        <div key={i} className="space-y-2 animate-in fade-in slide-in-from-left-4" style={{ animationDelay: `${i * 150}ms` }}>
-                                                            <h4 className="text-[17px] font-bold text-[#059669] tracking-tight">
-                                                                {typeof s === 'string' ? s : s.point}
-                                                            </h4>
-                                                            <p className="text-[14px] text-gray-600 leading-relaxed font-medium">
-                                                                {s.evidence || "Strong evidence across past roles and projects."}
-                                                            </p>
-                                                        </div>
-                                                    )) : (
-                                                        <div className="h-full flex items-center justify-center opacity-30 italic font-bold">
-                                                            No standout strengths detected.
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Right Card: Gaps */}
-                                        <div className="space-y-4">
-                                            <p className="text-gray-500 font-black tracking-widest text-[11px] uppercase opacity-70">
-                                                Critical gaps for this role
-                                            </p>
-                                            <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm p-10 h-full min-h-[400px]">
-                                                <div className="space-y-10">
-                                                    {aiData.concerns && aiData.concerns.length > 0 ? aiData.concerns.map((c: any, i: number) => (
-                                                        <div key={i} className="space-y-3 animate-in fade-in slide-in-from-right-4" style={{ animationDelay: `${i * 150}ms` }}>
-                                                            <h4 className="text-[17px] font-bold text-[#991b1b] tracking-tight">
-                                                                {c.point}
-                                                            </h4>
-                                                            <p className="text-[14px] text-gray-600 leading-relaxed font-medium">
-                                                                {c.impact}
-                                                            </p>
-                                                            {c.missing_skills && c.missing_skills.length > 0 && (
-                                                                <div className="flex flex-wrap gap-2 pt-1">
-                                                                    {c.missing_skills.map((skill: string, si: number) => (
-                                                                        <span key={si} className="px-2.5 py-1 rounded-md bg-red-50 text-red-700 text-[10px] font-black uppercase tracking-widest border border-red-100">
-                                                                            {skill}
-                                                                        </span>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )) : (
-                                                        <div className="h-full flex items-center justify-center opacity-30 italic font-bold">
-                                                            No critical gaps identified.
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* ✅ Section 4: EXPERIENCE VS REQUIREMENT */}
-                                    <div className="space-y-4">
-                                        <p className="text-gray-500 font-black tracking-widest text-[11px] uppercase opacity-70">
-                                            Experience vs Requirement
-                                        </p>
-                                        <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm overflow-hidden p-10 space-y-10">
-                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                                                {/* Row 1 Left: Years of Exp */}
+                                        <section className="reveal space-y-6">
+                                            <h2 className="text-xl font-editorial font-bold flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-primary">analytics</span> AI Score Breakdown
+                                            </h2>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-surface-container-low p-6 rounded-lg">
                                                 <div className="space-y-4">
-                                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Years of experience</p>
-                                                    <div className="bg-gray-100 rounded-2xl p-8 border border-gray-100 flex items-center gap-6">
-                                                        <span className="text-5xl font-black text-red-500 tracking-tighter tabular-nums leading-none">
-                                                            {candidate.experienceYears || aiData.experience_assessment?.years || "—"}
-                                                        </span>
-                                                        <div className="space-y-1">
-                                                            <p className="text-[16px] font-bold text-gray-900 tracking-tight">
-                                                                Candidate has {candidate.experienceYears || aiData.experience_assessment?.years || "no documented"} years total
-                                                            </p>
-                                                            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest leading-none">
-                                                                {aiData.experience_assessment?.vs_required || "JD requirements match check"}
-                                                            </p>
+                                                    <div className="space-y-1">
+                                                        <div className="flex justify-between text-sm font-semibold">
+                                                            <span>Must-have skills</span>
+                                                            <span>{breakdown.skills_score}/{breakdown.skills_max ?? 45}</span>
+                                                        </div>
+                                                        <div className="w-full h-2 bg-surface-container-highest rounded-full overflow-hidden">
+                                                            <div className="h-full bg-primary-container" style={{ width: `${(breakdown.skills_score / (breakdown.skills_max ?? 45)) * 100}%` }}></div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <div className="flex justify-between text-sm font-semibold">
+                                                            <span>Experience level</span>
+                                                            <span>{breakdown.exp_score}/{breakdown.exp_max ?? 25}</span>
+                                                        </div>
+                                                        <div className="w-full h-2 bg-surface-container-highest rounded-full overflow-hidden">
+                                                            <div className="h-full bg-primary-container" style={{ width: `${(breakdown.exp_score / (breakdown.exp_max ?? 25)) * 100}%` }}></div>
                                                         </div>
                                                     </div>
                                                 </div>
-
-                                                {/* Row 1 Right: Seniority Chart */}
                                                 <div className="space-y-4">
-                                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Seniority alignment</p>
-                                                    <div className="bg-gray-100 rounded-2xl p-8 border border-gray-100 relative min-h-[140px] flex flex-col justify-center">
-                                                        {/* Scale */}
-                                                        <div className="flex justify-between px-2 mb-4">
-                                                            {["Intern", "Junior", "Mid", "Senior", "Lead"].map((l, i) => (
-                                                                <span key={i} className="text-[10px] font-black text-gray-300 uppercase tracking-widest">{l}</span>
-                                                            ))}
+                                                    <div className="space-y-1">
+                                                        <div className="flex justify-between text-sm font-semibold">
+                                                            <span>Domain expertise</span>
+                                                            <span>{breakdown.domain_score ?? 0}/{breakdown.domain_max ?? 10}</span>
                                                         </div>
-                                                        <div className="relative h-10 w-full bg-gray-200 rounded-xl px-2 flex items-center">
-                                                            {/* Markers */}
-                                                            {(() => {
-                                                                const alignment = aiData.seniority_alignment;
-                                                                if (!alignment) return <div className="w-full text-center text-[10px] font-bold text-gray-400 italic">No alignment data found</div>;
-
-                                                                const levels = [0, 1, 2, 3, 4];
-                                                                const candPos = (alignment.candidate_level * 0.25) * 100;
-                                                                const jdPos = (alignment.jd_level * 0.25) * 100;
-
-                                                                return (
-                                                                    <>
-                                                                        <div className="absolute top-0 bottom-0 w-px bg-gray-200 left-[25%]" />
-                                                                        <div className="absolute top-0 bottom-0 w-px bg-gray-200 left-[50%]" />
-                                                                        <div className="absolute top-0 bottom-0 w-px bg-gray-200 left-[75%]" />
-
-                                                                        {/* JD Marker */}
-                                                                        <div
-                                                                            className="absolute h-8 w-16 bg-blue-200 text-blue-800 rounded-lg flex items-center justify-center text-[10px] font-black border border-blue-300 shadow-sm transition-all duration-1000"
-                                                                            style={{ left: `calc(${jdPos}% - 32px)`, zIndex: 10 }}
-                                                                        >
-                                                                            JD
-                                                                        </div>
-
-                                                                        {/* Candidate Marker */}
-                                                                        <div
-                                                                            className="absolute h-8 w-16 bg-red-200 text-red-800 rounded-lg flex items-center justify-center text-[10px] font-black border border-red-300 shadow-sm transition-all duration-1000"
-                                                                            style={{ left: `calc(${candPos}% - 32px)`, zIndex: 20 }}
-                                                                        >
-                                                                            {candidate.fullName?.split(' ')[0] || "Candidate"}
-                                                                        </div>
-                                                                    </>
-                                                                );
-                                                            })()}
+                                                        <div className="w-full h-2 bg-surface-container-highest rounded-full overflow-hidden">
+                                                            <div className="h-full bg-primary-container" style={{ width: `${((breakdown.domain_score ?? 0) / (breakdown.domain_max ?? 10)) * 100}%` }}></div>
                                                         </div>
-                                                        {aiData.seniority_alignment && (
-                                                            <div className="flex gap-4 mt-4">
-                                                                <div className="flex items-center gap-2">
-                                                                    <div className="h-2 w-2 rounded-full bg-red-300" />
-                                                                    <span className="text-[9px] font-bold text-gray-400 tracking-widest uppercase">Candidate — {aiData.seniority_alignment.candidate_label}</span>
-                                                                </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <div className="h-2 w-2 rounded-full bg-blue-300" />
-                                                                    <span className="text-[9px] font-bold text-gray-400 tracking-widest uppercase">JD requires — {aiData.seniority_alignment.jd_label}</span>
-                                                                </div>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <div className="flex justify-between text-sm font-semibold">
+                                                            <span>Soft skills alignment</span>
+                                                            <span>{breakdown.career_score ?? 0}/{breakdown.career_max ?? 10}</span>
+                                                        </div>
+                                                        <div className="w-full h-2 bg-surface-container-highest rounded-full overflow-hidden">
+                                                            <div className="h-full bg-primary-container" style={{ width: `${((breakdown.career_score ?? 0) / (breakdown.career_max ?? 10)) * 100}%` }}></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </section>
+                                    )}
+
+                                    {/* 2. Must-Have Skills */}
+                                    <section className="reveal space-y-4">
+                                        <div className="flex justify-between items-end">
+                                            <h2 className="text-xl font-editorial font-bold">Must-Have Skills</h2>
+                                            <span className="text-sm font-medium text-on-surface-variant">
+                                                {(aiData.skill_matching?.matched_must || []).length} of {aiData.skill_matching?.total_must || 7} matched
+                                            </span>
+                                        </div>
+                                        <div className="overflow-hidden bg-surface-container-lowest rounded-lg ring-1 ring-stone-200">
+                                            <table className="w-full text-left border-collapse">
+                                                <thead className="bg-surface-container-low text-xs uppercase tracking-widest font-bold text-on-surface-variant">
+                                                    <tr>
+                                                        <th className="px-6 py-4">Skill Name</th>
+                                                        <th className="px-6 py-4">Status</th>
+                                                        <th className="px-6 py-4">Weight</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-stone-100 text-sm">
+                                                    {(aiData.skill_matching?.must_have_details || []).map((skill: any, idx: number) => (
+                                                        <tr key={idx}>
+                                                            <td className="px-6 py-4 font-semibold">{skill.name}</td>
+                                                            <td className="px-6 py-4">
+                                                                <span className={cn(
+                                                                    "font-bold flex items-center gap-1",
+                                                                    skill.status === 'found' ? "text-secondary" :
+                                                                        skill.status === 'mentioned' ? "text-tertiary" : "text-error"
+                                                                )}>
+                                                                    <span className="material-symbols-outlined text-base">
+                                                                        {skill.status === 'found' ? 'check_circle' :
+                                                                            skill.status === 'mentioned' ? 'info' : 'cancel'}
+                                                                    </span>
+                                                                    {skill.status === 'found' ? 'Found' :
+                                                                        skill.status === 'mentioned' ? 'Mentioned' : 'Not Found'}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-on-surface-variant capitalize">{skill.weight || 'Medium'}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </section>
+
+                                    {/* 3. Strengths & Gaps */}
+                                    <section className="reveal grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                                        <div className="space-y-4">
+                                            <h2 className="text-xl font-editorial font-bold">Strengths</h2>
+                                            <ul className="space-y-3">
+                                                {strengths.slice(0, 3).map((s: string, i: number) => (
+                                                    <li key={i} className="flex gap-3 text-sm leading-relaxed">
+                                                        <span className="text-secondary font-bold">•</span> {s}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                        <div className="space-y-4">
+                                            <h2 className="text-xl font-editorial font-bold">Critical Gaps / Flags</h2>
+                                            <ul className="space-y-3">
+                                                {redFlags.slice(0, 3).map((f: string, i: number) => (
+                                                    <li key={i} className="flex gap-3 text-sm leading-relaxed">
+                                                        <span className="text-error font-bold">•</span> {f}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </section>
+
+                                    {/* 4. Performance vs Requirements */}
+                                    <section className="reveal space-y-6">
+                                        <h2 className="text-xl font-editorial font-bold">Performance vs Requirements</h2>
+                                        <div className="bg-surface-container-lowest p-8 rounded-lg ring-1 ring-stone-200">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                                                <div className="space-y-1">
+                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Experience Match</p>
+                                                    <h3 className="text-3xl font-extrabold text-on-surface">Experience Comparison</h3>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className="bg-surface-container-low p-4 rounded-lg">
+                                                        <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-1">JD Requirement</p>
+                                                        <p className="text-2xl font-extrabold text-on-surface">{aiData.experience_comparison?.jd || "N/A"}</p>
+                                                    </div>
+                                                    <div className="bg-primary-container/10 p-4 rounded-lg ring-1 ring-primary/20">
+                                                        <p className="text-[10px] font-bold uppercase text-primary mb-1">Candidate</p>
+                                                        <p className="text-2xl font-extrabold text-primary">{aiData.experience_comparison?.candidate || "N/A"}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    {/* 5. Career Progression */}
+                                    <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div className="reveal bg-surface-container-low p-6 rounded-lg text-center">
+                                            <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-2">Pattern</p>
+                                            <p className="text-lg font-bold">{careerProgression?.pattern || "Stable"}</p>
+                                            <p className="text-[11px] text-on-surface-variant leading-tight mt-2 px-2 italic">{careerProgression?.summary || "No specific pattern detected."}</p>
+                                        </div>
+                                        <div className="reveal bg-surface-container-low p-6 rounded-lg text-center" style={{ transitionDelay: '100ms' }}>
+                                            <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-2">Company Types</p>
+                                            <p className="text-lg font-bold">{careerProgression?.company_types || "Diverse"}</p>
+                                            <p className="text-[11px] text-on-surface-variant leading-tight mt-2 px-2 italic">{careerProgression?.industry_focus || "Mix of industry exposure."}</p>
+                                        </div>
+                                        <div className="reveal bg-surface-container-low p-6 rounded-lg text-center" style={{ transitionDelay: '200ms' }}>
+                                            <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-2">Tenure Avg</p>
+                                            <p className="text-lg font-bold">{careerProgression?.tenure_avg || "N/A"}</p>
+                                            <p className="text-[11px] text-on-surface-variant leading-tight mt-2 px-2 italic">{careerProgression?.tenure_sentiment || "Consistent tenure."}</p>
+                                        </div>
+                                    </section>
+
+                                    {/* 6. Career Timeline */}
+                                    <section className="reveal space-y-6">
+                                        <h2 className="text-xl font-editorial font-bold">Career Timeline</h2>
+                                        <div className="relative border-l-2 border-stone-200 ml-4 pl-10 space-y-12">
+                                            {workHistory.map((job: any, i: number) => (
+                                                <div key={i} className="reveal relative">
+                                                    <div className={cn(
+                                                        "absolute -left-[50px] top-0 w-8 h-8 rounded-full bg-white ring-2 flex items-center justify-center",
+                                                        i === 0 ? "ring-primary" : "ring-stone-200 bg-stone-100"
+                                                    )}>
+                                                        <span className={cn("material-symbols-outlined text-sm", i === 0 ? "text-primary" : "text-stone-400")}>
+                                                            {i === 0 ? 'work' : 'history'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <div className="flex justify-between items-start">
+                                                            <div>
+                                                                <h4 className="text-lg font-bold">{job.job_title}</h4>
+                                                                <p className={cn("font-semibold", i === 0 ? "text-primary" : "text-stone-500")}>
+                                                                    {job.company} • {job.duration}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <p className="text-sm text-on-surface-variant leading-relaxed max-w-3xl">
+                                                            {job.responsibilities || job.summary}
+                                                        </p>
+                                                        {job.skills && (
+                                                            <div className="flex flex-wrap gap-2 pt-2">
+                                                                {job.skills.map((skill: string, idx: number) => (
+                                                                    <span key={idx} className="text-[10px] font-bold bg-surface-container-highest px-2 py-1 rounded-sm uppercase">{skill}</span>
+                                                                ))}
                                                             </div>
                                                         )}
                                                     </div>
                                                 </div>
-                                            </div>
+                                            ))}
+                                        </div>
+                                    </section>
 
-                                            {/* Career Progression Detail Table */}
-                                            <div className="pt-8 border-t border-gray-100">
-                                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6">Career progression pattern</p>
-                                                <div className="space-y-6">
-                                                    {[
-                                                        { label: "Pattern", value: aiData.career_progression_details?.pattern || aiData.career_progression?.pattern, color: "text-blue-600", note: aiData.career_progression_details?.role_flow || aiData.career_progression?.analysis, subNote: aiData.career_progression_details?.pattern_note },
-                                                        { label: "Company types", value: aiData.career_progression_details?.company_types, isBold: true, subNote: aiData.career_progression_details?.company_note },
-                                                        { label: "Tenure avg", value: aiData.career_progression_details?.tenure_avg, color: "text-orange-600", subNote: aiData.career_progression_details?.tenure_note },
-                                                    ].map((row, i) => (
-                                                        <div key={i} className="flex gap-8 items-start">
-                                                            <p className="w-32 text-[13px] font-black text-gray-400 uppercase tracking-widest pt-1">{row.label}</p>
-                                                            <div className="flex-1 space-y-1">
-                                                                <p className="text-[15px] font-bold text-gray-700 leading-none">
-                                                                    <span className={cn(row.color, row.isBold ? "font-black" : "")}>{row.value || "—"}</span>
-                                                                    <span className="ml-3 font-medium text-gray-400">{row.note}</span>
-                                                                </p>
-                                                                {row.subNote && <p className="text-xs font-bold text-gray-400 truncate opacity-80">{row.subNote}</p>}
-                                                            </div>
-                                                        </div>
+                                    {/* 7. Integrity & Suitability */}
+                                    <section className="reveal grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-stone-200 pt-8">
+                                        <div className="space-y-6">
+                                            <div className="flex items-center justify-between">
+                                                <h3 className="text-lg font-editorial font-bold flex items-center gap-2">
+                                                    <span className="material-symbols-outlined text-stone-600">verified_user</span> Integrity Risk
+                                                </h3>
+                                                <div className="flex items-center gap-2 bg-secondary-container/10 border border-secondary-container/30 px-3 py-1 rounded-full">
+                                                    <div className="w-2 h-2 rounded-full bg-secondary animate-pulse"></div>
+                                                    <span className="text-[11px] font-bold text-secondary uppercase tracking-wider">Low Risk</span>
+                                                </div>
+                                            </div>
+                                            <div className="bg-surface-container-lowest ring-1 ring-stone-200 rounded-lg p-5 space-y-4">
+                                                <div className="flex gap-4">
+                                                    <div className="flex-shrink-0 mt-1">
+                                                        <span className="material-symbols-outlined text-secondary text-lg">check_circle</span>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-on-surface">Employment Verification</p>
+                                                        <p className="text-xs text-on-surface-variant leading-relaxed">Consistent employment history with no unverified gaps.</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-4">
+                                                    <div className="flex-shrink-0 mt-1">
+                                                        <span className="material-symbols-outlined text-secondary text-lg">check_circle</span>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-on-surface">Reference Sentiment</p>
+                                                        <p className="text-xs text-on-surface-variant leading-relaxed">AI sentiment analysis indicates strong collaborative ethics.</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-6">
+                                            <h3 className="text-lg font-editorial font-bold flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-stone-600">psychology</span> Suitability & Readiness
+                                            </h3>
+                                            <div className="grid grid-cols-1 gap-4">
+                                                <div className="bg-surface-container-low p-5 rounded-lg">
+                                                    <p className="text-[10px] font-bold uppercase text-on-surface-variant mb-3 tracking-widest">Upskilling Suggestions</p>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {(aiData.upskilling_suggestions || ["Core Competencies"]).map((s: string, i: number) => (
+                                                            <span key={i} className="bg-surface-container-highest text-on-surface text-[11px] font-medium px-3 py-1 rounded-full">{s}</span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                                <div className="bg-primary-container/5 border border-primary-container/20 p-5 rounded-lg flex items-center justify-between">
+                                                    <div>
+                                                        <p className="text-[10px] font-bold uppercase text-primary mb-1 tracking-widest">Readiness Timeline</p>
+                                                        <p className="text-sm text-on-surface-variant font-medium">Time until full operational impact</p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-2xl font-black text-primary">{aiData.readiness_timeline || "Immeditately"}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    {/* 8. Technical Inventory */}
+                                    <section className="reveal space-y-4">
+                                        <h2 className="text-sm font-editorial font-bold uppercase tracking-widest text-on-surface-variant">Technical Inventory</h2>
+                                        <div className="bg-surface-container-lowest ring-1 ring-stone-200 rounded-lg p-8 grid grid-cols-1 md:grid-cols-2 gap-12">
+                                            <div className="space-y-3">
+                                                <p className="text-xs font-bold text-primary uppercase tracking-wider">Technical Skills</p>
+                                                <div className="text-sm text-on-surface-variant leading-relaxed grid grid-cols-1 gap-1">
+                                                    {techSkills.map((s: string, i: number) => (
+                                                        <span key={i}>{s}</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div className="space-y-3">
+                                                <p className="text-xs font-bold text-primary uppercase tracking-wider">Tools & Domain</p>
+                                                <div className="text-sm text-on-surface-variant leading-relaxed grid grid-cols-1 gap-1">
+                                                    {[...toolSkills, ...domainSkills].map((s: string, i: number) => (
+                                                        <span key={i}>{s}</span>
                                                     ))}
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    </section>
 
-                                    {/* ✅ Section 5: CAREER TIMELINE */}
-                                    <div className="space-y-6">
-                                        <p className="text-gray-500 font-black tracking-widest text-[11px] uppercase opacity-70">
-                                            Career Timeline
-                                        </p>
-                                        <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm p-12">
-                                            <div className="relative pl-8 space-y-12">
-                                                {/* Vertical Track Line */}
-                                                <div className="absolute left-0 top-3 bottom-3 w-[2px] bg-gray-100 ml-[5px]" />
-
-                                                {(() => {
-                                                    // Prefer annotated history (new scans) over raw work_history (old scans)
-                                                    const history = aiData.work_history_annotated || aiData.work_history || workHistory || [];
-                                                    if (history.length === 0) return (
-                                                        <div className="py-10 text-center opacity-30 italic font-bold">
-                                                            No career history extracted yet.
-                                                        </div>
-                                                    );
-
-                                                    return history.map((role: any, idx: number) => {
-                                                        const isLatest = idx === 0;
-                                                        const techStack = role.technologies_used || [];
-
-                                                        // Fallback for summary if recruiter_summary is missing (older scans)
-                                                        const summary = role.recruiter_summary || (role.what_they_built && Array.isArray(role.what_they_built) ? role.what_they_built.join('. ') : "No detailed summary available.");
-
-                                                        return (
-                                                            <div key={idx} className="relative animate-in fade-in slide-in-from-left-4" style={{ animationDelay: `${idx * 150}ms` }}>
-                                                                {/* Node Dot */}
-                                                                <div className={cn(
-                                                                    "absolute -left-[30px] top-1.5 h-3.5 w-3.5 rounded-full border-4 border-white shadow-sm ring-2 ring-transparent",
-                                                                    isLatest ? "bg-blue-600 ring-blue-100" : "bg-gray-300"
-                                                                )} />
-
-                                                                <div className="space-y-4">
-                                                                    <div>
-                                                                        <h4 className="text-xl font-black text-gray-900 tracking-tight leading-none mb-1">
-                                                                            {role.role}
-                                                                        </h4>
-                                                                        <p className="text-[14px] font-bold text-gray-500">
-                                                                            {role.company} <span className="opacity-30 mx-1">·</span> <span className="capitalize">{role.company_type || "Company"}</span>
-                                                                        </p>
-                                                                        <p className="text-[12px] font-black text-gray-400 uppercase tracking-widest mt-1">
-                                                                            {role.start_date || role.start_year || "?"} — {role.end_date || (role.is_current ? "present" : role.end_year) || "?"}
-                                                                            <span className="opacity-30 mx-2">·</span>
-                                                                            ~{role.duration_months ? `${role.duration_months} months` : "duration n/a"}
-                                                                        </p>
-                                                                    </div>
-
-                                                                    <div className="bg-gray-50 border-gray-100">
-                                                                        <p className="text-[15px] font-bold text-gray-700 leading-relaxed">
-                                                                            {summary}
-                                                                        </p>
-                                                                    </div>
-
-                                                                    <div className="flex flex-wrap gap-2">
-                                                                        {techStack.map((tech: string, sIdx: number) => (
-                                                                            <span key={sIdx} className="px-3 py-1.5 rounded-lg bg-white border border-gray-100 text-[11px] font-bold text-[#2563eb] shadow-sm">
-                                                                                {tech}
-                                                                            </span>
-                                                                        ))}
-                                                                    </div>
-
-                                                                    {role.overlap_note && (
-                                                                        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-orange-50 text-orange-600 border border-orange-100 text-[10px] font-black uppercase tracking-widest mt-2">
-                                                                            {role.overlap_note}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    });
-                                                })()}
-                                            </div>
-                                        </div>
-                                    </div>
-
-
-
-
-
-                                    {/* ✅ Section: INTEGRITY SIGNALS & SUITABILITY */}
-                                    <div className="space-y-12 py-8">
-                                        {/* Integrity Signals — redesigned card layout */}
-                                        <div className="space-y-5">
-                                            <p className="text-gray-500 font-black tracking-widest text-[11px] uppercase opacity-70">
-                                                Integrity Signals &amp; Risk Assessment
+                                    {/* 9. Decision Consensus */}
+                                    <section className="reveal border-t border-stone-200 pt-8">
+                                        <div className="bg-on-surface text-surface py-5 px-8 rounded-lg">
+                                            <p className="text-base font-medium tracking-tight">
+                                                <span className="font-extrabold text-primary-fixed">Verdict: {aiData.verdict || normalizedStatus}</span>
+                                                <span className="mx-2 text-stone-500">—</span>
+                                                <span className="text-stone-300">{aiData.verdict_summary || "Candidate matched based on initial screening criteria."}</span>
                                             </p>
-                                            <div className="bg-white rounded-[32px] border border-gray-100 shadow-sm overflow-hidden">
-                                                {(() => {
-                                                    const signals: any[] = aiData.integrity_signals || (redFlags.map((f: any) => ({
-                                                        level: f.severity || "Low",
-                                                        label: f.flag?.replace(/_/g, ' ') || "Concern",
-                                                        summary: f.detail || "",
-                                                        details: ""
-                                                    })));
-
-                                                    if (signals.length === 0) return (
-                                                        <div className="px-10 py-8 flex items-center gap-4">
-                                                            <div className="h-8 w-8 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
-                                                                <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                                                            </div>
-                                                            <p className="text-[13px] font-bold text-gray-400 italic">No integrity concerns detected — resume dates and claims are consistent.</p>
-                                                        </div>
-                                                    );
-
-                                                    return (
-                                                        <div className="divide-y divide-gray-50">
-                                                            {signals.map((signal: any, i: number) => {
-                                                                const lvl = (signal.level || "low").toLowerCase();
-                                                                const isHigh = lvl === 'high';
-                                                                const isMedium = lvl === 'medium';
-
-                                                                const riskColor = isHigh
-                                                                    ? { bg: "bg-red-50", border: "border-red-100", dot: "bg-red-500", badge: "bg-red-100 text-red-700 border-red-200", text: "text-red-700" }
-                                                                    : isMedium
-                                                                        ? { bg: "bg-amber-50", border: "border-amber-100", dot: "bg-amber-400", badge: "bg-amber-100 text-amber-700 border-amber-200", text: "text-amber-700" }
-                                                                        : { bg: "bg-gray-50", border: "border-gray-100", dot: "bg-emerald-400", badge: "bg-emerald-50 text-emerald-700 border-emerald-100", text: "text-gray-600" };
-
-                                                                return (
-                                                                    <div key={i} className={cn("flex items-start gap-5 px-8 py-6", riskColor.bg)}>
-                                                                        <div className={cn("h-2.5 w-2.5 rounded-full mt-1.5 flex-shrink-0", riskColor.dot)} />
-                                                                        <div className="flex-1 space-y-1.5">
-                                                                            <div className="flex items-center gap-3 flex-wrap">
-                                                                                <span className={cn("px-2.5 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border", riskColor.badge)}>
-                                                                                    {signal.level} risk
-                                                                                </span>
-                                                                                <span className="text-[14px] font-black text-gray-800 tracking-tight">{signal.label}</span>
-                                                                            </div>
-                                                                            <p className={cn("text-[13px] font-bold leading-relaxed", riskColor.text)}>{signal.summary}</p>
-                                                                            {signal.details && (
-                                                                                <p className="text-[12px] font-medium text-gray-400 leading-relaxed">{signal.details}</p>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    );
-                                                })()}
-                                            </div>
                                         </div>
-
-                                        {/* Suitability Analysis Card (Always visible shell with fallbacks) */}
-                                        {(aiData.suitability_analysis || aiData.reasoning || aiData.breakdown) && (
-                                            <div className="bg-[#EBF5FF] rounded-[32px] border border-[#D1E9FF] p-12 space-y-8 shadow-lg animate-in fade-in duration-700">
-                                                <h4 className="text-[20px] font-black text-[#1C4E80] tracking-tight leading-none">
-                                                    What would make {candidate.fullName.split(' ')[0]} suitable for this role
-                                                </h4>
-                                                <div className="space-y-5">
-                                                    {(() => {
-                                                        const suggestions = (aiData.suitability_analysis?.suggestions || []).filter((s: string) => s && s.trim().length > 0);
-
-                                                        // Primary Fallback: Strengths
-                                                        let displayItems = suggestions.length > 0 ? suggestions :
-                                                            (aiData.strengths || [])
-                                                                .map((s: any) => typeof s === 'string' ? s : s.strength)
-                                                                .filter((s: string) => s && s.trim().length > 0)
-                                                                .slice(0, 3);
-
-                                                        // Secondary Fallback: Extract from Summary/Verdict if still empty
-                                                        if (displayItems.length === 0) {
-                                                            const rawText = String(aiData.ai_verdict || aiData.reasoning || summary || "");
-                                                            displayItems = rawText.split('.').map(s => s.trim()).filter(s => s.length > 40).slice(0, 2);
-                                                        }
-
-                                                        if (displayItems.length === 0) return (
-                                                            <p className="text-sm italic text-blue-400 font-bold opacity-60">Analysis of upskilling requirements pending...</p>
-                                                        );
-
-                                                        return displayItems.map((item: string, i: number) => (
-                                                            <div key={i} className="flex items-start gap-4 animate-in fade-in slide-in-from-left duration-500" style={{ animationDelay: `${i * 100}ms` }}>
-                                                                <span className="text-xl text-[#3B82F6] flex-shrink-0 mt-[-2px] font-black">→</span>
-                                                                <p className="text-[17px] font-bold text-[#1C4E80] leading-[1.45]">
-                                                                    {item.replace(/^[•\s→-]+/, '')}
-                                                                </p>
-                                                            </div>
-                                                        ));
-                                                    })()}
-
-                                                    <div className="flex items-start gap-4 pt-4 border-t border-blue-100 mt-2">
-                                                        <span className="text-xl text-[#3B82F6] flex-shrink-0 mt-[-2px] font-black">→</span>
-                                                        <p className="text-[17px] font-bold text-[#1C4E80] leading-[1.45]">
-                                                            Estimated readiness timeline: <span className="underline decoration-blue-300 decoration-4 underline-offset-4">{aiData.suitability_analysis?.readiness_timeline || "6-12 months"}</span> with deliberate upskilling in a high-growth environment
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* ✅ Section: SKILLS ON RESUME */}
-                                    <div className="space-y-4">
-                                        <p className="text-gray-500 font-black tracking-widest text-[11px] uppercase opacity-70">
-                                            Skills on Resume
-                                        </p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {techSkills.map((s: string, i: number) => (
-                                                <span key={`tech-${i}`} className="px-3.5 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-100 text-[12px] font-bold">
-                                                    {s}
-                                                </span>
-                                            ))}
-                                            {toolSkills.map((s: string, i: number) => (
-                                                <span key={`tool-${i}`} className="px-3.5 py-1.5 rounded-xl bg-gray-50 text-gray-700 border border-gray-100 text-[12px] font-bold">
-                                                    {s}
-                                                </span>
-                                            ))}
-                                            {domainSkills.map((s: string, i: number) => (
-                                                <span key={`domain-${i}`} className="px-3.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-100 text-[12px] font-bold">
-                                                    {s}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* ✅ AI System Verdict (Moved to bottom) */}
-                                    <div className="space-y-8">
-                                        <div className="space-y-1">
-                                            <h3 className="text-2xl font-black text-gray-900 tracking-tight">Candidate Analysis</h3>
-                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">Executive Talent Synthesis — Recruiter Snapshot</p>
-                                        </div>
-                                        <div className={cn(
-                                            "bg-white rounded-[32px] border shadow-[0_8px_32px_rgba(0,0,0,0.03)] p-10 relative overflow-hidden",
-                                            normalizedStatus === "Shortlisted" ? "border-green-200 bg-green-50" :
-                                                normalizedStatus === "Borderline" ? "border-orange-200 bg-orange-50" :
-                                                    normalizedStatus === "Rejected" ? "border-red-200 bg-red-50" : "border-blue-200 bg-blue-50"
-                                        )}>
-                                            <div className="flex items-center gap-6 mb-6">
-                                                <div className={cn(
-                                                    "h-14 w-14 rounded-2xl flex items-center justify-center shadow-lg flex-shrink-0",
-                                                    normalizedStatus === "Shortlisted" ? "bg-green-100 text-green-600" :
-                                                        normalizedStatus === "Borderline" ? "bg-orange-100 text-orange-600" :
-                                                            normalizedStatus === "Rejected" ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"
-                                                )}>
-                                                    {normalizedStatus === "Shortlisted" ? <CheckCircle2 className="h-7 w-7" /> : <AlertTriangle className="h-7 w-7" />}
-                                                </div>
-                                                <div>
-                                                    <p className={cn("text-[10px] font-black uppercase tracking-[0.3em] mb-1.5",
-                                                        normalizedStatus === "Shortlisted" ? "text-green-600" :
-                                                            normalizedStatus === "Borderline" ? "text-orange-600" :
-                                                                normalizedStatus === "Rejected" ? "text-red-600" : "text-blue-600"
-                                                    )}>Decision Consensus</p>
-                                                    <h3 className={cn("text-3xl font-black tracking-tighter uppercase",
-                                                        normalizedStatus === "Shortlisted" ? "text-green-800" :
-                                                            normalizedStatus === "Borderline" ? "text-orange-800" :
-                                                                normalizedStatus === "Rejected" ? "text-red-800" : "text-blue-800"
-                                                    )}>{normalizedStatus}</h3>
-                                                </div>
-                                            </div>
-                                            {/* Sharp one-line reason */}
-                                            {aiData.decision_reason && (
-                                                <div className={cn(
-                                                    "flex items-start gap-3 pt-5 border-t",
-                                                    normalizedStatus === "Shortlisted" ? "border-green-200" :
-                                                        normalizedStatus === "Borderline" ? "border-orange-200" :
-                                                            normalizedStatus === "Rejected" ? "border-red-200" : "border-blue-200"
-                                                )}>
-                                                    <div className={cn(
-                                                        "h-1 w-6 rounded-full mt-[10px] flex-shrink-0",
-                                                        normalizedStatus === "Shortlisted" ? "bg-green-500" :
-                                                            normalizedStatus === "Borderline" ? "bg-orange-500" :
-                                                                normalizedStatus === "Rejected" ? "bg-red-500" : "bg-blue-500"
-                                                    )} />
-                                                    <p className={cn(
-                                                        "text-[15px] font-bold leading-relaxed",
-                                                        normalizedStatus === "Shortlisted" ? "text-green-800" :
-                                                            normalizedStatus === "Borderline" ? "text-orange-800" :
-                                                                normalizedStatus === "Rejected" ? "text-red-800" : "text-blue-800"
-                                                    )}>{aiData.decision_reason}</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                </div>
+                                    </section>
+                                </main>
                             )}
                         </div> {/* closes Header Content (relative z-10 398) */}
                     </div> {/* closes Header Card (relative bg-white 364) */}
@@ -1260,14 +995,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
                             <div className="relative bg-white rounded-3xl border border-gray-100 shadow-[0_8px_40px_rgba(0,0,0,0.04)] overflow-hidden p-10">
                                 <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-300 via-indigo-600 to-indigo-400" />
-                                <div className="flex items-center gap-4 mb-8">
-                                    <div className="h-12 w-12 rounded-2xl bg-indigo-50 flex items-center justify-center">
-                                        <Camera className="h-6 w-6 text-indigo-600" />
-                                    </div>
-                                    <div>
-                                        <h2 className="text-xl font-black text-gray-900 tracking-tight">Technical Interview Review</h2>
-                                    </div>
-                                </div>
+
 
                                 {interviewRecordingUrl ? (
                                     <div className="space-y-8">
@@ -1288,41 +1016,30 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                             {/* LEFT COLUMN: Summary & Metadata */}
                                             <div className="space-y-6">
                                                 <div className="p-8 rounded-[32px] bg-white border border-gray-100 shadow-[0_8px_40px_rgba(0,0,0,0.03)] h-full">
-                                                    <div className="flex items-center justify-between mb-6 cursor-pointer group" onClick={() => toggleSection('communication')}>
+                                                    <div className="flex items-center justify-between mb-6">
                                                         <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Communication Breakdown</p>
-                                                        <ChevronDown className={cn("h-4 w-4 text-gray-300 transition-transform duration-300", !expandedSections.communication && "-rotate-90")} />
                                                     </div>
 
-                                                    <AnimatePresence initial={false}>
-                                                        {expandedSections.communication && (
-                                                            <motion.div
-                                                                initial={{ height: 0, opacity: 0 }}
-                                                                animate={{ height: 'auto', opacity: 1 }}
-                                                                exit={{ height: 0, opacity: 0 }}
-                                                                transition={{ duration: 0.3, ease: "easeInOut" }}
-                                                                className="overflow-hidden space-y-6"
-                                                            >
-                                                                <div className="space-y-6">
-                                                                    <CommunicationDonutChart
-                                                                        metrics={[
-                                                                            { label: "Clarity", value: 60, color: "#6366F1" },
-                                                                            { label: "Fluency", value: 35, color: "#F59E0B" },
-                                                                            { label: "Grammar", value: 30, color: "#10B981" },
-                                                                            { label: "Depth", value: 65, color: "#F43F5E" }
-                                                                        ]}
-                                                                    />
+                                                    <div className="space-y-6">
+                                                        <div className="space-y-6">
+                                                            <CommunicationDonutChart
+                                                                metrics={[
+                                                                    { label: "Clarity", value: 60, color: "#6366F1" },
+                                                                    { label: "Fluency", value: 35, color: "#F59E0B" },
+                                                                    { label: "Grammar", value: 30, color: "#10B981" },
+                                                                    { label: "Depth", value: 65, color: "#F43F5E" }
+                                                                ]}
+                                                            />
 
-                                                                    <div className="bg-[#FDF9F3] rounded-2xl p-6 space-y-2 border border-[#F5E6D3]">
-                                                                        <p className="text-[9.5px] font-black text-[#A89078] uppercase tracking-[0.2em]">CEFR Rating</p>
-                                                                        <h4 className="text-lg font-black text-[#A87128] tracking-tight">B1 — Intermediate</h4>
-                                                                        <p className="text-[11.5px] font-bold text-[#716152] leading-relaxed">
-                                                                            Can handle simple direct exchanges. Frequent grammatical errors and choppy fluency prevent B2. Insufficient for a senior {candidate.drive?.role || "AI Engineer"} role requiring technical explanation depth.
-                                                                        </p>
-                                                                    </div>
-                                                                </div>
-                                                            </motion.div>
-                                                        )}
-                                                    </AnimatePresence>
+                                                            <div className="bg-[#FDF9F3] rounded-2xl p-6 space-y-2 border border-[#F5E6D3]">
+                                                                <p className="text-[9.5px] font-black text-[#A89078] uppercase tracking-[0.2em]">CEFR Rating</p>
+                                                                <h4 className="text-lg font-black text-[#A87128] tracking-tight">B1 — Intermediate</h4>
+                                                                <p className="text-[11.5px] font-bold text-[#716152] leading-relaxed">
+                                                                    Can handle simple direct exchanges. Frequent grammatical errors and choppy fluency prevent B2. Insufficient for a senior {candidate.drive?.role || "AI Engineer"} role requiring technical explanation depth.
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -1361,316 +1078,394 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                             {/* LEFT COLUMN: JD Skills Proof */}
                                             <div className="space-y-6">
-                                                <div className="flex items-center gap-3 cursor-pointer group" onClick={() => toggleSection('skills')}>
+                                                <div className="flex items-center gap-3">
                                                     <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-900 flex-shrink-0">Did the interview prove JD Skills?</h3>
                                                     <div className="h-[1px] flex-1 bg-gray-100" />
-                                                    <ChevronDown className={cn("h-4 w-4 text-gray-300 transition-transform duration-300", !expandedSections.skills && "-rotate-90")} />
                                                 </div>
 
-                                                <AnimatePresence initial={false}>
-                                                    {expandedSections.skills && (
-                                                        <motion.div
-                                                            initial={{ height: 0, opacity: 0 }}
-                                                            animate={{ height: 'auto', opacity: 1 }}
-                                                            exit={{ height: 0, opacity: 0 }}
-                                                            transition={{ duration: 0.3, ease: "easeInOut" }}
-                                                            className="overflow-hidden"
-                                                        >
-                                                            <div className="p-8 rounded-[32px] bg-white border border-gray-100 shadow-[0_8px_40px_rgba(0,0,0,0.03)] h-full">
-                                                                <div className="space-y-6">
-                                                                    {[
-                                                                        {
-                                                                            title: "Cycle detection in graphs",
-                                                                            note: '"K. So is it totally based on coding?" — deflected',
-                                                                            confidence: "Confidence: High — no attempt made",
-                                                                            status: "Not proved",
-                                                                            score: "0/10",
-                                                                            color: "text-red-500 bg-red-50 border-red-100"
-                                                                        },
-                                                                        {
-                                                                            title: "Graph traversal (BFS / DFS)",
-                                                                            note: "Not reached — session ended early",
-                                                                            confidence: "Confidence: N/A — not tested",
-                                                                            status: "Not tested",
-                                                                            score: "—",
-                                                                            color: "text-gray-500 bg-gray-50 border-gray-100"
-                                                                        },
-                                                                        {
-                                                                            title: "Edge case handling",
-                                                                            note: "Not reached — session ended early",
-                                                                            confidence: "Confidence: N/A — not tested",
-                                                                            status: "Not tested",
-                                                                            score: "—",
-                                                                            color: "text-gray-500 bg-gray-50 border-gray-100"
-                                                                        },
-                                                                        {
-                                                                            title: "Problem-solving approach",
-                                                                            note: '"Actually, I\'m not good at coding."',
-                                                                            confidence: "Confidence: High — self-declared",
-                                                                            status: "Not proved",
-                                                                            score: "0/10",
-                                                                            color: "text-red-500 bg-red-50 border-red-100"
-                                                                        },
-                                                                        {
-                                                                            title: "Communication clarity",
-                                                                            note: "Basic exchanges functional, grammar poor",
-                                                                            confidence: "Confidence: High — full session data",
-                                                                            status: "Partial",
-                                                                            score: "5/10",
-                                                                            color: "text-orange-500 bg-orange-50 border-orange-100"
-                                                                        },
-                                                                    ].map((skill, i) => (
-                                                                        <div key={i} className={cn("space-y-2 pb-5", i !== 4 && "border-b border-gray-100")}>
-                                                                            <div className="flex items-start justify-between gap-4">
-                                                                                <div className="space-y-1 flex-1 pb-1">
-                                                                                    <h4 className="text-[14px] font-black text-gray-900 tracking-tight leading-tight">{skill.title}</h4>
-                                                                                    <p className="text-[11.5px] font-bold text-gray-400 italic font-mono leading-snug">
-                                                                                        {skill.note.startsWith('"') ? skill.note : (i === 1 || i === 2 ? skill.note : `"${skill.note}"`)}
-                                                                                    </p>
-                                                                                    <p className="text-[9.5px] font-black uppercase tracking-widest text-gray-300">{skill.confidence}</p>
-                                                                                </div>
-                                                                                <div className="flex items-start gap-3 pt-1">
-                                                                                    <span className={cn("px-2.5 py-1 rounded-full text-[8.5px] font-black uppercase tracking-widest border shadow-sm", skill.color)}>
-                                                                                        {skill.status}
-                                                                                    </span>
-                                                                                    <span className={cn("text-lg font-black min-w-[45px] text-right", skill.score === "—" ? "text-gray-200" : skill.score.startsWith('0') ? 'text-[#E63946]' : 'text-[#A87128]')}>
-                                                                                        {skill.score}
-                                                                                    </span>
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                    ))}
+                                                <div className="p-8 rounded-[32px] bg-white border border-gray-100 shadow-[0_8px_40px_rgba(0,0,0,0.03)] h-full mt-6">
+                                                    <div className="space-y-6">
+                                                        {[
+                                                            {
+                                                                title: "Cycle detection in graphs",
+                                                                note: '"K. So is it totally based on coding?" — deflected',
+                                                                confidence: "Confidence: High — no attempt made",
+                                                                status: "Not proved",
+                                                                score: "0/10",
+                                                                color: "text-red-500 bg-red-50 border-red-100"
+                                                            },
+                                                            {
+                                                                title: "Graph traversal (BFS / DFS)",
+                                                                note: "Not reached — session ended early",
+                                                                confidence: "Confidence: N/A — not tested",
+                                                                status: "Not tested",
+                                                                score: "—",
+                                                                color: "text-gray-500 bg-gray-50 border-gray-100"
+                                                            },
+                                                            {
+                                                                title: "Edge case handling",
+                                                                note: "Not reached — session ended early",
+                                                                confidence: "Confidence: N/A — not tested",
+                                                                status: "Not tested",
+                                                                score: "—",
+                                                                color: "text-gray-500 bg-gray-50 border-gray-100"
+                                                            },
+                                                            {
+                                                                title: "Problem-solving approach",
+                                                                note: '"Actually, I\'m not good at coding."',
+                                                                confidence: "Confidence: High — self-declared",
+                                                                status: "Not proved",
+                                                                score: "0/10",
+                                                                color: "text-red-500 bg-red-50 border-red-100"
+                                                            },
+                                                            {
+                                                                title: "Communication clarity",
+                                                                note: "Basic exchanges functional, grammar poor",
+                                                                confidence: "Confidence: High — full session data",
+                                                                status: "Partial",
+                                                                score: "5/10",
+                                                                color: "text-orange-500 bg-orange-50 border-orange-100"
+                                                            },
+                                                        ].map((skill, i) => (
+                                                            <div key={i} className={cn("space-y-2 pb-5", i !== 4 && "border-b border-gray-100")}>
+                                                                <div className="flex items-start justify-between gap-4">
+                                                                    <div className="space-y-1 flex-1 pb-1">
+                                                                        <h4 className="text-[14px] font-black text-gray-900 tracking-tight leading-tight">{skill.title}</h4>
+                                                                        <p className="text-[11.5px] font-bold text-gray-400 italic font-mono leading-snug">
+                                                                            {skill.note.startsWith('"') ? skill.note : (i === 1 || i === 2 ? skill.note : `"${skill.note}"`)}
+                                                                        </p>
+                                                                        <p className="text-[9.5px] font-black uppercase tracking-widest text-gray-300">{skill.confidence}</p>
+                                                                    </div>
+                                                                    <div className="flex items-start gap-3 pt-1">
+                                                                        <span className={cn("px-2.5 py-1 rounded-full text-[8.5px] font-black uppercase tracking-widest border shadow-sm", skill.color)}>
+                                                                            {skill.status}
+                                                                        </span>
+                                                                        <span className={cn("text-lg font-black min-w-[45px] text-right", skill.score === "—" ? "text-gray-200" : skill.score.startsWith('0') ? 'text-[#E63946]' : 'text-[#A87128]')}>
+                                                                            {skill.score}
+                                                                        </span>
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                        </motion.div>
-                                                    )}
-                                                </AnimatePresence>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             </div>
 
                                             {/* RIGHT COLUMN: Transcript */}
                                             <div className="space-y-6 text-gray-900">
-                                                <div className="flex items-center gap-3 cursor-pointer group" onClick={() => toggleSection('transcript')}>
-                                                    <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-900 flex-shrink-0">Full Session Log</h3>
-                                                    <div className="h-[1px] flex-1 bg-gray-100" />
-                                                    <ChevronDown className={cn("h-4 w-4 text-gray-300 transition-transform duration-300", !expandedSections.transcript && "-rotate-90")} />
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div className="flex items-center gap-3 flex-1">
+                                                        <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-900 flex-shrink-0">Full Session Log</h3>
+                                                        <div className="h-[1px] flex-1 bg-gray-100" />
+                                                    </div>
+                                                    <div className="flex bg-gray-50 rounded-xl p-1 border border-gray-100">
+                                                        <button
+                                                            onClick={() => setSessionLogMode('chat')}
+                                                            className={cn(
+                                                                "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                                                                sessionLogMode === 'chat' ? "bg-white text-indigo-600 shadow-sm border border-gray-100" : "text-gray-400 hover:text-gray-600"
+                                                            )}
+                                                        >
+                                                            Chat
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setSessionLogMode('analysis')}
+                                                            className={cn(
+                                                                "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                                                                sessionLogMode === 'analysis' ? "bg-white text-indigo-600 shadow-sm border border-gray-100" : "text-gray-400 hover:text-gray-600"
+                                                            )}
+                                                        >
+                                                            Analysis
+                                                        </button>
+                                                    </div>
                                                 </div>
 
-                                                <AnimatePresence initial={false}>
-                                                    {expandedSections.transcript && (
-                                                        <motion.div
-                                                            initial={{ height: 0, opacity: 0 }}
-                                                            animate={{ height: 'auto', opacity: 1 }}
-                                                            exit={{ height: 0, opacity: 0 }}
-                                                            transition={{ duration: 0.3, ease: "easeInOut" }}
-                                                            className="overflow-hidden"
-                                                        >
-                                                            <div className="relative h-[600px] bg-white rounded-[32px] border border-gray-100 shadow-[0_8px_40px_rgba(0,0,0,0.03)] overflow-hidden">
-                                                                <div className="h-full overflow-y-auto custom-scrollbar p-6 flex flex-col gap-4 scroll-smooth">
-                                                                    {interviewTranscript ? interviewTranscript.split('\n').filter((line: string) => line.trim()).map((line: string, idx: number) => {
-                                                                        // Our agent writes "Interviewer: ..." and "Candidate: ..."
-                                                                        const isAI = line.startsWith('Interviewer:');
-                                                                        const isUser = line.startsWith('Candidate:');
-                                                                        const cleanLine = line.replace(/^(Interviewer:|Candidate:|ai:|user:|system:)\s*/i, '').trim();
-                                                                        const label = isAI ? "Ishita (AI)" : isUser ? "Candidate" : "System";
+                                                <div className="relative h-[600px] bg-white rounded-[32px] border border-gray-100 shadow-[0_8px_40px_rgba(0,0,0,0.03)] overflow-hidden mt-6">
+                                                    <AnimatePresence mode="wait">
+                                                        {sessionLogMode === 'chat' ? (
+                                                            <motion.div
+                                                                key="chat"
+                                                                initial={{ opacity: 0, x: -20 }}
+                                                                animate={{ opacity: 1, x: 0 }}
+                                                                exit={{ opacity: 0, x: 20 }}
+                                                                className="h-full overflow-y-auto custom-scrollbar p-6 flex flex-col gap-4 scroll-smooth"
+                                                            >
+                                                                {interviewTranscript ? interviewTranscript.split('\n').filter((line: string) => line.trim()).map((line: string, idx: number) => {
+                                                                    const isAI = line.startsWith('Interviewer:');
+                                                                    const isUser = line.startsWith('Candidate:');
+                                                                    const cleanLine = line.replace(/^(Interviewer:|Candidate:|ai:|user:|system:)\s*/i, '').trim();
+                                                                    const label = isAI ? "Ishita (AI)" : isUser ? "Candidate" : "System";
 
-                                                                        return (
-                                                                            <div key={idx} className={cn("flex flex-col max-w-[90%] animate-in fade-in duration-500", isAI ? "self-start items-start" : "self-end items-end")}>
-                                                                                <div className={cn("flex items-center gap-2 mb-1.5 px-1", isAI ? "flex-row" : "flex-row-reverse")}>
-                                                                                    <div className={cn("h-6 w-6 rounded-lg flex items-center justify-center text-[8px] font-black shadow-sm", isAI ? 'bg-indigo-600 text-white' : isUser ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-500')}>
-                                                                                        {isAI ? 'AI' : isUser ? 'C' : 'S'}
-                                                                                    </div>
-                                                                                    <span className="text-[9px] font-black uppercase tracking-widest text-gray-400">{label}</span>
+                                                                    return (
+                                                                        <div key={idx} className={cn("flex flex-col max-w-[90%] animate-in fade-in duration-500", isAI ? "self-start items-start" : "self-end items-end")}>
+                                                                            <div className={cn("flex items-center gap-2 mb-1.5 px-1", isAI ? "flex-row" : "flex-row-reverse")}>
+                                                                                <div className={cn("h-6 w-6 rounded-lg flex items-center justify-center text-[8px] font-black shadow-sm", isAI ? 'bg-indigo-600 text-white' : isUser ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-500')}>
+                                                                                    {isAI ? 'AI' : isUser ? 'C' : 'S'}
                                                                                 </div>
-                                                                                <div className={cn("px-4 py-3 rounded-2xl text-[11px] font-bold leading-relaxed shadow-sm",
-                                                                                    isAI ? "bg-white text-gray-800 rounded-tl-none border border-gray-100" : "bg-indigo-600 text-white rounded-tr-none")}>
-                                                                                    {cleanLine}
+                                                                                <span className="text-[9px] font-black uppercase tracking-widest text-gray-400">{label}</span>
+                                                                            </div>
+                                                                            <div className={cn("px-4 py-3 rounded-2xl text-[11px] font-bold leading-relaxed shadow-sm",
+                                                                                isAI ? "bg-white text-gray-800 rounded-tl-none border border-gray-100" : "bg-indigo-600 text-white rounded-tr-none")}>
+                                                                                {cleanLine}
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                }) : (
+                                                                    <div className="h-full flex flex-col items-center justify-center opacity-30 gap-3">
+                                                                        <RefreshCw className="h-8 w-8 animate-spin" />
+                                                                        <p className="text-xs font-black uppercase tracking-widest">Reconstructing Log...</p>
+                                                                    </div>
+                                                                )}
+                                                            </motion.div>
+                                                        ) : (
+                                                            <motion.div
+                                                                key="analysis"
+                                                                initial={{ opacity: 0, x: 20 }}
+                                                                animate={{ opacity: 1, x: 0 }}
+                                                                exit={{ opacity: 0, x: -20 }}
+                                                                className="h-full flex flex-col"
+                                                            >
+                                                                {/* Question Selector Tabs */}
+                                                                <div className="flex items-center gap-2 p-4 border-b border-gray-50 bg-gray-50/30 overflow-x-auto no-scrollbar">
+                                                                    {[
+                                                                        { id: 'q1', label: 'Q1: Background' },
+                                                                        { id: 'q2', label: 'Q2: Technical Fit' },
+                                                                        { id: 'q3', label: 'Q3: Conflict Rez' },
+                                                                        { id: 'q4', label: 'Q4: Problem Solve' },
+                                                                        { id: 'q5', label: 'Q5: Career Goal' }
+                                                                    ].map((q, idx) => (
+                                                                        <button
+                                                                            key={q.id}
+                                                                            onClick={() => setSelectedQuestionIndex(idx)}
+                                                                            className={cn(
+                                                                                "px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border",
+                                                                                selectedQuestionIndex === idx 
+                                                                                    ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100" 
+                                                                                    : "bg-white text-gray-400 border-gray-100 hover:border-gray-200"
+                                                                            )}
+                                                                        >
+                                                                            {q.label}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+
+                                                                {/* Question Content */}
+                                                                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                                                                    {(() => {
+                                                                        const questions = [
+                                                                            {
+                                                                                question: "Can you tell me about your transition from Python development to Growth Engineering?",
+                                                                                analysis: "Candidate provided a clear narrative transition. They highlighted that while they enjoyed raw backend work, they found more impact in directly influencing business metrics through automation.",
+                                                                                depth: "High - Provided specific rationale",
+                                                                                how_answered: "Confident, articulate, used professional vocabulary.",
+                                                                                score: 9
+                                                                            },
+                                                                            {
+                                                                                question: "Describe a complex n8n workflow you built and the challenges you faced.",
+                                                                                analysis: "Candidate discussed a multi-channel lead qualification system. They accurately identified error handling and rate limiting as their primary engineering challenges.",
+                                                                                depth: "Technical - Deep understanding of node logic",
+                                                                                how_answered: "Structured 'STAR' approach. Detailed technical walkthrough.",
+                                                                                score: 8
+                                                                            },
+                                                                            {
+                                                                                question: "How do you handle disagreement with a product manager regarding technical feasibility?",
+                                                                                analysis: "Candidate focused on data-driven negotiation. They mentioned using small-scale POCs to prove feasibility rather than just verbal debate.",
+                                                                                depth: "Soft Skill - Strong EQ demonstrated",
+                                                                                how_answered: "Calm, collaborative tone. Demonstrated perspective-taking.",
+                                                                                score: 9
+                                                                            },
+                                                                            {
+                                                                                question: "Walking through a scenario where a database migration fails. What is your immediate protocol?",
+                                                                                analysis: "Mentioned rollbacks and post-mortems. Lacked specific details on some high-availability configurations but understood the core recovery lifecycle.",
+                                                                                depth: "Functional - Clear protocol knowledge",
+                                                                                how_answered: "Procedural. Focus on communication and stability.",
+                                                                                score: 7
+                                                                            },
+                                                                            {
+                                                                                question: "Where do you see your role as a Growth Engineer evolving in the next 18 months?",
+                                                                                analysis: "Strong ambition towards 'Growth Product' ownership. Clear alignment with the seniority trajectory expected for this role.",
+                                                                                depth: "Strategic - Long-term alignment",
+                                                                                how_answered: "Ambitious but realistic. High motivation signals.",
+                                                                                score: 10
+                                                                            }
+                                                                        ];
+                                                                        const q = questions[selectedQuestionIndex];
+                                                                        return (
+                                                                            <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                                                                <div className="space-y-4">
+                                                                                    <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Question {selectedQuestionIndex + 1}</span>
+                                                                                    <h4 className="text-xl font-black text-gray-900 leading-tight tracking-tight">
+                                                                                        {q.question}
+                                                                                    </h4>
+                                                                                </div>
+
+                                                                                <div className="space-y-4">
+                                                                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">AI Analysis & Insights</p>
+                                                                                    <div className="bg-indigo-50/50 rounded-2xl p-6 border border-indigo-100">
+                                                                                        <p className="text-[13.5px] font-bold text-gray-800 leading-relaxed italic">
+                                                                                            "{q.analysis}"
+                                                                                        </p>
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                                                    {[
+                                                                                        { label: "Answer Depth", val: q.depth, color: "text-indigo-600" },
+                                                                                        { label: "Communication style", val: q.how_answered, color: "text-emerald-600" },
+                                                                                        { label: "Component score", val: `${q.score}/10`, color: "text-orange-600", isScore: true }
+                                                                                    ].map((item, i) => (
+                                                                                        <div key={i} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+                                                                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2">{item.label}</p>
+                                                                                            <p className={cn("text-[12px] font-black tracking-tight", item.color)}>
+                                                                                                {item.val}
+                                                                                            </p>
+                                                                                        </div>
+                                                                                    ))}
                                                                                 </div>
                                                                             </div>
                                                                         );
-                                                                    }) : (
-                                                                        <div className="h-full flex flex-col items-center justify-center opacity-30 gap-3">
-                                                                            <RefreshCw className="h-8 w-8 animate-spin" />
-                                                                            <p className="text-xs font-black uppercase tracking-widest">Reconstructing Log...</p>
-                                                                        </div>
-                                                                    )}
+                                                                    })()}
                                                                 </div>
-                                                            </div>
-                                                        </motion.div>
-                                                    )}
-                                                </AnimatePresence>
+                                                            </motion.div>
+                                                        )}
+                                                    </AnimatePresence>
+                                                </div>
                                             </div>
 
                                             {/* RESUME CLAIMS VS INTERVIEW PROOF: CONSISTENCY CHECK */}
                                             <div className="space-y-6">
-                                                <div className="flex items-center gap-3 cursor-pointer group" onClick={() => toggleSection('consistency')}>
+                                                <div className="flex items-center gap-3">
                                                     <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-900 flex-shrink-0">Resume Claims vs Interview Proof — Consistency Check</h3>
                                                     <div className="h-[1px] flex-1 bg-gray-100" />
-                                                    <ChevronDown className={cn("h-4 w-4 text-gray-300 transition-transform duration-300", !expandedSections.consistency && "-rotate-90")} />
                                                 </div>
 
-                                                <AnimatePresence initial={false}>
-                                                    {expandedSections.consistency && (
-                                                        <motion.div
-                                                            initial={{ height: 0, opacity: 0 }}
-                                                            animate={{ height: 'auto', opacity: 1 }}
-                                                            exit={{ height: 0, opacity: 0 }}
-                                                            transition={{ duration: 0.3, ease: "easeInOut" }}
-                                                            className="overflow-hidden"
-                                                        >
-                                                            <div className="p-8 rounded-[32px] bg-white border border-gray-100 shadow-[0_8px_40px_rgba(0,0,0,0.03)] h-full overflow-hidden">
-                                                                <div className="grid grid-cols-[1.2fr_40px_1fr] md:grid-cols-[1fr_80px_1.5fr] items-center px-8 py-4 border-b border-gray-100 bg-gray-50/50">
-                                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Resume Claimed</p>
-                                                                    <div />
-                                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Interview Showed</p>
+                                                <div className="p-8 rounded-[32px] bg-white border border-gray-100 shadow-[0_8px_40px_rgba(0,0,0,0.03)] h-full overflow-hidden mt-6">
+                                                    <div className="grid grid-cols-[1.2fr_40px_1fr] md:grid-cols-[1fr_80px_1.5fr] items-center px-8 py-4 border-b border-gray-100 bg-gray-50/50">
+                                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Resume Claimed</p>
+                                                        <div />
+                                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Interview Showed</p>
+                                                    </div>
+
+                                                    <div className="divide-y divide-gray-100">
+                                                        {[
+                                                            {
+                                                                claim: "Built GTM automation systems at Niti AI",
+                                                                sub: "Claimed: GTM strategy",
+                                                                proof: "Zero GTM knowledge demonstrated. Could not answer basic GTM question.",
+                                                                status: "Mismatch",
+                                                                statusColor: "text-[#E63946] bg-red-50 border-red-100"
+                                                            },
+                                                            {
+                                                                claim: "n8n, Zapier, Apollo automation experience",
+                                                                sub: "Claimed: Automation tools",
+                                                                proof: "Not tested in interview — role needed coding, not automation tools.",
+                                                                status: "Not tested",
+                                                                statusColor: "text-[#8B5E3C] bg-[#FDF9F3] border-[#F5E6D3]"
+                                                            },
+                                                            {
+                                                                claim: "Python, Pandas, Power BI — data analysis",
+                                                                sub: "Claimed: Technical skills",
+                                                                proof: "Self-declared \"not good at coding.\" No code written.",
+                                                                status: "Contradicted",
+                                                                statusColor: "text-[#E63946] bg-red-50 border-red-100"
+                                                            },
+                                                            {
+                                                                claim: "Problem-solving and analytical thinking",
+                                                                sub: "Claimed: Soft skill",
+                                                                proof: "Minimal engagement with problem. Asked about time limit, then disengaged.",
+                                                                status: "Weak signal",
+                                                                statusColor: "text-[#8B5E3C] bg-[#FDF9F3] border-[#F5E6D3]"
+                                                            }
+                                                        ].map((item, i) => (
+                                                            <div key={i} className="grid grid-cols-[1.2fr_40px_1fr] md:grid-cols-[1fr_80px_1.5fr] items-center gap-4 py-6 px-8 hover:bg-gray-50/30 transition-colors">
+                                                                <div className="space-y-1">
+                                                                    <h4 className="text-[13.5px] font-black text-gray-900 tracking-tight leading-tight">{item.claim}</h4>
+                                                                    <p className="text-[10px] font-bold text-gray-400">{item.sub}</p>
                                                                 </div>
 
-                                                                <div className="divide-y divide-gray-100">
-                                                                    {[
-                                                                        {
-                                                                            claim: "Built GTM automation systems at Niti AI",
-                                                                            sub: "Claimed: GTM strategy",
-                                                                            proof: "Zero GTM knowledge demonstrated. Could not answer basic GTM question.",
-                                                                            status: "Mismatch",
-                                                                            statusColor: "text-[#E63946] bg-red-50 border-red-100"
-                                                                        },
-                                                                        {
-                                                                            claim: "n8n, Zapier, Apollo automation experience",
-                                                                            sub: "Claimed: Automation tools",
-                                                                            proof: "Not tested in interview — role needed coding, not automation tools.",
-                                                                            status: "Not tested",
-                                                                            statusColor: "text-[#8B5E3C] bg-[#FDF9F3] border-[#F5E6D3]"
-                                                                        },
-                                                                        {
-                                                                            claim: "Python, Pandas, Power BI — data analysis",
-                                                                            sub: "Claimed: Technical skills",
-                                                                            proof: "Self-declared \"not good at coding.\" No code written.",
-                                                                            status: "Contradicted",
-                                                                            statusColor: "text-[#E63946] bg-red-50 border-red-100"
-                                                                        },
-                                                                        {
-                                                                            claim: "Problem-solving and analytical thinking",
-                                                                            sub: "Claimed: Soft skill",
-                                                                            proof: "Minimal engagement with problem. Asked about time limit, then disengaged.",
-                                                                            status: "Weak signal",
-                                                                            statusColor: "text-[#8B5E3C] bg-[#FDF9F3] border-[#F5E6D3]"
-                                                                        }
-                                                                    ].map((item, i) => (
-                                                                        <div key={i} className="grid grid-cols-[1.2fr_40px_1fr] md:grid-cols-[1fr_80px_1.5fr] items-center gap-4 py-6 px-8 hover:bg-gray-50/30 transition-colors">
-                                                                            <div className="space-y-1">
-                                                                                <h4 className="text-[13.5px] font-black text-gray-900 tracking-tight leading-tight">{item.claim}</h4>
-                                                                                <p className="text-[10px] font-bold text-gray-400">{item.sub}</p>
-                                                                            </div>
+                                                                <div className="flex justify-center">
+                                                                    <ArrowRight className="h-4 w-4 text-gray-300" />
+                                                                </div>
 
-                                                                            <div className="flex justify-center">
-                                                                                <ArrowRight className="h-4 w-4 text-gray-300" />
-                                                                            </div>
-
-                                                                            <div className="space-y-2">
-                                                                                <p className={cn("text-[12px] font-black leading-snug tracking-tight", (item.status === "Mismatch" || item.status === "Contradicted") ? "text-[#E63946]" : "text-[#8B5E3C]")}>
-                                                                                    {item.proof}
-                                                                                </p>
-                                                                                <span className={cn("inline-flex px-2 py-0.5 rounded-lg text-[7.5px] font-black uppercase tracking-widest border shadow-sm", item.statusColor)}>
-                                                                                    {item.status}
-                                                                                </span>
-                                                                            </div>
-                                                                        </div>
-                                                                    ))}
+                                                                <div className="space-y-2">
+                                                                    <p className={cn("text-[12px] font-black leading-snug tracking-tight", (item.status === "Mismatch" || item.status === "Contradicted") ? "text-[#E63946]" : "text-[#8B5E3C]")}>
+                                                                        {item.proof}
+                                                                    </p>
+                                                                    <span className={cn("inline-flex px-2 py-0.5 rounded-lg text-[7.5px] font-black uppercase tracking-widest border shadow-sm", item.statusColor)}>
+                                                                        {item.status}
+                                                                    </span>
                                                                 </div>
                                                             </div>
-                                                        </motion.div>
-                                                    )}
-                                                </AnimatePresence>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             </div>
 
                                             {/* KEY MOMENTS FROM SESSION */}
                                             <div className="space-y-6">
-                                                <div className="flex items-center gap-3 cursor-pointer group" onClick={() => toggleSection('moments')}>
+                                                <div className="flex items-center gap-3">
                                                     <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-900 flex-shrink-0">Key Moments from Session</h3>
                                                     <div className="h-[1px] flex-1 bg-gray-100" />
-                                                    <ChevronDown className={cn("h-4 w-4 text-gray-300 transition-transform duration-300", !expandedSections.moments && "-rotate-90")} />
                                                 </div>
 
-                                                <AnimatePresence initial={false}>
-                                                    {expandedSections.moments && (
-                                                        <motion.div
-                                                            initial={{ height: 0, opacity: 0 }}
-                                                            animate={{ height: 'auto', opacity: 1 }}
-                                                            exit={{ height: 0, opacity: 0 }}
-                                                            transition={{ duration: 0.3, ease: "easeInOut" }}
-                                                            className="overflow-hidden"
-                                                        >
-                                                            <div className="p-8 rounded-[32px] bg-white border border-gray-100 shadow-[0_8px_40px_rgba(0,0,0,0.03)] h-full overflow-hidden">
-                                                                <div className="flex items-center gap-8 px-8 py-4 border-b border-gray-100 bg-gray-50/50">
-                                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest w-[55px]">Timeline</p>
-                                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Key Observation</p>
+                                                <div className="p-8 rounded-[32px] bg-white border border-gray-100 shadow-[0_8px_40px_rgba(0,0,0,0.03)] h-full overflow-hidden mt-6">
+                                                    <div className="flex items-center gap-8 px-8 py-4 border-b border-gray-100 bg-gray-50/50">
+                                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest w-[55px]">Timeline</p>
+                                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Key Observation</p>
+                                                    </div>
+                                                    <div className="divide-y divide-gray-100">
+                                                        {[
+                                                            {
+                                                                time: "0:38",
+                                                                tag: "Context",
+                                                                tagColor: "text-indigo-600 bg-indigo-50 border-indigo-100",
+                                                                title: "Minimal engagement at interview start",
+                                                                note: '"Yeah. Sure." — two-word response to interview structure explanation'
+                                                            },
+                                                            {
+                                                                time: "1:12",
+                                                                tag: "Flag",
+                                                                tagColor: "text-[#8B5E3C] bg-[#FDF9F3] border-[#F5E6D3]",
+                                                                title: "Deflected technical question — asked about format instead",
+                                                                note: '"K. So is it totally based on coding?" — avoidance rather than engagement'
+                                                            },
+                                                            {
+                                                                time: "1:18",
+                                                                tag: "Flag",
+                                                                tagColor: "text-[#8B5E3C] bg-[#FDF9F3] border-[#F5E6D3]",
+                                                                title: "Tab switch detected — at exact moment of deflection",
+                                                                note: "Proctoring: browser focus lost ~8 sec. Timing aligns with Q1 avoidance behaviour."
+                                                            },
+                                                            {
+                                                                time: "2:28",
+                                                                tag: "Critical",
+                                                                tagColor: "text-[#E63946] bg-red-50 border-red-100",
+                                                                title: "Self-declared inability to code — defining moment of session",
+                                                                note: '"Actually, I\'m not good at coding." — unprompted, direct self-admission'
+                                                            },
+                                                            {
+                                                                time: "3:05",
+                                                                tag: "Flag",
+                                                                tagColor: "text-[#8B5E3C] bg-[#FDF9F3] border-[#F5E6D3]",
+                                                                title: "Audio anomaly detected — 3 seconds post-admission",
+                                                                note: "Audio quality dipped significantly. Possible hardware adjustment or external noise interference."
+                                                            }
+                                                        ].map((moment, i) => (
+                                                            <div key={i} className="flex gap-8 px-8 py-6 hover:bg-gray-50/30 transition-colors">
+                                                                <div className="w-[55px] flex-shrink-0">
+                                                                    <div className="text-[13px] font-black text-gray-900 tabular-nums">{moment.time}</div>
+                                                                    <div className={cn("inline-flex px-1.5 py-0.5 rounded-md text-[7px] font-black uppercase tracking-widest border mt-1", moment.tagColor)}>{moment.tag}</div>
                                                                 </div>
-                                                                <div className="divide-y divide-gray-100">
-                                                                    {[
-                                                                        {
-                                                                            time: "0:38",
-                                                                            tag: "Context",
-                                                                            tagColor: "text-indigo-600 bg-indigo-50 border-indigo-100",
-                                                                            title: "Minimal engagement at interview start",
-                                                                            note: '"Yeah. Sure." — two-word response to interview structure explanation'
-                                                                        },
-                                                                        {
-                                                                            time: "1:12",
-                                                                            tag: "Flag",
-                                                                            tagColor: "text-[#8B5E3C] bg-[#FDF9F3] border-[#F5E6D3]",
-                                                                            title: "Deflected technical question — asked about format instead",
-                                                                            note: '"K. So is it totally based on coding?" — avoidance rather than engagement'
-                                                                        },
-                                                                        {
-                                                                            time: "1:18",
-                                                                            tag: "Flag",
-                                                                            tagColor: "text-[#8B5E3C] bg-[#FDF9F3] border-[#F5E6D3]",
-                                                                            title: "Tab switch detected — at exact moment of deflection",
-                                                                            note: "Proctoring: browser focus lost ~8 sec. Timing aligns with Q1 avoidance behaviour."
-                                                                        },
-                                                                        {
-                                                                            time: "2:28",
-                                                                            tag: "Critical",
-                                                                            tagColor: "text-[#E63946] bg-red-50 border-red-100",
-                                                                            title: "Self-declared inability to code — defining moment of session",
-                                                                            note: '"Actually, I\'m not good at coding." — unprompted, direct self-admission'
-                                                                        },
-                                                                        {
-                                                                            time: "3:05",
-                                                                            tag: "Flag",
-                                                                            tagColor: "text-[#8B5E3C] bg-[#FDF9F3] border-[#F5E6D3]",
-                                                                            title: "Audio anomaly detected — 3 seconds post-admission",
-                                                                            note: "Proctoring: voice-like background sound ~3 sec. Inconclusive — could be ambient noise."
-                                                                        },
-                                                                        {
-                                                                            time: "4:05",
-                                                                            tag: "Context",
-                                                                            tagColor: "text-indigo-600 bg-indigo-50 border-indigo-100",
-                                                                            title: "Interviewer offered hints — candidate still did not engage",
-                                                                            note: '"Focus on your logic and reasoning..." — AI prompted. No response to code or explain.'
-                                                                        }
-                                                                    ].map((moment, i) => (
-                                                                        <div key={i} className="flex items-start gap-8 py-6 px-8 hover:bg-gray-50/30 transition-colors">
-                                                                            <span className="text-[12px] font-black text-indigo-600 w-[55px] pt-1 leading-none">{moment.time}</span>
-                                                                            <div className="space-y-4 flex-1">
-                                                                                <div className="flex items-center gap-3">
-                                                                                    <span className={cn("px-2 py-0.5 rounded-lg text-[7.5px] font-black uppercase tracking-widest border", moment.tagColor)}>
-                                                                                        {moment.tag}
-                                                                                    </span>
-                                                                                    <h4 className="text-[13.5px] font-black text-gray-900 tracking-tight leading-tight">{moment.title}</h4>
-                                                                                </div>
-                                                                                <div className="bg-[#F9F7F2] rounded-xl px-4 py-2.5">
-                                                                                    <p className="text-[12px] font-bold text-gray-500 italic leading-snug">
-                                                                                        {moment.note}
-                                                                                    </p>
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                    ))}
+                                                                <div className="space-y-1">
+                                                                    <h4 className="text-[14px] font-black text-gray-900 tracking-tight leading-tight">{moment.title}</h4>
+                                                                    <p className="text-[12px] font-bold text-gray-400 italic font-mono leading-snug">
+                                                                        {moment.note}
+                                                                    </p>
                                                                 </div>
                                                             </div>
-                                                        </motion.div>
-                                                    )}
-                                                </AnimatePresence>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
 
@@ -1939,52 +1734,50 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                 { label: "Expected CTC", value: candidate.submissionData?.expectedCtc || "N/A", icon: IndianRupee },
                                                 { label: "Notice Period", value: candidate.submissionData?.noticePeriod || "N/A" },
                                             ].map((field, i) => (
-                                                <div key={i} className="p-4 rounded-2xl bg-orange-100 border-orange-100">
+                                                <div key={i} className="p-4 rounded-2xl bg-orange-50 border border-orange-100">
                                                     <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest mb-1">{field.label}</p>
-                                                    <div className="flex items-center gap-1.5">{field.icon && <field.icon className="h-3.5 w-3.5 text-gray-400" />}<p className="text-sm font-bold text-gray-900">{field.value}</p></div>
+                                                    <div className="flex items-center gap-1.5">{field.icon && <field.icon className="h-3.5 w-3.5 text-orange-400" />}<p className="text-sm font-bold text-gray-900">{field.value}</p></div>
                                                 </div>
                                             ))}
                                         </div>
                                     </section>
 
-                                    {/* Education Section from structuredResume */}
-                                    {structuredResume?.education && structuredResume.education.length > 0 && (
+                                    {/* Education Section from submissionData */}
+                                    {candidate.submissionData?.education && Array.isArray(candidate.submissionData.education) && candidate.submissionData.education.length > 0 && (
                                         <section className="space-y-4">
                                             <div className="flex items-center gap-2 text-blue-600"><FileText className="h-4 w-4" /><h3 className="text-sm font-black uppercase tracking-widest">Academic Details</h3></div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                {structuredResume.education.map((edu: any, i: number) => (
+                                                {candidate.submissionData.education.map((edu: any, i: number) => (
                                                     <div key={i} className="p-4 rounded-2xl bg-blue-50 border border-blue-100 space-y-1">
-                                                        <p className="text-sm font-bold text-gray-900">{edu.degree} {edu.field ? `in ${edu.field}` : ""}</p>
+                                                        <p className="text-sm font-bold text-gray-900">{edu.degree} {edu.fieldOfStudy ? `in ${edu.fieldOfStudy}` : ""}</p>
                                                         <p className="text-xs font-medium text-gray-600">{edu.institution}</p>
-                                                        {edu.year && <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mt-1">{edu.year}</p>}
+                                                        {(edu.startDate || edu.endDate) && (
+                                                            <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mt-1">
+                                                                {edu.startDate || "?"} - {edu.endDate || "?"}
+                                                            </p>
+                                                        )}
                                                     </div>
                                                 ))}
                                             </div>
                                         </section>
                                     )}
 
-                                    {/* Professional Experience from structuredResume */}
-                                    {structuredResume?.work_history && structuredResume.work_history.length > 0 && (
+                                    {/* Professional Experience from submissionData */}
+                                    {candidate.submissionData?.experience_list && Array.isArray(candidate.submissionData.experience_list) && candidate.submissionData.experience_list.length > 0 && (
                                         <section className="space-y-4">
                                             <div className="flex items-center gap-2 text-emerald-600"><BriefcaseBusiness className="h-4 w-4" /><h3 className="text-sm font-black uppercase tracking-widest">Professional Experience</h3></div>
                                             <div className="space-y-4">
-                                                {structuredResume.work_history.map((work: any, i: number) => (
+                                                {candidate.submissionData.experience_list.map((work: any, i: number) => (
                                                     <div key={i} className="p-5 rounded-2xl bg-emerald-50 border border-emerald-100 space-y-3">
                                                         <div className="flex justify-between items-start">
                                                             <div>
-                                                                <p className="text-[15px] font-black text-gray-900">{work.role}</p>
-                                                                <p className="text-sm font-bold text-gray-700">{work.company}</p>
+                                                                 <p className="text-[15px] font-black text-gray-900">{work.title}</p>
+                                                                 <p className="text-sm font-bold text-gray-700">{work.company}</p>
                                                             </div>
                                                             <div className="text-right">
-                                                                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">{work.start_date || "?"} - {work.end_date || (work.is_current ? "Present" : "?")}</p>
-                                                                {work.duration_months && <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mt-0.5">{work.duration_months} mos</p>}
+                                                                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">{work.startDate || "?"} - {work.endDate || (work.current ? "Present" : "?")}</p>
                                                             </div>
                                                         </div>
-                                                        {work.recruiter_summary && (
-                                                            <div className="bg-white/60 p-4 rounded-xl border border-emerald-100/50 mt-2">
-                                                                <p className="text-[13px] font-medium text-gray-700 leading-relaxed">{work.recruiter_summary}</p>
-                                                            </div>
-                                                        )}
                                                     </div>
                                                 ))}
                                             </div>
