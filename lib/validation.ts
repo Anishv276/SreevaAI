@@ -102,6 +102,10 @@ export const interviewTokenSchema = z.object({
   participantName: z.string().min(1, "Participant name required").max(100),
 });
 
+export const interviewShutdownSchema = z.object({
+  applicationId: z.string().min(1, "Application ID required"),
+});
+
 export const presignedUrlSchema = z.object({
   fileName: z.string().min(1, "File name required").max(255),
   fileType: z.string().min(1, "File type required").regex(/^[\w-]+\/[\w-]+$/, "Invalid MIME type"),

@@ -9,9 +9,9 @@ The secure interview flow transforms the candidate browser into a controlled int
 1. **Security Handshake**:
    - Candidate grants webcam and microphone permissions.
    - Interview starts in mandatory fullscreen mode.
-2. **Behavioral Monitoring**:
-   - Tab/window focus checks detect context switches.
-   - Interview can be terminated on repeated violations.
+2. **Environmental Check**:
+   - Verification of camera, microphone, and network stability.
+   - Requirement for mandatory fullscreen mode.
 3. **Snapshot Capture**:
    - Security snapshots are uploaded to the interview bucket for audit records.
 

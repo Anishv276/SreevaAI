@@ -221,7 +221,7 @@ function ApplicationContent() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
                                     <Label htmlFor="experience">Total Experience (Years) *</Label>
-                                    <Input id="experience" name="experience" type="number" placeholder="5" value={formData.experience} onChange={handleInputChange} />
+                                    <Input id="experience" name="experience" type="number" step="any" placeholder="5" value={formData.experience} onChange={handleInputChange} />
                                 </div>
                                 <div className="space-y-2">
                                     <Label>Notice Period *</Label>

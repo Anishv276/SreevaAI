@@ -68,8 +68,8 @@ function ExperienceCounter({
     const safeValue = Number.isNaN(numericValue) ? 0 : Math.max(0, numericValue);
 
     const adjust = (delta: number) => {
-        const next = Math.max(0, safeValue + delta);
-        onChange(Number.isInteger(next) ? String(next) : String(next));
+        const next = Math.max(0, Math.round((safeValue + delta) * 10) / 10);
+        onChange(String(next));
     };
 
     return (
@@ -156,7 +156,7 @@ export function ProfessionalDetails({
             <div className="space-y-3">
                 <Label htmlFor="experience" className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">Total Experience (Years) *</Label>
                 <ExperienceCounter
-                    value={formData.experience || formData.experienceYears?.toString() || ""}
+                    value={formData.experience || ""}
                     onChange={(val) => {
                         const parsed = parseFloat(val);
                         updateFormData({ experience: val, experienceYears: isNaN(parsed) ? null : parsed });

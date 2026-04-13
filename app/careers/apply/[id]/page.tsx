@@ -273,6 +273,31 @@ export default function ApplicationPage() {
 
         setIsSubmitting(true);
         try {
+            // Synchronize UI-deleted items back into structuredResume to ensure persistence reflects user changes
+            const updatedStructuredResume = {
+                ...(formData.structuredResume as any),
+                education: formData.education.map((edu: any) => ({
+                    institution: edu.institution || "",
+                    degree: edu.degree || "",
+                    field: edu.fieldOfStudy || "",
+                    start_year: edu.startDate || "",
+                    end_year: edu.endDate || ""
+                })),
+                work_history: formData.experience_list.map((exp: any) => ({
+                    role: exp.title || "",
+                    company: exp.company || "",
+                    start_year: exp.startDate || "",
+                    end_year: exp.endDate || "",
+                    is_current: !!exp.current,
+                    what_they_built: exp.description ? exp.description.split("\n") : []
+                })),
+                certifications: formData.certifications.map((cert: any) => ({
+                    name: cert.name || "",
+                    issuer: cert.issuer || "",
+                    year: cert.year || ""
+                }))
+            };
+
             // Using context method to maintain consistency and handle status codes properly
             await addCandidate({
                 name: formData.fullName,
@@ -294,7 +319,7 @@ export default function ApplicationPage() {
                 resumeUrl: formData.resumeUrl || (formData.resumeUploaded ? "resume_mock.pdf" : undefined),
                 resumeText: formData.resumeText,
                 passportUrl: formData.passportUrl,
-                structuredResume: formData.structuredResume,
+                structuredResume: updatedStructuredResume,
                 education: formData.education,
                 experience_list: formData.experience_list,
                 certifications: formData.certifications,

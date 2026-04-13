@@ -132,7 +132,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const lkRoomRef = useRef<any>(null);
     const readySignalSentFromParentRef = useRef(false);
 
-    const [showSecurityToast, setShowSecurityToast] = useState(false);
+
     const [isAgentReady, setIsAgentReady] = useState(false);
     const [agentReadyLatencyMs, setAgentReadyLatencyMs] = useState<number | null>(null);
     const [launchTimeoutCheck, setLaunchTimeoutCheck] = useState(0);
@@ -151,7 +151,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     useEffect(() => {
         if (phase !== "launching") return;
         if (launchTimeoutCheck >= 45 && !agentReadyCommittedRef.current) {
-            setJoinError("AI interviewer didn't respond in time. Please check your connection and try again.");
+            setJoinError("AI interviewer didn't respond in time. Please reload the website and try again.");
             agentReadyCommittedRef.current = false;
             setIsAgentReady(false);
             setAgentReadyLatencyMs(null);
@@ -163,7 +163,29 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             try { sessionStorage.removeItem(`lk_token_${id}`); } catch { }
             setPhase("check");
         }
-    }, [launchTimeoutCheck, phase]);
+    }, [launchTimeoutCheck, phase, id]);
+
+    // Lifecycle: Immediate worker shutdown if user exits during hardware check
+    useEffect(() => {
+        const handleExit = () => {
+            // Strictly only during 'check' phase as requested.
+            // We use fetch with keepalive to ensure the request finishes after the tab is actually closed.
+            if (phase === "check") {
+                fetch("/api/interview/shutdown", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ applicationId: id }),
+                    keepalive: true,
+                }).catch(() => {});
+            }
+        };
+
+        window.addEventListener("pagehide", handleExit);
+
+        return () => {
+            window.removeEventListener("pagehide", handleExit);
+        };
+    }, [id, phase]);
 
     // Phase transition — switch immediately once agent is ready
     useEffect(() => {
@@ -238,10 +260,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         // Handled by child component
     }, []);
 
-    const triggerSecurityWarning = () => {
-        setShowSecurityToast(true);
-        window.setTimeout(() => setShowSecurityToast(false), 5000);
-    };
+
 
 
     const tokenRequestRef = useRef<Promise<boolean> | null>(null);
@@ -425,7 +444,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             if (phase === "completed") return;
 
             if (!inFullscreen && isInterviewLocked && !allowFullscreenExitRef.current) {
-                triggerSecurityWarning();
                 containerRef.current?.requestFullscreen?.().catch(() => undefined);
             }
 
@@ -617,7 +635,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             isLaunchingActive={phase === "launching"}
                             timeLabel={formatDuration(remainingSeconds)}
                             timerExpired={timerExpired}
-                            onSecurityViolation={triggerSecurityWarning}
+
                             onRemoteAgentAudioTrack={handleRemoteAgentAudioTrack}
                             onRoomReady={(room) => { lkRoomRef.current = room; }}
                             onAllowExitNow={() => {
@@ -665,25 +683,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 )}
             </AnimatePresence>
 
-            {/* SECURITY TOAST */}
-            <AnimatePresence>
-                {showSecurityToast && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -100, x: "-50%" }}
-                        animate={{ opacity: 1, y: 24, x: "-50%" }}
-                        exit={{ opacity: 0, y: -100, x: "-50%" }}
-                        className="fixed top-0 left-1/2 z-[200] w-full max-w-sm px-4"
-                    >
-                        <div className="bg-orange-600/95 backdrop-blur-xl border border-orange-400 p-4 rounded-3xl shadow-[0_20px_50px_rgba(234,88,12,0.3)] flex items-center gap-4">
-                            <ShieldAlert className="w-6 h-6 text-white animate-pulse" />
-                            <div className="flex-1">
-                                <p className="text-white text-[10px] font-black uppercase tracking-widest">Security Warning</p>
-                                <p className="text-orange-50 text-[11px] font-bold leading-tight">Tab switch detected. This event has been synced with the recruiter.</p>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+
         </div>
     );
 }
@@ -696,7 +696,7 @@ function InterviewRoomContent({
     isLaunchingActive,
     timeLabel,
     timerExpired,
-    onSecurityViolation,
+
     onRemoteAgentAudioTrack,
     onAllowExitNow,
     onAgentReady,
@@ -709,7 +709,7 @@ function InterviewRoomContent({
     isLaunchingActive: boolean,
     timeLabel: string,
     timerExpired: boolean,
-    onSecurityViolation: () => void,
+
     onRemoteAgentAudioTrack: (track: MediaStreamTrack | null) => void,
     onAllowExitNow: () => void,
     onAgentReady?: (isReady: boolean) => void,
