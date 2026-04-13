@@ -4,20 +4,20 @@ const prisma = new PrismaClient();
 
 async function main() {
     let app = await prisma.application.findFirst({
-        where: { status: 'SHORTLISTED' },
+        where: { hiringStatus: 'SHORTLISTED' },
         orderBy: { createdAt: 'desc' }
     });
 
     if (!app) {
-        // Try ACCEPTED
+        // Try ACCEPTED or standard shortlisted
         app = await prisma.application.findFirst({
-            where: { status: 'ACCEPTED' },
+            where: { hiringStatus: { in: ['ACCEPTED', 'shortlisted'] } },
             orderBy: { createdAt: 'desc' }
         });
     }
 
     if (!app) {
-        // Last resort: any candidate
+        // Last resort: any recent candidate
         app = await prisma.application.findFirst({
             orderBy: { createdAt: 'desc' }
         });

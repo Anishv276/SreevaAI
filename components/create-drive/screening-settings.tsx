@@ -35,7 +35,7 @@ export function ScreeningSettings({ config, setConfig, aiEnabled, setAiEnabled, 
                             </p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-100">
+                    <div className="flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
                         <span className={`text-[12px] font-bold ${aiEnabled ? "text-gray-900" : "text-gray-400"}`}>
                             {aiEnabled ? "Enabled" : "Disabled"}
                         </span>
@@ -99,7 +99,7 @@ export function ScreeningSettings({ config, setConfig, aiEnabled, setAiEnabled, 
                 </div>
 
                 <div className="pl-4 space-y-4">
-                    <div className="flex p-1 bg-gray-100 rounded-xl w-fit">
+                    <div className="flex p-1 bg-gray-100 rounded-lg w-fit">
                         <button
                             type="button"
                             onClick={() => setShortlistMode("automatic")}

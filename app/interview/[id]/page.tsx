@@ -155,6 +155,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             agentReadyCommittedRef.current = false;
             setIsAgentReady(false);
             setAgentReadyLatencyMs(null);
+            // Reset connection state so the next attempt creates a fresh dispatch
+            setToken(null);
+            setServerUrl(null);
+            setShouldConnect(false);
+            // Clear the sessionStorage cache so ensureWarmConnection re-fetches
+            try { sessionStorage.removeItem(`lk_token_${id}`); } catch { }
             setPhase("check");
         }
     }, [launchTimeoutCheck, phase]);
@@ -390,6 +396,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         } catch (err) {
             console.error("Phase transition failed:", err);
             setJoinError(err instanceof Error ? err.message : "Unable to start interview.");
+            // Reset connection so a fresh dispatch is created on retry
+            setToken(null);
+            setServerUrl(null);
+            setShouldConnect(false);
+            // Clear the sessionStorage cache so ensureWarmConnection re-fetches
+            try { sessionStorage.removeItem(`lk_token_${id}`); } catch { }
             setPhase("check");
         } finally {
             setIsJoining(false);
@@ -805,6 +817,15 @@ function InterviewRoomContent({
         return groups;
     }, [transcriptions, localIdentity]);
 
+    // Ensure camera is explicitly enabled when interview becomes active
+    useEffect(() => {
+        if (isInterviewActive && localParticipant && !localParticipant.isCameraEnabled) {
+            localParticipant.setCameraEnabled(true).catch(err => {
+                console.error("[Camera] Failed to enable track:", err);
+            });
+        }
+    }, [isInterviewActive, localParticipant]);
+
     // Send one ready signal when interview becomes active and connected.
     useEffect(() => {
         if (connectionState !== "connected" || !localParticipant || !isInterviewActive) {
@@ -940,18 +961,18 @@ function InterviewRoomContent({
                 </div>
             </div>
 
-            <div className="absolute top-10 right-10 z-50 w-96 aspect-video bg-white rounded-[2.5rem] p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.4)] group border border-white/10">
-                <div className="w-full h-full rounded-[2rem] overflow-hidden bg-white relative">
+            <div className="absolute top-10 right-10 z-50 w-96 aspect-[4/3] bg-zinc-900 rounded-[2.5rem] p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.6)] group border border-white/10 ring-1 ring-white/5">
+                <div className="w-full h-full rounded-[2rem] overflow-hidden bg-zinc-950 relative">
                     {localCameraTrack ? (
-                        <div className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover scale-x-[-1] bg-white">
+                        <div className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover [&>canvas]:w-full [&>canvas]:h-full [&>canvas]:object-cover scale-x-[-1]">
                             <VideoTrack trackRef={localCameraTrack} />
                         </div>
                     ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-white">
-                            <Camera className="w-8 h-8 text-gray-100 animate-pulse" />
+                        <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-zinc-900/50">
+                            <Camera className="w-8 h-8 text-zinc-800 animate-pulse" />
                         </div>
                     )}
-                    <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 bg-black/40 backdrop-blur-md rounded-full border border-white/10">
+                    <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-full border border-white/10">
                         <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_20px_rgba(34,197,94,0.6)]" />
                         <p className="text-[10px] font-black uppercase tracking-widest text-white drop-shadow-md">You (Live)</p>
                     </div>

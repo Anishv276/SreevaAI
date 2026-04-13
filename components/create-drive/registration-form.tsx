@@ -32,7 +32,7 @@ export function RegistrationForm({ customFields, setCustomFields, isPassportRequ
 
     return (
         <div className="space-y-8 animate-in-fade">
-            <div className="space-y-4 border p-6 rounded-xl bg-gray-50/50">
+            <div className="space-y-4 border p-6 rounded-lg bg-gray-50/50">
                 <h3 className="text-lg font-semibold">Standard Fields</h3>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {["Full Name", "Email Address", "Phone Number", "Resume Upload", "Passport Photo", "Current Location", "Total Experience"].map((field) => (
@@ -61,9 +61,9 @@ export function RegistrationForm({ customFields, setCustomFields, isPassportRequ
 
                 <div className="space-y-3">
                     {customFields.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center p-12 rounded-2xl border-2 border-dashed border-gray-100 bg-white group hover:border-orange-200 transition-all cursor-pointer"
+                        <div className="flex flex-col items-center justify-center p-12 rounded-xl border-2 border-dashed border-gray-100 bg-white group hover:border-orange-200 transition-all cursor-pointer"
                              onClick={addField}>
-                            <div className="h-12 w-12 rounded-xl bg-orange-50 flex items-center justify-center text-[#F97316] mb-4 group-hover:scale-110 transition-transform">
+                            <div className="h-12 w-12 rounded-lg bg-orange-50 flex items-center justify-center text-[#F97316] mb-4 group-hover:scale-110 transition-transform">
                                 <Plus className="h-6 w-6" />
                             </div>
                             <p className="text-gray-500 font-bold text-sm tracking-tight">Click on "Add Question" to create your own questions</p>
@@ -71,7 +71,7 @@ export function RegistrationForm({ customFields, setCustomFields, isPassportRequ
                         </div>
                     ) : (
                         customFields.map((field) => (
-                            <div key={field.id} className="flex items-start gap-4 p-4 border rounded-xl bg-white shadow-sm hover:shadow-md transition-all">
+                            <div key={field.id} className="flex items-start gap-4 p-4 border rounded-lg bg-white shadow-sm hover:shadow-md transition-all">
                                 <div className="flex-1 grid gap-4 md:grid-cols-3">
                                     <div className="space-y-1">
                                         <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Question Label</Label>

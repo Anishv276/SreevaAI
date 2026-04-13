@@ -6,10 +6,10 @@ import { createPortal } from "react-dom";
 import { useEffect } from "react";
 
 const textareaClass =
-    "w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-[14px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316] hover:border-orange-300 transition-all duration-200 resize-none overflow-y-auto";
+    "w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-[14px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316] hover:border-orange-300 transition-all duration-200 resize-none overflow-y-auto";
 
 const inputClass =
-    "w-full h-11 rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316] hover:border-orange-300 transition-all duration-200";
+    "w-full h-11 rounded-lg border border-gray-200 bg-white px-4 text-[14px] text-gray-900 shadow-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#F97316]/20 focus:border-[#F97316] hover:border-orange-300 transition-all duration-200";
 
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
     return (

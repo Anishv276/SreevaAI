@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Steps } from "@/components/create-drive/steps";
+import { toast } from "@/components/ui/toast-custom";
 import { BasicInfo } from "@/components/create-drive/basic-info";
 import { JobDescription } from "@/components/create-drive/job-description";
 import { ScreeningSettings, ScreeningConfig } from "@/components/create-drive/screening-settings";
@@ -95,7 +96,6 @@ function CreateDriveForm() {
 
     // Track which steps have been explicitly completed
     const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
-    const [toast, setToast] = useState<string | null>(null);
     const [syncedFromAi, setSyncedFromAi] = useState(false);
     const formRef = useRef<HTMLDivElement>(null);
     const analysisAbortRef = useRef<AbortController | null>(null);
@@ -178,7 +178,7 @@ function CreateDriveForm() {
                     setSyncedFromAi(true);
                     setCurrentStep(0);
                     localStorage.removeItem("jd_draft");
-                    showToast("Job Description synced from AI Assistant!");
+                    toast.success("Job Description synced from AI Assistant!");
                 } catch (e) {
                     console.error("CreateDrive Sync - Parse Error:", e);
                 }
@@ -381,10 +381,6 @@ function CreateDriveForm() {
         }
     };
 
-    const showToast = (msg: string) => {
-        setToast(msg); // Persistent — only dismissed via X button
-    };
-
     /** Returns true if the step looks sufficiently filled to proceed */
     const isStepValid = (step: number): boolean => {
         if (step === 0) {
@@ -416,7 +412,7 @@ function CreateDriveForm() {
             return;
         }
         if (!isStepValid(currentStep)) {
-            showToast(STEP_VALIDATION_HINTS[currentStep]);
+            toast.error(STEP_VALIDATION_HINTS[currentStep]);
             return;
         }
         setCompletedSteps(prev => new Set(prev).add(currentStep));
@@ -436,7 +432,7 @@ function CreateDriveForm() {
         const description = formData.description?.trim() || "";
         const jdWordCount = countWords(description);
         if (jdWordCount < MIN_JD_WORDS) {
-            showToast(`Job description must be at least ${MIN_JD_WORDS} words before publishing.`);
+            toast.error(`Job description must be at least ${MIN_JD_WORDS} words before publishing.`);
             setCurrentStep(1);
             return;
         }
@@ -503,7 +499,7 @@ function CreateDriveForm() {
                 setPublishedDriveId(savedId);
                 setPublishedSlug(result?.slug || null);
                 setPublished(true);
-                showToast(isEditMode ? "Drive updated successfully!" : "Drive published successfully!");
+                toast.success(isEditMode ? "Drive updated successfully!" : "Drive published successfully!");
             } else {
                 console.error("Save succeeded but no ID returned. Result:", result);
                 throw new Error("Failed to retrieve Drive ID after saving. Please check the dashboard.");
@@ -511,7 +507,7 @@ function CreateDriveForm() {
         } catch (error: any) {
             console.error("Save process failed:", error);
             const msg = error.details ? `${error.message}: ${JSON.stringify(error.details)}` : error.message;
-            showToast(msg || "Failed to save drive details. Please try again.");
+            toast.error(msg || "Failed to save drive details. Please try again.");
         }
     };
 
@@ -709,17 +705,6 @@ function CreateDriveForm() {
     // ── Form screen ─────────────────────────────────────────
     return (
         <div className="max-w-4xl mx-auto py-4 space-y-4">
-            {/* Validation toast */}
-            {toast && (
-                <div className="flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 shadow-sm">
-                    <AlertCircle className="h-4 w-4 flex-shrink-0 text-[#F97316] mt-0.5" />
-                    <p className="flex-1 text-[13px] font-medium text-orange-700">{toast}</p>
-                    <button type="button" onClick={() => setToast(null)} className="text-orange-400 hover:text-orange-600">
-                        <X className="h-4 w-4" />
-                    </button>
-                </div>
-            )}
-
             <div className="mb-10 group">
                 <div className="flex items-center gap-4 mb-3">
                     <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />

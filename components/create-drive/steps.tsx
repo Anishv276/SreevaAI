@@ -30,7 +30,7 @@ export function Steps({ steps, currentStep, onStepClick, isEditMode }: StepsProp
                         <div
                             onClick={() => isClickable && onStepClick(index)}
                             className={cn(
-                                "flex h-8 w-8 items-center justify-center rounded-full border-2 bg-white transition-all duration-300",
+                                "flex h-8 w-8 items-center justify-center rounded-lg border-2 bg-white transition-all duration-300",
                                 isCompleted
                                     ? "border-[#F97316] bg-[#F97316] text-white cursor-pointer hover:opacity-80"
                                     : isCurrent

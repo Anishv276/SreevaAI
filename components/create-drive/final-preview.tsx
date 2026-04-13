@@ -12,9 +12,9 @@ export function FinalPreview({ formData, aiEnabled, weights, regFieldCount }: Fi
     return (
         <div className="space-y-6">
             {/* Orange-tinted ready banner */}
-            <div className="rounded-xl border border-orange-200 bg-orange-50 p-5 text-center">
+            <div className="rounded-lg border border-orange-200 bg-orange-50 p-5 text-center">
                 <div className="flex justify-center mb-3">
-                    <div className="h-11 w-11 rounded-full bg-orange-100 flex items-center justify-center text-[#F97316]">
+                    <div className="h-11 w-11 rounded-lg bg-orange-100 flex items-center justify-center text-[#F97316]">
                         <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                         </svg>
@@ -32,7 +32,7 @@ export function FinalPreview({ formData, aiEnabled, weights, regFieldCount }: Fi
                     {/* Job Details */}
                     <div>
                         <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Job Details</h3>
-                        <div className="rounded-xl border bg-white p-4 space-y-2.5 text-[13px]">
+                        <div className="rounded-lg border bg-white p-4 space-y-2.5 text-[13px]">
                             <div className="flex justify-between">
                                 <span className="text-gray-500">Role</span>
                                 <span className="font-semibold text-gray-800">{formData.role || "N/A"}</span>
@@ -51,7 +51,7 @@ export function FinalPreview({ formData, aiEnabled, weights, regFieldCount }: Fi
                     {/* Timeline */}
                     <div>
                         <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Timeline</h3>
-                        <div className="rounded-xl border bg-white p-4 space-y-2.5 text-[13px]">
+                        <div className="rounded-lg border bg-white p-4 space-y-2.5 text-[13px]">
                             <div className="flex items-center gap-3">
                                 <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
                                 <span className="text-gray-500">Last Date to Apply</span>
@@ -66,7 +66,7 @@ export function FinalPreview({ formData, aiEnabled, weights, regFieldCount }: Fi
                     {/* Screening Setup */}
                     <div>
                         <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Screening Setup</h3>
-                        <div className="rounded-xl border bg-white p-4 space-y-2.5 text-[13px]">
+                        <div className="rounded-lg border bg-white p-4 space-y-2.5 text-[13px]">
                             <div className="flex justify-between items-center">
                                 <div className="flex items-center gap-2 text-gray-500">
                                     <Brain className="h-3.5 w-3.5" />
@@ -97,7 +97,7 @@ export function FinalPreview({ formData, aiEnabled, weights, regFieldCount }: Fi
                     {/* AI Voice Interview */}
                     <div>
                         <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">AI Voice Interview</h3>
-                        <div className="rounded-xl border bg-white p-4 space-y-3 text-[13px]">
+                        <div className="rounded-lg border bg-white p-4 space-y-3 text-[13px]">
                             <div className="flex justify-between items-center">
                                 <div className="flex items-center gap-2 text-gray-500">
                                     <Mic className="h-3.5 w-3.5" />

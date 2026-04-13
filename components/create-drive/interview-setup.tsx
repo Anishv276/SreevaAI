@@ -67,7 +67,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
             {/* Header / Toggle Card */}
             <div className={`group flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-2xl transition-all duration-300 border ${interviewEnabled ? "bg-white border-orange-200 shadow-md" : "bg-gray-50 border-dashed border-gray-200 opacity-80"}`}>
                 <div className="flex items-center gap-4">
-                    <div className={`p-3 rounded-xl shadow-lg transition-all duration-300 ${interviewEnabled ? "bg-gradient-to-br from-[#F97316] to-orange-600 text-white" : "bg-gray-200 text-gray-400 grayscale"}`}>
+                    <div className={`p-3 rounded-lg shadow-lg transition-all duration-300 ${interviewEnabled ? "bg-gradient-to-br from-[#F97316] to-orange-600 text-white" : "bg-gray-200 text-gray-400 grayscale"}`}>
                         <Mic className="w-5 h-5" />
                     </div>
                     <div>
@@ -80,7 +80,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                         <p className="text-sm text-gray-500 font-medium mt-0.5">Automated screening via AI Voice Agent</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3 bg-gray-50 px-3 py-2 rounded-xl border border-gray-100">
+                <div className="flex items-center gap-3 bg-gray-50 px-3 py-2 rounded-lg border border-gray-100">
                     <span className={`text-xs font-bold ${interviewEnabled ? "text-gray-900" : "text-gray-400"}`}>
                         {interviewEnabled ? "Enabled" : "Disabled"}
                     </span>
@@ -97,7 +97,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                     {/* Language & Duration Settings */}
                     <div className="grid md:grid-cols-2 gap-4">
                         {/* Language */}
-                        <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm space-y-3">
+                        <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm space-y-3">
                             <div className="flex items-center gap-2">
                                 <Globe className="w-4 h-4 text-[#F97316]" />
                                 <h4 className="text-sm font-bold text-gray-900">Language</h4>
@@ -105,13 +105,13 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                             <div className="relative" ref={dropdownRef}>
                                 <button
                                     onClick={() => setShowLangDropdown(!showLangDropdown)}
-                                    className="w-full h-10 px-4 rounded-xl border border-gray-200 bg-white text-sm font-medium flex items-center justify-between hover:border-orange-300 transition-all"
+                                    className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white text-sm font-medium flex items-center justify-between hover:border-orange-300 transition-all"
                                 >
                                     <span>{formData.interviewLanguage || "English"}</span>
                                     <ChevronDown className="w-4 h-4 text-gray-400" />
                                 </button>
                                 {showLangDropdown && (
-                                    <div className="absolute top-full left-0 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-lg z-10 max-h-48 overflow-auto">
+                                    <div className="absolute top-full left-0 w-full mt-1 bg-white border border-gray-100 rounded-lg shadow-lg z-10 max-h-48 overflow-auto">
                                         {LANGUAGES.map(lang => (
                                             <button
                                                 key={lang}
@@ -127,7 +127,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                         </div>
 
                         {/* Duration */}
-                        <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm space-y-3">
+                        <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm space-y-3">
                             <div className="flex items-center gap-2">
                                 <Clock className="w-4 h-4 text-[#F97316]" />
                                 <h4 className="text-sm font-bold text-gray-900">Duration</h4>
@@ -147,7 +147,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                     </div>
 
                     {/* AI questions depth */}
-                    <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm space-y-3">
+                    <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm space-y-3">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <HelpCircle className="w-4 h-4 text-[#F97316]" />
@@ -169,7 +169,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                     </div>
 
                     {/* Interview Questions */}
-                    <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm space-y-4">
+                    <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm space-y-4">
                         <div className="flex items-center gap-2">
                             <BrainCircuit className="w-4 h-4 text-[#F97316]" />
                             <h4 className="text-base font-bold text-gray-900">Interview Questions</h4>
@@ -182,11 +182,11 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                                 onChange={(e) => setNewQuestion(e.target.value)}
                                 onKeyDown={(e) => e.key === "Enter" && addQuestion()}
                                 placeholder="Add a question..."
-                                className="flex-1 h-10 px-4 rounded-xl border border-gray-200 bg-white text-sm font-medium focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] transition-all"
+                                className="flex-1 h-10 px-4 rounded-lg border border-gray-200 bg-white text-sm font-medium focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] transition-all"
                             />
                             <Button 
                                 onClick={addQuestion}
-                                className="h-10 px-4 rounded-xl bg-[#F97316] hover:bg-orange-600 text-white font-bold text-sm"
+                                className="h-10 px-4 rounded-lg bg-[#F97316] hover:bg-orange-600 text-white font-bold text-sm"
                             >
                                 <Plus className="w-4 h-4" />
                             </Button>

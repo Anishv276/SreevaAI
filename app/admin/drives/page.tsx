@@ -545,7 +545,7 @@ export default function DrivesPage() {
                                                             <MoreHorizontal className="h-4 w-4" />
                                                         </Button>
                                                     </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end" className="w-56 p-2 rounded-xl border-gray-100 shadow-xl">
+                                                    <DropdownMenuContent align="end" className="w-56 p-2 rounded-2xl bg-white border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.12)] z-[60]">
                                                         <DropdownMenuItem
                                                             className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700 font-bold uppercase text-[10px] tracking-widest"
                                                             onClick={() => setCandidatePreviewSlug(drive.slug || drive.id)}

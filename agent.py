@@ -160,11 +160,6 @@ def build_sarvam_tts(
         "speaker": voice_id,
         # pace: valid for both v2 (0.3–3.0) and v3 (0.5–2.0). 1.0 = natural speed.
         "pace": 1.0,
-        # Streaming quality controls (WebSocket only, supported by livekit sarvam plugin)
-        # output_audio_bitrate: "32k"|"64k"|"96k"|"128k"|"192k". 128k = good quality/size balance.
-        "output_audio_bitrate": "128k",
-        # max_chunk_length: 50–500 chars per sentence chunk. 150 = default natural splits.
-        "max_chunk_length": 150,
     }
 
     # bulbul:v2-only parameters — DO NOT pass these to v3, they will cause errors
@@ -176,7 +171,23 @@ def build_sarvam_tts(
         # enable_preprocessing: expands numbers, dates, currencies for natural pronunciation.
         tts_kwargs["enable_preprocessing"] = True
 
-    return sarvam.TTS(**tts_kwargs)
+    # Defensive instantiation: strip unrecognised kwargs one by one if the
+    # sarvam plugin version doesn't accept them (avoids crashes on minor API changes).
+    optional_kwargs = ["max_chunk_length", "pace"]
+    while True:
+        try:
+            return sarvam.TTS(**tts_kwargs)
+        except TypeError as e:
+            err_msg = str(e)
+            stripped = False
+            for key in list(tts_kwargs.keys()):
+                if key in err_msg:
+                    logger.warning(f"[sarvam.TTS] Dropping unsupported kwarg '{key}': {e}")
+                    tts_kwargs.pop(key)
+                    stripped = True
+                    break
+            if not stripped:
+                raise
 
 
 def build_stt(language_code: str = "en-US", model: str = STT_MODEL):
@@ -222,19 +233,23 @@ def build_vad():
 
 
 def prewarm(proc: JobProcess):
+    logger.info("Prewarming worker process...")
     # Load VAD model (ONNX) — heaviest startup cost, must be synchronous
     proc.userdata["vad"] = build_vad()
+    logger.info("VAD model prewarmed.")
 
     # Pre-instantiate default STT/TTS plugins so their internal HTTP sessions
     # and model configs are warm before the first job arrives.
     try:
         proc.userdata["default_stt"] = build_stt()
-    except Exception:
-        pass
+        logger.info("Default STT prewarmed.")
+    except Exception as e:
+        logger.warning(f"Failed to prewarm default STT: {e}")
     try:
         proc.userdata["default_tts"] = build_tts()
-    except Exception:
-        pass
+        logger.info("Default TTS prewarmed.")
+    except Exception as e:
+        logger.warning(f"Failed to prewarm default TTS: {e}")
 
 
 def normalize_postgres_dsn(conn_str: str) -> str:
@@ -630,7 +645,19 @@ async def entrypoint(ctx: JobContext):
     app_id = ctx.room.name.replace("interview_", "")
 
     # Parallelize network-bound work: room connect + DB fetch run concurrently.
-    connect_task = asyncio.create_task(ctx.connect())
+    async def connect_with_retry():
+        for attempt in range(3):
+            try:
+                await ctx.connect()
+                return None
+            except Exception as e:
+                if attempt == 2:
+                    return e
+                logger.warning(f"Connection attempt {attempt + 1} failed: {e}. Retrying in 2s...")
+                await asyncio.sleep(2)
+        return RuntimeError("Failed to connect after 3 attempts")
+
+    connect_task = asyncio.create_task(connect_with_retry())
     context_task = asyncio.create_task(get_interview_context(app_id))
     connect_result, context_result = await asyncio.gather(
         connect_task,
@@ -897,7 +924,7 @@ Real examples:
   Ishita: "Ha, tell me about it — I have had back-to-backs since morning. Alright, let us make this the good part of the day for both of us."
 
 - Candidate: "I am a little nervous actually."
-  Ishita: "Oh that is completely normal, honestly. I would be more surprised if you were not. These things can feel high-stakes. Let us just have a conversation — no pressure at all."
+  Ishita: "Oh that is completely normal, honestly. I would be more surprised if you were not. These things can feel high-stakes. Let us just have a conversation — nothing to worry about."
 
 - Candidate: "Yeah I am doing well, just got back from lunch."
   Ishita: "Nice, good timing then! Okay so — let us get into it..."
@@ -967,7 +994,7 @@ You have the candidate resume and AI screening report above. Use this intelligen
 - IMPORTANT: Only reference companies, skills, or projects that are actually in the provided resume data. Never invent or assume background details.
 
 ## HOW YOU HANDLE DIFFICULT MOMENTS
-- Candidate is nervous or hesitant: slow down, be noticeably warmer, and say something reassuring like "No rush at all — take your time" before the next question.
+- Candidate is nervous or hesitant: slow down, be noticeably warmer. Use a reassuring phrase ONCE per topic — vary what you say each time. Options: "Take your time", "No rush at all", "We can slow down", "Whenever you're ready". Never repeat the same phrase twice in a row.
 - Candidate is sharp and confident: match their energy, be more direct, treat them as a peer.
 - Candidate gives a short or weak answer: do not skip past it or penalise them. Say warmly: "That is a helpful start — could you tell me a little more about how that played out in practice?"
 - Candidate gives an exceptional answer: acknowledge it genuinely before moving on. "That is a really thoughtful approach, honestly." Do not fake it and do not skip it.
@@ -1012,6 +1039,16 @@ Rules:
   - These are 2-3 word openers only. Move into your response immediately after.
   - NEVER use "Absolutely!", "Great!", "Fantastic!", "Of course!" — these are call-center clichés and candidates notice.
 
+## ANTI-REPETITION RULE — NON-NEGOTIABLE
+Never use the same reassurance phrase twice in a single conversation. This includes:
+  - "No pressure at all" — use once at most
+  - "Take your time" — use once at most
+  - "No rush at all" — use once at most
+  - "Whenever you are ready" — use once at most
+After you use a phrase once, it is retired for the rest of this conversation. Rotate to alternatives:
+  "We can slow right down", "I am not going anywhere", "This is a conversation, not a test",
+  "I get it — these things can feel strange", "Let us just take it easy".
+
 When a candidate gives a particularly long, detailed, or emotionally heavy answer:
   A brief acknowledgment before your follow-up is powerful: "That is a lot to unpack — thank you for sharing all of that."
 
@@ -1055,6 +1092,13 @@ Good closings reference what was actually discussed:
   - "Really glad we got to talk through your time at [company] — that was a rich conversation."
   - "Thanks so much for being so candid today, {candidate_name}. That takes guts."
   - "It was genuinely great speaking with you. Take care, and I really do wish you all the best."
+
+IMPORTANT — HONEST CLOSES: Never claim "we covered a lot" or "we had a rich conversation" if the interview was short or the candidate shared very little. Be warm but honest:
+  - If the interview ran its full course: "Really glad we got to cover all of that — thank you."
+  - If the conversation was shorter or the candidate struggled: "Thanks for being here today — I really appreciate it. Take care."
+  - Match your closing words to what actually happened. Hollow positivity feels worse than a simple, genuine goodbye.
+
+If you were interrupted mid-sentence and need to re-enter, do NOT restart with the same phrase you were saying. Pick up the thread from a new angle or acknowledge the interruption naturally: "Sorry, you go ahead" or just resume the substance of what you were saying without the opening filler.
 
 NEVER say "Interview complete." NEVER end abruptly. NEVER close coldly. The last thing a candidate hears from Ishita should leave them feeling respected and valued, regardless of how the interview went.
 
@@ -1584,9 +1628,12 @@ The best interviews do not feel like interviews. They feel like a conversation t
 
         # Mark as started in DB while greeting starts immediately.
         asyncio.create_task(mark_interview_started(app_id))
-        # Stabilization delay: Give newly initialized plugins (especially Sarvam) 
+        # Stabilization delay: Give newly initialized plugins (especially Sarvam)
         # a moment to reach a stable state before the first synthesis request.
-        await asyncio.sleep(0.5)
+        # Sarvam TTS can fail with "Cannot write to closing transport" if the
+        # WebSocket session is recycled right after init — 1.5s is more reliable.
+        stabilization_delay = 1.5 if org_tts_provider == "SARVAM" else 0.5
+        await asyncio.sleep(stabilization_delay)
 
         try:
             startup_latency_ms = int((time.perf_counter() - entry_started_at) * 1000)
@@ -1612,8 +1659,39 @@ The best interviews do not feel like interviews. They feel like a conversation t
                     "[GREETING] LLM already responded to candidate — skipping scripted welcome to avoid double-greeting"
                 )
             else:
-                await session.say(welcome_text, allow_interruptions=False)
-                logger.info("[GREETING] Welcome message delivered")
+                # Retry loop: Sarvam TTS WebSocket can fail on the very first
+                # synthesis call if the connection was recycled during startup.
+                # We retry up to 3 times with a short backoff before giving up.
+                greeting_delivered = False
+                for _attempt in range(3):
+                    try:
+                        await session.say(welcome_text, allow_interruptions=False)
+                        greeting_delivered = True
+                        logger.info(
+                            f"[GREETING] Welcome message delivered (attempt {_attempt + 1})"
+                        )
+                        break
+                    except Exception as _tts_err:
+                        err_str = str(_tts_err).lower()
+                        is_transport_err = any(
+                            pat in err_str
+                            for pat in (
+                                "closing transport",
+                                "connection error",
+                                "apiconnectionerror",
+                                "send task failed",
+                            )
+                        )
+                        if is_transport_err and _attempt < 2:
+                            logger.warning(
+                                f"[GREETING] TTS transport error on attempt {_attempt + 1}, "
+                                f"retrying in 1s: {_tts_err}"
+                            )
+                            await asyncio.sleep(1.0)
+                        else:
+                            raise
+                if not greeting_delivered:
+                    logger.error("[GREETING] All TTS retry attempts failed for greeting")
         except Exception as e:
             logger.error(f"[GREETING] Failed to deliver greeting: {e}")
 
@@ -1627,8 +1705,36 @@ The best interviews do not feel like interviews. They feel like a conversation t
     candidate_questions_asked = False
 
     # How many seconds before the end to trigger each nudge
+    # Only trigger the wrap-up nudge if the candidate has given at least 3 substantive
+    # responses — prevents premature "we're almost out of time" when no content collected.
     CANDIDATE_Q_TRIGGER_SECS = 150  # 2.5 minutes before end
     FINAL_THANKS_TRIGGER_SECS = 5  # 5 seconds before end
+    MIN_CANDIDATE_LINES_FOR_WRAPUP = 3  # require at least 3 candidate turns before wrap-up
+
+    # Nudge pool — each nudge used at most once per session to avoid repetition.
+    # Grouped by style so we rotate naturally through different framings.
+    _nudge_pool = [
+        f"Hey {candidate_name}, just checking in — I am still here whenever you are ready. No rush at all.",
+        f"Take your time, {candidate_name} — I am right here. Just say when.",
+        f"Still with you, {candidate_name} — whenever you are ready, we can carry on.",
+        f"I have got time — just let me know when you want to continue, {candidate_name}.",
+        f"No rush at all — I am here whenever you feel ready.",
+        f"Did you want to pick up from where we left off, or would it help if I rephrased that?",
+        f"We can take a moment — just come back to me whenever you are comfortable.",
+        f"Whenever you are ready, {candidate_name}. There is no rush here.",
+    ]
+    _nudges_used: list[str] = []
+
+    def _pick_nudge() -> str:
+        """Return an unused nudge. Resets the pool if all have been used."""
+        nonlocal _nudges_used
+        unused = [n for n in _nudge_pool if n not in _nudges_used]
+        if not unused:
+            _nudges_used = []
+            unused = list(_nudge_pool)
+        choice = random.choice(unused)
+        _nudges_used.append(choice)
+        return choice
 
     session_loop_start = time.monotonic()
 
@@ -1643,12 +1749,21 @@ The best interviews do not feel like interviews. They feel like a conversation t
             break
 
         # --- 2-3 min remaining: ask if candidate has any questions ---
-        if not candidate_questions_asked and remaining <= CANDIDATE_Q_TRIGGER_SECS:
+        # Only fire if the candidate has said at least MIN_CANDIDATE_LINES_FOR_WRAPUP lines,
+        # so we never announce "almost out of time" in a nearly empty interview.
+        candidate_line_count = sum(
+            1 for line in transcript_lines if line.startswith("Candidate:")
+        )
+        if (
+            not candidate_questions_asked
+            and remaining <= CANDIDATE_Q_TRIGGER_SECS
+            and candidate_line_count >= MIN_CANDIDATE_LINES_FOR_WRAPUP
+        ):
             candidate_questions_asked = True
             candidate_q_text = (
-                f"We are getting close to the end of our time, {candidate_name} \u2014 "
-                "and before I let you go, I just want to check \u2014 is there anything on your mind? "
-                "Anything you want to ask about the role or anything else?"
+                f"We are coming up on time, {candidate_name}. "
+                "Before we wrap up — is there anything you want to make sure you have said, "
+                "or anything you want to ask me about the role?"
             )
             try:
                 await session.say(candidate_q_text)
@@ -1664,16 +1779,9 @@ The best interviews do not feel like interviews. They feel like a conversation t
 
         # --- Smart Inactivity Nudge ---
         # If the candidate hasn't responded for 30s after Ishita finishes speaking,
-        # fire a warm, unhurried check-in.
+        # fire a warm, unhurried check-in using a non-repeating nudge from the pool.
         if not is_agent_speaking and (time.monotonic() - last_activity_at) > 30:
-            nudges = [
-                f"Hey {candidate_name}, just checking in — I am still here whenever you are ready. No rush at all.",
-                f"Take your time, {candidate_name} — I am right here. Just let me know when you would like to continue.",
-                f"I'm still with you, {candidate_name} — did you want to pick up from where we left off, or shall I rephrase that?",
-                f"No pressure at all, {candidate_name} — just checking you are still there. Whenever you are ready.",
-            ]
-            import random
-            nudge_text = random.choice(nudges)
+            nudge_text = _pick_nudge()
             try:
                 # Reset before say() to prevent immediate re-trigger if tts is slow
                 reset_nudge_timer()
@@ -1688,10 +1796,21 @@ The best interviews do not feel like interviews. They feel like a conversation t
     time_expired = not finished_task.done() and not disconnected_task.done()
 
     if time_expired:
-        goodbye_text = (
-            f"Thanks so much for your time today, {candidate_name} \u2014 "
-            "it was genuinely great speaking with you. Take care, and all the best!"
+        # Tailor the goodbye to how much content was actually exchanged.
+        # Avoid "we covered a lot" if the candidate barely spoke.
+        candidate_turns_final = sum(
+            1 for line in transcript_lines if line.startswith("Candidate:")
         )
+        if candidate_turns_final >= 4:
+            goodbye_text = (
+                f"Thanks so much for your time today, {candidate_name}. "
+                "It was genuinely great speaking with you. Take care, and all the best!"
+            )
+        else:
+            goodbye_text = (
+                f"Thanks for joining today, {candidate_name}. "
+                "Really appreciate you being here. Take care, and all the best!"
+            )
 
         try:
             await session.say(goodbye_text)

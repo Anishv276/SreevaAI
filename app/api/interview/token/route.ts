@@ -4,7 +4,7 @@ import { interviewTokenSchema } from "@/lib/validation";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 
-const DISPATCH_DEBOUNCE_MS = 45_000;
+const DISPATCH_DEBOUNCE_MS = 12_000;
 const dispatchByRoom = new Map<string, number>();
 
 function looksLikeAgentParticipant(participant: { identity?: string; name?: string }) {

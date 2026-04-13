@@ -79,7 +79,7 @@ function PremiumSelect({
                 width: rect.width,
                 zIndex: 9999,
             }}
-            className="rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden"
+            className="rounded-lg border border-gray-200 bg-white shadow-xl overflow-hidden"
         >
             <div className="p-1.5 max-h-[180px] overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-200 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-gray-300">
                 {options.map(opt => (
@@ -108,7 +108,7 @@ function PremiumSelect({
                 ref={triggerRef}
                 type="button"
                 onClick={handleOpen}
-                className="relative flex h-10 w-full items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-3 text-[14px] text-gray-900 shadow-sm hover:border-orange-300 hover:shadow-md transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316]"
+                className="relative flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 text-[14px] text-gray-900 shadow-sm hover:border-orange-300 hover:shadow-md transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316]"
             >
                 <span className={value ? "text-gray-900 font-medium" : "text-gray-400"}>
                     {value || placeholder}
@@ -139,7 +139,7 @@ function PremiumInput({
             </Label>
             <Input
                 {...props}
-                className="h-10 rounded-xl border-gray-200 bg-white px-3 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 hover:shadow-md focus-visible:ring-2 focus-visible:ring-[#F97316]/30 focus-visible:border-[#F97316] focus-visible:shadow-none transition-all duration-150 placeholder:text-gray-400 placeholder:font-normal"
+                className="h-10 rounded-lg border-gray-200 bg-white px-3 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 hover:shadow-md focus-visible:ring-2 focus-visible:ring-[#F97316]/30 focus-visible:border-[#F97316] focus-visible:shadow-none transition-all duration-150 placeholder:text-gray-400 placeholder:font-normal"
             />
         </div>
     );
@@ -314,7 +314,7 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange }: {
                 id={id}
                 type="button"
                 onClick={handleOpen}
-                className="relative flex h-10 w-full items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-3 text-[14px] shadow-sm hover:border-orange-300 hover:shadow-md transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316]"
+                className="relative flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 text-[14px] shadow-sm hover:border-orange-300 hover:shadow-md transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316]"
             >
                 <span className={displayValue ? "text-gray-900 font-medium" : "text-gray-400"}>
                     {displayValue || "Pick a date"}
@@ -341,7 +341,7 @@ function PositionCounter({ label, icon: Icon, value, onChange }: { label: string
                 {label}
                 <span className="text-[#F97316] ml-0.5">*</span>
             </Label>
-            <div className="flex h-10 items-center rounded-xl border border-gray-200 bg-white shadow-sm hover:border-orange-300 hover:shadow-md transition-all duration-150 overflow-hidden">
+            <div className="flex h-10 items-center rounded-lg border border-gray-200 bg-white shadow-sm hover:border-orange-300 hover:shadow-md transition-all duration-150 overflow-hidden">
                 <button
                     type="button"
                     onClick={() => onChange(Math.max(1, value - 1))}
