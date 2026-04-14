@@ -5,7 +5,6 @@ import { Maximize, Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { HardwareCheck } from "@/components/careers/interview/HardwareCheck";
-import { PROCTORING_SEVERITY_BY_TYPE, type ProctoringEvent, normalizeProctoringEvent } from "@/lib/proctoring";
 import {
   LiveKitRoom,
   useLocalParticipant,
@@ -139,6 +138,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const launchStartedAtRef = useRef<number | null>(null);
     const lkRoomRef = useRef<any>(null);
     const readySignalSentFromParentRef = useRef(false);
+    const connectionAttemptRef = useRef(0);
 
 
     const [isAgentReady, setIsAgentReady] = useState(false);
@@ -163,6 +163,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             agentReadyCommittedRef.current = false;
             setIsAgentReady(false);
             setAgentReadyLatencyMs(null);
+            connectionAttemptRef.current += 1;
             // Reset connection state so the next attempt creates a fresh dispatch
             setToken(null);
             setServerUrl(null);
@@ -274,6 +275,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const tokenRequestRef = useRef<Promise<boolean> | null>(null);
 
     const ensureWarmConnection = useCallback(async (): Promise<boolean> => {
+        const requestAttempt = connectionAttemptRef.current;
+
         if (token && serverUrl) {
             return true;
         }
@@ -317,6 +320,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 });
 
                 const data = await res.json();
+                if (requestAttempt !== connectionAttemptRef.current) {
+                    return false;
+                }
                 if (res.ok && data.token && data.serverUrl) {
                     sessionStorage.setItem(cacheKey, JSON.stringify({
                         token: data.token,
@@ -331,7 +337,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         setSessionDuration(data.duration);
                         setRemainingSeconds(data.duration);
                     }
-                    console.log("Warm connection preloaded.");
+                    console.log("Warm connection prepared.");
                     return true;
                 }
 
@@ -359,22 +365,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
     };
 
-    // Dispatch the agent as early as possible — on initial page load,
-    // so the worker has maximum time to initialize while the user completes
-    // the hardware check. ensureWarmConnection is idempotent (deduped + cached).
-    useEffect(() => {
-        ensureWarmConnection().catch(() => {});
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // intentionally run once on mount
-
-    // Also retry if the user somehow reaches "check" phase without a token yet
-    useEffect(() => {
-        if (phase === "check") {
-            ensureWarmConnection().catch(() => {});
-        }
-    }, [phase, ensureWarmConnection]);
-
-    // Token is fetched on demand or pre-warmed.
+    // Token is fetched on demand when the user clicks "I'm Ready".
 
     const handleAgentReady = useCallback((ready: boolean) => {
         setIsAgentReady(ready);
@@ -396,6 +387,16 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         await requestFullscreenMode();
 
         try {
+            // Enter launching immediately so the user sees the setup phase
+            // while the interview token and LiveKit room are prepared.
+            connectionAttemptRef.current += 1;
+            agentReadyCommittedRef.current = false;
+            readySignalSentFromParentRef.current = false;
+            launchStartedAtRef.current = performance.now();
+            setIsAgentReady(false);
+            setAgentReadyLatencyMs(null);
+            setPhase("launching");
+
             const isWarmReady = await ensureWarmConnection();
             if (!isWarmReady) {
                 throw new Error("Interview connection could not be prepared. Please retry.");
@@ -414,19 +415,18 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 lkRoomRef.current.startAudio().catch(() => {});
             }
 
-            // If agent is already ready, go directly to interview.
-            agentReadyCommittedRef.current = false;
-            launchStartedAtRef.current = performance.now();
-            setAgentReadyLatencyMs(null);
-            setPhase(isAgentReady ? "interview" : "launching");
-
         } catch (err) {
             console.error("Phase transition failed:", err);
             setJoinError(err instanceof Error ? err.message : "Unable to start interview.");
             // Reset connection so a fresh dispatch is created on retry
+            connectionAttemptRef.current += 1;
             setToken(null);
             setServerUrl(null);
             setShouldConnect(false);
+            setIsAgentReady(false);
+            setAgentReadyLatencyMs(null);
+            launchStartedAtRef.current = null;
+            agentReadyCommittedRef.current = false;
             // Clear the sessionStorage cache so ensureWarmConnection re-fetches
             try { sessionStorage.removeItem(`lk_token_${id}`); } catch { }
             setPhase("check");
@@ -615,7 +615,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             </AnimatePresence>
 
             {/* Interview room — outside AnimatePresence intentionally.
-                It pre-renders as soon as token is available (warm connection during hardware check)
+                It pre-renders as soon as the launching phase has prepared a token
                 and controls its own visibility via opacity/z-index/pointer-events. */}
             {token && serverUrl && phase !== "completed" && (
                 <div 
@@ -725,7 +725,6 @@ function InterviewRoomContent({
 }) {
     const { localParticipant } = useLocalParticipant();
     const cameraTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
-    const microphoneTracks = useTracks([Track.Source.Microphone], { onlySubscribed: false });
     const connectionState = useConnectionState();
     const remoteParticipants = useRemoteParticipants();
     const lkRoom = useRoomContext();
@@ -753,24 +752,12 @@ function InterviewRoomContent({
     const finishStartedRef = useRef(false);
     const recordingStartedRef = useRef(false);
     const transcriptPanelRef = useRef<HTMLDivElement>(null);
-    const proctoringVideoRef = useRef<HTMLVideoElement>(null);
-    const proctoringDetectorRef = useRef<any>(null);
-    const proctoringDetectionLoopRef = useRef<number | null>(null);
-    const proctoringCooldownRef = useRef<Map<string, number>>(new Map());
-    const proctoringStrikeRef = useRef<Map<string, number>>(new Map());
-    const proctoringTrackRef = useRef<MediaStream | null>(null);
-    const proctoringFaceStateRef = useRef<"clear" | "absent" | "multiple">("clear");
-    const proctoringCameraStateRef = useRef<boolean>(true);
-    const proctoringMicStateRef = useRef<boolean>(true);
-    const proctoringConnectionStateRef = useRef(connectionState);
     const transcriptions = useTranscriptions({ room: lkRoom });
     const localIdentity = lkRoom?.localParticipant?.identity ?? "";
-    const localMicrophoneTrack =
-        microphoneTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Microphone) || null;
 
-    // Agent readiness is based on room connection + remote agent presence.
+    // Agent readiness is based on room connection + remote agent speaking.
     useEffect(() => {
-        const readyNow = connectionState === "connected" && hasAgentPresence;
+        const readyNow = connectionState === "connected" && hasAgentPresence && isAiSpeaking;
         onAgentReady?.(readyNow);
 
         if (!isLaunchingActive) {
@@ -782,7 +769,7 @@ function InterviewRoomContent({
             launchReadySignalSentRef.current = true;
             console.log("[Agent] Ready in launching phase");
         }
-    }, [isLaunchingActive, connectionState, hasAgentPresence, onAgentReady]);
+    }, [isLaunchingActive, connectionState, hasAgentPresence, isAiSpeaking, onAgentReady]);
 
     // Start recording only after interview phase starts and agent actually begins speaking.
     useEffect(() => {
@@ -950,275 +937,6 @@ function InterviewRoomContent({
             lkRoom.off(RoomEvent.DataReceived, onDataReceived);
         };
     }, [lkRoom]);
-
-    const emitProctoringEvent = useCallback(
-        async (event: ProctoringEvent) => {
-            if (!isInterviewActive || !id) return;
-
-            const normalized = normalizeProctoringEvent({
-                ...event,
-                strike:
-                    event.strike ??
-                    (PROCTORING_SEVERITY_BY_TYPE[
-                        event.eventType as keyof typeof PROCTORING_SEVERITY_BY_TYPE
-                    ] === "high"
-                        ? 1
-                        : undefined),
-            });
-
-            const key = `${normalized.eventType}:${normalized.reason || ""}`;
-            const now = Date.now();
-            const lastSentAt = proctoringCooldownRef.current.get(key) || 0;
-            if (now - lastSentAt < 8_000) {
-                return;
-            }
-            proctoringCooldownRef.current.set(key, now);
-
-            if (normalized.strike === undefined) {
-                const nextStrike = (proctoringStrikeRef.current.get(normalized.eventType) || 0) + 1;
-                proctoringStrikeRef.current.set(normalized.eventType, nextStrike);
-                normalized.strike = nextStrike;
-            } else {
-                proctoringStrikeRef.current.set(normalized.eventType, normalized.strike);
-            }
-
-            if (localParticipant) {
-                try {
-                    const encoder = new TextEncoder();
-                    await localParticipant.publishData(
-                        encoder.encode(JSON.stringify(normalized)),
-                        { reliable: true }
-                    );
-                } catch {
-                    try {
-                        const encoder = new TextEncoder();
-                        await localParticipant.publishData(encoder.encode(JSON.stringify(normalized)), true);
-                    } catch (err) {
-                        console.warn("[PROCTORING] live event publish failed", err);
-                    }
-                }
-            }
-
-            try {
-                await fetch("/api/interview/proctoring", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        applicationId: id,
-                        events: [normalized],
-                    }),
-                    keepalive: true,
-                });
-            } catch (err) {
-                console.warn("[PROCTORING] persistence failed", err);
-            }
-        },
-        [id, isInterviewActive, localParticipant]
-    );
-
-    useEffect(() => {
-        proctoringConnectionStateRef.current = connectionState;
-    }, [connectionState]);
-
-    useEffect(() => {
-        proctoringCameraStateRef.current = !!localParticipant?.isCameraEnabled;
-        if (!isInterviewActive || !localParticipant) return;
-        if (!localParticipant.isCameraEnabled) {
-            void emitProctoringEvent({
-                eventType: "camera_disabled",
-                severity: "high",
-                reason: "camera_toggle_off",
-                metadata: { source: "participant_state" },
-            });
-        }
-    }, [emitProctoringEvent, isInterviewActive, localParticipant, localParticipant?.isCameraEnabled]);
-
-    useEffect(() => {
-        proctoringMicStateRef.current = !!localParticipant?.isMicrophoneEnabled;
-        if (!isInterviewActive || !localParticipant) return;
-        if (!localParticipant.isMicrophoneEnabled) {
-            void emitProctoringEvent({
-                eventType: "microphone_disabled",
-                severity: "medium",
-                reason: "microphone_toggle_off",
-                metadata: { source: "participant_state" },
-            });
-        }
-    }, [emitProctoringEvent, isInterviewActive, localParticipant, localParticipant?.isMicrophoneEnabled]);
-
-
-
-    useEffect(() => {
-        if (!isInterviewActive || !connectionState) return;
-        if (connectionState === "connected") {
-            if (proctoringConnectionStateRef.current !== "connected") {
-                void emitProctoringEvent({
-                    eventType: "connection_restored",
-                    severity: "low",
-                    reason: "connection_recovered",
-                    metadata: { state: connectionState },
-                });
-            }
-        } else if (connectionState === "reconnecting" || connectionState === "disconnected") {
-            void emitProctoringEvent({
-                eventType: "connection_lost",
-                severity: "medium",
-                reason: `connection_${connectionState}`,
-                metadata: { state: connectionState },
-            });
-        }
-
-        proctoringConnectionStateRef.current = connectionState;
-    }, [connectionState, emitProctoringEvent, isInterviewActive]);
-
-    useEffect(() => {
-        const cameraTrack = getMediaStreamTrack(localCameraTrack);
-        const microphoneTrack = getMediaStreamTrack(localMicrophoneTrack);
-
-        const handleCameraMute = () => {
-            if (!isInterviewActive) return;
-            void emitProctoringEvent({
-                eventType: "camera_disabled",
-                severity: "high",
-                reason: "camera_track_muted",
-                metadata: { source: "media_track" },
-            });
-        };
-
-        const handleMicMute = () => {
-            if (!isInterviewActive) return;
-            void emitProctoringEvent({
-                eventType: "microphone_disabled",
-                severity: "medium",
-                reason: "microphone_track_muted",
-                metadata: { source: "media_track" },
-            });
-        };
-
-        if (cameraTrack) {
-            cameraTrack.addEventListener("mute", handleCameraMute);
-            cameraTrack.addEventListener("ended", handleCameraMute);
-        }
-        if (microphoneTrack) {
-            microphoneTrack.addEventListener("mute", handleMicMute);
-            microphoneTrack.addEventListener("ended", handleMicMute);
-        }
-
-        return () => {
-            if (cameraTrack) {
-                cameraTrack.removeEventListener("mute", handleCameraMute);
-                cameraTrack.removeEventListener("ended", handleCameraMute);
-            }
-            if (microphoneTrack) {
-                microphoneTrack.removeEventListener("mute", handleMicMute);
-                microphoneTrack.removeEventListener("ended", handleMicMute);
-            }
-        };
-    }, [emitProctoringEvent, isInterviewActive, localCameraTrack, localMicrophoneTrack]);
-
-    useEffect(() => {
-        const video = proctoringVideoRef.current;
-        const cameraTrack = getMediaStreamTrack(localCameraTrack);
-
-        if (!video || !cameraTrack || !isInterviewActive) {
-            if (video) {
-                video.pause().catch(() => undefined);
-                video.srcObject = null;
-            }
-            proctoringTrackRef.current = null;
-            return;
-        }
-
-        const stream = new MediaStream([cameraTrack]);
-        proctoringTrackRef.current = stream;
-        video.srcObject = stream;
-        video.play().catch(() => undefined);
-
-        return () => {
-            video.pause().catch(() => undefined);
-            if (video.srcObject === stream) {
-                video.srcObject = null;
-            }
-            proctoringTrackRef.current = null;
-        };
-    }, [isInterviewActive, localCameraTrack]);
-
-    useEffect(() => {
-        let cancelled = false;
-        let interval: number | null = null;
-
-        const runFaceDetector = async () => {
-            if (!isInterviewActive) return;
-            const video = proctoringVideoRef.current;
-            if (!video || video.readyState < 2) return;
-
-            if (!proctoringDetectorRef.current) {
-                try {
-                    const { FaceLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision");
-                    const vision = await FilesetResolver.forVisionTasks(
-                        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-                    );
-                    proctoringDetectorRef.current = await FaceLandmarker.createFromOptions(vision, {
-                        baseOptions: {
-                            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-                            delegate: "CPU",
-                        },
-                        outputFaceBlendshapes: false,
-                        runningMode: "VIDEO",
-                        numFaces: 2,
-                    });
-                } catch (err) {
-                    console.warn("[PROCTORING] face detector unavailable", err);
-                    return;
-                }
-            }
-
-            try {
-                const detector = proctoringDetectorRef.current;
-                if (!detector) return;
-                const result = detector.detectForVideo(video, performance.now());
-                const faceCount = Array.isArray(result?.faceLandmarks) ? result.faceLandmarks.length : 0;
-
-                if (faceCount === 0) {
-                    if (proctoringFaceStateRef.current !== "absent") {
-                        proctoringFaceStateRef.current = "absent";
-                        void emitProctoringEvent({
-                            eventType: "face_not_detected",
-                            severity: "medium",
-                            reason: "no_face_in_frame",
-                            metadata: { faceCount },
-                        });
-                    }
-                } else if (faceCount > 1) {
-                    if (proctoringFaceStateRef.current !== "multiple") {
-                        proctoringFaceStateRef.current = "multiple";
-                        void emitProctoringEvent({
-                            eventType: "multiple_faces",
-                            severity: "high",
-                            reason: "multiple_faces_in_frame",
-                            metadata: { faceCount },
-                        });
-                    }
-                } else if (proctoringFaceStateRef.current !== "clear") {
-                    proctoringFaceStateRef.current = "clear";
-                }
-            } catch (err) {
-                console.warn("[PROCTORING] face sampling failed", err);
-            }
-        };
-
-        if (isInterviewActive) {
-            interval = window.setInterval(() => {
-                if (cancelled) return;
-                void runFaceDetector();
-            }, 4_000);
-        }
-
-        return () => {
-            cancelled = true;
-            if (interval) window.clearInterval(interval);
-        };
-    }, [emitProctoringEvent, isInterviewActive, localCameraTrack]);
 
     useEffect(() => {
         if (!transcriptPanelRef.current) return;
