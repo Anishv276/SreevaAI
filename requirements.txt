@@ -1,9 +1,11 @@
 # ── LiveKit (all MUST be the same version — mixing causes silent breakage) ─────
-livekit-agents==1.5.1
-livekit-plugins-openai==1.5.1
-livekit-plugins-deepgram==1.5.1
-livekit-plugins-cartesia==1.5.1
-livekit-plugins-silero==1.5.1
+livekit-agents==1.5.2
+livekit-plugins-openai==1.5.2
+livekit-plugins-deepgram==1.5.2
+livekit-plugins-cartesia==1.5.2
+livekit-plugins-silero==1.5.2
+livekit-plugins-sarvam==1.5.2
+livekit-plugins-turn-detector==1.5.2
 
 # ── Other ──────────────────────────────────────────────────────────────────────
 python-dotenv>=1.0.0

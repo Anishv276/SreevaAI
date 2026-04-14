@@ -3,9 +3,6 @@ import sys
 import asyncio
 import random
 
-# Windows Compatibility for LiveKit
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 
 import logging
@@ -302,6 +299,7 @@ def build_sarvam_tts(
         "speaker": voice_id,
         # pace: valid for both v2 (0.3–3.0) and v3 (0.5–2.0). 1.0 = natural speed.
         "pace": 1.0,
+        "output_audio_codec": "mp3",
     }
 
     # bulbul:v2-only parameters — DO NOT pass these to v3, they will cause errors
@@ -1697,7 +1695,6 @@ The best interviews do not feel like interviews. They feel like a conversation t
     turn_count = 0           # counts assistant turns for state injection cadence
     last_injection_turn = 0  # tracks which turn last received a state injection
     ready_event = asyncio.Event()
-    last_out_of_screen_alert_at = 0.0
     ready_signal_received_at: Optional[float] = None
 
     @ctx.room.on("disconnected")
@@ -1734,7 +1731,6 @@ The best interviews do not feel like interviews. They feel like a conversation t
     def on_data_received(*event_args):
         nonlocal \
             interview_marked_finished, \
-            last_out_of_screen_alert_at, \
             ready_signal_received_at
         try:
             raw_data = None
@@ -1776,78 +1772,6 @@ The best interviews do not feel like interviews. They feel like a conversation t
                         f"Candidate is ready signal received (attempt={payload.get('attempt')})"
                     )
                 ready_event.set()
-            elif payload.get("type") in ["candidate_out_of_screen", "tab_violation"]:
-                if not ready_event.is_set() or interview_marked_finished:
-                    return
-
-                now = time.time()
-                # Basic throttle for generic out-of-screen signals
-                if payload.get("type") == "candidate_out_of_screen":
-                    if now - last_out_of_screen_alert_at < 10:
-                        return
-                    last_out_of_screen_alert_at = now
-
-                    async def warn_generic():
-                        try:
-                            await session.say(
-                                "I noticed you moved away from the screen. Please stay in the interview window."
-                            )
-                        except Exception:
-                            pass
-
-                    asyncio.get_event_loop().create_task(warn_generic())
-
-                # Advanced Strike-Based Logic for Tab Violations
-                elif payload.get("type") == "tab_violation":
-                    strike_count = payload.get("strike", 0)
-                    duration = payload.get("duration", "0")
-
-                    async def handle_strike():
-                        try:
-                            if strike_count == 1:
-                                # Strike 1: Professional, calm but firm
-                                await session.say(
-                                    "I have detected a tab switch. Please remain on this page. Interview integrity is being monitored."
-                                )
-                            elif strike_count == 2:
-                                # Strike 2: Urgent, serious, cites exact duration
-                                await session.say(
-                                    f"Warning. You were away from this screen for {duration} seconds. That is strike two. One more violation and this interview will be immediately terminated."
-                                )
-                            elif strike_count >= 3:
-                                # Strike 3: Cold, authoritative, final
-                                await session.say(
-                                    "This session is now over. Due to repeated security violations, your interview has been terminated. Goodbye."
-                                )
-                                await asyncio.sleep(4)  # Wait for audio to finish
-
-                                # Send termination signal to Frontend
-                                try:
-                                    termination_signal = json.dumps(
-                                        {
-                                            "type": "interview_terminated",
-                                            "reason": "strikes",
-                                        }
-                                    ).encode("utf-8")
-                                    await ctx.room.local_participant.publish_data(
-                                        termination_signal, reliable=True
-                                    )
-                                    logger.info(
-                                        f"Sent termination signal for app {app_id}"
-                                    )
-                                except Exception as e:
-                                    logger.error(
-                                        f"Failed to send termination signal: {e}"
-                                    )
-
-                                await asyncio.sleep(
-                                    0.5
-                                )  # Give signal a moment to clear
-                                disconnect_event.set()  # Gracefully end session
-                        except Exception as e:
-                            logger.error(f"Error during verbal proctoring: {e}")
-
-                    asyncio.get_event_loop().create_task(handle_strike())
 
             elif payload.get("type") == "interview_finished":
                 logger.info("Candidate marked interview as finished")
@@ -2062,10 +1986,9 @@ The best interviews do not feel like interviews. They feel like a conversation t
         logger.warning(f"Did not find a human participant within {max_wait_seconds}s")
         return None
 
-    # FIX: Reduced from 600s (10 mins) to 90s.
-    # If nobody joins in 90 seconds, free the process slot so new interviews can start.
-    # Previously, a no-show would block a process slot for 10 MINUTES, starving all other candidates.
-    participant = await wait_for_human_participant(max_wait_seconds=90)
+    # FIX: Increased to 300s (5 mins) to allow for hardware checks.
+    # If nobody joins in 5 minutes, free the process slot.
+    participant = await wait_for_human_participant(max_wait_seconds=300)
     if not participant:
         logger.warning(
             f"[TIMEOUT] No candidate joined room for app {app_id} within 90s. Releasing slot."

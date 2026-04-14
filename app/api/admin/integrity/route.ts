@@ -13,12 +13,6 @@ interface ProctoringEvent {
 
 // Map raw eventType strings to our display categories
 const EVENT_MAP: Record<string, string> = {
-    TAB_SWITCH:         "tab_switch",
-    tab_switch:         "tab_switch",
-    tabSwitch:          "tab_switch",
-    FULLSCREEN_EXIT:    "fullscreen_exit",
-    fullscreen_exit:    "fullscreen_exit",
-    fullscreenExit:     "fullscreen_exit",
     FACE_NOT_DETECTED:  "face_not_detected",
     face_not_detected:  "face_not_detected",
     faceNotDetected:    "face_not_detected",
@@ -31,6 +25,8 @@ const EVENT_MAP: Record<string, string> = {
     DUPLICATE_IP:       "duplicate_ip",
     duplicate_ip:       "duplicate_ip",
     duplicateIp:        "duplicate_ip",
+    tab_switch:         "tab_switch",
+    tabSwitch:          "tab_switch",
 };
 
 function getRangeStart(range: string, from?: string, to?: string): Date {
@@ -124,7 +120,7 @@ export async function GET(req: NextRequest) {
                 if (ev.durationSeconds) violationCounts[category].durations.push(ev.durationSeconds);
 
                 hasAnySeverity = true;
-                if (ev.severity === "HIGH" || ev.severity === "high" || ev.eventType.includes("TAB") || ev.eventType.includes("FULLSCREEN")) {
+                if (ev.severity === "HIGH" || ev.severity === "high") {
                     hasHighSeverity = true;
                 }
             }
@@ -140,15 +136,14 @@ export async function GET(req: NextRequest) {
         const integrityScore = total > 0 ? Math.round(((clean + lowRisk * 0.5) / total) * 100) : 100;
 
         // Build ordered violation list
-        const ORDER = ["tab_switch", "fullscreen_exit", "face_not_detected", "multiple_faces", "audio_flag", "duplicate_ip"];
+        const ORDER = ["face_not_detected", "multiple_faces", "tab_switch", "fullscreen_exit", "audio_flag", "duplicate_ip"];
         const LABELS: Record<string, { title: string; abbr: string; getDesc: (v: typeof violationCounts[string]) => string }> = {
-            tab_switch:        { title: "Tab switches detected",      abbr: "TS", getDesc: v => `${v.incidents} incidents across ${v.candidateIds.size} candidates` },
-            fullscreen_exit:   { title: "Fullscreen exits",           abbr: "FF", getDesc: v => `${v.incidents} exits across ${v.candidateIds.size} candidates` },
             face_not_detected: { title: "Face not detected",          abbr: "FD", getDesc: v => {
                 const avgDur = v.durations.length ? Math.round(v.durations.reduce((a, b) => a + b, 0) / v.durations.length) : 0;
                 return `${v.incidents} events${avgDur ? `, avg ${avgDur}s absence` : ""}`;
             }},
-            multiple_faces:    { title: "Multiple faces in frame",    abbr: "MF", getDesc: v => `${v.incidents} incidents, ${v.candidateIds.size} candidates` },
+            tab_switch:        { title: "Tab switching / App switching", abbr: "TS", getDesc: v => `${v.incidents} switch events recorded` },
+            fullscreen_exit:   { title: "Fullscreen Exit",            abbr: "FE", getDesc: v => `${v.incidents} exits detected` },
             audio_flag:        { title: "Background audio flags",     abbr: "AU", getDesc: v => `${v.incidents} voice detections` },
             duplicate_ip:      { title: "Duplicate IP / location flags", abbr: "IP", getDesc: v => `${v.incidents} pairs flagged for collusion check` },
         };
@@ -161,7 +156,7 @@ export async function GET(req: NextRequest) {
                 title: LABELS[k].title,
                 description: LABELS[k].getDesc(violationCounts[k]),
                 count: violationCounts[k].incidents,
-                severity: k === "tab_switch" || k === "fullscreen_exit" ? "high" : k === "audio_flag" || k === "face_not_detected" ? "medium" : "low",
+                severity: k === "audio_flag" || k === "face_not_detected" ? "medium" : "low",
             }));
 
         // Add zero-count rows for all standard types so UI always shows them
@@ -173,7 +168,7 @@ export async function GET(req: NextRequest) {
                     title: LABELS[k].title,
                     description: "No incidents detected",
                     count: 0,
-                    severity: k === "tab_switch" || k === "fullscreen_exit" ? "high" : k === "audio_flag" || k === "face_not_detected" ? "medium" : "low",
+                    severity: k === "audio_flag" || k === "face_not_detected" ? "medium" : "low",
                 });
             }
         }
