@@ -22,6 +22,7 @@ import {
 } from "@livekit/components-react";
 import "@livekit/components-styles";
 import { Track, RoomEvent } from "livekit-client";
+import type { Room, TextStreamData } from "livekit-client";
 
 interface InterviewPageProps {
     params: Promise<{ id: string }>;
@@ -136,7 +137,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const launchIntervalRef = useRef<number | null>(null);
     const agentReadyCommittedRef = useRef(false);
     const launchStartedAtRef = useRef<number | null>(null);
-    const lkRoomRef = useRef<any>(null);
+    const lkRoomRef = useRef<Room | null>(null);
     const readySignalSentFromParentRef = useRef(false);
     const connectionAttemptRef = useRef(0);
 
@@ -721,7 +722,7 @@ function InterviewRoomContent({
     onRemoteAgentAudioTrack: (track: MediaStreamTrack | null) => void,
     onAllowExitNow: () => void,
     onAgentReady?: (isReady: boolean) => void,
-    onRoomReady?: (room: any) => void,
+    onRoomReady?: (room: Room) => void,
 }) {
     const { localParticipant } = useLocalParticipant();
     const cameraTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
@@ -804,13 +805,13 @@ function InterviewRoomContent({
         // Temporary map to track the latest version of each segment ID across the entire session
         const latestSegments = new Map<string, { text: string; isFinal: boolean; id: string; timestamp: number; identity: string }>();
 
-        for (const segment of transcriptions) {
+        for (const segment of transcriptions as TextStreamData[]) {
             if (!segment.text.trim()) continue;
-            
-            const identity = (segment as any).participantInfo?.identity || "";
-            const isFinal = (segment as any).streamInfo?.attributes?.["lk.transcription_final"] === "true" || (segment as any).isFinal === true;
-            const id = (segment as any).streamInfo?.id || (segment as any).id || Math.random().toString();
-            const timestamp = (segment as any).timestamp || Date.now();
+
+            const identity = segment.participantInfo?.identity || "";
+            const isFinal = segment.streamInfo.attributes?.["lk.transcription_final"] === "true";
+            const id = segment.streamInfo.id;
+            const timestamp = segment.streamInfo.timestamp;
 
             // Always keep the latest version of a segment
             latestSegments.set(id, { text: segment.text, isFinal, id, timestamp, identity });
