@@ -5,6 +5,7 @@ import { Maximize, Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { HardwareCheck } from "@/components/careers/interview/HardwareCheck";
+import { PROCTORING_SEVERITY_BY_TYPE, type ProctoringEvent, normalizeProctoringEvent } from "@/lib/proctoring";
 import {
   LiveKitRoom,
   useLocalParticipant,
@@ -50,7 +51,7 @@ type AttachableTrack = {
 // LiveKit TextStreamData type from @livekit/components-core
 // { text: string, participantInfo: { identity: string }, streamInfo: TextStreamInfo }
 
-/** Typewriter component: streams text character-by-character whenever text changes. */
+/** Typewriter component: streams text word-by-word whenever text changes. */
 const StreamingText = memo(function StreamingText({ text, className }: { text: string; className?: string }) {
     const [shown, setShown] = useState("");
     const shownRef = useRef("");
@@ -61,29 +62,36 @@ const StreamingText = memo(function StreamingText({ text, className }: { text: s
         if (timerRef.current) clearTimeout(timerRef.current);
         targetRef.current = text;
 
-        // If new text extends current shown text, continue from where we are.
-        // Otherwise (different text or first render), reset and animate from start.
-        const startPos = text.startsWith(shownRef.current) ? shownRef.current.length : 0;
+        // Split text into words (preserving spaces)
+        const words = text.split(/(\s+)/);
+        const currentWords = shownRef.current.split(/(\s+)/);
 
-        if (startPos === 0) {
+        // If new text doesn't start with what we are showing, reset
+        const isExtension = text.startsWith(shownRef.current);
+        let wordIndex = isExtension ? currentWords.length : 0;
+
+        if (!isExtension) {
             shownRef.current = "";
             setShown("");
         }
 
-        let pos = startPos;
         const step = () => {
-            if (targetRef.current !== text) return; // target changed mid-flight, abort
-            pos++;
-            const next = text.slice(0, pos);
-            shownRef.current = next;
-            setShown(next);
-            if (pos < text.length) {
-                timerRef.current = setTimeout(step, 18);
+            if (targetRef.current !== text) return;
+            
+            // Advance by one "word" (which might be a word + its following space)
+            if (wordIndex < words.length) {
+                wordIndex++;
+                const next = words.slice(0, wordIndex).join("");
+                shownRef.current = next;
+                setShown(next);
+                
+                // Faster interval for smoother "word" flow
+                timerRef.current = setTimeout(step, 40); 
             }
         };
 
-        if (pos < text.length) {
-            timerRef.current = setTimeout(step, 18);
+        if (wordIndex < words.length) {
+            timerRef.current = setTimeout(step, 10);
         }
 
         return () => { if (timerRef.current) clearTimeout(timerRef.current); };
@@ -717,6 +725,7 @@ function InterviewRoomContent({
 }) {
     const { localParticipant } = useLocalParticipant();
     const cameraTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
+    const microphoneTracks = useTracks([Track.Source.Microphone], { onlySubscribed: false });
     const connectionState = useConnectionState();
     const remoteParticipants = useRemoteParticipants();
     const lkRoom = useRoomContext();
@@ -744,8 +753,20 @@ function InterviewRoomContent({
     const finishStartedRef = useRef(false);
     const recordingStartedRef = useRef(false);
     const transcriptPanelRef = useRef<HTMLDivElement>(null);
+    const proctoringVideoRef = useRef<HTMLVideoElement>(null);
+    const proctoringDetectorRef = useRef<any>(null);
+    const proctoringDetectionLoopRef = useRef<number | null>(null);
+    const proctoringCooldownRef = useRef<Map<string, number>>(new Map());
+    const proctoringStrikeRef = useRef<Map<string, number>>(new Map());
+    const proctoringTrackRef = useRef<MediaStream | null>(null);
+    const proctoringFaceStateRef = useRef<"clear" | "absent" | "multiple">("clear");
+    const proctoringCameraStateRef = useRef<boolean>(true);
+    const proctoringMicStateRef = useRef<boolean>(true);
+    const proctoringConnectionStateRef = useRef(connectionState);
     const transcriptions = useTranscriptions({ room: lkRoom });
     const localIdentity = lkRoom?.localParticipant?.identity ?? "";
+    const localMicrophoneTrack =
+        microphoneTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Microphone) || null;
 
     // Agent readiness is based on room connection + remote agent presence.
     useEffect(() => {
@@ -790,27 +811,57 @@ function InterviewRoomContent({
             identity: string;
             isCandidate: boolean;
             speakerName: string;
-            segments: Array<{ text: string; isFinal: boolean; id: string }>;
+            segments: Array<{ text: string; isFinal: boolean; id: string; timestamp: number }>;
         }[] = [];
+
+        // Temporary map to track the latest version of each segment ID across the entire session
+        const latestSegments = new Map<string, { text: string; isFinal: boolean; id: string; timestamp: number; identity: string }>();
 
         for (const segment of transcriptions) {
             if (!segment.text.trim()) continue;
+            
             const identity = (segment as any).participantInfo?.identity || "";
-            const isCandidate = identity === localIdentity;
             const isFinal = (segment as any).streamInfo?.attributes?.["lk.transcription_final"] === "true" || (segment as any).isFinal === true;
             const id = (segment as any).streamInfo?.id || (segment as any).id || Math.random().toString();
-            
+            const timestamp = (segment as any).timestamp || Date.now();
+
+            // Always keep the latest version of a segment
+            latestSegments.set(id, { text: segment.text, isFinal, id, timestamp, identity });
+        }
+
+        // Sort all unique segments by timestamp
+        const sortedSegments = Array.from(latestSegments.values()).sort((a, b) => a.timestamp - b.timestamp);
+
+        for (const segment of sortedSegments) {
+            const isCandidate = segment.identity === localIdentity;
             const lastGroup = groups[groups.length - 1];
-            if (lastGroup && lastGroup.identity === identity) {
-                // If the same speaker continues, append to group
-                lastGroup.segments.push({ text: segment.text, isFinal, id });
+            
+            // Logic to decide if we should start a NEW row/bubble:
+            // 1. Identity change
+            // 2. Previous segment in the same group was final (new thought)
+            // 3. Significant time gap (> 1.5s)
+            let shouldBreak = false;
+            if (lastGroup) {
+                if (lastGroup.identity !== segment.identity) {
+                    shouldBreak = true;
+                } else {
+                    const lastSegment = lastGroup.segments[lastGroup.segments.length - 1];
+                    const timeGap = segment.timestamp - lastSegment.timestamp;
+                    if (lastSegment.isFinal || timeGap > 1500) {
+                        shouldBreak = true;
+                    }
+                }
+            }
+
+            if (lastGroup && !shouldBreak) {
+                lastGroup.segments.push(segment);
             } else {
                 groups.push({
-                    id,
-                    identity,
+                    id: segment.id, // Group ID based on first segment
+                    identity: segment.identity,
                     isCandidate,
                     speakerName: isCandidate ? "You" : "Interviewer",
-                    segments: [{ text: segment.text, isFinal, id }]
+                    segments: [segment]
                 });
             }
         }
@@ -899,6 +950,346 @@ function InterviewRoomContent({
             lkRoom.off(RoomEvent.DataReceived, onDataReceived);
         };
     }, [lkRoom]);
+
+    const emitProctoringEvent = useCallback(
+        async (event: ProctoringEvent) => {
+            if (!isInterviewActive || !id) return;
+
+            const normalized = normalizeProctoringEvent({
+                ...event,
+                strike:
+                    event.strike ??
+                    (PROCTORING_SEVERITY_BY_TYPE[
+                        event.eventType as keyof typeof PROCTORING_SEVERITY_BY_TYPE
+                    ] === "high"
+                        ? 1
+                        : undefined),
+            });
+
+            const key = `${normalized.eventType}:${normalized.reason || ""}`;
+            const now = Date.now();
+            const lastSentAt = proctoringCooldownRef.current.get(key) || 0;
+            if (now - lastSentAt < 8_000) {
+                return;
+            }
+            proctoringCooldownRef.current.set(key, now);
+
+            if (normalized.strike === undefined) {
+                const nextStrike = (proctoringStrikeRef.current.get(normalized.eventType) || 0) + 1;
+                proctoringStrikeRef.current.set(normalized.eventType, nextStrike);
+                normalized.strike = nextStrike;
+            } else {
+                proctoringStrikeRef.current.set(normalized.eventType, normalized.strike);
+            }
+
+            if (localParticipant) {
+                try {
+                    const encoder = new TextEncoder();
+                    await localParticipant.publishData(
+                        encoder.encode(JSON.stringify(normalized)),
+                        { reliable: true }
+                    );
+                } catch {
+                    try {
+                        const encoder = new TextEncoder();
+                        await localParticipant.publishData(encoder.encode(JSON.stringify(normalized)), true);
+                    } catch (err) {
+                        console.warn("[PROCTORING] live event publish failed", err);
+                    }
+                }
+            }
+
+            try {
+                await fetch("/api/interview/proctoring", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        applicationId: id,
+                        events: [normalized],
+                    }),
+                    keepalive: true,
+                });
+            } catch (err) {
+                console.warn("[PROCTORING] persistence failed", err);
+            }
+        },
+        [id, isInterviewActive, localParticipant]
+    );
+
+    useEffect(() => {
+        proctoringConnectionStateRef.current = connectionState;
+    }, [connectionState]);
+
+    useEffect(() => {
+        proctoringCameraStateRef.current = !!localParticipant?.isCameraEnabled;
+        if (!isInterviewActive || !localParticipant) return;
+        if (!localParticipant.isCameraEnabled) {
+            void emitProctoringEvent({
+                eventType: "camera_disabled",
+                severity: "high",
+                reason: "camera_toggle_off",
+                metadata: { source: "participant_state" },
+            });
+        }
+    }, [emitProctoringEvent, isInterviewActive, localParticipant, localParticipant?.isCameraEnabled]);
+
+    useEffect(() => {
+        proctoringMicStateRef.current = !!localParticipant?.isMicrophoneEnabled;
+        if (!isInterviewActive || !localParticipant) return;
+        if (!localParticipant.isMicrophoneEnabled) {
+            void emitProctoringEvent({
+                eventType: "microphone_disabled",
+                severity: "medium",
+                reason: "microphone_toggle_off",
+                metadata: { source: "participant_state" },
+            });
+        }
+    }, [emitProctoringEvent, isInterviewActive, localParticipant, localParticipant?.isMicrophoneEnabled]);
+
+    useEffect(() => {
+        if (!isInterviewActive) return;
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState !== "hidden") {
+                return;
+            }
+
+            void emitProctoringEvent({
+                eventType: "tab_switch",
+                severity: "high",
+                reason: "document_hidden",
+                metadata: { visibilityState: document.visibilityState },
+            });
+        };
+
+        const handleBlur = () => {
+            if (document.visibilityState === "hidden") return;
+            void emitProctoringEvent({
+                eventType: "tab_switch",
+                severity: "high",
+                reason: "window_blur",
+                metadata: { visibilityState: document.visibilityState },
+            });
+        };
+
+        const handleFullscreenChange = () => {
+            const inFullscreen = !!document.fullscreenElement;
+            if (!inFullscreen && !allowFullscreenExitRef.current && phase === "interview") {
+                void emitProctoringEvent({
+                    eventType: "fullscreen_exit",
+                    severity: "high",
+                    reason: "fullscreen_exit",
+                    metadata: { source: "fullscreenchange" },
+                });
+            }
+        };
+
+        const handleConnectionLoss = () => {
+            if (proctoringConnectionStateRef.current === "connected") {
+                void emitProctoringEvent({
+                    eventType: "connection_lost",
+                    severity: "medium",
+                    reason: "connection_state_changed",
+                    metadata: { state: proctoringConnectionStateRef.current },
+                });
+            }
+        };
+
+        const handlePageHide = () => {
+            void emitProctoringEvent({
+                eventType: "tab_switch",
+                severity: "high",
+                reason: "pagehide",
+                metadata: { source: "pagehide" },
+            });
+        };
+
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        window.addEventListener("blur", handleBlur);
+        document.addEventListener("fullscreenchange", handleFullscreenChange);
+        window.addEventListener("offline", handleConnectionLoss);
+        window.addEventListener("pagehide", handlePageHide);
+
+        return () => {
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+            window.removeEventListener("blur", handleBlur);
+            document.removeEventListener("fullscreenchange", handleFullscreenChange);
+            window.removeEventListener("offline", handleConnectionLoss);
+            window.removeEventListener("pagehide", handlePageHide);
+        };
+    }, [emitProctoringEvent, isInterviewActive, phase]);
+
+    useEffect(() => {
+        if (!isInterviewActive || !connectionState) return;
+        if (connectionState === "connected") {
+            if (proctoringConnectionStateRef.current !== "connected") {
+                void emitProctoringEvent({
+                    eventType: "connection_restored",
+                    severity: "low",
+                    reason: "connection_recovered",
+                    metadata: { state: connectionState },
+                });
+            }
+        } else if (connectionState === "reconnecting" || connectionState === "disconnected") {
+            void emitProctoringEvent({
+                eventType: "connection_lost",
+                severity: "medium",
+                reason: `connection_${connectionState}`,
+                metadata: { state: connectionState },
+            });
+        }
+
+        proctoringConnectionStateRef.current = connectionState;
+    }, [connectionState, emitProctoringEvent, isInterviewActive]);
+
+    useEffect(() => {
+        const cameraTrack = getMediaStreamTrack(localCameraTrack);
+        const microphoneTrack = getMediaStreamTrack(localMicrophoneTrack);
+
+        const handleCameraMute = () => {
+            if (!isInterviewActive) return;
+            void emitProctoringEvent({
+                eventType: "camera_disabled",
+                severity: "high",
+                reason: "camera_track_muted",
+                metadata: { source: "media_track" },
+            });
+        };
+
+        const handleMicMute = () => {
+            if (!isInterviewActive) return;
+            void emitProctoringEvent({
+                eventType: "microphone_disabled",
+                severity: "medium",
+                reason: "microphone_track_muted",
+                metadata: { source: "media_track" },
+            });
+        };
+
+        if (cameraTrack) {
+            cameraTrack.addEventListener("mute", handleCameraMute);
+            cameraTrack.addEventListener("ended", handleCameraMute);
+        }
+        if (microphoneTrack) {
+            microphoneTrack.addEventListener("mute", handleMicMute);
+            microphoneTrack.addEventListener("ended", handleMicMute);
+        }
+
+        return () => {
+            if (cameraTrack) {
+                cameraTrack.removeEventListener("mute", handleCameraMute);
+                cameraTrack.removeEventListener("ended", handleCameraMute);
+            }
+            if (microphoneTrack) {
+                microphoneTrack.removeEventListener("mute", handleMicMute);
+                microphoneTrack.removeEventListener("ended", handleMicMute);
+            }
+        };
+    }, [emitProctoringEvent, isInterviewActive, localCameraTrack, localMicrophoneTrack]);
+
+    useEffect(() => {
+        const video = proctoringVideoRef.current;
+        const cameraTrack = getMediaStreamTrack(localCameraTrack);
+
+        if (!video || !cameraTrack || !isInterviewActive) {
+            if (video) {
+                video.pause().catch(() => undefined);
+                video.srcObject = null;
+            }
+            proctoringTrackRef.current = null;
+            return;
+        }
+
+        const stream = new MediaStream([cameraTrack]);
+        proctoringTrackRef.current = stream;
+        video.srcObject = stream;
+        video.play().catch(() => undefined);
+
+        return () => {
+            video.pause().catch(() => undefined);
+            if (video.srcObject === stream) {
+                video.srcObject = null;
+            }
+            proctoringTrackRef.current = null;
+        };
+    }, [isInterviewActive, localCameraTrack]);
+
+    useEffect(() => {
+        let cancelled = false;
+        let interval: number | null = null;
+
+        const runFaceDetector = async () => {
+            if (!isInterviewActive) return;
+            const video = proctoringVideoRef.current;
+            if (!video || video.readyState < 2) return;
+
+            if (!proctoringDetectorRef.current) {
+                try {
+                    const { FaceLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision");
+                    const vision = await FilesetResolver.forVisionTasks(
+                        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+                    );
+                    proctoringDetectorRef.current = await FaceLandmarker.createFromOptions(vision, {
+                        baseOptions: {
+                            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+                            delegate: "CPU",
+                        },
+                        outputFaceBlendshapes: false,
+                        runningMode: "VIDEO",
+                        numFaces: 2,
+                    });
+                } catch (err) {
+                    console.warn("[PROCTORING] face detector unavailable", err);
+                    return;
+                }
+            }
+
+            try {
+                const detector = proctoringDetectorRef.current;
+                if (!detector) return;
+                const result = detector.detectForVideo(video, performance.now());
+                const faceCount = Array.isArray(result?.faceLandmarks) ? result.faceLandmarks.length : 0;
+
+                if (faceCount === 0) {
+                    if (proctoringFaceStateRef.current !== "absent") {
+                        proctoringFaceStateRef.current = "absent";
+                        void emitProctoringEvent({
+                            eventType: "face_not_detected",
+                            severity: "medium",
+                            reason: "no_face_in_frame",
+                            metadata: { faceCount },
+                        });
+                    }
+                } else if (faceCount > 1) {
+                    if (proctoringFaceStateRef.current !== "multiple") {
+                        proctoringFaceStateRef.current = "multiple";
+                        void emitProctoringEvent({
+                            eventType: "multiple_faces",
+                            severity: "high",
+                            reason: "multiple_faces_in_frame",
+                            metadata: { faceCount },
+                        });
+                    }
+                } else if (proctoringFaceStateRef.current !== "clear") {
+                    proctoringFaceStateRef.current = "clear";
+                }
+            } catch (err) {
+                console.warn("[PROCTORING] face sampling failed", err);
+            }
+        };
+
+        if (isInterviewActive) {
+            interval = window.setInterval(() => {
+                if (cancelled) return;
+                void runFaceDetector();
+            }, 4_000);
+        }
+
+        return () => {
+            cancelled = true;
+            if (interval) window.clearInterval(interval);
+        };
+    }, [emitProctoringEvent, isInterviewActive, localCameraTrack]);
 
     useEffect(() => {
         if (!transcriptPanelRef.current) return;
@@ -1066,7 +1457,7 @@ function InterviewRoomContent({
                                 return (
                                     <motion.div
                                         key={group.id}
-                                        initial={{ opacity: 0, x: group.isCandidate ? 20 : -20, scale: 0.95 }}
+                                        initial={{ opacity: 0, x: -20, scale: 0.95 }}
                                         animate={{ 
                                             opacity: Math.max(0.1, 1 - (idx * 0.15)),
                                             x: 0, 
@@ -1085,7 +1476,7 @@ function InterviewRoomContent({
                                         }}
                                         className={cn(
                                             "flex flex-col gap-0.5 max-w-[90%]",
-                                            group.isCandidate ? "self-end items-end" : "self-start items-start"
+                                            "self-start items-start" // Both now on the left for consistent LTR growth
                                         )}
                                     >
                                         <p className={cn(
@@ -1095,9 +1486,9 @@ function InterviewRoomContent({
                                             {group.isCandidate ? "You" : "Ishita"}{!isGroupFinal && " •••"}
                                         </p>
                                         <div className={cn(
-                                            "px-3 py-1.5 rounded-[1.2rem] backdrop-blur-md relative",
+                                            "px-4 py-2.5 rounded-[1.4rem] backdrop-blur-md relative",
                                             group.isCandidate 
-                                                ? "bg-orange-500/10 border border-orange-500/20 rounded-tr-[0.25rem] text-right" 
+                                                ? "bg-orange-500/10 border border-orange-500/20 rounded-tl-[0.25rem] text-left" 
                                                 : "bg-zinc-800/40 border border-white/5 rounded-tl-[0.25rem] text-left"
                                         )}>
                                             <StreamingText 

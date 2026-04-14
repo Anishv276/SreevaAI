@@ -166,6 +166,116 @@ def build_term_alias_hints(*text_blocks: str, max_lines: int = 10) -> str:
     return "\n".join(lines)
 
 
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = str(value).strip()
+        if not text:
+            return None
+        return float(text)
+    except Exception:
+        return None
+
+
+def infer_candidate_band(structured_resume_raw: Any, resume_text_block: str) -> str:
+    """
+    Infer interview mode from structured resume + free text:
+    - fresher: mostly projects/internships
+    - mid: mix of project + experience depth
+    - experienced: ownership/impact/leadership depth
+    """
+    years: Optional[float] = None
+    parsed_resume = None
+
+    try:
+        parsed_resume = (
+            json.loads(structured_resume_raw)
+            if isinstance(structured_resume_raw, str)
+            else structured_resume_raw
+        )
+    except Exception:
+        parsed_resume = None
+
+    if isinstance(parsed_resume, dict):
+        experience_obj = parsed_resume.get("experience")
+        if isinstance(experience_obj, dict):
+            years = _safe_float(experience_obj.get("total_years"))
+        if years is None:
+            years = _safe_float(parsed_resume.get("experienceYears"))
+        if years is None:
+            years = _safe_float(parsed_resume.get("experience_years"))
+
+    if years is None:
+        lower = (resume_text_block or "").lower()
+        year_match = re.search(r"(\d+(?:\.\d+)?)\s*\+?\s*(?:years|year|yrs|yr)\b", lower)
+        if year_match:
+            years = _safe_float(year_match.group(1))
+
+    text = (resume_text_block or "").lower()
+    fresher_signals = (
+        "fresher",
+        "entry level",
+        "student",
+        "final year",
+        "internship",
+        "intern",
+        "graduate",
+    )
+    experienced_signals = (
+        "senior",
+        "lead",
+        "manager",
+        "head of",
+        "director",
+        "staff engineer",
+        "principal",
+    )
+
+    if years is not None:
+        if years < 1.5:
+            return "fresher"
+        if years >= 5:
+            return "experienced"
+        return "mid"
+
+    if any(sig in text for sig in fresher_signals):
+        return "fresher"
+    if any(sig in text for sig in experienced_signals):
+        return "experienced"
+    return "mid"
+
+
+def build_coverage_checklist(candidate_band: str) -> list[str]:
+    common = [
+        "Validate 2-3 core skills from the resume with one concrete example each.",
+        "Ask for measurable outcomes, not just tool names.",
+        "Cover one communication or collaboration moment from real work.",
+    ]
+    if candidate_band == "fresher":
+        return [
+            "Deep-dive one academic/internship project end-to-end (problem, build, result).",
+            "Check fundamentals behind tools they mentioned (what they configured, why, what failed).",
+            "Ask one college/teamwork story (ownership, deadlines, conflicts, learning).",
+            "Assess learning speed: what they learned recently and how.",
+        ] + common
+    if candidate_band == "experienced":
+        return [
+            "Deep-dive one recent role with scope, ownership, and business impact.",
+            "Probe decision-making, tradeoffs, and stakeholder management.",
+            "Assess leadership/mentoring/process ownership with a specific example.",
+            "Verify advanced role-critical skills with architecture-level depth.",
+        ] + common
+    return [
+        "Cover one strong project story and one role experience story.",
+        "Probe execution details and impact across both project and work experience.",
+        "Validate breadth and depth of claimed tools/skills.",
+        "Ask one growth/career reflection (what changed from college/projects to real-world work).",
+    ] + common
+
+
 def build_tts(
     language: str = "en", model: str = CARTESIA_MODEL, voice_id: str = CARTESIA_VOICE_ID
 ):
@@ -893,8 +1003,9 @@ async def entrypoint(ctx: JobContext):
         f"voice={org_cartesia_voice if org_tts_provider != 'SARVAM' else org_sarvam_voice}, LLM: {org_llm_model} ({org_llm_provider})"
     )
 
-    # Formatting custom questions for the prompt
-    questions_list = "\n".join([f"- {q}" for q in custom_questions])
+    # Keep custom question text only; we will combine it with a mandatory
+    # candidate-band checklist after parsing resume context.
+    custom_questions_list = "\n".join([f"- {q}" for q in custom_questions])
 
     # Language Mapping for STT and TTS
     LANGUAGE_MAPPING = {
@@ -937,6 +1048,13 @@ async def entrypoint(ctx: JobContext):
     )
     resume_block = safe_parse(structured_resume, "No resume data provided.")
     ai_report_block = safe_parse(ai_report, "No prior screening data.")
+    candidate_band = infer_candidate_band(structured_resume, resume_block)
+    coverage_items = build_coverage_checklist(candidate_band)
+    coverage_block = "\n".join([f"- {item}" for item in coverage_items])
+    if custom_questions_list:
+        questions_list = f"{coverage_block}\n{custom_questions_list}"
+    else:
+        questions_list = coverage_block
 
     # Generate personalized candidate brief — fires in parallel with session.start()
     # This gives Ishita a specific interview plan built from this candidate's actual resume/JD.
@@ -1010,6 +1128,7 @@ CANDIDATE NAME  : {candidate_name}
 ROLE APPLIED FOR: {job_title}
 TIME AVAILABLE  : {time_limit_mins} minutes
 FOLLOW-UP DEPTH : Level {follow_up_depth}/5 — {depth_instruction}
+INTERVIEW MODE  : {candidate_band}
 
 HARD RESPONSE CONSTRAINTS (NON-NEGOTIABLE):
 - Ask one question per turn.
@@ -1024,6 +1143,12 @@ When term recognition is uncertain:
 - First, guess the closest likely tool once.
 - Ask one quick confirmation question.
 - If still unclear, proceed with a generic depth question and move on.
+
+MANDATORY COVERAGE ORDER:
+- Use the checklist in "MANDATORY INTERVIEW AREAS" below as required coverage.
+- Cover every checklist item at least once before wrap-up.
+- If candidate cannot answer an item after 2 tries, mark as thin and move to the next item.
+- Do not ask meta lines like "We can switch to a different question." Just ask the next question naturally.
 
 ═══════════════════════════════════════
   JOB REQUIREMENTS AND CONTEXT
@@ -1448,6 +1573,7 @@ BANNED PHRASES — these are pure AI/bot language. Using any of these instantly 
   ❌ "That is a great question" — classic bot deflection
   ❌ "Let me ask you about X" — announcing questions like a script
   ❌ "I am here for a real conversation" — self-referential and hollow
+  ❌ "All good. We can switch to a different question." — sounds scripted and abrupt
   ❌ "No pressure at all" (more than once) — loses meaning immediately
   ❌ "Feel free to share" — HR bot filler
   ❌ "How does that sound?" — checking in like a customer service agent
@@ -1868,15 +1994,23 @@ The best interviews do not feel like interviews. They feel like a conversation t
     filler_task: Optional[asyncio.Task] = None
     last_activity_at = time.monotonic()
     is_agent_speaking = False
+    is_candidate_speaking = False
 
     def reset_nudge_timer():
         nonlocal last_activity_at
         last_activity_at = time.monotonic()
         logger.debug("[NUDGE] Timer reset to zero")
 
+    @session.on("user_speech_started")
+    def on_user_speech_started():
+        nonlocal is_candidate_speaking
+        is_candidate_speaking = True
+        reset_nudge_timer()
+
     @session.on("user_speech_committed")
     def on_user_speech_committed(_msg):
-        nonlocal filler_task
+        nonlocal filler_task, is_candidate_speaking
+        is_candidate_speaking = False
         if filler_task:
             filler_task.cancel()
             filler_task = None
@@ -2067,14 +2201,11 @@ The best interviews do not feel like interviews. They feel like a conversation t
     # Keep these short and neutral. Avoid "I'm here/listening" style phrases that
     # sound robotic when repeated.
     _nudge_pool = [
-        f"Did you want me to rephrase that, or just take a moment?",
-        f"Take a moment if you need. I can also ask it a different way.",
-        f"No problem. Want me to simplify that question?",
-        f"All good. We can switch to a different question.",
+        "Could you share one specific example from your work?",
     ]
     _nudges_used: list[str] = []
     inactivity_nudge_count = 0
-    max_inactivity_nudges = 2
+    max_inactivity_nudges = 1
 
     def _pick_nudge() -> str:
         """Return an unused nudge. Resets the pool if all have been used."""
@@ -2137,13 +2268,14 @@ The best interviews do not feel like interviews. They feel like a conversation t
             break
 
         # --- Smart Inactivity Nudge ---
-        # If the candidate hasn't responded for 75s after Ishita finishes speaking,
+        # If the candidate hasn't responded for 120s after Ishita finishes speaking,
         # fire a warm, unhurried check-in using a non-repeating nudge from the pool.
-        # 75s leaves enough room for natural pauses and avoids over-nudging.
+        # 120s avoids accidental nudges in normal thinking pauses.
         if (
             not is_agent_speaking
+            and not is_candidate_speaking
             and inactivity_nudge_count < max_inactivity_nudges
-            and (time.monotonic() - last_activity_at) > 75
+            and (time.monotonic() - last_activity_at) > 120
         ):
             nudge_text = _pick_nudge()
             try:
