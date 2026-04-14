@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { createDriveSchema, bulkDeleteSchema, driveQuerySchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
 import { sanitizeObject } from "@/lib/utils";
+import { generateId } from "@/lib/ids";
 
 export async function GET(request: Request) {
     try {
@@ -162,9 +163,11 @@ export async function POST(request: Request) {
         const deadline = data.deadline ? new Date(data.deadline) : null;
 
         const slug = crypto.randomUUID();
+        const driveId = generateId("drv", data.title);
 
         const drive = await prisma.drive.create({
             data: {
+                id: driveId,
                 slug,
                 title: data.title,
                 description: data.description || "",

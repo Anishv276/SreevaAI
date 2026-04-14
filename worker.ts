@@ -7,6 +7,7 @@ import { writeFile, unlink } from 'fs/promises';
 import { PrismaClient } from '@prisma/client';
 import * as dotenv from 'dotenv';
 import { putObject } from "./lib/s3";
+import { generateId } from "./lib/ids";
 
 // Load environment variables
 dotenv.config();
@@ -156,7 +157,7 @@ const worker = new Worker('resume-processing', async (job) => {
       data: { 
         resumeText: resumeText || "",
         structuredResume: JSON.stringify(structuredResume || {}),
-        experienceYears: (structuredResume as any)?.experience?.total_years || null,
+        experienceYears: (structuredResume as any)?.experience?.total_years != null ? parseFloat(String((structuredResume as any).experience.total_years)) : null,
       }
     });
 
@@ -173,6 +174,7 @@ const worker = new Worker('resume-processing', async (job) => {
         extractedDetails: true,
         screeningThreshold: true,
         interviewEnabled: true,
+        orgId: true,
       },
     });
 
@@ -302,6 +304,7 @@ const worker = new Worker('resume-processing', async (job) => {
           status: "PENDING",
         },
         create: {
+          id: generateId("int", applicantName),
           applicationId,
           expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
           status: "PENDING",
@@ -310,21 +313,27 @@ const worker = new Worker('resume-processing', async (job) => {
 
       const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/interview/${applicationId}?token=${interview.accessToken}`;
 
-      await sendApplicationStatusEmail({
+      const emailResult = await sendApplicationStatusEmail({
         email: applicantEmail,
         fullName: applicantName,
         jobTitle: latestDrive?.title || drive.title,
+        orgId: latestDrive?.orgId || undefined,
         status: resumeStatus,
         score: currentScore,
         interviewLink
       });
-      console.log(`[EMAIL] Interview invite sent to ${applicantEmail} (voice interview enabled)`);
+      if (emailResult?.success === false) {
+        console.warn(`[EMAIL WARN] Interview invite not sent to ${applicantEmail}:`, emailResult.error);
+      } else {
+        console.log(`[EMAIL] Interview invite sent to ${applicantEmail} (voice interview enabled)`);
+      }
     } else {
       // Voice interview DISABLED or candidate REJECTED -> plain status email only, no interview link
       await sendApplicationStatusEmail({
         email: applicantEmail,
         fullName: applicantName,
         jobTitle: latestDrive?.title || drive.title,
+        orgId: latestDrive?.orgId || undefined,
         status: resumeStatus === 'SHORTLISTED' ? 'SHORTLISTED' : 'REJECTED',
         score: currentScore
         // No interviewLink -- email reflects resume status only
@@ -457,10 +466,12 @@ const interviewFinalizationWorker = new Worker(
       }
 
       try {
+        const appForId = await prisma.application.findUnique({ where: { id: applicationId }, select: { fullName: true } });
         await (prisma as any).interview.upsert({
           where: { applicationId },
           update: updateData,
           create: {
+            id: generateId("int", appForId?.fullName || applicationId),
             applicationId,
             status: interviewStatus || "IN_PROGRESS",
             ...updateData,
@@ -546,6 +557,7 @@ const interviewSnapshotWorker = new Worker(
       const url = await putObject(bucket, key, buffer, "image/jpeg");
 
       // 5. Update Database (Atomic Push)
+      const appForSnapshot = await prisma.application.findUnique({ where: { id: String(applicationId) }, select: { fullName: true } });
       await prisma.interview.upsert({
         where: { applicationId: String(applicationId) },
         update: {
@@ -554,6 +566,7 @@ const interviewSnapshotWorker = new Worker(
           }
         },
         create: {
+          id: generateId("int", appForSnapshot?.fullName || String(applicationId)),
           applicationId: String(applicationId),
           snapshots: [url],
           status: "PENDING"

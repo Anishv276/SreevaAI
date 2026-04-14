@@ -52,50 +52,41 @@ export async function PATCH(req: Request) {
         }
 
         const body = await req.json();
-        const { name, industry, size, website, location, logoUrl } = body;
+        const { name, industry, size, website, location, phone, logoUrl, customSenderEmail, customSenderName } = body;
 
-        // Cleanup old logo if it's being replaced or removed
+        // Build update payload — only include fields that were actually sent
+        const data: Record<string, any> = {};
+        if (name !== undefined) data.name = name;
+        if (industry !== undefined) data.industry = industry;
+        if (size !== undefined) data.size = size;
+        if (website !== undefined) data.website = website;
+        if (location !== undefined) data.location = location;
+        if (phone !== undefined) data.phone = phone;
+        if (customSenderEmail !== undefined) data.customSenderEmail = customSenderEmail;
+        if (customSenderName !== undefined) data.customSenderName = customSenderName;
+
+        // Handle logo separately — delete old one from R2 if being replaced
         if (logoUrl !== undefined) {
             const currentOrg = await prisma.organization.findUnique({
                 where: { id: session.orgId },
                 select: { logoUrl: true }
             });
-
             const shouldDelete = currentOrg?.logoUrl && (!logoUrl || currentOrg.logoUrl !== logoUrl);
-
-            console.log("[DEBUG_LOGO_DELETE]:", {
-                currentLogo: currentOrg?.logoUrl,
-                newLogo: logoUrl,
-                shouldDelete
-            });
-
             if (shouldDelete) {
                 try {
                     const { deleteObject, getKeyFromUrl } = await import("@/lib/s3");
                     const key = getKeyFromUrl(currentOrg.logoUrl || "");
-                    console.log("[DEBUG_LOGO_DELETE_KEY]:", key);
-                    
-                    if (key) {
-                        const bucket = process.env.R2_LOGOS_BUCKET || "logos";
-                        const success = await deleteObject(bucket, key);
-                        console.log("[DEBUG_LOGO_DELETE_RESULT]:", success);
-                    }
+                    if (key) await deleteObject(process.env.R2_LOGOS_BUCKET || "logos", key);
                 } catch (err) {
-                    console.error("[DEBUG_LOGO_DELETE_FATAL]:", err);
+                    console.error("Logo delete failed:", err);
                 }
             }
+            if (!logoUrl?.startsWith("blob:")) data.logoUrl = logoUrl;
         }
 
         const updatedOrg = await prisma.organization.update({
             where: { id: session.orgId },
-            data: {
-                name,
-                industry,
-                size,
-                website,
-                location,
-                logoUrl: logoUrl?.startsWith("blob:") ? undefined : logoUrl
-            }
+            data
         });
 
         return NextResponse.json(updatedOrg);

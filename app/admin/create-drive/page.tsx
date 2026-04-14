@@ -388,10 +388,11 @@ function CreateDriveForm() {
             return !!(title && role && department && workMode && employmentType && deadline);
         }
         if (step === 1) {
-            // Allow proceeding if analyzing OR if description is filled
-            if (isAnalyzing || formData.jdFileName) return true;
+            // Only allow proceeding if not currently mid-analysis
+            if (isAnalyzing) return true;
+            
             const description = formData.description?.trim() || "";
-            if (!description) return false;
+            // Must have a description and it must meet the minimum word count
             return countWords(description) >= MIN_JD_WORDS;
         }
         if (step === 2 && aiEnabled) {

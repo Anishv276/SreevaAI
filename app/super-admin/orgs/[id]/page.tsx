@@ -24,6 +24,11 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         name: "",
         slug: "",
         plan: "STARTER",
+        location: "",
+        phone: "",
+        expectedDrives: "",
+        expectedCandidates: "",
+        expectedInterviews: "",
         ttsProvider: "CARTESIA",
         cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
         cartesiaModel: "sonic-english",
@@ -35,7 +40,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         llmProvider: "OPENAI",
         llmModel: "gpt-4o",
         llmTemperature: 0.7,
-        location: ""
     });
 
     
@@ -48,9 +52,14 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                 const data = await res.json();
                 if (res.ok) {
                     setForm({
-                        name: data.name,
-                        slug: data.slug,
-                        plan: data.plan,
+                        name: data.name || "",
+                        slug: data.slug || "",
+                        plan: data.plan || "STARTER",
+                        location: data.location || "",
+                        phone: data.phone || "",
+                        expectedDrives: data.expectedDrives != null ? String(data.expectedDrives) : "",
+                        expectedCandidates: data.expectedCandidates != null ? String(data.expectedCandidates) : "",
+                        expectedInterviews: data.expectedInterviews != null ? String(data.expectedInterviews) : "",
                         ttsProvider: data.ttsProvider || "CARTESIA",
                         cartesiaVoiceId: data.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
                         cartesiaModel: data.cartesiaModel || "sonic-english",
@@ -61,8 +70,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         sarvamSttModel: data.sarvamSttModel || "saaras:v3",
                         llmProvider: data.llmProvider || "OPENAI",
                         llmModel: data.llmModel || "gpt-4o",
-                        llmTemperature: data.llmTemperature !== undefined ? data.llmTemperature : 0.7,
-                        location: data.location || ""
+                        llmTemperature: data.llmTemperature != null ? data.llmTemperature : 0.7,
                     });
 
                     if (data.users && data.users.length > 0) {
@@ -205,6 +213,36 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                     placeholder="e.g. Bangalore, India"
                                     className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium focus:ring-2 focus:ring-[#F97316]/30"
                                 />
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Phone</label>
+                                <input
+                                    value={form.phone}
+                                    onChange={e => setForm(prev => ({ ...prev, phone: e.target.value }))}
+                                    placeholder="e.g. +91 9999999999"
+                                    className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium focus:ring-2 focus:ring-[#F97316]/30"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-3">
+                                {[
+                                    { key: "expectedDrives", label: "Expected Drives" },
+                                    { key: "expectedCandidates", label: "Candidates" },
+                                    { key: "expectedInterviews", label: "Interviews" },
+                                ].map(({ key, label }) => (
+                                    <div key={key} className="space-y-2">
+                                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest leading-none">{label}</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={(form as any)[key]}
+                                            onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
+                                            placeholder="0"
+                                            className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium focus:ring-2 focus:ring-[#F97316]/30"
+                                        />
+                                    </div>
+                                ))}
                             </div>
 
                             <div className="space-y-4">

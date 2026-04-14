@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { OnboardingRedirect } from "@/components/admin/onboarding-redirect";
 import { RecruiterAssistant } from "@/components/admin/RecruiterAssistant";
+import { DomainVerificationBanner } from "@/components/admin/DomainVerificationBanner";
 import { Toaster } from "@/components/ui/toast-custom";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -56,6 +57,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                         body.reports-mode .recruiter-assistant-btn { display: none !important; }
                     ` }} />
                     <main className="min-h-screen">
+                        {showSidebar && <DomainVerificationBanner />}
                         <div className="max-w-full mx-auto p-4 md:p-8 lg:p-10">
                             {children}
                         </div>

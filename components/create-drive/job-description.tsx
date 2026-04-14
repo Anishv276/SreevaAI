@@ -67,7 +67,13 @@ function CurrencySelector({ value, onChange }: { value: string; onChange: (code:
     const dropdown = open && rect ? (
         <div
             ref={dropdownRef}
-            style={{ position: "fixed", top: rect.bottom + 6, left: rect.left, width: 220, zIndex: 9999 }}
+            style={{ 
+                position: "fixed", 
+                top: rect.bottom + 6, 
+                left: Math.min(rect.left, window.innerWidth - 220 - 20), 
+                width: 220, 
+                zIndex: 9999 
+            }}
             className="rounded-2xl border border-gray-100 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
         >
             <div className="p-2 border-b border-gray-50">
@@ -317,6 +323,16 @@ export function JobDescription({
                                         onChange={(e) => updateFormData((prev: any) => ({ ...prev, description: e.target.value }))}
                                         className={`${textareaClass} pl-9 ${isAnalyzing && !formData.description ? "bg-orange-50/20" : ""}`}
                                     />
+                                    {/* Word Counter */}
+                                    <div className="absolute right-3 bottom-2 flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-gray-50/80 backdrop-blur-sm border border-gray-100">
+                                        <p className={`text-[10px] font-black uppercase tracking-widest ${
+                                            (formData.description?.trim().split(/\s+/).filter(Boolean).length || 0) >= 30 
+                                                ? "text-green-500" 
+                                                : "text-gray-400"
+                                        }`}>
+                                            {formData.description?.trim().split(/\s+/).filter(Boolean).length || 0} / 30 Words
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                             <div>

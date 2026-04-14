@@ -2,7 +2,6 @@ import { Resend } from 'resend';
 import { prisma } from "@/lib/prisma";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM_EMAIL = process.env.FROM_EMAIL || 'Lumoscale <careers@lumoscale.com>';
 
 export async function sendApplicationStatusEmail({
     email,
@@ -91,18 +90,31 @@ export async function sendApplicationStatusEmail({
         </div>
     `;
 
-    let from = FROM_EMAIL;
-
-    if (orgId) {
-        const org = await prisma.organization.findUnique({
-            where: { id: orgId },
-            select: { customSenderEmail: true, customSenderName: true, isDomainVerified: true, name: true }
-        });
-        if (org?.isDomainVerified && org?.customSenderEmail) {
-            const displayName = org.customSenderName || org.name;
-            from = `${displayName} <${org.customSenderEmail}>`;
-        }
+    if (!orgId) {
+        console.warn(`[MAIL BLOCKED] No orgId provided — cannot determine sender`);
+        return { success: false, error: "No organization context for email sending." };
     }
+
+    const org = await prisma.organization.findUnique({
+        where: { id: orgId },
+        select: { customSenderEmail: true, customSenderName: true, customDomain: true, isDomainVerified: true, name: true }
+    });
+
+    if (!org) {
+        console.warn(`[MAIL BLOCKED] Org not found: ${orgId}`);
+        return { success: false, error: "Organization not found." };
+    }
+
+    if (!org.isDomainVerified || !org.customSenderEmail) {
+        console.warn(`[MAIL BLOCKED] Org ${org.name} has no verified domain/sender configured`);
+        return {
+            success: false,
+            error: "Domain verification required. Please verify your custom domain and set a sender email in Workspace Settings."
+        };
+    }
+
+    const displayName = org.customSenderName || org.name;
+    const from = `${displayName} <${org.customSenderEmail}>`;
 
     try {
         const payload = await resend.emails.send({
@@ -129,6 +141,7 @@ export async function sendTeamInviteEmail({
     email,
     inviterName,
     organizationName,
+    orgId,
     role,
     inviteUrl,
     expiresAt,
@@ -136,6 +149,7 @@ export async function sendTeamInviteEmail({
     email: string;
     inviterName: string;
     organizationName: string;
+    orgId?: string;
     role: "ADMIN" | "HR" | "TEAM";
     inviteUrl: string;
     expiresAt: Date;
@@ -163,9 +177,20 @@ export async function sendTeamInviteEmail({
         </div>
     `;
 
+    let inviteFrom = "noreply@lumoscale.com"; // fallback for team invites only
+    if (orgId) {
+        const org = await prisma.organization.findUnique({
+            where: { id: orgId },
+            select: { customSenderEmail: true, customSenderName: true, isDomainVerified: true, name: true }
+        });
+        if (org?.isDomainVerified && org?.customSenderEmail) {
+            inviteFrom = `${org.customSenderName || org.name} <${org.customSenderEmail}>`;
+        }
+    }
+
     try {
         const payload = await resend.emails.send({
-            from: FROM_EMAIL,
+            from: inviteFrom,
             to: email,
             subject,
             html,

@@ -6,8 +6,8 @@ export const prisma =
     globalForPrisma.prisma ||
     new PrismaClient({
         log: ['error', 'warn'],
-        datasourceUrl: process.env.DATABASE_URL,
-    })
+        // Add a query timeout to handle intermittent connection dips
+    }) as PrismaClient
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 

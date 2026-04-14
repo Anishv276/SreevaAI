@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import bcrypt from "bcryptjs";
+import { generateId } from "@/lib/ids";
 
 // GET /api/super-admin/orgs — list organizations with stats, pagination, and search
 export async function GET(request: Request) {
@@ -124,16 +125,21 @@ export async function POST(request: Request) {
             orgData.llmModel = llmModel || "gpt-4o";
             orgData.llmTemperature = llmTemperature !== undefined ? Number(llmTemperature) : 0.7;
 
+            const orgId = generateId("org", orgName);
+            const userName = adminName || adminEmail.split("@")[0];
+            const userId = generateId("usr", userName);
+
             const org = await tx.organization.create({
-                data: orgData,
+                data: { id: orgId, ...orgData },
             });
 
             const admin = await tx.user.create({
                 data: {
+                    id: userId,
                     email: adminEmail.toLowerCase().trim(),
-                    name: adminName || adminEmail.split("@")[0],
+                    name: userName,
                     role: "ORG_ADMIN",
-                    orgRole: "ADMIN", // Platform-standard role
+                    orgRole: "ADMIN",
                     password: hashedPassword,
                     orgId: org.id,
                 },

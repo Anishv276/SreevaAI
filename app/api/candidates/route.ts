@@ -6,6 +6,7 @@ import { getSession } from "@/lib/auth";
 import { sanitizeObject } from "@/lib/utils";
 import { deleteCandidateEmbeddings } from "@/lib/pinecone";
 import { submissionLimiter } from "@/lib/rate-limit";
+import { generateId } from "@/lib/ids";
 
 export async function GET(request: Request) {
     try {
@@ -80,7 +81,7 @@ export async function GET(request: Request) {
 
         const dataQuery = `${baseSelect}
             WHERE d."orgId" = ${driveId ? "$2" : "$1"}
-            ${driveId ? 'AND a."driveId" = $1::uuid' : ""}
+            ${driveId ? 'AND a."driveId" = $1' : ""}
             ${dateClause}
             ${statusClause}
             ${searchClause}
@@ -92,7 +93,7 @@ export async function GET(request: Request) {
             FROM "Application" a
             JOIN "Drive" d ON d.id = a."driveId"
             WHERE d."orgId" = ${driveId ? "$2" : "$1"}
-            ${driveId ? 'AND a."driveId" = $1::uuid' : ""}
+            ${driveId ? 'AND a."driveId" = $1' : ""}
             ${dateClause}
             ${statusClause}
             ${searchClause}
@@ -116,7 +117,7 @@ export async function GET(request: Request) {
                 JOIN "Drive" d ON d.id = a."driveId"
                 LEFT JOIN "Interview" i ON i."applicationId" = a.id
                 WHERE d."orgId" = $1
-                ${driveId && driveId !== "all" ? 'AND a."driveId" = $2::uuid' : ""}
+                ${driveId && driveId !== "all" ? 'AND a."driveId" = $2' : ""}
             `, ...(driveId && driveId !== "all" ? [orgId, driveId] : [orgId]))
         ]);
 
@@ -263,12 +264,16 @@ export async function POST(request: Request) {
         const finalResumeUrl = resumeUrl?.startsWith("blob:") ? undefined : resumeUrl?.trim();
         const finalPassportUrl = passportUrl?.startsWith("blob:") ? undefined : passportUrl?.trim();
 
+        const session = await getSession();
+        const applicationId = generateId("app", fullName);
         const application = await prisma.application.create({
             data: {
+                id: applicationId,
                 driveId,
                 fullName: fullName.trim(),
                 email: email.toLowerCase().trim(),
                 phone: phone.trim(),
+                userId: session?.userId || null,
                 resumeUrl: finalResumeUrl || "https://example.com/resume.pdf",
                 passportUrl: finalPassportUrl,
                 resumeText: resumeText,

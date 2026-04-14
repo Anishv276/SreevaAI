@@ -133,6 +133,38 @@ APP_BASE_URL = (
     or "http://localhost:3000"
 ).rstrip("/")
 
+MAX_FOLLOW_UP_DEPTH = 3
+MIN_FOLLOW_UP_DEPTH = 1
+
+_TOOL_ALIAS_CATALOG: dict[str, list[str]] = {
+    "n8n": ["n8n", "nh10", "n h 10", "en 8 en", "nan"],
+    "Apollo.io": ["apollo", "apolo", "apollo io"],
+    "LeadMagic": ["leadmagic", "lead magic", "lead magik"],
+    "Zoho Bigin": ["bigin", "begin", "big in", "zoho begin", "zoho bigin"],
+    "Zoho CRM": ["zoho crm", "joho crm", "zohho crm"],
+    "HubSpot": ["hubspot", "hub spot"],
+    "Salesforce": ["salesforce", "sales farce", "sales force"],
+    "Instantly": ["instantly", "instant ly"],
+    "Clay": ["clay", "kley"],
+}
+
+
+def build_term_alias_hints(*text_blocks: str, max_lines: int = 10) -> str:
+    combined = " ".join(block for block in text_blocks if isinstance(block, str)).lower()
+    lines: list[str] = []
+    for canonical, aliases in _TOOL_ALIAS_CATALOG.items():
+        matched = [a for a in aliases if a in combined]
+        if not matched:
+            continue
+        unique_aliases = sorted(set(matched))
+        lines.append(f"- {', '.join(unique_aliases[:3])} -> {canonical}")
+        if len(lines) >= max_lines:
+            break
+
+    if not lines:
+        return "- No strong alias hints from context. If unclear, confirm once, then move on."
+    return "\n".join(lines)
+
 
 def build_tts(
     language: str = "en", model: str = CARTESIA_MODEL, voice_id: str = CARTESIA_VOICE_ID
@@ -808,7 +840,14 @@ async def entrypoint(ctx: JobContext):
     job_details = require_db_value("jd")
     interview_lang = require_db_value("language")
     time_limit_mins = int(require_db_value("timeLimit"))
-    follow_up_depth = int(require_db_value("followUpDepth"))
+    raw_follow_up_depth = int(require_db_value("followUpDepth"))
+    follow_up_depth = max(
+        MIN_FOLLOW_UP_DEPTH, min(MAX_FOLLOW_UP_DEPTH, raw_follow_up_depth)
+    )
+    if follow_up_depth != raw_follow_up_depth:
+        logger.info(
+            f"[PROMPT_GUARD] follow_up_depth clamped from {raw_follow_up_depth} to {follow_up_depth}"
+        )
     questions_raw = context.get("questions")
     custom_questions: list[Any] = (
         questions_raw if isinstance(questions_raw, list) else []
@@ -927,6 +966,9 @@ async def entrypoint(ctx: JobContext):
         5: "Maximum depth. Four follow-ups. Surgically dissect every claim. Expect evidence and examples. Remain respectful but relentless.",
     }
     depth_instruction = depth_map.get(int(follow_up_depth), depth_map[3])
+    term_alias_hints = build_term_alias_hints(
+        jd_block, resume_block, questions_list, candidate_brief_block
+    )
 
     system_prompt = f"""You are Ishita — a Senior Talent Partner at a respected company, conducting a live voice interview. You have spent over two decades in recruitment, and what sets you apart is that people never feel like they are in an interview with you. They feel like they are having a real conversation with someone who genuinely cares.
 
@@ -968,6 +1010,20 @@ CANDIDATE NAME  : {candidate_name}
 ROLE APPLIED FOR: {job_title}
 TIME AVAILABLE  : {time_limit_mins} minutes
 FOLLOW-UP DEPTH : Level {follow_up_depth}/5 — {depth_instruction}
+
+HARD RESPONSE CONSTRAINTS (NON-NEGOTIABLE):
+- Ask one question per turn.
+- Maximum 2 clarification retries on the same question (initial ask + 2). Then move to a new area.
+- If the candidate says "I do not know/remember" twice on one topic, stop probing that topic immediately.
+- Never append trailing reassurance lines after a question. End with the question only.
+- Never use "I am here", "I am right here", "I am listening", or "still with you" unless there has been prolonged silence.
+
+ROLE-AWARE TERM RECOGNITION (from this candidate + role context):
+{term_alias_hints}
+When term recognition is uncertain:
+- First, guess the closest likely tool once.
+- Ask one quick confirmation question.
+- If still unclear, proceed with a generic depth question and move on.
 
 ═══════════════════════════════════════
   JOB REQUIREMENTS AND CONTEXT
@@ -1132,6 +1188,7 @@ You have a list of mandatory areas to cover above. You MUST treat this like a re
 HARD RULES — follow these exactly:
 1. Maximum {follow_up_depth} follow-up questions per topic. After {follow_up_depth} follow-ups on the same topic, you MUST move to a new area. No exceptions.
 2. If a candidate gives a vague or incomplete answer even after {follow_up_depth} probes, note it internally and move on. You can revisit it briefly at the end if time allows. Do NOT stay stuck on one topic for the whole interview.
+2b. If a candidate gives one strong, specific answer that already proves competence, do not over-probe. Acknowledge it and move to the next area.
 3. Transition naturally — never announce it. Do NOT say "Moving on" or "Next topic". Just pivot:
    - "That is helpful context. I want to shift gears a bit — [new question on new topic]."
    - "Got it. Something else I wanted to ask you about — [new topic]."
@@ -1235,7 +1292,7 @@ Your job is to understand INTENT, not parse WORDS. When a candidate's answer is 
    "Let me ask that differently — [clearer version of your question]."
 
 ## HOW YOU HANDLE DIFFICULT MOMENTS
-- Candidate is nervous or hesitant: slow down, be noticeably warmer. Use a reassuring phrase ONCE per topic — vary what you say each time. Options: "Take your time", "No rush at all", "We can slow down", "Whenever you're ready". Never repeat the same phrase twice in a row.
+- Candidate is nervous or hesitant: slow down, be noticeably warmer. Use at most one short reassurance, then ask a clear question. Do not stack multiple reassurance lines.
 - Candidate is sharp and confident: match their energy, be more direct, treat them as a peer.
 - Candidate gives a short or weak answer: do not skip past it or penalise them. Say warmly: "That is a helpful start — could you tell me a little more about how that played out in practice?"
 - Candidate gives an exceptional answer: acknowledge it genuinely before moving on. "That is a really thoughtful approach, honestly." Do not fake it and do not skip it.
@@ -1314,7 +1371,7 @@ Never use the same reassurance phrase twice in a single conversation. This inclu
   - "No rush at all" — use once at most
   - "Whenever you are ready" — use once at most
 After you use a phrase once, it is retired for the rest of this conversation. Rotate to alternatives:
-  "We can slow right down", "I am not going anywhere", "This is a conversation, not a test",
+  "We can slow right down", "Let us make this simple", "No stress, we can switch angle",
   "I get it — these things can feel strange", "Let us just take it easy".
 
 When a candidate gives a particularly long, detailed, or emotionally heavy answer:
@@ -2007,20 +2064,17 @@ The best interviews do not feel like interviews. They feel like a conversation t
     MIN_CANDIDATE_LINES_FOR_WRAPUP = 3  # require at least 3 candidate turns before wrap-up
 
     # Nudge pool — each nudge used at most once per session to avoid repetition.
-    # Varied in style: some are simple check-ins, some offer to rephrase, some are warm prompts.
-    # None end with "No rush at all" since that phrase is retired after first use by ANTI-REPETITION rule.
+    # Keep these short and neutral. Avoid "I'm here/listening" style phrases that
+    # sound robotic when repeated.
     _nudge_pool = [
-        f"Still with you, {candidate_name} — just let me know when you are ready.",
-        f"Take your time. I am right here.",
-        f"Whenever you feel ready — I am listening.",
         f"Did you want me to rephrase that, or just take a moment?",
-        f"I am not going anywhere, {candidate_name}. Just come back to me when you are good.",
-        f"We can slow right down if that helps.",
-        f"This is a conversation, not a test. Whenever you are comfortable.",
-        f"I get it — these things can feel a bit strange sometimes. Just say when.",
-        f"Happy to wait. Or if you want, I can ask something slightly different?",
+        f"Take a moment if you need. I can also ask it a different way.",
+        f"No problem. Want me to simplify that question?",
+        f"All good. We can switch to a different question.",
     ]
     _nudges_used: list[str] = []
+    inactivity_nudge_count = 0
+    max_inactivity_nudges = 2
 
     def _pick_nudge() -> str:
         """Return an unused nudge. Resets the pool if all have been used."""
@@ -2083,15 +2137,20 @@ The best interviews do not feel like interviews. They feel like a conversation t
             break
 
         # --- Smart Inactivity Nudge ---
-        # If the candidate hasn't responded for 45s after Ishita finishes speaking,
+        # If the candidate hasn't responded for 75s after Ishita finishes speaking,
         # fire a warm, unhurried check-in using a non-repeating nudge from the pool.
-        # 45s gives enough room for natural thinking pauses — 30s was too aggressive.
-        if not is_agent_speaking and (time.monotonic() - last_activity_at) > 45:
+        # 75s leaves enough room for natural pauses and avoids over-nudging.
+        if (
+            not is_agent_speaking
+            and inactivity_nudge_count < max_inactivity_nudges
+            and (time.monotonic() - last_activity_at) > 75
+        ):
             nudge_text = _pick_nudge()
             try:
                 # Reset before say() to prevent immediate re-trigger if tts is slow
                 reset_nudge_timer()
                 asyncio.get_event_loop().create_task(session.say(nudge_text))
+                inactivity_nudge_count += 1
                 logger.info(f"[NUDGE] Inactivity nudge delivered: '{nudge_text[:40]}...'")
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver nudge: {e}")

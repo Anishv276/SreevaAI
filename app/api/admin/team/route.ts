@@ -208,6 +208,7 @@ export async function POST(request: Request) {
             email: normalizedEmail,
             inviterName,
             organizationName,
+            orgId: session.orgId,
             role: normalizedRole,
             inviteUrl,
             expiresAt,

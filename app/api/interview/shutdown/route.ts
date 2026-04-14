@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
             if (dispatches && dispatches.length > 0) {
                 console.log(`[SHUTDOWN] Deleting ${dispatches.length} dispatches for ${roomName}`);
                 for (const d of dispatches) {
-                    await dispatchClient.deleteDispatch(d.id);
+                    await dispatchClient.deleteDispatch(d.id, roomName);
                 }
             }
         } catch (err) {

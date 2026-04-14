@@ -105,15 +105,16 @@ export default function SettingsPage() {
     const [profile, setProfile] = useState({ name: "", email: "", phone: "" });
 
     /* Company */
-    const [company, setCompany] = useState({ 
-        name: "", 
-        industry: "SAAS / TECHNOLOGY", 
-        size: "51–250 EMPLOYEES", 
-        website: "", 
+    const [company, setCompany] = useState({
+        name: "",
+        industry: "SAAS / TECHNOLOGY",
+        size: "51–250 EMPLOYEES",
+        website: "",
         location: "",
-        logoUrl: "", 
-        customSenderEmail: "", 
-        customSenderName: "" 
+        phone: "",
+        logoUrl: "",
+        customSenderEmail: "",
+        customSenderName: ""
     });
 
     /* Notifications */
@@ -160,7 +161,9 @@ export default function SettingsPage() {
     const [emailSubStep, setEmailSubStep] = useState(0);
     const [domainLinkError, setDomainLinkError] = useState("");
     const [isEditingSender, setIsEditingSender] = useState(false);
+    const [senderDraft, setSenderDraft] = useState({ localPart: "", name: "" });
     const [showDomainDeleteConfirm, setShowDomainDeleteConfirm] = useState(false);
+    const [domainCheckResult, setDomainCheckResult] = useState<"checking" | "verified" | "pending" | "error" | null>(null);
 
     const handleCopy = (text: string, i: number, type: 'host' | 'value') => {
         navigator.clipboard.writeText(text);
@@ -168,26 +171,62 @@ export default function SettingsPage() {
         setTimeout(() => setCopiedIndex(null), 2000);
     };
 
-    const fetchDomainInfo = async () => {
+    const fetchDomainInfo = async (showResult = false) => {
         setIsLoadingDomain(true);
+        if (showResult) setDomainCheckResult("checking");
         try {
             const res = await fetch("/api/admin/organization/domain");
-            if (res.ok) {
-                const data = await res.json();
-                if (!data.customDomain) {
-                    setDomainInfo(null);
-                    setEmailSubStep(0);
+            const data = await res.json();
+            if (!res.ok) {
+                console.error("Domain fetch error:", data?.error);
+                if (showResult) setDomainCheckResult("error");
+                return;
+            }
+            if (!data.customDomain) {
+                setDomainInfo(null);
+                setEmailSubStep(0);
+                if (showResult) setDomainCheckResult(null);
+            } else {
+                setDomainInfo(data);
+                const isVerified = data.isDomainVerified || data.resendStatus === "verified";
+                if (isVerified) {
+                    setEmailSubStep(2);
+                    if (showResult) setDomainCheckResult("verified");
                 } else {
-                    setDomainInfo(data);
-                    if (data.isDomainVerified || data.resendStatus === "verified") {
-                        setEmailSubStep(2);
-                    } else {
-                        setEmailSubStep(1);
-                    }
+                    setEmailSubStep(1);
+                    if (showResult) setDomainCheckResult("pending");
                 }
             }
         } catch (err) {
             console.error("Domain fetch failed:", err);
+            if (showResult) setDomainCheckResult("error");
+        } finally {
+            setIsLoadingDomain(false);
+        }
+    };
+
+    const verifyDns = async () => {
+        setIsLoadingDomain(true);
+        setDomainCheckResult("checking");
+        try {
+            const res = await fetch("/api/admin/organization/domain", { method: "POST" });
+            const data = await res.json();
+            if (!res.ok) {
+                setDomainCheckResult("error");
+                return;
+            }
+            setDomainInfo(data);
+            const isVerified = data.isDomainVerified || data.resendStatus === "verified";
+            if (isVerified) {
+                setEmailSubStep(2);
+                setDomainCheckResult("verified");
+            } else {
+                setEmailSubStep(1);
+                setDomainCheckResult("pending");
+            }
+        } catch (err) {
+            console.error("DNS verification failed:", err);
+            setDomainCheckResult("error");
         } finally {
             setIsLoadingDomain(false);
         }
@@ -236,9 +275,21 @@ export default function SettingsPage() {
                         size: data.size || "1–50 EMPLOYEES",
                         website: data.website || "",
                         location: data.location || "",
+                        phone: data.phone || "",
                         logoUrl: data.logoUrl || "",
                         customSenderEmail: data.customSenderEmail || "",
                         customSenderName: data.customSenderName || ""
+                    });
+                }
+
+                // Fetch detailed personal profile
+                const profileRes = await fetch("/api/auth/profile");
+                if (profileRes.ok) {
+                    const profData = await profileRes.json();
+                    setProfile({
+                        name: profData.name || "",
+                        email: profData.email || "",
+                        phone: profData.phone || ""
                     });
                 }
             } catch (err) {
@@ -255,9 +306,6 @@ export default function SettingsPage() {
         };
 
         fetchAll();
-        if (user) {
-            setProfile({ name: user.name || "", email: user.email || "", phone: "" });
-        }
     }, [user]);
 
     const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -329,6 +377,12 @@ export default function SettingsPage() {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(company)
+                });
+            } else if (activeSection === "profile") {
+                await fetch("/api/auth/profile", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: profile.name, phone: profile.phone })
                 });
             }
             setSaved(true);
@@ -649,6 +703,14 @@ export default function SettingsPage() {
                                                     value={company.website} onChange={e => setCompany(c => ({ ...c, website: e.target.value }))} />
                                             </div>
                                         </Field>
+                                        <Field label="Phone Number">
+                                            <div className="relative">
+                                                <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                                <Input type="tel" className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
+                                                    placeholder="+91 98765 43210"
+                                                    value={company.phone} onChange={e => setCompany(c => ({ ...c, phone: e.target.value }))} />
+                                            </div>
+                                        </Field>
                                         <Field label="Headquarters / Location">
                                             <LocationAutocomplete
                                                 value={company.location}
@@ -779,9 +841,15 @@ export default function SettingsPage() {
                                                     </div>
                                                 </div>
                                                 <div className="relative z-10 flex items-center gap-2">
-                                                    {emailSubStep === 2 && (
+                                                    {emailSubStep === 2 && company.customSenderEmail && company.customSenderName && (
                                                         <button
-                                                            onClick={() => setIsEditingSender(v => !v)}
+                                                            onClick={() => {
+                                                                setSenderDraft({
+                                                                    localPart: company.customSenderEmail ? company.customSenderEmail.split("@")[0] : "",
+                                                                    name: company.customSenderName || ""
+                                                                });
+                                                                setIsEditingSender(v => !v);
+                                                            }}
                                                             className="h-10 px-4 flex items-center gap-1.5 rounded-xl bg-white/10 hover:bg-white/20 transition-all text-white text-[10px] font-bold uppercase tracking-widest"
                                                         >
                                                             <Mail className="h-3.5 w-3.5" />
@@ -802,22 +870,25 @@ export default function SettingsPage() {
                                                 <div className="space-y-6 pt-2">
                                                     <div className="space-y-1 border-l-2 border-[#F97316] pl-4">
                                                         <h4 className="text-xs font-bold text-gray-900 uppercase tracking-tight">Handshake Protocol</h4>
-                                                        <p className="text-[10px] text-gray-400 font-medium">Add these records to your DNS provider then click Check Status.</p>
+                                                        <p className="text-[10px] text-gray-400 font-medium">Add these records to your DNS provider, then click Verify DNS to trigger verification with Resend.</p>
                                                     </div>
                                                     <div className="border border-gray-100 rounded-xl overflow-hidden shadow-sm bg-white">
                                                         <div className="bg-gray-50 border-b border-gray-100 px-4 py-3 flex text-[10px] font-bold uppercase text-gray-500 tracking-widest leading-none">
-                                                            <div className="w-[12%]">Type</div>
-                                                            <div className="w-[23%]">Host Name</div>
+                                                            <div className="w-[10%]">Type</div>
+                                                            <div className="w-[20%]">Host Name</div>
                                                             <div className="flex-1">Value</div>
-                                                            <div className="w-[15%] text-center">Priority</div>
+                                                            <div className="w-[10%] text-center">Priority</div>
+                                                            <div className="w-[14%] text-center">Status</div>
                                                         </div>
                                                         <div className="divide-y divide-gray-50 max-h-[400px] overflow-y-auto">
-                                                            {domainInfo.records.map((rec: any, i: number) => (
+                                                            {domainInfo.records.map((rec: any, i: number) => {
+                                                                const isRecVerified = rec.status === "verified";
+                                                                return (
                                                                 <div key={i} className="flex items-start px-4 py-3 bg-white hover:bg-orange-50/10 transition-all">
-                                                                    <div className="w-[12%] pt-1.5">
+                                                                    <div className="w-[10%] pt-1.5">
                                                                         <Badge className="bg-gray-900 text-white border-0 text-[9px] font-black italic px-2 py-0.5 rounded tracking-widest">{rec.type}</Badge>
                                                                     </div>
-                                                                    <div className="w-[23%] pr-3">
+                                                                    <div className="w-[20%] pr-3">
                                                                         <div onClick={() => handleCopy(rec.name || "@", i, 'host')} className="relative flex min-h-[32px] w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] text-gray-900 cursor-pointer hover:bg-white hover:border-[#F97316]/50 transition-all group/host shadow-inner">
                                                                             <span className="font-mono font-bold break-all uppercase leading-tight">{rec.name || "@"}</span>
                                                                             {copiedIndex?.i === i && copiedIndex?.type === 'host' ? <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" /> : <Copy className="h-3.5 w-3.5 text-gray-400 opacity-0 group-hover/host:opacity-100 transition-opacity shrink-0" />}
@@ -829,45 +900,87 @@ export default function SettingsPage() {
                                                                             {copiedIndex?.i === i && copiedIndex?.type === 'value' ? <Check className="h-3.5 w-3.5 mt-0.5 text-emerald-500 shrink-0" /> : <Copy className="h-3.5 w-3.5 mt-0.5 text-gray-400 opacity-0 group-hover/val:opacity-100 transition-opacity shrink-0" />}
                                                                         </div>
                                                                     </div>
-                                                                    <div className="w-[15%] pt-1.5 text-center">
+                                                                    <div className="w-[10%] pt-1.5 text-center">
                                                                         <span className="text-[10px] font-black text-gray-400 italic bg-gray-50 px-2 py-1 rounded border border-gray-100">{rec.priority ?? "-"}</span>
                                                                     </div>
+                                                                    <div className="w-[14%] pt-1.5 flex justify-center">
+                                                                        {isRecVerified ? (
+                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                                                                <Check className="h-2.5 w-2.5" /> Verified
+                                                                            </span>
+                                                                        ) : rec.status === "failed" || rec.status === "temporary_failure" ? (
+                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700 border border-red-200">
+                                                                                Failed
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-700 border border-amber-200">
+                                                                                Pending
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
-                                                            ))}
+                                                                );
+                                                            })}
                                                         </div>
                                                     </div>
-                                                    <Button onClick={fetchDomainInfo} disabled={isLoadingDomain} className="h-10 px-8 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 text-gray-900 font-bold text-[10px] uppercase tracking-widest shadow-sm flex items-center gap-2">
-                                                        {isLoadingDomain ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 text-[#F97316]" />}
-                                                        Check Status
-                                                    </Button>
+                                                    <div className="flex flex-col gap-3">
+                                                        <Button onClick={verifyDns} disabled={isLoadingDomain} className="h-10 px-8 rounded-xl border border-gray-100 bg-white hover:bg-gray-50 text-gray-900 font-bold text-[10px] uppercase tracking-widest shadow-sm flex items-center gap-2 w-fit">
+                                                            {isLoadingDomain ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 text-[#F97316]" />}
+                                                            {isLoadingDomain ? "Verifying..." : "Verify DNS"}
+                                                        </Button>
+                                                        {domainCheckResult === "checking" && (
+                                                            <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-blue-50 border border-blue-200">
+                                                                <Loader2 className="h-4 w-4 text-blue-500 animate-spin shrink-0" />
+                                                                <p className="text-[11px] font-bold text-blue-700 tracking-wide">Triggering DNS verification with Resend — this may take a few seconds...</p>
+                                                            </div>
+                                                        )}
+                                                        {domainCheckResult === "verified" && (
+                                                            <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                                                                <Check className="h-4 w-4 text-emerald-500 shrink-0" />
+                                                                <p className="text-[11px] font-bold text-emerald-700 tracking-wide">Domain verified successfully! Your custom sender is now active.</p>
+                                                            </div>
+                                                        )}
+                                                        {domainCheckResult === "pending" && (
+                                                            <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-orange-50 border border-orange-200">
+                                                                <AlertCircle className="h-4 w-4 text-orange-500 shrink-0 mt-0.5" />
+                                                                <div className="space-y-0.5">
+                                                                    <p className="text-[11px] font-bold text-orange-700 tracking-wide">Not verified yet — some records are still pending.</p>
+                                                                    <p className="text-[10px] text-orange-600 font-medium">DNS changes can take up to 24–48 hours to propagate. If you just added the records, wait a bit and check again.</p>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        {domainCheckResult === "error" && (
+                                                            <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-red-50 border border-red-200">
+                                                                <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+                                                                <p className="text-[11px] font-bold text-red-700 tracking-wide">Could not reach verification service. Please try again.</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             )}
 
-                                            {/* ── STEP 3: Verified — show sender details, edit on demand ── */}
-                                            {emailSubStep === 2 && (
-                                                <div className="pt-2">
-                                                    {!isEditingSender ? (
-                                                        /* Read-only summary */
-                                                        <div className="flex items-center gap-6 px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100">
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Sender Name</p>
-                                                                <p className="text-[14px] font-bold text-gray-900 truncate">{company.customSenderName || <span className="text-gray-300 font-medium italic">Not set</span>}</p>
-                                                            </div>
-                                                            <div className="w-px h-8 bg-gray-200" />
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Sender Email</p>
-                                                                <p className="text-[14px] font-bold text-gray-900 truncate">{company.customSenderEmail || <span className="text-gray-300 font-medium italic">Not set</span>}</p>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        /* Edit form */
+                                            {/* ── STEP 3: Verified — set or edit sender identity ── */}
+                                            {emailSubStep === 2 && (() => {
+                                                const hasSender = !!(company.customSenderEmail && company.customSenderName);
+                                                const showForm = !hasSender || isEditingSender;
+                                                return (
+                                                <div className="pt-2 space-y-4">
+                                                    {/* Sender form — shown when not set yet OR editing */}
+                                                    {showForm && (
                                                         <div className="space-y-5 p-6 rounded-2xl bg-gray-50/50 border border-gray-100">
-                                                            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Update sender identity</p>
+                                                            <div className="space-y-1 border-l-2 border-emerald-500 pl-4">
+                                                                <h4 className="text-xs font-bold text-gray-900 uppercase tracking-tight">{hasSender ? "Update Sender Identity" : "Set Sender Identity"}</h4>
+                                                                <p className="text-[10px] text-gray-400 font-medium">This name and email will appear on all outgoing recruitment emails for your org.</p>
+                                                            </div>
                                                             <div className="space-y-4">
                                                                 <div className="space-y-1.5">
                                                                     <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Sender Name</label>
-                                                                    <input className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-[14px] text-gray-900 font-medium shadow-sm focus:border-[#F97316] outline-none transition-all" placeholder="YOUR COMPANY" value={company.customSenderName || ""} 
-                                                                        onChange={e => setCompany(prev => ({ ...prev, customSenderName: e.target.value.toUpperCase() }))} />
+                                                                    <input
+                                                                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-[14px] text-gray-900 font-medium shadow-sm focus:border-[#F97316] outline-none transition-all"
+                                                                        placeholder="Your Company"
+                                                                        value={senderDraft.name}
+                                                                        onChange={e => setSenderDraft(prev => ({ ...prev, name: e.target.value }))}
+                                                                    />
                                                                 </div>
                                                                 <div className="space-y-1.5">
                                                                     <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Sender Email</label>
@@ -875,28 +988,70 @@ export default function SettingsPage() {
                                                                         <input
                                                                             className="h-11 flex-1 rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 font-medium shadow-sm focus:border-[#F97316] outline-none transition-all"
                                                                             placeholder="careers"
-                                                                            value={company.customSenderEmail ? company.customSenderEmail.split("@")[0] : ""}
+                                                                            value={senderDraft.localPart}
                                                                             onChange={e => {
-                                                                                setCompany(prev => {
-                                                                                    const localPart = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "").split("@")[0].trim();
-                                                                                    return { ...prev, customSenderEmail: localPart ? `${localPart}@${domainInfo.customDomain}` : "" };
-                                                                                });
+                                                                                const localPart = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "").split("@")[0];
+                                                                                setSenderDraft(prev => ({ ...prev, localPart }));
                                                                             }}
                                                                         />
-                                                                        <div className="flex items-center px-4 bg-gray-100 rounded-xl border border-gray-200 text-gray-400 text-[11px] font-bold italic">@{domainInfo.customDomain}</div>
+                                                                        <div className="flex items-center px-4 bg-gray-100 rounded-xl border border-gray-200 text-gray-500 text-[13px] font-bold">@{domainInfo.customDomain}</div>
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                             <div className="flex items-center gap-3">
-                                                                <Button onClick={async () => { await handleSave(); setIsEditingSender(false); }} disabled={isSaving || !company.customSenderEmail || !company.customSenderName} className="h-10 px-6 bg-gray-950 text-white rounded-xl font-bold text-[11px] uppercase tracking-widest shadow-xl hover:bg-black transition-all flex items-center gap-2">
-                                                                    {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+                                                                <Button
+                                                                    disabled={isSaving || !senderDraft.localPart || !senderDraft.name}
+                                                                    onClick={async () => {
+                                                                        const finalEmail = `${senderDraft.localPart}@${domainInfo.customDomain}`;
+                                                                        setIsSaving(true);
+                                                                        try {
+                                                                            await fetch("/api/admin/organization", {
+                                                                                method: "PATCH",
+                                                                                headers: { "Content-Type": "application/json" },
+                                                                                body: JSON.stringify({
+                                                                                    customSenderEmail: finalEmail,
+                                                                                    customSenderName: senderDraft.name
+                                                                                })
+                                                                            });
+                                                                            setCompany(prev => ({ ...prev, customSenderEmail: finalEmail, customSenderName: senderDraft.name }));
+                                                                            setSaved(true);
+                                                                            setTimeout(() => setSaved(false), 2500);
+                                                                            setIsEditingSender(false);
+                                                                        } finally {
+                                                                            setIsSaving(false);
+                                                                        }
+                                                                    }}
+                                                                    className="h-10 px-6 bg-gray-950 text-white rounded-xl font-bold text-[11px] uppercase tracking-widest shadow-xl hover:bg-black transition-all flex items-center gap-2"
+                                                                >
+                                                                    {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : hasSender ? "Update" : "Save & Activate"}
                                                                 </Button>
+                                                                {hasSender && (
+                                                                    <button onClick={() => setIsEditingSender(false)} className="text-[11px] font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest">
+                                                                        Cancel
+                                                                    </button>
+                                                                )}
                                                                 {saved && <span className="text-[10px] font-black uppercase text-emerald-500 tracking-widest flex items-center gap-1"><Check className="h-3 w-3" /> Saved</span>}
                                                             </div>
                                                         </div>
                                                     )}
+
+                                                    {/* Read-only summary — shown only when sender is set and not editing */}
+                                                    {hasSender && !isEditingSender && (
+                                                        <div className="flex items-center gap-6 px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100">
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Sender Name</p>
+                                                                <p className="text-[14px] font-bold text-gray-900 truncate">{company.customSenderName}</p>
+                                                            </div>
+                                                            <div className="w-px h-8 bg-gray-200" />
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Sender Email</p>
+                                                                <p className="text-[14px] font-bold text-gray-900 truncate">{company.customSenderEmail}</p>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            )}
+                                                );
+                                            })()}
                                         </div>
                                     )}
                                 </SettingsCard>
@@ -1256,7 +1411,7 @@ export default function SettingsPage() {
                     onConfirm={async () => {
                         try {
                             const res = await fetch("/api/admin/organization/domain", { method: "DELETE" });
-                            if (res.ok) fetchDomainInfo();
+                            if (res.ok) { setDomainCheckResult(null); fetchDomainInfo(); }
                         } finally {
                             setShowDomainDeleteConfirm(false);
                         }

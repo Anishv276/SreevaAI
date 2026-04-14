@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/auth";
 import { hashInviteToken, normalizeOrgRole } from "@/lib/invite";
+import { generateId } from "@/lib/ids";
 
 type InviteRow = {
     id: string;
@@ -78,7 +79,7 @@ export async function POST(
 
             const user = existingUser
                 ? await tx.user.update({ where: { id: existingUser.id }, data: baseData })
-                : await tx.user.create({ data: { email: invite.email, ...baseData } });
+                : await tx.user.create({ data: { id: generateId("usr", normalizedName || invite.email.split("@")[0]), email: invite.email, ...baseData } });
 
             await tx.$executeRawUnsafe(
                 `

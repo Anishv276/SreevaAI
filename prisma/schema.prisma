@@ -9,7 +9,7 @@ datasource db {
 }
 
 model Organization {
-  id                 String      @id @default(cuid())
+  id                 String      @id
   name               String
   slug               String      @unique
   logoUrl            String?
@@ -60,9 +60,10 @@ model SuperAdmin {
 }
 
 model User {
-  id              String        @id @default(cuid())
+  id              String        @id
   email           String        @unique
   name            String?
+  phone           String?
   role            String        @default("CANDIDATE")
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -99,50 +100,59 @@ model OrgInvite {
 }
 
 model Drive {
-  title              String
-  role               String?
-  description        String
-  department         String
-  type               String        @default("Full-time")
-  screeningThreshold Int           @default(60)
-  creatorId          String
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
-  deadline           DateTime?
-  positions          Int?          @default(1)
-  registrationFields String?       @default("[]")
-  workMode           String?       @default("Remote")
-  experience         String?
-  responsibilities   String?
-  requirements       String?
-  salary             String?
-  skills             String?
-  extractedDetails   String?       @default("{}")
-  interviewEnabled   Boolean       @default(true)
-  interviewLanguage  String?       @default("English")
-  interviewTime      Int?          @default(10)
-  proctoringLevel    String?       @default("Medium")
-  aiFollowUpDepth    Int?          @default(3)
-  interviewQuestions String?       @default("[]")
-  jdFileName         String?
-  jdPreviewUrl       String?
-  orgId              String?
-  status             String        @default("ACTIVE")
-  aiScreeningEnabled Boolean       @default(true)
-  isPassportRequired Boolean       @default(false)
-  slug               String?       @unique
-  id                 String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  shortlistMode      String        @default("automatic")
-  applications       Application[]
-  creator            User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
-  organization       Organization? @relation(fields: [orgId], references: [id])
+  title                String
+  role                 String?
+  description          String
+  department           String
+  type                 String        @default("Full-time")
+  screeningThreshold   Int           @default(60)
+  creatorId            String
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  deadline             DateTime?
+  positions            Int?          @default(1)
+  registrationFields   String?       @default("[]")
+  workMode             String?       @default("Remote")
+  experience           String?
+  responsibilities     String?
+  requirements         String?
+  salary               String?
+  skills               String?
+  extractedDetails     String?       @default("{}")
+  interviewEnabled     Boolean       @default(true)
+  interviewLanguage    String?       @default("English")
+  interviewTime        Int?          @default(10)
+  proctoringLevel      String?       @default("Medium")
+  aiFollowUpDepth      Int?          @default(3)
+  interviewQuestions   String?       @default("[]")
+  jdFileName           String?
+  jdPreviewUrl         String?
+  orgId                String?
+  status               String        @default("ACTIVE")
+  aiScreeningEnabled   Boolean       @default(true)
+  isPassportRequired   Boolean       @default(false)
+  slug                 String?       @unique
+  id                   String        @id
+  shortlistMode        String        @default("automatic")
+  location             String        @default("Remote")
+  aiScreeningWeights   String?       @default("{}")
+  assessmentCount      Int           @default(5)
+  assessmentDifficulty String        @default("Medium")
+  assessmentTypes      String        @default("MIXED")
+  assessmentTime       Int           @default(15)
+  assessmentMode       String        @default("TEST")
+  proctoringEnabled    Boolean       @default(true)
+  webcamMonitoring     Boolean       @default(true)
+  applications         Application[]
+  creator              User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
+  organization         Organization? @relation(fields: [orgId], references: [id])
 
   @@index([orgId, status])
   @@index([slug])
 }
 
 model Application {
-  id               String     @id @default(cuid())
+  id               String     @id
   fullName         String
   email            String
   phone            String
@@ -157,11 +167,11 @@ model Application {
   structuredResume String?    @default("{}")
   submissionData   Json?      @default("{}")
   passportUrl      String?
-  driveId          String     @db.Uuid
+  driveId          String
   resumeStatus     String     @default("pending")
   interviewStatus  String     @default("pending")
   hiringStatus     String     @default("pending")
-  drive            Drive      @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  drive            Drive      @relation(fields: [driveId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   user             User?      @relation(fields: [userId], references: [id])
   interview        Interview?
 
@@ -169,7 +179,7 @@ model Application {
 }
 
 model Interview {
-  id                    String      @id @default(cuid())
+  id                    String      @id
   applicationId         String      @unique
   accessToken           String      @unique @default(uuid())
   expiresAt             DateTime?

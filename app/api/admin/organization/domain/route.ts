@@ -24,15 +24,24 @@ export async function GET() {
         if (!org?.customDomain) return NextResponse.json({ domain: null });
 
         if (org.resendDomainId) {
+            // Do NOT call verify() here — it resets all record statuses to "pending"
+            // while its async process runs, so get() immediately after always reads pending.
+            // get() alone returns the real current status from Resend.
+
             try {
-                const { data } = await resend.domains.get(org.resendDomainId);
+                const { data, error } = await resend.domains.get(org.resendDomainId);
+
+                if (error) {
+                    console.error("Resend get domain error:", error);
+                }
+
                 const records: any[] = (data as any)?.records || [];
 
                 // Update DB if Resend now shows verified
                 if (data?.status === "verified" && !org.isDomainVerified) {
                     await prisma.organization.update({
                         where: { id: session.orgId as string },
-                        data: { isDomainVerified: true } as any
+                        data: { isDomainVerified: true }
                     });
                     org.isDomainVerified = true;
                 }
@@ -42,8 +51,8 @@ export async function GET() {
                     resendStatus: data?.status ?? (org.isDomainVerified ? "verified" : "pending"),
                     records
                 });
-            } catch {
-                // Resend API unavailable — fall back to DB state
+            } catch (err) {
+                console.error("Resend get domain failed:", err);
                 return NextResponse.json({
                     ...org,
                     resendStatus: org.isDomainVerified ? "verified" : "pending",
@@ -53,6 +62,59 @@ export async function GET() {
         }
 
         return NextResponse.json(org);
+    } catch (err: any) {
+        return NextResponse.json({ error: err.message }, { status: 500 });
+    }
+}
+
+// POST /api/admin/organization/domain — trigger Resend to re-verify DNS records
+export async function POST() {
+    try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
+        const org = await prisma.organization.findUnique({
+            where: { id: session.orgId as string },
+            select: {
+                customDomain: true,
+                resendDomainId: true,
+                isDomainVerified: true,
+                customSenderName: true,
+                customSenderEmail: true
+            }
+        });
+
+        if (!org?.resendDomainId) {
+            return NextResponse.json({ error: "No domain configured" }, { status: 400 });
+        }
+
+        // Trigger Resend to re-check DNS records
+        await resend.domains.verify(org.resendDomainId);
+
+        // Wait briefly for Resend to process, then read latest status
+        await new Promise(r => setTimeout(r, 3000));
+
+        const { data, error } = await resend.domains.get(org.resendDomainId);
+        if (error) {
+            console.error("Resend get after verify error:", error);
+        }
+
+        const records: any[] = (data as any)?.records || [];
+        const isVerified = data?.status === "verified";
+
+        if (isVerified && !org.isDomainVerified) {
+            await prisma.organization.update({
+                where: { id: session.orgId as string },
+                data: { isDomainVerified: true }
+            });
+            org.isDomainVerified = true;
+        }
+
+        return NextResponse.json({
+            ...org,
+            resendStatus: data?.status ?? (org.isDomainVerified ? "verified" : "pending"),
+            records
+        });
     } catch (err: any) {
         return NextResponse.json({ error: err.message }, { status: 500 });
     }
@@ -82,7 +144,7 @@ export async function DELETE() {
                 isDomainVerified: false,
                 customSenderEmail: null,
                 customSenderName: null
-            } as any
+            }
         });
 
         return NextResponse.json({ success: true });

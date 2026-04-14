@@ -51,8 +51,8 @@ export async function POST(req: Request) {
                     where: { id: session.orgId },
                     data: {
                         ...(name !== undefined && { name }),
-                        phone: phone || undefined,
-                        jobTitle: jobTitle || undefined,
+                        ...(phone !== undefined && { phone: phone || null }),
+                        ...(jobTitle !== undefined && { jobTitle: jobTitle || null }),
                         onboardingStep: 1
                     }
                 });

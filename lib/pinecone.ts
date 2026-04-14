@@ -110,3 +110,17 @@ export async function deleteDriveEmbeddings(driveId: string) {
         throw error;
     }
 }
+
+/**
+ * Delete all embeddings associated with a specific Organization
+ */
+export async function deleteOrgEmbeddings(orgId: string) {
+    try {
+        await (pineconeIndex as any).deleteMany({ filter: { orgId: { "$eq": orgId } } })
+            .catch(() => pineconeIndex.deleteMany({ orgId: { "$eq": orgId } } as any));
+        console.log(`[PINECONE_ORG_DELETE_SUCCESS]: ${orgId}`);
+    } catch (error: any) {
+        console.error("[PINECONE_ORG_DELETE_ERROR]:", error.message);
+        throw error;
+    }
+}

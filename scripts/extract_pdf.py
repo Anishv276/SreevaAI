@@ -1281,6 +1281,12 @@ MANDATORY PRE-CHECKS — READ BEFORE EXTRACTING
     Do not comment on age, nationality, institution prestige, or personal details.
     candidate_summary must describe skills and experience only — not personal attributes.
 
+11. CURRENT COMPANY & ROLE identification
+    - current_company MUST be the employer where the candidate is presently working.
+    - Identification: Look for "Present", "Current", or "Till Date" in work history.
+    - If no "Present" role exists, current_company should be the most recent employer.
+    - Never leave current_company null if there is any work history.
+
 ════════════════════════════════════════════════
 OUTPUT SCHEMA
 ════════════════════════════════════════════════
@@ -1420,6 +1426,14 @@ Return ONLY valid JSON matching this schema exactly. No markdown. No explanation
   "keywords": ["string"]
   // 10–15 keywords for JD matching. Canonical names. No categories.
 }}
+
+DEDUCTIVE REASONING STEPS FOR EXPERIENCE:
+1. List all roles with Start and End dates.
+2. If End is "Present", use current date (April 2026).
+3. Calculate duration for each role in months.
+4. Merge overlapping periods to avoid double counting.
+5. Sum merged intervals and divide by 12.0.
+6. Provide the result in "total_years".
 
 ════════════════════════════════════════════════
 Resume:

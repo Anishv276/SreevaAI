@@ -12,6 +12,7 @@ import {
     Loader2,
     Layers,
     Globe,
+    Trash2,
 } from "lucide-react";
 import { Skeleton as Shimmer } from "@/components/ui/skeleton";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
@@ -279,7 +280,7 @@ export default function OrgsPage() {
                                                 onValueChange={(val) => handleStatusChange(org.id, val)}
                                                 disabled={syncingOrgs.has(org.id)}
                                             >
-                                                <SelectTrigger className={`h-8 w-[110px] rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all duration-300 shadow-sm hover:shadow-md focus:ring-0 focus:ring-offset-0 ${
+                                                <SelectTrigger className={`h-8 w-[110px] rounded-md text-[10px] font-bold uppercase tracking-wider border transition-all duration-300 shadow-sm hover:shadow-md focus:ring-0 focus:ring-offset-0 ${
                                                     (org.status || "ACTIVE") === "ACTIVE" 
                                                     ? 'bg-emerald-50/50 border-emerald-100 text-emerald-700 hover:bg-emerald-100/50' 
                                                     : (org.status || "ACTIVE") === "SUSPENDED"
@@ -301,7 +302,7 @@ export default function OrgsPage() {
                                                         <SelectValue />
                                                     </div>
                                                 </SelectTrigger>
-                                                <SelectContent className="rounded-xl border-gray-100 shadow-[0_10px_40px_rgba(0,0,0,0.08)] p-1.5 min-w-[130px] animate-in zoom-in-95 duration-200">
+                                                <SelectContent className="rounded-lg border-gray-100 shadow-[0_10px_40px_rgba(0,0,0,0.08)] p-1.5 min-w-[130px] animate-in zoom-in-95 duration-200">
                                                     <SelectItem value="ACTIVE" className="rounded-lg font-bold uppercase text-[9px] tracking-widest text-emerald-600 focus:bg-emerald-50 focus:text-emerald-700 py-2.5 mb-0.5 cursor-pointer">
                                                         <span className="flex items-center gap-2">
                                                             <div className="h-1 w-1 rounded-full bg-emerald-500" />
@@ -350,7 +351,7 @@ export default function OrgsPage() {
                                             </button>
 
                                             {activeMenu === org.id && (
-                                                <div className="absolute right-0 top-11 w-52 bg-white border border-gray-100 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.1)] p-2 z-[100] animate-in-up duration-200">
+                                                <div className="absolute right-0 top-11 w-52 bg-white border border-gray-100 rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.1)] p-2 z-[100] animate-in-up duration-200">
                                                     <Link
                                                         href={`/super-admin/orgs/${org.id}/view?tab=drives`}
                                                         onClick={() => setActiveMenu(null)}
@@ -380,6 +381,16 @@ export default function OrgsPage() {
                                             <Edit2 className="h-3.5 w-3.5" />
                                             Edit
                                         </Link>
+
+                                        {/* Delete Button */}
+                                        <button 
+                                            onClick={() => deleteOrg(org)}
+                                            className="h-9 flex items-center gap-2 px-4 rounded-lg bg-gray-50 text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all border border-transparent hover:border-red-100 shadow-sm text-[11px] font-bold uppercase tracking-widest active:scale-95"
+                                            title="Terminate Organization"
+                                        >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                            Delete
+                                        </button>
                                     </div>
                                 </div>
                             ))}

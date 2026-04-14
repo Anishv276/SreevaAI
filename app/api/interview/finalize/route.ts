@@ -3,6 +3,7 @@ import { interviewFinalizationQueue } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
 import { interviewFinalizeSchema } from "@/lib/validation";
 import crypto from "crypto";
+import { generateId } from "@/lib/ids";
 
 export const runtime = "nodejs";
 
@@ -15,7 +16,11 @@ async function persistInterviewUpdateRaw(params: {
   const { applicationId, recordingUrl, transcript, interviewStatus } = params;
   const finalStatus = interviewStatus || "COMPLETED";
 
-  const interviewId = crypto.randomUUID();
+  const app = await prisma.application.findUnique({
+    where: { id: applicationId },
+    select: { fullName: true }
+  });
+  const interviewId = generateId("int", app?.fullName || applicationId);
   const accessToken = crypto.randomUUID();
 
   await prisma.$executeRawUnsafe(

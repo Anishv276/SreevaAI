@@ -283,7 +283,7 @@ export default function OnboardingPage() {
                 </div>
 
                 {/* Step Card */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.06),0_1px_4px_rgba(0,0,0,0.04)] border-t-[4px] border-t-[#F97316] overflow-hidden">
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.06),0_1px_4px_rgba(0,0,0,0.04)] border-t-[4px] border-t-[#F97316]">
                     <div className="p-8">
 
                         {/* ═══ STEP 0: PROFILE & SECURITY ═══ */}
@@ -593,14 +593,24 @@ export default function OnboardingPage() {
                                     ))}
                                 </div>
 
-                                <p className="text-center text-[11px] text-gray-400 font-medium">Click <strong className="text-gray-700">Proceed to Dashboard</strong> to start creating job drives and hiring with AI.</p>
+                                <div className="max-w-md mx-auto space-y-4">
+                                    <p className="text-center text-[11px] text-gray-400 font-medium leading-relaxed">
+                                        Click <strong className="text-gray-700">Proceed to Dashboard</strong> to start creating job drives and hiring with AI.
+                                    </p>
+                                    <div className="flex items-center gap-3 p-3 bg-orange-50/50 border border-orange-100 rounded-xl">
+                                        <Globe className="h-4 w-4 text-[#F97316] shrink-0" />
+                                        <p className="text-[9px] text-orange-800 font-semibold uppercase tracking-wider leading-relaxed">
+                                            Note: Recruitment emails will be enabled once you verify your custom domain in Workspace Settings.
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
                         )}
 
                     </div>
 
                     {/* Navigation Footer */}
-                    <div className="bg-gray-50/70 px-8 py-5 flex justify-between items-center border-t border-gray-100">
+                    <div className="bg-gray-50/70 px-8 py-5 flex justify-between items-center border-t border-gray-100 rounded-b-2xl">
                         <button
                             disabled={currentStep === 0 || isSaving}
                             onClick={() => setCurrentStep(prev => prev - 1)}

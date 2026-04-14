@@ -10,8 +10,10 @@ export async function POST(request: Request) {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
-        const { domain } = await request.json();
-        if (!domain) return NextResponse.json({ error: "Domain is required" }, { status: 400 });
+        const { domain: rawDomain } = await request.json();
+        if (!rawDomain) return NextResponse.json({ error: "Domain is required" }, { status: 400 });
+        // Strip www. prefix — Resend registers the apex domain
+        const domain = rawDomain.trim().toLowerCase().replace(/^www\./, "");
 
         // 1. Check if this org already registered this domain through our platform
         const org = await prisma.organization.findUnique({
@@ -27,16 +29,21 @@ export async function POST(request: Request) {
             });
         }
 
-        // 2. Check if domain exists in Resend (registered outside our platform)
+        // 2. Check if domain exists in Resend (may have been registered outside our platform)
         const { data: listData } = await resend.domains.list();
         const existing = (listData as any)?.data?.find((d: any) => d.name === domain);
 
         if (existing) {
-            // Exists in Resend but NOT through our platform — block, do not save
-            return NextResponse.json({
-                registeredElsewhere: true,
-                isVerified: existing.status === "verified"
+            // Domain exists in Resend under our API key — claim it by saving the ID to DB
+            await prisma.organization.update({
+                where: { id: session.orgId as string },
+                data: {
+                    customDomain: domain,
+                    resendDomainId: existing.id,
+                    isDomainVerified: existing.status === "verified"
+                }
             });
+                return NextResponse.json({ fresh: true });
         }
 
         // 3. Brand new — create in Resend and save to DB
@@ -49,7 +56,7 @@ export async function POST(request: Request) {
                 customDomain: domain,
                 resendDomainId: data!.id,
                 isDomainVerified: false
-            } as any
+            }
         });
 
         return NextResponse.json({ fresh: true });
@@ -58,7 +65,7 @@ export async function POST(request: Request) {
     }
 }
 
-export async function GET(request: Request) {
+export async function GET() {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
@@ -70,7 +77,8 @@ export async function GET(request: Request) {
 
         if (!org?.resendDomainId) return NextResponse.json({ error: "No domain registration found." }, { status: 404 });
 
-        // Check Resend Status
+        // Get latest status directly — do NOT call verify() before get(),
+        // as verify() is async and resets all record statuses to "pending" while processing.
         const { data, error } = await resend.domains.get(org.resendDomainId);
         if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
