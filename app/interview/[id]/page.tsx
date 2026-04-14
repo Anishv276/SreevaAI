@@ -1046,78 +1046,7 @@ function InterviewRoomContent({
         }
     }, [emitProctoringEvent, isInterviewActive, localParticipant, localParticipant?.isMicrophoneEnabled]);
 
-    useEffect(() => {
-        if (!isInterviewActive) return;
 
-        const handleVisibilityChange = () => {
-            if (document.visibilityState !== "hidden") {
-                return;
-            }
-
-            void emitProctoringEvent({
-                eventType: "tab_switch",
-                severity: "high",
-                reason: "document_hidden",
-                metadata: { visibilityState: document.visibilityState },
-            });
-        };
-
-        const handleBlur = () => {
-            if (document.visibilityState === "hidden") return;
-            void emitProctoringEvent({
-                eventType: "tab_switch",
-                severity: "high",
-                reason: "window_blur",
-                metadata: { visibilityState: document.visibilityState },
-            });
-        };
-
-        const handleFullscreenChange = () => {
-            const inFullscreen = !!document.fullscreenElement;
-            if (!inFullscreen && !allowFullscreenExitRef.current && phase === "interview") {
-                void emitProctoringEvent({
-                    eventType: "fullscreen_exit",
-                    severity: "high",
-                    reason: "fullscreen_exit",
-                    metadata: { source: "fullscreenchange" },
-                });
-            }
-        };
-
-        const handleConnectionLoss = () => {
-            if (proctoringConnectionStateRef.current === "connected") {
-                void emitProctoringEvent({
-                    eventType: "connection_lost",
-                    severity: "medium",
-                    reason: "connection_state_changed",
-                    metadata: { state: proctoringConnectionStateRef.current },
-                });
-            }
-        };
-
-        const handlePageHide = () => {
-            void emitProctoringEvent({
-                eventType: "tab_switch",
-                severity: "high",
-                reason: "pagehide",
-                metadata: { source: "pagehide" },
-            });
-        };
-
-        document.addEventListener("visibilitychange", handleVisibilityChange);
-        window.addEventListener("blur", handleBlur);
-        document.addEventListener("fullscreenchange", handleFullscreenChange);
-        window.addEventListener("offline", handleConnectionLoss);
-        window.addEventListener("pagehide", handlePageHide);
-
-        return () => {
-            document.removeEventListener("visibilitychange", handleVisibilityChange);
-            window.removeEventListener("blur", handleBlur);
-            document.removeEventListener("fullscreenchange", handleFullscreenChange);
-            window.removeEventListener("offline", handleConnectionLoss);
-            window.removeEventListener("pagehide", handlePageHide);
-        };
-    }, [emitProctoringEvent, isInterviewActive, phase]);
 
     useEffect(() => {
         if (!isInterviewActive || !connectionState) return;
