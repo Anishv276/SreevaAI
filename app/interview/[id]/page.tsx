@@ -19,9 +19,9 @@ import {
     useRemoteParticipants,
     useRoomContext,
     useTranscriptions,
-    useVoiceAssistant,
-    useAgent,
+    useIsSpeaking,
 } from "@livekit/components-react";
+
 import type { TextStreamData as TranscriptionSegment } from "@livekit/components-react";
 import "@livekit/components-styles";
 
@@ -826,16 +826,21 @@ function InterviewRoomContent({
         if (lkRoom) onRoomReady?.(lkRoom);
     }, [lkRoom, onRoomReady]);
 
-    const { audioTrack: agentAudioTrack } = useVoiceAssistant();
-    const agent = useAgent();
-
-    // Derived states for premium UI feedback
-    const isAiSpeaking = agent.state === "speaking";
-    const isAiThinking = agent.state === "thinking";
-    const isAiListening = agent.state === "listening" || agent.canListen;
-
-    const aiParticipantTrack = agentAudioTrack;
+    // Discovery and tracking for the AI Agent (the "Interviewer")
+    const agentParticipant = remoteParticipants.find(p => p.identity.includes("agent") || p.attributes?.agent === "true") || null;
+    const agentMicTrack = useTracks([Track.Source.Microphone], { onlySubscribed: true }).find(t => t.participant === agentParticipant);
+    const agentAudioTrack = agentMicTrack?.publication?.track?.mediaStreamTrack || null;
+    
     const hasAgentPresence = remoteParticipants.length > 0;
+
+    // Track Agent State (Speaking / Thinking)
+    const isAiSpeaking = useIsSpeaking(agentParticipant);
+    const agentState = agentParticipant?.attributes?.["agent.state"];
+    const isAiThinking = agentState === "thinking" || (hasAgentPresence && !isAiSpeaking && !isInterviewActive);
+    const isAiListening = !isAiSpeaking && !isAiThinking && hasAgentPresence;
+
+    const aiParticipantTrack = agentMicTrack;
+
 
     // Media Control Logic
     const isMicEnabled = localParticipant?.isMicrophoneEnabled ?? false;
@@ -1136,11 +1141,12 @@ function InterviewRoomContent({
                 >
                     {/* Advanced Shader Aura Visualizer (Real-time Audio Reactive) */}
                     <AuraVisualizer
-                        state={agent.state}
+                        state={isAiSpeaking ? "speaking" : (isAiThinking ? "thinking" : "listening")}
                         audioTrack={agentAudioTrack}
                         size="xl"
                         className="absolute inset-0 z-0 scale-150 opacity-80"
                     />
+
 
                     {/* Image Container */}
                     <div className="absolute inset-2 rounded-full overflow-hidden border-4 border-zinc-800/50 shadow-inner">
