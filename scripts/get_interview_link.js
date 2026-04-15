@@ -1,32 +1,113 @@
-
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { v4: uuidv4 } = require('uuid');
 
 async function main() {
-    let app = await prisma.application.findFirst({
-        where: { hiringStatus: 'SHORTLISTED' },
-        orderBy: { createdAt: 'desc' }
-    });
+    const targetName = process.argv[2];
+    let app;
 
-    if (!app) {
-        // Try ACCEPTED or standard shortlisted
+    if (targetName) {
+        console.log(`Searching for candidate: "${targetName}"...`);
         app = await prisma.application.findFirst({
-            where: { hiringStatus: { in: ['ACCEPTED', 'shortlisted'] } },
+            where: {
+                fullName: {
+                    contains: targetName,
+                    mode: 'insensitive'
+                }
+            },
             orderBy: { createdAt: 'desc' }
         });
     }
 
-    if (!app) {
-        // Last resort: any recent candidate
+    if (!app && !targetName) {
         app = await prisma.application.findFirst({
+            where: { hiringStatus: 'SHORTLISTED' },
             orderBy: { createdAt: 'desc' }
+        });
+
+        if (!app) {
+            app = await prisma.application.findFirst({
+                where: { hiringStatus: { in: ['ACCEPTED', 'shortlisted'] } },
+                orderBy: { createdAt: 'desc' }
+            });
+        }
+
+        if (!app) {
+            app = await prisma.application.findFirst({
+                orderBy: { createdAt: 'desc' }
+            });
+        }
+    }
+
+    if (!app && targetName) {
+        console.log(`Candidate "${targetName}" not found. Creating a test application...`);
+        
+        // Find a drive to attach to
+        let drive = await prisma.drive.findFirst({
+            where: { status: 'ACTIVE' }
+        });
+
+        if (!drive) {
+            drive = await prisma.drive.findFirst();
+        }
+
+        if (!drive) {
+            // Create a dummy drive if none exist
+            const org = await prisma.organization.findFirst();
+            const user = await prisma.user.findFirst();
+            
+            if (!org || !user) {
+                console.error("Cannot create test application: No Organization or User found in DB to link to.");
+                return;
+            }
+
+            drive = await prisma.drive.create({
+                data: {
+                    id: uuidv4(),
+                    title: "Test Drive",
+                    description: "Automatically created for testing",
+                    department: "Engineering",
+                    creatorId: user.id,
+                    orgId: org.id,
+                    status: 'ACTIVE'
+                }
+            });
+        }
+
+        app = await prisma.application.create({
+            data: {
+                id: uuidv4(),
+                fullName: targetName,
+                email: `${targetName.replace(/\s+/g, '.').toLowerCase()}@example.com`,
+                phone: "1234567890",
+                resumeUrl: "https://example.com/resume.pdf",
+                driveId: drive.id,
+                hiringStatus: 'shortlisted',
+                interviewStatus: 'pending'
+            }
         });
     }
 
     if (app) {
-        console.log(`Interview Link for ${app.fullName}: http://localhost:3000/interview/${app.id}`);
+        // Ensure an Interview record exists for this application
+        let interview = await prisma.interview.findUnique({
+            where: { applicationId: app.id }
+        });
+
+        if (!interview) {
+            interview = await prisma.interview.create({
+                data: {
+                    id: uuidv4(),
+                    applicationId: app.id,
+                    status: 'PENDING'
+                }
+            });
+        }
+
+        console.log(`\nInterview Link for ${app.fullName}:`);
+        console.log(`http://localhost:3000/interview/${app.id}`);
     } else {
-        console.log("No candidates found in database.");
+        console.log("No candidates found or could be created.");
     }
 }
 
