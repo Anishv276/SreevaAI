@@ -55,7 +55,7 @@ interface Org {
     };
 }
 
-type BillingFeatureKey = "interview" | "resumeExtraction" | "jdExtraction" | "chatbot" | "general";
+type BillingFeatureKey = "interview" | "resumeExtraction" | "jdExtraction" | "chatbot" | "resumeReport" | "interviewReport" | "general";
 
 type BillingFeatureMetrics = {
     runs?: number;
@@ -101,6 +101,8 @@ export default function OrgsPage() {
         { key: "chatbot", label: "LLM - Chatbot" },
         { key: "interview", label: "LLM - Interview" },
         { key: "jdExtraction", label: "LLM - JD" },
+        { key: "resumeReport", label: "LLM - Resume Report" },
+        { key: "interviewReport", label: "LLM - Interview Report" },
         { key: "general", label: "LLM - General" },
     ];
 
@@ -592,7 +594,7 @@ export default function OrgsPage() {
                                     <div className="h-[1px] flex-1 bg-gray-100" />
                                 </div>
                                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                                    {metricSections.filter(s => s.key !== 'interview').map((section) => {
+                                    {metricSections.map((section) => {
                                         const feature = getBillingFeature(metricsOrg, section.key);
                                         const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
                                         const models = Object.keys(feature.byModel || {});
@@ -787,7 +789,11 @@ export default function OrgsPage() {
                                                     </div>
                                                     <div>
                                                         <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Total Minutes</div>
-                                                        <div className="text-2xl font-black tabular-nums">{(Number(feature.sessionDuration || 0) / 60).toFixed(1)}m</div>
+                                                        <div className="text-2xl font-black tabular-nums">
+                                                            {Number(feature.sessionDuration || 0) > 0 
+                                                                ? (Number(feature.sessionDuration || 0) / 60).toFixed(1)
+                                                                : (Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}m
+                                                        </div>
                                                     </div>
                                                     <div>
                                                         <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Status</div>

@@ -6,6 +6,8 @@ export type BillingFeature =
   | "resumeExtraction"
   | "jdExtraction"
   | "chatbot"
+  | "resumeReport"
+  | "interviewReport"
   | "general";
 
 const BILLING_FEATURES: BillingFeature[] = [
@@ -13,6 +15,8 @@ const BILLING_FEATURES: BillingFeature[] = [
   "resumeExtraction",
   "jdExtraction",
   "chatbot",
+  "resumeReport",
+  "interviewReport",
   "general",
 ];
 
@@ -91,6 +95,8 @@ export const emptyBillingMetrics = () => ({
   resumeExtraction: emptyFeature(),
   jdExtraction: emptyFeature(),
   chatbot: emptyFeature(),
+  resumeReport: emptyFeature(),
+  interviewReport: emptyFeature(),
   general: emptyFeature(),
 });
 

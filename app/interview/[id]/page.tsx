@@ -170,7 +170,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         };
     }, [id, phase]);
 
-    // Phase transition — switch immediately once agent is ready
     useEffect(() => {
         if (phase !== "launching") return;
         if (!isAgentReady || agentReadyCommittedRef.current) return;
@@ -179,55 +178,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         setPhase("interview");
     }, [phase, isAgentReady]);
 
-    // Parent-level ready signal fallback to guarantee backend receives user_ready.
-    useEffect(() => {
-        if (phase !== "interview") {
-            readySignalSentFromParentRef.current = false;
-            return;
-        }
-        if (readySignalSentFromParentRef.current) return;
-
-        readySignalSentFromParentRef.current = true;
-        const encoder = new TextEncoder();
-        let cancelled = false;
-        let attempts = 0;
-
-        const sendReady = async () => {
-            if (cancelled) return;
-            const room = lkRoomRef.current;
-            const localParticipant = room?.localParticipant;
-            if (!localParticipant) {
-                return;
-            }
-            attempts += 1;
-            const data = encoder.encode(
-                JSON.stringify({ type: "user_ready", timestamp: Date.now(), source: "parent", attempt: attempts })
-            );
-            try {
-                await localParticipant.publishData(data, { reliable: true });
-                console.log("SENT READY SIGNAL (parent)", { attempt: attempts });
-            } catch (err) {
-                console.warn("[READY][parent] failed to publish user_ready", err);
-            }
-        };
-
-        void sendReady();
-        const retryTimer = window.setInterval(() => {
-            if (attempts >= 6) {
-                window.clearInterval(retryTimer);
-                return;
-            }
-            void sendReady();
-        }, 700);
-
-        return () => {
-            cancelled = true;
-            window.clearInterval(retryTimer);
-        };
-    }, [phase]);
-
     const isExitUnlocked = phase === "completed" || timerExpired;
-    const isInterviewLocked = phase === "interview" && !isExitUnlocked;
+    const isInterviewLocked = (phase === "interview") && !isExitUnlocked;
 
     const stopTracks = (stream: MediaStream | null) => {
         if (!stream) return;
@@ -920,21 +872,15 @@ function InterviewRoomContent({
             const id = segment.streamInfo.id;
             const timestamp = segment.streamInfo.timestamp;
 
-            // Always keep the latest version of a segment
             latestSegments.set(id, { text: segment.text, isFinal, id, timestamp, identity });
         }
 
-        // Sort all unique segments by timestamp
         const sortedSegments = Array.from(latestSegments.values()).sort((a, b) => a.timestamp - b.timestamp);
 
         for (const segment of sortedSegments) {
             const isCandidate = segment.identity === localIdentity;
             const lastGroup = groups[groups.length - 1];
 
-            // Logic to decide if we should start a NEW row/bubble:
-            // 1. Identity change
-            // 2. Previous segment in the same group was final (new thought)
-            // 3. Significant time gap (> 1.5s)
             let shouldBreak = false;
             if (lastGroup) {
                 if (lastGroup.identity !== segment.identity) {
@@ -942,7 +888,7 @@ function InterviewRoomContent({
                 } else {
                     const lastSegment = lastGroup.segments[lastGroup.segments.length - 1];
                     const timeGap = segment.timestamp - lastSegment.timestamp;
-                    if (lastSegment.isFinal || timeGap > 1500) {
+                    if (timeGap > 3000) {
                         shouldBreak = true;
                     }
                 }
@@ -952,7 +898,7 @@ function InterviewRoomContent({
                 lastGroup.segments.push(segment);
             } else {
                 groups.push({
-                    id: segment.id, // Group ID based on first segment
+                    id: segment.id,
                     identity: segment.identity,
                     isCandidate,
                     speakerName: isCandidate ? "You" : "Interviewer",

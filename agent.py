@@ -96,33 +96,59 @@ logger.addHandler(handler)
 logger.propagate = False  # Prevent double logging if root logger is configured
 
 
-class _SuppressNoisyWarnings(logging.Filter):
-    def filter(self, record: logging.LogRecord) -> bool:
-        msg = record.getMessage().lower()
-        blocked_patterns = (
-            "unexpected message",
+class _RuntimeWarningSampler(logging.Filter):
+    """
+    Rate-limit noisy warnings instead of hiding them.
+    Keeps logs readable while preserving the exact signals needed for debugging.
+    """
+    def __init__(self) -> None:
+        super().__init__()
+        self._last_seen: dict[str, float] = {}
+        self._interval_seconds = 30.0
+
+        self._drop_always = (
             "flush_done",
+            "re-using existing connection",
+            "unexpected response: type=text",
+        )
+
+        self._sampled = (
+            "unexpected message",
             "audio stream queue overflow",
             "inference is slower than realtime",
             "connectionreseterror",
             "duplexclosed",
-            "re-using existing connection",
-            "unexpected response: type=text",
-            # Non-fatal STT edge case in noisy/overlap moments; handled by runtime fallback.
             "final transcript not received after timeout",
-            # Happens when user speech arrives during temporarily paused scheduling windows.
             "speech scheduling is paused",
         )
-        return not any(pattern in msg for pattern in blocked_patterns)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage().lower()
+
+        if any(pattern in msg for pattern in self._drop_always):
+            return False
+
+        for pattern in self._sampled:
+            if pattern in msg:
+                now = time.time()
+                last = self._last_seen.get(pattern, 0.0)
+                if now - last < self._interval_seconds:
+                    return False
+                self._last_seen[pattern] = now
+                record.runtime_warning = pattern
+                record.runtime_warning_sampled = True
+                return True
+
+        return True
 
 
 for logger_name in ("livekit.plugins.cartesia", "livekit.plugins.silero", "livekit"):
     _logger = logging.getLogger(logger_name)
-    _logger.addFilter(_SuppressNoisyWarnings())
+    _logger.addFilter(_RuntimeWarningSampler())
 
 # --- Configuration ---
 # Reverted to nova-3-general and sonic-3 due to Deepgram project access tier limits
-STT_MODEL = "nova-3-general"  # deepgram model
+STT_MODEL = "nova-3"  # deepgram model
 CARTESIA_MODEL = "sonic-3"  # Cartesia model
 CARTESIA_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"  # "Jacqueline - Reassuring Agent" (verified on account)
 CARTESIA_VOICE_SPEED = 1.0
@@ -135,7 +161,7 @@ APP_BASE_URL = (
     or "http://localhost:3000"
 ).rstrip("/")
 
-MAX_FOLLOW_UP_DEPTH = 3
+MAX_FOLLOW_UP_DEPTH = 2
 MIN_FOLLOW_UP_DEPTH = 1
 
 _TOOL_ALIAS_CATALOG: dict[str, list[str]] = {
@@ -341,13 +367,24 @@ def build_stt(language_code: str = "en-US", model: str = STT_MODEL):
         "language": language_code,
         "interim_results": True,
         "punctuate": True,
+        "utterance_end_ms": 1000,  # Smarter word-gap detection for noisy rooms
+        "keywords": [
+            "I'm good:2",  # Boost common greetings
+            "I'm fine:2",
+            "thank you:1",
+            "interviewer:1.5",
+            "experience:1.2",
+            "product designer:2",
+            "resume:1.5",
+            "skills:1.2",
+            "Ishita:2",  # Agent name
+        ],
     }
 
     # livekit.plugins.deepgram versions differ in endpointing keyword support.
-    # Newer versions use endpointing_ms, older versions use endpointing.
     try:
         modern_kwargs = dict(stt_kwargs)
-        modern_kwargs["endpointing_ms"] = 300
+        modern_kwargs["endpointing_ms"] = 300  # Faster response
         return deepgram.STT(**modern_kwargs)
     except TypeError:
         legacy_kwargs = dict(stt_kwargs)
@@ -616,7 +653,15 @@ def _empty_billing_feature() -> dict[str, Any]:
 
 
 def _coerce_billing_metrics(value: Any) -> dict[str, Any]:
-    features = ["interview", "resumeExtraction", "jdExtraction", "chatbot", "general"]
+    features = [
+        "interview",
+        "resumeExtraction",
+        "jdExtraction",
+        "chatbot",
+        "resumeReport",
+        "interviewReport",
+        "general",
+    ]
     out = {feature: _empty_billing_feature() for feature in features}
     incoming = _coerce_jsonish(value)
     for feature in features:

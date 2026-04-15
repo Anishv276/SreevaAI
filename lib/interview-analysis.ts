@@ -249,7 +249,7 @@ Rules:
   if (orgId) {
     await recordOrgBillingFromOpenAICompletion({
       orgId,
-      feature: "interview",
+      feature: "interviewReport",
       completion: response,
     });
   }
