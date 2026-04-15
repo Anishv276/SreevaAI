@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { useEffect, useImperativeHandle, useMemo, useRef, forwardRef } from 'react';
 
 export interface ShaderToyProps {
   fs: string;
-  uniforms?: Record<string, { type: string; value: any }>;
+  uniforms?: Record<string, { type: string; value: unknown }>;
   onError?: (error: string) => void;
   onWarning?: (warning: string) => void;
   style?: React.CSSProperties;
@@ -18,14 +18,25 @@ export type ShaderToyHandle = {
 const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
   ({ fs, uniforms = {}, onError, onWarning, style, className }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const glRef = useRef<WebGL2RenderingContext | null>(null);
-    const programRef = useRef<WebGLProgram | null>(null);
     const requestRef = useRef<number | null>(null);
     const startTimeRef = useRef<number>(Date.now());
+    const uniformsRef = useRef(uniforms);
+    const uniformSignature = useMemo(
+      () =>
+        Object.entries(uniforms)
+          .map(([name, cfg]) => `${name}:${cfg.type}`)
+          .sort()
+          .join("|"),
+      [uniforms],
+    );
 
     useImperativeHandle(ref, () => ({
       getCanvas: () => canvasRef.current,
     }));
+
+    useEffect(() => {
+      uniformsRef.current = uniforms;
+    }, [uniforms]);
 
     useEffect(() => {
       const canvas = canvasRef.current;
@@ -36,7 +47,6 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
         onError?.("WebGL2 not supported");
         return;
       }
-      glRef.current = gl;
 
       // Vertex shader is standard
       const vsSource = `#version 300 es
@@ -64,7 +74,7 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
         precision highp float;
         uniform float iTime;
         uniform vec2 iResolution;
-        ${Object.entries(uniforms).map(([name, { type }]) => `uniform ${type.replace('1f', 'float').replace('2f', 'vec2').replace('3fv', 'vec3').replace('1i', 'int')} ${name};`).join('\n')}
+        ${Object.entries(uniformsRef.current).map(([name, { type }]) => `uniform ${type.replace('1f', 'float').replace('2f', 'vec2').replace('3fv', 'vec3').replace('1i', 'int')} ${name};`).join('\n')}
         out vec4 fragColor;
         void mainImage(out vec4 fragColor, in vec2 fragCoord);
         void main() {
@@ -90,11 +100,23 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
         onError?.(gl.getProgramInfoLog(program) || "Linking failed");
         return;
       }
-      programRef.current = program;
 
       const positionBuffer = gl.createBuffer();
+      if (!positionBuffer) {
+        onError?.("Failed to create position buffer");
+        return;
+      }
       gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+
+      const uniformLocations = new Map<string, WebGLUniformLocation | null>();
+      const cachedUniforms = uniformsRef.current;
+      Object.keys(cachedUniforms).forEach((name) => {
+        uniformLocations.set(name, gl.getUniformLocation(program, name));
+      });
+
+      canvas.width = canvas.clientWidth * window.devicePixelRatio;
+      canvas.height = canvas.clientHeight * window.devicePixelRatio;
 
       const render = () => {
         if (!gl || !program) return;
@@ -116,12 +138,19 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
         gl.uniform2f(gl.getUniformLocation(program, "iResolution"), canvas.width, canvas.height);
 
         // Apply custom uniforms
-        Object.entries(uniforms).forEach(([name, { type, value }]) => {
-          const loc = gl.getUniformLocation(program, name);
-          if (type === '1f') gl.uniform1f(loc, value);
-          else if (type === '2f') gl.uniform2f(loc, value[0], value[1]);
-          else if (type === '3fv') gl.uniform3fv(loc, value);
-          else if (type === '1i') gl.uniform1i(loc, value);
+        Object.entries(uniformsRef.current).forEach(([name, { type, value }]) => {
+          const loc = uniformLocations.get(name);
+          if (!loc) return;
+
+          if (type === '1f') {
+            gl.uniform1f(loc, Number(value));
+          } else if (type === '2f' && Array.isArray(value)) {
+            gl.uniform2f(loc, Number(value[0]), Number(value[1]));
+          } else if (type === '3fv' && Array.isArray(value)) {
+            gl.uniform3fv(loc, value as number[]);
+          } else if (type === '1i') {
+            gl.uniform1i(loc, Number(value));
+          }
         });
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -141,11 +170,12 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
       return () => {
         resizeObserver.disconnect();
         if (requestRef.current) cancelAnimationFrame(requestRef.current);
+        gl.deleteBuffer(positionBuffer);
         gl.deleteProgram(program);
         gl.deleteShader(vs);
         gl.deleteShader(fShader);
       };
-    }, [fs, JSON.stringify(uniforms)]);
+    }, [fs, uniformSignature, onError, onWarning]);
 
     return (
       <canvas

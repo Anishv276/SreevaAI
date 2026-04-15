@@ -16,16 +16,17 @@ import {
     ControlBar,
     useParticipantInfo,
     useConnectionState,
-    useRemoteParticipants,
+    useVoiceAssistant,
     useRoomContext,
     useTranscriptions,
-    useIsSpeaking,
 } from "@livekit/components-react";
+
 
 import type { TextStreamData as TranscriptionSegment } from "@livekit/components-react";
 import "@livekit/components-styles";
 
 import { Track, RoomEvent } from "livekit-client";
+
 import type { Room } from "livekit-client";
 
 
@@ -547,15 +548,16 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     useEffect(() => {
         if (phase !== "interview" || !interviewEndsAt || timerExpired) return;
 
-        const timer = window.setInterval(() => {
+        const updateRemaining = () => {
             const nextRemaining = Math.max(0, Math.ceil((interviewEndsAt - Date.now()) / 1000));
-            setRemainingSeconds(nextRemaining);
+            setRemainingSeconds((prev) => (prev === nextRemaining ? prev : nextRemaining));
 
             if (nextRemaining <= 0) {
-                setTimerExpired(true);
-                window.clearInterval(timer);
+                setTimerExpired((prev) => (prev ? prev : true));
             }
-        }, 250);
+        };
+
+        const timer = window.setInterval(updateRemaining, 1000);
 
         return () => window.clearInterval(timer);
     }, [phase, interviewEndsAt, timerExpired]);
@@ -818,28 +820,22 @@ function InterviewRoomContent({
     const { localParticipant } = useLocalParticipant();
     const cameraTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
     const connectionState = useConnectionState();
-    const remoteParticipants = useRemoteParticipants();
     const lkRoom = useRoomContext();
+    const voiceAssistant = useVoiceAssistant();
 
     // Give parent a ref to the room so it can call startAudio() on user gesture
     useEffect(() => {
         if (lkRoom) onRoomReady?.(lkRoom);
     }, [lkRoom, onRoomReady]);
 
-    // Discovery and tracking for the AI Agent (the "Interviewer")
-    const agentParticipant = remoteParticipants.find(p => p.identity.includes("agent") || p.attributes?.agent === "true") || null;
-    const agentMicTrack = useTracks([Track.Source.Microphone], { onlySubscribed: true }).find(t => t.participant === agentParticipant);
-    const agentAudioTrack = agentMicTrack?.publication?.track?.mediaStreamTrack || null;
-    
-    const hasAgentPresence = remoteParticipants.length > 0;
-
-    // Track Agent State (Speaking / Thinking)
-    const isAiSpeaking = useIsSpeaking(agentParticipant);
-    const agentState = agentParticipant?.attributes?.["agent.state"];
-    const isAiThinking = agentState === "thinking" || (hasAgentPresence && !isAiSpeaking && !isInterviewActive);
-    const isAiListening = !isAiSpeaking && !isAiThinking && hasAgentPresence;
-
-    const aiParticipantTrack = agentMicTrack;
+    // Voice assistant state from LiveKit agent lifecycle.
+    const aiParticipantTrack = voiceAssistant.audioTrack;
+    const agentAudioTrack = getMediaStreamTrack(aiParticipantTrack ?? null);
+    const hasAgentPresence = Boolean(voiceAssistant.agent);
+    const assistantState = String(voiceAssistant.state);
+    const isAiSpeaking = assistantState === "speaking";
+    const isAiThinking = assistantState === "thinking" || assistantState === "initializing";
+    const isAiListening = assistantState === "listening";
 
 
     // Media Control Logic
@@ -866,7 +862,9 @@ function InterviewRoomContent({
 
     // Agent readiness is based on room connection + remote agent speaking.
     useEffect(() => {
-        const readyNow = connectionState === "connected" && hasAgentPresence && isAiSpeaking;
+        const readyNow = connectionState === "connected"
+            && hasAgentPresence
+            && ["initializing", "listening", "thinking", "speaking"].includes(assistantState);
         onAgentReady?.(readyNow);
 
         if (!isLaunchingActive) {
@@ -878,11 +876,11 @@ function InterviewRoomContent({
             launchReadySignalSentRef.current = true;
             console.log("[Agent] Ready in launching phase");
         }
-    }, [isLaunchingActive, connectionState, hasAgentPresence, isAiSpeaking, onAgentReady]);
+    }, [isLaunchingActive, connectionState, hasAgentPresence, assistantState, onAgentReady]);
 
     // Start recording only after interview phase starts and agent actually begins speaking.
     useEffect(() => {
-        if (!isInterviewActive || agent.state !== "speaking") return;
+        if (!isInterviewActive || !isAiSpeaking) return;
 
         console.log("[Agent] State=speaking during interview");
 
@@ -896,7 +894,8 @@ function InterviewRoomContent({
                 body: JSON.stringify({ applicationId: id }),
             }).catch((err) => console.warn("[Recording] start-recording request failed:", err));
         }
-    }, [agent.state, id, isInterviewActive]);
+    }, [isAiSpeaking, id, isInterviewActive]);
+
     const [remoteForceFinish, setRemoteForceFinish] = useState(false);
     const localCameraTrack =
         cameraTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera) || null;
@@ -1019,9 +1018,8 @@ function InterviewRoomContent({
     }, [connectionState, localParticipant, isInterviewActive]);
 
     useEffect(() => {
-        const mediaTrack = getMediaStreamTrack(agentAudioTrack ?? null);
-        if (mediaTrack && mediaTrack.kind === "audio") {
-            onRemoteAgentAudioTrack(mediaTrack);
+        if (agentAudioTrack && agentAudioTrack.kind === "audio") {
+            onRemoteAgentAudioTrack(agentAudioTrack);
         }
     }, [agentAudioTrack, onRemoteAgentAudioTrack]);
 
@@ -1137,19 +1135,21 @@ function InterviewRoomContent({
                         repeat: Infinity,
                         ease: "easeInOut"
                     }}
-                    className="w-64 h-64 rounded-full border-2 flex items-center justify-center relative bg-black/40 backdrop-blur-3xl shadow-[0_0_120px_rgba(249,115,22,0.1)] group"
+                    className="w-64 h-64 rounded-full border-2 flex items-center justify-center relative isolate group"
                 >
                     {/* Advanced Shader Aura Visualizer (Real-time Audio Reactive) */}
-                    <AuraVisualizer
-                        state={isAiSpeaking ? "speaking" : (isAiThinking ? "thinking" : "listening")}
-                        audioTrack={agentAudioTrack}
-                        size="xl"
-                        className="absolute inset-0 z-0 scale-150 opacity-80"
-                    />
+                    <div className="absolute inset-0 rounded-full overflow-hidden pointer-events-none">
+                        <AuraVisualizer
+                            state={isAiSpeaking ? "speaking" : (isAiThinking ? "thinking" : "listening")}
+                            audioTrack={agentAudioTrack}
+                            size="full"
+                            className="absolute inset-0 z-0 opacity-80"
+                        />
+                    </div>
 
 
                     {/* Image Container */}
-                    <div className="absolute inset-2 rounded-full overflow-hidden border-4 border-zinc-800/50 shadow-inner">
+                    <div className="absolute inset-3 rounded-full overflow-hidden border-4 border-zinc-800/60 shadow-inner z-10">
                         <img
                             src="/avatars/jordan.png"
                             alt="AI Interviewer"

@@ -60,6 +60,7 @@ export function HardwareCheck({
     const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
     const [snapshotUploading, setSnapshotUploading] = useState(false);
 
+    const [consentChecked, setConsentChecked] = useState(false);
     // Live transcript from speech recognition
     const [liveTranscript, setLiveTranscript] = useState("");
     const [interimTranscript, setInterimTranscript] = useState("");
@@ -202,7 +203,8 @@ export function HardwareCheck({
             (uploadSpeedMbps !== null && uploadSpeedMbps >= 3.0) &&
             (downloadSpeedMbps !== null && downloadSpeedMbps >= 3.0) &&
             (latencyMs !== null && latencyMs < 300)
-        ));
+        )) &&
+        consentChecked;
 
     useEffect(() => {
         const originalInfo = console.info.bind(console);
@@ -602,7 +604,7 @@ export function HardwareCheck({
                     };
                     xhr.onerror = () => reject(new Error("Upload network error"));
                     xhr.open("POST", upUrl);
-                    xhr.setRequestHeader("X-Speed-Test", "upload"); 
+                    xhr.setRequestHeader("X-Speed-Test", "upload");
                     xhr.send(upPayload);
                 });
 
@@ -1145,17 +1147,17 @@ export function HardwareCheck({
                                     <div className={cn(
                                         "flex items-center gap-1.5 px-2 py-0.5 rounded-full border",
                                         networkQuality === "stable" ? "bg-green-50 border-green-100 text-green-600" :
-                                        networkQuality === "acceptable" ? "bg-orange-50 border-orange-100 text-orange-600" :
-                                        "bg-red-50 border-red-100 text-red-600"
+                                            networkQuality === "acceptable" ? "bg-orange-50 border-orange-100 text-orange-600" :
+                                                "bg-red-50 border-red-100 text-red-600"
                                     )}>
                                         <div className={cn(
                                             "w-1.5 h-1.5 rounded-full animate-pulse",
                                             networkQuality === "stable" ? "bg-green-500" :
-                                            networkQuality === "acceptable" ? "bg-orange-500" : "bg-red-500"
+                                                networkQuality === "acceptable" ? "bg-orange-500" : "bg-red-500"
                                         )} />
                                         <span className="text-[9px] font-bold uppercase tracking-tight">
                                             {networkQuality === "stable" ? "Stable" :
-                                             networkQuality === "acceptable" ? "Modest" : "Poor"}
+                                                networkQuality === "acceptable" ? "Modest" : "Poor"}
                                         </span>
                                     </div>
                                 )}
@@ -1174,12 +1176,12 @@ export function HardwareCheck({
                                     <span className={cn(
                                         "text-sm font-bold",
                                         !downloadSpeedMbps ? "text-gray-300" :
-                                        downloadSpeedMbps >= 10 ? "text-green-600" :
-                                        downloadSpeedMbps >= 5 ? "text-orange-600" : "text-red-500"
+                                            downloadSpeedMbps >= 10 ? "text-green-600" :
+                                                downloadSpeedMbps >= 5 ? "text-orange-600" : "text-red-500"
                                     )}>
                                         {!downloadSpeedMbps ? "--" :
-                                         downloadSpeedMbps >= 10 ? "Fast" :
-                                         downloadSpeedMbps >= 5 ? "Standard" : "Slow"}
+                                            downloadSpeedMbps >= 10 ? "Fast" :
+                                                downloadSpeedMbps >= 5 ? "Standard" : "Slow"}
                                     </span>
                                 </div>
                             </div>
@@ -1191,12 +1193,12 @@ export function HardwareCheck({
                                     <span className={cn(
                                         "text-sm font-bold",
                                         !uploadSpeedMbps ? "text-gray-300" :
-                                        uploadSpeedMbps >= 5 ? "text-green-600" :
-                                        uploadSpeedMbps >= 2 ? "text-orange-600" : "text-red-500"
+                                            uploadSpeedMbps >= 5 ? "text-green-600" :
+                                                uploadSpeedMbps >= 2 ? "text-orange-600" : "text-red-500"
                                     )}>
                                         {!uploadSpeedMbps ? "--" :
-                                         uploadSpeedMbps >= 5 ? "High" :
-                                         uploadSpeedMbps >= 2 ? "Moderate" : "Low"}
+                                            uploadSpeedMbps >= 5 ? "High" :
+                                                uploadSpeedMbps >= 2 ? "Moderate" : "Low"}
                                     </span>
                                 </div>
                             </div>
@@ -1210,12 +1212,12 @@ export function HardwareCheck({
                                             className={cn(
                                                 "text-sm font-bold",
                                                 !latencyMs ? "text-gray-300" :
-                                                latencyMs < 80 ? "text-green-600" :
-                                                latencyMs < 150 ? "text-orange-600" : "text-red-500"
+                                                    latencyMs < 80 ? "text-green-600" :
+                                                        latencyMs < 150 ? "text-orange-600" : "text-red-500"
                                             )}>
                                             {!latencyMs ? "--" :
-                                             latencyMs < 80 ? "Responsive" :
-                                             latencyMs < 150 ? "Delayed" : "Lagging"}
+                                                latencyMs < 80 ? "Responsive" :
+                                                    latencyMs < 150 ? "Delayed" : "Lagging"}
                                         </motion.span>
                                     </AnimatePresence>
                                 </div>
@@ -1230,12 +1232,12 @@ export function HardwareCheck({
                                             className={cn(
                                                 "text-sm font-bold",
                                                 !jitterMs ? "text-gray-300" :
-                                                jitterMs < 20 ? "text-green-600" :
-                                                jitterMs < 40 ? "text-orange-600" : "text-red-500"
+                                                    jitterMs < 20 ? "text-green-600" :
+                                                        jitterMs < 40 ? "text-orange-600" : "text-red-500"
                                             )}>
                                             {!jitterMs ? "--" :
-                                             jitterMs < 20 ? "Stable" :
-                                             jitterMs < 40 ? "Wavy" : "Unstable"}
+                                                jitterMs < 20 ? "Stable" :
+                                                    jitterMs < 40 ? "Wavy" : "Unstable"}
                                         </motion.span>
                                     </AnimatePresence>
                                 </div>
@@ -1247,20 +1249,20 @@ export function HardwareCheck({
                                 className={cn(
                                     "p-2.5 rounded-xl border text-[10px] font-medium leading-relaxed flex items-start gap-2",
                                     networkQuality === "stable" ? "bg-green-50/50 border-green-100 text-green-700" :
-                                    networkQuality === "acceptable" ? "bg-orange-50/50 border-orange-100 text-orange-700" :
-                                    "bg-red-50/50 border-red-100 text-red-700"
+                                        networkQuality === "acceptable" ? "bg-orange-50/50 border-orange-100 text-orange-700" :
+                                            "bg-red-50/50 border-red-100 text-red-700"
                                 )}>
                                 <div className={cn(
                                     "mt-0.5 w-1 h-1 rounded-full shrink-0",
                                     networkQuality === "stable" ? "bg-green-500" :
-                                    networkQuality === "acceptable" ? "bg-orange-500" : "bg-red-500"
+                                        networkQuality === "acceptable" ? "bg-orange-500" : "bg-red-500"
                                 )} />
                                 {hardwareStatusMsg}
                             </motion.div>
                         )}
 
                         {networkQuality === "poor" && !bypassSpeedTest && (
-                            <button onClick={() => setBypassSpeedTest(true)} 
+                            <button onClick={() => setBypassSpeedTest(true)}
                                 className="mt-2 w-full text-[10px] text-gray-400 hover:text-gray-600 underline">
                                 Skip anyway
                             </button>
@@ -1271,12 +1273,29 @@ export function HardwareCheck({
 
             {/* Bottom CTA */}
             <div className="border-t border-gray-100 px-6 py-5">
-                <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
-                    <div className="text-sm text-gray-500">
-                        {allReady
-                            ? "All checks passed — you're ready to begin!"
-                            : `${checks.length - readyCount} check${checks.length - readyCount !== 1 ? "s" : ""} remaining`}
+                <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+                    <div className="flex flex-col gap-1.5 flex-1 max-w-xl">
+                        <label className="group flex items-start gap-3 cursor-pointer select-none">
+                            <div className="relative flex items-center mt-1">
+                                <input
+                                    type="checkbox"
+                                    checked={consentChecked}
+                                    onChange={(e) => setConsentChecked(e.target.checked)}
+                                    className="peer h-5 w-5 cursor-pointer appearance-none rounded-md border-2 border-gray-200 transition-all checked:border-orange-500 checked:bg-orange-500 hover:border-orange-300"
+                                />
+                                <CheckCircle2 className="pointer-events-none absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
+                            </div>
+                            <span className="text-xs font-semibold text-gray-600 group-hover:text-gray-900 transition-colors leading-relaxed">
+                                A photo is captured during hardware setup to verify your identity throughout this interview session
+                            </span>
+                        </label>
+                        <div className="text-[10px] items-center gap-1.5 text-gray-400 font-medium ml-8">
+                            {allReady
+                                ? "All checks passed — you're ready to begin!"
+                                : `${checks.length - readyCount} check${checks.length - readyCount !== 1 ? "s" : ""} remaining`}
+                        </div>
                     </div>
+
                     <button
                         onClick={handleBeginInterview}
                         disabled={!allReady || isStarting || snapshotUploading}

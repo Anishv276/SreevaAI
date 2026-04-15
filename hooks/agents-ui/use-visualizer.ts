@@ -1,43 +1,67 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { animate, useMotionValue, useMotionValueEvent } from 'framer-motion';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentState } from '@livekit/components-react';
 
-function useAnimatedValue(initialValue: number) {
-  const [value, setValue] = useState(initialValue);
-  const motionValue = useMotionValue(initialValue);
-  
-  useMotionValueEvent(motionValue, 'change', (v) => setValue(v));
+type MediaTrackLike =
+  | MediaStreamTrack
+  | { kind?: string; getMediaStreamTrack?: () => MediaStreamTrack | null | undefined }
+  | null
+  | undefined;
 
-  const animateTo = useCallback((target: number | number[], options: any) => {
-    return animate(motionValue, target, options);
-  }, [motionValue]);
-
-  return { value, animateTo };
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
-// Simple placeholder for useTrackVolume logic if not available from LiveKit directly
-// but since we want to be high-performance, we'll use a simplified version.
-function useTrackVolume(audioTrack?: { getMediaStreamTrack(): MediaStreamTrack | undefined }) {
+function resolveAudioTrack(audioTrack?: unknown): MediaStreamTrack | null {
+  if (!audioTrack) return null;
+
+  // Check if it's already a MediaStreamTrack
+  if (audioTrack instanceof MediaStreamTrack) {
+    return audioTrack;
+  }
+
+  // Handle LiveKit track objects or other wrappers
+  const source = audioTrack as any;
+  if (typeof source.getMediaStreamTrack === 'function') {
+    const track = source.getMediaStreamTrack();
+    return track instanceof MediaStreamTrack ? track : null;
+  }
+
+  // Fallback for simple objects with a 'kind' property but no method
+  if (source.kind === 'audio' && source instanceof MediaStreamTrack) {
+    return source;
+  }
+
+  return null;
+}
+
+
+function useTrackVolume(audioTrack?: unknown) {
   const [volume, setVolume] = useState(0);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const dataArrayRef = useRef<Uint8Array | null>(null);
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const track = audioTrack?.getMediaStreamTrack();
-    if (!track || track.kind !== 'audio') {
-      setVolume(0);
+    const track = resolveAudioTrack(audioTrack);
+
+    if (!track) {
+      queueMicrotask(() => setVolume(0));
       return;
     }
 
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextCtor) {
+      return;
+    }
+
+    const audioContext = new AudioContextCtor();
     const source = audioContext.createMediaStreamSource(new MediaStream([track]));
     const analyser = audioContext.createAnalyser();
     analyser.fftSize = 256;
     source.connect(analyser);
-    
+
     analyserRef.current = analyser;
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
@@ -45,21 +69,27 @@ function useTrackVolume(audioTrack?: { getMediaStreamTrack(): MediaStreamTrack |
 
     const update = () => {
       if (!analyserRef.current || !dataArrayRef.current) return;
-      analyserRef.current.getByteFrequencyData(dataArrayRef.current);
+      analyserRef.current.getByteFrequencyData(dataArrayRef.current as any);
       let sum = 0;
       for (let i = 0; i < dataArrayRef.current.length; i++) {
         sum += dataArrayRef.current[i];
       }
       const avg = sum / dataArrayRef.current.length;
-      setVolume(avg / 128.0); // Normalize to ~0-1
+      const normalized = clamp(avg / 128.0, 0, 1.4);
+      setVolume((prev) => (Math.abs(prev - normalized) < 0.02 ? prev : normalized));
       rafRef.current = requestAnimationFrame(update);
     };
 
     rafRef.current = requestAnimationFrame(update);
 
     return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      audioContext.close();
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      source.disconnect();
+      analyser.disconnect();
+      void audioContext.close();
     };
   }, [audioTrack]);
 
@@ -68,50 +98,60 @@ function useTrackVolume(audioTrack?: { getMediaStreamTrack(): MediaStreamTrack |
 
 export function useAgentVisualizer(
   state: AgentState,
-  audioTrack?: any
+  audioTrack?: unknown
 ) {
-  const { value: intensity, animateTo: animateIntensity } = useAnimatedValue(0.3);
-  const { value: speed, animateTo: animateSpeed } = useAnimatedValue(1.0);
   const volume = useTrackVolume(audioTrack);
+  const [phase, setPhase] = useState(0);
 
   useEffect(() => {
-    const transition = { duration: 0.8, ease: "easeInOut" };
-    const pulseTransition = { duration: 2, repeat: Infinity, repeatType: "mirror" as const, ease: "easeInOut" };
+    const timer = window.setInterval(() => {
+      setPhase((prev) => (prev + 1) % 20000);
+    }, 50);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const t = phase * 0.05;
+
+  return useMemo(() => {
+    const pulseSlow = (Math.sin(t * 2.1) + 1) * 0.5;
+    const pulseFast = (Math.sin(t * 4.8) + 1) * 0.5;
+    const voice = clamp(volume, 0, 1.2);
+
+    let intensity = 0.24;
+    let speed = 0.7;
 
     switch (state) {
-      case 'idle':
-      case 'disconnected':
-        animateIntensity(0.2, transition);
-        animateSpeed(0.5, transition);
+      case 'speaking':
+        intensity = 0.42 + voice * 0.72 + pulseFast * 0.06;
+        speed = 1.9 + voice * 1.3;
         break;
-
-      case 'listening':
-        // Gentle pulse when waiting
-        animateIntensity([0.3, 0.5], pulseTransition);
-        animateSpeed(1.2, transition);
-        break;
-
       case 'thinking':
       case 'connecting':
-        // Distinct "neural link" pulse
-        animateIntensity([0.4, 0.7], { ...pulseTransition, duration: 1.2 });
-        animateSpeed(2.5, transition);
+      case 'pre-connect-buffering':
+        intensity = 0.42 + pulseFast * 0.23;
+        speed = 2.35;
         break;
-
-      case 'speaking':
-        // Reactive to volume, so we set a baseline
-        animateSpeed(2.0, transition);
+      case 'listening':
+      case 'initializing':
+        intensity = 0.3 + pulseSlow * 0.16;
+        speed = 1.25;
+        break;
+      case 'failed':
+        intensity = 0.26;
+        speed = 0.55;
+        break;
+      case 'idle':
+      case 'disconnected':
+      default:
+        intensity = 0.2 + pulseSlow * 0.08;
+        speed = 0.6;
         break;
     }
-  }, [state, animateIntensity, animateSpeed]);
 
-  // Reactive intensity for speaking
-  useEffect(() => {
-    if (state === 'speaking') {
-      const targetIntensity = 0.4 + (volume * 1.2);
-      animateIntensity(targetIntensity, { duration: 0.1 });
-    }
-  }, [state, volume, animateIntensity]);
-
-  return { intensity, speed };
+    return {
+      intensity: clamp(intensity, 0.12, 1.45),
+      speed: clamp(speed, 0.45, 3.6),
+    };
+  }, [state, t, volume]);
 }

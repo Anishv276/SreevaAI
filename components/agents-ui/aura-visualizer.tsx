@@ -8,8 +8,8 @@ import { cn } from '@/lib/utils';
 
 export interface AuraVisualizerProps {
   state?: AgentState;
-  audioTrack?: any;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  audioTrack?: unknown;
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
   color?: [number, number, number]; // RGB normalized 0-1
   className?: string;
 }
@@ -51,6 +51,7 @@ const SIZES = {
   md: 'h-48 w-48',
   lg: 'h-96 w-96',
   xl: 'h-[32rem] w-[32rem]',
+  full: 'h-full w-full',
 };
 
 export function AuraVisualizer({

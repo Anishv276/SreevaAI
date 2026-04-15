@@ -33,7 +33,6 @@ from livekit.agents.voice.events import ConversationItemAddedEvent
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
 from livekit.plugins import openai, deepgram, cartesia, silero, sarvam
-from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 
 load_dotenv()
@@ -109,6 +108,10 @@ class _SuppressNoisyWarnings(logging.Filter):
             "duplexclosed",
             "re-using existing connection",
             "unexpected response: type=text",
+            # Non-fatal STT edge case in noisy/overlap moments; handled by runtime fallback.
+            "final transcript not received after timeout",
+            # Happens when user speech arrives during temporarily paused scheduling windows.
+            "speech scheduling is paused",
         )
         return not any(pattern in msg for pattern in blocked_patterns)
 
@@ -301,7 +304,6 @@ def build_sarvam_tts(
         "speaker": voice_id,
         # pace: valid for both v2 (0.3–3.0) and v3 (0.5–2.0). 1.0 = natural speed.
         "pace": 1.0,
-        "output_audio_codec": "mp3",
     }
 
     # bulbul:v2-only parameters — DO NOT pass these to v3, they will cause errors
@@ -345,11 +347,11 @@ def build_stt(language_code: str = "en-US", model: str = STT_MODEL):
     # Newer versions use endpointing_ms, older versions use endpointing.
     try:
         modern_kwargs = dict(stt_kwargs)
-        modern_kwargs["endpointing_ms"] = 400
+        modern_kwargs["endpointing_ms"] = 300
         return deepgram.STT(**modern_kwargs)
     except TypeError:
         legacy_kwargs = dict(stt_kwargs)
-        legacy_kwargs["endpointing"] = 400
+        legacy_kwargs["endpointing"] = 300
         return deepgram.STT(**legacy_kwargs)
 
 
@@ -380,13 +382,9 @@ def prewarm(proc: JobProcess):
     proc.userdata["vad"] = build_vad()
     logger.info("VAD model prewarmed.")
 
-    # Warm the context-aware turn detector as well so first-session latency stays low.
-    try:
-        proc.userdata["turn_detector"] = MultilingualModel()
-        logger.info("Turn detector prewarmed.")
-    except Exception as e:
-        proc.userdata["turn_detector"] = None
-        logger.warning(f"Failed to prewarm turn detector: {e}")
+    # Turn detector requires session context in some runtime modes.
+    # Keep startup noise low and initialize it lazily in-session if needed.
+    proc.userdata["turn_detector"] = None
 
     # Pre-instantiate default STT/TTS plugins so their internal HTTP sessions
     # and model configs are warm before the first job arrives.
@@ -1539,6 +1537,25 @@ async def entrypoint(ctx: JobContext):
     # --- Fix 1: Session State ---
     transcript_lines: list[str] = []
     session_start_time: Optional[float] = None
+    background_tasks: set[asyncio.Task[Any]] = set()
+
+    def spawn_background_task(coro, label: str) -> asyncio.Task[Any]:
+        task = asyncio.create_task(coro)
+        background_tasks.add(task)
+
+        def _on_done(done_task: asyncio.Task[Any]) -> None:
+            background_tasks.discard(done_task)
+            if done_task.cancelled():
+                return
+            try:
+                err = done_task.exception()
+            except Exception:
+                return
+            if err:
+                logger.warning(f"[TASK] Background task '{label}' failed: {err}")
+
+        task.add_done_callback(_on_done)
+        return task
 
     def append_transcript_line(speaker: str, text: str) -> None:
         # Strip SSML-like tags (e.g., <emotion />, <prosody>) from the transcript
@@ -1748,26 +1765,44 @@ async def entrypoint(ctx: JobContext):
     else:
         questions_list = coverage_block
 
-    # Generate personalized candidate brief — fires in parallel with session.start()
-    # This gives Ishita a specific interview plan built from this candidate's actual resume/JD.
+    # Generate personalized candidate brief in the background.
+    # We wait only briefly so first greeting is not blocked by this network call.
     oai_client_brief = AsyncOpenAI()
-    candidate_brief_block = await generate_candidate_brief(
-        candidate_name=candidate_name,
-        job_title=job_title,
-        jd_block=jd_block,
-        resume_block=resume_block,
-        ai_report_block=ai_report_block,
-        questions_list=questions_list,
-        follow_up_depth=follow_up_depth,
-        time_limit_mins=time_limit_mins,
-        client=oai_client_brief,
-        org_id=org_id,
-        llm_model=analysis_openai_model,
+    candidate_brief_task = spawn_background_task(
+        generate_candidate_brief(
+            candidate_name=candidate_name,
+            job_title=job_title,
+            jd_block=jd_block,
+            resume_block=resume_block,
+            ai_report_block=ai_report_block,
+            questions_list=questions_list,
+            follow_up_depth=follow_up_depth,
+            time_limit_mins=time_limit_mins,
+            client=oai_client_brief,
+            org_id=org_id,
+            llm_model=analysis_openai_model,
+        ),
+        "candidate_brief_generation",
     )
+    candidate_brief_block = ""
+    try:
+        candidate_brief_block = await asyncio.wait_for(
+            asyncio.shield(candidate_brief_task),
+            timeout=2.5,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[BRIEF] Background brief generation exceeded 2.5s; continuing startup without blocking greeting"
+        )
+    except Exception as brief_err:
+        logger.warning(f"[BRIEF] Failed to fetch pre-greeting brief: {brief_err}")
+
     if candidate_brief_block:
-        logger.info(f"[BRIEF] Personalized interview brief generated ({len(candidate_brief_block)} chars)")
+        logger.info(
+            f"[BRIEF] Personalized interview brief generated ({len(candidate_brief_block)} chars)"
+        )
     else:
-        logger.warning("[BRIEF] No candidate brief generated — falling back to raw resume/JD")
+        logger.warning("[BRIEF] No immediate brief available — falling back to raw resume/JD")
 
     # Depth instruction mapping
     depth_map = {
@@ -2287,6 +2322,32 @@ The best interviews do not feel like interviews. They feel like a conversation t
     chat_ctx = llm.ChatContext()
     chat_ctx.add_message(role="system", content=system_prompt)
 
+    async def attach_brief_when_ready():
+        nonlocal candidate_brief_block
+        try:
+            delayed_brief = await candidate_brief_task
+        except Exception as brief_err:
+            logger.warning(f"[BRIEF] Deferred brief generation failed: {brief_err}")
+            return
+
+        if not delayed_brief or delayed_brief == candidate_brief_block:
+            return
+
+        candidate_brief_block = delayed_brief
+        chat_ctx.add_message(
+            role="system",
+            content=(
+                "[PERSONALIZED INTERVIEW PLAN UPDATE]\n"
+                f"{delayed_brief}\n"
+                "Use this updated brief from now on. Do not reference this note aloud."
+            ),
+        )
+        logger.info(
+            f"[BRIEF] Deferred brief attached to chat context ({len(delayed_brief)} chars)"
+        )
+
+    spawn_background_task(attach_brief_when_ready(), "attach_brief_when_ready")
+
     vad_instance = ctx.proc.userdata.get("vad") or build_vad()
 
     def _text_from_content(content) -> str:
@@ -2362,7 +2423,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
     else:
         llm_plugin = build_llm(model=org_llm_model, temperature=org_llm_temperature)
 
-    turn_detector = proc.userdata.get("turn_detector")
+    turn_detector = ctx.proc.userdata.get("turn_detector")
     latest_session_usage: Optional[AgentSessionUsage] = None
 
     session = AgentSession(
@@ -2380,9 +2441,11 @@ The best interviews do not feel like interviews. They feel like a conversation t
             interruption=InterruptionOptions(
                 enabled=True,
                 mode="adaptive",
-                discard_audio_if_uninterruptible=True,
-                min_duration=0.5,
-                min_words=0,
+                # Keep buffered speech when interruptions are temporarily disabled
+                # (AEC warmup / uninterruptible phase) to avoid dropping user turns.
+                discard_audio_if_uninterruptible=False,
+                min_duration=0.7,
+                min_words=1,
                 resume_false_interruption=True,
                 false_interruption_timeout=2.5,  # was 2.0 — more forgiving on brief cross-talk
             ),
@@ -2403,6 +2466,8 @@ The best interviews do not feel like interviews. They feel like a conversation t
                 "LiveKit": "Live Kit",
             }),
         ],
+        # Shorter warmup reduces paused-scheduling windows that can drop early user turns.
+        aec_warmup_duration=1.0,
     )
 
     @session.on("session_usage_updated")
@@ -2584,7 +2649,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
                                 # Remove old state injections — keep only the latest 2
                                 state_msgs = [
                                     m
-                                    for m in session.chat_ctx.messages
+                                    for m in chat_ctx.messages
                                     if getattr(m, "role", "") == "system"
                                     and "[INTERVIEW STATE UPDATE" in (
                                         getattr(m, "content", "") or ""
@@ -2593,7 +2658,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
                                 if len(state_msgs) >= 2:
                                     for old_msg in state_msgs[:-1]:
                                         try:
-                                            session.chat_ctx.messages.remove(old_msg)
+                                            chat_ctx.messages.remove(old_msg)
                                         except (ValueError, AttributeError):
                                             pass
 
@@ -2603,7 +2668,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
                                     "Use this to guide your next 3-4 exchanges. "
                                     "Do not reference this note aloud."
                                 )
-                                session.chat_ctx.add_message(
+                                chat_ctx.add_message(
                                     role="system", content=injection_text
                                 )
                                 logger.info(
@@ -2615,7 +2680,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
                                 f"[STATE_INJECT] Injection failed at turn {t}: {e}"
                             )
 
-                    asyncio.get_event_loop().create_task(_inject_state())
+                    spawn_background_task(_inject_state(), f"inject_state_turn_{current_turn}")
 
             # --- Periodic auto-save every 5 turns to prevent data loss ---
             if len(transcript_lines) > 0 and len(transcript_lines) % 5 == 0:
@@ -2632,7 +2697,10 @@ The best interviews do not feel like interviews. They feel like a conversation t
                     except Exception as save_err:
                         logger.warning(f"[TRANSCRIPT] Periodic save failed: {save_err}")
 
-                asyncio.get_event_loop().create_task(_periodic_save())
+                spawn_background_task(
+                    _periodic_save(),
+                    f"periodic_save_{len(lines_snapshot)}_lines",
+                )
 
         except Exception as e:
             logger.warning(f"[TRANSCRIPT] Event parse error: {e}")
@@ -2720,7 +2788,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
     participant = await wait_for_human_participant(max_wait_seconds=300)
     if not participant:
         logger.warning(
-            f"[TIMEOUT] No candidate joined room for app {app_id} within 90s. Releasing slot."
+            f"[TIMEOUT] No candidate joined room for app {app_id} within 300s. Releasing slot."
         )
         disconnect_event.set()
         try:
@@ -2758,12 +2826,10 @@ The best interviews do not feel like interviews. They feel like a conversation t
         )
 
         # Mark as started in DB while greeting starts immediately.
-        asyncio.create_task(mark_interview_started(app_id))
-        # Stabilization delay: Give newly initialized plugins (especially Sarvam)
-        # a moment to reach a stable state before the first synthesis request.
-        # Sarvam TTS can fail with "Cannot write to closing transport" if the
-        # WebSocket session is recycled right after init — 1.5s is more reliable.
-        stabilization_delay = 1.5 if org_tts_provider == "SARVAM" else 0.5
+        spawn_background_task(mark_interview_started(app_id), "mark_interview_started")
+        # Short stabilization delay to reduce first-greeting latency while still
+        # avoiding immediate post-init transport churn.
+        stabilization_delay = 0.4 if org_tts_provider == "SARVAM" else 0.15
         await asyncio.sleep(stabilization_delay)
 
         try:
@@ -2796,7 +2862,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
                 greeting_delivered = False
                 for _attempt in range(3):
                     try:
-                        await session.say(welcome_text, allow_interruptions=False)
+                        await session.say(welcome_text, allow_interruptions=True)
                         greeting_delivered = True
                         logger.info(
                             f"[GREETING] Welcome message delivered (attempt {_attempt + 1})"
@@ -2933,7 +2999,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
             try:
                 # Reset before say() to prevent immediate re-trigger if tts is slow
                 reset_nudge_timer()
-                asyncio.get_event_loop().create_task(session.say(nudge_text))
+                spawn_background_task(session.say(nudge_text), "inactivity_nudge")
                 inactivity_nudge_count += 1
                 logger.info(f"[NUDGE] Inactivity nudge delivered: '{nudge_text[:40]}...'")
             except Exception as e:
@@ -2963,7 +3029,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
 
         try:
             await session.say(goodbye_text)
-            await asyncio.sleep(5)  # Let them hear the goodbye
+            await asyncio.sleep(0.5)  # tiny tail for transport flush
         except Exception:
             pass
 
@@ -2980,9 +3046,9 @@ The best interviews do not feel like interviews. They feel like a conversation t
 
     # --- Grace Period: Wait for final STT results to arrive (Deepgram/LiveKit tail) ---
     logger.info(
-        f"Interview ended (finished={finished_task.done()}, time_expired={time_expired}). Waiting 5s for final transcripts..."
+        f"Interview ended (finished={finished_task.done()}, time_expired={time_expired}). Waiting 1s for final transcripts..."
     )
-    await asyncio.sleep(5)
+    await asyncio.sleep(1)
 
     # ✅ Final definitive save
     await persist_transcript(app_id, transcript_lines, session_start_time)
@@ -3008,10 +3074,10 @@ The best interviews do not feel like interviews. They feel like a conversation t
                     org_id=org_id,
                     llm_model=analysis_openai_model,
                 ),
-                timeout=25,
+                timeout=8,
             )
         except asyncio.TimeoutError:
-            logger.warning(f"[SUMMARY] Timed out for {app_id}; skipped after 25s")
+            logger.warning(f"[SUMMARY] Timed out for {app_id}; skipped after 8s")
         except Exception as e:
             logger.error(f"[SUMMARY] Failed post-interview for {app_id}: {e}")
 
@@ -3021,10 +3087,19 @@ The best interviews do not feel like interviews. They feel like a conversation t
         # ⚡ Trigger Pinecone Sync immediately
         await notify_sync_engine(app_id)
 
+    # Cancel any leftover fire-and-forget work so job teardown is instant.
+    if background_tasks:
+        logger.debug(f"[SHUTDOWN] Cancelling {len(background_tasks)} background task(s)")
+        for bg_task in list(background_tasks):
+            if not bg_task.done():
+                bg_task.cancel()
+        await asyncio.gather(*list(background_tasks), return_exceptions=True)
+        background_tasks.clear()
+
     # Allow session to close
     logger.info("Final save complete. Closing job process.")
     try:
-        session.shutdown(drain=True)
+        session.shutdown(drain=False)
     except Exception:
         pass
 
