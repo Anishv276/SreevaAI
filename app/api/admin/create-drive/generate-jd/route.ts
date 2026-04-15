@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { recordOrgBillingFromOpenAICompletion } from "@/lib/usage-metrics";
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -138,6 +139,7 @@ OUTPUT SCHEMA — all fields required
 export async function POST(req: Request) {
     try {
         const { prompt, history = [] } = await req.json();
+        let orgId: string | null = null;
 
         if (!prompt) {
             return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
@@ -145,9 +147,11 @@ export async function POST(req: Request) {
 
         // ── Fetch organization context from DB ────────────────────────────────
         let orgContext = "";
+        let configuredOpenAIModel: string | null = null;
         try {
             const session = await getSession();
             if (session?.orgId) {
+                orgId = session.orgId;
                 const org = await prisma.organization.findUnique({
                     where: { id: session.orgId },
                     select: {
@@ -155,10 +159,15 @@ export async function POST(req: Request) {
                         industry: true,
                         size: true,
                         website: true,
+                        llmProvider: true,
+                        llmModel: true,
                     },
                 });
 
                 if (org) {
+                    if ((org.llmProvider || "OPENAI") === "OPENAI" && org.llmModel) {
+                        configuredOpenAIModel = org.llmModel;
+                    }
                     const parts = [
                         `Company Name: ${org.name}`,
                         org.industry ? `Industry: ${org.industry}` : null,
@@ -181,10 +190,12 @@ export async function POST(req: Request) {
                 content: m.content,
             }))
             .slice(-10);
+        const discoveryModel = configuredOpenAIModel || "gpt-4o-mini";
+        const synthesisModel = configuredOpenAIModel || "gpt-4o";
 
         // ── STAGE 1: Discovery Check (gpt-4o-mini, fast ~300ms) ──────────────
         const discoveryResponse = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: discoveryModel,
             messages: [
                 { role: "system", content: DISCOVERY_PROMPT },
                 ...historyMessages,
@@ -194,6 +205,13 @@ export async function POST(req: Request) {
             temperature: 0.2,
             max_tokens: 500,
         });
+        if (orgId) {
+            await recordOrgBillingFromOpenAICompletion({
+                orgId,
+                feature: "jdExtraction",
+                completion: discoveryResponse,
+            });
+        }
 
         const discoveryRaw = discoveryResponse.choices[0].message.content || "{}";
         const discovery = JSON.parse(discoveryRaw);
@@ -235,7 +253,7 @@ Now write the JD. Apply seniority calibration based on the experience level. Mak
 `;
 
         const synthesisResponse = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model: synthesisModel,
             messages: [
                 { role: "system", content: SYNTHESIS_PROMPT },
                 { role: "user", content: synthesisUserPrompt },
@@ -244,6 +262,13 @@ Now write the JD. Apply seniority calibration based on the experience level. Mak
             temperature: 0.85,
             max_tokens: 2500,
         });
+        if (orgId) {
+            await recordOrgBillingFromOpenAICompletion({
+                orgId,
+                feature: "jdExtraction",
+                completion: synthesisResponse,
+            });
+        }
 
         const synthesisContent = synthesisResponse.choices[0].message.content;
         const jdData = JSON.parse(synthesisContent || "{}");

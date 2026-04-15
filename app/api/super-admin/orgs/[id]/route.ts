@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { deleteObject, getKeyFromUrl } from "@/lib/s3";
@@ -55,6 +56,7 @@ export async function PATCH(
             ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice,
             sttProvider, deepgramModel, sarvamSttModel,
             llmProvider, llmModel, llmTemperature,
+            usageMetrics,
         } = body;
 
         // Build update — only write fields that were sent
@@ -102,6 +104,24 @@ export async function PATCH(
         if (llmProvider !== undefined) updateData.llmProvider = llmProvider;
         if (llmModel !== undefined) updateData.llmModel = llmModel;
         if (llmTemperature !== undefined) updateData.llmTemperature = Number(llmTemperature);
+
+        // Billing / usage metrics are stored as JSON
+        if (usageMetrics !== undefined) {
+            if (typeof usageMetrics === "string") {
+                const trimmed = usageMetrics.trim();
+                if (!trimmed) {
+                    updateData.usageMetrics = {};
+                } else {
+                    try {
+                        updateData.usageMetrics = JSON.parse(trimmed);
+                    } catch {
+                        return NextResponse.json({ error: "usageMetrics must be valid JSON" }, { status: 400 });
+                    }
+                }
+            } else {
+                updateData.usageMetrics = usageMetrics ?? {};
+            }
+        }
 
         const updated = await prisma.organization.update({
             where: { id },

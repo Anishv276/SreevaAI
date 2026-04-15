@@ -11,8 +11,8 @@ export async function GET() {
             select: { status: true }
         } as any);
         
-        if (!org || org.status !== 'ACTIVE') {
-            // Org is suspended or deleted, session is invalid
+        if (!org || (org.status !== 'ACTIVE' && org.status !== 'SUSPENDED' && org.status !== 'CLOSED')) {
+            // Org is deleted or has an invalid status, session is invalid
             return NextResponse.json(null);
         }
     }

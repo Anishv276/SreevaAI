@@ -118,6 +118,7 @@ export default function ApplyStartPage({ params }: { params: Promise<{ id: strin
         const data = new FormData()
         data.append("file", file)
         data.append("type", "RESUME")
+        if (drive?.orgId) data.append("orgId", drive.orgId)
 
         try {
             const response = await fetch("/api/extract", {

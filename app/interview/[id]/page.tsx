@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Maximize, Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
 import { HardwareCheck } from "@/components/careers/interview/HardwareCheck";
 import {
   LiveKitRoom,
@@ -19,10 +20,22 @@ import {
   useRoomContext,
   useTranscriptions,
   useVoiceAssistant,
+  useAgent,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
 import { Track, RoomEvent } from "livekit-client";
-import type { Room, TextStreamData } from "livekit-client";
+import type { Room } from "livekit-client";
+
+interface TextStreamData {
+    text: string;
+    participantInfo?: { identity: string };
+    streamInfo: {
+        id: string;
+        timestamp: number;
+        attributes?: Record<string, string>;
+    };
+}
+
 
 interface InterviewPageProps {
     params: Promise<{ id: string }>;
@@ -53,51 +66,17 @@ type AttachableTrack = {
 
 /** Typewriter component: streams text word-by-word whenever text changes. */
 const StreamingText = memo(function StreamingText({ text, className }: { text: string; className?: string }) {
-    const [shown, setShown] = useState("");
-    const shownRef = useRef("");
-    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const targetRef = useRef(text);
-
-    useEffect(() => {
-        if (timerRef.current) clearTimeout(timerRef.current);
-        targetRef.current = text;
-
-        // Split text into words (preserving spaces)
-        const words = text.split(/(\s+)/);
-        const currentWords = shownRef.current.split(/(\s+)/);
-
-        // If new text doesn't start with what we are showing, reset
-        const isExtension = text.startsWith(shownRef.current);
-        let wordIndex = isExtension ? currentWords.length : 0;
-
-        if (!isExtension) {
-            shownRef.current = "";
-            setShown("");
-        }
-
-        const step = () => {
-            if (targetRef.current !== text) return;
-            
-            // Advance by one "word" (which might be a word + its following space)
-            if (wordIndex < words.length) {
-                wordIndex++;
-                const next = words.slice(0, wordIndex).join("");
-                shownRef.current = next;
-                setShown(next);
-                
-                // Faster interval for smoother "word" flow
-                timerRef.current = setTimeout(step, 40); 
-            }
-        };
-
-        if (wordIndex < words.length) {
-            timerRef.current = setTimeout(step, 10);
-        }
-
-        return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-    }, [text]);
-
-    return <p className={className}>{shown}</p>;
+    // With TTS-aligned transcripts enabled, the backend sends text exactly when it's spoken.
+    // We no longer need a manual 40ms timer to "guess" the speed.
+    return (
+        <motion.p 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className={className}
+        >
+            {text}
+        </motion.p>
+    );
 });
 
 function getMediaStreamTrack(trackRef: TrackReference | null): MediaStreamTrack | null {
@@ -233,13 +212,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             try {
                 await localParticipant.publishData(data, { reliable: true });
                 console.log("SENT READY SIGNAL (parent)", { attempt: attempts });
-            } catch {
-                try {
-                    await localParticipant.publishData(data, true);
-                    console.log("SENT READY SIGNAL (parent legacy)", { attempt: attempts });
-                } catch (err) {
-                    console.warn("[READY][parent] failed to publish user_ready", err);
-                }
+            } catch (err) {
+                console.warn("[READY][parent] failed to publish user_ready", err);
             }
         };
 
@@ -735,10 +709,22 @@ function InterviewRoomContent({
         if (lkRoom) onRoomReady?.(lkRoom);
     }, [lkRoom, onRoomReady]);
 
-    const { state: agentState, audioTrack: agentAudioTrack } = useVoiceAssistant();
-    const isAiSpeaking = agentState === "speaking";
+    const { audioTrack: agentAudioTrack } = useVoiceAssistant();
+    const agent = useAgent();
+    
+    // Derived states for premium UI feedback
+    const isAiSpeaking = agent.state === "speaking";
+    const isAiThinking = agent.state === "thinking";
+    const isAiListening = agent.state === "listening" || agent.canListen;
+    
     const aiParticipantTrack = agentAudioTrack;
     const hasAgentPresence = remoteParticipants.length > 0;
+    
+    // Media Control Logic
+    const isMicEnabled = localParticipant?.isMicrophoneEnabled ?? false;
+    const toggleMic = useCallback(() => {
+        localParticipant?.setMicrophoneEnabled(!isMicEnabled);
+    }, [localParticipant, isMicEnabled]);
 
     // startAudio is now called from handleHardwareComplete (user gesture) in the parent.
     // This useEffect is a fallback only — if the room reconnects mid-interview.
@@ -774,7 +760,7 @@ function InterviewRoomContent({
 
     // Start recording only after interview phase starts and agent actually begins speaking.
     useEffect(() => {
-        if (!isInterviewActive || agentState !== "speaking") return;
+        if (!isInterviewActive || agent.state !== "speaking") return;
 
         console.log("[Agent] State=speaking during interview");
 
@@ -788,7 +774,7 @@ function InterviewRoomContent({
                 body: JSON.stringify({ applicationId: id }),
             }).catch((err) => console.warn("[Recording] start-recording request failed:", err));
         }
-    }, [agentState, id, isInterviewActive]);
+    }, [agent.state, id, isInterviewActive]);
     const [remoteForceFinish, setRemoteForceFinish] = useState(false);
     const localCameraTrack =
         cameraTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera) || null;
@@ -1022,8 +1008,8 @@ function InterviewRoomContent({
             <div className="flex-1 flex flex-col items-center justify-center p-8 relative">
                 <motion.div 
                     animate={{ 
-                        scale: isAiSpeaking ? [1, 1.04, 1.01, 1.06, 1] : [1, 1.01, 1],
-                        borderColor: isAiSpeaking ? "rgba(249, 115, 34, 0.6)" : "rgba(249, 115, 34, 0.2)",
+                        scale: isAiSpeaking ? [1, 1.04, 1.01, 1.06, 1] : (isAiThinking ? [1, 1.02, 1] : [1, 1.01, 1]),
+                        borderColor: isAiSpeaking ? "rgba(249, 115, 34, 0.6)" : (isAiThinking ? "rgba(249, 115, 34, 0.3)" : "rgba(249, 115, 34, 0.2)"),
                     }}
                     transition={{ 
                         duration: isAiSpeaking ? 0.8 : 4, 
@@ -1032,28 +1018,13 @@ function InterviewRoomContent({
                     }}
                     className="w-64 h-64 rounded-full border-2 flex items-center justify-center relative bg-black/40 backdrop-blur-3xl shadow-[0_0_120px_rgba(249,115,22,0.1)] group"
                 >
-                    {/* Premium Organic Voice Halos (Animated Rings) */}
-                    <AnimatePresence>
-                        {isAiSpeaking && (
-                            <>
-                                {[...Array(3)].map((_, i) => (
-                                    <motion.div
-                                        key={i}
-                                        initial={{ opacity: 0, scale: 1 }}
-                                        animate={{ opacity: [0, 0.4, 0], scale: [1, 1.5 + (i * 0.2)] }}
-                                        exit={{ opacity: 0 }}
-                                        transition={{ 
-                                            duration: 2, 
-                                            repeat: Infinity, 
-                                            delay: i * 0.6,
-                                            ease: "easeOut" 
-                                        }}
-                                        className="absolute inset-0 rounded-full border-2 border-orange-500/30 pointer-events-none"
-                                    />
-                                ))}
-                            </>
-                        )}
-                    </AnimatePresence>
+                    {/* Advanced Shader Aura Visualizer (Real-time Audio Reactive) */}
+                    <AuraVisualizer 
+                        state={agent.state}
+                        audioTrack={agentAudioTrack}
+                        size="xl"
+                        className="absolute inset-0 z-0 scale-150 opacity-80"
+                    />
 
                     {/* Image Container */}
                     <div className="absolute inset-2 rounded-full overflow-hidden border-4 border-zinc-800/50 shadow-inner">
@@ -1062,7 +1033,8 @@ function InterviewRoomContent({
                             alt="AI Interviewer" 
                             className={cn(
                                 "w-full h-full object-cover transition-all duration-700",
-                                isAiSpeaking ? "scale-110 contrast-[1.1] brightness-[1.05]" : "scale-100 grayscale-[0.2] brightness-90"
+                                isAiSpeaking ? "scale-110 contrast-[1.1] brightness-[1.05]" : 
+                                (isAiThinking ? "scale-105 contrast-[1.05] brightness-[1.02]" : "scale-100 grayscale-[0.2] brightness-90")
                             )}
                         />
                         {/* Gradient Overlay for Depth */}
@@ -1071,10 +1043,14 @@ function InterviewRoomContent({
 
                     <div className="absolute -bottom-16 flex flex-col items-center gap-2">
                         <p className={cn(
-                            "text-[10px] font-black uppercase tracking-[0.5em] transition-all duration-500",
-                            isAiSpeaking ? "text-orange-500 translate-y-1" : "text-zinc-500"
+                            "text-[10px] font-black uppercase tracking-[0.5em] transition-all duration-500 text-center",
+                            isAiSpeaking ? "text-orange-500 translate-y-1" : (isAiThinking ? "text-orange-300" : "text-zinc-500")
                         )}>
-                            {isAiSpeaking ? "Interviewer Speaking" : (aiParticipantTrack ? "Interviewer Listening" : "Waiting for Interviewer...")}
+                            {isAiSpeaking 
+                                ? "Interviewer Speaking" 
+                                : (isAiThinking 
+                                    ? "Ishita is thinking..." 
+                                    : (isAiListening ? "Interviewer Listening" : "Waiting for Interviewer..."))}
                         </p>
                         {isAiSpeaking && (
                             <motion.div 
@@ -1159,14 +1135,46 @@ function InterviewRoomContent({
             <div className="h-44 bg-zinc-900/20 backdrop-blur-3xl p-8 grid grid-cols-3 items-center relative z-10">
                 
                 {/* Left: Status */}
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-orange-500/10 flex items-center justify-center border border-orange-500/20">
-                        <ShieldCheck className="w-6 h-6 text-orange-500" />
+                <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-orange-500/10 flex items-center justify-center border border-orange-500/20">
+                            <ShieldCheck className="w-6 h-6 text-orange-500" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Security</p>
+                            <p className="text-[11px] font-bold text-green-500 uppercase tracking-widest">Encrypted</p>
+                        </div>
                     </div>
-                    <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Security</p>
-                        <p className="text-[11px] font-bold text-green-500 uppercase tracking-widest">Encrypted</p>
-                    </div>
+
+                    {/* Microphone Toggle */}
+                    <button 
+                        onClick={toggleMic}
+                        className={cn(
+                            "group flex items-center gap-3 px-5 py-3 rounded-2xl border transition-all active:scale-95",
+                            isMicEnabled 
+                                ? "bg-zinc-800/40 border-white/5 hover:bg-zinc-800/60" 
+                                : "bg-red-500/10 border-red-500/20 hover:bg-red-500/20"
+                        )}
+                    >
+                        <div className={cn(
+                            "w-8 h-8 rounded-xl flex items-center justify-center transition-colors",
+                            isMicEnabled ? "bg-orange-500/10" : "bg-red-500/20"
+                        )}>
+                            {isMicEnabled 
+                                ? <Mic className="w-4 h-4 text-orange-500" /> 
+                                : <MicOff className="w-4 h-4 text-red-500" />
+                            }
+                        </div>
+                        <div className="text-left">
+                            <p className="text-[8px] font-black uppercase tracking-[0.2em] text-zinc-500">Microphone</p>
+                            <p className={cn(
+                                "text-[10px] font-bold uppercase tracking-widest",
+                                isMicEnabled ? "text-white" : "text-red-500"
+                            )}>
+                                {isMicEnabled ? "Active" : "Muted"}
+                            </p>
+                        </div>
+                    </button>
                 </div>
 
                 {/* Middle: Centered End Interview Button */}

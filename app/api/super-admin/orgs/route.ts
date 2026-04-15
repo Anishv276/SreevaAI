@@ -94,6 +94,7 @@ export async function POST(request: Request) {
                 slug: slug.toLowerCase().replace(/\s+/g, "-"),
                 plan: plan || "STARTER",
                 logoUrl: logoUrl || null,
+                usageMetrics: {},
                 ttsProvider: ttsProvider || "CARTESIA",
                 sttProvider: sttProvider || "DEEPGRAM",
             };

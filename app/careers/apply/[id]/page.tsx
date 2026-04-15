@@ -105,6 +105,7 @@ export default function ApplicationPage() {
         const data = new FormData();
         data.append("file", file);
         data.append("type", "RESUME");
+        if ((job as any)?.orgId) data.append("orgId", (job as any).orgId);
         
         try {
             const response = await fetch("/api/extract", { method: "POST", body: data });

@@ -43,6 +43,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
         return NextResponse.json({
             ...drive,
+            orgId: (drive as any).orgId,
             applicants: (drive as any)._count?.applications || 0,
             daysLeft: Math.max(0, Math.ceil((new Date((drive as any).createdAt).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24))),
             aiScreening: {

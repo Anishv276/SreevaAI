@@ -43,6 +43,7 @@ interface OrgDetail {
     plan: string;
     status: string;
     industry: string | null;
+    usageMetrics?: Record<string, unknown> | null;
     ttsProvider?: string;
     cartesiaVoiceId?: string;
     cartesiaModel?: string;
@@ -68,6 +69,23 @@ interface Candidate {
     date: string;
 }
 
+type BillingFeatureMetrics = {
+    runs?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    sessionDuration?: number;
+    costUsd?: number;
+    ttsRuns?: number;
+    ttsCharacters?: number;
+    ttsCostUsd?: number;
+    sttRuns?: number;
+    sttAudioSeconds?: number;
+    sttCostUsd?: number;
+    byModel?: Record<string, unknown>;
+    ttsByModel?: Record<string, unknown>;
+    sttByModel?: Record<string, unknown>;
+};
+
 const PLANS = [
     { id: "STARTER", label: "Starter", desc: "For small teams", color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
     { id: "PRO", label: "Professional", desc: "Best for scaling", color: "text-[#F97316]", bg: "bg-orange-50", border: "border-orange-100" },
@@ -85,7 +103,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
     // Sync tab from URL to state
     useEffect(() => {
         if (tab === "drives" || tab === "candidates") {
-            setView(tab as any);
+            setView(tab as "drives" | "candidates");
         }
     }, [tab]);
     const [org, setOrg] = useState<OrgDetail | null>(null);
@@ -97,6 +115,16 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
     const [deleteError, setDeleteError] = useState("");
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [showMetrics, setShowMetrics] = useState(false);
+
+    const formatModelNames = (models?: Record<string, unknown>, fallback?: string | null) => {
+        const names = Object.keys(models || {})
+            .map((k) => k.split(":").slice(1).join(":") || k)
+            .filter(Boolean);
+        if (names.length) return names.join(", ");
+        const configured = (fallback || "").trim();
+        return configured || "-";
+    };
 
 
     // Pagination & Search state
@@ -220,6 +248,12 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                         </div>
 
                         <div className="flex items-center gap-4 mt-8 md:mt-0">
+                            <button
+                                onClick={() => setShowMetrics(true)}
+                                className="flex items-center gap-2 px-6 py-3 bg-gray-900 text-white font-black text-[10px] uppercase tracking-widest rounded-xl shadow-sm border border-gray-900 hover:bg-gray-800 transition-all"
+                            >
+                                <Sparkles className="h-4 w-4" /> View Metrics
+                            </button>
                             {view === "candidates" && (
                                 <button 
                                     onClick={() => setIsDeleteModalOpen(true)}
@@ -384,6 +418,150 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                 confirmText="Terminate Records"
                 isLoading={isDeleting}
             />
+
+            {showMetrics && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+                    <div className="w-full max-w-4xl overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-5">
+                            <div>
+                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Metrics</div>
+                                <h3 className="text-xl font-black text-gray-900">AI usage overview</h3>
+                            </div>
+                            <button
+                                onClick={() => setShowMetrics(false)}
+                                className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        <div className="grid gap-4 p-6 md:grid-cols-2">
+                            {[
+                                { label: "Interview LLM", key: "interview" },
+                                { label: "Resume Extraction", key: "resumeExtraction" },
+                                { label: "JD Extraction", key: "jdExtraction" },
+                                { label: "Chatbot", key: "chatbot" },
+                                { label: "General", key: "general" },
+                            ].map((section) => {
+                                const usage = (org?.usageMetrics ?? {}) as Record<string, unknown>;
+                                const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
+                                const billing = (billingAll[section.key] ?? {}) as BillingFeatureMetrics;
+                                const totalTokens = Number(billing?.inputTokens || 0) + Number(billing?.outputTokens || 0);
+                                const interviewMinutes = section.key === "interview"
+                                    ? (Number(billing?.sessionDuration || 0) / 60).toFixed(1)
+                                    : null;
+                                const interviewTtsCost = section.key === "interview"
+                                    ? Number(billing?.ttsCostUsd || 0).toFixed(2)
+                                    : null;
+                                const interviewTtsChars = section.key === "interview"
+                                    ? Number(billing?.ttsCharacters || 0).toLocaleString()
+                                    : null;
+                                const interviewSttCost = section.key === "interview"
+                                    ? Number(billing?.sttCostUsd || 0).toFixed(2)
+                                    : null;
+                                const interviewSttMinutes = section.key === "interview"
+                                    ? (Number(billing?.sttAudioSeconds || 0) / 60).toFixed(1)
+                                    : null;
+                                const llmModels = formatModelNames(billing?.byModel, org?.llmModel || "");
+                                const ttsModels = section.key === "interview"
+                                    ? formatModelNames(
+                                        billing?.ttsByModel,
+                                        (org?.ttsProvider || "").toUpperCase() === "SARVAM"
+                                            ? (org?.sarvamModel || "bulbul:v3")
+                                            : (org?.cartesiaModel || "sonic-english"),
+                                    )
+                                    : null;
+                                const sttModels = section.key === "interview"
+                                    ? formatModelNames(
+                                        billing?.sttByModel,
+                                        (org?.sttProvider || "").toUpperCase() === "SARVAM"
+                                            ? (org?.sarvamSttModel || "saaras:v3")
+                                            : (org?.deepgramModel || "nova-3-general"),
+                                    )
+                                    : null;
+                                return (
+                                    <div key={section.key} className="rounded-2xl border border-gray-100 bg-gray-50/70 p-5 shadow-sm">
+                                        <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">{section.label}</div>
+                                        <div className="mt-2 text-3xl font-black text-gray-900">${Number(billing?.costUsd || 0).toFixed(2)}</div>
+                                        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                                            <div className="rounded-xl border border-gray-100 bg-white p-3">
+                                                <div className="text-[10px] font-black uppercase tracking-widest text-gray-400">Runs</div>
+                                                <div className="text-lg font-black text-gray-900">{billing?.runs || 0}</div>
+                                            </div>
+                                            <div className="rounded-xl border border-gray-100 bg-white p-3">
+                                                <div className="text-[10px] font-black uppercase tracking-widest text-gray-400">Tokens</div>
+                                                <div className="text-lg font-black text-gray-900">{totalTokens.toLocaleString()}</div>
+                                            </div>
+                                        </div>
+                                        {interviewMinutes !== null && (
+                                            <div className="mt-3 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                                Interview time: <span className="text-gray-900">{interviewMinutes} min</span>
+                                            </div>
+                                        )}
+                                        <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                            LLM model: <span className="text-gray-900">{llmModels}</span>
+                                        </div>
+                                        {interviewTtsCost !== null && (
+                                            <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                                TTS cost: <span className="text-gray-900">${interviewTtsCost}</span>
+                                            </div>
+                                        )}
+                                        {interviewTtsChars !== null && (
+                                            <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                                TTS chars: <span className="text-gray-900">{interviewTtsChars}</span>
+                                            </div>
+                                        )}
+                                        {ttsModels !== null && (
+                                            <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                                TTS model: <span className="text-gray-900">{ttsModels}</span>
+                                            </div>
+                                        )}
+                                        {interviewSttCost !== null && (
+                                            <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                                STT cost: <span className="text-gray-900">${interviewSttCost}</span>
+                                            </div>
+                                        )}
+                                        {interviewSttMinutes !== null && (
+                                            <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                                STT audio: <span className="text-gray-900">{interviewSttMinutes} min</span>
+                                            </div>
+                                        )}
+                                        {sttModels !== null && (
+                                            <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                                STT model: <span className="text-gray-900">{sttModels}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="border-t border-gray-100 px-6 py-4">
+                            <div className="text-sm font-bold text-gray-700">
+                                Total AI Cost (LLM + TTS + STT):{" "}
+                                <span className="text-gray-900">
+                                    ${[
+                                        "interview",
+                                        "resumeExtraction",
+                                        "jdExtraction",
+                                        "chatbot",
+                                        "general",
+                                    ].reduce((sum, key) => {
+                                        const usage = (org?.usageMetrics ?? {}) as Record<string, unknown>;
+                                        const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
+                                        const row = billingAll[key] ?? {};
+                                        return (
+                                            sum
+                                            + Number(row.costUsd || 0)
+                                            + Number(row.ttsCostUsd || 0)
+                                            + Number(row.sttCostUsd || 0)
+                                        );
+                                    }, 0).toFixed(2)}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

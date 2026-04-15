@@ -6,12 +6,24 @@ import { OnboardingRedirect } from "@/components/admin/onboarding-redirect";
 import { RecruiterAssistant } from "@/components/admin/RecruiterAssistant";
 import { DomainVerificationBanner } from "@/components/admin/DomainVerificationBanner";
 import { Toaster } from "@/components/ui/toast-custom";
+import { AccountStatusHandler } from "@/components/admin/AccountStatusHandler";
+import { prisma } from "@/lib/prisma";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
     const session = await getSession();
 
     if (!session) {
         redirect("/login?from=admin");
+    }
+
+    // Fetch account status in real-time
+    let orgStatus = "ACTIVE";
+    if (session.orgId) {
+        const org = await prisma.organization.findUnique({
+            where: { id: session.orgId },
+            select: { status: true }
+        } as any);
+        orgStatus = org?.status || "ACTIVE";
     }
 
     // Allow Super Admins to access admin routes for "inspections"
@@ -27,6 +39,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
     return (
         <>
+        <AccountStatusHandler status={orgStatus} />
         <div className="flex min-h-screen bg-[#F8F9FB] relative overflow-hidden font-sans">
             {/* ── Background Deck: Aurora Blobs ──────────────── */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">

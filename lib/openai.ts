@@ -108,7 +108,16 @@ const JDSkeleton: JDData = {
 
 // calculateScore is handled by the Python worker scripts/extract_pdf.py for production consistency.
 
-export async function extractJDFromText(text: string) {
+export async function extractJDFromText(text: string, modelOverride?: string): Promise<{
+    data: JDData;
+    usage: {
+        model: string;
+        inputTokens: number;
+        outputTokens: number;
+        cachedInputTokens: number;
+    };
+}> {
+    const model = modelOverride || "gpt-4o";
     const prompt = `You are a senior technical recruiter and structured data engineer.
 Your job is to extract a precise, bias-free, machine-readable JSON object from a Job Description.
 This output is consumed by an automated scoring engine that matches hundreds of resumes.
@@ -317,7 +326,7 @@ ${text}
     try {
         console.log("[AI_JD_EXTRACT_START]: Text length:", text.length);
         const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model,
             messages: [
                 { role: "system", content: "You are structured data extraction engine for hiring systems. Convert JDs into clean, consistent JSON. Output ONLY valid JSON. Follow the schema exactly. Do not add extra fields. Standardize all values. Remove duplicates." },
                 { role: "user", content: prompt }
@@ -328,7 +337,15 @@ ${text}
         const content = completion.choices[0].message.content;
         if (!content) {
             console.error("[AI_JD_EXTRACT_NULL]: No content received");
-            return JDSkeleton;
+            return {
+                data: JDSkeleton,
+                usage: {
+                    model,
+                    inputTokens: 0,
+                    outputTokens: 0,
+                    cachedInputTokens: 0,
+                },
+            };
         }
 
         const rawData = JSON.parse(content);
@@ -337,13 +354,37 @@ ${text}
         if (!validated.success) {
             console.error("[AI_JD_VALIDATION_ERROR]:", validated.error.format());
             // Merge valid parts with skeleton if possible, but for now just return skeleton to be safe
-            return { ...JDSkeleton, ...rawData }; // Attempt partial recovery
+            return {
+                data: { ...JDSkeleton, ...rawData } as JDData,
+                usage: {
+                    model,
+                    inputTokens: completion.usage?.prompt_tokens ?? 0,
+                    outputTokens: completion.usage?.completion_tokens ?? 0,
+                    cachedInputTokens: completion.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+                },
+            };
         }
 
         console.log("[AI_JD_EXTRACT_SUCCESS]: Extraction complete for", validated.data.job_title);
-        return validated.data;
+        return {
+            data: validated.data,
+            usage: {
+                model,
+                inputTokens: completion.usage?.prompt_tokens ?? 0,
+                outputTokens: completion.usage?.completion_tokens ?? 0,
+                cachedInputTokens: completion.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+            },
+        };
     } catch (error: any) {
         console.error("[AI_JD_EXTRACT_FATAL]:", error.message);
-        return JDSkeleton;
+        return {
+            data: JDSkeleton,
+            usage: {
+                model,
+                inputTokens: 0,
+                outputTokens: 0,
+                cachedInputTokens: 0,
+            },
+        };
     }
 }

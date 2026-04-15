@@ -4,6 +4,7 @@ livekit-plugins-openai==1.5.1
 livekit-plugins-deepgram==1.5.1
 livekit-plugins-cartesia==1.5.1
 livekit-plugins-silero==1.5.1
+livekit-plugins-turn-detector==1.4.4
 
 # ── Other ──────────────────────────────────────────────────────────────────────
 python-dotenv>=1.0.0

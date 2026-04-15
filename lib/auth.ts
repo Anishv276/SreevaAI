@@ -2,9 +2,32 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
-const SECRET = new TextEncoder().encode(
-    process.env.JWT_SECRET || "lumoscale-super-secret-jwt-key-2026"
-);
+const DEV_JWT_SECRET = "dev-only-jwt-secret-change-me";
+let warnedAboutMissingSecret = false;
+
+function getJwtSecret(): string {
+    const secret = process.env.JWT_SECRET?.trim();
+    if (secret) return secret;
+
+    if (process.env.NODE_ENV === "production") {
+        throw new Error(
+            "JWT_SECRET is required in production. Set a strong secret in your environment before starting the app."
+        );
+    }
+
+    if (!warnedAboutMissingSecret) {
+        console.warn(
+            "[auth] JWT_SECRET is not set. Using a development-only fallback secret."
+        );
+        warnedAboutMissingSecret = true;
+    }
+
+    return DEV_JWT_SECRET;
+}
+
+function getSecretKey() {
+    return new TextEncoder().encode(getJwtSecret());
+}
 
 export type SessionRole = "SUPER_ADMIN" | "ADMIN" | "CANDIDATE";
 
@@ -16,6 +39,11 @@ export interface SessionUser {
     orgId: string | null;
     onboardingComplete?: boolean;
 }
+
+type SessionTokenPayload = SessionUser & {
+    exp?: number;
+    iat?: number;
+};
 
 export function normalizeRole(role: string | null | undefined): SessionRole {
     const normalized = (role || "").toUpperCase();
@@ -37,13 +65,13 @@ export async function createSession(user: SessionUser): Promise<string> {
         .setProtectedHeader({ alg: "HS256" })
         .setIssuedAt()
         .setExpirationTime("7d")
-        .sign(SECRET);
+        .sign(getSecretKey());
 }
 
 export async function verifySession(token: string): Promise<SessionUser | null> {
     try {
-        const { payload } = await jwtVerify(token, SECRET);
-        return payload as unknown as any;
+        const { payload } = await jwtVerify(token, getSecretKey());
+        return payload as unknown as SessionUser;
     } catch {
         return null;
     }
@@ -68,7 +96,8 @@ export async function refreshSessionCookie(request: NextRequest, response: NextR
     const parsed = await verifySession(sessionCookie);
     if (!parsed) return response;
 
-    const expSeconds = Number((parsed as any).exp || 0);
+    const tokenPayload = parsed as SessionTokenPayload;
+    const expSeconds = Number(tokenPayload.exp || 0);
     if (expSeconds > 0) {
         const remainingMs = expSeconds * 1000 - Date.now();
         const refreshThresholdMs = 24 * 60 * 60 * 1000; // refresh only in last 24h
@@ -78,10 +107,12 @@ export async function refreshSessionCookie(request: NextRequest, response: NextR
     }
 
     // Remove existing timestamps to prevent conflicts when re-signing
-    const { exp, iat, ...userData } = parsed as any;
+    const { exp, iat, ...userData } = tokenPayload;
+    void exp;
+    void iat;
     
     const expiresIn = 7 * 24 * 60 * 60 * 1000; // 7 days
-    const newSessionToken = await createSession(userData as any);
+    const newSessionToken = await createSession(userData);
     
     response.cookies.set("session", newSessionToken, {
         httpOnly: true,

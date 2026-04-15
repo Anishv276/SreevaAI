@@ -16,6 +16,7 @@ import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/auth-context";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
+import { useSearchParams } from "next/navigation";
 
 /* ── Section nav ──────────────────────────────────── */
 const sections = [
@@ -96,7 +97,15 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
 /* ── Main Page ────────────────────────────────────── */
 export default function SettingsPage() {
     const { user } = useAuth();
+    const searchParams = useSearchParams();
     const [activeSection, setActiveSection] = useState("profile");
+
+    useEffect(() => {
+        const section = searchParams.get("section");
+        if (section && sections.some(s => s.id === section)) {
+            setActiveSection(section);
+        }
+    }, [searchParams]);
     const [isLoading, setIsLoading] = useState(true);
     const logoInputRef = useRef<HTMLInputElement>(null);
     const [isUploadingLogo, setIsUploadingLogo] = useState(false);

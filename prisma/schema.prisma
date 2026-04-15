@@ -7,7 +7,6 @@ datasource db {
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
-
 model Organization {
   id                 String      @id
   name               String
@@ -44,6 +43,7 @@ model Organization {
   llmProvider        String?     @default("OPENAI")
   llmTemperature     Float?      @default(0.7)
   cartesiaModel      String?     @default("sonic-english")
+  usageMetrics       Json?       @default("{}")
   drives             Drive[]
   invites            OrgInvite[]
   users              User[]

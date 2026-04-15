@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { recordOrgBillingFromOpenAICompletion } from "@/lib/usage-metrics";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
@@ -121,10 +122,12 @@ export async function generateInterviewReport(opts: {
   candidateName: string;
   durationSeconds: number;
   proctoringEvents?: any[];
+  orgId?: string;
 }): Promise<InterviewReport> {
   const {
     transcript, resumeText, jdText, role,
     candidateName, durationSeconds, proctoringEvents = [],
+    orgId,
   } = opts;
 
   const durationMin = Math.round(durationSeconds / 60);
@@ -243,6 +246,13 @@ Rules:
       { role: "user",   content: userPrompt },
     ],
   });
+  if (orgId) {
+    await recordOrgBillingFromOpenAICompletion({
+      orgId,
+      feature: "interview",
+      completion: response,
+    });
+  }
 
   const raw = JSON.parse(response.choices[0].message.content!);
 

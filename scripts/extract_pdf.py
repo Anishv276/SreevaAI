@@ -716,7 +716,7 @@ def compute_score(jd_data, resume_data, threshold=70):
 
 
 def generate_report(
-    jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client
+    jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client, report_model="gpt-4o"
 ):
     """
     LLM writes ONLY the human-readable report.
@@ -922,7 +922,7 @@ Return ONLY valid JSON in this EXACT schema (no markdown, no code fences):
 """
 
     completion = client.chat.completions.create(
-        model="gpt-4o",
+        model=report_model,
         temperature=0,
         messages=[
             {
@@ -959,10 +959,21 @@ Return ONLY valid JSON in this EXACT schema (no markdown, no code fences):
         response_format={"type": "json_object"},
     )
 
-    return json.loads(completion.choices[0].message.content)
+    report = json.loads(completion.choices[0].message.content)
+    usage = getattr(completion, "usage", None)
+    prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+    completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+    prompt_details = getattr(usage, "prompt_tokens_details", None)
+    cached_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
+    return report, {
+        "model": report_model,
+        "inputTokens": prompt_tokens,
+        "outputTokens": completion_tokens,
+        "cachedInputTokens": cached_tokens,
+    }
 
 
-def extract_data(text, type_):
+def extract_data(text, type_, llm_model_override=None):
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         print(
@@ -1477,8 +1488,14 @@ Resume:
             flush=True,
         )
         try:
-            report = generate_report(
-                jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client
+            report, report_usage = generate_report(
+                jd_data,
+                resume_data,
+                jd_raw_text,
+                resume_raw_text,
+                score_result,
+                client,
+                report_model=llm_model_override or "gpt-4o",
             )
             # ── 3. ASSEMBLE FINAL OUTPUT ───────────────────────
             final_data = {
@@ -1497,17 +1514,25 @@ Resume:
                 # Backward-compat: if LLM still emits old key, promote it
                 "experience_assessment": report.get("experience_assessment") or report.get("experience_analysis") or {},
             }
-            return final_data
+            return {"data": final_data, "usage": report_usage}
         except Exception as e:
             # Fallback reasoning if detailed report fails
             return {
-                **score_result,
-                "recruiter_snapshot": f"Automated evaluation completed with score {score_result['score']}.",
-                "ai_verdict": f"Status: {score_result['status']}. Score: {score_result['score']}.",
+                "data": {
+                    **score_result,
+                    "recruiter_snapshot": f"Automated evaluation completed with score {score_result['score']}.",
+                    "ai_verdict": f"Status: {score_result['status']}. Score: {score_result['score']}.",
+                },
+                "usage": {
+                    "model": llm_model_override or "gpt-4o",
+                    "inputTokens": 0,
+                    "outputTokens": 0,
+                    "cachedInputTokens": 0,
+                },
             }
 
-    # gpt-4o-mini for all types
-    model = "gpt-4o-mini"
+    # gpt-4o-mini for all types unless a model override is provided
+    model = llm_model_override or "gpt-4o-mini"
     temperature = 0
 
     system_prompt = (
@@ -1544,7 +1569,21 @@ Resume:
         if content is None:
             raise ValueError("OpenAI returned empty content")
 
-        return json.loads(content)
+        usage = getattr(completion, "usage", None)
+        prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+        prompt_details = getattr(usage, "prompt_tokens_details", None)
+        cached_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
+
+        return {
+            "data": json.loads(content),
+            "usage": {
+                "model": model,
+                "inputTokens": prompt_tokens,
+                "outputTokens": completion_tokens,
+                "cachedInputTokens": cached_tokens,
+            },
+        }
     except Exception as e:
         print(json.dumps({"error": f"OpenAI Error: {str(e)}"}))
         sys.exit(1)
@@ -1561,6 +1600,7 @@ if __name__ == "__main__":
 
     file_path = sys.argv[1]
     type_ = sys.argv[2]
+    llm_model_override = sys.argv[3] if len(sys.argv) > 3 else None
 
     if not os.path.exists(file_path):
         print(json.dumps({"error": f"File not found: {file_path}"}))
@@ -1570,8 +1610,23 @@ if __name__ == "__main__":
         # For SCORE, file_path contains JSON { "resume": "...", "jd": "..." }
         with open(file_path, "r", encoding="utf-8") as f:
             text = f.read()
-        data = extract_data(text, type_)
-        print(json.dumps({"data": data}))
+        data = extract_data(text, type_, llm_model_override)
+        print(
+            json.dumps(
+                {
+                    "data": data.get("data", data),
+                    "usage": data.get(
+                        "usage",
+                        {
+                            "model": "gpt-4o",
+                            "inputTokens": 0,
+                            "outputTokens": 0,
+                            "cachedInputTokens": 0,
+                        },
+                    ),
+                }
+            )
+        )
     else:
         # For JD or RESUME, file_path is a PDF/text file
         text = extract_text(file_path, type_)
@@ -1584,7 +1639,7 @@ if __name__ == "__main__":
              }))
              sys.exit(1)
 
-        data = extract_data(text, type_)
+        data = extract_data(text, type_, llm_model_override)
 
         # Output to stdout for the backend
-        print(json.dumps({"text": text, "data": data}))
+        print(json.dumps({"text": text, "data": data["data"], "usage": data["usage"]}))

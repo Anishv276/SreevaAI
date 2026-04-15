@@ -4,6 +4,7 @@ import { writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { spawn } from "child_process";
 import { tmpdir } from "os";
+import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -53,9 +54,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         let aiResult: any = { score: 0, status: "Pending", reasoning: "Processing failed" };
 
         const pythonCmd = process.platform === "win32" ? "python" : "python3";
+        let orgOpenAIModel = "gpt-4o-mini";
+        if (application.drive.orgId) {
+            const orgConfig = await prisma.organization.findUnique({
+                where: { id: application.drive.orgId },
+                select: { llmProvider: true, llmModel: true },
+            });
+            if ((orgConfig?.llmProvider || "OPENAI") === "OPENAI" && orgConfig?.llmModel) {
+                orgOpenAIModel = orgConfig.llmModel;
+            }
+        }
         console.log(`[AI RE-SCAN] Executing for ${application.email} | threshold=${threshold}`);
 
-        const pythonProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempInputPath, "SCORE"]);
+        const pythonProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempInputPath, "SCORE", orgOpenAIModel]);
 
         let outputData = "";
         let errorData = "";
@@ -73,6 +84,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         const parsed = JSON.parse(outputData);
         aiResult = parsed.data || parsed;
+        if (application.drive.orgId && parsed?.usage) {
+            await recordOrgBillingUsage({
+                orgId: application.drive.orgId,
+                feature: "resumeExtraction",
+                usage: {
+                    model: parsed.usage.model || "gpt-4o",
+                    inputTokens: parsed.usage.inputTokens || 0,
+                    outputTokens: parsed.usage.outputTokens || 0,
+                    cachedInputTokens: parsed.usage.cachedInputTokens || 0,
+                },
+            });
+        }
 
         // 4. DB threshold is the ONLY pass/fail criterion — Python's status is ignored
         const score: number = typeof aiResult.score === "number" ? aiResult.score : parseInt(aiResult.score || "0") || 0;

@@ -7,6 +7,9 @@ import os from "os";
 import { extractJDFromText } from "@/lib/openai";
 import { z } from "zod";
 import { extractionLimiter } from "@/lib/rate-limit";
+import { getSession } from "@/lib/auth";
+import { recordOrgBillingUsage } from "@/lib/usage-metrics";
+import { prisma } from "@/lib/prisma";
 
 const extractQuerySchema = z.object({
     type: z.enum(["JD", "RESUME", "PASSPORT"]),
@@ -38,6 +41,25 @@ export async function POST(request: Request) {
         const file = formData.get("file") as File | null;
         const url = formData.get("url") as string | null;
         const typeRaw = formData.get("type") as string | null;
+        const explicitOrgId = formData.get("orgId") as string | null;
+        let sessionOrgId: string | null = null;
+        try {
+            const session = await getSession();
+            sessionOrgId = session?.orgId || null;
+        } catch {
+            sessionOrgId = null;
+        }
+        const orgId = explicitOrgId || sessionOrgId;
+        let orgOpenAIModel = "gpt-4o-mini";
+        if (orgId) {
+            const orgConfig = await prisma.organization.findUnique({
+                where: { id: orgId },
+                select: { llmProvider: true, llmModel: true },
+            });
+            if ((orgConfig?.llmProvider || "OPENAI") === "OPENAI" && orgConfig?.llmModel) {
+                orgOpenAIModel = orgConfig.llmModel;
+            }
+        }
 
         if (!file && !url) {
             return NextResponse.json({ error: "Missing file or URL" }, { status: 400 });
@@ -76,7 +98,14 @@ export async function POST(request: Request) {
 
                 console.log("[SCRAPE_SUCCESS]: Text extracted, length:", text.length);
 
-                const data = await extractJDFromText(text);
+                const { data, usage } = await extractJDFromText(text, orgOpenAIModel);
+                if (orgId && usage) {
+                    await recordOrgBillingUsage({
+                        orgId,
+                        feature: "jdExtraction",
+                        usage,
+                    });
+                }
                 return NextResponse.json({ data, text });
             } catch (err: any) {
                 console.error("[SCRAPE_FATAL_ERROR]:", { url, error: err.message });
@@ -111,7 +140,7 @@ export async function POST(request: Request) {
 
         console.log("[PYTHON_EXEC]: Starting scripts/extract_pdf.py for", file.name);
         const pythonCommand = process.platform === "win32" ? "python" : "python3";
-        const pythonProcess = spawn(pythonCommand, ["scripts/extract_pdf.py", tempFilePath, type]);
+        const pythonProcess = spawn(pythonCommand, ["scripts/extract_pdf.py", tempFilePath, type, orgOpenAIModel]);
 
         pythonProcess.stdout.on("data", (data) => { outputData += data.toString(); });
         pythonProcess.stderr.on("data", (data) => { errorData += data.toString(); });
@@ -196,6 +225,20 @@ export async function POST(request: Request) {
                     error: "Could not extract sufficient text from this document. Please ensure the file is not empty or a scanned image.",
                     code: "EXTRACTION_INSUFFICIENT_DATA"
                 }, { status: 422 });
+            }
+
+            const feature = type === "JD" ? "jdExtraction" : type === "RESUME" ? "resumeExtraction" : null;
+            if (feature && orgId && result.usage) {
+                await recordOrgBillingUsage({
+                    orgId,
+                    feature,
+                    usage: {
+                        model: result.usage.model || "gpt-4o-mini",
+                        inputTokens: result.usage.inputTokens || 0,
+                        outputTokens: result.usage.outputTokens || 0,
+                        cachedInputTokens: result.usage.cachedInputTokens || 0,
+                    },
+                });
             }
 
             return NextResponse.json({

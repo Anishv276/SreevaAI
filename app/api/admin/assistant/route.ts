@@ -1,11 +1,23 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import OpenAI from "openai";
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
+
+async function getOrgOpenAIModel(orgId: string): Promise<string> {
+    const org = await prisma.organization.findUnique({
+        where: { id: orgId },
+        select: { llmProvider: true, llmModel: true },
+    });
+    if ((org?.llmProvider || "OPENAI") === "OPENAI" && org?.llmModel) {
+        return org.llmModel;
+    }
+    return "gpt-4o-mini";
+}
 
 function detectIntent(message: string): string {
     const lower = message.toLowerCase();
@@ -736,6 +748,7 @@ export async function POST(request: Request) {
 
         const { message, history = [] } = await request.json();
         const orgId = session.orgId;
+        const orgOpenAIModel = await getOrgOpenAIModel(orgId);
 
         const intent = detectIntent(message);
         console.log(`[LUMO] Intent: ${intent} | Message: "${message}"`);
@@ -803,22 +816,44 @@ Keep responses concise and use bold for important info. Always sign off as Lumo.
             `;
             
             const gptResponse = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
+                model: orgOpenAIModel,
                 messages: [
                     { role: "system", content: gptContext },
                     { role: "user", content: "Format this as a natural response" }
                 ],
                 temperature: 0.7,
                 stream: true,
+                stream_options: { include_usage: true },
             });
 
             const stream = new ReadableStream({
                 async start(controller) {
+                    let promptTokens = 0;
+                    let completionTokens = 0;
+                    let cachedTokens = 0;
                     for await (const chunk of gptResponse) {
+                        if ((chunk as any).usage) {
+                            const usage = (chunk as any).usage;
+                            promptTokens = usage.prompt_tokens ?? promptTokens;
+                            completionTokens = usage.completion_tokens ?? completionTokens;
+                            cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? cachedTokens;
+                        }
                         const content = chunk.choices[0]?.delta?.content || "";
                         if (content) {
                             controller.enqueue(new TextEncoder().encode(content));
                         }
+                    }
+                    if (promptTokens > 0 || completionTokens > 0) {
+                        await recordOrgBillingUsage({
+                            orgId,
+                            feature: "chatbot",
+                            usage: {
+                                model: orgOpenAIModel,
+                                inputTokens: promptTokens,
+                                outputTokens: completionTokens,
+                                cachedInputTokens: cachedTokens,
+                            },
+                        });
                     }
                     controller.close();
                 },
@@ -863,7 +898,7 @@ Be concise and helpful. Use bold for names and scores. Always provide exact time
         `;
 
         const gptResponse = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: orgOpenAIModel,
             messages: [
                 { role: "system", content: systemContext },
                 ...history.slice(-3),
@@ -871,15 +906,37 @@ Be concise and helpful. Use bold for names and scores. Always provide exact time
             ],
             temperature: 0.7,
             stream: true,
+            stream_options: { include_usage: true },
         });
 
         const stream = new ReadableStream({
             async start(controller) {
+                let promptTokens = 0;
+                let completionTokens = 0;
+                let cachedTokens = 0;
                 for await (const chunk of gptResponse) {
+                    if ((chunk as any).usage) {
+                        const usage = (chunk as any).usage;
+                        promptTokens = usage.prompt_tokens ?? promptTokens;
+                        completionTokens = usage.completion_tokens ?? completionTokens;
+                        cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? cachedTokens;
+                    }
                     const content = chunk.choices[0]?.delta?.content || "";
                     if (content) {
                         controller.enqueue(new TextEncoder().encode(content));
                     }
+                }
+                if (promptTokens > 0 || completionTokens > 0) {
+                    await recordOrgBillingUsage({
+                        orgId,
+                        feature: "chatbot",
+                        usage: {
+                            model: orgOpenAIModel,
+                            inputTokens: promptTokens,
+                            outputTokens: completionTokens,
+                            cachedInputTokens: cachedTokens,
+                        },
+                    });
                 }
                 controller.close();
             },

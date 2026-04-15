@@ -78,21 +78,8 @@ export async function POST(request: Request) {
         }
 
         // ── ORGANIZATION STATUS CHECKS ───────────────────────
-        if (userProfile.organization) {
-            const org = userProfile.organization;
-            if (org.status === "SUSPENDED") {
-                return NextResponse.json({ 
-                    error: "Please recharge credits for service to continue",
-                    code: "ORG_SUSPENDED"
-                }, { status: 403 });
-            }
-            if (org.status === "CLOSED") {
-                return NextResponse.json({ 
-                    error: "Your login has been closed, please contact administrator to this",
-                    code: "ORG_CLOSED"
-                }, { status: 403 });
-            }
-        }
+        // We now allow login for all statuses to handle messaging in the dashboard
+
 
         const valid = await bcrypt.compare(password, userProfile.password);
         if (!valid) {

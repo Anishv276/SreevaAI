@@ -40,10 +40,29 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         llmProvider: "OPENAI",
         llmModel: "gpt-4o",
         llmTemperature: 0.7,
+        usageMetrics: "{}",
     });
 
     
     const [adminInfo, setAdminInfo] = useState<{name: string, email: string} | null>(null);
+
+    const formatJsonForEditor = (value: unknown) => {
+        if (value == null) return "{}";
+        if (typeof value === "string") {
+            const trimmed = value.trim();
+            if (!trimmed) return "{}";
+            try {
+                return JSON.stringify(JSON.parse(trimmed), null, 2);
+            } catch {
+                return trimmed;
+            }
+        }
+        try {
+            return JSON.stringify(value, null, 2);
+        } catch {
+            return "{}";
+        }
+    };
 
     useEffect(() => {
         const fetchOrg = async () => {
@@ -71,6 +90,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         llmProvider: data.llmProvider || "OPENAI",
                         llmModel: data.llmModel || "gpt-4o",
                         llmTemperature: data.llmTemperature != null ? data.llmTemperature : 0.7,
+                        usageMetrics: formatJsonForEditor(data.usageMetrics),
                     });
 
                     if (data.users && data.users.length > 0) {
@@ -95,10 +115,25 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         setSaved(false);
 
         try {
+            let parsedUsageMetrics: unknown = {};
+            if ((form.usageMetrics || "").trim()) {
+                try {
+                    parsedUsageMetrics = JSON.parse(form.usageMetrics);
+                } catch {
+                    setError("Usage metrics must be valid JSON.");
+                    return;
+                }
+            }
+
+            const payload = {
+                ...form,
+                usageMetrics: parsedUsageMetrics,
+            };
+
             const res = await fetch(`/api/super-admin/orgs/${id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(form),
+                body: JSON.stringify(payload),
             });
 
             if (!res.ok) {
@@ -243,6 +278,22 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                         />
                                     </div>
                                 ))}
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest leading-none">
+                                    Billing Usage Metrics JSON
+                                </label>
+                                <textarea
+                                    value={form.usageMetrics}
+                                    onChange={e => setForm(prev => ({ ...prev, usageMetrics: e.target.value }))}
+                                    placeholder='{"month":"2026-04","interviews":120,"apiCalls":5400,"creditsUsed":118.5}'
+                                    rows={8}
+                                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm font-mono font-medium leading-6 focus:ring-2 focus:ring-[#F97316]/30 min-h-[180px]"
+                                />
+                                <p className="text-[11px] text-gray-400 font-medium">
+                                    Store billing or usage snapshots here as valid JSON. Example fields: month, interviews, apiCalls, creditsUsed.
+                                </p>
                             </div>
 
                             <div className="space-y-4">

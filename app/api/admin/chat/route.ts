@@ -3,6 +3,7 @@ import { getEmbedding } from "@/lib/openai";
 import { queryCandidates } from "@/lib/pinecone";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { recordOrgBillingFromOpenAICompletion } from "@/lib/usage-metrics";
 import OpenAI from "openai";
 
 const openai = new OpenAI();
@@ -71,8 +72,19 @@ export async function POST(req: NextRequest) {
 
     const org = await prisma.organization.findUnique({
       where: { id: orgId },
-      select: { name: true, industry: true, size: true, plan: true },
+      select: {
+        name: true,
+        industry: true,
+        size: true,
+        plan: true,
+        llmProvider: true,
+        llmModel: true,
+      },
     });
+    const orgOpenAIModel =
+      (org?.llmProvider || "OPENAI") === "OPENAI" && org?.llmModel
+        ? org.llmModel
+        : "gpt-4o-mini";
 
     const { messages } = await req.json();
     const userMessage = messages[messages.length - 1]?.content ?? "";
@@ -342,11 +354,16 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
 
     // ── 5. First LLM call ────────────────────────────────────────────────────
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: orgOpenAIModel,
       messages: [{ role: "system", content: systemPrompt }, ...messages],
       tools,
       tool_choice: "auto",
       temperature: 0.2,
+    });
+    await recordOrgBillingFromOpenAICompletion({
+      orgId,
+      feature: "chatbot",
+      completion: response,
     });
 
     const responseMessage = response.choices[0].message;
@@ -694,9 +711,14 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
 
       // ── 7. Second LLM call with tool results ──────────────────────────────
       const secondResponse = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: orgOpenAIModel,
         messages: toolMessages,
         temperature: 0.2,
+      });
+      await recordOrgBillingFromOpenAICompletion({
+        orgId,
+        feature: "chatbot",
+        completion: secondResponse,
       });
 
       return NextResponse.json(secondResponse.choices[0].message);

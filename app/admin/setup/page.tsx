@@ -214,7 +214,7 @@ export default function OnboardingPage() {
                 });
                 if (!res.ok) { const d = await res.json(); setError(d.error || "Workspace activation failed."); setIsSaving(false); return; }
                 localStorage.removeItem("onboarding_draft");
-                window.location.href = "/admin";
+                router.replace("/admin/welcome");
                 return;
             }
             setCurrentStep(prev => prev + 1);
