@@ -204,14 +204,15 @@ export function HardwareCheck({
             (latencyMs !== null && latencyMs < 300)
         ));
 
-    // Suppress TF Lite logs
     useEffect(() => {
         const originalInfo = console.info.bind(console);
         const originalLog = console.log.bind(console);
-        const isNoise = (msg: unknown) =>
-            typeof msg === "string" && (msg.includes("XNNPACK") || msg.includes("TensorFlow Lite") || msg.includes("Created TensorFlow"));
-        console.info = (...args: unknown[]) => { if (!isNoise(args[0])) originalInfo(...args); };
-        console.log = (...args: unknown[]) => { if (!isNoise(args[0])) originalLog(...args); };
+        const isNoise = (msg: unknown) => {
+            const m = typeof msg === "string" ? msg : String(msg);
+            return m.includes("XNNPACK") || m.includes("TensorFlow Lite") || m.includes("Created TensorFlow") || m.includes("delegate for CPU");
+        };
+        console.info = (...args: unknown[]) => { if (!args[0] || !isNoise(args[0])) originalInfo(...args); };
+        console.log = (...args: unknown[]) => { if (!args[0] || !isNoise(args[0])) originalLog(...args); };
         return () => { console.info = originalInfo; console.log = originalLog; };
     }, []);
 
@@ -250,6 +251,10 @@ export function HardwareCheck({
             if (video.currentTime === lastVideoTimeRef.current) return;
             lastVideoTimeRef.current = video.currentTime;
             try {
+                if (typeof faceDetectorRef.current.detectForVideo !== 'function') {
+                    console.warn("[FaceDetection] detectForVideo not ready");
+                    return;
+                }
                 const result = faceDetectorRef.current.detectForVideo(video, performance.now());
                 const currentNumFaces = (result?.faceLandmarks) ? result.faceLandmarks.length : 0;
                 faceHistoryRef.current.push(currentNumFaces);
@@ -291,7 +296,9 @@ export function HardwareCheck({
                 if (avgBrightness < 70) setFace("Environment is too dark. Increase lighting.");
                 else if (avgBrightness > 200) setFace("Environment is too bright (reduce backlight).");
                 else setFace(null);
-            } catch { }
+            } catch (err) {
+                console.error("[FaceDetection] loop error:", err);
+            }
         };
         faceDetectionAnimRef.current = requestAnimationFrame(detect);
     }, []);

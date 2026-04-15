@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useState, use, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Maximize, Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut } from "lucide-react";
+import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
@@ -101,7 +101,6 @@ function getAttachableTrack(trackRef: TrackReference): AttachableTrack | null {
 
 function InterviewContent({ id, params }: { id: string, params: Promise<{ id: string }> }) {
     const [phase, setPhase] = useState<"check" | "launching" | "interview" | "finalizing" | "completed">("check");
-    const [isFullscreen, setIsFullscreen] = useState(false);
     const [token, setToken] = useState<string | null>(null);
     const [serverUrl, setServerUrl] = useState<string | null>(null);
     const [isJoining, setIsJoining] = useState(false);
@@ -112,7 +111,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [remainingSeconds, setRemainingSeconds] = useState(INTERVIEW_DURATION_SECONDS);
     const [timerExpired, setTimerExpired] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
-    const allowFullscreenExitRef = useRef(false);
     const launchIntervalRef = useRef<number | null>(null);
     const agentReadyCommittedRef = useRef(false);
     const launchStartedAtRef = useRef<number | null>(null);
@@ -124,6 +122,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [isAgentReady, setIsAgentReady] = useState(false);
     const [agentReadyLatencyMs, setAgentReadyLatencyMs] = useState<number | null>(null);
     const [launchTimeoutCheck, setLaunchTimeoutCheck] = useState(0);
+    const [isTabViolation, setIsTabViolation] = useState(false);
+    const [isFullscreenViolation, setIsFullscreenViolation] = useState(false);
 
     // Countdown ticker — purely visual, counts up for display purposes
     useEffect(() => {
@@ -329,16 +329,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         return tokenRequestRef.current;
     }, [id, token, serverUrl]);
 
-    const requestFullscreenMode = async () => {
-        try {
-            if (containerRef.current?.requestFullscreen) {
-                await containerRef.current.requestFullscreen();
-                setIsFullscreen(true);
-            }
-        } catch (err) {
-            console.error("Fullscreen failed:", err);
-        }
-    };
 
     // Token is fetched on demand when the user clicks "I'm Ready".
 
@@ -355,15 +345,28 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         });
     }, []);
 
+    const requestFullscreenMode = useCallback(async () => {
+        try {
+            const elem = document.documentElement as any;
+            const rfs = elem.requestFullscreen || elem.webkitRequestFullscreen || elem.mozRequestFullScreen || elem.msRequestFullscreen;
+            if (rfs) {
+                await rfs.call(elem);
+                setIsFullscreenViolation(false);
+            }
+        } catch (err) {
+            console.warn("Fullscreen request failed:", err);
+        }
+    }, []);
+
     const handleHardwareComplete = async () => {
         setIsJoining(true);
         setJoinError(null);
 
-        await requestFullscreenMode();
-
         try {
-            // Enter launching immediately so the user sees the setup phase
-            // while the interview token and LiveKit room are prepared.
+            // Enter fullscreen on user gesture IMMEDIATELY
+            await requestFullscreenMode();
+
+            // Enter launching phase...
             connectionAttemptRef.current += 1;
             agentReadyCommittedRef.current = false;
             readySignalSentFromParentRef.current = false;
@@ -385,7 +388,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
             setShouldConnect(true);
 
-            // Unlock audio context on user gesture — must happen here, not in useEffect
+            // Unlock audio context...
             if (lkRoomRef.current) {
                 lkRoomRef.current.startAudio().catch(() => {});
             }
@@ -419,24 +422,112 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         };
     }, []);
 
+
     useEffect(() => {
-        const handleFSChange = () => {
-            const inFullscreen = !!document.fullscreenElement;
-            setIsFullscreen(inFullscreen);
+        if (phase !== "interview") {
+            setIsTabViolation(false);
+            return;
+        }
 
-            if (phase === "completed") return;
+        const handleViolation = () => {
+            setIsTabViolation(true);
+            
+            // Telemetry: Log to backend
+            fetch("/api/interview/proctoring", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    applicationId: id,
+                    events: [{
+                        eventType: "tab_switch",
+                        severity: "medium",
+                        timestamp: Date.now(),
+                        reason: document.hidden ? "Tab Switched" : "Window Blurred"
+                    }]
+                })
+            }).catch(() => {});
 
-            if (!inFullscreen && isInterviewLocked && !allowFullscreenExitRef.current) {
-                containerRef.current?.requestFullscreen?.().catch(() => undefined);
-            }
-
-            if (allowFullscreenExitRef.current) {
-                allowFullscreenExitRef.current = false;
+            // Also signal to agent if possible via data channel
+            const room = lkRoomRef.current;
+            if (room?.localParticipant) {
+                const encoder = new TextEncoder();
+                const data = encoder.encode(JSON.stringify({
+                    type: "tab_violation",
+                    timestamp: Date.now()
+                }));
+                room.localParticipant.publishData(data, { reliable: true }).catch(() => {});
             }
         };
-        document.addEventListener("fullscreenchange", handleFSChange);
-        return () => document.removeEventListener("fullscreenchange", handleFSChange);
-    }, [isInterviewLocked, phase]);
+
+        const onVisibilityChange = () => {
+            if (document.hidden) handleViolation();
+        };
+
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        window.addEventListener("blur", handleViolation);
+
+        return () => {
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+            window.removeEventListener("blur", handleViolation);
+        };
+    }, [phase, id]);
+    
+    useEffect(() => {
+        if (phase !== "interview") {
+            setIsFullscreenViolation(false);
+            return;
+        }
+
+        const onFullscreenChange = () => {
+            const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
+            
+            if (!isFS) {
+                setIsFullscreenViolation(true);
+                
+                // Telemetry
+                fetch("/api/interview/proctoring", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        applicationId: id,
+                        events: [{
+                            eventType: "fullscreen_exit",
+                            severity: "high",
+                            timestamp: Date.now(),
+                            reason: "Manually Exited Fullscreen"
+                        }]
+                    })
+                }).catch(() => {});
+
+                const room = lkRoomRef.current;
+                if (room?.localParticipant) {
+                    const encoder = new TextEncoder();
+                    const data = encoder.encode(JSON.stringify({
+                        type: "candidate_out_of_screen",
+                        timestamp: Date.now()
+                    }));
+                    room.localParticipant.publishData(data, { reliable: true }).catch(() => {});
+                }
+            } else {
+                setIsFullscreenViolation(false);
+            }
+        };
+
+        document.addEventListener("fullscreenchange", onFullscreenChange);
+        document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+        document.addEventListener("mozfullscreenchange", onFullscreenChange);
+        document.addEventListener("MSFullscreenChange", onFullscreenChange);
+
+        // Immediate check on start
+        onFullscreenChange();
+
+        return () => {
+            document.removeEventListener("fullscreenchange", onFullscreenChange);
+            document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+            document.removeEventListener("mozfullscreenchange", onFullscreenChange);
+            document.removeEventListener("MSFullscreenChange", onFullscreenChange);
+        };
+    }, [phase, id]);
 
     useEffect(() => {
         if (!isInterviewLocked) return;
@@ -478,10 +569,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
   useEffect(() => {
     if (phase !== "completed" && phase !== "finalizing") return;
-    allowFullscreenExitRef.current = true;
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => undefined);
-    }
     setShouldConnect(false);
   }, [phase]);
 
@@ -621,9 +708,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
                             onRemoteAgentAudioTrack={handleRemoteAgentAudioTrack}
                             onRoomReady={(room) => { lkRoomRef.current = room; }}
-                            onAllowExitNow={() => {
-                                allowFullscreenExitRef.current = true;
-                            }}
                         />
                     </LiveKitRoom>
                 </div>
@@ -642,30 +726,73 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 </div>
             )}
 
-            <AnimatePresence mode="wait">
-                {phase === "interview" && !isFullscreen && (
+            <AnimatePresence>
+                {isTabViolation && phase === "interview" && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[1000] flex flex-col items-center justify-center bg-white/80 backdrop-blur-3xl px-6"
+                        className="fixed inset-0 z-[200] bg-zinc-950/90 backdrop-blur-md flex items-center justify-center p-6"
                     >
-                        <ShieldAlert className="w-16 h-16 text-orange-500 mb-6 animate-bounce" />
-                        <h2 className="text-3xl font-black text-gray-900 text-center mb-3 uppercase italic">Security Halt</h2>
-                        <p className="text-orange-900/60 text-center max-w-sm mb-10 font-bold uppercase tracking-widest text-[10px]">
-                            Fullscreen required for integrity verification.
-                        </p>
-                        <button
-                            onClick={requestFullscreenMode}
-                            className="bg-orange-600 hover:bg-orange-500 text-white font-black px-12 py-5 rounded-3xl shadow-[0_20px_40px_rgba(234,88,12,0.4)] transition-all hover:scale-110 active:scale-95 flex items-center gap-3 uppercase tracking-widest text-xs"
-                        >
-                            <Maximize className="w-4 h-4" />
-                            Resume Interview
-                        </button>
+                        <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-6">
+                            <div className="mx-auto w-20 h-20 rounded-2xl bg-orange-500/10 flex items-center justify-center">
+                                <ShieldAlert className="w-10 h-10 text-orange-500" />
+                            </div>
+                            <div className="space-y-2">
+                                <h2 className="text-2xl font-black text-white uppercase tracking-tight">Security Alert</h2>
+                                <p className="text-zinc-400 text-sm font-medium leading-relaxed">
+                                    Tab switching or window blurring detected. This incident has been logged for review to ensure interview integrity.
+                                </p>
+                            </div>
+                            <div className="pt-4 flex flex-col gap-3">
+                                <Button
+                                    onClick={() => setIsTabViolation(false)}
+                                    className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black uppercase tracking-widest py-6 rounded-2xl shadow-[0_10px_20px_-10px_rgba(249,115,22,0.5)] transition-all active:scale-95"
+                                >
+                                    I Understand & Continue
+                                </Button>
+                                <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                                    Incident logged for review
+                                </div>
+                            </div>
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
+            <AnimatePresence>
+                {isFullscreenViolation && phase === "interview" && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[210] bg-zinc-950/90 backdrop-blur-md flex items-center justify-center p-6"
+                    >
+                        <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-6">
+                            <div className="mx-auto w-20 h-20 rounded-2xl bg-orange-500/10 flex items-center justify-center">
+                                <Zap className="w-10 h-10 text-orange-500" />
+                            </div>
+                            <div className="space-y-2">
+                                <h2 className="text-2xl font-black text-white uppercase tracking-tight">Fullscreen Required</h2>
+                                <p className="text-zinc-400 text-sm font-medium leading-relaxed">
+                                    The interview must be conducted in fullscreen mode for security and integrity purposes. 
+                                </p>
+                            </div>
+                            <div className="pt-4 flex flex-col gap-3">
+                                <Button
+                                    onClick={requestFullscreenMode}
+                                    className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black uppercase tracking-widest py-6 rounded-2xl shadow-[0_10px_20px_-10px_rgba(249,115,22,0.5)] transition-all active:scale-95"
+                                >
+                                    Re-enter Fullscreen
+                                </Button>
+                                <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                                    Incident logged for review
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
         </div>
     );
@@ -681,7 +808,6 @@ function InterviewRoomContent({
     timerExpired,
 
     onRemoteAgentAudioTrack,
-    onAllowExitNow,
     onAgentReady,
     onRoomReady,
 }: {
@@ -694,7 +820,6 @@ function InterviewRoomContent({
     timerExpired: boolean,
 
     onRemoteAgentAudioTrack: (track: MediaStreamTrack | null) => void,
-    onAllowExitNow: () => void,
     onAgentReady?: (isReady: boolean) => void,
     onRoomReady?: (room: Room) => void,
 }) {
@@ -934,7 +1059,6 @@ function InterviewRoomContent({
         if (finishStartedRef.current) return;
         finishStartedRef.current = true;
 
-        onAllowExitNow();
         onFinalizing();
         // Recording is handled server-side by LiveKit Egress.
         // The server will receive an egress_ended webhook and save the URL automatically.
@@ -942,7 +1066,7 @@ function InterviewRoomContent({
             try { lkRoom?.disconnect(); } catch (_) {}
             onFinish();
         }, 1500);
-    }, [onAllowExitNow, onFinalizing, lkRoom, onFinish]);
+    }, [onFinalizing, lkRoom, onFinish]);
 
     useEffect(() => {
         if (!timerExpired || !isInterviewActive) return;
