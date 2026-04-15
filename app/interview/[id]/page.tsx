@@ -21,24 +21,16 @@ import {
     useTranscriptions,
     useVoiceAssistant,
     useAgent,
-    TextStreamData,
 } from "@livekit/components-react";
+import type { TextStreamData } from "@livekit/components-react";
 import "@livekit/components-styles";
+
 import { Track, RoomEvent } from "livekit-client";
 import type { Room } from "livekit-client";
 
-interface TextStreamData {
-    text: string;
-    participantInfo?: { identity: string };
-    streamInfo: {
-        id: string;
-        timestamp: number;
-        attributes?: Record<string, string>;
-    };
-}
-
 
 interface InterviewPageProps {
+
     params: Promise<{ id: string }>;
 }
 
