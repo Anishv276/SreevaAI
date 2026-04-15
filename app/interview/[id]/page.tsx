@@ -7,20 +7,21 @@ import { cn } from "@/lib/utils";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
 import { HardwareCheck } from "@/components/careers/interview/HardwareCheck";
 import {
-  LiveKitRoom,
-  useLocalParticipant,
-  useTracks,
-  AudioVisualizer,
-  TrackReference,
-  RoomAudioRenderer,
-  ControlBar,
-  useParticipantInfo,
-  useConnectionState,
-  useRemoteParticipants,
-  useRoomContext,
-  useTranscriptions,
-  useVoiceAssistant,
-  useAgent,
+    LiveKitRoom,
+    useLocalParticipant,
+    useTracks,
+    AudioVisualizer,
+    TrackReference,
+    RoomAudioRenderer,
+    ControlBar,
+    useParticipantInfo,
+    useConnectionState,
+    useRemoteParticipants,
+    useRoomContext,
+    useTranscriptions,
+    useVoiceAssistant,
+    useAgent,
+    TextStreamData,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
 import { Track, RoomEvent } from "livekit-client";
@@ -69,7 +70,7 @@ const StreamingText = memo(function StreamingText({ text, className }: { text: s
     // With TTS-aligned transcripts enabled, the backend sends text exactly when it's spoken.
     // We no longer need a manual 40ms timer to "guess" the speed.
     return (
-        <motion.p 
+        <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className={className}
@@ -165,7 +166,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ applicationId: id }),
                     keepalive: true,
-                }).catch(() => {});
+                }).catch(() => { });
             }
         };
 
@@ -390,7 +391,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
             // Unlock audio context...
             if (lkRoomRef.current) {
-                lkRoomRef.current.startAudio().catch(() => {});
+                lkRoomRef.current.startAudio().catch(() => { });
             }
 
         } catch (err) {
@@ -431,7 +432,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
         const handleViolation = () => {
             setIsTabViolation(true);
-            
+
             // Telemetry: Log to backend
             fetch("/api/interview/proctoring", {
                 method: "POST",
@@ -445,7 +446,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         reason: document.hidden ? "Tab Switched" : "Window Blurred"
                     }]
                 })
-            }).catch(() => {});
+            }).catch(() => { });
 
             // Also signal to agent if possible via data channel
             const room = lkRoomRef.current;
@@ -455,7 +456,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     type: "tab_violation",
                     timestamp: Date.now()
                 }));
-                room.localParticipant.publishData(data, { reliable: true }).catch(() => {});
+                room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
             }
         };
 
@@ -471,7 +472,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             window.removeEventListener("blur", handleViolation);
         };
     }, [phase, id]);
-    
+
     useEffect(() => {
         if (phase !== "interview") {
             setIsFullscreenViolation(false);
@@ -480,10 +481,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
         const onFullscreenChange = () => {
             const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
-            
+
             if (!isFS) {
                 setIsFullscreenViolation(true);
-                
+
                 // Telemetry
                 fetch("/api/interview/proctoring", {
                     method: "POST",
@@ -497,7 +498,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             reason: "Manually Exited Fullscreen"
                         }]
                     })
-                }).catch(() => {});
+                }).catch(() => { });
 
                 const room = lkRoomRef.current;
                 if (room?.localParticipant) {
@@ -506,7 +507,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         type: "candidate_out_of_screen",
                         timestamp: Date.now()
                     }));
-                    room.localParticipant.publishData(data, { reliable: true }).catch(() => {});
+                    room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
                 }
             } else {
                 setIsFullscreenViolation(false);
@@ -567,16 +568,16 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         return () => window.clearInterval(timer);
     }, [phase, interviewEndsAt, timerExpired]);
 
-  useEffect(() => {
-    if (phase !== "completed" && phase !== "finalizing") return;
-    setShouldConnect(false);
-  }, [phase]);
+    useEffect(() => {
+        if (phase !== "completed" && phase !== "finalizing") return;
+        setShouldConnect(false);
+    }, [phase]);
 
     return (
         <div ref={containerRef} className="min-h-screen bg-white text-gray-900 flex flex-col font-sans relative overflow-hidden">
             <AnimatePresence mode="wait">
                 {phase === "check" && (
-                    <motion.div 
+                    <motion.div
                         key="check"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -624,11 +625,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                     const done = i === 0 ? true : i === 1 ? !!token : isAgentReady;
                                     return (
                                         <div key={step} className="flex items-center gap-2">
-                                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${
-                                                done
-                                                    ? "bg-green-500/10 border-green-500/30 text-green-400"
-                                                    : "bg-zinc-800 border-zinc-700 text-zinc-500"
-                                            }`}>
+                                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${done
+                                                ? "bg-green-500/10 border-green-500/30 text-green-400"
+                                                : "bg-zinc-800 border-zinc-700 text-zinc-500"
+                                                }`}>
                                                 {done ? <CheckCircle2 className="w-3 h-3" /> : <Loader2 className="w-3 h-3 animate-spin" />}
                                                 {step}
                                             </div>
@@ -644,7 +644,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
 
                 {phase === "finalizing" && (
-                    <motion.div 
+                    <motion.div
                         key="finalizing"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -665,7 +665,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 )}
 
                 {phase === "completed" && (
-                    <motion.div 
+                    <motion.div
                         key="completed"
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -680,7 +680,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 It pre-renders as soon as the launching phase has prepared a token
                 and controls its own visibility via opacity/z-index/pointer-events. */}
             {token && serverUrl && phase !== "completed" && (
-                <div 
+                <div
                     key="interview-room"
                     className={cn(
                         "flex-1 flex flex-col w-full h-full absolute inset-0 transition-opacity duration-1000 bg-white",
@@ -775,7 +775,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             <div className="space-y-2">
                                 <h2 className="text-2xl font-black text-white uppercase tracking-tight">Fullscreen Required</h2>
                                 <p className="text-zinc-400 text-sm font-medium leading-relaxed">
-                                    The interview must be conducted in fullscreen mode for security and integrity purposes. 
+                                    The interview must be conducted in fullscreen mode for security and integrity purposes.
                                 </p>
                             </div>
                             <div className="pt-4 flex flex-col gap-3">
@@ -836,15 +836,15 @@ function InterviewRoomContent({
 
     const { audioTrack: agentAudioTrack } = useVoiceAssistant();
     const agent = useAgent();
-    
+
     // Derived states for premium UI feedback
     const isAiSpeaking = agent.state === "speaking";
     const isAiThinking = agent.state === "thinking";
     const isAiListening = agent.state === "listening" || agent.canListen;
-    
+
     const aiParticipantTrack = agentAudioTrack;
     const hasAgentPresence = remoteParticipants.length > 0;
-    
+
     // Media Control Logic
     const isMicEnabled = localParticipant?.isMicrophoneEnabled ?? false;
     const toggleMic = useCallback(() => {
@@ -855,7 +855,7 @@ function InterviewRoomContent({
     // This useEffect is a fallback only — if the room reconnects mid-interview.
     useEffect(() => {
         if (connectionState === "connected" && lkRoom) {
-            lkRoom.startAudio().catch(() => {});
+            lkRoom.startAudio().catch(() => { });
         }
     }, [connectionState, lkRoom]);
 
@@ -934,7 +934,7 @@ function InterviewRoomContent({
         for (const segment of sortedSegments) {
             const isCandidate = segment.identity === localIdentity;
             const lastGroup = groups[groups.length - 1];
-            
+
             // Logic to decide if we should start a NEW row/bubble:
             // 1. Identity change
             // 2. Previous segment in the same group was final (new thought)
@@ -1063,7 +1063,7 @@ function InterviewRoomContent({
         // Recording is handled server-side by LiveKit Egress.
         // The server will receive an egress_ended webhook and save the URL automatically.
         setTimeout(() => {
-            try { lkRoom?.disconnect(); } catch (_) {}
+            try { lkRoom?.disconnect(); } catch (_) { }
             onFinish();
         }, 1500);
     }, [onFinalizing, lkRoom, onFinish]);
@@ -1082,11 +1082,11 @@ function InterviewRoomContent({
         <div className="flex-1 flex flex-col h-full w-full relative bg-[#121214] text-white overflow-hidden">
             {/* Ambient Background Glow */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,_rgba(249,115,22,0.04)_0%,_transparent_50%)] pointer-events-none" />
-            
+
             {isInterviewActive && <RoomAudioRenderer />}
             {/* FORCE AUDIO TRACK ATTACHMENT */}
             {isInterviewActive && aiParticipantTrack && <AudioTrack trackRef={aiParticipantTrack} />}
-            
+
             {/* Role Context - TOP LEFT */}
             <div className="absolute top-10 left-10 z-[60]">
                 <div className="flex items-center gap-4 bg-zinc-900/40 backdrop-blur-xl px-6 py-4 rounded-[2rem] border border-white/5 shadow-2xl">
@@ -1130,20 +1130,20 @@ function InterviewRoomContent({
 
             {/* AI Avatar Area */}
             <div className="flex-1 flex flex-col items-center justify-center p-8 relative">
-                <motion.div 
-                    animate={{ 
+                <motion.div
+                    animate={{
                         scale: isAiSpeaking ? [1, 1.04, 1.01, 1.06, 1] : (isAiThinking ? [1, 1.02, 1] : [1, 1.01, 1]),
                         borderColor: isAiSpeaking ? "rgba(249, 115, 34, 0.6)" : (isAiThinking ? "rgba(249, 115, 34, 0.3)" : "rgba(249, 115, 34, 0.2)"),
                     }}
-                    transition={{ 
-                        duration: isAiSpeaking ? 0.8 : 4, 
+                    transition={{
+                        duration: isAiSpeaking ? 0.8 : 4,
                         repeat: Infinity,
                         ease: "easeInOut"
                     }}
                     className="w-64 h-64 rounded-full border-2 flex items-center justify-center relative bg-black/40 backdrop-blur-3xl shadow-[0_0_120px_rgba(249,115,22,0.1)] group"
                 >
                     {/* Advanced Shader Aura Visualizer (Real-time Audio Reactive) */}
-                    <AuraVisualizer 
+                    <AuraVisualizer
                         state={agent.state}
                         audioTrack={agentAudioTrack}
                         size="xl"
@@ -1152,13 +1152,13 @@ function InterviewRoomContent({
 
                     {/* Image Container */}
                     <div className="absolute inset-2 rounded-full overflow-hidden border-4 border-zinc-800/50 shadow-inner">
-                        <img 
-                            src="/avatars/jordan.png" 
-                            alt="AI Interviewer" 
+                        <img
+                            src="/avatars/jordan.png"
+                            alt="AI Interviewer"
                             className={cn(
                                 "w-full h-full object-cover transition-all duration-700",
-                                isAiSpeaking ? "scale-110 contrast-[1.1] brightness-[1.05]" : 
-                                (isAiThinking ? "scale-105 contrast-[1.05] brightness-[1.02]" : "scale-100 grayscale-[0.2] brightness-90")
+                                isAiSpeaking ? "scale-110 contrast-[1.1] brightness-[1.05]" :
+                                    (isAiThinking ? "scale-105 contrast-[1.05] brightness-[1.02]" : "scale-100 grayscale-[0.2] brightness-90")
                             )}
                         />
                         {/* Gradient Overlay for Depth */}
@@ -1170,14 +1170,14 @@ function InterviewRoomContent({
                             "text-[10px] font-black uppercase tracking-[0.5em] transition-all duration-500 text-center",
                             isAiSpeaking ? "text-orange-500 translate-y-1" : (isAiThinking ? "text-orange-300" : "text-zinc-500")
                         )}>
-                            {isAiSpeaking 
-                                ? "Interviewer Speaking" 
-                                : (isAiThinking 
-                                    ? "Ishita is thinking..." 
+                            {isAiSpeaking
+                                ? "Interviewer Speaking"
+                                : (isAiThinking
+                                    ? "Ishita is thinking..."
                                     : (isAiListening ? "Interviewer Listening" : "Waiting for Interviewer..."))}
                         </p>
                         {isAiSpeaking && (
-                            <motion.div 
+                            <motion.div
                                 initial={{ opacity: 0, scale: 0.9 }}
                                 animate={{ opacity: 1, scale: 1 }}
                                 className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full"
@@ -1190,9 +1190,9 @@ function InterviewRoomContent({
                 </motion.div>
                 {/* Floating Vanishing Transcript - Bottom Left Anchor */}
                 <div className="absolute left-16 bottom-24 z-[65] w-[450px] pointer-events-none">
-                    <div 
+                    <div
                         className="flex flex-col-reverse gap-1.5 max-h-[500px] overflow-hidden py-10"
-                        style={{ 
+                        style={{
                             maskImage: 'linear-gradient(to top, black 30%, transparent 95%)',
                             WebkitMaskImage: 'linear-gradient(to top, black 30%, transparent 95%)'
                         }}
@@ -1201,23 +1201,23 @@ function InterviewRoomContent({
                             {groupedTranscriptions.slice(-8).reverse().map((group, idx) => {
                                 const isGroupFinal = group.segments.every(s => s.isFinal);
                                 const combinedText = group.segments.map(s => s.text.trim()).join(" ");
-                                
+
                                 return (
                                     <motion.div
                                         key={group.id}
                                         initial={{ opacity: 0, x: -20, scale: 0.95 }}
-                                        animate={{ 
+                                        animate={{
                                             opacity: Math.max(0.1, 1 - (idx * 0.15)),
-                                            x: 0, 
-                                            scale: 1 
+                                            x: 0,
+                                            scale: 1
                                         }}
-                                        exit={{ 
-                                            opacity: 0, 
-                                            y: -60, 
-                                            scale: 0.9, 
-                                            transition: { duration: 0.5 } 
+                                        exit={{
+                                            opacity: 0,
+                                            y: -60,
+                                            scale: 0.9,
+                                            transition: { duration: 0.5 }
                                         }}
-                                        transition={{ 
+                                        transition={{
                                             type: "spring",
                                             stiffness: 150,
                                             damping: 20
@@ -1235,16 +1235,16 @@ function InterviewRoomContent({
                                         </p>
                                         <div className={cn(
                                             "px-4 py-2.5 rounded-[1.4rem] backdrop-blur-md relative",
-                                            group.isCandidate 
-                                                ? "bg-orange-500/10 border border-orange-500/20 rounded-tl-[0.25rem] text-left" 
+                                            group.isCandidate
+                                                ? "bg-orange-500/10 border border-orange-500/20 rounded-tl-[0.25rem] text-left"
                                                 : "bg-zinc-800/40 border border-white/5 rounded-tl-[0.25rem] text-left"
                                         )}>
-                                            <StreamingText 
-                                                text={combinedText} 
+                                            <StreamingText
+                                                text={combinedText}
                                                 className={cn(
                                                     "text-sm font-bold italic tracking-tight leading-snug",
                                                     group.isCandidate ? "text-orange-100" : "text-white"
-                                                )} 
+                                                )}
                                             />
                                         </div>
                                     </motion.div>
@@ -1257,7 +1257,7 @@ function InterviewRoomContent({
 
             {/* Bottom Navigation & Premium Timer */}
             <div className="h-44 bg-zinc-900/20 backdrop-blur-3xl p-8 grid grid-cols-3 items-center relative z-10">
-                
+
                 {/* Left: Status */}
                 <div className="flex items-center gap-6">
                     <div className="flex items-center gap-4">
@@ -1271,12 +1271,12 @@ function InterviewRoomContent({
                     </div>
 
                     {/* Microphone Toggle */}
-                    <button 
+                    <button
                         onClick={toggleMic}
                         className={cn(
                             "group flex items-center gap-3 px-5 py-3 rounded-2xl border transition-all active:scale-95",
-                            isMicEnabled 
-                                ? "bg-zinc-800/40 border-white/5 hover:bg-zinc-800/60" 
+                            isMicEnabled
+                                ? "bg-zinc-800/40 border-white/5 hover:bg-zinc-800/60"
                                 : "bg-red-500/10 border-red-500/20 hover:bg-red-500/20"
                         )}
                     >
@@ -1284,8 +1284,8 @@ function InterviewRoomContent({
                             "w-8 h-8 rounded-xl flex items-center justify-center transition-colors",
                             isMicEnabled ? "bg-orange-500/10" : "bg-red-500/20"
                         )}>
-                            {isMicEnabled 
-                                ? <Mic className="w-4 h-4 text-orange-500" /> 
+                            {isMicEnabled
+                                ? <Mic className="w-4 h-4 text-orange-500" />
                                 : <MicOff className="w-4 h-4 text-red-500" />
                             }
                         </div>
@@ -1303,13 +1303,13 @@ function InterviewRoomContent({
 
                 {/* Middle: Centered End Interview Button */}
                 <div className="flex justify-center">
-                    <Button 
+                    <Button
                         variant="destructive"
                         onClick={handleFinish}
                         className="h-20 px-16 rounded-[2.5rem] bg-red-600 text-white hover:bg-black hover:text-white font-black uppercase tracking-[0.3em] text-[12px] transition-all shadow-[0_20px_50px_rgba(220,38,38,0.3)] active:scale-95 border-none group"
                     >
                         <span className="flex items-center gap-3">
-                            Finish Interview 
+                            Finish Interview
                             <LogOut className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                         </span>
                     </Button>
@@ -1385,11 +1385,11 @@ function VideoTrack({ trackRef }: { trackRef: TrackReference }) {
     }, []);
 
     return (
-        <video 
-            ref={videoRef} 
-            autoPlay 
-            playsInline 
-            className="w-full h-full object-cover bg-white brightness-[1.08] contrast-[1.05]" 
+        <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            className="w-full h-full object-cover bg-white brightness-[1.08] contrast-[1.05]"
         />
     );
 }
@@ -1434,7 +1434,7 @@ function CompletionView({ id }: { id: string }) {
         <div className="w-full max-w-xl mx-auto px-6">
             <AnimatePresence mode="wait">
                 {step === "sync" && (
-                    <motion.div 
+                    <motion.div
                         key="sync"
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -1448,7 +1448,7 @@ function CompletionView({ id }: { id: string }) {
                         <p className="text-sm font-bold text-gray-400 uppercase tracking-[0.2em] leading-relaxed mb-12 max-w-sm mx-auto">
                             Your interview session has been encrypted and secured for review.
                         </p>
-                        <Button 
+                        <Button
                             onClick={() => setStep("feedback")}
                             className="w-full h-20 rounded-[2rem] bg-gray-900 text-white font-black uppercase tracking-[0.3em] text-[13px] hover:bg-black transition-all shadow-2xl group"
                         >
@@ -1459,7 +1459,7 @@ function CompletionView({ id }: { id: string }) {
                 )}
 
                 {step === "feedback" && (
-                    <motion.div 
+                    <motion.div
                         key="feedback"
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
@@ -1480,11 +1480,11 @@ function CompletionView({ id }: { id: string }) {
                                     onClick={() => setRating(star)}
                                     className="transition-all duration-300 transform active:scale-90"
                                 >
-                                    <Sparkles 
+                                    <Sparkles
                                         className={cn(
                                             "w-12 h-12 transition-all duration-300",
-                                            (hoverRating || rating) >= star 
-                                                ? "text-orange-500 fill-orange-500 scale-110 drop-shadow-[0_0_15px_rgba(249,115,22,0.4)]" 
+                                            (hoverRating || rating) >= star
+                                                ? "text-orange-500 fill-orange-500 scale-110 drop-shadow-[0_0_15px_rgba(249,115,22,0.4)]"
                                                 : "text-gray-200"
                                         )}
                                     />
@@ -1505,13 +1505,13 @@ function CompletionView({ id }: { id: string }) {
                                 </div>
                             </div>
 
-                            <Button 
+                            <Button
                                 onClick={handleSubmit}
                                 disabled={rating === 0 || isSubmitting}
                                 className={cn(
                                     "w-full h-20 rounded-[2rem] font-black uppercase tracking-[0.3em] text-[13px] transition-all shadow-2xl",
-                                    rating > 0 
-                                        ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:scale-[1.02] active:scale-95 shadow-orange-500/20" 
+                                    rating > 0
+                                        ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:scale-[1.02] active:scale-95 shadow-orange-500/20"
                                         : "bg-gray-100 text-gray-400 cursor-not-allowed border-none shadow-none"
                                 )}
                             >
@@ -1528,16 +1528,16 @@ function CompletionView({ id }: { id: string }) {
                 )}
 
                 {step === "thanks" && (
-                    <motion.div 
+                    <motion.div
                         key="thanks"
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
                         className="text-center"
                     >
-                        <motion.div 
+                        <motion.div
                             initial={{ scale: 0 }}
                             animate={{ scale: 1, rotate: [0, 10, -10, 0] }}
-                            transition={{ 
+                            transition={{
                                 scale: { type: "spring", stiffness: 200, damping: 10 },
                                 rotate: { duration: 1, times: [0, 0.3, 0.7, 1], ease: "easeInOut" }
                             }}
@@ -1549,7 +1549,7 @@ function CompletionView({ id }: { id: string }) {
                         <p className="text-sm font-bold text-gray-400 uppercase tracking-[0.2em] leading-relaxed mb-12 max-w-sm mx-auto">
                             Your feedback helps us build the best recruitment experience in the world.
                         </p>
-                        <Button 
+                        <Button
                             onClick={() => window.location.href = "/careers"}
                             className="w-full h-20 rounded-[2rem] bg-gray-900 text-white font-black uppercase tracking-[0.3em] text-[13px] hover:bg-black transition-all shadow-2xl"
                         >
