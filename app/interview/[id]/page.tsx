@@ -22,7 +22,7 @@ import {
     useVoiceAssistant,
     useAgent,
 } from "@livekit/components-react";
-import type { TextStreamData } from "@livekit/components-react";
+import type { TextStreamData as TranscriptionSegment } from "@livekit/components-react";
 import "@livekit/components-styles";
 
 import { Track, RoomEvent } from "livekit-client";
@@ -908,7 +908,7 @@ function InterviewRoomContent({
         // Temporary map to track the latest version of each segment ID across the entire session
         const latestSegments = new Map<string, { text: string; isFinal: boolean; id: string; timestamp: number; identity: string }>();
 
-        for (const segment of transcriptions as TextStreamData[]) {
+        for (const segment of transcriptions as TranscriptionSegment[]) {
             if (!segment.text.trim()) continue;
 
             const identity = segment.participantInfo?.identity || "";
