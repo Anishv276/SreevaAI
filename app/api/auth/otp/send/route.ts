@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { Resend } from "resend";
+import { getPlatformSender } from "@/lib/mail";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -12,35 +13,44 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Not authorized" }, { status: 401 });
         }
 
-        const MASTER_ADMIN_EMAIL = "lumoscale@gmail.com";
+        const masterEmail = process.env.MASTER_ADMIN_EMAIL;
+        if (!masterEmail) return NextResponse.json({ error: "Master identity not configured" }, { status: 500 });
+
+        // ── RATE LIMITING ───────────────────────────────────
+        const isLimited = await isRateLimited(`otp-send:${adminEmail}`, 5, 60);
+        if (isLimited) {
+            return NextResponse.json({ 
+                error: "Too many security code requests. Please wait a minute.", 
+                code: "RATE_LIMIT_EXCEEDED" 
+            }, { status: 429 });
+        }
 
         // Generate a 6-digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
         // Store OTP in VerificationToken table tied to current session user
-        const verificationToken = (prisma as any).verificationToken;
-        await verificationToken.upsert({
-            where: { token: otp }, 
-            update: { expires, superAdminId: session.userId },
-            create: {
+        await prisma.verificationToken.create({
+            data: {
                 superAdminId: session.userId,
                 token: otp,
                 expires
             }
         });
 
+        // Resolve dynamic platform sender
+        const from = await getPlatformSender();
+
         // ── LIVE EMAIL VIA RESEND TO MASTER IDENTITY ──────
-        console.log(`[MASTER SECURITY] OTP for ${MASTER_ADMIN_EMAIL}: ${otp}`);
 
         const { data, error: mailError } = await resend.emails.send({
-            from: "Lumoscale Security <security@lumoscale.com>",
-            to: MASTER_ADMIN_EMAIL,
+            from: from,
+            to: masterEmail,
             subject: "🛡️ Master Access: 6-Digit Security Code",
             html: `
                 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
                     <h2 style="font-weight: 800; tracking-tight;">Security Verification</h2>
-                    <p style="color: #666;">Requested root-access change for master identity: <strong>${MASTER_ADMIN_EMAIL}</strong></p>
+                    <p style="color: #666;">Requested root-access change for master identity: <strong>${masterEmail}</strong></p>
                     <div style="background: #fdf2f2; border: 1px solid #fee2e2; padding: 30px; border-radius: 12px; text-align: center; margin: 40px 0;">
                         <span style="font-size: 32px; font-weight: 900; letter-spacing: 0.5em; color: #f97316;">${otp}</span>
                     </div>
@@ -57,7 +67,7 @@ export async function POST(request: Request) {
             }, { status: 500 });
         }
 
-        return NextResponse.json({ success: true, message: `Security code sent to ${MASTER_ADMIN_EMAIL}` });
+        return NextResponse.json({ success: true, message: `Security code sent to ${masterEmail}` });
     } catch (error: any) {
         console.error("Critical Security Sequence Error:", error);
         return NextResponse.json({ error: error.message || "Root access initiation failed" }, { status: 500 });

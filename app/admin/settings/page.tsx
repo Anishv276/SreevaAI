@@ -13,6 +13,7 @@ import {
     Loader2, Copy, X, MapPin as MapPinIcon
 } from "lucide-react";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
+import { PhoneInput } from "@/components/application/phone-input";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/auth-context";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
@@ -53,7 +54,7 @@ type TeamResponse = {
 /* ── Reusable card wrapper ────────────────────────── */
 function SettingsCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
     return (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-visible">
             <div className="px-6 py-5 border-b border-gray-100">
                 <h2 className="text-lg font-bold text-gray-900">{title}</h2>
                 {description && <p className="text-sm text-gray-500 font-medium mt-1">{description}</p>}
@@ -579,16 +580,12 @@ export default function SettingsPage() {
                                             </div>
                                         </Field>
                                         <Field label="Phone Number">
-                                            <div className="relative">
-                                                <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                                <Input
-                                                    type="tel"
-                                                    className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
-                                                    value={profile.phone}
-                                                    onChange={e => setProfile(p => ({ ...p, phone: e.target.value }))}
-                                                />
-                                            </div>
-                                        </Field>
+                                             <PhoneInput
+                                                 value={profile.phone}
+                                                 onChange={val => setProfile(p => ({ ...p, phone: val }))}
+                                                 className="mt-1"
+                                             />
+                                         </Field>
                                     </div>
                                 </SettingsCard>
                             </div>
@@ -713,13 +710,12 @@ export default function SettingsPage() {
                                             </div>
                                         </Field>
                                         <Field label="Phone Number">
-                                            <div className="relative">
-                                                <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                                <Input type="tel" className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
-                                                    placeholder="+91 98765 43210"
-                                                    value={company.phone} onChange={e => setCompany(c => ({ ...c, phone: e.target.value }))} />
-                                            </div>
-                                        </Field>
+                                             <PhoneInput
+                                                 value={profile.phone}
+                                                 onChange={val => setProfile(p => ({ ...p, phone: val }))}
+                                                 className="mt-1"
+                                             />
+                                         </Field>
                                         <Field label="Headquarters / Location">
                                             <LocationAutocomplete
                                                 value={company.location}
@@ -801,12 +797,11 @@ export default function SettingsPage() {
                                                             });
                                                             const json = await res.json();
                                                             if (res.ok) {
-                                                                if (json.registeredElsewhere) {
-                                                                    // Exists in Resend but NOT via our platform — hard stop
-                                                                    setDomainLinkError(json.isVerified
-                                                                        ? `${newDomain} is already verified and registered on another platform.`
-                                                                        : `${newDomain} is already registered in Resend outside this platform.`
-                                                                    );
+                                                                if (json.alreadyVerified) {
+                                                                    // Already verified for this org — show success and advance
+                                                                    setSaved(true);
+                                                                    setTimeout(() => setSaved(false), 2500);
+                                                                    fetchDomainInfo(); // This will setEmailSubStep(2)
                                                                 } else {
                                                                     // Registered via our platform (new or resumed) — load and advance
                                                                     fetchDomainInfo();
@@ -893,41 +888,41 @@ export default function SettingsPage() {
                                                             {domainInfo.records.map((rec: any, i: number) => {
                                                                 const isRecVerified = rec.status === "verified";
                                                                 return (
-                                                                <div key={i} className="flex items-start px-4 py-3 bg-white hover:bg-orange-50/10 transition-all">
-                                                                    <div className="w-[10%] pt-1.5">
-                                                                        <Badge className="bg-gray-900 text-white border-0 text-[9px] font-black italic px-2 py-0.5 rounded tracking-widest">{rec.type}</Badge>
-                                                                    </div>
-                                                                    <div className="w-[20%] pr-3">
-                                                                        <div onClick={() => handleCopy(rec.name || "@", i, 'host')} className="relative flex min-h-[32px] w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] text-gray-900 cursor-pointer hover:bg-white hover:border-[#F97316]/50 transition-all group/host shadow-inner">
-                                                                            <span className="font-mono font-bold break-all uppercase leading-tight">{rec.name || "@"}</span>
-                                                                            {copiedIndex?.i === i && copiedIndex?.type === 'host' ? <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" /> : <Copy className="h-3.5 w-3.5 text-gray-400 opacity-0 group-hover/host:opacity-100 transition-opacity shrink-0" />}
+                                                                    <div key={i} className="flex items-start px-4 py-3 bg-white hover:bg-orange-50/10 transition-all">
+                                                                        <div className="w-[10%] pt-1.5">
+                                                                            <Badge className="bg-gray-900 text-white border-0 text-[9px] font-black italic px-2 py-0.5 rounded tracking-widest">{rec.type}</Badge>
+                                                                        </div>
+                                                                        <div className="w-[20%] pr-3">
+                                                                            <div onClick={() => handleCopy(rec.name || "@", i, 'host')} className="relative flex min-h-[32px] w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] text-gray-900 cursor-pointer hover:bg-white hover:border-[#F97316]/50 transition-all group/host shadow-inner">
+                                                                                <span className="font-mono font-bold break-all uppercase leading-tight">{rec.name || "@"}</span>
+                                                                                {copiedIndex?.i === i && copiedIndex?.type === 'host' ? <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" /> : <Copy className="h-3.5 w-3.5 text-gray-400 opacity-0 group-hover/host:opacity-100 transition-opacity shrink-0" />}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex-1 pr-3 min-w-0">
+                                                                            <div onClick={() => handleCopy(rec.value, i, 'value')} className="relative flex min-h-[32px] w-full items-start justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-900 cursor-pointer hover:bg-white hover:border-[#F97316]/50 transition-all group/val shadow-inner">
+                                                                                <span className="font-mono font-medium break-all leading-relaxed whitespace-pre-wrap">{rec.value}</span>
+                                                                                {copiedIndex?.i === i && copiedIndex?.type === 'value' ? <Check className="h-3.5 w-3.5 mt-0.5 text-emerald-500 shrink-0" /> : <Copy className="h-3.5 w-3.5 mt-0.5 text-gray-400 opacity-0 group-hover/val:opacity-100 transition-opacity shrink-0" />}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="w-[10%] pt-1.5 text-center">
+                                                                            <span className="text-[10px] font-black text-gray-400 italic bg-gray-50 px-2 py-1 rounded border border-gray-100">{rec.priority ?? "-"}</span>
+                                                                        </div>
+                                                                        <div className="w-[14%] pt-1.5 flex justify-center">
+                                                                            {isRecVerified ? (
+                                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                                                                    <Check className="h-2.5 w-2.5" /> Verified
+                                                                                </span>
+                                                                            ) : rec.status === "failed" || rec.status === "temporary_failure" ? (
+                                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700 border border-red-200">
+                                                                                    Failed
+                                                                                </span>
+                                                                            ) : (
+                                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-700 border border-amber-200">
+                                                                                    Pending
+                                                                                </span>
+                                                                            )}
                                                                         </div>
                                                                     </div>
-                                                                    <div className="flex-1 pr-3 min-w-0">
-                                                                        <div onClick={() => handleCopy(rec.value, i, 'value')} className="relative flex min-h-[32px] w-full items-start justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-900 cursor-pointer hover:bg-white hover:border-[#F97316]/50 transition-all group/val shadow-inner">
-                                                                            <span className="font-mono font-medium break-all leading-relaxed whitespace-pre-wrap">{rec.value}</span>
-                                                                            {copiedIndex?.i === i && copiedIndex?.type === 'value' ? <Check className="h-3.5 w-3.5 mt-0.5 text-emerald-500 shrink-0" /> : <Copy className="h-3.5 w-3.5 mt-0.5 text-gray-400 opacity-0 group-hover/val:opacity-100 transition-opacity shrink-0" />}
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="w-[10%] pt-1.5 text-center">
-                                                                        <span className="text-[10px] font-black text-gray-400 italic bg-gray-50 px-2 py-1 rounded border border-gray-100">{rec.priority ?? "-"}</span>
-                                                                    </div>
-                                                                    <div className="w-[14%] pt-1.5 flex justify-center">
-                                                                        {isRecVerified ? (
-                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 border border-emerald-200">
-                                                                                <Check className="h-2.5 w-2.5" /> Verified
-                                                                            </span>
-                                                                        ) : rec.status === "failed" || rec.status === "temporary_failure" ? (
-                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700 border border-red-200">
-                                                                                Failed
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-700 border border-amber-200">
-                                                                                Pending
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
                                                                 );
                                                             })}
                                                         </div>
@@ -973,92 +968,92 @@ export default function SettingsPage() {
                                                 const hasSender = !!(company.customSenderEmail && company.customSenderName);
                                                 const showForm = !hasSender || isEditingSender;
                                                 return (
-                                                <div className="pt-2 space-y-4">
-                                                    {/* Sender form — shown when not set yet OR editing */}
-                                                    {showForm && (
-                                                        <div className="space-y-5 p-6 rounded-2xl bg-gray-50/50 border border-gray-100">
-                                                            <div className="space-y-1 border-l-2 border-emerald-500 pl-4">
-                                                                <h4 className="text-xs font-bold text-gray-900 uppercase tracking-tight">{hasSender ? "Update Sender Identity" : "Set Sender Identity"}</h4>
-                                                                <p className="text-[10px] text-gray-400 font-medium">This name and email will appear on all outgoing recruitment emails for your org.</p>
-                                                            </div>
-                                                            <div className="space-y-4">
-                                                                <div className="space-y-1.5">
-                                                                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Sender Name</label>
-                                                                    <input
-                                                                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-[14px] text-gray-900 font-medium shadow-sm focus:border-[#F97316] outline-none transition-all"
-                                                                        placeholder="Your Company"
-                                                                        value={senderDraft.name}
-                                                                        onChange={e => setSenderDraft(prev => ({ ...prev, name: e.target.value }))}
-                                                                    />
+                                                    <div className="pt-2 space-y-4">
+                                                        {/* Sender form — shown when not set yet OR editing */}
+                                                        {showForm && (
+                                                            <div className="space-y-5 p-6 rounded-2xl bg-gray-50/50 border border-gray-100">
+                                                                <div className="space-y-1 border-l-2 border-emerald-500 pl-4">
+                                                                    <h4 className="text-xs font-bold text-gray-900 uppercase tracking-tight">{hasSender ? "Update Sender Identity" : "Set Sender Identity"}</h4>
+                                                                    <p className="text-[10px] text-gray-400 font-medium">This name and email will appear on all outgoing recruitment emails for your org.</p>
                                                                 </div>
-                                                                <div className="space-y-1.5">
-                                                                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Sender Email</label>
-                                                                    <div className="flex gap-2">
+                                                                <div className="space-y-4">
+                                                                    <div className="space-y-1.5">
+                                                                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Sender Name</label>
                                                                         <input
-                                                                            className="h-11 flex-1 rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 font-medium shadow-sm focus:border-[#F97316] outline-none transition-all"
-                                                                            placeholder="careers"
-                                                                            value={senderDraft.localPart}
-                                                                            onChange={e => {
-                                                                                const localPart = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "").split("@")[0];
-                                                                                setSenderDraft(prev => ({ ...prev, localPart }));
-                                                                            }}
+                                                                            className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-[14px] text-gray-900 font-medium shadow-sm focus:border-[#F97316] outline-none transition-all"
+                                                                            placeholder="Your Company"
+                                                                            value={senderDraft.name}
+                                                                            onChange={e => setSenderDraft(prev => ({ ...prev, name: e.target.value }))}
                                                                         />
-                                                                        <div className="flex items-center px-4 bg-gray-100 rounded-xl border border-gray-200 text-gray-500 text-[13px] font-bold">@{domainInfo.customDomain}</div>
+                                                                    </div>
+                                                                    <div className="space-y-1.5">
+                                                                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">Sender Email</label>
+                                                                        <div className="flex gap-2">
+                                                                            <input
+                                                                                className="h-11 flex-1 rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 font-medium shadow-sm focus:border-[#F97316] outline-none transition-all"
+                                                                                placeholder="careers"
+                                                                                value={senderDraft.localPart}
+                                                                                onChange={e => {
+                                                                                    const localPart = e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "").split("@")[0];
+                                                                                    setSenderDraft(prev => ({ ...prev, localPart }));
+                                                                                }}
+                                                                            />
+                                                                            <div className="flex items-center px-4 bg-gray-100 rounded-xl border border-gray-200 text-gray-500 text-[13px] font-bold">@{domainInfo.customDomain}</div>
+                                                                        </div>
                                                                     </div>
                                                                 </div>
+                                                                <div className="flex items-center gap-3">
+                                                                    <Button
+                                                                        disabled={isSaving || !senderDraft.localPart || !senderDraft.name}
+                                                                        onClick={async () => {
+                                                                            const finalEmail = `${senderDraft.localPart}@${domainInfo.customDomain}`;
+                                                                            setIsSaving(true);
+                                                                            try {
+                                                                                await fetch("/api/admin/organization", {
+                                                                                    method: "PATCH",
+                                                                                    headers: { "Content-Type": "application/json" },
+                                                                                    body: JSON.stringify({
+                                                                                        customSenderEmail: finalEmail,
+                                                                                        customSenderName: senderDraft.name
+                                                                                    })
+                                                                                });
+                                                                                setCompany(prev => ({ ...prev, customSenderEmail: finalEmail, customSenderName: senderDraft.name }));
+                                                                                setSaved(true);
+                                                                                setTimeout(() => setSaved(false), 2500);
+                                                                                setIsEditingSender(false);
+                                                                            } finally {
+                                                                                setIsSaving(false);
+                                                                            }
+                                                                        }}
+                                                                        className="h-10 px-6 bg-gray-950 text-white rounded-xl font-bold text-[11px] uppercase tracking-widest shadow-xl hover:bg-black transition-all flex items-center gap-2"
+                                                                    >
+                                                                        {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : hasSender ? "Update" : "Save & Activate"}
+                                                                    </Button>
+                                                                    {hasSender && (
+                                                                        <button onClick={() => setIsEditingSender(false)} className="text-[11px] font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest">
+                                                                            Cancel
+                                                                        </button>
+                                                                    )}
+                                                                    {saved && <span className="text-[10px] font-black uppercase text-emerald-500 tracking-widest flex items-center gap-1"><Check className="h-3 w-3" /> Saved</span>}
+                                                                </div>
                                                             </div>
-                                                            <div className="flex items-center gap-3">
-                                                                <Button
-                                                                    disabled={isSaving || !senderDraft.localPart || !senderDraft.name}
-                                                                    onClick={async () => {
-                                                                        const finalEmail = `${senderDraft.localPart}@${domainInfo.customDomain}`;
-                                                                        setIsSaving(true);
-                                                                        try {
-                                                                            await fetch("/api/admin/organization", {
-                                                                                method: "PATCH",
-                                                                                headers: { "Content-Type": "application/json" },
-                                                                                body: JSON.stringify({
-                                                                                    customSenderEmail: finalEmail,
-                                                                                    customSenderName: senderDraft.name
-                                                                                })
-                                                                            });
-                                                                            setCompany(prev => ({ ...prev, customSenderEmail: finalEmail, customSenderName: senderDraft.name }));
-                                                                            setSaved(true);
-                                                                            setTimeout(() => setSaved(false), 2500);
-                                                                            setIsEditingSender(false);
-                                                                        } finally {
-                                                                            setIsSaving(false);
-                                                                        }
-                                                                    }}
-                                                                    className="h-10 px-6 bg-gray-950 text-white rounded-xl font-bold text-[11px] uppercase tracking-widest shadow-xl hover:bg-black transition-all flex items-center gap-2"
-                                                                >
-                                                                    {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : hasSender ? "Update" : "Save & Activate"}
-                                                                </Button>
-                                                                {hasSender && (
-                                                                    <button onClick={() => setIsEditingSender(false)} className="text-[11px] font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest">
-                                                                        Cancel
-                                                                    </button>
-                                                                )}
-                                                                {saved && <span className="text-[10px] font-black uppercase text-emerald-500 tracking-widest flex items-center gap-1"><Check className="h-3 w-3" /> Saved</span>}
-                                                            </div>
-                                                        </div>
-                                                    )}
+                                                        )}
 
-                                                    {/* Read-only summary — shown only when sender is set and not editing */}
-                                                    {hasSender && !isEditingSender && (
-                                                        <div className="flex items-center gap-6 px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100">
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Sender Name</p>
-                                                                <p className="text-[14px] font-bold text-gray-900 truncate">{company.customSenderName}</p>
+                                                        {/* Read-only summary — shown only when sender is set and not editing */}
+                                                        {hasSender && !isEditingSender && (
+                                                            <div className="flex items-center gap-6 px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Sender Name</p>
+                                                                    <p className="text-[14px] font-bold text-gray-900 truncate">{company.customSenderName}</p>
+                                                                </div>
+                                                                <div className="w-px h-8 bg-gray-200" />
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Sender Email</p>
+                                                                    <p className="text-[14px] font-bold text-gray-900 truncate">{company.customSenderEmail}</p>
+                                                                </div>
                                                             </div>
-                                                            <div className="w-px h-8 bg-gray-200" />
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Sender Email</p>
-                                                                <p className="text-[14px] font-bold text-gray-900 truncate">{company.customSenderEmail}</p>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
+                                                        )}
+                                                    </div>
                                                 );
                                             })()}
                                         </div>

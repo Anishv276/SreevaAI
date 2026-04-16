@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, ChevronRight, Globe, Loader2, Zap } from "lucide-react";
+import { ChevronRight, Globe, Zap, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -13,7 +13,7 @@ export function DomainVerificationBanner() {
         customDomain?: string | null;
         isLoading: boolean;
     }>({
-        isDomainVerified: true,
+        isDomainVerified: false,
         isLoading: true
     });
 
@@ -24,7 +24,7 @@ export function DomainVerificationBanner() {
                 if (res.ok) {
                     const data = await res.json();
                     setDomainStatus({
-                        isDomainVerified: data.isDomainVerified ?? true,
+                        isDomainVerified: data.isDomainVerified === true, // Strict check: null/false => not verified
                         customDomain: data.customDomain,
                         isLoading: false
                     });
@@ -45,43 +45,57 @@ export function DomainVerificationBanner() {
 
     return (
         <div className="relative z-50">
-            <div className="bg-orange-50 border-b border-orange-100 px-4 py-2.5 shadow-sm overflow-hidden relative group">
-                {/* Background Decor */}
-                <div className="absolute top-0 right-0 w-64 h-full bg-gradient-to-l from-orange-100/50 to-transparent pointer-events-none" />
-                <div className="absolute -top-12 -right-12 w-24 h-24 bg-white/40 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-1000" />
+            <div className="bg-red-50/80 backdrop-blur-md border-b border-red-100 px-4 py-3 shadow-sm overflow-hidden relative group">
+                {/* Visual Accent */}
+                <div className="absolute top-0 left-0 w-1.5 h-full bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]" />
                 
-                <div className="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 relative z-10">
-                    <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-lg bg-white border border-orange-200 flex items-center justify-center text-[#F97316] shadow-sm shrink-0">
-                            <Globe className="h-4 w-4" />
+                {/* Background Decor */}
+                <div className="absolute top-0 right-0 w-80 h-full bg-gradient-to-l from-red-100/30 to-transparent pointer-events-none" />
+                <div className="absolute -top-10 -right-10 w-32 h-32 bg-white/40 rounded-full blur-2xl group-hover:scale-125 transition-transform duration-1000" />
+                
+                <div className="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 relative z-10 pl-2">
+                    <div className="flex items-center gap-4">
+                        <div className="h-10 w-10 rounded-xl bg-white border border-red-100 flex items-center justify-center text-red-600 shadow-sm shrink-0 animate-pulse-subtle">
+                            <AlertCircle className="h-5 w-5" />
                         </div>
                         <div className="flex flex-col">
-                            <p className="text-[11px] font-black uppercase tracking-widest text-[#9A3412]">
-                                {domainStatus.customDomain ? `Domain Verification Pending` : "Custom Domain Required"}
-                            </p>
-                            <p className="text-[10px] font-medium text-orange-700/80">
+                            <h4 className="text-[11px] font-black uppercase tracking-widest text-red-900 flex items-center gap-2">
+                                {domainStatus.customDomain ? "Action Required: Domain Verification" : "Action Required: Setup Required"}
+                                <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-ping" />
+                            </h4>
+                            <p className="text-[10px] font-semibold text-red-800/70 mt-0.5 leading-relaxed">
                                 {domainStatus.customDomain 
-                                    ? `Candidate emails are currently blocked for ${domainStatus.customDomain}.` 
-                                    : "Set up your custom domain to enable automated candidate invitations."}
+                                    ? `Candidate recruitment emails are blocked until ${domainStatus.customDomain} is verified.` 
+                                    : "Automated candidate invitations are disabled. Configure your custom domain to enable them."}
                             </p>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2 w-full md:w-auto">
+                    <div className="flex items-center gap-3 w-full md:w-auto">
                         <Link 
-                            href="/admin/settings"
-                            className="flex-1 md:flex-none h-8 px-5 bg-[#F97316] hover:bg-[#EA580C] text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg shadow-orange-200 active:scale-95"
+                            href="/admin/settings?section=domains"
+                            className="flex-1 md:flex-none h-9 px-6 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-200 active:scale-95 group/btn"
                         >
-                            <Zap className="h-3 w-3" />
-                            Complete Setup
-                            <ChevronRight className="h-3 w-3" />
+                            <Zap className="h-3.5 w-3.5 fill-current" />
+                            Complete Domain Setup
+                            <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
                         </Link>
                     </div>
                 </div>
             </div>
             
-            {/* Animated Warning Stripe for high visibility */}
-            <div className="h-0.5 w-full bg-gradient-to-r from-orange-400 via-white to-orange-400 opacity-30" />
+            {/* Animated Bottom Glow */}
+            <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-red-400/30 to-transparent" />
+            
+            <style jsx>{`
+                @keyframes pulse-subtle {
+                    0%, 100% { opacity: 1; transform: scale(1); }
+                    50% { opacity: 0.9; transform: scale(0.98); }
+                }
+                .animate-pulse-subtle {
+                    animation: pulse-subtle 3s infinite ease-in-out;
+                }
+            `}</style>
         </div>
     );
 }

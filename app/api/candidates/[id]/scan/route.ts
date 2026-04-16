@@ -81,18 +81,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         });
 
 
-        let outputData = "";
-        let errorData = "";
-
-        await new Promise((resolve, reject) => {
-            pythonProcess.stdout.on("data", (data) => (outputData += data.toString()));
-            pythonProcess.stderr.on("data", (data) => (errorData += data.toString()));
-            pythonProcess.on("close", (code) => {
-                if (code !== 0) reject(new Error(errorData));
-                else resolve(null);
-            });
-        });
-
         await unlink(tempInputPath).catch(() => {});
 
         const parsed = JSON.parse(outputData);

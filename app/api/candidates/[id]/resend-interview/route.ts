@@ -2,9 +2,15 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendApplicationStatusEmail } from "@/lib/mail";
 import { v4 as uuidv4 } from "uuid";
+import { getSession, isAdminRole } from "@/lib/auth";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
     try {
+        const session = await getSession();
+        if (!session || !isAdminRole(session.role)) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
         const { id: applicationId } = await context.params;
 
         if (!applicationId) {
@@ -24,6 +30,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             console.error(`[RESEND] Application not found for ID: ${applicationId}`);
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
+
+        // ── AUTHORIZATION ─────────────────────────────────
+        if (session.orgId && application.drive?.orgId !== session.orgId) {
+            return NextResponse.json({ error: "Forbidden: Candidate belongs to another organization" }, { status: 403 });
+        }
+        // ──────────────────────────────────────────────────
 
         const resumeStatus = (application.resumeStatus || "").toUpperCase();
         const hiringStatus = (application.hiringStatus || "").toUpperCase();

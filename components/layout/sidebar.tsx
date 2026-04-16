@@ -261,9 +261,9 @@ export function Sidebar() {
                         <button
                             onClick={() => setMenuOpen(!menuOpen)}
                             className={cn(
-                                "w-full flex items-center gap-3 p-2.5 rounded-[1.5rem] transition-all duration-300 group border",
+                                "w-full flex items-center gap-3 p-2 rounded-2xl transition-all duration-300 group border",
                                 menuOpen 
-                                    ? "bg-gray-900 border-gray-800 shadow-2xl" 
+                                    ? "bg-gray-50 border-gray-200 shadow-md" 
                                     : "bg-white border-transparent hover:border-gray-200 hover:shadow-lg"
                             )}
                         >
@@ -278,8 +278,8 @@ export function Sidebar() {
                             </div>
                             <div className="flex-1 text-left min-w-0">
                                 <p className={cn(
-                                    "text-sm font-black truncate tracking-tight uppercase",
-                                    menuOpen ? "text-white" : "text-gray-900"
+                                    "text-[13px] font-bold truncate tracking-tight",
+                                    "text-gray-900"
                                 )}>
                                     {user?.name || "Recruiter"}
                                 </p>
@@ -303,19 +303,19 @@ export function Sidebar() {
                                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                     animate={{ opacity: 1, y: 0, scale: 1 }}
                                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                    className="absolute bottom-[calc(100%+12px)] left-0 right-0 bg-gray-900 border border-gray-800 rounded-[2rem] overflow-hidden z-50 shadow-[0_20px_60px_rgba(0,0,0,0.3)] p-2"
+                                    className="absolute bottom-[calc(100%+12px)] left-0 right-0 bg-white border border-gray-200 rounded-2xl overflow-hidden z-50 shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-1.5"
                                 >
                                     <button 
                                         onClick={() => { router.push("/admin/settings"); setMenuOpen(false); }}
-                                        className="flex items-center gap-3 w-full px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-white hover:bg-white/5 rounded-2xl transition-all group/item"
+                                        className="flex items-center gap-3 w-full px-4 py-3 text-[11px] font-bold text-gray-500 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-all group/item"
                                     >
-                                        <User className="h-4 w-4 text-gray-600 group-hover/item:text-orange-500 transition-colors" />
+                                        <User className="h-4 w-4 text-gray-400 group-hover/item:text-[#F97316] transition-colors" />
                                         Profile Settings
                                     </button>
-                                    <div className="h-px bg-gray-800 my-1.5 mx-3" />
+                                    <div className="h-px bg-gray-100 my-1 mx-3" />
                                     <button 
                                         onClick={() => { setShowLogoutConfirm(true); setMenuOpen(false); }}
-                                        className="flex items-center gap-3 w-full px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-2xl transition-all"
+                                        className="flex items-center gap-3 w-full px-4 py-3 text-[11px] font-bold text-red-500 hover:bg-red-50 rounded-xl transition-all"
                                     >
                                         <LogOut className="h-4 w-4" /> Sign Out
                                     </button>

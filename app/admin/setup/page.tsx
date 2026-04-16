@@ -10,6 +10,7 @@ import {
     Trash2, ImageIcon
 } from "lucide-react"; 
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
+import { PhoneInput } from "@/components/application/phone-input";
 import { cn } from "@/lib/utils";
 
 const STEPS = ["Profile", "Company", "Hiring Goals", "Proceed"];
@@ -338,15 +339,11 @@ export default function OnboardingPage() {
                                     </div>
                                     <div className="space-y-2">
                                         <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Phone Number</label>
-                                        <div className="relative">
-                                            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"><Phone className="h-4 w-4" /></div>
-                                            <input
-                                                className="h-11 w-full rounded-xl border border-gray-200 bg-white pl-10 pr-4 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 focus:border-[#F97316] transition-all"
-                                                placeholder="+91 98765 43210"
-                                                value={profile.phone}
-                                                onChange={e => setProfile({ ...profile, phone: e.target.value })}
-                                            />
-                                        </div>
+                                         <PhoneInput
+                                             value={profile.phone}
+                                             onChange={val => setProfile({ ...profile, phone: val })}
+                                             className="mt-1"
+                                         />
                                     </div>
                                 </div>
 

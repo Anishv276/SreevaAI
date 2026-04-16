@@ -14,8 +14,10 @@ import {
     Globe,
     Trash2,
     Sparkles,
-    MoreHorizontal,
+    MoreVertical,
     X,
+    AlertCircle,
+    Clock,
 } from "lucide-react";
 import { Skeleton as Shimmer } from "@/components/ui/skeleton";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
@@ -95,6 +97,8 @@ export default function OrgsPage() {
     const [isDeleting, setIsDeleting] = useState(false);
     const [syncingOrgs, setSyncingOrgs] = useState<Set<string>>(new Set());
     const [metricsOrg, setMetricsOrg] = useState<Org | null>(null);
+    const [statusModalOrg, setStatusModalOrg] = useState<{ id: string; name: string; currentStatus: string; pendingStatus: string } | null>(null);
+    const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
     const metricSections: { key: BillingFeatureKey; label: string }[] = [
         { key: "resumeExtraction", label: "LLM - Resume" },
@@ -196,12 +200,27 @@ export default function OrgsPage() {
     };
 
     const handleStatusChange = async (orgId: string, newStatus: string) => {
-        const previousOrg = orgs.find(o => o.id === orgId);
-        if (!previousOrg || previousOrg.status === newStatus) return;
+        const org = orgs.find(o => o.id === orgId);
+        if (!org || org.status === newStatus) return;
 
+        // Instead of immediate update, open the confirmation modal
+        setStatusModalOrg({
+            id: orgId,
+            name: org.name,
+            currentStatus: org.status || "ACTIVE",
+            pendingStatus: newStatus
+        });
+    };
+
+    const confirmStatusUpdate = async () => {
+        if (!statusModalOrg) return;
+        const { id: orgId, name: orgName, pendingStatus: newStatus, currentStatus: previousStatus } = statusModalOrg;
+
+        setIsUpdatingStatus(true);
         // OPTIMISTIC UPDATE: Change UI instantly
         setOrgs(prev => prev.map(o => o.id === orgId ? { ...o, status: newStatus } : o));
         setSyncingOrgs(prev => new Set(prev).add(orgId));
+        setStatusModalOrg(null);
 
         try {
             const res = await fetch(`/api/super-admin/orgs/${orgId}`, {
@@ -213,12 +232,13 @@ export default function OrgsPage() {
             if (!res.ok) {
                 throw new Error("Failed to update status");
             }
-            toast.success(`${previousOrg.name} status updated to ${newStatus.toLowerCase()}`);
+            toast.success(`${orgName} status updated to ${newStatus.toLowerCase()}`);
         } catch (error) {
             // ROLLBACK: Revert to previous state on failure
-            setOrgs(prev => prev.map(o => o.id === orgId ? { ...o, status: previousOrg.status } : o));
+            setOrgs(prev => prev.map(o => o.id === orgId ? { ...o, status: previousStatus } : o));
             toast.error("Cloud sync failed. Reverting status.");
         } finally {
+            setIsUpdatingStatus(false);
             setSyncingOrgs(prev => {
                 const updated = new Set(prev);
                 updated.delete(orgId);
@@ -398,15 +418,8 @@ export default function OrgsPage() {
                                                         : 'bg-rose-50/50 border-rose-100 text-rose-700 hover:bg-rose-100/50'
                                                     }`}>
                                                     <div className="flex items-center gap-2 w-full">
-                                                        {syncingOrgs.has(org.id) ? (
+                                                        {syncingOrgs.has(org.id) && (
                                                             <Loader2 className="h-2.5 w-2.5 animate-spin text-gray-400" />
-                                                        ) : (
-                                                            <div className={`h-1.5 w-1.5 rounded-full transition-all duration-500 shadow-[0_0_8px_rgba(0,0,0,0.1)] ${(org.status || "ACTIVE") === "ACTIVE"
-                                                                ? 'bg-emerald-500 shadow-emerald-200 animate-pulse'
-                                                                : (org.status || "ACTIVE") === "SUSPENDED"
-                                                                    ? 'bg-amber-500 shadow-amber-200'
-                                                                    : 'bg-rose-500 shadow-rose-200'
-                                                                }`} />
                                                         )}
                                                         <SelectValue />
                                                     </div>
@@ -452,44 +465,38 @@ export default function OrgsPage() {
                                             {/* Three Dots Trigger */}
                                             <button
                                                 onClick={() => setActiveMenu(activeMenu === org.id ? null : org.id)}
-                                                className={`h-9 w-9 flex items-center justify-center rounded-lg transition-all active:scale-90 ${activeMenu === org.id
-                                                    ? 'bg-gray-900 text-white shadow-lg'
-                                                    : 'bg-gray-50 text-gray-400 hover:text-gray-900 hover:bg-gray-100 border border-transparent hover:border-gray-200 shadow-sm'}`}
+                                                className={`h-9 w-9 flex items-center justify-center rounded-xl transition-all active:scale-95 ${activeMenu === org.id
+                                                    ? 'bg-[#F97316] text-white shadow-lg'
+                                                    : 'bg-white text-gray-400 hover:text-gray-900 hover:bg-gray-50 border border-gray-100 shadow-sm'}`}
                                                 title="More Actions"
                                             >
-                                                <MoreHorizontal className="h-4 w-4" />
-                                            </button>
-
-                                            {activeMenu === org.id && (
-                                                <div className="absolute right-0 top-11 w-64 bg-white border border-gray-100 rounded-2xl shadow-[0_30px_90px_rgba(0,0,0,0.15)] p-2 z-[250] animate-in-up duration-200">
+                                                <MoreVertical className="h-4 w-4" />
+                                            </button>                                            {activeMenu === org.id && (
+                                                <div className="absolute right-0 top-11 w-60 bg-white border border-gray-100 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-1.5 z-[250] animate-in slide-in-from-top-2 duration-200">
                                                     {/* View Section */}
-                                                    <div className="px-3 py-2 text-[9px] font-black uppercase tracking-[0.2em] text-gray-400 border-b border-gray-50 mb-1">
+                                                    <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
                                                         Navigation
                                                     </div>
                                                     <Link
                                                         href={`/super-admin/orgs/${org.id}/view?tab=drives`}
                                                         onClick={() => setActiveMenu(null)}
-                                                        className="flex items-center gap-3.5 px-3 py-3 rounded-xl hover:bg-blue-50/50 text-gray-900 transition-colors group/item"
+                                                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors group/item"
                                                     >
-                                                        <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center group-hover/item:bg-blue-100 transition-colors">
-                                                            <Briefcase className="h-4 w-4 text-blue-600" />
-                                                        </div>
+                                                        <Briefcase className="h-4 w-4 text-gray-400 group-hover/item:text-blue-600 transition-colors" />
                                                         <div className="flex flex-col">
-                                                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-900">View Drives</span>
-                                                            <span className="text-[8px] font-bold text-gray-400">Recruitment pipelines</span>
+                                                            <span className="text-[13px] font-semibold text-gray-900">View Drives</span>
+                                                            <span className="text-[10px] text-gray-500">Recruitment pipelines</span>
                                                         </div>
                                                     </Link>
                                                     <Link
                                                         href={`/super-admin/orgs/${org.id}/view?tab=candidates`}
                                                         onClick={() => setActiveMenu(null)}
-                                                        className="flex items-center gap-3.5 px-3 py-3 rounded-xl hover:bg-indigo-50/50 text-gray-900 transition-colors group/item"
+                                                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors group/item"
                                                     >
-                                                        <div className="h-8 w-8 rounded-lg bg-indigo-50 flex items-center justify-center group-hover/item:bg-indigo-100 transition-colors">
-                                                            <Users className="h-4 w-4 text-indigo-600" />
-                                                        </div>
+                                                        <Users className="h-4 w-4 text-gray-400 group-hover/item:text-indigo-600 transition-colors" />
                                                         <div className="flex flex-col">
-                                                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-900">View Candidates</span>
-                                                            <span className="text-[8px] font-bold text-gray-400">Manage all profiles</span>
+                                                            <span className="text-[13px] font-semibold text-gray-900">View Candidates</span>
+                                                            <span className="text-[10px] text-gray-500">Manage all profiles</span>
                                                         </div>
                                                     </Link>
 
@@ -499,14 +506,12 @@ export default function OrgsPage() {
                                                     <Link
                                                         href={`/super-admin/orgs/${org.id}`}
                                                         onClick={() => setActiveMenu(null)}
-                                                        className="flex items-center gap-3.5 px-3 py-3 rounded-xl hover:bg-orange-50/50 text-gray-900 transition-colors group/item"
+                                                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors group/item"
                                                     >
-                                                        <div className="h-8 w-8 rounded-lg bg-orange-50 flex items-center justify-center group-hover/item:bg-orange-100 transition-colors">
-                                                            <Edit2 className="h-4 w-4 text-[#F97316]" />
-                                                        </div>
+                                                        <Edit2 className="h-4 w-4 text-gray-400 group-hover/item:text-[#F97316] transition-colors" />
                                                         <div className="flex flex-col">
-                                                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-900">Edit Settings</span>
-                                                            <span className="text-[8px] font-bold text-gray-400">Configure parameters</span>
+                                                            <span className="text-[13px] font-semibold text-gray-900">Edit Settings</span>
+                                                            <span className="text-[10px] text-gray-500">Configure parameters</span>
                                                         </div>
                                                     </Link>
 
@@ -517,14 +522,12 @@ export default function OrgsPage() {
                                                             setOrgToDelete(org);
                                                             setIsDeleteModalOpen(true);
                                                         }}
-                                                        className="w-full flex items-center gap-3.5 px-3 py-3 rounded-xl hover:bg-red-50 text-red-600 transition-colors group/item"
+                                                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-red-50 text-red-600 transition-colors group/item"
                                                     >
-                                                        <div className="h-8 w-8 rounded-lg bg-red-50 flex items-center justify-center group-hover/item:bg-red-100 transition-colors">
-                                                            <Trash2 className="h-4 w-4 text-red-600" />
-                                                        </div>
+                                                        <Trash2 className="h-4 w-4 text-gray-400 group-hover/item:text-red-500 transition-colors" />
                                                         <div className="flex flex-col items-start">
-                                                            <span className="text-[10px] font-black uppercase tracking-widest">Terminate Portal</span>
-                                                            <span className="text-[8px] font-bold text-red-400/70">Permanent destruction</span>
+                                                            <span className="text-[13px] font-semibold text-gray-900">Terminate Portal</span>
+                                                            <span className="text-[10px] text-gray-400 group-hover/item:text-red-400">Permanent destruction</span>
                                                         </div>
                                                     </button>
                                                 </div>
@@ -568,32 +571,111 @@ export default function OrgsPage() {
                 isLoading={isDeleting}
             />
 
+            {/* Status Toggle Modal */}
+            {statusModalOrg && (
+                <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm mx-4 space-y-6">
+                        <div className="flex flex-col items-center gap-3 text-center">
+                            <div className={`h-14 w-14 rounded-2xl flex items-center justify-center ${
+                                statusModalOrg.pendingStatus === "ACTIVE" 
+                                    ? "bg-emerald-50" 
+                                    : statusModalOrg.pendingStatus === "SUSPENDED" 
+                                        ? "bg-amber-50" 
+                                        : "bg-rose-50"
+                            }`}>
+                                {statusModalOrg.pendingStatus === "ACTIVE" ? (
+                                    <AlertCircle className="h-7 w-7 text-emerald-500" />
+                                ) : statusModalOrg.pendingStatus === "SUSPENDED" ? (
+                                    <Clock className="h-7 w-7 text-amber-500" />
+                                ) : (
+                                    <AlertCircle className="h-7 w-7 text-rose-500" />
+                                )}
+                            </div>
+                            <h2 className="text-xl font-black text-gray-900">
+                                {statusModalOrg.pendingStatus === "ACTIVE" 
+                                    ? "Activate Organization?" 
+                                    : statusModalOrg.pendingStatus === "SUSPENDED" 
+                                        ? "Suspend Organization?" 
+                                        : "Close Organization?"}
+                            </h2>
+                            <p className="text-sm text-gray-500 font-medium leading-relaxed">
+                                {statusModalOrg.pendingStatus === "ACTIVE"
+                                    ? `Are you sure you want to activate ${statusModalOrg.name}? This will restore access to their portal and recruitment drives.`
+                                    : statusModalOrg.pendingStatus === "SUSPENDED"
+                                        ? `Are you sure you want to suspend ${statusModalOrg.name}? They will temporarily lose access to their dashboard.`
+                                        : `Closing ${statusModalOrg.name} will restrict access to their data. You can reopen it later if needed.`
+                                }
+                            </p>
+                        </div>
+                        <div className="flex gap-3">
+                            <button 
+                                className="flex-1 h-11 bg-gray-100 hover:bg-gray-200 text-gray-900 font-bold rounded-2xl transition-all"
+                                onClick={() => setStatusModalOrg(null)} 
+                                disabled={isUpdatingStatus}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className={`flex-1 h-11 font-bold text-white rounded-2xl transition-all shadow-lg active:scale-95 ${
+                                    statusModalOrg.pendingStatus === "ACTIVE"
+                                        ? "bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-emerald-200"
+                                        : statusModalOrg.pendingStatus === "SUSPENDED"
+                                            ? "bg-gradient-to-r from-amber-500 to-amber-600 shadow-amber-200"
+                                            : "bg-gradient-to-r from-rose-500 to-rose-600 shadow-rose-200"
+                                }`}
+                                disabled={isUpdatingStatus}
+                                onClick={confirmStatusUpdate}
+                            >
+                                {isUpdatingStatus ? (
+                                    <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                                ) : (
+                                    statusModalOrg.pendingStatus === "ACTIVE" ? "Yes, Activate" : statusModalOrg.pendingStatus === "SUSPENDED" ? "Yes, Suspend" : "Yes, Close"
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {metricsOrg && (
-                <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 px-4">
-                    <div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-2xl">
-                        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-5">
-                            <div>
-                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Metrics</div>
-                                <h3 className="text-xl font-black text-gray-900">{metricsOrg.name} - AI Usage</h3>
+                <div className="fixed inset-0 z-[400] flex items-center justify-center bg-gray-950/60 backdrop-blur-md px-4 py-6">
+                    <div className="w-full max-w-5xl h-full max-h-[90vh] flex flex-col overflow-hidden rounded-[2.5rem] border border-white/20 bg-white/95 shadow-2xl animate-in zoom-in-95 duration-300">
+                        {/* Header */}
+                        <div className="relative flex items-center justify-between px-10 py-8 border-b border-gray-100 overflow-hidden">
+                            <div className="absolute top-0 right-0 p-8 opacity-[0.03] rotate-12">
+                                <Sparkles className="h-24 w-24" />
+                            </div>
+                            <div className="relative z-10 flex items-center gap-5">
+                                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-200">
+                                    <Layers className="h-7 w-7 text-white" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <div className="h-2 w-2 rounded-full bg-orange-500 animate-pulse" />
+                                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-orange-600/60">Live Analytics</span>
+                                    </div>
+                                    <h3 className="text-2xl font-black text-gray-900 tracking-tight">
+                                        {metricsOrg.name} <span className="text-gray-400 font-medium">— AI Consumption</span>
+                                    </h3>
+                                </div>
                             </div>
                             <button
                                 onClick={() => setMetricsOrg(null)}
-                                className="inline-flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100"
+                                className="relative z-10 group h-12 px-6 flex items-center gap-3 rounded-2xl bg-gray-50 text-gray-900 border border-gray-100 hover:bg-gray-900 hover:text-white transition-all shadow-sm hover:shadow-md"
                             >
-                                <X className="h-4 w-4" />
-                                Close
+                                <X className="h-4 w-4 group-hover:rotate-90 transition-transform duration-300" />
+                                <span className="text-sm font-bold">Close</span>
                             </button>
                         </div>
 
-                        <div className="max-h-[70vh] overflow-y-auto p-6 space-y-8">
+                        <div className="flex-1 overflow-y-auto p-10 space-y-12">
                             {/* ── LLM PROCESSING SECTION ────────────────── */}
-                            <div>
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="h-[1px] flex-1 bg-gray-100" />
-                                    <h4 className="text-[10px] font-black uppercase tracking-[0.25em] text-gray-400">LLM Processing Engines</h4>
-                                    <div className="h-[1px] flex-1 bg-gray-100" />
+                            <div className="space-y-6">
+                                <div className="flex items-center gap-4">
+                                    <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400 whitespace-nowrap">Core Processing Units</h4>
+                                    <div className="h-[1px] flex-1 bg-gradient-to-r from-gray-100 to-transparent" />
                                 </div>
-                                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                                <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
                                     {metricSections.map((section) => {
                                         const feature = getBillingFeature(metricsOrg, section.key);
                                         const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
@@ -601,34 +683,40 @@ export default function OrgsPage() {
                                         const setupModel = getSetupModel(metricsOrg, 'LLM');
 
                                         return (
-                                            <div key={section.key} className="rounded-xl border border-gray-100 bg-gray-50/50 p-4 hover:bg-white hover:shadow-md transition-all">
-                                                <div className="flex flex-col gap-1">
-                                                    <div className="text-[9px] font-bold uppercase tracking-widest text-[#F97316]">{section.label.replace('LLM - ', '')}</div>
-                                                    <div className="flex flex-wrap gap-1">
+                                            <div key={section.key} className="group relative rounded-3xl border border-gray-100 bg-white p-6 hover:border-orange-200 hover:shadow-xl hover:shadow-orange-500/5 transition-all duration-300">
+                                                <div className="flex flex-col gap-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="text-[10px] font-black uppercase tracking-widest text-[#F97316]/60">{section.label.replace('LLM - ', '')}</div>
+                                                        <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
+                                                    </div>
+                                                    
+                                                    <div className="flex flex-wrap gap-1.5 min-h-[24px]">
                                                         {models.length > 0 ? (
                                                             models.map(m => (
-                                                                <div key={m} className="text-[8px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 uppercase tracking-tighter">
+                                                                <div key={m} className="text-[9px] font-black text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100 uppercase tracking-tight">
                                                                     {cleanName(m)}
                                                                 </div>
                                                             ))
                                                         ) : setupModel ? (
-                                                            <div className="text-[8px] font-bold text-gray-500 bg-white px-2 py-0.5 rounded border border-gray-100 uppercase tracking-tighter">
-                                                                {setupModel} (Setup)
+                                                            <div className="text-[9px] font-black text-gray-400 bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-200 uppercase tracking-tight">
+                                                                {setupModel}
                                                             </div>
                                                         ) : (
-                                                            <div className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter italic">Not Configured</div>
+                                                            <div className="text-[9px] font-bold text-gray-300 italic">No Instance</div>
                                                         )}
                                                     </div>
                                                 </div>
-                                                <div className="mt-2 text-xl font-black text-gray-900">${Number(feature.costUsd || 0).toFixed(2)}</div>
-                                                <div className="mt-2 space-y-1 text-[11px] text-gray-500">
-                                                    <div className="flex justify-between">
-                                                        <span>Runs</span>
-                                                        <span className="font-bold text-gray-900">{Number(feature.runs || 0)}</span>
+                                                <div className="mt-5 mb-4">
+                                                    <div className="text-3xl font-black text-gray-900 tracking-tight">${Number(feature.costUsd || 0).toFixed(2)}</div>
+                                                </div>
+                                                <div className="space-y-2 pt-4 border-t border-gray-50 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                                                    <div className="flex justify-between items-center">
+                                                        <span>Requests</span>
+                                                        <span className="text-gray-900">{Number(feature.runs || 0).toLocaleString()}</span>
                                                     </div>
-                                                    <div className="flex justify-between">
-                                                        <span>Tokens</span>
-                                                        <span className="font-bold text-gray-900">{totalTokens.toLocaleString()}</span>
+                                                    <div className="flex justify-between items-center">
+                                                        <span>Volume</span>
+                                                        <span className="text-gray-900">{totalTokens.toLocaleString()} <span className="text-[8px] opacity-40">TKN</span></span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -638,27 +726,27 @@ export default function OrgsPage() {
                             </div>
 
                             {/* ── VOICE & SPEECH SECTION ────────────────── */}
-                            <div className="grid gap-6 md:grid-cols-2">
+                            <div className="grid gap-10 md:grid-cols-2">
                                 {/* TTS Section */}
-                                <div className="space-y-4">
-                                    <div className="flex items-center gap-3">
-                                        <h4 className="text-[10px] font-black uppercase tracking-[0.25em] text-gray-400 whitespace-nowrap">TTS - Text to Speech</h4>
-                                        <div className="h-[1px] flex-1 bg-gray-100" />
+                                <div className="space-y-6">
+                                    <div className="flex items-center gap-4">
+                                        <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400 whitespace-nowrap">Synthesis Hub</h4>
+                                        <div className="h-[1px] flex-1 bg-gradient-to-r from-gray-100 to-transparent" />
                                     </div>
-                                    <div className="rounded-2xl border border-blue-100 bg-blue-50/30 p-5">
-                                        <div className="flex items-center justify-between mb-4">
-                                            <div className="space-y-1">
-                                                <div className="text-[28px] font-black text-blue-900 tracking-tighter">
+                                    <div className="relative overflow-hidden rounded-[2.5rem] border border-blue-100 bg-blue-50/30 p-8 group hover:bg-blue-50/50 transition-all">
+                                        <div className="relative z-10 flex items-center justify-between mb-8">
+                                            <div className="space-y-2">
+                                                <div className="text-4xl font-black text-blue-900 tracking-tighter">
                                                     ${metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCostUsd || 0), 0).toFixed(2)}
                                                 </div>
-                                                <div className="text-[10px] font-bold uppercase tracking-widest text-blue-600">Total TTS Generation</div>
+                                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600/60">Voice Generation Cost</div>
                                             </div>
-                                            <div className="text-right text-blue-800">
-                                                <div className="text-lg font-black">{metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCharacters || 0), 0).toLocaleString()}</div>
-                                                <div className="text-[9px] font-bold uppercase opacity-60">Total Characters</div>
+                                            <div className="text-right">
+                                                <div className="text-2xl font-black text-blue-800">{metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCharacters || 0), 0).toLocaleString()}</div>
+                                                <div className="text-[9px] font-black uppercase tracking-widest text-blue-400 opacity-60">Total Characters</div>
                                             </div>
                                         </div>
-                                        <div className="flex flex-wrap gap-1.5 border-t border-blue-100/50 pt-3">
+                                        <div className="flex flex-wrap gap-2 pt-6 border-t border-blue-100/50">
                                             {(() => {
                                                 const allTtsModels = metricSections.flatMap(s => Object.keys(getBillingFeature(metricsOrg, s.key).ttsByModel || {}));
                                                 const uniqueModels = Array.from(new Set(allTtsModels));
@@ -666,44 +754,37 @@ export default function OrgsPage() {
 
                                                 if (uniqueModels.length > 0) {
                                                     return uniqueModels.map(m => (
-                                                        <span key={m} className="px-2 py-0.5 bg-white text-blue-700 text-[9px] font-bold rounded border border-blue-100 uppercase tracking-tight">
+                                                        <span key={m} className="px-3 py-1.5 bg-white text-blue-700 text-[10px] font-black rounded-xl border border-blue-100 uppercase tracking-widest shadow-sm">
                                                             {cleanName(m)}
                                                         </span>
                                                     ));
                                                 }
-                                                if (setupModel) {
-                                                    return (
-                                                        <span className="px-2 py-0.5 bg-white text-blue-500 text-[9px] font-bold rounded border border-blue-100 border-dashed uppercase tracking-tight">
-                                                            {setupModel} (Setup)
-                                                        </span>
-                                                    );
-                                                }
-                                                return <span className="text-[9px] text-blue-400 italic">No TTS Models Recorded</span>;
+                                                return <span className="text-[10px] font-bold text-blue-300 italic bg-white/50 px-4 py-1.5 rounded-xl border border-blue-100/50 border-dashed">{setupModel || "System Default"}</span>;
                                             })()}
                                         </div>
                                     </div>
                                 </div>
 
                                 {/* STT Section */}
-                                <div className="space-y-4">
-                                    <div className="flex items-center gap-3">
-                                        <h4 className="text-[10px] font-black uppercase tracking-[0.25em] text-gray-400 whitespace-nowrap">STT - Speech to Text</h4>
-                                        <div className="h-[1px] flex-1 bg-gray-100" />
+                                <div className="space-y-6">
+                                    <div className="flex items-center gap-4">
+                                        <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400 whitespace-nowrap">Recognition Hub</h4>
+                                        <div className="h-[1px] flex-1 bg-gradient-to-r from-gray-100 to-transparent" />
                                     </div>
-                                    <div className="rounded-2xl border border-orange-100 bg-orange-50/30 p-5">
-                                        <div className="flex items-center justify-between mb-4">
-                                            <div className="space-y-1">
-                                                <div className="text-[28px] font-black text-orange-900 tracking-tighter">
+                                    <div className="relative overflow-hidden rounded-[2.5rem] border border-orange-100 bg-orange-50/30 p-8 group hover:bg-orange-50/50 transition-all">
+                                        <div className="relative z-10 flex items-center justify-between mb-8">
+                                            <div className="space-y-2">
+                                                <div className="text-4xl font-black text-orange-900 tracking-tighter">
                                                     ${metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttCostUsd || 0), 0).toFixed(2)}
                                                 </div>
-                                                <div className="text-[10px] font-bold uppercase tracking-widest text-orange-600">Total STT Processing</div>
+                                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-600/60">Audio Processing Cost</div>
                                             </div>
-                                            <div className="text-right text-orange-800">
-                                                <div className="text-lg font-black">{(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttAudioSeconds || 0), 0) / 60).toFixed(1)}m</div>
-                                                <div className="text-[9px] font-bold uppercase opacity-60">Total Minutes</div>
+                                            <div className="text-right">
+                                                <div className="text-2xl font-black text-orange-800">{(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttAudioSeconds || 0), 0) / 60).toFixed(1)}m</div>
+                                                <div className="text-[9px] font-black uppercase tracking-widest text-orange-400 opacity-60">Total Minutes</div>
                                             </div>
                                         </div>
-                                        <div className="flex flex-wrap gap-1.5 border-t border-orange-100/50 pt-3">
+                                        <div className="flex flex-wrap gap-2 pt-6 border-t border-orange-100/50">
                                             {(() => {
                                                 const allSttModels = metricSections.flatMap(s => Object.keys(getBillingFeature(metricsOrg, s.key).sttByModel || {}));
                                                 const uniqueModels = Array.from(new Set(allSttModels));
@@ -711,19 +792,12 @@ export default function OrgsPage() {
 
                                                 if (uniqueModels.length > 0) {
                                                     return uniqueModels.map(m => (
-                                                        <span key={m} className="px-2 py-0.5 bg-white text-orange-700 text-[9px] font-bold rounded border border-orange-100 uppercase tracking-tight">
+                                                        <span key={m} className="px-3 py-1.5 bg-white text-orange-700 text-[10px] font-black rounded-xl border border-orange-100 uppercase tracking-widest shadow-sm">
                                                             {cleanName(m)}
                                                         </span>
                                                     ));
                                                 }
-                                                if (setupModel) {
-                                                    return (
-                                                        <span className="px-2 py-0.5 bg-white text-orange-500 text-[9px] font-bold rounded border border-orange-100 border-dashed uppercase tracking-tight">
-                                                            {setupModel} (Setup)
-                                                        </span>
-                                                    );
-                                                }
-                                                return <span className="text-[9px] text-orange-400 italic">No STT Models Recorded</span>;
+                                                return <span className="text-[10px] font-bold text-orange-300 italic bg-white/50 px-4 py-1.5 rounded-xl border border-orange-100/50 border-dashed">{setupModel || "System Default"}</span>;
                                             })()}
                                         </div>
                                     </div>
@@ -732,10 +806,9 @@ export default function OrgsPage() {
 
                             {/* ── OVERALL INTERVIEW SECTION ────────────────── */}
                             <div className="pt-2">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="h-[1px] flex-1 bg-gray-100" />
-                                    <h4 className="text-[10px] font-black uppercase tracking-[0.25em] text-gray-400 whitespace-nowrap">AI Interview - Overall Pipeline</h4>
-                                    <div className="h-[1px] flex-1 bg-gray-100" />
+                                <div className="flex items-center gap-4 mb-6">
+                                    <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400 whitespace-nowrap">Pipeline Summary</h4>
+                                    <div className="h-[1px] flex-1 bg-gradient-to-r from-gray-100 to-transparent" />
                                 </div>
                                 {(() => {
                                     const feature = getBillingFeature(metricsOrg, 'interview');
@@ -751,105 +824,94 @@ export default function OrgsPage() {
                                     const setupStt = getSetupModel(metricsOrg, 'STT');
 
                                     return (
-                                        <div className="relative overflow-hidden rounded-2xl border-2 border-gray-900 bg-gray-950 p-8 text-white shadow-2xl group">
-                                            <div className="absolute top-0 right-0 p-12 opacity-10 group-hover:opacity-20 transition-opacity">
-                                                <Sparkles className="h-32 w-32" />
+                                        <div className="relative overflow-hidden rounded-[3rem] border-2 border-gray-900 bg-gray-950 p-10 text-white shadow-2xl group transition-all duration-500 hover:shadow-orange-500/10">
+                                            <div className="absolute top-0 right-0 p-12 opacity-[0.05] group-hover:opacity-10 group-hover:rotate-12 transition-all duration-700">
+                                                <Sparkles className="h-40 w-40" />
                                             </div>
 
-                                            <div className="relative flex flex-col md:flex-row md:items-end justify-between gap-8 mb-8">
-                                                <div className="space-y-4">
-                                                    <div className="space-y-1">
-                                                        <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Pipeline Total Cost</div>
-                                                        <div className="text-6xl font-black tracking-tighter text-white">${totalCost.toFixed(2)}</div>
+                                            <div className="relative flex flex-col lg:flex-row lg:items-end justify-between gap-12 mb-12">
+                                                <div className="space-y-6">
+                                                    <div className="space-y-2">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <div className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+                                                            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Total Pipeline Expenditure</span>
+                                                        </div>
+                                                        <div className="text-7xl font-black tracking-tighter text-white">${totalCost.toFixed(2)}</div>
                                                     </div>
-                                                    <div className="flex flex-wrap gap-4 pt-2">
-                                                        <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2">
-                                                            <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500">LLM Analysis</div>
+                                                    <div className="flex flex-wrap gap-3 pt-4">
+                                                        <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl px-5 py-3 transition-colors hover:bg-white/10">
+                                                            <div className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-1">LLM Logic</div>
                                                             <div className="text-sm font-black text-emerald-400">${Number(feature.costUsd || 0).toFixed(2)}</div>
                                                         </div>
-                                                        <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2">
-                                                            <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Voice Synthesis</div>
+                                                        <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl px-5 py-3 transition-colors hover:bg-white/10">
+                                                            <div className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-1">Voice Synth</div>
                                                             <div className="text-sm font-black text-blue-400">${Number(feature.ttsCostUsd || 0).toFixed(2)}</div>
                                                         </div>
-                                                        <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-2">
-                                                            <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Speech Audio</div>
-                                                            <div className="text-sm font-black text-[#F97316]">${Number(feature.sttCostUsd || 0).toFixed(2)}</div>
+                                                        <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl px-5 py-3 transition-colors hover:bg-white/10">
+                                                            <div className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-1">Audio Trans</div>
+                                                            <div className="text-sm font-black text-orange-400">${Number(feature.sttCostUsd || 0).toFixed(2)}</div>
                                                         </div>
                                                     </div>
                                                 </div>
 
-                                                <div className="grid grid-cols-2 gap-8 text-right min-w-[240px]">
-                                                    <div>
-                                                        <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Total Sessions</div>
-                                                        <div className="text-2xl font-black tabular-nums">{Number(feature.runs || 0)}</div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-10 text-right min-w-[300px]">
+                                                    <div className="space-y-1">
+                                                        <div className="text-[10px] font-black uppercase tracking-widest text-gray-500">Drives</div>
+                                                        <div className="text-3xl font-black tabular-nums text-white">{(metricsOrg as any).driveCount || 0}</div>
                                                     </div>
-                                                    <div>
-                                                        <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Total Tokens</div>
-                                                        <div className="text-2xl font-black tabular-nums">{totalTokens.toLocaleString()}</div>
+                                                    <div className="space-y-1">
+                                                        <div className="text-[10px] font-black uppercase tracking-widest text-gray-500">Sessions</div>
+                                                        <div className="text-3xl font-black tabular-nums text-white">{Number(feature.runs || 0).toLocaleString()}</div>
                                                     </div>
-                                                    <div>
-                                                        <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Total Minutes</div>
-                                                        <div className="text-2xl font-black tabular-nums">
+                                                    <div className="space-y-1">
+                                                        <div className="text-[10px] font-black uppercase tracking-widest text-gray-500">Tokens</div>
+                                                        <div className="text-3xl font-black tabular-nums text-white">{totalTokens.toLocaleString()}</div>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <div className="text-[10px] font-black uppercase tracking-widest text-gray-500">Duration</div>
+                                                        <div className="text-3xl font-black tabular-nums text-white">
                                                             {Number(feature.sessionDuration || 0) > 0 
                                                                 ? (Number(feature.sessionDuration || 0) / 60).toFixed(1)
-                                                                : (Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}m
+                                                                : (Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}<span className="text-xs ml-1 opacity-40">M</span>
                                                         </div>
                                                     </div>
-                                                    <div>
-                                                        <div className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Status</div>
-                                                        <div className="text-2xl font-black text-emerald-400 uppercase tracking-tighter">Healthy</div>
+                                                    <div className="space-y-1 col-span-2 sm:col-span-1">
+                                                        <div className="text-[10px] font-black uppercase tracking-widest text-gray-500">Pipeline</div>
+                                                        <div className="text-3xl font-black text-emerald-400 uppercase tracking-tighter">Healthy</div>
                                                     </div>
                                                 </div>
                                             </div>
 
                                             {/* Tech Stack Overlay */}
-                                            <div className="relative border-t border-white/10 pt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+                                            <div className="relative border-t border-white/10 pt-8 grid grid-cols-1 md:grid-cols-3 gap-8">
                                                 <div>
-                                                    <div className="text-[8px] font-black uppercase tracking-[0.2em] text-gray-500 mb-2">Core LLM Intelligence</div>
-                                                    <div className="space-y-2">
-                                                        <div className="flex flex-wrap gap-1.5 ">
-                                                            {llmModels.length > 0 ? llmModels.map(m => (
-                                                                <span key={m} className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-[9px] font-bold rounded border border-emerald-400/20 uppercase">
-                                                                    {cleanName(m)}
-                                                                </span>
-                                                            )) : setupLlm ? (
-                                                                <span className="px-2 py-0.5 bg-white/5 text-gray-400 text-[9px] font-bold rounded border border-white/10 uppercase italic">
-                                                                    {setupLlm} (Setup)
-                                                                </span>
-                                                            ) : <span className="text-[9px] text-gray-600 italic">No Setup</span>}
-                                                        </div>
+                                                    <div className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-500 mb-3">Logic Provider</div>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {llmModels.length > 0 ? llmModels.map(m => (
+                                                            <span key={m} className="px-3 py-1 bg-emerald-500/10 text-emerald-400 text-[10px] font-black rounded-lg border border-emerald-400/20 uppercase tracking-widest">
+                                                                {cleanName(m)}
+                                                            </span>
+                                                        )) : <span className="text-[10px] font-bold text-gray-600 italic">{setupLlm || "Standard"}</span>}
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-[8px] font-black uppercase tracking-[0.2em] text-gray-500 mb-2">Voice Generation</div>
-                                                    <div className="space-y-2">
-                                                        <div className="flex flex-wrap gap-1.5">
-                                                            {ttsModels.length > 0 ? ttsModels.map(m => (
-                                                                <span key={m} className="px-2 py-0.5 bg-blue-500/10 text-blue-400 text-[9px] font-bold rounded border border-blue-400/20 uppercase">
-                                                                    {cleanName(m)}
-                                                                </span>
-                                                            )) : setupTts ? (
-                                                                <span className="px-2 py-0.5 bg-white/5 text-gray-400 text-[9px] font-bold rounded border border-white/10 uppercase italic">
-                                                                    {setupTts} (Setup)
-                                                                </span>
-                                                            ) : <span className="text-[9px] text-gray-600 italic">No Setup</span>}
-                                                        </div>
+                                                    <div className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-500 mb-3">Synthesis Unit</div>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {ttsModels.length > 0 ? ttsModels.map(m => (
+                                                            <span key={m} className="px-3 py-1 bg-blue-500/10 text-blue-400 text-[10px] font-black rounded-lg border border-blue-400/20 uppercase tracking-widest">
+                                                                {cleanName(m)}
+                                                            </span>
+                                                        )) : <span className="text-[10px] font-bold text-gray-600 italic">{setupTts || "Standard"}</span>}
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <div className="text-[8px] font-black uppercase tracking-[0.2em] text-gray-500 mb-2">Speech Recognition</div>
-                                                    <div className="space-y-2">
-                                                        <div className="flex flex-wrap gap-1.5">
-                                                            {sttModels.length > 0 ? sttModels.map(m => (
-                                                                <span key={m} className="px-2 py-0.5 bg-orange-500/10 text-orange-400 text-[9px] font-bold rounded border border-orange-400/20 uppercase">
-                                                                    {cleanName(m)}
-                                                                </span>
-                                                            )) : setupStt ? (
-                                                                <span className="px-2 py-0.5 bg-white/5 text-gray-400 text-[9px] font-bold rounded border border-white/10 uppercase italic">
-                                                                    {setupStt} (Setup)
-                                                                </span>
-                                                            ) : <span className="text-[9px] text-gray-600 italic">No Setup</span>}
-                                                        </div>
+                                                    <div className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-500 mb-3">Recognition Engine</div>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {sttModels.length > 0 ? sttModels.map(m => (
+                                                            <span key={m} className="px-3 py-1 bg-orange-500/10 text-orange-400 text-[10px] font-black rounded-lg border border-orange-400/20 uppercase tracking-widest">
+                                                                {cleanName(m)}
+                                                            </span>
+                                                        )) : <span className="text-[10px] font-bold text-gray-600 italic">{setupStt || "Standard"}</span>}
                                                     </div>
                                                 </div>
                                             </div>
@@ -859,9 +921,10 @@ export default function OrgsPage() {
                             </div>
                         </div>
 
-                        <div className="border-t border-gray-100 px-6 py-4">
-                            <div className="text-sm font-bold text-gray-700">
-                                Total AI Exposure (LLM + TTS + STT): <span className="text-gray-900">${getOrgTotalBillingCost(metricsOrg).toFixed(2)}</span>
+                        <div className="border-t border-gray-100 px-10 py-6 bg-gray-50/50 flex items-center justify-between">
+                            <div className="text-[11px] font-black uppercase tracking-widest text-gray-400">Total Organization Footprint</div>
+                            <div className="text-xl font-black text-gray-900 tracking-tight">
+                                ${getOrgTotalBillingCost(metricsOrg).toFixed(2)}
                             </div>
                         </div>
                     </div>

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/auth";
 import { hashInviteToken, normalizeOrgRole } from "@/lib/invite";
 import { generateId } from "@/lib/ids";
+import { validatePasswordStrength } from "@/lib/validation";
 
 type InviteRow = {
     id: string;
@@ -30,8 +31,9 @@ export async function POST(
             return NextResponse.json({ error: "Name is required" }, { status: 400 });
         }
 
-        if (normalizedPassword.length < 6) {
-            return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+        const { isValid: isPasswordValid, error: passwordError } = validatePasswordStrength(normalizedPassword);
+        if (!isPasswordValid) {
+            return NextResponse.json({ error: passwordError }, { status: 400 });
         }
 
         const tokenHash = hashInviteToken(token);

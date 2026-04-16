@@ -59,8 +59,8 @@ export default function InviteAcceptPage() {
             setError("Name is required");
             return;
         }
-        if (password.length < 6) {
-            setError("Password must be at least 6 characters");
+        if (password.length < 8) {
+            setError("Password must be at least 8 characters");
             return;
         }
         if (password !== confirmPassword) {
@@ -150,7 +150,7 @@ export default function InviteAcceptPage() {
                             />
                             <input
                                 type="password"
-                                placeholder="Create password"
+                                placeholder="8+ chars (A, a, 1, @)"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 className="w-full h-11 px-4 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-300"

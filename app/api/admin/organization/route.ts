@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { getSession, isAdminRole } from "@/lib/auth";
 
 export async function GET() {
     try {
@@ -47,8 +47,8 @@ export async function GET() {
 export async function PATCH(req: Request) {
     try {
         const session = await getSession();
-        if (!session?.orgId) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        if (!session?.orgId || !isAdminRole(session.role)) {
+            return NextResponse.json({ error: "Unauthorized: administrator access required" }, { status: 403 });
         }
 
         const body = await req.json();

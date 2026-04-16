@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession, createSession } from "@/lib/auth";
+import { getSession, createSession, isAdminRole } from "@/lib/auth";
 import bcrypt from "bcryptjs";
+import { validatePasswordStrength } from "@/lib/validation";
 
 export async function POST(req: Request) {
     try {
         const session = await getSession();
-        if (!session?.orgId) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        if (!session?.orgId || !isAdminRole(session.role)) {
+            return NextResponse.json({ error: "Unauthorized: administrator access required" }, { status: 403 });
         }
 
         const body = await req.json();
@@ -23,9 +24,8 @@ export async function POST(req: Request) {
 
                 // Handle password update (stays on User — it's an auth concern)
                 if (password) {
-                    if (password.length < 8) {
-                        return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
-                    }
+                    const { isValid, error: strengthError } = validatePasswordStrength(password);
+                    if (!isValid) return NextResponse.json({ error: strengthError }, { status: 400 });
                     const user = await prisma.user.findUnique({
                         where: { id: session.userId },
                         select: { password: true }
@@ -61,9 +61,8 @@ export async function POST(req: Request) {
 
             case "security": {
                 const { password, currentPassword } = data;
-                if (!password || password.length < 8) {
-                    return NextResponse.json({ error: "Invalid password format." }, { status: 400 });
-                }
+                const { isValid, error: strengthError } = validatePasswordStrength(password || "");
+                if (!isValid) return NextResponse.json({ error: strengthError }, { status: 400 });
 
                 // SECURITY HANDSHAKE: Verify current password
                 const user = await prisma.user.findUnique({

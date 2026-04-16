@@ -48,6 +48,7 @@ export async function GET() {
 
                 return NextResponse.json({
                     ...org,
+                    isDomainVerified: org.isDomainVerified ?? false,
                     resendStatus: data?.status ?? (org.isDomainVerified ? "verified" : "pending"),
                     records
                 });
@@ -112,6 +113,7 @@ export async function POST() {
 
         return NextResponse.json({
             ...org,
+            isDomainVerified: org.isDomainVerified ?? false,
             resendStatus: data?.status ?? (org.isDomainVerified ? "verified" : "pending"),
             records
         });

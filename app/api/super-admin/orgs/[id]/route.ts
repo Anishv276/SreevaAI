@@ -59,6 +59,19 @@ export async function PATCH(
             usageMetrics,
         } = body;
 
+        // ── INPUT VALIDATION ────────────────────────────────
+        if (plan && !["STARTER", "PROFESSIONAL", "ENTERPRISE", "TRIAL", "ENTERPRISE_CUSTOM"].includes(plan)) {
+            return NextResponse.json({ error: "Invalid organization plan" }, { status: 400 });
+        }
+        if (status && !["ACTIVE", "SUSPENDED", "PENDING", "DEACTIVATED"].includes(status)) {
+            return NextResponse.json({ error: "Invalid organization status" }, { status: 400 });
+        }
+        if (usageMetrics) {
+            if (typeof usageMetrics !== "object" && typeof usageMetrics !== "string") {
+                return NextResponse.json({ error: "usageMetrics must be an object or JSON string" }, { status: 400 });
+            }
+        }
+
         // Build update — only write fields that were sent
         const updateData: any = {};
         if (name !== undefined) updateData.name = name;

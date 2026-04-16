@@ -58,7 +58,16 @@ export async function POST(req: Request) {
       );
     }
 
-    const { applicationId, recordingUrl, transcript, interviewStatus, appStatus, duration } = result.data;
+    const { applicationId, interviewToken, recordingUrl, transcript, interviewStatus, appStatus, duration } = result.data;
+
+    // ── AUTHENTICATION ────────────────────────────────
+    const interview = await prisma.interview.findUnique({
+      where: { applicationId },
+      select: { accessToken: true }
+    });
+    if (!interview || interview.accessToken !== interviewToken) {
+      return NextResponse.json({ error: "Unauthorized: Invalid finalization token" }, { status: 401 });
+    }
     
     const transcriptRaw = transcript;
     const finalTranscript = transcriptRaw?.trim();

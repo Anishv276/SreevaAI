@@ -99,11 +99,13 @@ export const bulkDeleteCandidatesSchema = z.object({
 
 export const interviewTokenSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),
+  interviewToken: z.string().min(1, "Access token required"),
   participantName: z.string().min(1, "Participant name required").max(100),
 });
 
 export const interviewShutdownSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),
+  interviewToken: z.string().min(1, "Security token required"),
 });
 
 export const presignedUrlSchema = z.object({
@@ -127,6 +129,7 @@ export const candidateQuerySchema = z.object({
 
 export const interviewFinalizeSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),
+  interviewToken: z.string().min(1, "Security token required"),
   interviewStatus: z.enum(["COMPLETED", "FAILED", "NO_SHOW"]).optional(),
   status: z.enum(["COMPLETED", "FAILED", "NO_SHOW"]).optional(), // Legacy support
   appStatus: z.string().optional(),
@@ -201,4 +204,23 @@ export function withSearchParams<T extends z.ZodTypeAny>(
     
     return handler(result.data);
   };
+}
+
+export const strongPasswordSchema = z
+  .string()
+  .min(8, "Password must be at least 8 characters long")
+  .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+  .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+  .regex(/[0-9]/, "Password must contain at least one number")
+  .regex(/[^a-zA-Z0-9]/, "Password must contain at least one special character");
+
+export function validatePasswordStrength(password: string): { isValid: boolean; error?: string } {
+  const result = strongPasswordSchema.safeParse(password);
+  if (!result.success) {
+    return { 
+      isValid: false, 
+      error: result.error.errors[0].message 
+    };
+  }
+  return { isValid: true };
 }

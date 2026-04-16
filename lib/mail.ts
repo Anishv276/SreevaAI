@@ -3,6 +3,22 @@ import { prisma } from "@/lib/prisma";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+
+export async function getPlatformSender() {
+    try {
+        const settings = await prisma.superAdmin.findFirst({
+            where: { isDomainVerified: true }
+        });
+        if (settings?.isDomainVerified && settings.customSenderEmail) {
+            const name = settings.customSenderName || "Lumoscale Platform";
+            return `${name} <${settings.customSenderEmail}>`;
+        }
+    } catch (e) {
+        console.error("Failed to fetch platform sender:", e);
+    }
+    return "Lumoscale Security <security@lumoscale.com>"; // Absolute Fallback
+}
+
 export async function sendApplicationStatusEmail({
     email,
     fullName,
@@ -105,16 +121,13 @@ export async function sendApplicationStatusEmail({
         return { success: false, error: "Organization not found." };
     }
 
-    if (!org.isDomainVerified || !org.customSenderEmail) {
-        console.warn(`[MAIL BLOCKED] Org ${org.name} has no verified domain/sender configured`);
-        return {
-            success: false,
-            error: "Domain verification required. Please verify your custom domain and set a sender email in Workspace Settings."
-        };
+    let from = await getPlatformSender(); // Default to platform sender
+    if (org.isDomainVerified && org.customSenderEmail) {
+        const displayName = org.customSenderName || org.name;
+        from = `${displayName} <${org.customSenderEmail}>`;
+    } else {
+        console.warn(`[MAIL FALLBACK] Org ${org.name} has no verified domain — using platform sender`);
     }
-
-    const displayName = org.customSenderName || org.name;
-    const from = `${displayName} <${org.customSenderEmail}>`;
 
     try {
         const payload = await resend.emails.send({
@@ -129,7 +142,7 @@ export async function sendApplicationStatusEmail({
             return { success: false, error: payload.error };
         }
 
-        console.log(`[MAIL] Status email sent to ${email} (${status})`);
+        console.log(`[MAIL] Status email sent to ${email} (${status}) using sender ${from}`);
         return { success: true };
     } catch (error) {
         console.error(`[MAIL EXCEPTION] Failed to send email to ${email}:`, error);
@@ -177,7 +190,7 @@ export async function sendTeamInviteEmail({
         </div>
     `;
 
-    let inviteFrom = "noreply@lumoscale.com"; // fallback for team invites only
+    let inviteFrom = await getPlatformSender();
     if (orgId) {
         const org = await prisma.organization.findUnique({
             where: { id: orgId },
@@ -201,12 +214,13 @@ export async function sendTeamInviteEmail({
             return { success: false, error: payload.error };
         }
 
-        console.log(`[INVITE EMAIL] Invite sent to ${email}`);
+        console.log(`[INVITE EMAIL] Invite sent to ${email} using sender ${inviteFrom}`);
         return { success: true };
     } catch (error) {
         console.error(`[INVITE EMAIL EXCEPTION] Failed to send invite to ${email}:`, error);
         return { success: false, error };
     }
 }
+
 
 

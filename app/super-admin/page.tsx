@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
+import { getSession } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { 
     Plus,
     Building2, 
@@ -61,6 +63,11 @@ async function getStats() {
 }
 
 export default async function SuperAdminDashboard() {
+    const session = await getSession();
+    if (!session || session.role !== "SUPER_ADMIN") {
+        redirect("/login?error=UnauthorizedAccess");
+    }
+
     const { orgCount, activeOrgCount, driveCount, candidateCount, newCandidatesThisWeek, totalInterviews, activeOrgs } = await getStats();
 
     const stats = [
@@ -168,14 +175,14 @@ export default async function SuperAdminDashboard() {
                                     </p>
                                 </div>
                                 <div className="mt-auto space-y-5">
-                                    <div className="flex items-center justify-between border-t border-dashed border-gray-100 pt-4">
-                                        <div className="flex items-center gap-2 text-[11px] font-bold text-gray-400">
+                                    <div className="flex flex-wrap gap-2 mt-auto">
+                                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-100 text-[#2563EB]">
                                             <Users className="h-3.5 w-3.5" />
-                                            <span>{org._count.users} Users</span>
+                                            <span>{(org as any)._count.users} Users</span>
                                         </div>
                                         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-50 border border-orange-100 text-[#F97316]">
                                             <Briefcase className="h-3.5 w-3.5" />
-                                            <span className="text-xs font-bold">{org._count.drives} Active Drives</span>
+                                            <span className="text-xs font-bold">{(org as any)._count.drives} Active Drives</span>
                                         </div>
                                     </div>
                                     <Link 

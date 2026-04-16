@@ -1,6 +1,7 @@
 import { AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { interviewShutdownSchema } from "@/lib/validation";
+import { prisma } from "@/lib/prisma";
 
 function toHttpUrl(rawUrl: string) {
     if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://") && !rawUrl.startsWith("ws://") && !rawUrl.startsWith("wss://")) {
@@ -23,7 +24,17 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const { applicationId } = result.data;
+        const { applicationId, interviewToken } = result.data;
+
+        // ── AUTHENTICATION ────────────────────────────────
+        const interview = await prisma.interview.findUnique({
+            where: { applicationId },
+            select: { accessToken: true }
+        });
+        if (!interview || interview.accessToken !== interviewToken) {
+            return NextResponse.json({ error: "Unauthorized: Invalid security token" }, { status: 401 });
+        }
+
         const roomName = "interview_" + applicationId;
 
         const apiKey = process.env.LIVEKIT_API_KEY;

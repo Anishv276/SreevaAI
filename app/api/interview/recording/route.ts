@@ -65,6 +65,7 @@ export async function POST(req: Request) {
         console.log(`[RECORDING_API] Incoming Request: ${contentType}, length: ${contentLength}`);
 
         let applicationId = "";
+        let interviewToken = "";
         let recordingUrl = "";
         let recordingKey = "";
         let duration: number | null = null;
@@ -84,6 +85,7 @@ export async function POST(req: Request) {
                 }, { status: 500 });
             }
             applicationId = String(formData.get("applicationId") || "").trim();
+            interviewToken = String(formData.get("interviewToken") || "").trim();
             const recording = formData.get("recording") as File | null;
             const durationStr = formData.get("duration");
             if (durationStr) duration = parseInt(String(durationStr));
@@ -129,13 +131,23 @@ export async function POST(req: Request) {
         } else {
             const body = await req.json();
             applicationId = String(body?.applicationId || "").trim();
+            interviewToken = String(body?.interviewToken || "").trim();
             recordingUrl = String(body?.recordingUrl || "").trim();
             recordingKey = String(body?.recordingKey || "").trim();
             if (body?.duration) duration = parseInt(String(body.duration));
         }
 
-        if (!applicationId || !recordingUrl) {
-            return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+        if (!applicationId || !recordingUrl || !interviewToken) {
+            return NextResponse.json({ error: "Missing required fields (including token)" }, { status: 400 });
+        }
+
+        // ── AUTHENTICATION ────────────────────────────────
+        const interviewRecord = await prisma.interview.findUnique({
+            where: { applicationId },
+            select: { accessToken: true }
+        });
+        if (!interviewRecord || interviewRecord.accessToken !== interviewToken) {
+            return NextResponse.json({ error: "Unauthorized: Invalid session token" }, { status: 401 });
         }
 
         let jobId: string | number | undefined;

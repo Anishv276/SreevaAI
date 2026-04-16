@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
 import { HardwareCheck } from "@/components/careers/interview/HardwareCheck";
+import { useSearchParams } from "next/navigation";
 import {
     LiveKitRoom,
     useLocalParticipant,
@@ -119,6 +120,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [isTabViolation, setIsTabViolation] = useState(false);
     const [isFullscreenViolation, setIsFullscreenViolation] = useState(false);
 
+    const searchParams = useSearchParams();
+    const interviewToken = searchParams.get("token") || "";
+
     // Countdown ticker — purely visual, counts up for display purposes
     useEffect(() => {
         if (phase !== "launching") return;
@@ -142,8 +146,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             setToken(null);
             setServerUrl(null);
             setShouldConnect(false);
-            // Clear the sessionStorage cache so ensureWarmConnection re-fetches
-            try { sessionStorage.removeItem(`lk_token_${id}`); } catch { }
             setPhase("check");
         }
     }, [launchTimeoutCheck, phase, id]);
@@ -157,7 +159,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 fetch("/api/interview/shutdown", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ applicationId: id }),
+                    body: JSON.stringify({ 
+                        applicationId: id,
+                        interviewToken: interviewToken 
+                    }),
                     keepalive: true,
                 }).catch(() => { });
             }
@@ -202,29 +207,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             return true;
         }
 
-        const cacheKey = `lk_token_${id}`;
-        const cached = sessionStorage.getItem(cacheKey);
-        if (cached) {
-            try {
-                const parsed = JSON.parse(cached) as { token?: string; url?: string; duration?: number; timestamp?: number };
-                // Only reuse cache if it's less than 5 minutes old
-                if (parsed.token && parsed.url && parsed.timestamp && (Date.now() - parsed.timestamp < 5 * 60 * 1000)) {
-                    setToken(parsed.token);
-                    setServerUrl(parsed.url);
-                    if (typeof parsed.duration === "number" && parsed.duration > 0) {
-                        setSessionDuration(parsed.duration);
-                        setRemainingSeconds(parsed.duration);
-                    }
-                    console.log("Warm connection restored from cache.");
-                    return true;
-                } else {
-                    sessionStorage.removeItem(cacheKey);
-                }
-            } catch {
-                sessionStorage.removeItem(cacheKey);
-            }
-        }
-
         if (tokenRequestRef.current) {
             return tokenRequestRef.current;
         }
@@ -236,6 +218,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         applicationId: id,
+                        interviewToken: interviewToken,
                         participantName: "Candidate",
                     }),
                 });
@@ -245,13 +228,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     return false;
                 }
                 if (res.ok && data.token && data.serverUrl) {
-                    sessionStorage.setItem(cacheKey, JSON.stringify({
-                        token: data.token,
-                        url: data.serverUrl,
-                        duration: data.duration,
-                        timestamp: Date.now()
-                    }));
-
                     setToken(data.token);
                     setServerUrl(data.serverUrl);
                     if (typeof data.duration === "number" && data.duration > 0) {
@@ -351,8 +327,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             setAgentReadyLatencyMs(null);
             launchStartedAtRef.current = null;
             agentReadyCommittedRef.current = false;
-            // Clear the sessionStorage cache so ensureWarmConnection re-fetches
-            try { sessionStorage.removeItem(`lk_token_${id}`); } catch { }
             setPhase("check");
         } finally {
             setIsJoining(false);
@@ -384,6 +358,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     applicationId: id,
+                    interviewToken: interviewToken,
                     events: [{
                         eventType: "tab_switch",
                         severity: "medium",
@@ -436,6 +411,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         applicationId: id,
+                        interviewToken: interviewToken,
                         events: [{
                             eventType: "fullscreen_exit",
                             severity: "high",
@@ -617,7 +593,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         animate={{ opacity: 1, scale: 1 }}
                         className="flex-1 min-h-screen w-full flex items-center justify-center bg-white z-[100] absolute inset-0"
                     >
-                        <CompletionView id={id} />
+                        <CompletionView id={id} interviewToken={interviewToken} />
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -1350,7 +1326,7 @@ function AudioTrack({ trackRef }: { trackRef: TrackReference }) {
     return <audio ref={audioRef} autoPlay />;
 }
 
-function CompletionView({ id }: { id: string }) {
+function CompletionView({ id, interviewToken }: { id: string; interviewToken: string }) {
     const [step, setStep] = useState<"sync" | "feedback" | "thanks">("sync");
     const [rating, setRating] = useState(0);
     const [hoverRating, setHoverRating] = useState(0);
@@ -1364,7 +1340,11 @@ function CompletionView({ id }: { id: string }) {
             await fetch(`/api/interview/${id}/feedback`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ rating, feedback }),
+                body: JSON.stringify({ 
+                    rating, 
+                    feedback,
+                    interviewToken 
+                }),
             });
             setStep("thanks");
         } catch (err) {

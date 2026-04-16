@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw, Play, Pause } from "lucide-react";
+import { CARTESIA_VOICES } from "@/lib/constants/voices";
 
 const PLANS = [
     { id: "STARTER", label: "Starter", desc: "For small teams", color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
@@ -15,6 +16,9 @@ export default function NewOrgPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState<{ orgName: string; adminEmail: string } | null>(null);
+
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
 
     const [form, setForm] = useState({
         orgName: "",
@@ -44,6 +48,54 @@ export default function NewOrgPage() {
                    ? name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") 
                    : prev.slug,
         }));
+    };
+
+    const playSample = async () => {
+        const isCartesia = form.ttsProvider === "CARTESIA";
+        const voiceId = isCartesia ? form.cartesiaVoiceId : form.sarvamVoice;
+        const modelId = isCartesia ? form.cartesiaModel : form.sarvamModel;
+        const endpoint = isCartesia ? "/api/admin/voice/preview" : "/api/admin/voice/preview/sarvam";
+        const transcript = isCartesia 
+            ? "Hello! I am ready to conduct high-quality AI interviews for your team." 
+            : "नमस्ते, मैं आपकी टीम के लिए उच्च गुणवत्ता वाले साक्षात्कार आयोजित करने के लिए तैयार हूँ।";
+
+        if (!voiceId) return;
+        
+        setPreviewLoading(true);
+        try {
+            if (activeAudio) {
+                activeAudio.pause();
+                setActiveAudio(null);
+            }
+
+            const res = await fetch(endpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ voiceId, modelId, transcript })
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => null);
+                throw new Error(errData?.error || "Preview failed");
+            }
+
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            
+            audio.onended = () => {
+                setActiveAudio(null);
+                URL.revokeObjectURL(url);
+            };
+
+            await audio.play();
+            setActiveAudio(audio);
+        } catch (err: any) {
+            console.error("Playback error:", err);
+            alert(err.message || "Could not play voice sample. Please check your API key or Voice ID.");
+        } finally {
+            setPreviewLoading(false);
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -145,10 +197,10 @@ export default function NewOrgPage() {
                 {/* Step Indicator */}
                 <div className="relative flex justify-between w-full mb-8">
                     <div className="absolute top-4 left-0 h-[2px] w-full bg-gray-200 rounded-full" />
-                    <div className="absolute top-4 left-0 h-[2px] bg-[#F97316] rounded-full transition-all duration-300" style={{ width: form.adminName ? "100%" : "50%" }} />
-                    {["Organization", "Admin Account"].map((step, i) => {
-                        const isCompleted = (i === 0 && form.adminName);
-                        const isCurrent = (!form.adminName && i === 0) || (form.adminName && i === 1);
+                    <div className="absolute top-4 left-0 h-[2px] bg-[#F97316] rounded-full transition-all duration-300" style={{ width: form.orgName ? (form.adminName ? "100%" : "50%") : "0%" }} />
+                    {["Organization Blueprint", "Administrative Control"].map((step, i) => {
+                        const isCompleted = (i === 0 && form.adminName) || (i === 1 && form.adminEmail && form.adminPassword);
+                        const isCurrent = (i === 0 && !form.adminName) || (i === 1 && form.adminName && !form.adminEmail);
                         return (
                             <div key={step} className="relative z-10 flex flex-col items-center gap-2">
                                 <div className={`flex h-8 w-8 items-center justify-center rounded-full border-2 bg-white transition-all ${isCompleted ? "border-[#F97316] bg-[#F97316] text-white" : isCurrent ? "border-[#F97316] text-[#F97316]" : "border-gray-300 text-gray-400"}`}>
@@ -295,7 +347,7 @@ export default function NewOrgPage() {
                         {/* Provider Selection Dropdown */}
                         <div className="grid md:grid-cols-2 gap-8">
                             <div className="space-y-4">
-                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Primary TTS Engine</label>
+                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">Primary TTS Engine</label>
                                 <select 
                                     value={form.ttsProvider}
                                     onChange={e => setForm(prev => ({ ...prev, ttsProvider: e.target.value }))}
@@ -319,40 +371,49 @@ export default function NewOrgPage() {
                             <div className="grid md:grid-cols-2 gap-8 pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                 <div className="space-y-4">
                                     <div className="flex items-center justify-between">
-                                        <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Voice Selection</label>
+                                        <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">Voice Selection</label>
                                         <button 
                                             type="button"
-                                            onClick={() => {
-                                                const id = form.cartesiaVoiceId;
-                                                const url = `https://cartesia-public-samples.s3.amazonaws.com/${id}.mp3`;
-                                                const audio = new Audio(url);
-                                                audio.play().catch(() => alert(`Cartesia Voice Sample not live for ID: ${id}`));
-                                            }}
-                                            className="text-[10px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-1.5 hover:text-purple-700 transition-colors"
+                                            disabled={previewLoading || !form.cartesiaVoiceId}
+                                            onClick={playSample}
+                                            className="text-[10px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-1.5 hover:text-purple-700 transition-colors disabled:opacity-50"
                                         >
-                                            <RefreshCw className="h-3 w-3" /> Play Sample
+                                            {previewLoading ? (
+                                                <RefreshCw className="h-3 w-3 animate-spin" />
+                                            ) : activeAudio ? (
+                                                <Pause className="h-3 w-3" />
+                                            ) : (
+                                                <Play className="h-3 w-3" />
+                                            )}
+                                            {previewLoading ? "Generating..." : activeAudio ? "Playing..." : "Play Sample"}
                                         </button>
                                     </div>
                                     <select 
                                         value={
-                                            ["9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", "a0e99829-1bb2-4c69-ad7d-9473235bca21", "79a125e3-4d2a-4885-8f77-50a847f0e7fe", "638385f3-3333-4f5d-85a2-3f820c64b732", "248be1fc-3d27-4452-9457-3705bf68bf8f", "custom"].includes(form.cartesiaVoiceId) 
+                                            CARTESIA_VOICES.some(v => v.id === form.cartesiaVoiceId)
                                                 ? form.cartesiaVoiceId 
-                                                : "custom"
+                                                : form.cartesiaVoiceId === "_none" ? "_none" : "custom"
                                         }
-                                        onChange={e => setForm(prev => ({ ...prev, cartesiaVoiceId: e.target.value === "custom" ? "" : e.target.value }))}
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            if (val === "custom") {
+                                                setForm(prev => ({ ...prev, cartesiaVoiceId: "" }));
+                                            } else {
+                                                setForm(prev => ({ ...prev, cartesiaVoiceId: val }));
+                                            }
+                                        }}
                                         className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none"
                                     >
-                                        <option value="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc">Jacqueline (Verified Agent)</option>
-                                        <option value="a0e99829-1bb2-4c69-ad7d-9473235bca21">Arno (Professional Male)</option>
-                                        <option value="79a125e3-4d2a-4885-8f77-50a847f0e7fe">British Lady (Sophisticated)</option>
-                                        <option value="638385f3-3333-4f5d-85a2-3f820c64b732">California Girl (Casual)</option>
-                                        <option value="248be1fc-3d27-4452-9457-3705bf68bf8f">Barista (Warm Helper)</option>
+                                        <option value="_none">-- No Voice Selected --</option>
+                                        {CARTESIA_VOICES.filter(v => v.provider === "CARTESIA").map(v => (
+                                            <option key={v.id} value={v.id}>{v.name} ({v.description})</option>
+                                        ))}
                                         <option value="custom">-- Custom Voice ID --</option>
                                     </select>
-                                    {(!["9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", "a0e99829-1bb2-4c69-ad7d-9473235bca21", "79a125e3-4d2a-4885-8f77-50a847f0e7fe", "638385f3-3333-4f5d-85a2-3f820c64b732", "248be1fc-3d27-4452-9457-3705bf68bf8f"].includes(form.cartesiaVoiceId) || form.cartesiaVoiceId === "custom" || form.cartesiaVoiceId === "") && (
+                                    {(form.cartesiaVoiceId !== "_none" && !CARTESIA_VOICES.some(v => v.id === form.cartesiaVoiceId)) && (
                                         <input
                                             type="text"
-                                            value={form.cartesiaVoiceId === "custom" ? "" : form.cartesiaVoiceId}
+                                            value={form.cartesiaVoiceId}
                                             onChange={e => setForm(prev => ({ ...prev, cartesiaVoiceId: e.target.value }))}
                                             placeholder="Paste custom ID here (e.g. 9626c3...)"
                                             className="h-11 w-full rounded-xl border border-purple-200 bg-purple-50 shrink-0 px-3 text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none mt-2 font-mono placeholder:text-purple-300 text-purple-900"
@@ -360,7 +421,7 @@ export default function NewOrgPage() {
                                     )}
                                 </div>
                                 <div className="space-y-4">
-                                    <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Neural Engine (Model)</label>
+                                    <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">Neural Engine (Model)</label>
                                     <select 
                                         value={form.cartesiaModel}
                                         onChange={e => setForm(prev => ({ ...prev, cartesiaModel: e.target.value }))}
@@ -370,7 +431,7 @@ export default function NewOrgPage() {
                                         <option value="sonic-multilingual">sonic-multilingual</option>
                                         <option value="sonic-3">sonic-3 (Ultra-Low Latency)</option>
                                     </select>
-                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.15em] leading-relaxed">Sonic 3 is optimized for elite real-time responsiveness.</p>
+                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.15em] leading-relaxed mt-1">Sonic 3 is optimized for elite real-time responsiveness.</p>
                                 </div>
                             </div>
                         )}
@@ -379,7 +440,7 @@ export default function NewOrgPage() {
                             <div className="pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-8">
                                 <div className="grid md:grid-cols-2 gap-8">
                                     <div className="space-y-4">
-                                        <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Model Version (Bulbul)</label>
+                                        <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">Model Version (Bulbul)</label>
                                         <select 
                                             value={form.sarvamModel}
                                             onChange={e => setForm(prev => ({ ...prev, sarvamModel: e.target.value }))}
@@ -392,13 +453,21 @@ export default function NewOrgPage() {
                                     </div>
                                     <div className="space-y-4">
                                         <div className="flex items-center justify-between">
-                                            <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Neural Speaker</label>
+                                            <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">Neural Speaker</label>
                                             <button 
                                                 type="button"
-                                                onClick={() => alert(`Streaming ${form.sarvamVoice} sample...`)}
-                                                className="text-[10px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-1.5 hover:text-purple-700 transition-colors"
+                                                disabled={previewLoading || !form.sarvamVoice}
+                                                onClick={playSample}
+                                                className="text-[10px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-1.5 hover:text-purple-700 transition-colors disabled:opacity-50"
                                             >
-                                                <RefreshCw className="h-3 w-3" /> Preview Speaker
+                                                {previewLoading ? (
+                                                    <RefreshCw className="h-3 w-3 animate-spin" />
+                                                ) : activeAudio ? (
+                                                    <Pause className="h-3 w-3" />
+                                                ) : (
+                                                    <RefreshCw className="h-3 w-3" />
+                                                )}
+                                                {previewLoading ? "Generating..." : activeAudio ? "Playing..." : "Preview Speaker"}
                                             </button>
                                         </div>
                                         <select 
@@ -467,7 +536,7 @@ export default function NewOrgPage() {
                         {/* Provider Selection */}
                         <div className="grid md:grid-cols-2 gap-8">
                             <div className="space-y-4">
-                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Neural Listening Engine</label>
+                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">Neural Listening Engine</label>
                                 <select 
                                     value={form.sttProvider}
                                     onChange={e => setForm(prev => ({ ...prev, sttProvider: e.target.value }))}
@@ -490,7 +559,7 @@ export default function NewOrgPage() {
                         {form.sttProvider === "DEEPGRAM" && (
                             <div className="pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                 <div className="space-y-4">
-                                    <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Transcription Model</label>
+                                    <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">Transcription Model</label>
                                     <select 
                                         value={form.deepgramModel}
                                         onChange={e => setForm(prev => ({ ...prev, deepgramModel: e.target.value }))}
@@ -531,7 +600,7 @@ export default function NewOrgPage() {
                                             <option value="nova-phonecall">Nova-1 Phonecall</option>
                                         </optgroup>
                                     </select>
-                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed">
+                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed mt-1">
                                         Select specialized neural architecture for the client's specific use case.
                                     </p>
                                 </div>
@@ -542,7 +611,7 @@ export default function NewOrgPage() {
                         {form.sttProvider === "SARVAM" && (
                             <div className="pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                 <div className="space-y-4">
-                                    <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Neural Transcription Model</label>
+                                    <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">Neural Transcription Model</label>
                                     <select 
                                         value={form.sarvamSttModel}
                                         onChange={e => setForm(prev => ({ ...prev, sarvamSttModel: e.target.value }))}
@@ -556,7 +625,7 @@ export default function NewOrgPage() {
                                             <option value="saaras:v2">Saaras v2 (Standard)</option>
                                         </optgroup>
                                     </select>
-                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed">
+                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed mt-1">
                                         Optimized for multi-accent Indian regional speech recognition with sovereign accuracy.
                                     </p>
                                 </div>

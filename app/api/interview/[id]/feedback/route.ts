@@ -7,10 +7,21 @@ export async function POST(
 ) {
     try {
         const { id } = await params;
-        const { rating, feedback } = await request.json();
+        const { rating, feedback, interviewToken } = await request.json();
 
         if (typeof rating !== "number" || rating < 1 || rating > 5) {
             return NextResponse.json({ error: "Invalid rating" }, { status: 400 });
+        }
+
+        // ── AUTHENTICATION ────────────────────────────────
+        const interview = await prisma.interview.findFirst({
+            where: {
+                OR: [{ id: id }, { applicationId: id }]
+            },
+            select: { accessToken: true }
+        });
+        if (!interview || interview.accessToken !== interviewToken) {
+            return NextResponse.json({ error: "Unauthorized: Invalid feedback token" }, { status: 401 });
         }
 
         // We check both by ID and applicationId just in case, 

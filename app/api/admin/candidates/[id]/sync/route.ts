@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getEmbedding } from "@/lib/openai";
 import { upsertCandidateEmbedding } from "@/lib/pinecone";
+import { getSession, isAdminRole } from "@/lib/auth";
 
 /**
  * API to manually or automatically sync a candidate's data to Pinecone.
@@ -12,6 +13,11 @@ export async function POST(
     context: { params: Promise<{ id: string }> }
 ) {
     try {
+        const session = await getSession();
+        if (!session || !isAdminRole(session.role)) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
         const { id } = await context.params;
 
         const app = await prisma.application.findUnique({
@@ -25,6 +31,12 @@ export async function POST(
         if (!app) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
+
+        // ── AUTHORIZATION ─────────────────────────────────
+        if (session.orgId && app.drive.orgId !== session.orgId) {
+            return NextResponse.json({ error: "Forbidden: Candidate belongs to another organization" }, { status: 403 });
+        }
+        // ──────────────────────────────────────────────────
 
         console.log(`[SYNC_ENGINE]: Syncing ${app.fullName} to Pinecone...`);
 

@@ -2,7 +2,8 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Building2, ShieldCheck, Globe, Loader2, User, Mail, ShieldAlert, RefreshCw, Lock, MapPin as MapPinIcon } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Building2, ShieldCheck, Globe, Loader2, User, Mail, ShieldAlert, RefreshCw, Lock, Play, Pause, MapPin as MapPinIcon } from "lucide-react";
+import { CARTESIA_VOICES } from "@/lib/constants/voices";
 
 
 const PLANS = [
@@ -40,29 +41,14 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         llmProvider: "OPENAI",
         llmModel: "gpt-4o",
         llmTemperature: 0.7,
-        usageMetrics: "{}",
     });
+
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
 
     
     const [adminInfo, setAdminInfo] = useState<{name: string, email: string} | null>(null);
 
-    const formatJsonForEditor = (value: unknown) => {
-        if (value == null) return "{}";
-        if (typeof value === "string") {
-            const trimmed = value.trim();
-            if (!trimmed) return "{}";
-            try {
-                return JSON.stringify(JSON.parse(trimmed), null, 2);
-            } catch {
-                return trimmed;
-            }
-        }
-        try {
-            return JSON.stringify(value, null, 2);
-        } catch {
-            return "{}";
-        }
-    };
 
     useEffect(() => {
         const fetchOrg = async () => {
@@ -90,7 +76,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         llmProvider: data.llmProvider || "OPENAI",
                         llmModel: data.llmModel || "gpt-4o",
                         llmTemperature: data.llmTemperature != null ? data.llmTemperature : 0.7,
-                        usageMetrics: formatJsonForEditor(data.usageMetrics),
                     });
 
                     if (data.users && data.users.length > 0) {
@@ -108,6 +93,54 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         fetchOrg();
     }, [id]);
 
+    const playSample = async () => {
+        const isCartesia = form.ttsProvider === "CARTESIA";
+        const voiceId = isCartesia ? form.cartesiaVoiceId : form.sarvamVoice;
+        const modelId = isCartesia ? form.cartesiaModel : form.sarvamModel;
+        const endpoint = isCartesia ? "/api/admin/voice/preview" : "/api/admin/voice/preview/sarvam";
+        const transcript = isCartesia 
+            ? "Hello! I am ready to conduct high-quality AI interviews for your team." 
+            : "नमस्ते, मैं आपकी टीम के लिए उच्च गुणवत्ता वाले साक्षात्कार आयोजित करने के लिए तैयार हूँ।";
+
+        if (!voiceId) return;
+        
+        setPreviewLoading(true);
+        try {
+            if (activeAudio) {
+                activeAudio.pause();
+                setActiveAudio(null);
+            }
+
+            const res = await fetch(endpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ voiceId, modelId, transcript })
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => null);
+                throw new Error(errData?.error || "Preview failed");
+            }
+
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            
+            audio.onended = () => {
+                setActiveAudio(null);
+                URL.revokeObjectURL(url);
+            };
+
+            await audio.play();
+            setActiveAudio(audio);
+        } catch (err: any) {
+            console.error("Playback error:", err);
+            alert(err.message || "Could not play voice sample. Please check your API key or Voice ID.");
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
@@ -115,19 +148,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         setSaved(false);
 
         try {
-            let parsedUsageMetrics: unknown = {};
-            if ((form.usageMetrics || "").trim()) {
-                try {
-                    parsedUsageMetrics = JSON.parse(form.usageMetrics);
-                } catch {
-                    setError("Usage metrics must be valid JSON.");
-                    return;
-                }
-            }
-
             const payload = {
                 ...form,
-                usageMetrics: parsedUsageMetrics,
             };
 
             const res = await fetch(`/api/super-admin/orgs/${id}`, {
@@ -280,21 +302,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                 ))}
                             </div>
 
-                            <div className="space-y-2">
-                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest leading-none">
-                                    Billing Usage Metrics JSON
-                                </label>
-                                <textarea
-                                    value={form.usageMetrics}
-                                    onChange={e => setForm(prev => ({ ...prev, usageMetrics: e.target.value }))}
-                                    placeholder='{"month":"2026-04","interviews":120,"apiCalls":5400,"creditsUsed":118.5}'
-                                    rows={8}
-                                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm font-mono font-medium leading-6 focus:ring-2 focus:ring-[#F97316]/30 min-h-[180px]"
-                                />
-                                <p className="text-[11px] text-gray-400 font-medium">
-                                    Store billing or usage snapshots here as valid JSON. Example fields: month, interviews, apiCalls, creditsUsed.
-                                </p>
-                            </div>
+                            
 
                             <div className="space-y-4">
 
@@ -320,8 +328,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                         </div>
                                         {form.plan === plan.id && <ShieldCheck className="h-4 w-4 text-[#F97316]" />}
                                     </button>
-                                ))}
-                            </div>
+                                ))}                            </div>
                         </div>
                     </div>
                 </div>
@@ -393,37 +400,46 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                         <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">Voice Selection</label>
                                         <button 
                                             type="button"
-                                            onClick={() => {
-                                                const id = form.cartesiaVoiceId;
-                                                const url = `https://cartesia-public-samples.s3.amazonaws.com/${id}.mp3`;
-                                                const audio = new Audio(url);
-                                                audio.play().catch(() => alert(`Cartesia Voice Sample not live for: ${id}`));
-                                            }}
-                                            className="text-[10px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-1.5 hover:text-purple-700 transition-colors"
+                                            disabled={previewLoading || !form.cartesiaVoiceId}
+                                            onClick={playSample}
+                                            className="text-[10px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-1.5 hover:text-purple-700 transition-colors disabled:opacity-50"
                                         >
-                                            <RefreshCw className="h-3 w-3" /> Play Sample
+                                            {previewLoading ? (
+                                                <RefreshCw className="h-3 w-3 animate-spin" />
+                                            ) : activeAudio ? (
+                                                <Pause className="h-3 w-3" />
+                                            ) : (
+                                                <Play className="h-3 w-3" />
+                                            )}
+                                            {previewLoading ? "Generating..." : activeAudio ? "Playing..." : "Play Sample"}
                                         </button>
                                     </div>
                                     <select 
                                         value={
-                                            ["9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", "a0e99829-1bb2-4c69-ad7d-9473235bca21", "79a125e3-4d2a-4885-8f77-50a847f0e7fe", "638385f3-3333-4f5d-85a2-3f820c64b732", "248be1fc-3d27-4452-9457-3705bf68bf8f", "custom"].includes(form.cartesiaVoiceId) 
+                                            CARTESIA_VOICES.some(v => v.id === form.cartesiaVoiceId)
                                                 ? form.cartesiaVoiceId 
-                                                : "custom"
+                                                : form.cartesiaVoiceId === "_none" ? "_none" : "custom"
                                         }
-                                        onChange={e => setForm(prev => ({ ...prev, cartesiaVoiceId: e.target.value === "custom" ? "" : e.target.value }))}
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            if (val === "custom") {
+                                                setForm(prev => ({ ...prev, cartesiaVoiceId: "" }));
+                                            } else {
+                                                setForm(prev => ({ ...prev, cartesiaVoiceId: val }));
+                                            }
+                                        }}
                                         className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none"
                                     >
-                                        <option value="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc">Jacqueline (Verified Agent)</option>
-                                        <option value="a0e99829-1bb2-4c69-ad7d-9473235bca21">Arno (Professional Male)</option>
-                                        <option value="79a125e3-4d2a-4885-8f77-50a847f0e7fe">British Lady (Sophisticated)</option>
-                                        <option value="638385f3-3333-4f5d-85a2-3f820c64b732">California Girl (Casual)</option>
-                                        <option value="248be1fc-3d27-4452-9457-3705bf68bf8f">Barista (Warm Helper)</option>
+                                        <option value="_none">-- No Voice Selected --</option>
+                                        {CARTESIA_VOICES.filter(v => v.provider === "CARTESIA").map(v => (
+                                            <option key={v.id} value={v.id}>{v.name} ({v.description})</option>
+                                        ))}
                                         <option value="custom">-- Custom Voice ID --</option>
                                     </select>
-                                    {(!["9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", "a0e99829-1bb2-4c69-ad7d-9473235bca21", "79a125e3-4d2a-4885-8f77-50a847f0e7fe", "638385f3-3333-4f5d-85a2-3f820c64b732", "248be1fc-3d27-4452-9457-3705bf68bf8f"].includes(form.cartesiaVoiceId) || form.cartesiaVoiceId === "custom" || form.cartesiaVoiceId === "") && (
+                                    {(form.cartesiaVoiceId !== "_none" && !CARTESIA_VOICES.some(v => v.id === form.cartesiaVoiceId)) && (
                                         <input
                                             type="text"
-                                            value={form.cartesiaVoiceId === "custom" ? "" : form.cartesiaVoiceId}
+                                            value={form.cartesiaVoiceId}
                                             onChange={e => setForm(prev => ({ ...prev, cartesiaVoiceId: e.target.value }))}
                                             placeholder="Paste custom ID here (e.g. 9626c3...)"
                                             className="h-11 w-full rounded-xl border border-purple-200 bg-purple-50 shrink-0 px-3 text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none mt-2 font-mono placeholder:text-purple-300 text-purple-900"
@@ -466,10 +482,18 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                             <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">Neural Persona</label>
                                             <button 
                                                 type="button"
-                                                onClick={() => alert(`Streaming ${form.sarvamVoice} sample...`)}
-                                                className="text-[10px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-1.5 hover:text-purple-700 transition-colors"
+                                                disabled={previewLoading || !form.sarvamVoice}
+                                                onClick={playSample}
+                                                className="text-[10px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-1.5 hover:text-purple-700 transition-colors disabled:opacity-50"
                                             >
-                                                <RefreshCw className="h-3 w-3" /> Preview
+                                                {previewLoading ? (
+                                                    <RefreshCw className="h-3 w-3 animate-spin" />
+                                                ) : activeAudio ? (
+                                                    <Pause className="h-3 w-3" />
+                                                ) : (
+                                                    <RefreshCw className="h-3 w-3" />
+                                                )}
+                                                {previewLoading ? "Generating..." : activeAudio ? "Playing..." : "Preview"}
                                             </button>
                                         </div>
                                         <select 

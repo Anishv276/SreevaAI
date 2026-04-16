@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { generateId } from "@/lib/ids";
+import { validatePasswordStrength } from "@/lib/validation";
 
 // GET /api/super-admin/orgs — list organizations with stats, pagination, and search
 export async function GET(request: Request) {
@@ -74,6 +75,18 @@ export async function POST(request: Request) {
 
         if (!orgName || !slug || !adminEmail || !adminPassword) {
             return NextResponse.json({ error: "orgName, slug, adminEmail, and adminPassword are required" }, { status: 400 });
+        }
+
+        // Email Validation
+        const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!EMAIL_REGEX.test(adminEmail)) {
+            return NextResponse.json({ error: "Invalid admin email format" }, { status: 400 });
+        }
+
+        // Admin Password Validation
+        const { isValid: isPasswordValid, error: passwordError } = validatePasswordStrength(adminPassword);
+        if (!isPasswordValid) {
+            return NextResponse.json({ error: passwordError }, { status: 400 });
         }
 
         // Check slug uniqueness

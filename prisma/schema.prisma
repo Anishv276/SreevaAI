@@ -29,7 +29,7 @@ model Organization {
   onboardingComplete Boolean     @default(false)
   customDomain       String?
   resendDomainId     String?
-  isDomainVerified   Boolean     @default(false)
+  isDomainVerified   Boolean?    @default(false)
   customSenderEmail  String?
   customSenderName   String?
   ttsProvider        String?     @default("CARTESIA")
@@ -57,6 +57,13 @@ model SuperAdmin {
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   verificationTokens VerificationToken[]
+  
+  // Platform Domain Settings
+  customDomain       String?
+  resendDomainId     String?
+  isDomainVerified   Boolean?            @default(false)
+  customSenderEmail  String?
+  customSenderName   String?
 }
 
 model User {
@@ -202,9 +209,11 @@ model Interview {
 
 model VerificationToken {
   id           String      @id @default(cuid())
-  token        String      @unique
+  token        String
   expires      DateTime
   createdAt    DateTime    @default(now())
   superAdminId String?
   superAdmin   SuperAdmin? @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
-}
+
+  @@index([token, superAdminId])
+}

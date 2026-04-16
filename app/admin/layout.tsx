@@ -62,7 +62,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 
                 <div id="admin-main-wrapper" className={cn(
                     "flex-1 min-w-0 transition-all duration-500 ease-in-out", 
-                    showSidebar && "md:pl-[220px]"
+                    showSidebar && "md:pl-[240px]"
                 )}>
                     <style dangerouslySetInnerHTML={{ __html: `
                         body.reports-mode #global-admin-sidebar { display: none !important; }

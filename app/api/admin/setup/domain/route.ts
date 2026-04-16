@@ -15,18 +15,28 @@ export async function POST(request: Request) {
         // Strip www. prefix — Resend registers the apex domain
         const domain = rawDomain.trim().toLowerCase().replace(/^www\./, "");
 
-        // 1. Check if this org already registered this domain through our platform
-        const org = await prisma.organization.findUnique({
-            where: { id: session.orgId as string },
-            select: { customDomain: true, resendDomainId: true, isDomainVerified: true }
+        // 1. Check if this domain is already registered by ANY organization
+        const existingAny = await prisma.organization.findFirst({
+            where: { customDomain: domain },
+            select: { id: true, isDomainVerified: true }
         });
 
-        if (org?.customDomain === domain && org?.resendDomainId) {
-            // Registered through our platform — just return current status so UI can resume
-            return NextResponse.json({
-                registeredOnPlatform: true,
-                isVerified: org.isDomainVerified
-            });
+        if (existingAny) {
+            // If it belongs to another organization, block it
+            if (existingAny.id !== session.orgId) {
+                return NextResponse.json({ 
+                    error: "This domain is already registered by another workspace. Please use a different domain." 
+                }, { status: 400 });
+            }
+
+            // If it belongs to the current org and is already verified, inform the UI
+            if (existingAny.isDomainVerified) {
+                return NextResponse.json({
+                    registeredOnPlatform: true,
+                    isVerified: true,
+                    alreadyVerified: true // New flag for UI auto-advance
+                });
+            }
         }
 
         // 2. Check if domain exists in Resend (may have been registered outside our platform)

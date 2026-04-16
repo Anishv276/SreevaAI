@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 
 const proctoringSignalSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),
+  interviewToken: z.string().min(1, "Security token required"),
   events: z.array(z.object({
     eventType: z.string().min(1),
     severity: z.enum(["low", "medium", "high"]).optional(),
@@ -45,7 +46,17 @@ export async function POST(req: Request) {
       );
     }
 
-    const { applicationId } = result.data;
+    const { applicationId, interviewToken } = result.data;
+
+    // ── AUTHENTICATION ────────────────────────────────
+    const authCheck = await prisma.interview.findUnique({
+      where: { applicationId },
+      select: { accessToken: true }
+    });
+    if (!authCheck || authCheck.accessToken !== interviewToken) {
+      return NextResponse.json({ error: "Unauthorized: Invalid security token" }, { status: 401 });
+    }
+
     const events = normalizeProctoringEvents(result.data.events);
 
     const app = await prisma.application.findUnique({

@@ -14,22 +14,26 @@ export async function POST(
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        // Dev bypass supports local testing with a static token value.
-        const isDev = process.env.NODE_ENV === "development";
-        const isDevBypass = interviewToken === "dev-bypass";
+        const interview = await prisma.interview.findFirst({
+            where: {
+                applicationId,
+                accessToken: interviewToken,
+            },
+        });
 
-        if (!isDevBypass || !isDev) {
-            const interview = await prisma.interview.findFirst({
-                where: {
-                    applicationId,
-                    accessToken: interviewToken,
-                },
-            });
-
-            if (!interview) {
-                return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
-            }
+        if (!interview) {
+            return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
         }
+
+        // ── LIFECYCLE CHECK ──────────────────────────────
+        if (interview.status === "COMPLETED" || interview.status === "FAILED") {
+            return NextResponse.json({ error: "Access Denied: Interview already finalized" }, { status: 403 });
+        }
+
+        if (interview.expiresAt && interview.expiresAt < new Date()) {
+            return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
+        }
+        // ─────────────────────────────────────────────────
 
         const roomName = `interview_${applicationId}`;
         const participantIdentity = `candidate_${applicationId}`;

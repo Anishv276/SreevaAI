@@ -27,6 +27,8 @@ const EVENT_MAP: Record<string, string> = {
     duplicateIp:        "duplicate_ip",
     tab_switch:         "tab_switch",
     tabSwitch:          "tab_switch",
+    fullscreen_exit:    "fullscreen_exit",
+    fullscreenExit:     "fullscreen_exit",
 };
 
 function getRangeStart(range: string, from?: string, to?: string): Date {
@@ -142,6 +144,7 @@ export async function GET(req: NextRequest) {
                 const avgDur = v.durations.length ? Math.round(v.durations.reduce((a, b) => a + b, 0) / v.durations.length) : 0;
                 return `${v.incidents} events${avgDur ? `, avg ${avgDur}s absence` : ""}`;
             }},
+            multiple_faces:    { title: "Multiple faces detected",    abbr: "MF", getDesc: v => `${v.incidents} incidents flagged` },
             tab_switch:        { title: "Tab switching / App switching", abbr: "TS", getDesc: v => `${v.incidents} switch events recorded` },
             fullscreen_exit:   { title: "Fullscreen Exit",            abbr: "FE", getDesc: v => `${v.incidents} exits detected` },
             audio_flag:        { title: "Background audio flags",     abbr: "AU", getDesc: v => `${v.incidents} voice detections` },
@@ -149,26 +152,26 @@ export async function GET(req: NextRequest) {
         };
 
         const violations = ORDER
-            .filter(k => violationCounts[k])
+            .filter(k => violationCounts[k] && LABELS[k])
             .map(k => ({
                 key: k,
                 abbr: LABELS[k].abbr,
                 title: LABELS[k].title,
                 description: LABELS[k].getDesc(violationCounts[k]),
                 count: violationCounts[k].incidents,
-                severity: k === "audio_flag" || k === "face_not_detected" ? "medium" : "low",
+                severity: k === "audio_flag" || k === "face_not_detected" || k === "multiple_faces" ? "medium" : "low",
             }));
 
         // Add zero-count rows for all standard types so UI always shows them
         for (const k of ORDER) {
-            if (!violationCounts[k]) {
+            if (!violationCounts[k] && LABELS[k]) {
                 violations.push({
                     key: k,
                     abbr: LABELS[k].abbr,
                     title: LABELS[k].title,
                     description: "No incidents detected",
                     count: 0,
-                    severity: k === "audio_flag" || k === "face_not_detected" ? "medium" : "low",
+                    severity: k === "audio_flag" || k === "face_not_detected" || k === "multiple_faces" ? "medium" : "low",
                 });
             }
         }

@@ -4,6 +4,7 @@ import "./globals.css";
 import { JobsProvider } from "@/context/jobs-context";
 import { AuthProvider } from "@/context/auth-context";
 import { CandidatesProvider } from "@/context/candidates-context";
+import { Toaster } from "@/components/ui/toast-custom";
 
 const jakarta = Plus_Jakarta_Sans({ 
   subsets: ["latin"],
@@ -32,6 +33,7 @@ export default function RootLayout({
           <JobsProvider>
             <CandidatesProvider>
               {children}
+              <Toaster />
             </CandidatesProvider>
           </JobsProvider>
         </AuthProvider>

@@ -13,6 +13,23 @@ function looksLikeAgentParticipant(participant: { identity?: string; name?: stri
     return identity.startsWith("aw_") || identity.includes("agent") || name.includes("agent");
 }
 
+function cleanupDispatchMap() {
+    const now = Date.now();
+    const TWO_HOURS = 2 * 60 * 60 * 1000;
+    
+    // Cleanup if map is getting large or entries are old
+    if (dispatchByRoom.size > 1000) {
+        dispatchByRoom.clear(); // Safety flush
+        return;
+    }
+
+    for (const [room, timestamp] of dispatchByRoom.entries()) {
+        if (now - timestamp > TWO_HOURS) {
+            dispatchByRoom.delete(room);
+        }
+    }
+}
+
 function toWsUrl(rawUrl: string) {
     if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://") && !rawUrl.startsWith("ws://") && !rawUrl.startsWith("wss://")) {
         return `wss://${rawUrl}`;
@@ -32,6 +49,7 @@ function toHttpUrl(rawUrl: string) {
 }
 
 export async function POST(req: NextRequest) {
+    cleanupDispatchMap();
     try {
         const body = await req.json();
 
@@ -43,7 +61,27 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const { applicationId, participantName } = result.data;
+        const { applicationId, interviewToken, participantName } = result.data;
+
+        // ── AUTHENTICATION ────────────────────────────────
+        const interview = await prisma.interview.findUnique({
+            where: { applicationId },
+            select: { accessToken: true, status: true, expiresAt: true }
+        });
+
+        if (!interview || interview.accessToken !== interviewToken) {
+            return NextResponse.json({ error: "Unauthorized: Invalid interview security token" }, { status: 401 });
+        }
+
+        // ── LIFECYCLE CHECK ──────────────────────────────
+        if (interview.status === "COMPLETED" || interview.status === "FAILED") {
+            return NextResponse.json({ error: "Access Denied: Interview already finalized" }, { status: 403 });
+        }
+
+        if (interview.expiresAt && interview.expiresAt < new Date()) {
+            return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
+        }
+        // ─────────────────────────────────────────────────
 
         // Fetch application to get drive details (interview duration)
         let application = await prisma.application.findUnique({
@@ -55,19 +93,8 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
 
-        try {
-            await prisma.interview.upsert({
-                where: { applicationId },
-                update: {},
-                create: {
-                    applicationId,
-                    status: "PENDING",
-                    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-                },
-            });
-        } catch (interviewSyncError) {
-            console.warn("[InterviewToken] Interview row sync skipped:", interviewSyncError);
-        }
+        // Removed insecure auto-upsert of interview records. 
+        // Interview records must be pre-created by the invite/drive system.
 
         const driveDurationMins = application.drive.interviewTime || 15;
         const durationSeconds = driveDurationMins * 60;
