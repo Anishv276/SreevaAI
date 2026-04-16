@@ -1,11 +1,12 @@
 "use client";
 import { Suspense, useState, use, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut } from "lucide-react";
+import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
 import { HardwareCheck } from "@/components/careers/interview/HardwareCheck";
+import { FaceProctoring } from "@/components/careers/interview/FaceProctoring";
 import { useSearchParams } from "next/navigation";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import {
@@ -121,9 +122,55 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [isTabViolation, setIsTabViolation] = useState(false);
     const [isFullscreenViolation, setIsFullscreenViolation] = useState(false);
 
+    // ── AI Face Proctoring ────────────────────────────────────────────────────
+    const [referenceSnapshotUrl, setReferenceSnapshotUrl] = useState<string | null>(null);
+    const [faceViolationAlert, setFaceViolationAlert] = useState<{ type: string; reason: string } | null>(null);
+    const faceViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
+
     const searchParams = useSearchParams();
     const interviewToken = searchParams.get("token") || "";
     const requireInterviewToken = isInterviewTokenRequired();
+
+    // Load reference snapshot from sessionStorage (set by HardwareCheck after camera capture)
+    useEffect(() => {
+        try {
+            const snap = sessionStorage.getItem("proctor_ref_snapshot");
+            if (snap) setReferenceSnapshotUrl(snap);
+        } catch { }
+    }, []);
+
+    // ── Face violation handler ────────────────────────────────────────────────
+    const handleFaceViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
+        // 1. Show transient alert to candidate (auto-dismiss after 6s)
+        setFaceViolationAlert({ type: eventType, reason });
+        if (faceViolationTimerRef.current) clearTimeout(faceViolationTimerRef.current);
+        faceViolationTimerRef.current = setTimeout(() => setFaceViolationAlert(null), 6000);
+
+        // 2. Send to backend for audit trail
+        fetch("/api/interview/proctoring", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                applicationId: id,
+                interviewToken,
+                events: [{
+                    eventType,
+                    severity: severity ?? "medium",
+                    timestamp: Date.now(),
+                    reason,
+                }],
+            }),
+        }).catch(() => { });
+
+        // 3. Signal agent via data channel (optional — agent can adjust)
+        const room = lkRoomRef.current;
+        if (room?.localParticipant) {
+            try {
+                const data = new TextEncoder().encode(JSON.stringify({ type: "face_proctoring_violation", eventType, timestamp: Date.now() }));
+                room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
+            } catch { }
+        }
+    }, [id, interviewToken]);
 
     // Countdown ticker — purely visual, counts up for display purposes
     useEffect(() => {
@@ -529,6 +576,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             isStarting={isJoining}
                             errorMessage={joinError}
                             applicationId={id}
+                            interviewToken={interviewToken}
                         />
                     </motion.div>
                 )}
@@ -614,6 +662,15 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {/* ── AI Face Proctoring (runs silently during interview) ─────────── */}
+            <FaceProctoring
+                applicationId={id}
+                interviewToken={interviewToken}
+                isActive={phase === "interview"}
+                referenceSnapshotUrl={referenceSnapshotUrl}
+                onViolation={handleFaceViolation}
+            />
 
             {/* Interview room — outside AnimatePresence intentionally.
                 It pre-renders as soon as the launching phase has prepared a token
@@ -727,6 +784,41 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
                                     Incident logged for review
                                 </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── AI Proctoring Violation Alert (face / gaze / pose) ─────────── */}
+            <AnimatePresence>
+                {faceViolationAlert && phase === "interview" && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 40 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 40 }}
+                        className="fixed bottom-52 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
+                    >
+                        <div className="flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md border border-orange-500/30 rounded-2xl px-5 py-3 shadow-2xl max-w-sm">
+                            <div className="w-8 h-8 rounded-xl bg-orange-500/10 flex items-center justify-center shrink-0">
+                                {faceViolationAlert.type === "multiple_faces" ? (
+                                    <Users className="w-4 h-4 text-orange-500" />
+                                ) : faceViolationAlert.type === "face_absence" ? (
+                                    <EyeOff className="w-4 h-4 text-orange-500" />
+                                ) : (
+                                    <Eye className="w-4 h-4 text-orange-500" />
+                                )}
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">
+                                    {faceViolationAlert.type === "multiple_faces" ? "Multiple People Detected"
+                                        : faceViolationAlert.type === "face_absence" ? "Face Not Visible"
+                                        : faceViolationAlert.type === "identity_mismatch" ? "Identity Check"
+                                        : "Attention Required"}
+                                </p>
+                                <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
+                                    {faceViolationAlert.reason}
+                                </p>
                             </div>
                         </div>
                     </motion.div>
@@ -1018,8 +1110,6 @@ function InterviewRoomContent({
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,_rgba(249,115,22,0.04)_0%,_transparent_50%)] pointer-events-none" />
 
             {isInterviewActive && <RoomAudioRenderer />}
-            {/* FORCE AUDIO TRACK ATTACHMENT */}
-            {isInterviewActive && aiParticipantTrack && <AudioTrack trackRef={aiParticipantTrack} />}
 
             {/* Role Context - TOP LEFT */}
             <div className="absolute top-10 left-10 z-[60]">

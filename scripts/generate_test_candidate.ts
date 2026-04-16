@@ -4,35 +4,60 @@ import { generateId } from "../lib/ids";
 const prisma = new PrismaClient();
 
 async function main() {
-  // 1. Get or create a default drive
+  // 1. Get or create a default organization
+  let org = await prisma.organization.findFirst();
+  if (!org) {
+    org = await prisma.organization.create({
+      data: {
+        id: generateId("org", "Default Org"),
+        name: "Default Org",
+        slug: "default-org-" + Math.floor(Math.random() * 1000),
+      }
+    });
+  }
+
+  // 2. Get or create a default admin user
+  let creator = await prisma.user.findFirst({ where: { role: "ADMIN" } });
+  if (!creator) {
+    creator = await prisma.user.create({
+      data: {
+        id: "admin-" + Math.floor(Math.random() * 1000),
+        email: "admin@lumoscale.com",
+        name: "Default Admin",
+        role: "ADMIN",
+        orgId: org.id,
+      }
+    });
+  }
+
+  // 3. Get or create a default drive
   let drive = await prisma.drive.findFirst();
-  
   if (!drive) {
-    const creator = await prisma.user.findFirst({ where: { role: "ADMIN" } });
-    if (!creator) {
-      console.error("No admin user found to create a drive.");
-      return;
-    }
-    
     drive = await prisma.drive.create({
       data: {
+        id: generateId("drv", "Senior AI Engineer"),
         title: "Senior AI Engineer",
         description: "Looking for someone to build next-gen AI agents.",
         department: "Engineering",
         workMode: "Remote",
         creatorId: creator.id,
         skills: "Python, LiveKit, OpenAI, TypeScript",
+        orgId: org.id,
       }
     });
   }
 
   const timestamp = Date.now();
-  const testName = `Test Candidate ${timestamp}`;
-  const testEmail = `test_${timestamp}@example.com`;
+  const argName = process.argv[2];
+  const testName = argName || `Test Candidate ${timestamp}`;
+  const testEmail = argName 
+    ? `${argName.toLowerCase().replace(/\s+/g, "_")}_${timestamp}@example.com`
+    : `test_${timestamp}@example.com`;
 
-  // 2. Create Application
+  // 4. Create Application
   const application = await prisma.application.create({
     data: {
+      id: generateId("app", testName),
       fullName: testName,
       email: testEmail,
       phone: "+1234567890",
@@ -42,7 +67,7 @@ async function main() {
     }
   });
 
-  // 3. Create Interview
+  // 5. Create Interview
   const interview = await prisma.interview.create({
     data: {
       id: generateId("int", application.fullName || application.id),

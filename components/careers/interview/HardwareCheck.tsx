@@ -20,6 +20,7 @@ interface HardwareCheckProps {
     errorMessage?: string | null;
     candidateName?: string;
     applicationId?: string;
+    interviewToken?: string;
     title?: string;
 }
 
@@ -31,6 +32,7 @@ export function HardwareCheck({
     errorMessage = null,
     candidateName = "candidate",
     applicationId = "unknown",
+    interviewToken = "",
     title = "Environment Check",
 }: HardwareCheckProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -163,16 +165,6 @@ export function HardwareCheck({
     }, [networkQuality]);
     const [bypassSpeedTest, setBypassSpeedTest] = useState(false);
 
-    // Face Detection
-    const [faceWarning, setFaceWarning] = useState<string | null>(null);
-    const [faceVerified, setFaceVerified] = useState(false);
-    const [faceModelReady, setFaceModelReady] = useState(false);
-    const [faceModelFailed, setFaceModelFailed] = useState(false);
-    const faceDetectorRef = useRef<any>(null);
-    const faceDetectionAnimRef = useRef<number | null>(null);
-    const lastVideoTimeRef = useRef(-1);
-    const faceHistoryRef = useRef<number[]>([]);
-
     // Browser compatibility
     const [browserSupported, setBrowserSupported] = useState(true);
     const [browserName, setBrowserName] = useState("");
@@ -196,7 +188,6 @@ export function HardwareCheck({
     const allReady = cameraStatus === "granted" &&
         micStatus === "granted" &&
         micVerified &&
-        (faceModelFailed || (faceVerified && !faceWarning)) &&
         (noiseBypass || noisePassed) &&
         (speakerStatus === "passed" || speakerStatus === "failed") &&
         (bypassSpeedTest || (
@@ -218,93 +209,6 @@ export function HardwareCheck({
         return () => { console.info = originalInfo; console.log = originalLog; };
     }, []);
 
-    // MediaPipe Face Landmarker
-    useEffect(() => {
-        let mounted = true;
-        const loadModel = async () => {
-            try {
-                const { FaceLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision");
-                const vision = await FilesetResolver.forVisionTasks(
-                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-                );
-                const detector = await FaceLandmarker.createFromOptions(vision, {
-                    baseOptions: {
-                        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-                        delegate: "CPU"
-                    },
-                    outputFaceBlendshapes: false,
-                    runningMode: "VIDEO",
-                    numFaces: 1
-                });
-                if (mounted) { faceDetectorRef.current = detector; setFaceModelReady(true); }
-            } catch {
-                if (mounted) setFaceModelFailed(true);
-            }
-        };
-        loadModel();
-        return () => { mounted = false; };
-    }, []);
-
-    const startFaceDetection = useCallback(() => {
-        const detect = () => {
-            faceDetectionAnimRef.current = requestAnimationFrame(detect);
-            const video = videoRef.current;
-            if (!video || video.readyState < 2 || !faceDetectorRef.current || video.paused || video.ended) return;
-            if (video.currentTime === lastVideoTimeRef.current) return;
-            lastVideoTimeRef.current = video.currentTime;
-            try {
-                if (typeof faceDetectorRef.current.detectForVideo !== 'function') {
-                    console.warn("[FaceDetection] detectForVideo not ready");
-                    return;
-                }
-                const result = faceDetectorRef.current.detectForVideo(video, performance.now());
-                const currentNumFaces = (result?.faceLandmarks) ? result.faceLandmarks.length : 0;
-                faceHistoryRef.current.push(currentNumFaces);
-                if (faceHistoryRef.current.length > 5) faceHistoryRef.current.shift();
-                if (faceHistoryRef.current.length < 5) return;
-                const counts: Record<number, number> = {};
-                faceHistoryRef.current.forEach(n => counts[n] = (counts[n] || 0) + 1);
-                const majorityEntry = Object.entries(counts).find(([, c]) => c >= 3);
-                if (!majorityEntry) return;
-                const consensusNumFaces = Number(majorityEntry[0]);
-                const setFace = (warning: string | null) => { setFaceWarning(warning); setFaceVerified(warning === null); };
-                if (consensusNumFaces === 0) { setFace("Please position your face in frame"); return; }
-                if (consensusNumFaces > 1) { setFace("Only one person allowed in frame"); return; }
-                if (!result?.faceLandmarks || result.faceLandmarks.length !== 1) return;
-                const landmarks = result.faceLandmarks[0];
-                let minX = 1, maxX = 0, minY = 1, maxY = 0;
-                for (const pt of landmarks) {
-                    if (pt.x < minX) minX = pt.x; if (pt.x > maxX) maxX = pt.x;
-                    if (pt.y < minY) minY = pt.y; if (pt.y > maxY) maxY = pt.y;
-                }
-                const faceWidth = maxX - minX; const faceHeight = maxY - minY;
-                const rawCx = (minX + maxX) / 2; const cx = 1 - rawCx; const cy = (minY + maxY) / 2;
-                if (cx < 0.35 || cx > 0.65 || cy < 0.25 || cy > 0.55) { setFace("Please center your face on the screen"); return; }
-                if (faceWidth < 0.20) { setFace("Please move closer to the camera"); return; }
-                if (faceWidth > 0.55) { setFace("Please move slightly back"); return; }
-                const canvas = document.createElement('canvas');
-                canvas.width = 30; canvas.height = 30;
-                const ctx = canvas.getContext('2d');
-                if (!ctx || video.videoWidth === 0 || video.videoHeight === 0) { setFace(null); return; }
-                ctx.drawImage(video, Math.max(0, minX * video.videoWidth), Math.max(0, minY * video.videoHeight),
-                    Math.min(faceWidth * video.videoWidth, video.videoWidth), Math.min(faceHeight * video.videoHeight, video.videoHeight), 0, 0, 30, 30);
-                const imgData = ctx.getImageData(0, 0, 30, 30);
-                let totalLuminance = 0;
-                for (let i = 0; i < imgData.data.length; i += 4) {
-                    const r = imgData.data[i], g = imgData.data[i + 1], b = imgData.data[i + 2];
-                    totalLuminance += Math.sqrt(0.299 * (r * r) + 0.587 * (g * g) + 0.114 * (b * b));
-                }
-                const avgBrightness = totalLuminance / 900;
-                if (avgBrightness < 70) setFace("Environment is too dark. Increase lighting.");
-                else if (avgBrightness > 200) setFace("Environment is too bright (reduce backlight).");
-                else setFace(null);
-            } catch (err) {
-                console.error("[FaceDetection] loop error:", err);
-            }
-        };
-        faceDetectionAnimRef.current = requestAnimationFrame(detect);
-    }, []);
-
     const uploadSnapshot = useCallback(async (label = "verification") => {
         const video = videoRef.current;
         if (!video || video.readyState < 2 || snapshotDoneRef.current) return;
@@ -316,24 +220,39 @@ export function HardwareCheck({
         ctx.drawImage(video, 0, 0, 640, 480);
         const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
         setSnapshotUrl(dataUrl);
+        // Persist for identity verification during live interview
+        try { sessionStorage.setItem("proctor_ref_snapshot", dataUrl); } catch { }
         setSnapshotUploading(true);
         try {
             const r = await fetch("/api/upload/interview-snapshot", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ imageDataUrl: dataUrl, candidateName, applicationId, label }),
+                body: JSON.stringify({ 
+                    imageDataUrl: dataUrl, 
+                    candidateName, 
+                    applicationId, 
+                    interviewToken,
+                    label 
+                }),
             });
             const resBody = await r.json();
-            if (resBody.status === "queued" || resBody.url) snapshotDoneRef.current = true;
-        } catch { } finally {
+            if (resBody.status === "queued" || resBody.url) {
+                snapshotDoneRef.current = true;
+            } else {
+                console.warn("[Snapshot] API error:", resBody);
+            }
+        } catch (err) {
+            console.error("[Snapshot] Upload failed:", err);
+        } finally {
             setSnapshotUploading(false);
         }
-    }, [candidateName, applicationId]);
+    }, [candidateName, applicationId, interviewToken]);
 
     const handleBeginInterview = useCallback(async () => {
-        // Trigger the handshake snapshot. We don't block the UI transition 
-        // to avoid perceived lag, but we trigger it immediately.
-        void uploadSnapshot("INITIAL_HANDSHAKE");
+        // Trigger the handshake snapshot. 
+        // We MUST await this to ensure the database record is created 
+        // before the component unmounts (changing the phase).
+        await uploadSnapshot("INITIAL_HANDSHAKE");
         onComplete();
     }, [uploadSnapshot, onComplete]);
 
@@ -677,9 +596,6 @@ export function HardwareCheck({
         verifiedRef.current = false;
         snapshotDoneRef.current = false;
         setSnapshotUrl(null);
-        setFaceWarning(null);
-        setFaceVerified(false);
-        faceHistoryRef.current = [];
         setNoiseDb(null);
         setNoiseMeasuring(false);
         setNoiseBypass(false);
@@ -717,7 +633,6 @@ export function HardwareCheck({
                 if (videoRef.current.paused) videoRef.current.onloadedmetadata = playVideo;
             }
             setCameraStatus("granted");
-            startFaceDetection();
             const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
             audioCtxRef.current = ctx;
             const unlockCtx = () => {
@@ -741,7 +656,7 @@ export function HardwareCheck({
             setMicStatus("denied");
             setError("Could not access camera or microphone. Please check browser permissions.");
         }
-    }, [startVisualizer, startFaceDetection]);
+    }, [startVisualizer]);
 
     // ── Global Mount Lifecycle ──────────────────────────────────────────────
     useEffect(() => {
@@ -756,7 +671,6 @@ export function HardwareCheck({
         return () => {
             clearInterval(networkInterval);
             if (animRef.current) cancelAnimationFrame(animRef.current);
-            if (faceDetectionAnimRef.current) cancelAnimationFrame(faceDetectionAnimRef.current);
             streamRef.current?.getTracks().forEach(t => t.stop());
             audioCtxRef.current?.close();
             if (recogRef.current) try { recogRef.current.abort(); } catch { }
@@ -767,7 +681,6 @@ export function HardwareCheck({
     const checks = [
         cameraStatus === "granted",
         micStatus === "granted" && micVerified,
-        faceModelFailed || (faceVerified && !faceWarning),
         noiseBypass || noisePassed,
         speakerStatus === "passed" || speakerStatus === "failed",
         bypassSpeedTest || (uploadSpeedMbps !== null && uploadSpeedMbps >= 3.0 && downloadSpeedMbps !== null && downloadSpeedMbps >= 3.0 && latencyMs !== null && latencyMs < 300),
@@ -851,7 +764,7 @@ export function HardwareCheck({
                             <Camera className="w-4 h-4 text-gray-600" />
                             <span className="font-medium text-gray-900 text-sm">Camera</span>
                         </div>
-                        <StatusIcon ok={cameraStatus === "granted" && (faceModelFailed || faceVerified)} loading={cameraStatus === "requesting"} />
+                        <StatusIcon ok={cameraStatus === "granted"} loading={cameraStatus === "requesting"} />
                     </div>
 
                     {/* Video preview */}
@@ -863,32 +776,6 @@ export function HardwareCheck({
                                 <span className="text-xs text-gray-400">
                                     {cameraStatus === "requesting" ? "Requesting access…" : cameraStatus === "denied" ? "Camera denied" : "Camera off"}
                                 </span>
-                            </div>
-                        )}
-                        {/* Face detection overlay */}
-                        {cameraStatus === "granted" && !faceModelFailed && (
-                            <div className="absolute bottom-2 left-2 right-2">
-                                <AnimatePresence mode="wait">
-                                    {faceWarning ? (
-                                        <motion.div key="warn" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                                            className="bg-orange-500/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                                            <AlertCircle className="w-3 h-3 flex-shrink-0" />
-                                            {faceWarning}
-                                        </motion.div>
-                                    ) : faceVerified ? (
-                                        <motion.div key="ok" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                                            className="bg-green-500/90 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                                            <CheckCircle2 className="w-3 h-3" />
-                                            Face detected
-                                        </motion.div>
-                                    ) : !faceModelReady ? (
-                                        <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                                            className="bg-black/60 backdrop-blur-sm text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                                            <Loader2 className="w-3 h-3 animate-spin" />
-                                            Loading face detection…
-                                        </motion.div>
-                                    ) : null}
-                                </AnimatePresence>
                             </div>
                         )}
                         {snapshotUploading && (

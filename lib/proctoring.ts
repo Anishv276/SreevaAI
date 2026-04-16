@@ -1,8 +1,6 @@
 export type ProctoringSeverity = "low" | "medium" | "high";
 
 export type ProctoringEventType =
-  | "face_not_detected"
-  | "multiple_faces"
   | "camera_disabled"
   | "microphone_disabled"
   | "connection_lost"
@@ -10,7 +8,12 @@ export type ProctoringEventType =
   | "audio_flag"
   | "duplicate_ip"
   | "tab_switch"
-  | "fullscreen_exit";
+  | "fullscreen_exit"
+  | "face_absence"
+  | "multiple_faces"
+  | "gaze_violation"
+  | "head_pose_violation"
+  | "identity_mismatch";
 
 export interface ProctoringEvent {
   eventType: string;
@@ -23,10 +26,6 @@ export interface ProctoringEvent {
 }
 
 const EVENT_ALIASES: Record<string, ProctoringEventType> = {
-  face_not_detected: "face_not_detected",
-  faceNotDetected: "face_not_detected",
-  multiple_faces: "multiple_faces",
-  multipleFaces: "multiple_faces",
   camera_disabled: "camera_disabled",
   cameraDisabled: "camera_disabled",
   microphone_disabled: "microphone_disabled",
@@ -43,11 +42,19 @@ const EVENT_ALIASES: Record<string, ProctoringEventType> = {
   tabSwitch: "tab_switch",
   fullscreen_exit: "fullscreen_exit",
   fullscreenExit: "fullscreen_exit",
+  face_absence: "face_absence",
+  faceAbsence: "face_absence",
+  multiple_faces: "multiple_faces",
+  multipleFaces: "multiple_faces",
+  gaze_violation: "gaze_violation",
+  gazeViolation: "gaze_violation",
+  head_pose_violation: "head_pose_violation",
+  headPoseViolation: "head_pose_violation",
+  identity_mismatch: "identity_mismatch",
+  identityMismatch: "identity_mismatch",
 };
 
 export const PROCTORING_SEVERITY_BY_TYPE: Record<ProctoringEventType, ProctoringSeverity> = {
-  face_not_detected: "medium",
-  multiple_faces: "high",
   camera_disabled: "high",
   microphone_disabled: "medium",
   connection_lost: "medium",
@@ -56,11 +63,14 @@ export const PROCTORING_SEVERITY_BY_TYPE: Record<ProctoringEventType, Proctoring
   duplicate_ip: "high",
   tab_switch: "medium",
   fullscreen_exit: "high",
+  face_absence: "high",
+  multiple_faces: "high",
+  gaze_violation: "medium",
+  head_pose_violation: "medium",
+  identity_mismatch: "high",
 };
 
 export const PROCTORING_EVENT_ORDER: ProctoringEventType[] = [
-  "face_not_detected",
-  "multiple_faces",
   "camera_disabled",
   "microphone_disabled",
   "connection_lost",
@@ -69,6 +79,11 @@ export const PROCTORING_EVENT_ORDER: ProctoringEventType[] = [
   "duplicate_ip",
   "tab_switch",
   "fullscreen_exit",
+  "face_absence",
+  "multiple_faces",
+  "gaze_violation",
+  "head_pose_violation",
+  "identity_mismatch",
 ];
 
 export function normalizeProctoringEvent(event: ProctoringEvent): ProctoringEvent {
