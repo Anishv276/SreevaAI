@@ -214,10 +214,10 @@ export default function CandidateDashboard() {
                                                                     "upcoming"
                                                                 }
                                                                 action={
-                                                                    app.interview.status === "PENDING" && app.interview.canStart
+                                                                    app.interview.status === "PENDING" && app.interview.canStart && app.interview.interviewLink
                                                                         ? {
                                                                             label: "Start Interview",
-                                                                            href: `/interview/${app.id}?token=${app.interview.token}`
+                                                                            href: app.interview.interviewLink
                                                                         }
                                                                         : undefined
                                                                 }

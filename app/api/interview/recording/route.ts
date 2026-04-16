@@ -3,6 +3,7 @@ import { putObject } from "@/lib/s3";
 import { interviewFinalizationQueue } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
 
 export const runtime = "nodejs";
 
@@ -69,6 +70,7 @@ export async function POST(req: Request) {
         let recordingUrl = "";
         let recordingKey = "";
         let duration: number | null = null;
+        const requireInterviewToken = isInterviewTokenRequired();
 
         if (contentType.includes("multipart/form-data")) {
             console.log("[RECORDING_API] Attempting to parse FormData...");
@@ -137,7 +139,7 @@ export async function POST(req: Request) {
             if (body?.duration) duration = parseInt(String(body.duration));
         }
 
-        if (!applicationId || !recordingUrl || !interviewToken) {
+        if (!applicationId || !recordingUrl || (requireInterviewToken && !interviewToken)) {
             return NextResponse.json({ error: "Missing required fields (including token)" }, { status: 400 });
         }
 
@@ -146,7 +148,7 @@ export async function POST(req: Request) {
             where: { applicationId },
             select: { accessToken: true }
         });
-        if (!interviewRecord || interviewRecord.accessToken !== interviewToken) {
+        if (requireInterviewToken && (!interviewRecord || interviewRecord.accessToken !== interviewToken)) {
             return NextResponse.json({ error: "Unauthorized: Invalid session token" }, { status: 401 });
         }
 

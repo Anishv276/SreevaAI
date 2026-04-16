@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { sendApplicationStatusEmail } from "@/lib/mail";
+import { generateId } from "@/lib/ids";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
 
 export async function POST(request: Request) {
     try {
@@ -70,9 +72,17 @@ export async function POST(request: Request) {
                 const interview = await (prisma as any).interview.upsert({
                     where: { applicationId: app.id },
                     update: { expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000), status: "PENDING" },
-                    create: { applicationId: app.id, expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000), status: "PENDING" },
+                    create: {
+                        id: generateId("int", app.fullName || app.id),
+                        applicationId: app.id,
+                        expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+                        status: "PENDING",
+                    },
                 });
-                const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${app.id}?token=${interview.accessToken}`;
+                const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${app.id}`;
+                const interviewLink = isInterviewTokenRequired()
+                    ? `${interviewBase}?token=${interview.accessToken}`
+                    : interviewBase;
                 return sendApplicationStatusEmail({
                     email: app.email,
                     fullName: app.fullName,

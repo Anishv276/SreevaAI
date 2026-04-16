@@ -420,12 +420,17 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
 
     const addCandidate = async (newCandidateData: Omit<Candidate, "id" | "date" | "status" | "score">) => {
         try {
+            const fullName =
+                (newCandidateData as Candidate).name ||
+                (newCandidateData as any).fullName ||
+                "";
+
             const response = await fetch("/api/candidates", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     ...newCandidateData,
-                    fullName: newCandidateData.name,
+                    fullName,
                 }),
             });
 
@@ -446,8 +451,9 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 }
                 
                 // Throw error with status code so frontend can handle duplicates specifically
-                const error = new Error(errorMessage);
+                const error = new Error(detailMsg ? `${errorMessage}${detailMsg}` : errorMessage);
                 (error as any).status = response.status;
+                (error as any).details = errorData.details;
                 throw error;
             }
 

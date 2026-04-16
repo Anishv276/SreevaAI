@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
 import { HardwareCheck } from "@/components/careers/interview/HardwareCheck";
 import { useSearchParams } from "next/navigation";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
 import {
     LiveKitRoom,
     useLocalParticipant,
@@ -122,6 +123,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
     const searchParams = useSearchParams();
     const interviewToken = searchParams.get("token") || "";
+    const requireInterviewToken = isInterviewTokenRequired();
 
     // Countdown ticker — purely visual, counts up for display purposes
     useEffect(() => {
@@ -207,6 +209,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             return true;
         }
 
+        if (requireInterviewToken && !interviewToken) {
+            console.error("Warm connection failed: missing interview security token in the URL.");
+            return false;
+        }
+
         if (tokenRequestRef.current) {
             return tokenRequestRef.current;
         }
@@ -238,7 +245,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     return true;
                 }
 
-                console.error("Warm connection failed:", data?.error || "Invalid token payload");
+                console.error(
+                    "Warm connection failed:",
+                    data?.error || "Invalid token payload",
+                    data?.details || {}
+                );
                 return false;
             } catch (err) {
                 console.error("Warm connection request failed:", err);
@@ -285,6 +296,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         setJoinError(null);
 
         try {
+            if (!interviewToken) {
+                if (requireInterviewToken) {
+                    throw new Error("This interview link is missing its security token. Please reopen the interview link from your invitation email or dashboard.");
+                }
+            }
+
             // Enter fullscreen on user gesture IMMEDIATELY
             await requestFullscreenMode();
 

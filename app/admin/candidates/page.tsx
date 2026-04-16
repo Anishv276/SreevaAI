@@ -293,11 +293,6 @@ export default function CandidatesPage() {
     };
 
     const handleResendInterview = async (candidate: { id: string; interviewStatus?: string }) => {
-        const status = (candidate.interviewStatus || "").toLowerCase();
-        if (status !== "pending" && status !== "in progress" && status !== "interview pending" && status !== "interview in progress") {
-            toast.error("Interview link can only be resent for candidates with Pending or In Progress interview status");
-            return;
-        }
         setResendingId(candidate.id);
         try {
             const res = await fetch(`/api/candidates/${candidate.id}/resend-interview`, { method: "POST" });

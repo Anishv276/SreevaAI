@@ -2,6 +2,7 @@ import { AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { interviewShutdownSchema } from "@/lib/validation";
 import { prisma } from "@/lib/prisma";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
 
 function toHttpUrl(rawUrl: string) {
     if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://") && !rawUrl.startsWith("ws://") && !rawUrl.startsWith("wss://")) {
@@ -25,13 +26,14 @@ export async function POST(req: NextRequest) {
         }
 
         const { applicationId, interviewToken } = result.data;
+        const requireInterviewToken = isInterviewTokenRequired();
 
         // ── AUTHENTICATION ────────────────────────────────
         const interview = await prisma.interview.findUnique({
             where: { applicationId },
             select: { accessToken: true }
         });
-        if (!interview || interview.accessToken !== interviewToken) {
+        if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
             return NextResponse.json({ error: "Unauthorized: Invalid security token" }, { status: 401 });
         }
 

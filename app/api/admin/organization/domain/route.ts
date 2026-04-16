@@ -37,13 +37,29 @@ export async function GET() {
 
                 const records: any[] = (data as any)?.records || [];
 
+                const isVerified = data?.status === "verified";
+
                 // Update DB if Resend now shows verified
-                if (data?.status === "verified" && !org.isDomainVerified) {
+                if (isVerified && (!org.isDomainVerified || !org.customSenderEmail)) {
                     await prisma.organization.update({
                         where: { id: session.orgId as string },
-                        data: { isDomainVerified: true }
+                        data: {
+                            isDomainVerified: true,
+                            customSenderEmail: org.customSenderEmail || (org.customDomain ? `security@${org.customDomain}` : undefined),
+                            customSenderName: org.customSenderName || "Lumoscale Platform"
+                        }
                     });
                     org.isDomainVerified = true;
+                    if (!org.customSenderEmail && org.customDomain) {
+                        org.customSenderEmail = `security@${org.customDomain}`;
+                        org.customSenderName = "Lumoscale Platform";
+                    }
+                } else if (!isVerified && org.isDomainVerified) {
+                    await prisma.organization.update({
+                        where: { id: session.orgId as string },
+                        data: { isDomainVerified: false }
+                    });
+                    org.isDomainVerified = false;
                 }
 
                 return NextResponse.json({
@@ -103,12 +119,26 @@ export async function POST() {
         const records: any[] = (data as any)?.records || [];
         const isVerified = data?.status === "verified";
 
-        if (isVerified && !org.isDomainVerified) {
+        if (isVerified && (!org.isDomainVerified || !org.customSenderEmail)) {
             await prisma.organization.update({
                 where: { id: session.orgId as string },
-                data: { isDomainVerified: true }
+                data: {
+                    isDomainVerified: true,
+                    customSenderEmail: org.customSenderEmail || (org.customDomain ? `security@${org.customDomain}` : undefined),
+                    customSenderName: org.customSenderName || "Lumoscale Platform"
+                }
             });
             org.isDomainVerified = true;
+            if (!org.customSenderEmail && org.customDomain) {
+                org.customSenderEmail = `security@${org.customDomain}`;
+                org.customSenderName = "Lumoscale Platform";
+            }
+        } else if (!isVerified && org.isDomainVerified) {
+            await prisma.organization.update({
+                where: { id: session.orgId as string },
+                data: { isDomainVerified: false }
+            });
+            org.isDomainVerified = false;
         }
 
         return NextResponse.json({

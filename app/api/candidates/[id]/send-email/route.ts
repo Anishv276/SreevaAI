@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { Resend } from "resend";
+import { resolveVerifiedSender } from "@/lib/mail";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -55,16 +56,11 @@ export async function POST(
             .replace(/\{\{role\}\}/gi, (application as any).drive?.title || "the role")
             .replace(/\{\{email\}\}/gi, application.email);
 
-        // Determine sender
-        let from = process.env.FROM_EMAIL || "Lumoscale <careers@lumoscale.com>";
-        if (orgId) {
-            const org = await prisma.organization.findUnique({
-                where: { id: orgId },
-                select: { customSenderEmail: true, customSenderName: true, isDomainVerified: true, name: true },
-            });
-            if (org?.isDomainVerified && org?.customSenderEmail) {
-                from = `${org.customSenderName || org.name} <${org.customSenderEmail}>`;
-            }
+        const sender = await resolveVerifiedSender(orgId || (application as any).drive?.orgId || undefined);
+        if (!sender.from) {
+            return NextResponse.json({
+                error: sender.reason || "No verified sender available for this organization"
+            }, { status: 502 });
         }
 
         const html = `
@@ -75,10 +71,10 @@ export async function POST(
             </div>
         `;
 
-        const payload = await resend.emails.send({ from, to: application.email, subject, html });
+        const payload = await resend.emails.send({ from: sender.from, to: application.email, subject, html });
 
         if (payload.error) {
-            return NextResponse.json({ error: "Email delivery failed" }, { status: 500 });
+            return NextResponse.json({ error: payload.error.message || "Email delivery failed" }, { status: 500 });
         }
 
         return NextResponse.json({ success: true });

@@ -109,15 +109,22 @@ export async function GET() {
         const { data, error } = await resend.domains.get(config.resendDomainId);
         if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-        if (data?.status === "verified" && !config.isDomainVerified) {
+        if (data?.status === "verified") {
+            if (!config.isDomainVerified) {
+                await prisma.superAdmin.update({
+                    where: { id: config.id },
+                    data: { 
+                        isDomainVerified: true,
+                        // Auto-fill sender on first successful verify to bypass step 3 setup
+                        customSenderEmail: `security@${config.customDomain}`,
+                        customSenderName: "Lumoscale Platform"
+                    }
+                });
+            }
+        } else if (config.isDomainVerified) {
             await prisma.superAdmin.update({
                 where: { id: config.id },
-                data: { 
-                    isDomainVerified: true,
-                    // Auto-fill sender on first successful verify to bypass step 3 setup
-                    customSenderEmail: `security@${config.customDomain}`,
-                    customSenderName: "Lumoscale Platform"
-                }
+                data: { isDomainVerified: false }
             });
         }
 

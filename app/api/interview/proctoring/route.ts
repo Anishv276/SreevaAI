@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { generateId } from "@/lib/ids";
 import { normalizeProctoringEvents, type ProctoringEvent } from "@/lib/proctoring";
 import { z } from "zod";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
 
 export const runtime = "nodejs";
 
@@ -47,13 +48,14 @@ export async function POST(req: Request) {
     }
 
     const { applicationId, interviewToken } = result.data;
+    const requireInterviewToken = isInterviewTokenRequired();
 
     // ── AUTHENTICATION ────────────────────────────────
     const authCheck = await prisma.interview.findUnique({
       where: { applicationId },
       select: { accessToken: true }
     });
-    if (!authCheck || authCheck.accessToken !== interviewToken) {
+    if (requireInterviewToken && (!authCheck || authCheck.accessToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid security token" }, { status: 401 });
     }
 

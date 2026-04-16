@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { generateId } from "../lib/ids";
 
 const prisma = new PrismaClient();
 
@@ -44,6 +45,7 @@ async function main() {
   // 3. Create Interview
   const interview = await prisma.interview.create({
     data: {
+      id: generateId("int", application.fullName || application.id),
       applicationId: application.id,
       status: "PENDING",
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days

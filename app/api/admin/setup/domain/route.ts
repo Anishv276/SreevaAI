@@ -50,7 +50,11 @@ export async function POST(request: Request) {
                 data: {
                     customDomain: domain,
                     resendDomainId: existing.id,
-                    isDomainVerified: existing.status === "verified"
+                    isDomainVerified: existing.status === "verified",
+                    ...(existing.status === "verified" && {
+                        customSenderEmail: `security@${domain}`,
+                        customSenderName: "Lumoscale Platform"
+                    })
                 }
             });
                 return NextResponse.json({ fresh: true });
@@ -96,6 +100,11 @@ export async function GET() {
             await prisma.organization.update({
                 where: { id: session.orgId as string },
                 data: { isDomainVerified: true } as any
+            });
+        } else {
+            await prisma.organization.update({
+                where: { id: session.orgId as string },
+                data: { isDomainVerified: false } as any
             });
         }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
 
 export async function POST(
     request: Request,
@@ -8,6 +9,7 @@ export async function POST(
     try {
         const { id } = await params;
         const { rating, feedback, interviewToken } = await request.json();
+        const requireInterviewToken = isInterviewTokenRequired();
 
         if (typeof rating !== "number" || rating < 1 || rating > 5) {
             return NextResponse.json({ error: "Invalid rating" }, { status: 400 });
@@ -20,7 +22,7 @@ export async function POST(
             },
             select: { accessToken: true }
         });
-        if (!interview || interview.accessToken !== interviewToken) {
+        if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
             return NextResponse.json({ error: "Unauthorized: Invalid feedback token" }, { status: 401 });
         }
 

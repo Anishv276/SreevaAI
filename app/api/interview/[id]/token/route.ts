@@ -1,6 +1,7 @@
 import { AccessToken } from "livekit-server-sdk";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isInterviewReopenAllowed, isInterviewTokenRequired } from "@/lib/interview-access";
 
 export async function POST(
     request: Request,
@@ -9,8 +10,10 @@ export async function POST(
     try {
         const { id: applicationId } = await params;
         const { token: interviewToken } = await request.json();
+        const requireInterviewToken = isInterviewTokenRequired();
+        const allowReopen = isInterviewReopenAllowed();
 
-        if (!applicationId || !interviewToken) {
+        if (!applicationId || (requireInterviewToken && !interviewToken)) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
@@ -21,16 +24,16 @@ export async function POST(
             },
         });
 
-        if (!interview) {
+        if (requireInterviewToken && !interview) {
             return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
         }
 
         // ── LIFECYCLE CHECK ──────────────────────────────
-        if (interview.status === "COMPLETED" || interview.status === "FAILED") {
+        if (!allowReopen && (interview?.status === "COMPLETED" || interview?.status === "FAILED")) {
             return NextResponse.json({ error: "Access Denied: Interview already finalized" }, { status: 403 });
         }
 
-        if (interview.expiresAt && interview.expiresAt < new Date()) {
+        if (interview?.expiresAt && interview.expiresAt < new Date()) {
             return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
         }
         // ─────────────────────────────────────────────────

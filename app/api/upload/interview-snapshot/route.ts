@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
 import { interviewSnapshotQueue } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
 
 export async function POST(request: Request) {
     try {
         const body = await request.json();
         const { imageDataUrl, candidateName, applicationId, interviewToken, label } = body;
+        const requireInterviewToken = isInterviewTokenRequired();
         
         console.log(`[SNAPSHOT_API] Processing for AppID: ${applicationId}`);
 
-        if (!imageDataUrl || !applicationId || !interviewToken) {
+        if (!imageDataUrl || !applicationId || (requireInterviewToken && !interviewToken)) {
             return NextResponse.json({ error: "Missing required fields (imageDataUrl, applicationId, or interviewToken)" }, { status: 400 });
         }
 
@@ -19,11 +21,11 @@ export async function POST(request: Request) {
             select: { accessToken: true, status: true }
         });
 
-        if (!interview || interview.accessToken !== interviewToken) {
+        if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
             return NextResponse.json({ error: "Unauthorized: Invalid session token" }, { status: 401 });
         }
 
-        if (interview.status !== "INPROGRESS" && interview.status !== "PENDING") {
+        if (requireInterviewToken && interview.status !== "INPROGRESS" && interview.status !== "PENDING") {
              return NextResponse.json({ error: "Unauthorized: Interview is not in an active state" }, { status: 403 });
         }
         // ──────────────────────────────────────────────────

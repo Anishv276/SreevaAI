@@ -3,20 +3,157 @@ import { prisma } from "@/lib/prisma";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+async function readResendDomainVerified(resendDomainId?: string | null): Promise<boolean | null> {
+    if (!resendDomainId) return null;
+    try {
+        const { data, error } = await resend.domains.get(resendDomainId);
+        if (error) {
+            console.error("[MAIL] Resend domain lookup failed:", error);
+            return null;
+        }
+        return data?.status === "verified";
+    } catch (e) {
+        console.error("[MAIL] Resend domain lookup exception:", e);
+        return null;
+    }
+}
+
+type SenderResolution = {
+    from: string | null;
+    reason?: string;
+};
+
 
 export async function getPlatformSender() {
     try {
         const settings = await prisma.superAdmin.findFirst({
-            where: { isDomainVerified: true }
+            where: {
+                OR: [
+                    { isDomainVerified: true },
+                    { customDomain: { not: null } }
+                ]
+            },
+            orderBy: { updatedAt: "desc" }
         });
-        if (settings?.isDomainVerified && settings.customSenderEmail) {
-            const name = settings.customSenderName || "Lumoscale Platform";
-            return `${name} <${settings.customSenderEmail}>`;
+        if (settings) {
+            const senderEmail = settings.customSenderEmail || (settings.customDomain ? `security@${settings.customDomain}` : null);
+            const senderName = settings.customSenderName || "Lumoscale Platform";
+
+            if (settings.isDomainVerified && senderEmail) {
+                if (!settings.customSenderEmail && settings.customDomain) {
+                    await prisma.superAdmin.update({
+                        where: { id: settings.id },
+                        data: {
+                            customSenderEmail: senderEmail,
+                            customSenderName: senderName,
+                        },
+                    }).catch(() => { });
+                }
+
+                return `${senderName} <${senderEmail}>`;
+            }
         }
     } catch (e) {
         console.error("Failed to fetch platform sender:", e);
     }
     return "Lumoscale Security <security@lumoscale.com>"; // Absolute Fallback
+}
+
+async function getVerifiedPlatformSenderWithReason(): Promise<SenderResolution> {
+    try {
+        const settings = await prisma.superAdmin.findFirst({
+            where: {
+                OR: [
+                    { isDomainVerified: true },
+                    { customDomain: { not: null } }
+                ]
+            },
+            orderBy: { updatedAt: "desc" }
+        });
+        if (!settings) {
+            return { from: null, reason: "No platform sender settings found." };
+        }
+
+        let isVerified = Boolean(settings.isDomainVerified);
+        if (settings.resendDomainId) {
+            const resendVerified = await readResendDomainVerified(settings.resendDomainId);
+            // Fail closed: if domain exists in Resend but we cannot confirm verified,
+            // don't trust stale DB flags for outbound sender identity.
+            if (resendVerified !== true) {
+                if (resendVerified === false && settings.isDomainVerified) {
+                    await prisma.superAdmin.update({
+                        where: { id: settings.id },
+                        data: { isDomainVerified: false }
+                    }).catch(() => { });
+                }
+                return {
+                    from: null,
+                    reason: "Platform domain is not verified in Resend for the active API key."
+                };
+            }
+            isVerified = true;
+            if (resendVerified !== Boolean(settings.isDomainVerified)) {
+                await prisma.superAdmin.update({
+                    where: { id: settings.id },
+                    data: { isDomainVerified: resendVerified }
+                }).catch(() => { });
+            }
+        }
+
+        if (!isVerified) return { from: null, reason: "Platform domain is not marked verified." };
+
+        const senderEmail = settings.customSenderEmail || (settings.customDomain ? `security@${settings.customDomain}` : null);
+        if (!senderEmail) return { from: null, reason: "Platform sender email is missing." };
+
+        const senderName = settings.customSenderName || "Lumoscale Platform";
+        return { from: `${senderName} <${senderEmail}>` };
+    } catch (e) {
+        console.error("Failed to fetch verified platform sender:", e);
+        return { from: null, reason: "Failed to resolve platform sender." };
+    }
+}
+
+export async function resolveVerifiedSender(orgId?: string): Promise<SenderResolution> {
+    if (orgId) {
+        try {
+            const org = await prisma.organization.findUnique({
+                where: { id: orgId },
+                select: {
+                    id: true,
+                    name: true,
+                    customSenderEmail: true,
+                    customSenderName: true,
+                    customDomain: true,
+                    isDomainVerified: true,
+                    resendDomainId: true
+                }
+            });
+
+            if (org) {
+                const orgSenderEmail = org.customSenderEmail || (org.customDomain ? `security@${org.customDomain}` : null);
+                if (orgSenderEmail) {
+                    const displayName = org.customSenderName || org.name || "Organization";
+                    if (!org.customSenderEmail && org.customDomain) {
+                        await prisma.organization.update({
+                            where: { id: org.id },
+                            data: {
+                                customSenderEmail: orgSenderEmail,
+                                customSenderName: displayName,
+                            },
+                        }).catch(() => { });
+                    }
+                    return { from: `${displayName} <${orgSenderEmail}>` };
+                }
+                return { from: null, reason: `Organization sender email missing in DB for orgId=${org.id}` };
+            }
+            return { from: null, reason: `Organization not found for orgId=${orgId}` };
+        } catch (e) {
+            console.error("Failed to resolve org sender:", e);
+            return { from: null, reason: "Failed to resolve organization sender from DB." };
+        }
+    }
+
+    return await getVerifiedPlatformSenderWithReason();
 }
 
 export async function sendApplicationStatusEmail({
@@ -113,25 +250,26 @@ export async function sendApplicationStatusEmail({
 
     const org = await prisma.organization.findUnique({
         where: { id: orgId },
-        select: { customSenderEmail: true, customSenderName: true, customDomain: true, isDomainVerified: true, name: true }
+        select: { id: true, customSenderEmail: true, customDomain: true, isDomainVerified: true, resendDomainId: true, name: true }
     });
 
-    if (!org) {
+    if (!org?.id) {
         console.warn(`[MAIL BLOCKED] Org not found: ${orgId}`);
         return { success: false, error: "Organization not found." };
     }
 
-    let from = await getPlatformSender(); // Default to platform sender
-    if (org.isDomainVerified && org.customSenderEmail) {
-        const displayName = org.customSenderName || org.name;
-        from = `${displayName} <${org.customSenderEmail}>`;
-    } else {
-        console.warn(`[MAIL FALLBACK] Org ${org.name} has no verified domain — using platform sender`);
+    const { from, reason } = await resolveVerifiedSender(org.id);
+
+    if (!from) {
+        return {
+            success: false,
+            error: reason || `No verified sender available. orgId=${orgId}, orgVerified=${Boolean(org.isDomainVerified)}, orgSender=${org.customSenderEmail || "missing"}, orgDomain=${org.customDomain || "missing"}`
+        };
     }
 
     try {
         const payload = await resend.emails.send({
-            from: from,
+            from,
             to: email,
             subject: subject,
             html: html,
@@ -190,15 +328,14 @@ export async function sendTeamInviteEmail({
         </div>
     `;
 
-    let inviteFrom = await getPlatformSender();
-    if (orgId) {
-        const org = await prisma.organization.findUnique({
-            where: { id: orgId },
-            select: { customSenderEmail: true, customSenderName: true, isDomainVerified: true, name: true }
-        });
-        if (org?.isDomainVerified && org?.customSenderEmail) {
-            inviteFrom = `${org.customSenderName || org.name} <${org.customSenderEmail}>`;
-        }
+    const sender = await resolveVerifiedSender(orgId);
+    const inviteFrom = sender.from;
+
+    if (!inviteFrom) {
+        return {
+            success: false,
+            error: sender.reason || "No verified sender available in DB for invite emails."
+        };
     }
 
     try {
@@ -221,6 +358,7 @@ export async function sendTeamInviteEmail({
         return { success: false, error };
     }
 }
+
 
 
 

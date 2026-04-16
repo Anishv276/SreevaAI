@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
 
 const emailSchema = z.string().email("Valid email required");
 
@@ -50,11 +51,15 @@ export async function GET(request: Request) {
                 ? {
                     status: app.interview.status,
                     token: app.interview.accessToken,
+                    accessToken: app.interview.accessToken,
                     expiresAt: app.interview.expiresAt,
                     canStart:
                         app.interview.status === "PENDING" &&
                         !!app.interview.expiresAt &&
                         new Date() < new Date(app.interview.expiresAt),
+                    interviewLink: isInterviewTokenRequired()
+                        ? `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${app.id}?token=${encodeURIComponent(app.interview.accessToken)}`
+                        : `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${app.id}`,
                 }
                 : null;
 

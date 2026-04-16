@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { Resend } from "resend";
-import { getPlatformSender } from "@/lib/mail";
+import { resolveVerifiedSender } from "@/lib/mail";
 import { isRateLimited } from "@/lib/rate-limit";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -39,13 +39,18 @@ export async function POST(request: Request) {
             }
         });
 
-        // Resolve dynamic platform sender
-        const from = await getPlatformSender();
+        const sender = await resolveVerifiedSender();
+        if (!sender.from) {
+            return NextResponse.json({
+                error: "No verified sender available for OTP emails",
+                details: sender.reason || "Configure and verify a sender domain first."
+            }, { status: 502 });
+        }
 
         // ── LIVE EMAIL VIA RESEND TO MASTER IDENTITY ──────
 
         const { data, error: mailError } = await resend.emails.send({
-            from: from,
+            from: sender.from,
             to: masterEmail,
             subject: "🛡️ Master Access: 6-Digit Security Code",
             html: `

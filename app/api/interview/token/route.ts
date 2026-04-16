@@ -1,11 +1,17 @@
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { NextRequest, NextResponse } from "next/server";
-import { interviewTokenSchema } from "@/lib/validation";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { isInterviewReopenAllowed, isInterviewTokenRequired } from "@/lib/interview-access";
+import { z } from "zod";
 
 const DISPATCH_DEBOUNCE_MS = 12_000;
 const dispatchByRoom = new Map<string, number>();
+const interviewWarmTokenSchema = z.object({
+    applicationId: z.string().min(1, "Application ID required"),
+    interviewToken: z.string().optional(),
+    participantName: z.string().min(1, "Participant name required").max(100),
+});
 
 function looksLikeAgentParticipant(participant: { identity?: string; name?: string }) {
     const identity = (participant.identity || "").toLowerCase();
@@ -53,7 +59,7 @@ export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
 
-        const result = interviewTokenSchema.safeParse(body);
+        const result = interviewWarmTokenSchema.safeParse(body);
         if (!result.success) {
             return NextResponse.json(
                 { error: "Validation failed", details: result.error.flatten().fieldErrors },
@@ -62,6 +68,8 @@ export async function POST(req: NextRequest) {
         }
 
         const { applicationId, interviewToken, participantName } = result.data;
+        const requireInterviewToken = isInterviewTokenRequired();
+        const allowReopen = isInterviewReopenAllowed();
 
         // ── AUTHENTICATION ────────────────────────────────
         const interview = await prisma.interview.findUnique({
@@ -69,16 +77,16 @@ export async function POST(req: NextRequest) {
             select: { accessToken: true, status: true, expiresAt: true }
         });
 
-        if (!interview || interview.accessToken !== interviewToken) {
+        if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
             return NextResponse.json({ error: "Unauthorized: Invalid interview security token" }, { status: 401 });
         }
 
         // ── LIFECYCLE CHECK ──────────────────────────────
-        if (interview.status === "COMPLETED" || interview.status === "FAILED") {
+        if (!allowReopen && (interview?.status === "COMPLETED" || interview?.status === "FAILED")) {
             return NextResponse.json({ error: "Access Denied: Interview already finalized" }, { status: 403 });
         }
 
-        if (interview.expiresAt && interview.expiresAt < new Date()) {
+        if (interview?.expiresAt && interview.expiresAt < new Date()) {
             return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
         }
         // ─────────────────────────────────────────────────

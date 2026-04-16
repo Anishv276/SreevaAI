@@ -24,6 +24,7 @@ from livekit.agents import (
     cli,
     llm,
     text_transforms,
+    tts as lk_tts,
 )
 from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice.events import ConversationItemAddedEvent
@@ -301,18 +302,28 @@ def build_coverage_checklist(candidate_band: str) -> list[str]:
     ] + common
 
 
-def build_tts(
+def build_cartesia_tts(
     language: str = "en", model: str = CARTESIA_MODEL, voice_id: str = CARTESIA_VOICE_ID
 ):
-    # speed/emotion controls only supported on sonic-2 family
-    tts_kwargs: dict = {
+    # Cartesia is our primary TTS provider.
+    # `text_pacing=True` helps the stream emit speech more reliably for longer, conversational prompts.
+    tts_kwargs: dict[str, Any] = {
         "model": model,
         "voice": voice_id,
         "language": language,
+        "text_pacing": True,
     }
     if "sonic-2" in model:
         tts_kwargs["speed"] = CARTESIA_VOICE_SPEED
     return cartesia.TTS(**tts_kwargs)
+
+
+def build_tts(
+    language: str = "en", model: str = CARTESIA_MODEL, voice_id: str = CARTESIA_VOICE_ID
+):
+    primary_tts = build_cartesia_tts(language=language, model=model, voice_id=voice_id)
+    fallback_tts = build_sarvam_tts(language=language)
+    return lk_tts.FallbackAdapter([primary_tts, fallback_tts], max_retry_per_tts=1)
 
 
 def build_sarvam_tts(
@@ -364,18 +375,6 @@ def build_stt(language_code: str = "en-US", model: str = STT_MODEL):
         "language": language_code,
         "interim_results": True,
         "punctuate": True,
-        "utterance_end_ms": 1000,  # Smarter word-gap detection for noisy rooms
-        "keywords": [
-            "I'm good:2",  # Boost common greetings
-            "I'm fine:2",
-            "thank you:1",
-            "interviewer:1.5",
-            "experience:1.2",
-            "product designer:2",
-            "resume:1.5",
-            "skills:1.2",
-            "Ishita:2",  # Agent name
-        ],
     }
 
     # livekit.plugins.deepgram versions differ in endpointing keyword support.

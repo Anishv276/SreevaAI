@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { interviewFinalizeSchema } from "@/lib/validation";
 import crypto from "crypto";
 import { generateId } from "@/lib/ids";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
 
 export const runtime = "nodejs";
 
@@ -59,13 +60,14 @@ export async function POST(req: Request) {
     }
 
     const { applicationId, interviewToken, recordingUrl, transcript, interviewStatus, appStatus, duration } = result.data;
+    const requireInterviewToken = isInterviewTokenRequired();
 
     // ── AUTHENTICATION ────────────────────────────────
     const interview = await prisma.interview.findUnique({
       where: { applicationId },
       select: { accessToken: true }
     });
-    if (!interview || interview.accessToken !== interviewToken) {
+    if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid finalization token" }, { status: 401 });
     }
     

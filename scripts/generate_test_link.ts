@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import * as dotenv from 'dotenv';
+import { generateId } from '../lib/ids';
 
 dotenv.config();
 
@@ -21,6 +22,7 @@ async function main() {
     console.log('Creating interview for application:', application.id);
     interview = await prisma.interview.create({
       data: {
+        id: generateId("int", application.fullName || application.id),
         applicationId: application.id,
         status: 'PENDING',
         expiresAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000) // 2 days

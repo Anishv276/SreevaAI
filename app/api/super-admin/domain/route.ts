@@ -27,16 +27,14 @@ export async function GET() {
             if (error) console.error("Resend get platform domain error:", error);
 
             const isVerified = data?.status === "verified";
-            if (isVerified && !config.isDomainVerified) {
+            if (isVerified && (!config.isDomainVerified || !config.customSenderEmail)) {
                 await prisma.superAdmin.update({
                     where: { id: config.id },
                     data: {
                         isDomainVerified: true,
-                        // Fill default sender if verified and no sender exists
-                        ...(!config.customSenderEmail && {
-                            customSenderEmail: `security@${config.customDomain}`,
-                            customSenderName: "Lumoscale Platform"
-                        })
+                        // Keep the sender aligned with the verified platform domain
+                        customSenderEmail: config.customSenderEmail || `security@${config.customDomain}`,
+                        customSenderName: config.customSenderName || "Lumoscale Platform"
                     }
                 });
                 config.isDomainVerified = true;
@@ -44,6 +42,12 @@ export async function GET() {
                     config.customSenderEmail = `security@${config.customDomain}`;
                     config.customSenderName = "Lumoscale Platform";
                 }
+            } else if (!isVerified && config.isDomainVerified) {
+                await prisma.superAdmin.update({
+                    where: { id: config.id },
+                    data: { isDomainVerified: false }
+                });
+                config.isDomainVerified = false;
             }
 
             return NextResponse.json({
@@ -83,16 +87,14 @@ export async function POST() {
         if (error) console.error("Resend verify check error:", error);
 
         const isVerified = data?.status === "verified";
-        if (isVerified && !config.isDomainVerified) {
+        if (isVerified && (!config.isDomainVerified || !config.customSenderEmail)) {
             await prisma.superAdmin.update({
                 where: { id: config.id },
                 data: {
                     isDomainVerified: true,
-                    // Fill default sender if verified and no sender exists
-                    ...(!config.customSenderEmail && {
-                        customSenderEmail: `security@${config.customDomain}`,
-                        customSenderName: "Lumoscale Platform"
-                    })
+                    // Keep the sender aligned with the verified platform domain
+                    customSenderEmail: config.customSenderEmail || `security@${config.customDomain}`,
+                    customSenderName: config.customSenderName || "Lumoscale Platform"
                 }
             });
             config.isDomainVerified = true;
@@ -100,6 +102,12 @@ export async function POST() {
                 config.customSenderEmail = `security@${config.customDomain}`;
                 config.customSenderName = "Lumoscale Platform";
             }
+        } else if (!isVerified && config.isDomainVerified) {
+            await prisma.superAdmin.update({
+                where: { id: config.id },
+                data: { isDomainVerified: false }
+            });
+            config.isDomainVerified = false;
         }
 
         return NextResponse.json({

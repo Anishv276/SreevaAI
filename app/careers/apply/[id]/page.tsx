@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, Suspense, useEffect } from "react";
-import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { PersonalInfo } from "@/components/application/personal-info";
 import { ProfessionalDetails } from "@/components/application/professional-details";
@@ -13,7 +13,6 @@ import { PortalHeader } from "@/components/careers/portal-header";
 import { ArrowLeft, CheckCircle2, Loader2, AlertCircle, X } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { useCandidates } from "@/context/candidates-context";
 import { useJobs } from "@/context/jobs-context";
 
 
@@ -31,8 +30,6 @@ export default function ApplicationPage() {
     const searchParams = useSearchParams();
     const mode = searchParams.get("mode");
     const id = params?.id as string;
-    const router = useRouter();
-    const { addCandidate } = useCandidates();
     const { jobs } = useJobs();
     const [alreadyApplied, setAlreadyApplied] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -273,8 +270,7 @@ export default function ApplicationPage() {
                 throw new Error(err?.error || "Submission failed");
             }
 
-            const candidate = await res.json();
-            addCandidate?.(candidate);
+            await res.json();
             setIsSuccess(true);
         } catch (err: any) {
             console.error("Submit error:", err);
