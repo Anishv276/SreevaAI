@@ -22,11 +22,11 @@ const apiKey = process.env.PINECONE_API_KEY;
 const indexName = process.env.PINECONE_INDEX_NAME || "transcripts";
 
 if (!apiKey) {
-    console.warn("PINECONE_API_KEY is not set in environment variables.");
+    throw new Error("CRITICAL_CONFIGURATION_MISSING: PINECONE_API_KEY is not defined.");
 }
 
 const pc = new Pinecone({
-    apiKey: apiKey!,
+    apiKey,
 });
 
 export const pineconeIndex = pc.index(indexName);

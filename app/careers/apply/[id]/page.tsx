@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense, useEffect } from "react";
+import { useState, useRef, Suspense, useEffect } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { PersonalInfo } from "@/components/application/personal-info";
@@ -43,11 +43,11 @@ export default function ApplicationPage() {
         setPageAlert({ message, type });
         setTimeout(() => setPageAlert(null), 4000);
     };
-    
+
     // Fix: support both numeric ID and random Slug
     const job = jobs.find(j => j.id.toString() === id || (j as any).slug === id);
     const jobTitle = job?.title || "this position";
-    
+
     const [formData, setFormData] = useState({
         fullName: "",
         email: "",
@@ -74,10 +74,23 @@ export default function ApplicationPage() {
         experience_list: [] as any[],
         certifications: [] as any[]
     });
-    
+
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysisError, setAnalysisError] = useState<string | null>(null);
-    
+
+    // ── Race condition guards ──────────────────────────────────────────────────
+    // State updates are batched/async; refs are synchronous — use refs as the
+    // authoritative "in-flight" flag so two rapid file-drops cannot both pass
+    // the guard before the first setIsAnalyzing(true) has rendered.
+    const isAnalyzingRef = useRef(false);
+    const isUploadingPassportRef = useRef(false);
+    const isSubmittingRef = useRef(false);
+    // ──────────────────────────────────────────────────────────────────────────
+
+    const updateFormData = (updates: Partial<typeof formData>) => {
+        setFormData(prev => ({ ...prev, ...updates }));
+    };
+
     useEffect(() => {
         if (id && typeof window !== "undefined") {
             const prefill = localStorage.getItem(`prefill_${id}`);
@@ -96,544 +109,345 @@ export default function ApplicationPage() {
             }
         }
     }, [id]);
-    
+
+    // ── Resume analysis (race-condition-safe) ──────────────────────────────────
     const startAnalysis = async (file: File) => {
+        // Synchronous ref check prevents concurrent calls even before React
+        // re-renders with the updated isAnalyzing state.
+        if (isAnalyzingRef.current) return;
+        isAnalyzingRef.current = true;
+
         setIsAnalyzing(true);
         setAnalysisError(null);
         updateFormData({ resumeUploaded: true });
-        
+
         const data = new FormData();
         data.append("file", file);
         data.append("type", "RESUME");
         if ((job as any)?.orgId) data.append("orgId", (job as any).orgId);
-        
+
         try {
-            const response = await fetch("/api/extract", { method: "POST", body: data });
-            if (response.ok) {
-                const { data: extractedData, text, url: resumeUrl } = await response.json();
-                const isManual = mode === "manual";
-                
-                const resumeFields: any = {
-                    resumeText: text || "",
-                    resumeUrl: resumeUrl || "",
-                    structuredResume: extractedData || {},
-                    resumeUploaded: true
-                };
-                
-                setFormData(prev => {
-                    const newData = { ...prev, ...resumeFields };
-                    
-                    // Only auto-fill individual fields if NOT in manual mode
-                    if (!isManual) {
-                        const autoFillFields: any = {
-                            fullName: extractedData?.full_name || "",
-                            email: extractedData?.email || "",
-                            phone: extractedData?.phone || "",
-                            location: formatExtractedLocation(extractedData?.location),
-                            experience: (() => {
-                                const yrs = extractedData?.experience?.total_years;
-                                return (typeof yrs === 'number' && yrs >= 0) ? String(yrs) : "";
-                            })(),
-                            experienceYears: extractedData?.experience?.total_years || null,
-                            currentCompany: extractedData?.current_company || "",
-                        };
+            const response = await fetch("/api/extract", {
+                method: "POST",
+                body: data,
+            });
 
-                        Object.keys(autoFillFields).forEach(key => {
-                            if (prev[key as keyof typeof prev] === "" && autoFillFields[key]) {
-                                (newData as any)[key] = autoFillFields[key];
-                            }
-                        });
-
-                        // ── Auto-fill Education ─────────────────────────
-                        if (extractedData?.education && Array.isArray(extractedData.education)) {
-                            newData.education = extractedData.education.map((edu: any) => ({
-                                id: Math.random().toString(36).substr(2, 9),
-                                institution: edu.institution || "",
-                                degree: edu.degree || "",
-                                fieldOfStudy: edu.field || "",
-                                startDate: edu.start_year ? String(edu.start_year) : "", // Simplified year to string
-                                endDate: edu.year || edu.end_year ? String(edu.year || edu.end_year) : "",
-                                grade: ""
-                            }));
-                        }
-
-                        // ── Auto-fill Professional Experience ───────────
-                        if (extractedData?.work_history && Array.isArray(extractedData.work_history)) {
-                            newData.experience_list = extractedData.work_history.map((job: any) => ({
-                                id: Math.random().toString(36).substr(2, 9),
-                                title: job.role || "",
-                                company: job.company || "",
-                                location: "", // Not explicitly in simple work_history
-                                startDate: job.start_year ? String(job.start_year) : "",
-                                endDate: job.end_year ? String(job.end_year) : "",
-                                current: !!job.is_current,
-                                description: (job.what_they_built || []).join("\n") + 
-                                             (job.technologies_used?.length ? "\n\nStack: " + job.technologies_used.join(", ") : "")
-                            }));
-                        }
-                    }
-                    
-                    return newData;
-                });
-            } else {
-                setAnalysisError("Failed to analyze resume. Please try again.");
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err?.error || "Failed to extract resume details");
             }
-        } catch (err) {
-            setAnalysisError("Network error. Please check your connection.");
+
+            const { data: extracted, text, url: resumeUrl } = await response.json();
+
+            updateFormData({
+                fullName: extracted?.full_name || formData.fullName,
+                email: extracted?.email || formData.email,
+                phone: extracted?.phone || formData.phone,
+                location: formatExtractedLocation(extracted?.location) || formData.location,
+                currentCompany: extracted?.current_company || formData.currentCompany,
+                experience: extracted?.total_experience ? String(extracted.total_experience) : formData.experience,
+                experienceYears: typeof extracted?.total_experience === "number" ? extracted.total_experience : formData.experienceYears,
+                resumeUrl: resumeUrl || formData.resumeUrl,
+                resumeText: text || formData.resumeText,
+                structuredResume: extracted || formData.structuredResume,
+                education: Array.isArray(extracted?.education) ? extracted.education : formData.education,
+                experience_list: Array.isArray(extracted?.work_history) ? extracted.work_history : formData.experience_list,
+                resumeUploaded: true,
+            });
+        } catch (err: any) {
+            console.error("Resume analysis error:", err);
+            setAnalysisError(err?.message || "Could not analyze resume. You can still fill in the form manually.");
+            updateFormData({ resumeUploaded: false });
         } finally {
             setIsAnalyzing(false);
+            isAnalyzingRef.current = false;
         }
     };
 
-    const startPassportUpload = async (file: File) => {
-        updateFormData({ isUploadingPassport: true });
-        
-        const data = new FormData();
-        data.append("file", file);
-        data.append("type", "PASSPORT");
-        
-        try {
-            const response = await fetch("/api/extract", { method: "POST", body: data });
-            if (response.ok) {
-                const { url: passportUrl } = await response.json();
-                updateFormData({ 
-                    passportUrl: passportUrl || "",
-                    passportUploaded: true,
-                    isUploadingPassport: false
-                });
-            } else {
-                showAlert("Failed to upload passport photo.", "error");
-                updateFormData({ isUploadingPassport: false });
-            }
-        } catch (err) {
-            showAlert("Upload failed. Please try again.", "error");
-            updateFormData({ isUploadingPassport: false });
-        }
-    };
-    
     const clearResume = () => {
+        if (isAnalyzingRef.current) return; // don't allow clear during upload
         updateFormData({
             resumeUploaded: false,
-            resumeText: "",
             resumeUrl: "",
-            structuredResume: {}
+            resumeText: "",
+            structuredResume: {},
         });
+        setAnalysisError(null);
     };
-    
-    const updateFormData = (data: any) => {
-        setFormData(prev => ({ ...prev, ...data }));
-    };
-    
-    const handleSubmit = async () => {
-        // Form Validation for Required Fields (*)
-        const requiredFields: any = {
-            fullName: "Full Name",
-            email: "Email Address",
-            phone: "Phone Number",
-            location: "Current Location",
-            experience: "Total Experience",
-            noticePeriod: "Notice Period",
-            expectedCtc: "Expected CTC"
-        };
-        
-        for (const [key, label] of Object.entries(requiredFields)) {
-            const value = (formData as any)[key];
-            if (!value || String(value).trim() === "") {
-                showAlert(`Please provide your ${label}.`, "error");
-                return;
-            }
-        }
 
-        // Custom Questions Validation
-        if (job?.registrationFields) {
-            try {
-                const fields = typeof job.registrationFields === 'string' ? JSON.parse(job.registrationFields) : job.registrationFields;
-                if (Array.isArray(fields)) {
-                    for (const field of fields) {
-                        if (field.required) {
-                            const answer = formData.customAnswers[field.label];
-                            if (!answer || (typeof answer === 'string' && answer.trim() === "")) {
-                                showAlert(`Please answer the required question: ${field.label}`, "error");
-                                return;
-                            }
-                        }
-                    }
-                }
-            } catch (e) { console.error("Validation check failed for custom fields", e); }
-        }
+    // ── Passport upload (race-condition-safe) ──────────────────────────────────
+    const startPassportUpload = async (file: File) => {
+        if (isUploadingPassportRef.current) return;
+        isUploadingPassportRef.current = true;
+        updateFormData({ isUploadingPassport: true });
 
-        if (!formData.resumeUploaded) {
-            showAlert("Please upload your Resume/CV to continue.", "error");
-            return;
-        }
-
-        if (!formData.agreedToTerms) {
-            showAlert("Please agree to the terms and policies to submit your application.", "error");
-            return;
-        }
-
-        setIsSubmitting(true);
         try {
-            // Synchronize UI-deleted items back into structuredResume to ensure persistence reflects user changes
-            const updatedStructuredResume = {
-                ...(formData.structuredResume as any),
-                education: formData.education.map((edu: any) => ({
-                    institution: edu.institution || "",
-                    degree: edu.degree || "",
-                    field: edu.fieldOfStudy || "",
-                    start_year: edu.startDate || "",
-                    end_year: edu.endDate || ""
-                })),
-                work_history: formData.experience_list.map((exp: any) => ({
-                    role: exp.title || "",
-                    company: exp.company || "",
-                    start_year: exp.startDate || "",
-                    end_year: exp.endDate || "",
-                    is_current: !!exp.current,
-                    what_they_built: exp.description ? exp.description.split("\n") : []
-                })),
-                certifications: formData.certifications.map((cert: any) => ({
-                    name: cert.name || "",
-                    issuer: cert.issuer || "",
-                    year: cert.year || ""
-                }))
-            };
+            const presignedRes = await fetch("/api/upload/presigned", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    fileName: file.name,
+                    fileType: file.type,
+                    type: "CERTIFICATION",
+                }),
+            });
 
-            // Using context method to maintain consistency and handle status codes properly
-            await addCandidate({
-                name: formData.fullName,
+            if (!presignedRes.ok) throw new Error("Failed to get upload URL for passport");
+            const { uploadUrl, publicUrl } = await presignedRes.json();
+
+            const uploadRes = await fetch(uploadUrl, {
+                method: "PUT",
+                body: file,
+                headers: { "Content-Type": file.type },
+            });
+
+            if (!uploadRes.ok) throw new Error("Failed to upload passport photo");
+
+            updateFormData({
+                passportUrl: publicUrl,
+                passportUploaded: true,
+                isUploadingPassport: false,
+            });
+        } catch (err: any) {
+            console.error("Passport upload error:", err);
+            showAlert(err?.message || "Failed to upload passport photo. Please try again.");
+            updateFormData({ isUploadingPassport: false, passportUploaded: false });
+        } finally {
+            isUploadingPassportRef.current = false;
+        }
+    };
+
+    // ── Form submission (race-condition-safe) ──────────────────────────────────
+    const handleSubmit = async () => {
+        if (isSubmittingRef.current) return;
+
+        // Basic validation
+        if (!formData.fullName.trim()) { showAlert("Full name is required"); return; }
+        if (!formData.email.trim()) { showAlert("Email address is required"); return; }
+        if (!formData.phone.trim()) { showAlert("Phone number is required"); return; }
+        if (!formData.resumeUrl && !formData.resumeUploaded) {
+            showAlert("Please upload your resume before submitting");
+            return;
+        }
+
+        isSubmittingRef.current = true;
+        setIsSubmitting(true);
+
+        try {
+            const payload: Record<string, any> = {
+                driveId: id,
+                fullName: formData.fullName,
                 email: formData.email,
                 phone: formData.phone,
                 location: formData.location,
                 portfolio: formData.portfolio,
-                role: jobTitle,
-                driveId: String(job?.id || id),
-                experience: formData.experience || (formData.experienceYears != null ? String(formData.experienceYears) : ""),
-                experienceYears: (formData.experienceYears != null && !isNaN(formData.experienceYears))
-                    ? formData.experienceYears
-                    : (formData.experience ? parseFloat(formData.experience) : undefined),
+                experience: formData.experience,
+                experienceYears: formData.experienceYears,
                 currentCompany: formData.currentCompany,
-                currentCtc: formData.ctc,
-                expectedCtc: formData.expectedCtc,
+                ctc: formData.ctc,
                 noticePeriod: formData.noticePeriod,
+                expectedCtc: formData.expectedCtc,
                 coverLetter: formData.coverLetter,
-                resumeUrl: formData.resumeUrl || (formData.resumeUploaded ? "resume_mock.pdf" : undefined),
+                resumeUrl: formData.resumeUrl,
                 resumeText: formData.resumeText,
-                passportUrl: formData.passportUrl,
-                structuredResume: updatedStructuredResume,
+                structuredResume: formData.structuredResume,
+                passportUrl: formData.passportUrl || undefined,
                 education: formData.education,
                 experience_list: formData.experience_list,
                 certifications: formData.certifications,
-                ...formData.customAnswers
+                customAnswers: formData.customAnswers,
+            };
+
+            const res = await fetch("/api/candidates", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
             });
 
-            localStorage.setItem(`applied_${id}`, "true");
-            setIsSuccess(true);
-        } catch (error: any) {
-            console.error("Failed to submit application:", error);
-            if (error.status === 409 || error.message?.toLowerCase().includes("already applied")) {
-                setAlreadyApplied(true);
-                localStorage.setItem(`applied_${id}`, "true");
-            } else {
-                showAlert(error.message || "Failed to submit application. Please try again.", "error");
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                if (res.status === 409) {
+                    setAlreadyApplied(true);
+                    return;
+                }
+                throw new Error(err?.error || "Submission failed");
             }
+
+            const candidate = await res.json();
+            addCandidate?.(candidate);
+            setIsSuccess(true);
+        } catch (err: any) {
+            console.error("Submit error:", err);
+            showAlert(err?.message || "Submission failed. Please try again.");
         } finally {
             setIsSubmitting(false);
+            isSubmittingRef.current = false;
         }
     };
-    
-    if (isSuccess || alreadyApplied) {
+
+    // ── Render: success state ──────────────────────────────────────────────────
+    if (isSuccess) {
         return (
-            <div className="min-h-screen bg-[#FDFCFB] flex flex-col items-center justify-center p-6">
-                <div className="max-w-md w-full bg-white rounded-2xl border border-orange-100 p-8 text-center space-y-6 shadow-lg">
-                    <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-50 text-[#F97316]">
-                        <CheckCircle2 className="h-8 w-8" />
+            <div className="min-h-screen bg-[#FDFCFB] flex items-center justify-center p-6">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="max-w-md w-full text-center space-y-6"
+                >
+                    <div className="h-20 w-20 rounded-3xl bg-green-100 flex items-center justify-center mx-auto">
+                        <CheckCircle2 className="h-10 w-10 text-green-600" />
                     </div>
-                    <div className="space-y-2">
-                        <h2 className="text-2xl font-bold text-gray-900">
-                            {isSuccess ? "Thank You!" : "Already Applied!"}
-                        </h2>
-                        <div className="h-1 w-10 bg-[#F97316] rounded-full mx-auto" />
+                    <div>
+                        <h1 className="text-2xl font-black text-gray-900">Application Submitted!</h1>
+                        <p className="text-gray-500 mt-2 font-medium">
+                            Thank you for applying to <span className="font-bold text-gray-800">{jobTitle}</span>. We'll be in touch soon.
+                        </p>
                     </div>
-                    <p className="text-gray-500 font-medium">
-                        {isSuccess 
-                            ? "Your application has been received. Our team will review it soon!"
-                            : `You have already submitted an application for ${jobTitle}.`
-                        }
-                    </p>
-                    <div className="pt-4 space-y-3">
-                        <Link href={`/careers/jobs/${id}`}>
-                            <Button className="w-full h-12 rounded-xl bg-gray-900 hover:bg-black text-white font-bold shadow-lg transition-all">
-                                VIEW STATUS
-                            </Button>
-                        </Link>
-                        <Link href="/careers">
-                            <Button variant="outline" className="w-full h-12 rounded-xl border-2 border-orange-100 text-[#F97316] hover:bg-orange-50 font-bold transition-all">
-                                EXPLORE MORE JOBS
-                            </Button>
-                        </Link>
-                    </div>
-                </div>
+                    <Link href={`/careers`}>
+                        <Button variant="outline" className="rounded-2xl h-12 px-8 font-bold">
+                            Browse More Jobs
+                        </Button>
+                    </Link>
+                </motion.div>
             </div>
         );
     }
-    
+
+    // ── Render: already applied ────────────────────────────────────────────────
+    if (alreadyApplied) {
+        return (
+            <div className="min-h-screen bg-[#FDFCFB] flex items-center justify-center p-6">
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="max-w-md w-full text-center space-y-6"
+                >
+                    <div className="h-20 w-20 rounded-3xl bg-amber-100 flex items-center justify-center mx-auto">
+                        <AlertCircle className="h-10 w-10 text-amber-600" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-black text-gray-900">Already Applied</h1>
+                        <p className="text-gray-500 mt-2 font-medium">
+                            It looks like you've already applied to this position.
+                        </p>
+                    </div>
+                    <Link href={`/careers`}>
+                        <Button variant="outline" className="rounded-2xl h-12 px-8 font-bold">
+                            Browse More Jobs
+                        </Button>
+                    </Link>
+                </motion.div>
+            </div>
+        );
+    }
+
+    // ── Render: main application form ─────────────────────────────────────────
+    const isPassportRequired = !!(job as any)?.isPassportRequired;
+
     return (
-        <div className="min-h-screen bg-[#FDFCFB] selection:bg-orange-100 selection:text-orange-900">
+        <div className="min-h-screen bg-[#FDFCFB] flex flex-col">
             <PortalHeader />
 
+            {/* Alert Banner */}
             <AnimatePresence>
                 {pageAlert && (
-                    <motion.div 
-                        initial={{ opacity: 0, y: -20, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                        className="fixed top-8 left-1/2 -translate-x-1/2 z-[100] w-full max-w-md px-4"
+                    <motion.div
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-6 py-3 rounded-2xl shadow-xl text-sm font-bold ${
+                            pageAlert.type === "success"
+                                ? "bg-green-600 text-white"
+                                : "bg-red-500 text-white"
+                        }`}
                     >
-                        <div className={`p-4 rounded-2xl border shadow-2xl backdrop-blur-md flex items-center justify-between gap-4 ${
-                            pageAlert.type === 'error' 
-                                ? 'bg-red-50/90 border-red-100 text-red-800' 
-                                : 'bg-emerald-50/90 border-emerald-100 text-emerald-800'
-                        }`}>
-                            <div className="flex items-center gap-3">
-                                <div className={`h-8 w-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                                    pageAlert.type === 'error' ? 'bg-red-100' : 'bg-emerald-100'
-                                }`}>
-                                    {pageAlert.type === 'error' ? <AlertCircle className="h-5 w-5" /> : <CheckCircle2 className="h-5 w-5" />}
-                                </div>
-                                <p className="text-sm font-black uppercase tracking-tight leading-tight">{pageAlert.message}</p>
-                            </div>
-                            <button onClick={() => setPageAlert(null)} className="p-1 hover:bg-black/5 rounded-full transition-colors">
-                                <X className="h-4 w-4 opacity-50" />
-                            </button>
-                        </div>
+                        {pageAlert.type === "error" ? (
+                            <AlertCircle className="h-4 w-4" />
+                        ) : (
+                            <CheckCircle2 className="h-4 w-4" />
+                        )}
+                        {pageAlert.message}
+                        <button
+                            type="button"
+                            onClick={() => setPageAlert(null)}
+                            className="ml-2 opacity-70 hover:opacity-100"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            <main className="container mx-auto px-4 py-12 max-w-4xl animate-in-fade">
-                {/* Header Section */}
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10 px-2">
-                    <div className="space-y-14">
-                        <Link href={`/careers/jobs/${id}`}>
-                            <Button variant="outline" className="h-10 px-4 rounded-xl border-gray-100 bg-white/50 text-gray-500 text-xs font-black uppercase tracking-widest hover:bg-white hover:text-[#F97316] hover:border-orange-100 transition-all shadow-sm group">
-                                <ArrowLeft className="h-4 w-4 mr-2 transition-transform group-hover:-translate-x-1" /> 
-                                Back to Job
-                            </Button>
-                        </Link>
-                        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 tracking-tight">
-                            Apply for <span className="text-[#F97316]">{jobTitle}</span>
-                        </h1>
+            <main className="flex-1 container max-w-2xl py-10 px-4 mx-auto">
+                <div className="mb-8 flex items-center gap-4">
+                    <Link href={`/careers/${id}`} className="h-10 w-10 flex items-center justify-center rounded-2xl border border-gray-100 bg-white shadow-sm hover:border-orange-200 transition-all">
+                        <ArrowLeft className="h-5 w-5 text-gray-500" />
+                    </Link>
+                    <div>
+                        <p className="text-[10px] font-black text-[#F97316] uppercase tracking-[0.3em]">Application</p>
+                        <h1 className="text-xl font-black text-gray-900 leading-tight">{jobTitle}</h1>
                     </div>
                 </div>
-                
-                {/* Single Page Form Card */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_10px_40px_rgba(0,0,0,0.04)] overflow-hidden">
-                    <div className="p-8 space-y-8">
-                        <Suspense fallback={<div className="h-40 flex items-center justify-center font-medium text-gray-400">Loading...</div>}>
-                            <div className="space-y-16">
-                                {/* Personal Info Section */}
-                                <div className="space-y-6">
-                                    <div className="flex items-center gap-3">
-                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
-                                        <h3 className="text-lg font-inter font-bold text-black">Personal Information</h3>
-                                    </div>
-                                    <PersonalInfo 
-                                        formData={formData} 
-                                        updateFormData={updateFormData} 
-                                        isAnalyzing={isAnalyzing}
-                                        analysisError={analysisError}
-                                        startAnalysis={startAnalysis}
-                                        clearResume={clearResume}
-                                        mode={mode || "manual"}
-                                        isPassportRequired={!!(job as any)?.isPassportRequired}
-                                        isUploadingPassport={formData.isUploadingPassport}
-                                        startPassportUpload={startPassportUpload}
-                                        passportUploaded={formData.passportUploaded}
-                                        passportUrl={formData.passportUrl}
-                                    />
-                                </div>
-                                
-                                <div className="border-t border-gray-100" />
-                                
-                                {/* Professional Details Section */}
-                                <div className="space-y-6">
-                                    <div className="flex items-center gap-3">
-                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
-                                        <h3 className="text-lg font-inter font-bold text-gray-900">Professional Details</h3>
-                                    </div>
-                                    <ProfessionalDetails 
-                                        formData={formData} 
-                                        updateFormData={updateFormData} 
-                                        isAnalyzing={isAnalyzing}
-                                    />
-                                </div>
-                                {job?.registrationFields && (() => {
-                                    try {
-                                        const fields = typeof job.registrationFields === 'string' ? JSON.parse(job.registrationFields) : job.registrationFields;
-                                        if (!Array.isArray(fields) || fields.length === 0) return null;
 
-                                        return (
-                                            <>
-                                                <div className="border-t border-gray-100" />
-                                                <div className="space-y-6">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
-                                                        <h3 className="text-lg font-inter font-bold text-gray-900">Additional Questions</h3>
-                                                    </div>
-                                                    <div className="grid gap-8">
-                                                        {fields.map((field: any) => (
-                                                            <div key={field.id} className="space-y-3">
-                                                                <label className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">
-                                                                    {field.label} {field.required ? "*" : ""}
-                                                                </label>
-                                                                {field.type === "Short" && (
-                                                                    <input
-                                                                        type="text"
-                                                                        className="w-full h-12 rounded-2xl border-gray-100 bg-gray-50/30 px-4 text-sm font-medium transition-all focus:bg-white focus:border-[#F97316] focus:ring-4 focus:ring-orange-500/10 placeholder:text-gray-300"
-                                                                        value={formData.customAnswers[field.label] || ""}
-                                                                        onChange={(e) => updateFormData({ 
-                                                                            customAnswers: { ...formData.customAnswers, [field.label]: e.target.value } 
-                                                                        })}
-                                                                    />
-                                                                )}
-                                                                {field.type === "Long" && (
-                                                                    <textarea
-                                                                        className="w-full h-32 rounded-2xl border-gray-100 bg-gray-50/30 p-4 text-sm font-medium transition-all focus:bg-white focus:border-[#F97316] focus:ring-4 focus:ring-orange-500/10 placeholder:text-gray-300"
-                                                                        value={formData.customAnswers[field.label] || ""}
-                                                                        onChange={(e) => updateFormData({ 
-                                                                            customAnswers: { ...formData.customAnswers, [field.label]: e.target.value } 
-                                                                        })}
-                                                                    />
-                                                                )}
-                                                                {field.type === "Url" && (
-                                                                    <input
-                                                                        type="url"
-                                                                        placeholder="https://..."
-                                                                        className="w-full h-12 rounded-2xl border-gray-100 bg-gray-50/30 px-4 text-sm font-medium transition-all focus:bg-white focus:border-[#F97316] focus:ring-4 focus:ring-orange-500/10 placeholder:text-gray-300"
-                                                                        value={formData.customAnswers[field.label] || ""}
-                                                                        onChange={(e) => updateFormData({ 
-                                                                            customAnswers: { ...formData.customAnswers, [field.label]: e.target.value } 
-                                                                        })}
-                                                                    />
-                                                                )}
-                                                                {field.type === "File" && (
-                                                                    <input
-                                                                        type="file"
-                                                                        className="w-full h-12 flex items-center justify-center p-2 rounded-2xl border-2 border-dashed border-gray-100 bg-gray-50/30 text-sm font-medium focus:border-[#F97316]"
-                                                                        onChange={(e) => {
-                                                                            const file = e.target.files?.[0];
-                                                                            if (file) {
-                                                                                updateFormData({ 
-                                                                                    customAnswers: { ...formData.customAnswers, [field.label]: file.name } 
-                                                                                });
-                                                                            }
-                                                                        }}
-                                                                    />
-                                                                )}
-                                                                {field.type === "Yes/No" && (
-                                                                    <div className="flex gap-4">
-                                                                        {["Yes", "No"].map(opt => (
-                                                                            <button
-                                                                                key={opt}
-                                                                                type="button"
-                                                                                onClick={() => updateFormData({ 
-                                                                                    customAnswers: { ...formData.customAnswers, [field.label]: opt } 
-                                                                                })}
-                                                                                className={`h-11 px-8 rounded-xl font-bold text-xs uppercase tracking-widest transition-all ${
-                                                                                    formData.customAnswers[field.label] === opt
-                                                                                        ? "bg-[#F97316] text-white shadow-lg"
-                                                                                        : "bg-gray-50 text-gray-400 hover:bg-gray-100"
-                                                                                }`}
-                                                                            >
-                                                                                {opt}
-                                                                            </button>
-                                                                        ))}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </>
-                                        );
-                                    } catch (e) { return null; }
-                                })()}
+                <div className="space-y-10">
+                    <PersonalInfo
+                        formData={formData}
+                        updateFormData={updateFormData}
+                        isAnalyzing={isAnalyzing}
+                        analysisError={analysisError}
+                        startAnalysis={startAnalysis}
+                        clearResume={clearResume}
+                        mode={mode || "resume"}
+                        isPassportRequired={isPassportRequired}
+                        isUploadingPassport={formData.isUploadingPassport}
+                        startPassportUpload={startPassportUpload}
+                        passportUploaded={formData.passportUploaded}
+                        passportUrl={formData.passportUrl}
+                    />
 
-                                <div className="border-t border-gray-100" />
+                    <ProfessionalDetails
+                        formData={formData}
+                        updateFormData={updateFormData}
+                        isAnalyzing={isAnalyzing}
+                    />
 
-                                {/* Experience Section */}
-                                <div className="space-y-6">
-                                    <div className="flex items-center gap-3">
-                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
-                                        <h3 className="text-lg font-inter font-bold text-gray-900">Professional Experience</h3>
-                                    </div>
-                                    <ExperienceInfo 
-                                        value={formData.experience_list} 
-                                        onChange={(val) => updateFormData({ experience_list: val })} 
-                                    />
-                                </div>
+                    <ExperienceInfo
+                        value={formData.experience_list}
+                        onChange={(val) => updateFormData({ experience_list: val })}
+                    />
 
-                                <div className="border-t border-gray-100" />
+                    <EducationInfo
+                        value={formData.education}
+                        onChange={(val) => updateFormData({ education: val })}
+                    />
 
-                                {/* Education Section */}
-                                <div className="space-y-6">
-                                    <div className="flex items-center gap-3">
-                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
-                                        <h3 className="text-lg font-inter font-bold text-gray-900">Academic History</h3>
-                                    </div>
-                                    <EducationInfo 
-                                        value={formData.education} 
-                                        onChange={(val) => updateFormData({ education: val })} 
-                                    />
-                                </div>
+                    <CertificationInfo
+                        value={formData.certifications}
+                        onChange={(val) => updateFormData({ certifications: val })}
+                    />
 
-                                <div className="border-t border-gray-100" />
+                    <ResumeReview
+                        formData={formData}
+                        updateFormData={updateFormData}
+                        isAnalyzing={isAnalyzing}
+                        analysisError={analysisError}
+                        startAnalysis={startAnalysis}
+                        clearResume={clearResume}
+                        agreedToTerms={formData.agreedToTerms}
+                        onAgreedToTermsChange={(checked) => updateFormData({ agreedToTerms: checked })}
+                    />
 
-                                {/* Certifications Section */}
-                                <div className="space-y-6">
-                                    <div className="flex items-center gap-3">
-                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
-                                        <h3 className="text-lg font-inter font-bold text-gray-900">Certifications & Awards (Optional)</h3>
-                                    </div>
-                                    <CertificationInfo 
-                                        value={formData.certifications} 
-                                        onChange={(val) => updateFormData({ certifications: val })} 
-                                    />
-                                </div>
-
-                                <div className="border-t border-gray-100" />
-                                
-                                {/* Resume & Review Section */}
-                                <div className="space-y-6">
-                                    <div className="flex items-center gap-3">
-                                        <span className="h-6 w-1 bg-[#F97316] rounded-full" />
-                                        <h3 className="text-lg font-inter font-bold text-gray-900">Final Submission</h3>
-                                    </div>
-                                    <ResumeReview 
-                                        formData={formData} 
-                                        updateFormData={updateFormData} 
-                                        isAnalyzing={isAnalyzing}
-                                        analysisError={analysisError}
-                                        startAnalysis={startAnalysis}
-                                        clearResume={clearResume}
-                                        agreedToTerms={formData.agreedToTerms}
-                                        onAgreedToTermsChange={(checked: any) => updateFormData({ agreedToTerms: !!checked })}
-                                    />
-                                </div>
-                            </div>
-                        </Suspense>
-                    </div>
-                    
-                    {/* Submit Button */}
-                    <div className="bg-gray-50 border-t border-gray-100 px-8 py-10 flex flex-col items-center">
+                    <div className="pt-4 flex justify-end">
                         <Button
                             onClick={handleSubmit}
-                            disabled={isSubmitting || !formData.agreedToTerms}
-                            className="w-full max-w-md h-14 rounded-2xl bg-gray-900 hover:bg-black text-white font-bold text-base shadow-lg transition-all hover:translate-y-[-2px] disabled:opacity-50 disabled:cursor-not-allowed group/btn"
+                            disabled={isSubmitting || isAnalyzing}
+                            className="h-14 px-10 rounded-2xl bg-[#F97316] hover:bg-orange-600 text-white font-black text-sm uppercase tracking-widest shadow-xl shadow-orange-500/20 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                             {isSubmitting ? (
-                                <><Loader2 className="h-5 w-5 mr-2 animate-spin" /> Submitting...</>
+                                <>
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    Submitting...
+                                </>
                             ) : (
                                 "Submit Application"
                             )}

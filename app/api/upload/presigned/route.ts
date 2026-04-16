@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getPresignedUploadUrl } from "@/lib/s3";
 import { v4 as uuidv4 } from "uuid";
 import { presignedUrlSchema } from "@/lib/validation";
+import { getSession, isAdminRole } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
     try {
@@ -15,15 +17,45 @@ export async function POST(request: Request) {
             );
         }
 
-        const { fileName, fileType, driveId, type } = result.data;
+        const { fileName, fileType, fileSize, driveId, type } = result.data;
+
+        // ── AUTHORIZATION & QUOTA ─────────────────────────
+        const session = await getSession();
+        const isJD = type === "JD";
+        const isCert = type === "CERTIFICATION";
+
+        if (fileSize) {
+            const limit = (isJD || isCert) ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
+            if (fileSize > limit) {
+                return NextResponse.json({ 
+                    error: `File too large. Maximum size for ${type} is ${limit / (1024 * 1024)}MB` 
+                }, { status: 413 });
+            }
+        }
+
+        if (isJD || isCert) {
+            if (!session || !isAdminRole(session.role)) {
+                return NextResponse.json({ error: "Unauthorized: Admin access required for JD/Certification uploads" }, { status: 401 });
+            }
+        } else if (type === "RESUME") {
+            // For public uploads, verify the driveId exists and is active
+            if (!driveId) {
+                return NextResponse.json({ error: "driveId is required for resume uploads" }, { status: 400 });
+            }
+            const drive = await prisma.drive.findUnique({
+                where: { id: driveId },
+                select: { status: true }
+            });
+            if (!drive || (drive as any).status === "CLOSED") {
+                return NextResponse.json({ error: "Applications for this position are closed" }, { status: 403 });
+            }
+        }
+        // ──────────────────────────────────────────────────
 
         const uniqueId = uuidv4();
         const safeFileName = fileName.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
         
         // Pick BUCKET and PREFIX based on TYPE
-        const isJD = type === "JD";
-        const isCert = type === "CERTIFICATION";
-        
         const bucket = isJD 
             ? (process.env.R2_JDS_BUCKET || "jds")
             : isCert

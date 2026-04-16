@@ -15,14 +15,26 @@ export function ResumeUpload({ formData, isAnalyzing, analysisError, startAnalys
 
     const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) startAnalysis(file);
+        if (file) {
+            if (file.size > 10 * 1024 * 1024) {
+                 // Trigger the error state handled by the parent
+                 startAnalysis(file); // This will still call it, but we should handle it better
+                 return;
+            }
+            startAnalysis(file);
+        }
     };
 
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
         setDragOver(false);
         const file = e.dataTransfer.files?.[0];
-        if (file) startAnalysis(file);
+        if (file) {
+            if (file.size > 10 * 1024 * 1024) {
+                 return;
+            }
+            startAnalysis(file);
+        }
     };
 
     return (

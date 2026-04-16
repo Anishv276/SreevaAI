@@ -41,91 +41,93 @@ export async function GET(request: Request) {
             return NextResponse.json({ candidates: [], pagination: { total: 0, pages: 0, page, limit } });
         }
 
-        let dateClause = "";
-        let searchClause = "";
-        let statusClause = "";
-        let paramIndex = driveId ? 3 : 2;
-        const queryParams: any[] = driveId ? [driveId, orgId] : [orgId];
+        // ── PRISMA QUERY BUILDER ───────────────────
+        const where: any = {
+            drive: { orgId }
+        };
 
-        if (startDate) {
-            dateClause += ` AND a."createdAt" >= $${paramIndex++}`;
-            queryParams.push(new Date(startDate));
+        if (driveId && driveId !== "all") {
+            where.driveId = driveId;
         }
-        if (endDate) {
-            const end = new Date(endDate);
-            end.setHours(23, 59, 59, 999);
-            dateClause += ` AND a."createdAt" <= $${paramIndex++}`;
-            queryParams.push(end);
+
+        if (startDate || endDate) {
+            where.createdAt = {};
+            if (startDate) where.createdAt.gte = new Date(startDate);
+            if (endDate) {
+                const end = new Date(endDate);
+                end.setHours(23, 59, 59, 999);
+                where.createdAt.lte = end;
+            }
         }
 
         if (resumeStatus && resumeStatus !== "all") {
-            statusClause += ` AND a."resumeStatus" = $${paramIndex++}`;
-            queryParams.push(resumeStatus.toLowerCase());
+            where.resumeStatus = resumeStatus.toLowerCase();
         }
 
         if (interviewStatus && interviewStatus !== "all") {
-            statusClause += ` AND a."interviewStatus" = $${paramIndex++}`;
-            queryParams.push(interviewStatus.toLowerCase());
+            where.interviewStatus = interviewStatus.toLowerCase();
         }
 
         if (hiringStatus && hiringStatus !== "all") {
-            statusClause += ` AND a."hiringStatus" = $${paramIndex++}`;
-            queryParams.push(hiringStatus.toLowerCase());
+            where.hiringStatus = hiringStatus.toLowerCase();
         }
 
         if (search) {
-            searchClause = ` AND (a."fullName" ILIKE $${paramIndex} OR a."email" ILIKE $${paramIndex} OR d."title" ILIKE $${paramIndex})`;
-            queryParams.push(`%${search}%`);
-            paramIndex++;
+            where.OR = [
+                { fullName: { contains: search, mode: "insensitive" } },
+                { email: { contains: search, mode: "insensitive" } },
+                { drive: { title: { contains: search, mode: "insensitive" } } }
+            ];
         }
 
-        const dataQuery = `${baseSelect}
-            WHERE d."orgId" = ${driveId ? "$2" : "$1"}
-            ${driveId ? 'AND a."driveId" = $1' : ""}
-            ${dateClause}
-            ${statusClause}
-            ${searchClause}
-            ORDER BY a."createdAt" DESC
-            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-
-        const countQuery = `
-            SELECT COUNT(*)::INT
-            FROM "Application" a
-            JOIN "Drive" d ON d.id = a."driveId"
-            WHERE d."orgId" = ${driveId ? "$2" : "$1"}
-            ${driveId ? 'AND a."driveId" = $1' : ""}
-            ${dateClause}
-            ${statusClause}
-            ${searchClause}
-        `;
-
-
-        const [candidates, countResult, statsResult] = await Promise.all([
-            prisma.$queryRawUnsafe(dataQuery, ...queryParams, limit, offset),
-            prisma.$queryRawUnsafe<any[]>(countQuery, ...queryParams),
-            // Run stats as a separate simple query in parallel
-            prisma.$queryRawUnsafe<any[]>(`
-                SELECT
-                    COUNT(*) FILTER (WHERE LOWER(a."resumeStatus") = 'shortlisted')::INT AS shortlisted,
-                    COUNT(*) FILTER (WHERE LOWER(a."resumeStatus") = 'rejected')::INT AS rejected,
-                    COUNT(*) FILTER (WHERE LOWER(a."hiringStatus") = 'hired')::INT AS hired,
-                    COUNT(*) FILTER (WHERE LOWER(a."hiringStatus") = 'not hired')::INT AS not_hired,
-                    COUNT(*) FILTER (WHERE LOWER(a."interviewStatus") = 'inprogress')::INT AS "interviewRunning",
-                    COUNT(*) FILTER (WHERE LOWER(a."interviewStatus") = 'pending')::INT AS "interviewPending",
-                    COUNT(*) FILTER (WHERE LOWER(a."interviewStatus") = 'finished')::INT AS "interviewCompleted"
-                FROM "Application" a
-                JOIN "Drive" d ON d.id = a."driveId"
-                LEFT JOIN "Interview" i ON i."applicationId" = a.id
-                WHERE d."orgId" = $1
-                ${driveId && driveId !== "all" ? 'AND a."driveId" = $2' : ""}
-            `, ...(driveId && driveId !== "all" ? [orgId, driveId] : [orgId]))
+        const [candidates, total, statsResult] = await Promise.all([
+            prisma.application.findMany({
+                where,
+                include: {
+                    drive: { select: { title: true } }
+                },
+                orderBy: { createdAt: "desc" },
+                skip: offset,
+                take: limit,
+            }),
+            prisma.application.count({ where }),
+            prisma.application.groupBy({
+                by: ['resumeStatus', 'hiringStatus', 'interviewStatus'],
+                where: {
+                    drive: { orgId, ...(driveId && driveId !== "all" ? { id: driveId } : {}) }
+                },
+                _count: { _all: true }
+            })
         ]);
 
-        const total = countResult[0]?.count || 0;
-        const statsRow = (statsResult as any[])[0] ?? {};
+        // Aggregate stats manually from groupBy result
+        const statsRow = {
+            shortlisted: 0,
+            rejected: 0,
+            hired: 0,
+            not_hired: 0,
+            interviewRunning: 0,
+            interviewPending: 0,
+            interviewCompleted: 0
+        };
 
-        if ((candidates as any[]).length > 0) {
-            console.log("[candidates] first row keys:", Object.keys((candidates as any[])[0]));
+        statsResult.forEach((group: any) => {
+            const count = group._count._all;
+            const resStatus = (group.resumeStatus || "").toLowerCase();
+            const hiStatus = (group.hiringStatus || "").toLowerCase();
+            const intStatus = (group.interviewStatus || "").toLowerCase();
+
+            if (resStatus === 'shortlisted') statsRow.shortlisted += count;
+            if (resStatus === 'rejected') statsRow.rejected += count;
+            if (hiStatus === 'hired') statsRow.hired += count;
+            if (hiStatus === 'not hired') statsRow.not_hired += count;
+            if (intStatus === 'inprogress') statsRow.interviewRunning += count;
+            if (intStatus === 'pending') statsRow.interviewPending += count;
+            if (intStatus === 'finished' || intStatus === 'completed') statsRow.interviewCompleted += count;
+        });
+
+        if (candidates.length > 0) {
+            console.log("[candidates] first row keys:", Object.keys(candidates[0]));
         }
 
         const formattedCandidates = (candidates as any[]).map((app: any) => {

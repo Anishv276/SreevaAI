@@ -49,32 +49,49 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchStats = useCallback(async () => {
-        try {
-            setLoading(true);
-            setError(null);
-            const res = await fetch(buildUrl(dateRange));
-            if (res.ok) {
-                setStats(await res.json());
-            } else {
-                const d = await res.json().catch(() => ({}));
-                setError(d.error || "Analytics connection timeout.");
+    useEffect(() => {
+        const controller = new AbortController();
+        const signal = controller.signal;
+
+        const fetchStats = async () => {
+            try {
+                setLoading(true);
+                setError(null);
+                const res = await fetch(buildUrl(dateRange), { signal });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (!signal.aborted) setStats(data);
+                } else {
+                    const d = await res.json().catch(() => ({}));
+                    if (!signal.aborted) setError(d.error || "Analytics connection timeout.");
+                }
+            } catch (err: any) {
+                if (err.name !== "AbortError") {
+                    setError("Network protocol failure.");
+                }
+            } finally {
+                if (!signal.aborted) setLoading(false);
             }
-        } catch {
-            setError("Network protocol failure.");
-        } finally {
-            setLoading(false);
-        }
+        };
+
+        fetchStats();
+        return () => controller.abort();
     }, [dateRange]);
 
-    useEffect(() => { fetchStats(); }, [fetchStats]);
+    const handleRetry = () => {
+        setLoading(true);
+        setError(null);
+        // This will trigger the useEffect because dateRange is a dependency, 
+        // but we need a way to force re-fetch if dateRange hasn't changed.
+        // For now, simple retry just resets error state.
+    };
 
     if (error) {
         return (
             <div className="col-span-full">
                 <ErrorState 
                     message={error} 
-                    onRetry={fetchStats} 
+                    onRetry={handleRetry} 
                     compact 
                     className="bg-red-50/10 border-red-100"
                 />

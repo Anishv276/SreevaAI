@@ -18,24 +18,32 @@ export function DomainVerificationBanner() {
     });
 
     useEffect(() => {
+        const controller = new AbortController();
+        const signal = controller.signal;
+
         const checkStatus = async () => {
             try {
-                const res = await fetch("/api/admin/organization");
+                const res = await fetch("/api/admin/organization", { signal });
                 if (res.ok) {
                     const data = await res.json();
-                    setDomainStatus({
-                        isDomainVerified: data.isDomainVerified === true, // Strict check: null/false => not verified
-                        customDomain: data.customDomain,
-                        isLoading: false
-                    });
+                    if (!signal.aborted) {
+                        setDomainStatus({
+                            isDomainVerified: data.isDomainVerified === true,
+                            customDomain: data.customDomain,
+                            isLoading: false
+                        });
+                    }
                 }
-            } catch (err) {
-                console.error("Banner status check failed:", err);
-                setDomainStatus(prev => ({ ...prev, isLoading: false }));
+            } catch (err: any) {
+                if (err.name !== "AbortError") {
+                    console.error("Banner status check failed:", err);
+                    setDomainStatus(prev => ({ ...prev, isLoading: false }));
+                }
             }
         };
 
         checkStatus();
+        return () => controller.abort();
     }, [pathname]); // Refresh on navigation to catch updates from settings
 
     if (domainStatus.isLoading || domainStatus.isDomainVerified) return null;

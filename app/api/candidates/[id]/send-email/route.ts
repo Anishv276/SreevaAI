@@ -16,13 +16,21 @@ export async function POST(
         const { id } = await params;
         const orgId = session.orgId;
 
+        // ── AUTHORIZATION ─────────────────────────────────
+        if (session.role !== "SUPER_ADMIN" && !orgId) {
+            return NextResponse.json({ error: "Unauthorized: Missing organization context" }, { status: 401 });
+        }
+
         const application = await prisma.application.findFirst({
-            where: { id, ...(session.role !== "SUPER_ADMIN" ? { drive: { orgId } } : {}) },
+            where: { 
+                id, 
+                ...(session.role !== "SUPER_ADMIN" ? { drive: { orgId: orgId! } } : {}) 
+            },
             include: { drive: { select: { title: true, orgId: true } } },
         });
 
         if (!application) {
-            return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
+            return NextResponse.json({ error: "Candidate not found or access denied" }, { status: 404 });
         }
 
         const { subject, body } = await request.json();
@@ -30,8 +38,19 @@ export async function POST(
             return NextResponse.json({ error: "Subject and body are required" }, { status: 400 });
         }
 
-        // Resolve variables
-        const resolvedBody = body
+        // ── XSS PROTECTION ─────────────────────────────────
+        const escapeHtml = (unsafe: string) => {
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        };
+        const safeBody = escapeHtml(body);
+
+        // Resolve variables on sanitized output
+        const resolvedBody = safeBody
             .replace(/\{\{name\}\}/gi, application.fullName)
             .replace(/\{\{role\}\}/gi, (application as any).drive?.title || "the role")
             .replace(/\{\{email\}\}/gi, application.email);

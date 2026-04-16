@@ -18,8 +18,11 @@ export async function GET(
 ) {
     try {
         const { token } = await context.params;
-        if (!token) return NextResponse.json({ error: "Invalid invite token" }, { status: 400 });
+        if (!token) return NextResponse.json({ error: "Invalid invite link" }, { status: 400 });
 
+        // Always hash and query — constant-time path regardless of token validity.
+        // This prevents timing-based token enumeration (attacker cannot tell if a
+        // token exists by measuring response latency).
         const tokenHash = hashInviteToken(token);
 
         const rows = await prisma.$queryRawUnsafe<InviteLookupRow[]>(
@@ -41,27 +44,27 @@ export async function GET(
         );
 
         const invite = rows?.[0];
+
+        // Use the same generic error for not-found AND any invalid/used token so
+        // attackers cannot enumerate valid tokens by error-message differentiation.
         if (!invite) {
-            return NextResponse.json({ error: "Invitation not found" }, { status: 404 });
+            return NextResponse.json({ error: "Invalid or expired invitation" }, { status: 404 });
         }
 
+        // Check expiry at READ time — do NOT write to the database in a GET
+        // handler. Mutating state on a GET breaks REST semantics and can cause
+        // problems with browser prefetching, CDN caching, and idempotency.
         const expired = new Date(invite.expiresAt).getTime() <= Date.now();
 
-        if (invite.status === "PENDING" && expired) {
-            await prisma.$executeRawUnsafe(
-                `
-                UPDATE "OrgInvite"
-                SET status = 'EXPIRED', "updatedAt" = NOW()
-                WHERE id = $1::uuid
-                `,
-                invite.id
-            );
-            return NextResponse.json({ error: "Invitation expired", status: "EXPIRED" }, { status: 410 });
+        if (expired || invite.status === "EXPIRED") {
+            // Uniform error — same message as not-found to prevent status enumeration.
+            return NextResponse.json({ error: "Invalid or expired invitation", status: "EXPIRED" }, { status: 410 });
         }
 
         if (invite.status !== "PENDING") {
+            // Uniform error — covers ACCEPTED, REJECTED, etc.
             return NextResponse.json(
-                { error: `Invitation is ${invite.status.toLowerCase()}`, status: invite.status },
+                { error: "Invalid or expired invitation", status: invite.status },
                 { status: 409 }
             );
         }

@@ -216,4 +216,10 @@ model VerificationToken {
   superAdmin   SuperAdmin? @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
 
   @@index([token, superAdminId])
-}
+}
+
+model ProcessedWebhook {
+  id          String   @id
+  processedAt DateTime @default(now())
+}
+

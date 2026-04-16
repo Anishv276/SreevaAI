@@ -45,7 +45,7 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
     const [error, setError] = useState<string | null>(null);
     const router = useRouter();
 
-    const fetchCandidates = useCallback(async () => {
+    const fetchCandidates = useCallback(async (signal?: AbortSignal) => {
         setLoading(true);
         setError(null);
         try {
@@ -58,22 +58,26 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
                 params.set("range", dateRange.type);
             }
 
-            const res = await fetch(`/api/admin/top-candidates?${params.toString()}`);
+            const res = await fetch(`/api/admin/top-candidates?${params.toString()}`, { signal });
             if (res.ok) {
                 const data = await res.json();
-                setCandidates(data.candidates ?? []);
+                if (!signal?.aborted) setCandidates(data.candidates ?? []);
             } else {
-                setError("Talent synchronization failed.");
+                if (!signal?.aborted) setError("Talent synchronization failed.");
             }
-        } catch (err) {
-            setError("Network connectivity issue.");
+        } catch (err: any) {
+            if (err.name !== "AbortError") {
+                setError("Network connectivity issue.");
+            }
         } finally {
-            setLoading(false);
+            if (!signal?.aborted) setLoading(false);
         }
     }, [dateRange]);
 
     useEffect(() => {
-        fetchCandidates();
+        const controller = new AbortController();
+        fetchCandidates(controller.signal);
+        return () => controller.abort();
     }, [fetchCandidates]);
 
     return (
@@ -107,7 +111,7 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
                         />
                     </div>
                 ) : candidates.length === 0 ? (
-                    <div className="flex items-center justify-center h-48 text-[12px] font-bold text-gray-300 uppercase tracking-widest">
+                    <div className="flex items-center justify-center h-48 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
                         Zero matches processed
                     </div>
                 ) : (

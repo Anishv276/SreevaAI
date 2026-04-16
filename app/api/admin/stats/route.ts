@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
         // Single query for all application/interview stats using FILTER
-        const [appStats, driveStats, hiredApps, hiredAppsPrev, feedbackStats] = await Promise.all([
+        const [appStats, driveStats, feedbackStats] = await Promise.all([
             prisma.$queryRaw<any[]>`
                 SELECT
                     COUNT(*) FILTER (WHERE a."createdAt" >= ${start})::INT AS applications,
@@ -76,7 +76,14 @@ export async function GET(req: NextRequest) {
                     )::INT AS interviewed,
                     COUNT(*) FILTER (WHERE i."status" = 'IN_PROGRESS')::INT AS "liveInterviews",
                     COUNT(*) FILTER (WHERE i."status" = 'COMPLETED' AND a."aiScore" IS NULL)::INT AS "needsReview",
-                    COUNT(*) FILTER (WHERE i."createdAt" >= ${start})::INT AS invited
+                    COUNT(*) FILTER (WHERE i."createdAt" >= ${start})::INT AS invited,
+                    -- Time metrics
+                    AVG(EXTRACT(EPOCH FROM (a."updatedAt" - a."createdAt"))/86400) FILTER (
+                        WHERE a."updatedAt" >= ${start} AND a."hiringStatus" ILIKE 'HIRED'
+                    )::FLOAT AS "avgTimeToHire",
+                    AVG(EXTRACT(EPOCH FROM (a."updatedAt" - a."createdAt"))/86400) FILTER (
+                        WHERE a."updatedAt" >= ${prevStart} AND a."updatedAt" < ${prevEnd} AND a."hiringStatus" ILIKE 'HIRED'
+                    )::FLOAT AS "avgTimeToHirePrev"
                 FROM "Application" a
                 JOIN "Drive" d ON d.id = a."driveId"
                 LEFT JOIN "Interview" i ON i."applicationId" = a.id
@@ -93,16 +100,8 @@ export async function GET(req: NextRequest) {
                 FROM "Drive"
                 WHERE "orgId" = ${orgId}
             `,
-            prisma.application.findMany({
-                where: { updatedAt: { gte: start }, hiringStatus: { equals: "Hired", mode: 'insensitive' }, drive: { orgId } },
-                select: { createdAt: true, updatedAt: true },
-            }),
-            prisma.application.findMany({
-                where: { updatedAt: { gte: prevStart, lt: prevEnd }, hiringStatus: { equals: "Hired", mode: 'insensitive' }, drive: { orgId } },
-                select: { createdAt: true, updatedAt: true },
-            }),
             prisma.interview.aggregate({
-                where: { application: { drive: { orgId } }, candidateRating: { not: null } },
+                where: { application: { drive: { orgId } } },
                 _avg: { candidateRating: true }
             })
         ]);
@@ -110,14 +109,12 @@ export async function GET(req: NextRequest) {
         const s = appStats[0];
         const d = driveStats[0];
 
-        function avgDays(apps: { createdAt: Date; updatedAt: Date }[]) {
-            if (!apps.length) return null;
-            const total = apps.reduce((sum, a) => sum + (a.updatedAt.getTime() - a.createdAt.getTime()), 0);
-            return Math.round(total / apps.length / (1000 * 60 * 60 * 24));
+        function safeRound(val: any) {
+            return val != null ? Math.round(Number(val)) : null;
         }
 
-        const avgTimeToHire = avgDays(hiredApps);
-        const avgTimeToHirePrev = avgDays(hiredAppsPrev);
+        const avgTimeToHire = safeRound(s.avgTimeToHire);
+        const avgTimeToHirePrev = safeRound(s.avgTimeToHirePrev);
 
         const applications = Number(s.applications);
         const applicationsPrev = Number(s.applicationsPrev);

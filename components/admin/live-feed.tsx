@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
     UserPlus, FileCheck, XCircle,
     Sparkles, TriangleAlert, ChevronRight, Loader2,
@@ -39,39 +39,60 @@ function useActivityFeed(dateRange: DateRange) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    async function fetchFeed() {
-        setError(null);
-        try {
-            const params = new URLSearchParams();
-            if (dateRange.type === "custom") {
-                params.set("range", "custom");
-                params.set("from", dateRange.from);
-                params.set("to", dateRange.to);
-            } else {
-                params.set("range", dateRange.type);
-            }
-
-            const res = await fetch(`/api/admin/activity?${params.toString()}`);
-            if (res.ok) {
-                const data = await res.json();
-                setFeedItems(data.feed ?? []);
-            } else {
-                setError("Activity sync failed.");
-            }
-        } catch {
-            setError("Network protocol failure.");
-        } finally {
-            setLoading(false);
-        }
-    }
+    // Ref for the latest fetch to allow retries
+    const fetchRef = useRef<(() => Promise<void>) | null>(null);
 
     useEffect(() => {
+        const controller = new AbortController();
+        const signal = controller.signal;
+
+        const fetchFeed = async () => {
+            setError(null);
+            setLoading(true);
+            try {
+                const params = new URLSearchParams();
+                if (dateRange.type === "custom") {
+                    params.set("range", "custom");
+                    params.set("from", dateRange.from);
+                    params.set("to", dateRange.to);
+                } else {
+                    params.set("range", dateRange.type);
+                }
+
+                const res = await fetch(`/api/admin/activity?${params.toString()}`, { signal });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (!signal.aborted) {
+                        setFeedItems(data.feed ?? []);
+                    }
+                } else {
+                    if (!signal.aborted) setError("Activity sync failed.");
+                }
+            } catch (err: any) {
+                if (err.name !== "AbortError") {
+                    setError("Network protocol failure.");
+                }
+            } finally {
+                if (!signal.aborted) setLoading(false);
+            }
+        };
+
+        fetchRef.current = fetchFeed;
         fetchFeed();
-        const interval = setInterval(fetchFeed, 30_000); // refresh every 30s
-        return () => clearInterval(interval);
+        const interval = setInterval(fetchFeed, 30_000); 
+
+        return () => {
+            controller.abort();
+            clearInterval(interval);
+        };
     }, [dateRange]);
 
-    return { feedItems, loading, error, fetchFeed };
+    return { 
+        feedItems, 
+        loading, 
+        error, 
+        fetchFeed: () => fetchRef.current?.() 
+    };
 }
 
 const insights = [

@@ -42,36 +42,47 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
     const [error, setError] = useState<string | null>(null);
     const router = useRouter();
 
-    const fetchDrives = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const params = new URLSearchParams();
-            if (dateRange.type === "custom") {
-                params.set("range", "custom");
-                params.set("from", dateRange.from);
-                params.set("to", dateRange.to);
-            } else {
-                params.set("range", dateRange.type);
-            }
+    useEffect(() => {
+        const controller = new AbortController();
+        const signal = controller.signal;
 
-            const res = await fetch(`/api/admin/drives-summary?${params.toString()}`);
-            if (res.ok) {
-                const data = await res.json();
-                setDrives(data.drives ?? []);
-            } else {
-                setError("Neural pipeline sync failed.");
+        const fetchDrives = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const params = new URLSearchParams();
+                if (dateRange.type === "custom") {
+                    params.set("range", "custom");
+                    params.set("from", dateRange.from);
+                    params.set("to", dateRange.to);
+                } else {
+                    params.set("range", dateRange.type);
+                }
+
+                const res = await fetch(`/api/admin/drives-summary?${params.toString()}`, { signal });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (!signal.aborted) setDrives(data.drives ?? []);
+                } else {
+                    if (!signal.aborted) setError("Neural pipeline sync failed.");
+                }
+            } catch (err: any) {
+                if (err.name !== "AbortError") {
+                    setError("Network connectivity issue.");
+                }
+            } finally {
+                if (!signal.aborted) setLoading(false);
             }
-        } catch (err) {
-            setError("Network connectivity issue.");
-        } finally {
-            setLoading(false);
-        }
+        };
+
+        fetchDrives();
+        return () => controller.abort();
     }, [dateRange]);
 
-    useEffect(() => {
-        fetchDrives();
-    }, [fetchDrives]);
+    const handleRetry = () => {
+        setLoading(true);
+        setError(null);
+    };
 
     return (
         <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-full overflow-hidden hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)] transition-all duration-700">
@@ -98,7 +109,7 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                     <div className="flex items-center justify-center h-48 py-8">
                         <ErrorState 
                             message={error} 
-                            onRetry={fetchDrives} 
+                            onRetry={handleRetry} 
                             compact 
                             className="bg-transparent border-none shadow-none"
                         />

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { Resend } from "resend";
 import { getPlatformSender } from "@/lib/mail";
+import { isRateLimited } from "@/lib/rate-limit";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
         if (!masterEmail) return NextResponse.json({ error: "Master identity not configured" }, { status: 500 });
 
         // ── RATE LIMITING ───────────────────────────────────
-        const isLimited = await isRateLimited(`otp-send:${adminEmail}`, 5, 60);
+        const isLimited = await isRateLimited(`otp-send:${masterEmail}`, 5, 60);
         if (isLimited) {
             return NextResponse.json({ 
                 error: "Too many security code requests. Please wait a minute.", 

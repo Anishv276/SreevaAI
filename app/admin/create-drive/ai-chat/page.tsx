@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { escapeHtml, nl2br } from "@/lib/sanitize";
 import { 
     Sparkles, Send, Bot, User, 
     ArrowLeft, CheckCircle2, Loader2, 
@@ -192,46 +193,48 @@ export default function AiChatJdPage() {
         element.style.background = "white";
         element.style.color = "#111827";
         
+        // All JD fields are escaped with escapeHtml() to prevent XSS in the
+        // generated PDF preview element.
         element.innerHTML = `
             <div style="border-bottom: 2px solid #F97316; padding-bottom: 20px; margin-bottom: 30px;">
-                <h1 style="font-size: 28px; font-weight: 900; margin: 0; letter-spacing: -0.025em;">${jd.job_title}</h1>
-                <p style="color: #6B7280; font-weight: 700; text-transform: uppercase; font-size: 10px; margin-top: 8px; letter-spacing: 0.1em;">${jd.department} • ${jd.work_mode}</p>
+                <h1 style="font-size: 28px; font-weight: 900; margin: 0; letter-spacing: -0.025em;">${escapeHtml(jd.job_title)}</h1>
+                <p style="color: #6B7280; font-weight: 700; text-transform: uppercase; font-size: 10px; margin-top: 8px; letter-spacing: 0.1em;">${escapeHtml(jd.department)} • ${escapeHtml(jd.work_mode)}</p>
             </div>
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
                 <div>
                    <p style="font-size: 10px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; margin-bottom: 5px;">Experience</p>
-                   <p style="font-weight: 700; font-size: 14px; margin: 0;">${jd.experience}</p>
+                   <p style="font-weight: 700; font-size: 14px; margin: 0;">${escapeHtml(jd.experience)}</p>
                 </div>
                 <div>
                    <p style="font-size: 10px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; margin-bottom: 5px;">Compensation</p>
-                   <p style="font-weight: 700; font-size: 14px; margin: 0;">${jd.salary}</p>
+                   <p style="font-weight: 700; font-size: 14px; margin: 0;">${escapeHtml(jd.salary)}</p>
                 </div>
             </div>
 
             <div style="margin-bottom: 30px;">
                 <h2 style="font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #111827; margin-bottom: 12px;">Executive Summary</h2>
-                <p style="font-size: 14px; line-height: 1.6; color: #374151;">${jd.description}</p>
+                <p style="font-size: 14px; line-height: 1.6; color: #374151;">${escapeHtml(jd.description)}</p>
             </div>
 
             <div style="margin-bottom: 30px;">
                 <h2 style="font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #111827; margin-bottom: 12px;">Key Responsibilities</h2>
                 <ul style="padding-left: 18px; margin: 0;">
-                    ${jd.responsibilities.map((r: string) => `<li style="font-size: 13px; color: #374151; margin-bottom: 8px; line-height: 1.5;">${r}</li>`).join('')}
+                    ${jd.responsibilities.map((r: string) => `<li style="font-size: 13px; color: #374151; margin-bottom: 8px; line-height: 1.5;">${escapeHtml(r)}</li>`).join('')}
                 </ul>
             </div>
 
             <div style="margin-bottom: 30px;">
                 <h2 style="font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #111827; margin-bottom: 12px;">Required Technical Skills</h2>
                 <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                    ${jd.technical_skills.map((s: string) => `<span style="background: #F3F4F6; padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 700; color: #374151;">${s}</span>`).join('')}
+                    ${jd.technical_skills.map((s: string) => `<span style="background: #F3F4F6; padding: 6px 12px; border-radius: 8px; font-size: 11px; font-weight: 700; color: #374151;">${escapeHtml(s)}</span>`).join('')}
                 </div>
             </div>
 
             <div style="margin-bottom: 30px;">
                 <h2 style="font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; color: #111827; margin-bottom: 12px;">Candidate Profile</h2>
                 <ul style="padding-left: 18px; margin: 0;">
-                    ${jd.candidate_requirements.map((req: string) => `<li style="font-size: 13px; color: #374151; margin-bottom: 8px; line-height: 1.5;">${req}</li>`).join('')}
+                    ${jd.candidate_requirements.map((req: string) => `<li style="font-size: 13px; color: #374151; margin-bottom: 8px; line-height: 1.5;">${escapeHtml(req)}</li>`).join('')}
                 </ul>
             </div>
 
@@ -451,7 +454,7 @@ export default function AiChatJdPage() {
                                                         ? "bg-gray-900 text-white rounded-tr-none font-bold shadow-2xl" 
                                                         : "bg-white text-gray-800 rounded-tl-none border border-gray-100 shadow-xl shadow-gray-200/20"
                                                 )}
-                                                dangerouslySetInnerHTML={{ __html: m.content.replace(/\n/g, '<br />') }}
+                                                dangerouslySetInnerHTML={{ __html: nl2br(m.content) }}
                                             />
                                         )}
 

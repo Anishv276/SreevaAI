@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { WebhookReceiver } from "livekit-server-sdk";
 import { prisma } from "@/lib/prisma";
+import { generateId } from "@/lib/ids";
 
 /**
  * LiveKit Webhook Handler
@@ -42,54 +43,91 @@ export async function POST(req: NextRequest) {
         }
 
         const egressInfo = event.egressInfo;
-        if (!egressInfo) {
+        if (!egressInfo || !egressInfo.egressId) {
+            console.warn("[Webhook] Missing egressInfo or egressId");
             return NextResponse.json({ ok: true });
         }
 
         // Extract application ID from file path:
         // Path format: candidates/{name}/recordings/interview_{applicationId}_{timestamp}.mp4
         const filePath = egressInfo.fileResults?.[0]?.filename ?? "";
+        // Regex: Search for applicationId between 'interview_' and the trailing timestamp/extension
         const match = filePath.match(/interview_([^_]+(?:_[^_]+)*?)_\d+\.mp4$/);
         
         if (!match) {
-            console.warn("[Webhook] Could not parse applicationId from filepath:", filePath);
-            return NextResponse.json({ ok: true });
+            console.error("[Webhook] Could not parse applicationId from filepath:", filePath);
+            return NextResponse.json({ error: "Invalid path format" }, { status: 400 });
         }
 
-        // The applicationId is everything before the last _timestamp
-        // Since cuid IDs have no underscores, we can safely extract it
         const applicationId = match[1];
         const downloadUrl = (egressInfo.fileResults?.[0] as any)?.downloadUrl ?? egressInfo.fileResults?.[0]?.location ?? "";
         const durationSeconds = Number(egressInfo.fileResults?.[0]?.duration ?? 0) / 1_000_000_000; // proto: nanoseconds
 
         if (!applicationId || !downloadUrl) {
-            console.warn("[Webhook] Missing applicationId or downloadUrl:", { applicationId, downloadUrl });
-            return NextResponse.json({ ok: true });
+            console.error("[Webhook] Missing applicationId or downloadUrl:", { applicationId, downloadUrl });
+            return NextResponse.json({ error: "Missing required event data" }, { status: 400 });
+        }
+
+        // ── 2. Validate Application Existence ────────────────────
+        const app = await prisma.application.findUnique({
+            where: { id: applicationId },
+            select: { id: true }
+        });
+
+        if (!app) {
+            console.error("[Webhook] Application NOT FOUND in database:", applicationId);
+            return NextResponse.json({ error: `Application ${applicationId} not found` }, { status: 400 });
         }
 
         console.log(`[Webhook] Egress ended for App ${applicationId}. URL: ${downloadUrl}`);
 
-        // Persist recording URL to the Interview record
-        await prisma.interview.upsert({
-            where: { applicationId },
-            update: {
-                interviewRecordingUrl: downloadUrl,
-                interviewRecordedAt: new Date(),
-                interviewDuration: Math.round(durationSeconds),
-                status: "COMPLETED",
-                completedAt: new Date(),
-            },
-            create: {
-                applicationId,
-                interviewRecordingUrl: downloadUrl,
-                interviewRecordedAt: new Date(),
-                interviewDuration: Math.round(durationSeconds),
-                status: "COMPLETED",
-                completedAt: new Date(),
-            },
+        // ── 3. Atomically Update Interview & Track Webhook ────────
+        // Use an interactive transaction to ensure we don't process the same event twice
+        const result = await prisma.$transaction(async (tx: any) => {
+            // Check idempotency again inside the transaction for absolute safety
+            const existing = await tx.processedWebhook.findUnique({
+                where: { id: egressInfo.egressId }
+            });
+
+            if (existing) {
+                return { skipped: true };
+            }
+
+            // Perform the update
+            await tx.interview.upsert({
+                where: { applicationId },
+                update: {
+                    interviewRecordingUrl: downloadUrl,
+                    interviewRecordedAt: new Date(),
+                    interviewDuration: Math.round(durationSeconds),
+                    status: "COMPLETED",
+                    completedAt: new Date(),
+                },
+                create: {
+                    id: generateId("int", applicationId),
+                    applicationId,
+                    interviewRecordingUrl: downloadUrl,
+                    interviewRecordedAt: new Date(),
+                    interviewDuration: Math.round(durationSeconds),
+                    status: "COMPLETED",
+                    completedAt: new Date(),
+                },
+            });
+
+            // Mark as processed
+            await tx.processedWebhook.create({
+                data: { id: egressInfo.egressId }
+            });
+
+            return { skipped: false };
         });
 
-        console.log(`[Webhook] Successfully updated Interview record for App ${applicationId}`);
+        if (result.skipped) {
+            console.log(`[Webhook] Event ${egressInfo.egressId} already processed. Skipping.`);
+            return NextResponse.json({ ok: true });
+        }
+
+        console.log(`[Webhook] Successfully updated Interview and marked event ${egressInfo.egressId} as processed`);
         return NextResponse.json({ ok: true });
 
     } catch (err) {

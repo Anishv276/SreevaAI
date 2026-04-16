@@ -1,6 +1,10 @@
-import Redis from 'ioredis';
+import redis from "@/lib/queue";
 
-const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+export async function isRateLimited(key: string, limit: number, windowSeconds: number) {
+  const limiter = new RateLimiter(key, limit, windowSeconds);
+  const { success } = await limiter.check('global');
+  return !success;
+}
 
 export class RateLimiter {
   private keyPrefix: string;

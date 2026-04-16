@@ -44,18 +44,25 @@ export function RecruiterAssistant() {
 
     // Fetch Organization Branding
     useEffect(() => {
+        const controller = new AbortController();
+        const signal = controller.signal;
+
         const fetchOrg = async () => {
             try {
-                const res = await fetch("/api/admin/organization");
+                const res = await fetch("/api/admin/organization", { signal });
                 if (res.ok) {
                     const data = await res.json();
-                    setCompany({ logoUrl: data.logoUrl, name: data.name });
+                    if (!signal.aborted) setCompany({ logoUrl: data.logoUrl, name: data.name });
                 }
-            } catch (err) {
-                console.error("Failed to fetch org branding", err);
+            } catch (err: any) {
+                if (err.name !== "AbortError") {
+                    console.error("Failed to fetch org branding", err);
+                }
             }
         };
+
         fetchOrg();
+        return () => controller.abort();
     }, []);
 
     // Auto-scroll to bottom on message change

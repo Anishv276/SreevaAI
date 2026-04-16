@@ -25,7 +25,7 @@ export async function POST(request: Request) {
                 fullName: true,
                 email: true,
                 resumeUrl: true,
-                drive: { select: { title: true, orgId: true, slug: true } },
+                drive: { select: { id: true, title: true, orgId: true, slug: true } },
             },
         });
 
@@ -43,10 +43,12 @@ export async function POST(request: Request) {
                 for (const app of applications) {
                     if (app.resumeUrl) {
                         const key = getKeyFromUrl(app.resumeUrl);
-                        if (key) await deleteObject(bucket, key).catch(() => {});
+                        if (key) await deleteObject(bucket, key).catch((err) => console.error("[BULK_DELETE_OBJ_ERROR]:", err));
                     }
                 }
-            } catch {}
+            } catch (err) {
+                console.error("[BULK_DELETE_STORAGE_ERROR]:", err);
+            }
 
             await prisma.application.deleteMany({ where: { id: { in: validIds } } });
             return NextResponse.json({ message: `${validIds.length} candidates deleted` });
@@ -107,7 +109,9 @@ export async function POST(request: Request) {
                         interviewLink: careersUrl,
                     })
                 )
-            ).catch(() => {});
+            ).catch(err => {
+                console.error("[BULK_REJECT_EMAIL_ERROR]:", err);
+            });
 
             return NextResponse.json({ message: `${validIds.length} candidates marked as not hired` });
         }
@@ -129,7 +133,9 @@ export async function POST(request: Request) {
                         score: 0,
                     })
                 )
-            ).catch(() => {});
+            ).catch(err => {
+                console.error("[BULK_HIRE_EMAIL_ERROR]:", err);
+            });
 
             try {
                 const driveIds = [...new Set(applications.map(a => a.drive.id))];

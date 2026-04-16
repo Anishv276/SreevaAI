@@ -43,34 +43,40 @@ export async function GET() {
             prisma.application.count({ where: { drive: { orgId }, hiringStatus: 'hired' } })
         ]);
 
-        // Interview Stats
-        const interviewStats = await prisma.interview.findMany({
+        // ── AGGREGATE OPTIMIZATION: Interview Stats ────────
+        const interviewAgg = await prisma.interview.aggregate({
             where: { application: { drive: { orgId } } },
-            select: { status: true, interviewDuration: true }
+            _avg: { interviewDuration: true }
         });
+        const avgInterviewDuration = Math.round(interviewAgg._avg.interviewDuration || 0);
 
-        const avgInterviewDuration = interviewStats.length > 0
-            ? Math.round(interviewStats.reduce((acc, i) => acc + (i.interviewDuration || 0), 0) / interviewStats.length)
-            : 0;
-
-        // Score Distribution - Using actual aiScore field
-        const scoredApplications = await prisma.application.findMany({
-            where: { drive: { orgId }, aiScore: { not: null } },
-            select: { aiScore: true }
-        });
+        // ── DB BUCKETING: Score Distribution ───────────────
+        const scoreGroups = await prisma.$queryRawUnsafe<any[]>(`
+            SELECT 
+                CASE 
+                    WHEN "aiScore" < 20 THEN '0-20'
+                    WHEN "aiScore" < 40 THEN '20-40'
+                    WHEN "aiScore" < 60 THEN '40-60'
+                    WHEN "aiScore" < 80 THEN '60-80'
+                    ELSE '80-100'
+                END as range,
+                COUNT(*)::INT as count
+            FROM "Application" a JOIN "Drive" d ON a."driveId" = d."id"
+            WHERE d."orgId" = $1 AND "aiScore" IS NOT NULL
+            GROUP BY range
+        `, orgId);
 
         const scoreRanges = [
-            { range: "0-20", min: 0, max: 20, count: 0 },
-            { range: "20-40", min: 20, max: 40, count: 0 },
-            { range: "40-60", min: 40, max: 60, count: 0 },
-            { range: "60-80", min: 60, max: 80, count: 0 },
-            { range: "80-100", min: 80, max: 100, count: 0 }
+            { range: "0-20", count: 0 },
+            { range: "20-40", count: 0 },
+            { range: "40-60", count: 0 },
+            { range: "60-80", count: 0 },
+            { range: "80-100", count: 0 }
         ];
 
-        scoredApplications.forEach(app => {
-            const score = app.aiScore || 0;
-            const range = scoreRanges.find(r => score >= r.min && score < r.max);
-            if (range) range.count++;
+        scoreGroups.forEach(group => {
+            const range = scoreRanges.find(r => r.range === group.range);
+            if (range) range.count = group.count;
         });
 
         // Trends - Last 7 days (using actual createdAt)
@@ -94,7 +100,7 @@ export async function GET() {
             trendsHired.push(dayHired);
         }
 
-        // Drive Performance - Using actual Drive fields
+        // ── N+1 RESOLUTION: Drive Performance ────────────────
         const drives = await prisma.drive.findMany({
             where: { orgId },
             orderBy: { createdAt: 'desc' },
@@ -111,30 +117,40 @@ export async function GET() {
             }
         });
 
-        const drivePerformance = await Promise.all(drives.map(async (drive) => {
-            const apps = drive._count.applications;
-            const hired = await prisma.application.count({ where: { driveId: drive.id, hiringStatus: 'hired' } });
-            const interviewComplete = await prisma.application.count({ 
-                where: { driveId: drive.id, interviewStatus: 'finished' } 
+        const driveIds = drives.map(d => d.id);
+        
+        let drivePerformance: any[] = [];
+        if (driveIds.length > 0) {
+            const aggregatedAppStats = await prisma.application.groupBy({
+                by: ['driveId', 'hiringStatus', 'interviewStatus', 'resumeStatus'],
+                where: { driveId: { in: driveIds } },
+                _count: { id: true }
             });
-            const pending = await prisma.application.count({ where: { driveId: drive.id, resumeStatus: 'pending' } });
-            const conversion = apps > 0 ? Math.round((hired / apps) * 100 * 10) / 10 : 0;
+
+            const statCache: Record<string, { hired: number, pending: number, interview: number }> = {};
+            for (const d of driveIds) statCache[d] = { hired: 0, pending: 0, interview: 0 };
             
-            return {
-                id: drive.id,
-                title: drive.title,
-                department: drive.department,
-                type: drive.type,
-                applications: apps,
-                hired,
-                interviewComplete,
-                pending,
-                conversionRate: conversion,
-                status: drive.status,
-                deadline: drive.deadline,
-                createdAt: drive.createdAt
-            };
-        }));
+            for (const stat of aggregatedAppStats) {
+                if ((stat.hiringStatus || "").toLowerCase() === 'hired') statCache[stat.driveId].hired += stat._count.id;
+                if ((stat.interviewStatus || "").toLowerCase() === 'finished' || (stat.interviewStatus || "").toLowerCase() === 'completed') statCache[stat.driveId].interview += stat._count.id;
+                if ((stat.resumeStatus || "").toLowerCase() === 'pending') statCache[stat.driveId].pending += stat._count.id;
+            }
+
+            drivePerformance = drives.map((drive) => {
+                const apps = drive._count.applications;
+                const stats = statCache[drive.id];
+                const conversion = apps > 0 ? Math.round((stats.hired / apps) * 100 * 10) / 10 : 0;
+                
+                return {
+                    ...drive,
+                    applications: apps,
+                    hired: stats.hired,
+                    interviewComplete: stats.interview,
+                    pending: stats.pending,
+                    conversionRate: conversion
+                };
+            });
+        }
 
         // Status Breakdown
         const statusBreakdown = await prisma.application.groupBy({
@@ -143,39 +159,42 @@ export async function GET() {
             _count: { resumeStatus: true }
         });
 
-        // Interview-specific metrics (from Interview table)
-        const interviewMetrics = await prisma.interview.findMany({
+        // ── AGGREGATE OPTIMIZATIONS: Interview Status ────────
+        const interviewGroupStats = await prisma.interview.groupBy({
+            by: ['status'],
             where: { application: { drive: { orgId } } },
-            select: { status: true, interviewDuration: true, startedAt: true, completedAt: true }
+            _count: { id: true }
         });
-
-        const totalInterviews = interviewMetrics.length;
-        const completedInterviews = interviewMetrics.filter(i => i.status === 'COMPLETED').length;
         
-        // Time-based metrics (from Application createdAt/updatedAt)
-        const recentApps = await prisma.application.findMany({
-            where: { drive: { orgId } },
-            select: { resumeStatus: true, createdAt: true, updatedAt: true, aiScore: true }
-        });
-
-        // Avg time from application to first response
-        let avgResponseTime = 0;
-        const respondedApps = recentApps.filter(a => a.resumeStatus !== 'pending');
-        if (respondedApps.length > 0) {
-            const totalDays = respondedApps.reduce((acc, app) => {
-                const diff = new Date(app.updatedAt).getTime() - new Date(app.createdAt).getTime();
-                return acc + diff / (1000 * 60 * 60 * 24);
-            }, 0);
-            avgResponseTime = Math.round(totalDays / respondedApps.length);
+        let totalInterviews = 0;
+        let completedInterviews = 0;
+        for (const row of interviewGroupStats) {
+            totalInterviews += row._count.id;
+            if (row.status === 'COMPLETED') completedInterviews += row._count.id;
         }
 
-        // AI Score analytics
-        const scoredApps = recentApps.filter(a => a.aiScore !== null);
-        const avgAIScore = scoredApps.length > 0 
-            ? Math.round(scoredApps.reduce((acc, a) => acc + (a.aiScore || 0), 0) / scoredApps.length) 
-            : 0;
-        const passingScores = scoredApps.filter(a => (a.aiScore || 0) >= 60).length;
-        const passRate = scoredApps.length > 0 ? Math.round((passingScores / scoredApps.length) * 100) : 0;
+        // ── DB RAW CALCULATION: Response Time ──────── 
+        const timeMetrics = await prisma.$queryRawUnsafe<any[]>(`
+            SELECT AVG(EXTRACT(EPOCH FROM (a."updatedAt" - a."createdAt"))/86400)::FLOAT as avg_days
+            FROM "Application" a JOIN "Drive" d ON a."driveId" = d."id"
+            WHERE d."orgId" = $1 AND LOWER(a."resumeStatus") != 'pending'
+        `, orgId);
+        const avgResponseTime = Math.round(timeMetrics[0]?.avg_days || 0);
+
+        // ── AGGREGATE OPTIMIZATIONS: AI Pass Rates ────────
+        const scoreAgg = await prisma.application.aggregate({
+            where: { drive: { orgId }, aiScore: { not: null } },
+            _avg: { aiScore: true },
+            _count: { aiScore: true }
+        });
+        const passingCount = await prisma.application.count({
+            where: { drive: { orgId }, aiScore: { gte: 60 } }
+        });
+
+        const avgAIScore = Math.round(scoreAgg._avg.aiScore || 0);
+        const passRate = scoreAgg._count.aiScore > 0 
+             ? Math.round((passingCount / scoreAgg._count.aiScore) * 100) 
+             : 0;
 
         // Drive deadline tracking
         const driveDeadlines = await prisma.drive.findMany({

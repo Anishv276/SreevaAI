@@ -113,7 +113,38 @@ export async function POST(request: Request) {
             }
         }
 
-        if (!file) return NextResponse.json({ error: "File required" }, { status: 400 });
+        if (!file) {
+            return NextResponse.json({ error: "File required" }, { status: 400 });
+        }
+
+        // ── SERVER-SIDE VALIDATION ───────────────────────────
+        const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+        if (file.size > MAX_SIZE) {
+            return NextResponse.json({ 
+                error: "File size exceeds 10MB limit.", 
+                code: "FILE_TOO_LARGE" 
+            }, { status: 413 });
+        }
+
+        const allowedTypes = {
+            JD: ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"],
+            RESUME: ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"],
+            PASSPORT: ["image/jpeg", "image/png", "application/pdf", "image/webp"]
+        };
+
+        const currentAllowed = allowedTypes[type as keyof typeof allowedTypes] || [];
+        const isMimeAllowed = currentAllowed.some(t => file.type.includes(t) || (t.endsWith("/*") && file.type.startsWith(t.split("/")[0])));
+        
+        if (!isMimeAllowed) {
+             // Fallback: check extension if MIME is missing
+             const validExts = type === "PASSPORT" ? /\.(jpg|jpeg|png|pdf|webp)$/i : /\.(pdf|docx|txt)$/i;
+             if (!file.name.match(validExts)) {
+                return NextResponse.json({ 
+                    error: `Invalid file type for ${type}.`, 
+                    code: "INVALID_FILE_TYPE" 
+                }, { status: 415 });
+             }
+        }
 
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);

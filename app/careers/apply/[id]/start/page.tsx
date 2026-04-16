@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, use, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
@@ -151,8 +151,9 @@ export default function ApplyStartPage({ params }: { params: Promise<{ id: strin
             router.push(`/careers/apply/${drive.id}?mode=resume`)
             
         } catch (err: any) {
+            // Log full error internally; never expose internal details to users.
             console.error("Apply error:", err)
-            setError(err.message || "An error occurred. Please try the manual option.")
+            setError("Something went wrong analysing your resume. Please try again or fill in manually.")
             // Only reset on error so the user can try again
             setIsAnalyzing(false)
         }

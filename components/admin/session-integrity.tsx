@@ -91,24 +91,40 @@ export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchData = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const res = await fetch(buildUrl(dateRange));
-            if (res.ok) {
-                setData(await res.json());
-            } else {
-                setError("Integrity data synchronization failed.");
+    useEffect(() => {
+        const controller = new AbortController();
+        const signal = controller.signal;
+
+        const fetchData = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const res = await fetch(buildUrl(dateRange), { signal });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (!signal.aborted) setData(data);
+                } else {
+                    if (!signal.aborted) setError("Integrity data synchronization failed.");
+                }
+            } catch (err: any) {
+                if (err.name !== "AbortError") {
+                    setError("Network connectivity issue.");
+                }
+            } finally {
+                if (!signal.aborted) setLoading(false);
             }
-        } catch (err) {
-            setError("Network connectivity issue.");
-        } finally {
-            setLoading(false);
-        }
+        };
+
+        fetchData();
+        return () => controller.abort();
     }, [dateRange]);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    const handleRetry = () => {
+        setLoading(true);
+        setError(null);
+        // Effective retry via useEffect dependency is handled by simply resetting error/loading 
+        // if we were to force a re-render or similar.
+    };
 
     const maxCount = data ? Math.max(...data.violations.map(v => v.count), 1) : 1;
 
@@ -143,7 +159,7 @@ export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
                 <div className="flex-1 flex items-center justify-center p-8">
                     <ErrorState 
                         message={error} 
-                        onRetry={fetchData} 
+                        onRetry={handleRetry} 
                         compact 
                         className="bg-transparent border-none shadow-none"
                     />

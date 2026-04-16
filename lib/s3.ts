@@ -1,12 +1,20 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
+const r2Endpoint = process.env.R2_ENDPOINT;
+const r2AccessKey = process.env.R2_ACCESS_KEY_ID;
+const r2SecretKey = process.env.R2_SECRET_ACCESS_KEY;
+
+if (!r2Endpoint || !r2AccessKey || !r2SecretKey) {
+  throw new Error("CRITICAL_CONFIGURATION_MISSING: R2_ENDPOINT, R2_ACCESS_KEY_ID, or R2_SECRET_ACCESS_KEY is not defined.");
+}
+
 const r2Client = new S3Client({
   region: "auto",
-  endpoint: process.env.R2_ENDPOINT,
-  forcePathStyle: true, // Recommended for Cloudflare R2 and S3-compatible storage
+  endpoint: r2Endpoint,
+  forcePathStyle: true,
   credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID || "",
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || "",
+    accessKeyId: r2AccessKey,
+    secretAccessKey: r2SecretKey,
   },
 });
 

@@ -42,24 +42,38 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchData = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const res = await fetch(buildUrl(dateRange));
-            if (res.ok) {
-                setData(await res.json());
-            } else {
-                setError("Score data synchronization failed.");
+    useEffect(() => {
+        const controller = new AbortController();
+        const signal = controller.signal;
+
+        const fetchData = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const res = await fetch(buildUrl(dateRange), { signal });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (!signal.aborted) setData(data);
+                } else {
+                    if (!signal.aborted) setError("Score data synchronization failed.");
+                }
+            } catch (err: any) {
+                if (err.name !== "AbortError") {
+                    setError("Network connectivity issue.");
+                }
+            } finally {
+                if (!signal.aborted) setLoading(false);
             }
-        } catch (err) {
-            setError("Network connectivity issue.");
-        } finally {
-            setLoading(false);
-        }
+        };
+
+        fetchData();
+        return () => controller.abort();
     }, [dateRange]);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    const handleRetry = () => {
+        setLoading(true);
+        setError(null);
+    };
 
     const maxCount = data
         ? Math.max(...data.distribution.map((b) => b.count), 1)
@@ -95,7 +109,7 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
                 <div className="flex-1 flex items-center justify-center">
                     <ErrorState 
                         message={error} 
-                        onRetry={fetchData} 
+                        onRetry={handleRetry} 
                         compact 
                         className="bg-transparent border-none shadow-none"
                     />

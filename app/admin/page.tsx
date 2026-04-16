@@ -15,16 +15,11 @@ import Link from "next/link";
 export default function DashboardPage() {
     const [dateRange, setDateRange] = useState<DateRange>({ type: "month" });
     const [mounted, setMounted] = useState(false);
-    const [ready, setReady] = useState(false);
-
     useEffect(() => {
         setMounted(true);
-        // Simulate initial fold readiness or just wait for next tick
-        const timer = setTimeout(() => setReady(true), 1200); 
-        return () => clearTimeout(timer);
     }, []);
 
-    if (!mounted || !ready) {
+    if (!mounted) {
         return <DashboardSkeleton />;
     }
 

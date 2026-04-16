@@ -10,7 +10,7 @@ import {
     Briefcase, Globe, Database, HelpCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/context/auth-context";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -73,6 +73,43 @@ export function Sidebar() {
         if (user) fetchOrg();
     }, [user, orgId, isSuperAdmin]);
 
+    const modalRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!showLogoutConfirm) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key !== "Tab") return;
+
+            const focusableElements = modalRef.current?.querySelectorAll("button:not([disabled])");
+            if (!focusableElements || focusableElements.length === 0) return;
+
+            const firstElement = focusableElements[0] as HTMLElement;
+            const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+            if (e.shiftKey) {
+                if (document.activeElement === firstElement) {
+                    lastElement.focus();
+                    e.preventDefault();
+                }
+            } else {
+                if (document.activeElement === lastElement) {
+                    firstElement.focus();
+                    e.preventDefault();
+                }
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        // Focus the first button on mount
+        setTimeout(() => {
+            const firstButton = modalRef.current?.querySelector("button");
+            firstButton?.focus();
+        }, 50);
+
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [showLogoutConfirm]);
+
     const handleLogout = async () => {
         setIsLoggingOut(true);
         try {
@@ -100,6 +137,7 @@ export function Sidebar() {
                             initial={{ opacity: 0, scale: 0.95, y: 20 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            ref={modalRef}
                             className="relative w-full max-w-md bg-white border border-gray-100 rounded-[2rem] shadow-[0_32px_80px_rgba(0,0,0,0.15)] overflow-hidden"
                         >
                             <div className="p-8 text-center space-y-6">

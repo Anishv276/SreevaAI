@@ -77,7 +77,14 @@ export const createCandidateSchema = z.object({
   driveId: z.string().min(1, "Valid drive ID required"),
   fullName: z.string().min(1, "Full name is required").max(100),
   email: z.string().email("Valid email required"),
-  phone: z.string().min(1, "Phone is required").max(20),
+  phone: z.string()
+    .min(1, "Phone is required")
+    .max(25)
+    .transform((val) => val.replace(/[\s\-().]/g, "")) // strip formatting chars
+    .refine(
+      (val) => /^\+?[1-9]\d{6,14}$/.test(val),
+      "Please enter a valid international phone number (e.g. +919876543210 or +1 555-000-0000)"
+    ),
   resumeUrl: z.string().optional(), // Relaxed for mocks/internal paths
   passportUrl: z.string().optional(),
   resumeText: z.string().optional(),
@@ -111,6 +118,7 @@ export const interviewShutdownSchema = z.object({
 export const presignedUrlSchema = z.object({
   fileName: z.string().min(1, "File name required").max(255),
   fileType: z.string().min(1, "File type required").regex(/^[\w-]+\/[\w-]+$/, "Invalid MIME type"),
+  fileSize: z.number().max(10 * 1024 * 1024, "File size must be less than 10MB").optional(),
   driveId: z.string().optional(),
   type: z.enum(["JD", "RESUME", "CERTIFICATION"]).optional().default("RESUME"),
 });
@@ -219,7 +227,7 @@ export function validatePasswordStrength(password: string): { isValid: boolean; 
   if (!result.success) {
     return { 
       isValid: false, 
-      error: result.error.errors[0].message 
+      error: result.error.issues[0]?.message || "Validation failed"
     };
   }
   return { isValid: true };

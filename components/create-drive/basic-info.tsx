@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -16,6 +17,7 @@ function PremiumSelect({
     value,
     onChange,
     placeholder,
+    error,
 }: {
     label: string;
     icon: React.ElementType;
@@ -23,6 +25,7 @@ function PremiumSelect({
     value: string;
     onChange: (v: string) => void;
     placeholder: string;
+    error?: string;
 }) {
     const [open, setOpen] = useState(false);
     const [rect, setRect] = useState<DOMRect | null>(null);
@@ -108,13 +111,19 @@ function PremiumSelect({
                 ref={triggerRef}
                 type="button"
                 onClick={handleOpen}
-                className="relative flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 text-[14px] text-gray-900 shadow-sm hover:border-orange-300 hover:shadow-md transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316]"
+                className={cn(
+                    "relative flex h-10 w-full items-center justify-between gap-2 rounded-lg border bg-white px-3 text-[14px] shadow-sm transition-all duration-150 focus:outline-none focus:ring-2",
+                    error 
+                        ? "border-red-500 ring-red-500/10 focus:ring-red-500/30 focus:border-red-500" 
+                        : "border-gray-200 hover:border-orange-300 hover:shadow-md focus:ring-[#F97316]/30 focus:border-[#F97316]"
+                )}
             >
                 <span className={value ? "text-gray-900 font-medium" : "text-gray-400"}>
                     {value || placeholder}
                 </span>
-                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${open ? "rotate-180 text-[#F97316]" : ""}`} />
+                <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", open ? "rotate-180 text-[#F97316]" : "text-gray-400")} />
             </button>
+            {error && <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest px-1">{error}</p>}
             {typeof window !== "undefined" && createPortal(dropdown, document.body)}
         </div>
     );
@@ -125,10 +134,12 @@ function PremiumSelect({
 function PremiumInput({
     label,
     icon: Icon,
+    error,
     ...props
 }: {
     label: string;
     icon: React.ElementType;
+    error?: string;
 } & React.InputHTMLAttributes<HTMLInputElement>) {
     return (
         <div className="space-y-2">
@@ -139,8 +150,14 @@ function PremiumInput({
             </Label>
             <Input
                 {...props}
-                className="h-10 rounded-lg border-gray-200 bg-white px-3 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 hover:shadow-md focus-visible:ring-2 focus-visible:ring-[#F97316]/30 focus-visible:border-[#F97316] focus-visible:shadow-none transition-all duration-150 placeholder:text-gray-400 placeholder:font-normal"
+                className={cn(
+                    "h-10 rounded-lg bg-white px-3 text-[14px] font-medium shadow-sm transition-all duration-150 placeholder:text-gray-400 placeholder:font-normal",
+                    error 
+                        ? "border-red-500 focus-visible:ring-red-500/30 focus-visible:border-red-500" 
+                        : "border-gray-200 hover:border-orange-300 hover:shadow-md focus-visible:ring-[#F97316]/30 focus-visible:border-[#F97316]"
+                )}
             />
+            {error && <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest px-1">{error}</p>}
         </div>
     );
 }
@@ -150,9 +167,10 @@ const DAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MONTHS = ["January","February","March","April","May","June",
     "July","August","September","October","November","December"];
 
-function PremiumDatePicker({ label, icon: Icon, id, value, onChange }: {
+function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
     label: string; icon: React.ElementType; id: string;
     value: string; onChange: (v: string) => void;
+    error?: string;
 }) {
     const [open, setOpen] = useState(false);
     const [rect, setRect] = useState<DOMRect | null>(null);
@@ -314,20 +332,26 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange }: {
                 id={id}
                 type="button"
                 onClick={handleOpen}
-                className="relative flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 text-[14px] shadow-sm hover:border-orange-300 hover:shadow-md transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316]"
+                className={cn(
+                    "relative flex h-10 w-full items-center justify-between gap-2 rounded-lg border bg-white px-3 text-[14px] shadow-sm transition-all duration-150 focus:outline-none focus:ring-2",
+                    error 
+                        ? "border-red-500 ring-red-500/10 focus:ring-red-500/30 focus:border-red-500" 
+                        : "border-gray-200 hover:border-orange-300 hover:shadow-md focus:ring-[#F97316]/30 focus:border-[#F97316]"
+                )}
             >
                 <span className={displayValue ? "text-gray-900 font-medium" : "text-gray-400"}>
                     {displayValue || "Pick a date"}
                 </span>
-                <Calendar className={`h-4 w-4 transition-colors ${open ? "text-[#F97316]" : "text-gray-400"}`} />
+                <Calendar className={cn("h-4 w-4 transition-colors", open ? "text-[#F97316]" : "text-gray-400")} />
             </button>
+            {error && <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest px-1">{error}</p>}
             {typeof window !== "undefined" && createPortal(calendar, document.body)}
         </div>
     );
 }
 
 /* ── Position counter ────────────────────────────────────── */
-function PositionCounter({ label, icon: Icon, value, onChange }: { label: string; icon: React.ElementType; value: number; onChange: (v: number) => void }) {
+function PositionCounter({ label, icon: Icon, value, onChange, error }: { label: string; icon: React.ElementType; value: number; onChange: (v: number) => void; error?: string }) {
     const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = parseInt(e.target.value);
         if (!isNaN(val) && val >= 1) onChange(val);
@@ -341,7 +365,12 @@ function PositionCounter({ label, icon: Icon, value, onChange }: { label: string
                 {label}
                 <span className="text-[#F97316] ml-0.5">*</span>
             </Label>
-            <div className="flex h-10 items-center rounded-lg border border-gray-200 bg-white shadow-sm hover:border-orange-300 hover:shadow-md transition-all duration-150 overflow-hidden">
+            <div className={cn(
+                "flex h-10 items-center rounded-lg border bg-white shadow-sm transition-all duration-150 overflow-hidden",
+                error 
+                    ? "border-red-500 ring-red-500/10" 
+                    : "border-gray-200 hover:border-orange-300 hover:shadow-md"
+            )}>
                 <button
                     type="button"
                     onClick={() => onChange(Math.max(1, value - 1))}
@@ -364,6 +393,7 @@ function PositionCounter({ label, icon: Icon, value, onChange }: { label: string
                     +
                 </button>
             </div>
+            {error && <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest px-1">{error}</p>}
         </div>
     );
 }
@@ -384,8 +414,22 @@ interface BasicInfoProps {
 }
 
 export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoProps) {
+    const [touched, setTouched] = useState<Record<string, boolean>>({});
+
     const handleChange = (field: string, value: any) => {
         updateFormData({ ...formData, [field]: value });
+    };
+
+    const handleBlur = (field: string) => {
+        setTouched(prev => ({ ...prev, [field]: true }));
+    };
+
+    const getError = (field: string) => {
+        if (!touched[field]) return undefined;
+        if (!formData[field] || (typeof formData[field] === 'string' && !formData[field].trim())) {
+            return "This field is required";
+        }
+        return undefined;
     };
 
     return (
@@ -416,6 +460,8 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                         id="role"
                         value={formData.role || ""}
                         onChange={(e) => handleChange("role", e.target.value)}
+                        onBlur={() => handleBlur("role")}
+                        error={getError("role")}
                         placeholder="e.g. Backend Engineer"
                         required
                     />
@@ -425,6 +471,8 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                         id="title"
                         value={formData.title || ""}
                         onChange={(e) => handleChange("title", e.target.value)}
+                        onBlur={() => handleBlur("title")}
+                        error={getError("title")}
                         placeholder="e.g. Senior Backend Engineer Drive"
                         required
                     />
@@ -443,7 +491,8 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                         icon={Building2}
                         options={DEPARTMENTS}
                         value={formData.department || ""}
-                        onChange={(v) => handleChange("department", v)}
+                        onChange={(v) => { handleChange("department", v); handleBlur("department"); }}
+                        error={getError("department")}
                         placeholder="Select Department"
                     />
                     <PremiumSelect
@@ -451,7 +500,8 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                         icon={Laptop}
                         options={WORK_MODES}
                         value={formData.workMode || ""}
-                        onChange={(v) => handleChange("workMode", v)}
+                        onChange={(v) => { handleChange("workMode", v); handleBlur("workMode"); }}
+                        error={getError("workMode")}
                         placeholder="Remote / Hybrid / On-site"
                     />
                 </div>
@@ -469,21 +519,24 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                         icon={Briefcase}
                         options={EMPLOYMENT_TYPES}
                         value={formData.employmentType || ""}
-                        onChange={(v) => handleChange("employmentType", v)}
+                        onChange={(v) => { handleChange("employmentType", v); handleBlur("employmentType"); }}
+                        error={getError("employmentType")}
                         placeholder="Select Type"
                     />
                     <PositionCounter
                         label="Open Positions"
                         icon={Users}
                         value={formData.positions || 1}
-                        onChange={(v: number) => handleChange("positions", v)}
+                        onChange={(v: number) => { handleChange("positions", v); handleBlur("positions"); }}
+                        error={getError("positions")}
                     />
                     <PremiumDatePicker
                         label="Application Deadline"
                         icon={Calendar}
                         id="deadline"
                         value={formData.deadline || ""}
-                        onChange={(v: string) => handleChange("deadline", v)}
+                        onChange={(v: string) => { handleChange("deadline", v); handleBlur("deadline"); }}
+                        error={getError("deadline")}
                     />
                 </div>
             </section>

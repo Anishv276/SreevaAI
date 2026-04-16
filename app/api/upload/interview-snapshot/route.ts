@@ -1,16 +1,32 @@
 import { NextResponse } from "next/server";
 import { interviewSnapshotQueue } from "@/lib/queue";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { imageDataUrl, candidateName, applicationId, label } = body;
+        const { imageDataUrl, candidateName, applicationId, interviewToken, label } = body;
         
-        console.log(`[SNAPSHOT_API] Queueing offload for AppID: ${applicationId}`);
+        console.log(`[SNAPSHOT_API] Processing for AppID: ${applicationId}`);
 
-        if (!imageDataUrl || !applicationId) {
-            return NextResponse.json({ error: "Missing imageDataUrl or applicationId" }, { status: 400 });
+        if (!imageDataUrl || !applicationId || !interviewToken) {
+            return NextResponse.json({ error: "Missing required fields (imageDataUrl, applicationId, or interviewToken)" }, { status: 400 });
         }
+
+        // ── AUTHENTICATION ────────────────────────────────
+        const interview = await prisma.interview.findUnique({
+            where: { applicationId },
+            select: { accessToken: true, status: true }
+        });
+
+        if (!interview || interview.accessToken !== interviewToken) {
+            return NextResponse.json({ error: "Unauthorized: Invalid session token" }, { status: 401 });
+        }
+
+        if (interview.status !== "INPROGRESS" && interview.status !== "PENDING") {
+             return NextResponse.json({ error: "Unauthorized: Interview is not in an active state" }, { status: 403 });
+        }
+        // ──────────────────────────────────────────────────
 
         // Offload to BullMQ worker
         // We send the full data here. Since Redis has a 32MB limit, 

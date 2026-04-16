@@ -29,24 +29,27 @@ export async function GET(req: NextRequest) {
         const from = searchParams.get("from") ?? undefined;
         const start = getRangeStart(range, from);
 
-        // Get all completed interviews with AI scores in range
-        const interviews = await prisma.interview.findMany({
-            where: {
-                status: "COMPLETED",
-                completedAt: { gte: start },
-                application: {
-                    drive: { orgId },
-                    aiScore: { not: null },
-                },
-            },
-            select: {
-                application: { select: { aiScore: true } },
-            },
-        });
+        // ── DB BUCKETING: Score Distribution ───────────────
+        const scoreGroups = await prisma.$queryRawUnsafe<any[]>(`
+            SELECT 
+                CASE 
+                    WHEN a."aiScore" < 20 THEN '0–20'
+                    WHEN a."aiScore" < 40 THEN '20–40'
+                    WHEN a."aiScore" < 60 THEN '40–60'
+                    WHEN a."aiScore" < 80 THEN '60–80'
+                    ELSE '80–100'
+                END as label,
+                COUNT(*)::INT as count
+            FROM "Interview" iv
+            JOIN "Application" a ON iv."applicationId" = a."id"
+            JOIN "Drive" d ON a."driveId" = d."id"
+            WHERE d."orgId" = $1 
+              AND iv."status" = 'COMPLETED'
+              AND iv."completedAt" >= $2
+              AND a."aiScore" IS NOT NULL
+            GROUP BY label
+        `, orgId, start);
 
-        const total = interviews.length;
-
-        // Bucket into 5 bands
         const bands = [
             { label: "0–20",  min: 0,  max: 20,  color: "#EF4444", tier: "Below threshold" },
             { label: "20–40", min: 20, max: 40,  color: "#DC2626", tier: "Below threshold" },
@@ -55,11 +58,11 @@ export async function GET(req: NextRequest) {
             { label: "80–100",min: 80, max: 101, color: "#16A34A", tier: "Excellent" },
         ];
 
+        let total = 0;
         const distribution = bands.map((band) => {
-            const count = interviews.filter((iv) => {
-                const score = iv.application.aiScore ?? 0;
-                return score >= band.min && score < band.max;
-            }).length;
+            const match = scoreGroups.find(g => g.label === band.label);
+            const count = match ? match.count : 0;
+            total += count;
             return { ...band, count };
         });
 
