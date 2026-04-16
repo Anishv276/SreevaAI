@@ -21,18 +21,16 @@ export async function POST(request: Request) {
             select: { accessToken: true, status: true }
         });
 
-        if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
-            return NextResponse.json({ error: "Unauthorized: Invalid session token" }, { status: 401 });
-        }
-
-        if (requireInterviewToken && interview.status !== "INPROGRESS" && interview.status !== "PENDING") {
-             return NextResponse.json({ error: "Unauthorized: Interview is not in an active state" }, { status: 403 });
+        if (requireInterviewToken) {
+            if (!interview || interview.accessToken !== interviewToken) {
+                return NextResponse.json({ error: "Unauthorized: Invalid session token" }, { status: 401 });
+            }
+            if (interview.status !== "INPROGRESS" && interview.status !== "PENDING") {
+                return NextResponse.json({ error: "Unauthorized: Interview is not in an active state" }, { status: 403 });
+            }
         }
         // ──────────────────────────────────────────────────
 
-        // Offload to BullMQ worker
-        // We send the full data here. Since Redis has a 32MB limit, 
-        // the worker is configured to remove jobs immediately on completion.
         await interviewSnapshotQueue.add(`snapshot-${applicationId}-${Date.now()}`, {
             imageDataUrl,
             applicationId,

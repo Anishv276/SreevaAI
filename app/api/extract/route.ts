@@ -251,7 +251,7 @@ export async function POST(request: Request) {
             }
 
             // Guard: ensure we got meaningful text back for JD/RESUME types
-            if (type !== "PASSPORT" && result.text && result.text.length < 100) {
+            if (result.text && typeof result.text === 'string' && result.text.length < 100) {
                 return NextResponse.json({
                     error: "Could not extract sufficient text from this document. Please ensure the file is not empty or a scanned image.",
                     code: "EXTRACTION_INSUFFICIENT_DATA"
