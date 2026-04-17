@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState, useRef } from "react";
+import { use, useEffect, useState, useRef, memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -20,9 +20,263 @@ import "plyr-react/plyr.css";
 const Plyr = dynamic(() => import("plyr-react").then((mod) => mod.Plyr), { ssr: false });
 
 
-/* ── Premium Score Indicator ─────────────────────────── */
+/* ── Pic 1: Top Summary Cards ────────────────────────── */
+const ScoreCard = memo(function ScoreCard({ label, value, status, color = "orange" }: { label: string; value: string; status: string; color?: "orange" | "red" | "emerald" | "slate" }) {
+    const bgStyles = {
+        orange: "bg-[#FDF9F3] border-[#F5E6D3] text-[#8B5E3C]",
+        red: "bg-[#FFF5F5] border-[#FED7D7] text-[#C53030]",
+        emerald: "bg-[#F0FFF4] border-[#C6F6D5] text-[#2F855A]",
+        slate: "bg-[#F8FAFC] border-[#E2E8F0] text-[#475569]"
+    };
+    const badgeStyles = {
+        orange: "bg-[#F59E0B]/10 text-[#B45309] border-[#F59E0B]/20",
+        red: "bg-[#EF4444]/10 text-[#B91C1C] border-[#EF4444]/20",
+        emerald: "bg-[#10B981]/10 text-[#047857] border-[#10B981]/20",
+        slate: "bg-[#64748B]/10 text-[#334155] border-[#64748B]/20"
+    };
+
+    return (
+        <div className={cn("p-8 rounded-[32px] border flex flex-col items-center justify-center gap-2 transition-all hover:shadow-md", bgStyles[color])}>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">{label}</p>
+            <h4 className="text-3xl font-black tracking-tight">{value}</h4>
+            <span className={cn("px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border mt-2", badgeStyles[color])}>
+                {status}
+            </span>
+        </div>
+    );
+});
+
+/* ── Pic 2: JD Skill Assessment Cards ─────────────────── */
+/* ── Pic 2: JD Skill Assessment Cards ─────────────────── */
+/* ── Assessment Card (Minimalist Bento Style) ───────── */
+const AssessmentCard = memo(function AssessmentCard({ title, subtitle, confidence, score, status }: { title: string; subtitle: string; confidence: string; score: string; status: "PROVED" | "PARTIAL" | "NOT PROVED" | "NOT TESTED" }) {
+    const statusStyles = {
+        PROVED: "bg-emerald-50 text-emerald-600 border-emerald-100",
+        PARTIAL: "bg-[#FFFBEB] text-[#B45309] border-[#FEF3C7]",
+        "NOT PROVED": "bg-rose-50 text-rose-600 border-rose-100",
+        "NOT TESTED": "bg-gray-50 text-gray-400 border-gray-100",
+    };
+
+    return (
+        <div className="flex items-start justify-between py-6 border-b border-gray-50 last:border-0 group">
+            <div className="space-y-3">
+                <h4 className="text-[15px] font-black text-gray-950 tracking-tight leading-none">{title}</h4>
+                <p className="text-[12px] font-medium text-gray-400 italic leading-relaxed max-w-[380px]">"{subtitle}"</p>
+                <p className="text-[9px] font-black text-gray-300 uppercase tracking-[0.2em] pt-0.5">CONFIDENCE: {confidence}</p>
+            </div>
+            <div className="flex flex-col items-end justify-between self-stretch py-0.5">
+                <span className={cn("px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border shadow-sm", statusStyles[status])}>
+                    {status}
+                </span>
+                <span className="text-[16px] font-black text-gray-950 tracking-tighter">{score}</span>
+            </div>
+        </div>
+    );
+});
+
+/* ── Verdict Score Card ─────────────────────────────── */
+const VerdictScoreCard = memo(function VerdictScoreCard({ label, value, color }: { label: string; value: string; color: "red" | "orange" | "green" }) {
+    const colors = {
+        red: "text-[#EF4444]",
+        orange: "text-[#D97706]",
+        green: "text-[#10B981]",
+    };
+    return (
+        <div className="p-14 rounded-[48px] bg-white border border-gray-100 flex flex-col items-center justify-center gap-4 transition-all hover:shadow-[0_20px_50px_rgba(0,0,0,0.04)] shadow-sm flex-1">
+            <h4 className={cn("text-7xl font-black tracking-tighter", colors[color])}>{value}</h4>
+            <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.4em] pt-2">{label}</p>
+        </div>
+    );
+});
+
+/* ── Recommended Action Item ────────────────────────── */
+const RecommendedActionItem = memo(function RecommendedActionItem({ text }: { text: string }) {
+    return (
+        <div className="flex gap-4 items-start group">
+            <div className="mt-1 h-5 w-5 rounded-full flex items-center justify-center shrink-0">
+                <ArrowRight className="h-4 w-4 text-[#6366F1] group-hover:translate-x-1 transition-transform" />
+            </div>
+            <p className="text-[15px] font-bold text-[#4338CA] leading-relaxed tracking-tight">
+                {text}
+            </p>
+        </div>
+    );
+});
+
+/* ── Pic 2: Chat Entry ───────────────────────────────── */
+const ChatEntry = memo(function ChatEntry({ role, text, name }: { role: "ai" | "candidate"; text: string; name: string }) {
+    const isAi = role === "ai";
+    return (
+        <div className={cn("flex flex-col gap-3", isAi ? "items-start" : "items-end")}>
+            <div className={cn("flex items-center gap-2 px-0.5", isAi ? "flex-row" : "flex-row-reverse")}>
+                <div className={cn("h-6 w-6 rounded-lg flex items-center justify-center text-[8px] font-black text-white shadow-sm", isAi ? "bg-[#4338CA]" : "bg-[#F97316]")}>
+                    {isAi ? "AI" : "C"}
+                </div>
+                <span className={cn("text-[8px] font-black uppercase tracking-widest", isAi ? "text-[#4338CA]" : "text-gray-400")}>
+                    {isAi ? `${name.toUpperCase()} (AI)` : `CANDIDATE C`}
+                </span>
+            </div>
+            <div className={cn(
+                "max-w-[80%] p-4 rounded-[24px] text-[12px] font-medium leading-[1.5] font-sans shadow-[0_4px_16px_rgba(0,0,0,0.02)]",
+                isAi ? "bg-white border border-gray-100 text-gray-800 rounded-tl-none" : "bg-[#4338CA] text-white rounded-tr-none"
+            )}>
+                {text}
+            </div>
+        </div>
+    );
+});
+
+/* ── Pic 2: Key Moment Entry ─────────────────────────── */
+const MomentEntry = memo(function MomentEntry({ time, type, observation, comment }: { time: string; type: "CONTEXT" | "FLAG" | "CRITICAL"; observation: string; comment: string }) {
+    const typeStyles = {
+        CONTEXT: "text-[#6366F1] bg-[#EEF2FF] border-[#E0E7FF]",
+        FLAG: "text-[#D97706] bg-[#FFFBEB] border-[#FEF3C7]",
+        CRITICAL: "text-[#E11D48] bg-[#FFF1F2] border-[#FECACA]"
+    };
+    return (
+        <div className="grid grid-cols-[80px_1fr] group border-b border-gray-50 last:border-0 hover:bg-gray-50/20 transition-all">
+            <div className="py-6">
+                <span className="text-[13px] font-black text-[#4338CA] tracking-tight">{time}</span>
+            </div>
+            <div className="py-6 space-y-3">
+                <div className="flex items-center gap-3">
+                    <span className={cn("px-2 py-0.5 rounded-[4px] text-[8px] font-black uppercase tracking-widest border shadow-sm", typeStyles[type])}>{type}</span>
+                    <h5 className="text-[15px] font-black text-gray-950 tracking-tight leading-none">{observation}</h5>
+                </div>
+                <div className="p-4 rounded-[20px] bg-[#F7F6F3] border border-gray-100/50 italic text-[11px] text-gray-500 leading-relaxed font-medium">
+                    "{comment}"
+                </div>
+            </div>
+        </div>
+    );
+});
+
+/* ── Pic 4: Verdict Score Box ────────────────────────── */
+const VerdictScoreBox = memo(function VerdictScoreBox({ label, value, color = "rose" }: { label: string; value: string; color?: "rose" | "orange" | "amber" }) {
+    const colors = {
+        rose: "text-rose-600 bg-rose-50/30 border-rose-100",
+        orange: "text-orange-600 bg-orange-50/30 border-orange-100",
+        amber: "text-amber-600 bg-amber-50/30 border-amber-100"
+    };
+    return (
+        <div className={cn("p-10 rounded-[40px] border flex flex-col items-center justify-center gap-3", colors[color])}>
+            <span className="text-5xl font-black tracking-tighter">{value}</span>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">{label}</p>
+        </div>
+    );
+});
+
+/* ── Pic 5: Deep Dive Log ────────────────────────────── */
+const DeepDiveLog = memo(function DeepDiveLog({ label, description, time, type = "error" }: { label: string; description: string; time: string; type?: "error" | "warning" | "success" }) {
+    const styles = {
+        error: "bg-red-50 border-red-100 text-red-600",
+        warning: "bg-orange-50 border-orange-100 text-orange-600",
+        success: "bg-emerald-50 border-emerald-100 text-emerald-600"
+    };
+    return (
+        <div className={cn("p-5 rounded-3xl border flex items-start justify-between gap-4", styles[type])}>
+            <div className="space-y-1">
+                <h5 className="text-[13px] font-bold text-gray-900">{label}</h5>
+                <p className="text-[11px] font-black uppercase tracking-widest opacity-70 leading-relaxed">{description}</p>
+            </div>
+            <span className="text-[10px] font-black whitespace-nowrap pt-0.5 uppercase">{time}</span>
+        </div>
+    );
+});
+
+/* ── Pic 3: Integrity Logic Row ──────────────────────── */
+/* ── Pic 3: Integrity Logic Row ──────────────────────── */
+const IntegrityRow = memo(function IntegrityRow({ label, value, status }: { label: string; value: string; status: string }) {
+    return (
+        <div className="p-6 rounded-[32px] bg-white border border-gray-100 flex flex-col items-center justify-center gap-2 flex-1 shadow-sm">
+            <h4 className="text-2xl font-black text-gray-900 tracking-tight">{value}</h4>
+            <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">{label}</p>
+            <span className={cn("px-2 py-0.5 rounded text-[7px] font-black uppercase tracking-tighter border mt-1",
+                status === "NO RISK" ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-orange-50 text-orange-600 border-orange-100 font-bold"
+            )}>{status}</span>
+        </div>
+    );
+});
+
+/* ── Proctoring Metric Card ─────────────────────────── */
+const ProctoringMetric = memo(function ProctoringMetric({ value, label, risk }: { value: string; label: string; risk: "NO RISK" | "MEDIUM RISK" | "HIGH RISK" }) {
+    const riskStyles = {
+        "NO RISK": "bg-[#F0FDF4] text-emerald-600 border-[#DCFCE7]",
+        "MEDIUM RISK": "bg-[#FFF7ED] text-orange-600 border-[#FFEDD5]",
+        "HIGH RISK": "bg-[#FFF1F2] text-rose-600 border-[#FFE4E6]",
+    };
+    const valueColors = {
+        "NO RISK": "text-emerald-500",
+        "MEDIUM RISK": "text-orange-500",
+        "HIGH RISK": "text-rose-500",
+    };
+    // Special case for the reddish "1" in the screenshot
+    const displayColor = (label === "Tab Switches" && value === "1") ? "text-[#EF4444]" : valueColors[risk];
+
+    return (
+        <div className="p-10 rounded-[44px] bg-white border border-gray-100 flex flex-col items-center justify-center gap-4 transition-all hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] shadow-[0_4px_24px_rgba(0,0,0,0.02)] flex-1">
+            <h4 className={cn("text-5xl font-black tracking-tight", displayColor)}>{value}</h4>
+            <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] whitespace-nowrap">{label}</p>
+            <span className={cn("px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border mt-1", riskStyles[risk])}>
+                {risk}
+            </span>
+        </div>
+    );
+});
+
+/* ── Timeline Event Item ────────────────────────────── */
+const TimelineEvent = memo(function TimelineEvent({ time, event, risk, desc, subNote, isSuccess = false }: { time: string; event: string; risk: "CLEAN" | "MEDIUM RISK" | "HIGH RISK"; desc: string; subNote?: string; isSuccess?: boolean }) {
+    const riskStyles = {
+        CLEAN: "bg-[#F0FDF4] text-emerald-600 border-[#DCFCE7]",
+        "MEDIUM RISK": "bg-[#FFF7ED] text-orange-600 border-[#FFEDD5]",
+        "HIGH RISK": "bg-[#FFF1F2] text-rose-600 border-[#FFE4E6]",
+    };
+    const dotColor = isSuccess ? "bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]" : risk === "MEDIUM RISK" ? "bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.4)]" : "bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.4)]";
+
+    return (
+        <div className="grid grid-cols-[100px_1fr] relative group">
+            <div className="flex flex-col items-center pt-1">
+                <span className="text-[14px] font-black text-[#4338CA] font-mono tracking-tight">{time}</span>
+                <div className="w-[1px] flex-1 bg-gray-100 my-4 group-last:hidden" />
+            </div>
+            <div className="pb-14 pl-8 relative">
+                <div className={cn("absolute -left-[4.5px] top-[8px] h-[9px] w-[9px] rounded-full ring-[4px] ring-white shadow-sm z-10", dotColor)} />
+                <div className="space-y-3">
+                    <div className="flex items-center gap-4">
+                        <h5 className="text-[15px] font-black text-gray-900 tracking-tight leading-none">{event}</h5>
+                        <span className={cn("px-3 py-1 rounded-[6px] text-[9px] font-black uppercase tracking-widest border shadow-sm", riskStyles[risk])}>
+                            {risk}
+                        </span>
+                    </div>
+                    <p className="text-[13px] font-medium text-gray-400 leading-relaxed max-w-[95%]">{desc}</p>
+                    {subNote && (
+                        <p className="text-[13px] font-medium text-[#6366F1] italic leading-relaxed pt-2 max-w-[95%]">
+                            {subNote}
+                        </p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+});
+
+/* ── Analysis Signal Item ────────────────────────────── */
+const AnalysisSignal = memo(function AnalysisSignal({ title, desc, type }: { title: string; desc: string; type: "success" | "warning" }) {
+    return (
+        <div className="flex gap-6 p-8 rounded-[40px] bg-white border border-gray-100/60 shadow-[0_2px_12px_rgba(0,0,0,0.02)] hover:shadow-md transition-all group">
+            <div className={cn("h-11 w-11 rounded-full flex items-center justify-center shrink-0 shadow-sm", type === "success" ? "bg-[#F0FDF4] text-emerald-500" : "bg-[#FFF7ED] text-orange-500")}>
+                {type === "success" ? <CheckCircle2 className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
+            </div>
+            <div className="space-y-2">
+                <h5 className="text-[15px] font-black text-gray-900 tracking-tight leading-tight group-hover:text-indigo-600 transition-colors">{title}</h5>
+                <p className="text-[13px] font-medium text-gray-400 leading-relaxed">{desc}</p>
+            </div>
+        </div>
+    );
+});
+
 /* ── Premium Score Ring ────────────────────────────── */
-function CircularProgress({
+const CircularProgress = memo(function CircularProgress({
     value,
     max = 100,
     label,
@@ -98,10 +352,10 @@ function CircularProgress({
             </span>
         </div>
     );
-}
+});
 
 /* ── Segmented Data Track ────────────────────────────── */
-function SegmentedProgress({ candValue, jdValue, label, unit = "YRS" }: { candValue: number; jdValue: number; label: string; unit?: string }) {
+const SegmentedProgress = memo(function SegmentedProgress({ candValue, jdValue, label, unit = "YRS" }: { candValue: number; jdValue: number; label: string; unit?: string }) {
     const totalBlocks = Math.max(candValue, jdValue, 8);
     return (
         <div className="space-y-4">
@@ -125,10 +379,10 @@ function SegmentedProgress({ candValue, jdValue, label, unit = "YRS" }: { candVa
             </div>
         </div>
     );
-}
+});
 
 /* ── Communication Donut Chart ────────────────────────── */
-function CommunicationDonutChart({ metrics }: { metrics: { label: string; value: number; color: string }[] }) {
+const CommunicationDonutChart = memo(function CommunicationDonutChart({ metrics }: { metrics: { label: string; value: number; color: string }[] }) {
     const [hovered, setHovered] = useState<number | null>(null);
     const [animProgress, setAnimProgress] = useState(0);
 
@@ -273,7 +527,7 @@ function CommunicationDonutChart({ metrics }: { metrics: { label: string; value:
             </div>
         </div>
     );
-}
+});
 
 /* ── Main Component ─────────────────────────────── */
 export default function CandidateProfilePage({ params }: { params: Promise<{ id: string }> }) {
@@ -300,7 +554,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
     const handleMouseMove = (e: React.MouseEvent) => {
         const target = (e.target as HTMLElement).closest('.spotlight-card') as HTMLElement;
         if (!target) return;
-        
+
         const rect = target.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
@@ -480,18 +734,21 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                 .tracking-premium { letter-spacing: -0.02em !important; }
                 .glass-card {
                     background: rgba(255, 255, 255, 0.45);
-                    backdrop-filter: blur(24px) saturate(180%);
-                    -webkit-backdrop-filter: blur(24px) saturate(180%);
+                    backdrop-filter: blur(12px) saturate(160%);
+                    -webkit-backdrop-filter: blur(12px) saturate(160%);
                     border: 1px solid rgba(255, 255, 255, 0.3);
                     box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04);
+                    will-change: transform;
                 }
                 .spotlight-card {
                     position: relative;
                     background: rgba(255, 255, 255, 0.5);
-                    backdrop-filter: blur(20px);
+                    backdrop-filter: blur(10px);
                     border: 1px solid rgba(255, 255, 255, 0.25);
                     transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
                     overflow: hidden;
+                    will-change: transform;
+                    contain: content;
                 }
                 .spotlight-card::before {
                     content: "";
@@ -510,19 +767,23 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.04);
                     transform: translateY(-4px);
                 }
+                .optimize-scroll {
+                    content-visibility: auto;
+                    contain-intrinsic-size: 1px 500px;
+                }
                         ` }} />
 
             {/* ── Background Aurora Blobs ──────────────── */}
             <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden" style={{ transform: 'translateZ(0)' }}>
-                <div className="absolute top-[-20%] right-[-10%] w-[800px] h-[800px] bg-purple-500/10 blur-[160px] rounded-full animate-pulse" style={{ willChange: 'transform, opacity' }} />
-                <div className="absolute bottom-[-20%] left-[-10%] w-[800px] h-[800px] bg-blue-500/10 blur-[160px] rounded-full" style={{ willChange: 'transform' }} />
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[1000px] bg-indigo-500/5 blur-[200px] rounded-full" style={{ willChange: 'transform' }} />
+                <div className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] bg-purple-500/5 blur-[120px] rounded-full animate-pulse" style={{ willChange: 'opacity' }} />
+                <div className="absolute bottom-[-20%] left-[-10%] w-[600px] h-[600px] bg-blue-500/5 blur-[120px] rounded-full" style={{ willChange: 'opacity' }} />
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-indigo-500/5 blur-[150px] rounded-full" style={{ willChange: 'opacity' }} />
             </div>
 
             {/* ── Main Content Area ─────────────────────────── */}
             <div className="flex-1 min-w-0">
                 {/* ── Sticky Navigation Header ─────────────────────────── */}
-                <header className="sticky top-0 z-[100] bg-white/40 backdrop-blur-3xl border-b border-white/20 px-6 py-4">
+                <header className="sticky top-0 z-[100] bg-white/40 backdrop-blur-xl border-b border-white/20 px-6 py-4 transition-all">
                     <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-4">
                         {/* Left: Exit & Context */}
                         <div className="flex items-center gap-6">
@@ -742,7 +1003,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         </div>
                                     </div>
 
-                                    <div className="p-10 spotlight-card rounded-[48px] shadow-sm">
+                                    <div className="p-10 spotlight-card rounded-[48px] shadow-sm optimize-scroll">
                                         <div className="flex flex-row items-center justify-around gap-2 px-4">
                                             <CircularProgress
                                                 value={breakdown?.skills_score || 0}
@@ -827,7 +1088,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                        <div className="p-10 spotlight-card rounded-[40px] border-t-4 border-t-emerald-500 shadow-sm space-y-10">
+                                        <div className="p-10 spotlight-card rounded-[40px] border-t-4 border-t-emerald-500 shadow-sm space-y-10 optimize-scroll">
                                             <div className="flex items-center gap-4">
                                                 <div className="h-10 w-10 rounded-2xl bg-emerald-50 flex items-center justify-center">
                                                     <CheckCircle2 className="h-5 w-5 text-emerald-600" />
@@ -849,7 +1110,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                             </div>
                                         </div>
 
-                                        <div className="p-10 spotlight-card rounded-[40px] border-t-4 border-t-amber-500 shadow-sm space-y-10">
+                                        <div className="p-10 spotlight-card rounded-[40px] border-t-4 border-t-amber-500 shadow-sm space-y-10 optimize-scroll">
                                             <div className="flex items-center gap-4">
                                                 <div className="h-10 w-10 rounded-2xl bg-amber-50 flex items-center justify-center">
                                                     <AlertTriangle className="h-5 w-5 text-amber-600" />
@@ -874,7 +1135,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                         {/* ── Career Timeline (Left) ──────────────── */}
-                                        <div className="p-8 spotlight-card bg-white rounded-[40px] shadow-sm flex flex-col h-full border border-slate-100">
+                                        <div className="p-8 spotlight-card bg-white rounded-[40px] shadow-sm flex flex-col h-full border border-slate-100 optimize-scroll">
                                             <div className="flex items-center gap-3 mb-10 px-2">
                                                 <div className="h-10 w-10 rounded-2xl bg-slate-50 flex items-center justify-center border border-slate-100">
                                                     <BriefcaseBusiness className="h-5 w-5 text-slate-400" />
@@ -884,7 +1145,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                             <div className="relative flex-1 px-4">
                                                 <div className="absolute left-[31px] top-2 bottom-8 w-[2px] bg-slate-50" />
-                                                
+
                                                 <div className="space-y-10">
                                                     {(() => {
                                                         const history = aiData.work_history || workHistory || [];
@@ -896,7 +1157,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                                         "h-4 w-4 rounded-full mt-1.5 z-10 ring-4 ring-white shrink-0 transition-all",
                                                                         isCurrent ? "bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.5)] scale-110" : "bg-slate-200"
                                                                     )} />
-                                                                    
+
                                                                     <div className="space-y-2 pb-2">
                                                                         <div className="flex flex-col gap-0.5">
                                                                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
@@ -920,9 +1181,9 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         </div>
 
                                         {/* ── Strategic Verdict (Right) ───────────── */}
-                                        <div className="p-8 spotlight-card bg-indigo-50/30 rounded-[40px] border border-indigo-100/50 shadow-sm flex flex-col h-full relative overflow-hidden group">
+                                        <div className="p-8 spotlight-card bg-indigo-50/30 rounded-[40px] border border-indigo-100/50 shadow-sm flex flex-col h-full relative overflow-hidden group optimize-scroll">
                                             <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-200/20 blur-[60px] rounded-full -mr-24 -mt-24 pointer-events-none" />
-                                            
+
                                             <div className="flex items-center gap-3 mb-10 px-2 relative z-10">
                                                 <div className="h-10 w-10 rounded-2xl bg-white border border-indigo-100 flex items-center justify-center shadow-sm">
                                                     <Sparkles className="h-5 w-5 text-indigo-500" />
@@ -974,7 +1235,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     {/* 8. Candidate Analysis - Expert Commentary */}
                                     <div className={cn(
-                                        "p-10 spotlight-card border rounded-[40px] space-y-8 mx-2 transition-colors duration-500",
+                                        "p-10 spotlight-card border rounded-[40px] space-y-8 mx-2 transition-colors duration-500 optimize-scroll",
                                         normalizedStatus === "Shortlisted" ? "border-emerald-200 shadow-emerald-900/5 shadow-2xl" :
                                             normalizedStatus === "Rejected" ? "border-rose-200 shadow-rose-900/5 shadow-2xl" : "border-slate-200"
                                     )}>
@@ -1079,278 +1340,437 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                     </div>
 
                     {activeTab === "interview" && (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                            <div className="relative spotlight-card rounded-[48px] shadow-sm overflow-hidden p-10 border border-white/20">
-                                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-300 via-indigo-600 to-indigo-400" />
-                                <div className="flex items-center gap-4 mb-8">
-                                    <div className="h-12 w-12 rounded-2xl bg-indigo-50 flex items-center justify-center">
-                                        <Camera className="h-6 w-6 text-indigo-600" />
-                                    </div>
-                                    <div>
-                                        <h2 className="text-xl font-black text-gray-900 tracking-premium uppercase">Technical Interview Review</h2>
+                        <div className="space-y-12 animate-in fade-in slide-in-from-bottom-3 duration-700 pb-20 bg-[#F7F6F3] -mx-8 px-12 pt-16">
+                            
+                            {/* ── Section: Performance Analysis ── */}
+                            <div className="space-y-12">
+                                <div className="flex flex-col items-center gap-6 text-center">
+                                    <div className="flex items-center gap-8">
+                                        <div className="h-[1px] w-32 bg-gray-200" />
+                                        <h3 className="text-[11px] font-black text-gray-400 uppercase tracking-[0.6em] opacity-80">Performance Analysis</h3>
+                                        <div className="h-[1px] w-32 bg-gray-200" />
                                     </div>
                                 </div>
 
-                                {interviewRecordingUrl ? (
-                                    <div className="space-y-8">
-                                        <div className="pt-4 pb-4 flex items-center gap-6">
-                                            <div className="h-[1px] flex-1 bg-gray-100" />
-                                            <div className="flex items-center gap-4">
-                                                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400">Integrity and Proctoring</h3>
-                                                <button
-                                                    onClick={() => setShowIntegrityDetails(true)}
-                                                    className="px-3 py-1 rounded-lg bg-white/50 backdrop-blur-sm border border-white/20 text-[9px] font-black text-gray-500 uppercase tracking-widest hover:bg-white hover:text-gray-900 transition-all shadow-sm ring-1 ring-black/5"
-                                                >
-                                                    View all logs
-                                                </button>
-                                            </div>
-                                            <div className="h-[1px] flex-1 bg-gray-100" />
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                                    {/* communication */}
+                                    <div className="p-12 rounded-[48px] bg-white border border-gray-100 shadow-sm space-y-10">
+                                        <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Communication Analysis</p>
+                                        <div className="flex justify-center py-6">
+                                            <CommunicationDonutChart
+                                                metrics={[
+                                                    { label: "CLARITY", value: 60, color: "#6366F1" },
+                                                    { label: "FLUENCY", value: 35, color: "#F59E0B" },
+                                                    { label: "GRAMMAR", value: 30, color: "#10B981" },
+                                                    { label: "DEPTH", value: 45, color: "#F43F5E" }
+                                                ]}
+                                            />
                                         </div>
-
-                                        <div className="bg-[#FDF9F3] border-l-4 border-gray-400 p-6 rounded-r-3xl mb-8">
-                                            <p className="text-[#4A3728] text-[13px] leading-relaxed font-bold">
-                                                {aiData.ai_verdict || `The candidate demonstrated technical knowledge but lacked depth in specific project-based questions. Standard performance for B1 level communication.`}
+                                        <div className="p-10 rounded-[40px] bg-[#FAF9F6] border border-[#F5E6D3]/50 space-y-4">
+                                            <p className="text-[9px] font-black text-[#A89078] uppercase tracking-[0.3em]">CEFR RATING</p>
+                                            <h4 className="text-3xl font-black text-[#8B5E3C] tracking-tight">B1 — Intermediate</h4>
+                                            <p className="text-[15px] font-medium text-gray-500 leading-relaxed">
+                                                Can handle simple direct exchanges. Frequent grammatical errors and choppy fluency prevent B2. Insufficient for a senior role requiring complex technical explanation.
                                             </p>
                                         </div>
+                                    </div>
 
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                            <div className="space-y-6">
-                                                <div className="p-10 rounded-[40px] glass-card border border-white/30 h-full">
-                                                    <div className="flex items-center justify-between mb-6 cursor-pointer group" onClick={() => toggleSection('communication')}>
-                                                        <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Communication Breakdown</p>
-                                                        <ChevronDown className={cn("h-4 w-4 text-gray-300 transition-transform duration-300", !expandedSections.communication && "-rotate-90")} />
+                                    {/* video */}
+                                    <div className="p-4 rounded-[52px] bg-white border border-gray-100 shadow-sm flex flex-col justify-center min-h-[480px]">
+                                        <div className="aspect-video w-full rounded-[44px] border-[8px] border-gray-900 bg-black overflow-hidden shadow-2xl relative">
+                                            {interviewRecordingUrl ? (
+                                                <Plyr
+                                                    key={interviewRecordingUrl}
+                                                    source={{
+                                                        type: "video",
+                                                        sources: [{ src: interviewRecordingUrl, type: "video/mp4" }],
+                                                    }}
+                                                    options={{
+                                                        duration: recordingDurationSec || undefined,
+                                                        controls: ["play-large", "play", "progress", "current-time", "mute", "volume", "captions", "settings", "pip", "fullscreen"],
+                                                    }}
+                                                />
+                                            ) : (
+                                                <div className="h-full w-full flex items-center justify-center text-gray-500">Video Loading...</div>
+                                            )}
+                                        </div>
+                                        <div className="pt-6 text-center">
+                                            <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.4em]">Secure Cloudflare R2 Recording</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-8">
+                                    {/* Section 1: JD Skills (Top Left) */}
+                                    <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-8">Did the Interview Prove JD Skills?</p>
+                                        <div className="flex-1 overflow-y-auto scrollbar-hide pr-1">
+                                            {[
+                                                { title: "Cycle detection in graphs", subtitle: "So is it totally based on coding? — deflected", confidence: "HIGH — NO ATTEMPT", score: "0/10", status: "NOT PROVED" },
+                                                { title: "Graph traversal (BFS / DFS)", subtitle: "Not reached — session ended early", confidence: "N/A — NOT TESTED", score: "0/10", status: "NOT TESTED" },
+                                                { title: "Edge case handling", subtitle: "Not reached — session ended early", confidence: "N/A — NOT TESTED", score: "0/10", status: "NOT TESTED" },
+                                                { title: "Problem-solving approach", subtitle: "Actually, I'm not good at coding.", confidence: "HIGH — SELF-DECLARED", score: "0/10", status: "NOT PROVED" },
+                                                { title: "Communication clarity", subtitle: "Basic exchanges functional, grammar poor", confidence: "HIGH — FULL DATA", score: "5/10", status: "PARTIAL" }
+                                            ].map((s, i) => (
+                                                <AssessmentCard key={i} {...s as any} />
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Section 2: Full Session Log (Top Right) */}
+                                    <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-8">Full Session Log</p>
+                                        <div className="flex-1 overflow-y-auto space-y-8 scrollbar-hide pr-4">
+                                            {[
+                                                { role: "ai", name: "Ishita", text: "Hey Vamsi Test Applicant, welcome! Really glad you could make it today. I'm Ishita, and I'll be having a conversation with you about the GTM Engineer role. How are you doing today?" },
+                                                { role: "candidate", name: candidate.fullName, text: "Wait... is it based on coding? I thought this was for GTM." },
+                                                { role: "ai", name: "Ishita", text: "It's a GTM Engineer role, so it involves both technical implementation and strategy. Let's start with something fundamental." },
+                                                { role: "candidate", name: candidate.fullName, text: "Actually, to be honest, I'm not good at coding. I handle the strategy side mostly." },
+                                                { role: "ai", name: "Ishita", text: "I appreciate the honesty. In that case, how do you approach building robust automation workflows?" },
+                                                { role: "candidate", name: candidate.fullName, text: "I've used them, but... let's see how it goes." }
+                                            ].map((chat, i) => (
+                                                <ChatEntry key={i} {...chat as any} />
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Section 3: Consistency Check (Bottom Left) */}
+                                    <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-8">Resume claims vs Interview proof — consistency check</p>
+                                        <div className="grid grid-cols-[1.5fr_1.8fr_120px] gap-6 px-6 mb-6 border-b border-gray-50 pb-6">
+                                            <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest">Resume Claimed</span>
+                                            <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest">Interview Showed</span>
+                                            <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest text-center">Result</span>
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto scrollbar-hide">
+                                            {[
+                                                { claim: "Built GTM automation systems at Niti AI", sub: "GTM strategy", proof: "Zero GTM knowledge demonstrated. Could not answer basic GTM question.", status: "MISMATCH" },
+                                                { claim: "n8n, Zapier, Apollo automation experience", sub: "Automation tools", proof: "Not tested in interview — role needed coding.", status: "NOT TESTED" },
+                                                { claim: "Python, Pandas, Power BI — data analysis", sub: "Technical skills", proof: "Self-declared 'not good at coding.' No code written.", status: "CONTRADICTED" },
+                                                { claim: "Problem-solving and analytical thinking", sub: "Soft skill", proof: "Minimal engagement with problem. Disengaged.", status: "WEAK SIGNAL" }
+                                            ].map((c, i) => (
+                                                <div key={i} className="grid grid-cols-[1.5fr_1.8fr_120px] gap-8 px-6 py-6 rounded-3xl hover:bg-gray-50/50 transition-all group items-start border-b border-gray-50 last:border-0 relative">
+                                                    <div className="space-y-2">
+                                                        <p className="text-[14px] font-black text-gray-900 leading-tight">{c.claim}</p>
+                                                        <p className="text-[9px] font-black text-[#6366F1] uppercase tracking-widest">FIELD: {c.sub}</p>
                                                     </div>
-
-                                                    <AnimatePresence initial={false}>
-                                                        {expandedSections.communication && (
-                                                            <motion.div
-                                                                initial={{ height: 0, opacity: 0 }}
-                                                                animate={{ height: 'auto', opacity: 1 }}
-                                                                exit={{ height: 0, opacity: 0 }}
-                                                                transition={{ duration: 0.3, ease: "easeInOut" }}
-                                                                className="overflow-hidden space-y-6"
-                                                            >
-                                                                <div className="space-y-6">
-                                                                    <CommunicationDonutChart
-                                                                        metrics={[
-                                                                            { label: "Clarity", value: 60, color: "#6366F1" },
-                                                                            { label: "Fluency", value: 35, color: "#F59E0B" },
-                                                                            { label: "Grammar", value: 30, color: "#10B981" },
-                                                                            { label: "Depth", value: 65, color: "#F43F5E" }
-                                                                        ]}
-                                                                    />
-
-                                                                    <div className="bg-[#FDF9F3] rounded-2xl p-6 space-y-2 border border-[#F5E6D3]">
-                                                                        <p className="text-[9.5px] font-black text-[#A89078] uppercase tracking-[0.2em]">CEFR Rating</p>
-                                                                        <h4 className="text-lg font-black text-[#A87128] tracking-tight">B1 — Intermediate</h4>
-                                                                        <p className="text-[11.5px] font-bold text-[#716152] leading-relaxed">
-                                                                            Can handle simple direct exchanges. Frequent grammatical errors and choppy fluency prevent B2.
-                                                                        </p>
-                                                                    </div>
-                                                                </div>
-                                                            </motion.div>
-                                                        )}
-                                                    </AnimatePresence>
+                                                    <div className="flex gap-4">
+                                                        <ArrowRight className="h-4 w-4 text-gray-200 mt-1 shrink-0 group-hover:text-indigo-400 transition-colors" />
+                                                        <p className={cn("text-[13px] font-bold leading-relaxed", 
+                                                            c.status === "CONTRADICTED" || c.status === "MISMATCH" ? "text-rose-600" : 
+                                                            c.status === "WEAK SIGNAL" ? "text-orange-700" : "text-gray-400 italic"
+                                                        )}>
+                                                            {c.proof}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex justify-center">
+                                                        <span className={cn("px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border shadow-sm",
+                                                            c.status === "MATCHED" ? "bg-emerald-50 text-emerald-600 border-emerald-100" :
+                                                            c.status === "CONTRADICTED" || c.status === "MISMATCH" ? "bg-rose-50 text-rose-600 border-rose-100" : 
+                                                            "bg-[#FFFBEB] text-[#B45309] border-[#FEF3C7]"
+                                                        )}>{c.status.replace('_', ' ')}</span>
+                                                    </div>
                                                 </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Section 4: Key Moments (Bottom Right) */}
+                                    <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-8">Key Moments From Session</p>
+                                        <div className="flex grid grid-cols-[80px_1fr] px-6 mb-6 border-b border-gray-50 pb-6 mt-[-10px]">
+                                            <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest">Timeline</span>
+                                            <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest">Key Observation</span>
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto scrollbar-hide pr-2">
+                                            {[
+                                                { time: "0:38", type: "CONTEXT", observation: "Minimal engagement at interview start", comment: "Yeah. Sure. - two-word response to interview structure explanation" },
+                                                { time: "1:12", type: "FLAG", observation: "Deflected technical question — asked about format instead", comment: "K. So is it totally based on coding? - avoidance rather than engagement" },
+                                                { time: "1:18", type: "FLAG", observation: "Tab switch detected — at exact moment of deflection", comment: "Proctoring: browser focus lost ~8 sec. Timing aligns with Q1 avoidance behaviour." },
+                                                { time: "2:28", type: "CRITICAL", observation: "Self-declared inability to code — defining moment of session", comment: "Actually, I'm not good at coding. - unprompted, direct self-admission" },
+                                                { time: "3:05", type: "FLAG", observation: "Audio anomaly detected — 3 seconds post-admission", comment: "Voice-like sound. Flagged for correlation." }
+                                            ].map((m, i) => (
+                                                <MomentEntry key={i} {...m as any} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* ── Section: Integrity & Proctoring ── */}
+                                <div className="pt-24 border-t border-gray-200 mt-24 space-y-12">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-[11px] font-black text-gray-400 uppercase tracking-[0.5em] opacity-80">Integrity and Proctoring</h3>
+                                        <Button variant="outline" className="rounded-full border-gray-200 text-[10px] font-black h-8 px-6 hover:bg-white hover:border-gray-900 transition-all uppercase tracking-widest shadow-sm">
+                                            View all logs
+                                        </Button>
+                                    </div>
+
+                                    {/* ── Integrity Verdict Card ── */}
+                                    <div className="grid grid-cols-[340px_1fr] rounded-[48px] bg-white border-2 border-[#F5E6D3]/30 shadow-[0_20px_60px_rgba(139,94,60,0.06)] overflow-hidden border-l-[8px] border-l-[#8B5E3C]">
+                                        <div className="bg-[#FAF9F6] p-12 flex flex-col items-center justify-center gap-4 border-r border-[#F5E6D3]/20">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">Integrity Score</p>
+                                            <div className="flex items-baseline gap-1">
+                                                <span className="text-7xl font-black text-gray-900 tracking-tighter">5.8</span>
+                                                <span className="text-2xl font-bold text-gray-300">/10</span>
                                             </div>
+                                            <span className="px-6 py-2 rounded-full bg-[#FEF3C7]/60 text-[#B45309] text-[10px] font-black uppercase tracking-[0.2em] border border-[#FDE68A]">
+                                                Inconclusive
+                                            </span>
+                                        </div>
+                                        <div className="p-12 space-y-6">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">Integrity Verdict</p>
+                                            <p className="text-[15px] font-medium text-gray-700 leading-[1.8] max-w-[95%]">
+                                                2 events in a 5-minute session. Tab switch timed during Q1 at the exact moment of deflection — <span className="underline decoration-orange-400 decoration-2 underline-offset-4 text-gray-900 font-bold italic">the most suspicious signal</span>. Audio anomaly is inconclusive. Face present 100% of session; no multiple faces; gaze pattern normal. The proctoring data alone does not confirm cheating, but combined with self-declared inability and zero output, the overall picture warrants a human review of the recording before making a final integrity call.
+                                            </p>
+                                        </div>
+                                    </div>
 
-                                            <div className="space-y-4">
-                                                <div className="aspect-[4/3] w-full rounded-[32px] border-4 border-gray-900 bg-black overflow-hidden shadow-2xl relative flex items-center justify-center px-4 md:px-0">
-                                                    <div className="w-full h-full">
-                                                        <Plyr
-                                                            source={{
-                                                                type: "video",
-                                                                sources: [{ src: interviewRecordingUrl, type: "video/mp4" }],
-                                                            }}
-                                                            options={{
-                                                                duration: recordingDurationSec || undefined,
-                                                                controls: ["play-large", "play", "progress", "current-time", "mute", "volume", "captions", "settings", "pip", "fullscreen"],
-                                                            }}
-                                                        />
-                                                    </div>
-                                                </div>
-                                                
-                                                <div className="p-8 rounded-[32px] glass-card border border-white/30 h-full overflow-hidden">
-                                                    <div className="flex items-center gap-8 px-6 py-4 border-b border-white/10 bg-white/5">
-                                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest w-[55px]">Timeline</p>
-                                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Key Observation</p>
-                                                    </div>
-                                                    <div className="divide-y divide-gray-100/10">
-                                                        {[
-                                                            { time: "0:45", observation: "Strong articulation of system design principles.", status: "Positive" },
-                                                            { time: "2:15", observation: "Hesitation when discussing multi-threading.", status: "Neutral" },
-                                                            { time: "4:30", observation: "Excellent summary of project lifecycle.", status: "Strong" },
-                                                        ].map((item, i) => (
-                                                            <div key={i} className="flex items-center gap-8 py-4 px-6 hover:bg-white/5 transition-colors">
-                                                                <span className="text-[10px] font-black text-indigo-400 w-[55px] font-mono">{item.time}</span>
-                                                                <div className="flex-1">
-                                                                    <p className="text-[12px] font-bold text-gray-700">{item.observation}</p>
-                                                                    <span className={cn(
-                                                                        "text-[8px] font-black uppercase tracking-tighter",
-                                                                        item.status === "Positive" ? "text-emerald-500" : item.status === "Strong" ? "text-blue-500" : "text-amber-500"
-                                                                    )}>{item.status} Signal</span>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
+                                    {/* ── Proctoring Metrics Row ── */}
+                                    <div className="flex gap-6">
+                                        <ProctoringMetric value="1" label="Tab Switches" risk="MEDIUM RISK" />
+                                        <ProctoringMetric value="0" label="Multiple Faces" risk="NO RISK" />
+                                        <ProctoringMetric value="1" label="Audio Anomalies" risk="MEDIUM RISK" />
+                                        <ProctoringMetric value="100%" label="Face Present" risk="NO RISK" />
+                                        <ProctoringMetric value="Normal" label="Eye Gaze" risk="NO RISK" />
+                                    </div>
+
+                                    {/* ── Correlation Timeline vs Pattern Analysis Grid ── */}
+                                    <div className="grid grid-cols-[1.1fr_1fr] gap-12">
+                                        {/* Left: Timeline */}
+                                    <div className="p-12 rounded-[48px] bg-white border border-gray-100 shadow-sm space-y-12 optimize-scroll">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Event Timeline — Correlated with Interview</p>
+                                            <div className="space-y-2">
+                                                <TimelineEvent 
+                                                    time="0:00" 
+                                                    event="Session started" 
+                                                    risk="CLEAN" 
+                                                    desc="Camera on. Single face detected. Browser focus confirmed. Audio levels normal." 
+                                                    isSuccess 
+                                                />
+                                                <TimelineEvent 
+                                                    time="1:18" 
+                                                    event="Tab switch" 
+                                                    risk="MEDIUM RISK" 
+                                                    desc="Browser focus lost for ~8 seconds. Candidate returned to session tab." 
+                                                    subNote="Timed during Q1 deflection — candidate was avoiding the coding question at this exact moment. Most notable signal in session."
+                                                />
+                                                <TimelineEvent 
+                                                    time="3:05" 
+                                                    event="Audio anomaly" 
+                                                    risk="MEDIUM RISK" 
+                                                    desc="Voice-like background sound for ~3 seconds. Could be ambient noise or TV." 
+                                                    subNote="Occurred 37 seconds after self-admission 'not good at coding.' No clear link — flag for awareness only."
+                                                />
+                                                <TimelineEvent 
+                                                    time="5:00" 
+                                                    event="Session ended" 
+                                                    risk="CLEAN" 
+                                                    desc="No further anomalies. Face present entire session. Gaze consistent with genuine attempt." 
+                                                    isSuccess
+                                                />
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                        {/* Right: Pattern Analysis */}
+                                        <div className="p-12 rounded-[48px] bg-white border border-gray-100 shadow-[0_8px_32px_rgba(0,0,0,0.02)] space-y-12 optimize-scroll">
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Pattern Analysis — What signals mean together</p>
                                             <div className="space-y-6">
-                                                <div className="flex items-center gap-3 cursor-pointer group" onClick={() => toggleSection('skills')}>
-                                                    <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-900 flex-shrink-0">JD Skill Alignment</h3>
-                                                    <div className="h-[1px] flex-1 bg-gray-100" />
-                                                    <ChevronDown className={cn("h-4 w-4 text-gray-300 transition-transform duration-300", !expandedSections.skills && "-rotate-90")} />
-                                                </div>
-
-                                                <AnimatePresence initial={false}>
-                                                    {expandedSections.skills && (
-                                                        <motion.div
-                                                            initial={{ height: 0, opacity: 0 }}
-                                                            animate={{ height: 'auto', opacity: 1 }}
-                                                            exit={{ height: 0, opacity: 0 }}
-                                                            transition={{ duration: 0.3, ease: "easeInOut" }}
-                                                            className="overflow-hidden"
-                                                        >
-                                                <div className="p-8 rounded-[32px] glass-card border border-white/30 h-full overflow-hidden">
-                                                    <div className="flex items-center gap-8 px-8 py-4 border-b border-white/10 bg-white/5">
-                                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex-1">Requirement</p>
-                                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest w-[80px] text-center">Status</p>
-                                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex-1">Interview Proof</p>
-                                                    </div>
-                                                    <div className="divide-y divide-gray-100/10">
-                                                        {[
-                                                            { title: "Technical knowledge", status: "Partial", proof: "Demonstrated React basics but struggled with Next.js SSR.", color: "text-orange-500 bg-orange-50/10 border-orange-100/20" },
-                                                            { title: "Communication", status: "Proved", proof: "Articulated thoughts clearly. CEFR B2 level observed.", color: "text-emerald-500 bg-emerald-50/10 border-emerald-100/20" },
-                                                        ].map((skill, i) => (
-                                                            <div key={i} className="grid grid-cols-[1fr_80px_1.5fr] items-center gap-4 py-6 px-8 hover:bg-white/5 transition-colors">
-                                                                <h4 className="text-sm font-bold text-gray-900">{skill.title}</h4>
-                                                                <div className="flex justify-center">
-                                                                    <span className={cn("px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter border", skill.color)}>{skill.status}</span>
-                                                                </div>
-                                                                <p className="text-[11px] font-medium text-gray-500 leading-relaxed italic">{skill.proof}</p>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                                        </motion.div>
-                                                    )}
-                                                </AnimatePresence>
-                                            </div>
-
-                                            <div className="space-y-6">
-                                                <div className="flex items-center gap-3 cursor-pointer group" onClick={() => toggleSection('transcript')}>
-                                                    <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-900 flex-shrink-0">Full Session Log</h3>
-                                                    <div className="h-[1px] flex-1 bg-gray-100" />
-                                                    <ChevronDown className={cn("h-4 w-4 text-gray-300 transition-transform duration-300", !expandedSections.transcript && "-rotate-90")} />
-                                                </div>
-
-                                                <AnimatePresence initial={false}>
-                                                    {expandedSections.transcript && (
-                                                        <motion.div
-                                                            initial={{ height: 0, opacity: 0 }}
-                                                            animate={{ height: 'auto', opacity: 1 }}
-                                                            exit={{ height: 0, opacity: 0 }}
-                                                            transition={{ duration: 0.3, ease: "easeInOut" }}
-                                                            className="overflow-hidden"
-                                                        >
-                                                            <div className="h-[400px] rounded-[40px] glass-card border border-white/30 p-10 overflow-y-auto">
-                                                                {interviewTranscript ? interviewTranscript.split('\n').map((line: string, idx: number) => (
-                                                                    <p key={idx} className="text-[11px] font-medium text-gray-600 mb-2">{line}</p>
-                                                                )) : <p className="text-center opacity-40">Transcript pending...</p>}
-                                                            </div>
-                                                        </motion.div>
-                                                    )}
-                                                </AnimatePresence>
+                                                <AnalysisSignal 
+                                                    type="warning" 
+                                                    title="Tab switch timing is the key concern" 
+                                                    desc="Not the count (1 is low) but the exact timing — during the technical question at the moment of deflection. This correlation is what matters." 
+                                                />
+                                                <AnalysisSignal 
+                                                    type="success" 
+                                                    title="No proxy candidate risk" 
+                                                    desc="Face present 100% of session. Single face only. No deepfake indicators detected. Candidate was physically present throughout." 
+                                                />
+                                                <AnalysisSignal 
+                                                    type="warning" 
+                                                    title="Audio anomaly — insufficient to conclude" 
+                                                    desc="Single 3-second event. No repeated pattern. Cannot conclude external assistance from one event alone." 
+                                                />
+                                                <AnalysisSignal 
+                                                    type="success" 
+                                                    title="Gaze pattern supports genuine attempt" 
+                                                    desc="Eye movement consistent with reading the problem and thinking. No sustained off-screen reference pattern detected." 
+                                                />
                                             </div>
                                         </div>
                                     </div>
-                                ) : (
-                                    <div className="py-20 flex flex-col items-center gap-4 bg-gray-50 rounded-3xl">
-                                        <EyeOff className="h-10 w-10 text-gray-300" />
-                                        <p className="text-sm font-black text-gray-400 uppercase tracking-widest text-center">Interview Recording Pending</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
+                                </div>
 
-                    {showSubmissionPreview && (
-                        <div className="fixed inset-0 z-[100] flex justify-end">
-                            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setShowSubmissionPreview(false)} />
-                            <div className="relative w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-                                <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
-                                    <h2 className="text-xl font-black text-gray-900">Application Preview</h2>
-                                    <Button variant="ghost" size="icon" onClick={() => setShowSubmissionPreview(false)}><X className="h-6 w-6 text-gray-400" /></Button>
-                                </div>
-                                <div className="flex-1 overflow-y-auto p-8 space-y-8">
-                                    <div className="p-6 rounded-2xl bg-gray-50 border border-gray-100 space-y-4">
-                                        <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Cover Message</p>
-                                        <p className="text-sm font-medium text-gray-700 leading-relaxed whitespace-pre-wrap">{candidate.submissionData?.coverLetter || "No message provided."}</p>
-                                    </div>
-                                </div>
-                                <div className="p-8 border-t border-gray-100 bg-gray-50">
-                                    <Button onClick={() => setShowSubmissionPreview(false)} className="w-full h-12 rounded-xl bg-gray-900 text-white font-black hover:bg-black">CLOSE PREVIEW</Button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {showIntegrityDetails && (
-                        <div className="fixed inset-0 z-[100] flex justify-end">
-                            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setShowIntegrityDetails(false)} />
-                            <div className="relative w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-                                <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10 font-sans">
-                                    <div><h2 className="text-xl font-black text-gray-900 tracking-tight">Integrity Deep-Dive</h2><p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Full Proctoring Logs & Event Analysis</p></div>
-                                    <Button variant="ghost" size="icon" onClick={() => setShowIntegrityDetails(false)} className="rounded-xl hover:bg-gray-100"><X className="h-6 w-6 text-gray-400" /></Button>
-                                </div>
-                                <div className="flex-1 overflow-y-auto p-8 space-y-10 text-gray-900 font-sans">
-                                    <section className="space-y-4">
-                                        <div className="flex items-center gap-2 text-[#E63946]"><MonitorSmartphone className="h-4 w-4" /><h3 className="text-sm font-black uppercase tracking-widest tracking-premium">Tab Detection Logs</h3></div>
-                                        <div className="space-y-3">
-                                            <div className="p-4 rounded-2xl bg-red-50 border border-red-100 flex items-start justify-between">
-                                                <div>
-                                                    <p className="text-sm font-bold">Browser Focus Lost</p>
-                                                    <p className="text-xs text-gray-500 mt-1 uppercase font-black opacity-70">Candidate switched to another window/tab during Question 1.</p>
+                                            {/* ── Section: Final Verdict ── */}
+                                            <div className="pt-20 border-t border-gray-200 mt-20 space-y-12">
+                                                <div className="flex flex-col items-center gap-6 text-center">
+                                                    <div className="flex items-center gap-8">
+                                                        <div className="h-[1px] w-32 bg-gray-200" />
+                                                        <h3 className="text-[11px] font-black text-gray-400 uppercase tracking-[0.6em] opacity-80">Final Verdict</h3>
+                                                        <div className="h-[1px] w-32 bg-gray-200" />
+                                                    </div>
                                                 </div>
-                                                <span className="text-[10px] font-black text-red-500 whitespace-nowrap">1:18 AM • 8.2s</span>
+
+                                                {/* ── Score Summary ── */}
+                                                <div className="flex gap-8">
+                                                    <VerdictScoreCard label="Interview /10" value="2.1" color="red" />
+                                                    <VerdictScoreCard label="Integrity /10" value="5.8" color="orange" />
+                                                    <VerdictScoreCard label="Combined /10" value="1.8" color="red" />
+                                                </div>
+
+                                                {/* ── Status Badge ── */}
+                                                <div className="flex justify-center">
+                                                    <div className="px-10 py-4 rounded-full bg-[#FFF1F2] border border-[#FECACA] text-[13px] font-black text-[#E11D48] uppercase tracking-[0.3em] shadow-sm">
+                                                        Do not proceed to next round
+                                                    </div>
+                                                </div>
+
+                                                {/* ── Verdict Narrative ── */}
+                                                <div className="flex justify-center">
+                                                    <p className="max-w-[850px] text-center text-[16px] font-medium text-gray-500 leading-[2] tracking-tight">
+                                                        The candidate demonstrated limited ability to articulate their experience and impact in the domain of B2B go-to-market strategies, providing only a brief and unclear response regarding their involvement with a "report strategy since sales systems." This suggests an area to explore further, particularly to understand the depth of their practical experience and specific contributions to lead generation or revenue growth. Communication during the interview was notably minimal and lacked elaboration, which may impact their effectiveness in a role that requires clear and proactive collaboration with cross-functional teams. While the candidate remained engaged, their responses did not convey a strong command of the subject matter or a confident attitude toward the role's responsibilities. Given these observations, the candidate's fit for the GTM Engineer Recruitment Drive role appears limited at this stage. Therefore, the recommendation is a "Maybe," contingent on further assessment of their technical expertise and communication skills in subsequent interactions.
+                                                    </p>
+                                                </div>
+
+                                                {/* ── Recommended Next Actions ── */}
+                                                <div className="flex justify-center">
+                                                    <div className="w-full max-w-[900px] p-12 rounded-[48px] bg-[#EEF2FF] border border-[#E0E7FF] space-y-8">
+                                                        <p className="text-center text-[11px] font-black text-[#6366F1] uppercase tracking-[0.4em] mb-4">Recommended Next Action</p>
+                                                        <div className="space-y-6 flex flex-col items-center">
+                                                            <div className="space-y-5 w-fit">
+                                                                <RecommendedActionItem text="Reject for this AI Engineer role — performance failure is definitive, no further round needed" />
+                                                                <RecommendedActionItem text="Human review of recording recommended before logging integrity verdict — proctoring is inconclusive, not confirmed" />
+                                                                <RecommendedActionItem text="Flag for talent pool as junior automation role candidate — n8n and Apollo experience has value in a different context" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </section>
-                                    <section className="space-y-4">
-                                        <div className="flex items-center gap-2 text-[#10B981]"><UserCheck className="h-4 w-4" /><h3 className="text-sm font-black uppercase tracking-widest tracking-premium">Facial & Gaze Analysis</h3></div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100">
-                                                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Face Presence</p>
-                                                <p className="text-sm font-bold">100% of session</p>
-                                            </div>
-                                            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100">
-                                                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Multiple Faces</p>
-                                                <p className="text-sm font-bold">None detected</p>
-                                            </div>
-                                        </div>
-                                    </section>
-                                    <section className="space-y-4">
-                                        <div className="flex items-center gap-2 text-[#F59E0B]"><Volume2 className="h-4 w-4" /><h3 className="text-sm font-black uppercase tracking-widest tracking-premium">Audio Anomalies</h3></div>
-                                        <div className="p-4 rounded-2xl bg-orange-50 border border-orange-100 flex items-start justify-between">
-                                            <div>
-                                                <p className="text-sm font-bold">Background Voice Detected</p>
-                                                <p className="text-xs text-gray-500 mt-1 uppercase font-black opacity-70">Faint secondary voice captured shortly after candidate admission.</p>
-                                            </div>
-                                            <span className="text-[10px] font-black text-orange-500 whitespace-nowrap">3:05 AM • 3.0s</span>
-                                        </div>
-                                    </section>
-                                </div>
-                                <div className="p-8 border-t border-gray-100 bg-gray-100">
-                                    <Button onClick={() => setShowIntegrityDetails(false)} className="w-full h-12 rounded-xl bg-gray-900 text-white font-black hover:bg-black transition-all">CLOSE DETAILS</Button>
                                 </div>
                             </div>
+                        )}
+                {showSubmissionPreview && (
+                    <div className="fixed inset-0 z-[100] flex justify-end">
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setShowSubmissionPreview(false)} />
+                        <div className="relative w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+                            <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
+                                <h2 className="text-xl font-black text-gray-900">Application Preview</h2>
+                                <Button variant="ghost" size="icon" onClick={() => setShowSubmissionPreview(false)}><X className="h-6 w-6 text-gray-400" /></Button>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                                <div className="p-6 rounded-2xl bg-gray-50 border border-gray-100 space-y-4">
+                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Cover Message</p>
+                                    <p className="text-sm font-medium text-gray-700 leading-relaxed whitespace-pre-wrap">{candidate.submissionData?.coverLetter || "No message provided."}</p>
+                                </div>
+                            </div>
+                            <div className="p-8 border-t border-gray-100 bg-gray-50">
+                                <Button onClick={() => setShowSubmissionPreview(false)} className="w-full h-12 rounded-xl bg-gray-900 text-white font-black hover:bg-black">CLOSE PREVIEW</Button>
+                            </div>
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
+
+                {showIntegrityDetails && (
+                    <div className="fixed inset-0 z-[100] flex justify-end">
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setShowIntegrityDetails(false)} />
+                        <div className="relative w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+                            <div className="px-10 py-8 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
+                                <div className="space-y-1">
+                                    <h2 className="text-2xl font-black text-gray-900 tracking-tight">Integrity Deep-Dive</h2>
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Full Proctoring Logs & Event Analysis</p>
+                                </div>
+                                <Button variant="ghost" size="icon" onClick={() => setShowIntegrityDetails(false)} className="rounded-2xl hover:bg-gray-100 h-12 w-12">
+                                    <X className="h-6 w-6 text-gray-400" />
+                                </Button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-10 space-y-12 bg-white">
+                                {/* ── Tab Detection ── */}
+                                <section className="space-y-6">
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-8 w-8 rounded-xl bg-rose-50 flex items-center justify-center">
+                                            <MonitorSmartphone className="h-4 w-4 text-rose-500" />
+                                        </div>
+                                        <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Tab Detection Logs</h3>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <DeepDiveLog
+                                            label="Browser Focus Lost"
+                                            description="Candidate switched to another window/tab during 'n8n custom nodes' question."
+                                            time="1:18 AM • 8.2s"
+                                            type="error"
+                                        />
+                                        <DeepDiveLog
+                                            label="External Search Likely"
+                                            description="Tab switch duration correlates with response improvement."
+                                            time="1:24 AM • 12.0s"
+                                            type="warning"
+                                        />
+                                    </div>
+                                </section>
+
+                                {/* ── Facial & Gaze ── */}
+                                <section className="space-y-6">
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-8 w-8 rounded-xl bg-emerald-50 flex items-center justify-center">
+                                            <UserCheck className="h-4 w-4 text-emerald-500" />
+                                        </div>
+                                        <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Facial & Gaze Analysis</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="p-6 rounded-3xl bg-emerald-50 border border-emerald-100 space-y-1">
+                                            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Face Presence</p>
+                                            <p className="text-xl font-black text-gray-900">100.0%</p>
+                                        </div>
+                                        <div className="p-6 rounded-3xl bg-emerald-50 border border-emerald-100 space-y-1">
+                                            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Multiple Faces</p>
+                                            <p className="text-xl font-black text-gray-900">0.0%</p>
+                                        </div>
+                                        <div className="p-6 rounded-3xl bg-orange-50 border border-orange-100 space-y-1">
+                                            <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest">Gaze Deviation</p>
+                                            <p className="text-xl font-black text-gray-900">14.2%</p>
+                                        </div>
+                                        <div className="p-6 rounded-3xl bg-emerald-50 border border-emerald-100 space-y-1">
+                                            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Head Pose Stability</p>
+                                            <p className="text-xl font-black text-gray-900">High</p>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                {/* ── Audio Anomalies ── */}
+                                <section className="space-y-6">
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-8 w-8 rounded-xl bg-orange-50 flex items-center justify-center">
+                                            <Volume2 className="h-4 w-4 text-orange-500" />
+                                        </div>
+                                        <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Audio Anomalies</h3>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <DeepDiveLog
+                                            label="Background Voice Detected"
+                                            description="Faint secondary voice captured shortly after candidate admission."
+                                            time="3:05 AM • 3.0s"
+                                            type="warning"
+                                        />
+                                        <DeepDiveLog
+                                            label="Clean Session Audio"
+                                            description="No major shouting or hardware disconnects detected."
+                                            time="4:12 AM"
+                                            type="success"
+                                        />
+                                    </div>
+                                </section>
+                            </div>
+
+                            <div className="p-10 border-t border-gray-100 bg-gray-50/50">
+                                <Button onClick={() => setShowIntegrityDetails(false)} className="w-full h-14 rounded-2xl bg-gray-900 text-white font-black text-[12px] uppercase tracking-widest hover:bg-black transition-all shadow-xl">
+                                    CLOSE ANALYSIS SYSTEM
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
+        </div >
     );
 }
