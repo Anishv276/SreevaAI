@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Loader2, ChevronRight } from "lucide-react";
+import { Loader2, ChevronRight, Plus, Rocket, Sparkles } from "lucide-react";
 import { ErrorState } from "./error-state";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -114,23 +114,69 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                             className="bg-transparent border-none shadow-none"
                         />
                     </div>
-                ) : drives.length === 0 ? (
-                    <div className="flex items-center justify-center h-48 text-[12px] font-bold text-gray-300 uppercase tracking-widest">
-                        No active streams found
-                    </div>
                 ) : (
-                    <motion.div 
-                        initial="hidden"
-                        animate="visible"
-                        variants={{
-                            hidden: { opacity: 0 },
-                            visible: {
-                                opacity: 1,
-                                transition: { staggerChildren: 0.1 }
-                            }
-                        }}
-                        className="space-y-4"
-                    >
+                    <div className="flex flex-col h-full">
+                        {drives.length === 0 ? (
+                            <motion.div 
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="grid grid-cols-1 md:grid-cols-3 gap-5 h-full"
+                            >
+                                {/* Card 1: Create Drive */}
+                                <Link href="/admin/create-drive" className="group/card flex-1">
+                                    <div className="h-full min-h-[220px] p-8 rounded-[2.5rem] border-2 border-dashed border-gray-100 bg-gray-50/30 flex flex-col items-center justify-center text-center gap-4 group-hover/card:border-orange-300 group-hover/card:bg-orange-50/30 transition-all duration-500">
+                                        <div className="h-16 w-16 rounded-[1.5rem] bg-orange-100/50 flex items-center justify-center text-[#F97316] group-hover/card:scale-110 group-hover/card:rotate-6 transition-all duration-500">
+                                            <Plus className="h-8 w-8" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-[14px] font-black text-gray-900 uppercase tracking-tight mb-1">Create Drive</h4>
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed px-4">Initialize your first AI-driven recruitment pipeline</p>
+                                        </div>
+                                        <div className="mt-2 px-6 py-2 bg-gray-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest group-hover/card:bg-[#F97316] group-hover/card:shadow-lg group-hover/card:shadow-orange-500/20 transition-all">
+                                            Get Started
+                                        </div>
+                                    </div>
+                                </Link>
+
+                                {/* Card 2: Placeholder - Candidates */}
+                                <div className="group/card flex-1 cursor-not-allowed opacity-60">
+                                    <div className="h-full min-h-[220px] p-8 rounded-[2.5rem] border border-gray-100 bg-white shadow-sm flex flex-col items-center justify-center text-center gap-4 transition-all duration-500">
+                                        <div className="h-16 w-16 rounded-[1.5rem] bg-gray-50 flex items-center justify-center text-gray-300">
+                                            <Rocket className="h-7 w-7" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-[13px] font-extrabold text-gray-400 uppercase tracking-tight mb-1 italic">Source Talent</h4>
+                                            <p className="text-[9px] font-bold text-gray-300 uppercase tracking-widest leading-relaxed px-4">Automated outreach will synchronize here</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Card 3: Placeholder - Insights */}
+                                <div className="group/card flex-1 cursor-not-allowed opacity-60">
+                                    <div className="h-full min-h-[220px] p-8 rounded-[2.5rem] border border-gray-100 bg-white shadow-sm flex flex-col items-center justify-center text-center gap-4 transition-all duration-500">
+                                        <div className="h-16 w-16 rounded-[1.5rem] bg-gray-50 flex items-center justify-center text-gray-300">
+                                            <Sparkles className="h-7 w-7" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-[13px] font-extrabold text-gray-400 uppercase tracking-tight mb-1 italic">AI Insights</h4>
+                                            <p className="text-[9px] font-bold text-gray-300 uppercase tracking-widest leading-relaxed px-4">Neural matching patterns load post-activity</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        ) : (
+                            <motion.div 
+                                initial="hidden"
+                                animate="visible"
+                                variants={{
+                                    hidden: { opacity: 0 },
+                                    visible: {
+                                        opacity: 1,
+                                        transition: { staggerChildren: 0.1 }
+                                    }
+                                }}
+                                className="space-y-4"
+                            >
                         {drives.map((drive) => {
                             const color = barColor(drive.screeningPct, drive.screeningThreshold);
                             const deadlineLabel = drive.deadline
@@ -213,6 +259,8 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                             );
                         })}
                     </motion.div>
+                )}
+                    </div>
                 )}
             </div>
         </div>

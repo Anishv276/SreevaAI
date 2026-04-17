@@ -2611,7 +2611,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
                 interview_marked_finished = True
                 interview_finished_event.set()
                 disconnect_event.set()  # Resolve hang
-        except Exception as e:
+        except Exception as e:      
             logger.debug(f"Ignored malformed data packet: {e}")
             return
 

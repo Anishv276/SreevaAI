@@ -57,6 +57,22 @@ const GAZE_DOWN_THRESHOLD      =  0.08;  // nose 8% below expected neutral Y
 const YAW_THRESHOLD_DEG        = 14;     // ~14° horizontal head turn (moderate)
 const PITCH_DOWN_THRESHOLD_DEG = 12;     // ~12° head looking down
 const PITCH_UP_THRESHOLD_DEG   = 10;     // ~10° head looking up
+
+// New Signals (4, 5, 6)
+const CENTER_X_MIN = 0.35;
+const CENTER_X_MAX = 0.65;
+const CENTER_Y_MIN = 0.25;
+const CENTER_Y_MAX = 0.55;
+const CENTERING_GRACE_MS = 3_000;
+
+const PROXIMITY_MIN = 0.20;
+const PROXIMITY_MAX = 0.55;
+const PROXIMITY_GRACE_MS = 3_000;
+
+const LIGHTING_MIN = 70;
+const LIGHTING_MAX = 200;
+const LIGHTING_GRACE_MS = 5_000;
+
 const DETECTION_INTERVAL_MS    = 250;    // run detection 4 fps — fast enough for 3s grace
 const IDENTITY_CHECK_INTERVAL  = 60_000; // face verify every 60 s throughout session
 const IDENTITY_FACE_SIZE       = 64;     // resize face crop to 64×64 for comparison
@@ -72,6 +88,9 @@ const COOLDOWNS: Record<string, number> = {
   gaze_violation:       8_000,
   head_pose_violation:  8_000,
   identity_mismatch:   60_000,
+  centering_violation:  8_000,
+  proximity_violation:  8_000,
+  lighting_violation:  15_000,
 };
 
 interface FaceProctoringProps {
@@ -107,6 +126,9 @@ export function FaceProctoring({
   // Sustained-violation timers
   const gazeViolStartRef      = useRef<number | null>(null);
   const headPoseViolStartRef  = useRef<number | null>(null);
+  const centeringViolStartRef = useRef<number | null>(null);
+  const proximityViolStartRef = useRef<number | null>(null);
+  const lightingViolStartRef  = useRef<number | null>(null);
 
   // Multiple-face consecutive-frame counter (debounce false positives)
   const multiFaceCountRef     = useRef(0);
@@ -118,6 +140,9 @@ export function FaceProctoring({
   const refCanvasRef       = useRef<HTMLCanvasElement | null>(null);
   const lastIdentityCheck  = useRef(0);
   const identityCheckCount = useRef(0);
+
+  // Lighting check throttle
+  const lastLightingCheckRef = useRef(0);
 
   // Keep isActive in a ref so the RAF loop always reads the latest value
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
@@ -358,6 +383,9 @@ export function FaceProctoring({
       // Reset sustained-violation timers
       gazeViolStartRef.current = null;
       headPoseViolStartRef.current = null;
+      centeringViolStartRef.current = null;
+      proximityViolStartRef.current = null;
+      // We don't reset lighting here, it can be tested even with no face
       return;
     }
 
@@ -415,6 +443,73 @@ export function FaceProctoring({
       headPoseViolStartRef.current = null;
     }
 
+    // ── 4a. Focus Centering (Signal 4) ────────────────────────────────────────
+    const xsNorm = landmarks.map(l => l.x);
+    const ysNorm = landmarks.map(l => l.y);
+    const minXNorm = Math.min(...xsNorm), maxXNorm = Math.max(...xsNorm);
+    const minYNorm = Math.min(...ysNorm), maxYNorm = Math.max(...ysNorm);
+    const cx = (minXNorm + maxXNorm) / 2;
+    const cy = (minYNorm + maxYNorm) / 2;
+
+    const isCenteringViolated = cx < CENTER_X_MIN || cx > CENTER_X_MAX || cy < CENTER_Y_MIN || cy > CENTER_Y_MAX;
+    if (isCenteringViolated) {
+      if (!centeringViolStartRef.current) centeringViolStartRef.current = now;
+      if (now - centeringViolStartRef.current > CENTERING_GRACE_MS) {
+        fire("centering_violation", `Face outside allowed frame area for >${CENTERING_GRACE_MS / 1000}s`, "medium");
+      }
+    } else {
+      centeringViolStartRef.current = null;
+    }
+
+    // ── 4b. Proximity / Scale (Signal 5) ──────────────────────────────────────
+    const faceWidthRatio = maxXNorm - minXNorm;
+    const isProximityViolated = faceWidthRatio < PROXIMITY_MIN || faceWidthRatio > PROXIMITY_MAX;
+    if (isProximityViolated) {
+      if (!proximityViolStartRef.current) proximityViolStartRef.current = now;
+      if (now - proximityViolStartRef.current > PROXIMITY_GRACE_MS) {
+        const reason = faceWidthRatio < PROXIMITY_MIN ? "Face too far from camera" : "Face too close to camera";
+        fire("proximity_violation", `${reason} for >${PROXIMITY_GRACE_MS / 1000}s`, "medium");
+      }
+    } else {
+      proximityViolStartRef.current = null;
+    }
+
+    // ── 4c. Lighting Quality (Signal 6) ───────────────────────────────────────
+    // Check lighting roughly every 1s
+    if (now - lastLightingCheckRef.current > 1000) {
+      lastLightingCheckRef.current = now;
+      try {
+        const lbCanvas = document.createElement("canvas");
+        lbCanvas.width = 1; lbCanvas.height = 1;
+        const lbCtx = lbCanvas.getContext("2d");
+        if (lbCtx && video.videoWidth > 0 && video.videoHeight > 0) {
+          // Draw face box scaled down to 1x1 pixel (hardware average)
+          const bx = minXNorm * video.videoWidth;
+          const by = minYNorm * video.videoHeight;
+          const bw = faceWidthRatio * video.videoWidth;
+          const bh = (maxYNorm - minYNorm) * video.videoHeight;
+          if (bw > 0 && bh > 0) {
+            lbCtx.drawImage(video, bx, by, bw, bh, 0, 0, 1, 1);
+            const data = lbCtx.getImageData(0, 0, 1, 1).data;
+            // ITU-R BT.601 perceptual brightness (0 - 255)
+            const brightness = 0.299 * data[0] + 0.587 * data[1] + 0.114 * data[2];
+            
+            if (brightness < LIGHTING_MIN || brightness > LIGHTING_MAX) {
+              if (!lightingViolStartRef.current) lightingViolStartRef.current = now;
+              if (now - lightingViolStartRef.current > LIGHTING_GRACE_MS) {
+                 const reason = brightness < LIGHTING_MIN ? "Lighting too dim" : "Lighting too harsh/bright";
+                 fire("lighting_violation", `${reason} (Value: ${brightness.toFixed(0)})`, "low");
+              }
+            } else {
+              lightingViolStartRef.current = null;
+            }
+          }
+        }
+      } catch (err) {
+        // ignore occasional canvas draw errors
+      }
+    }
+
     // ── 5. Periodic Identity Verification ────────────────────────────────────
     // Runs every 60 s for the entire interview session (no arbitrary cap).
     if (referenceSnapshotUrl && now - lastIdentityCheck.current > IDENTITY_CHECK_INTERVAL) {
@@ -463,15 +558,14 @@ export function FaceProctoring({
         const { FaceLandmarker: FL, FilesetResolver } = await import("@mediapipe/tasks-vision");
 
         const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"
+          "/mediapipe"
         );
 
         if (cancelled) return;
 
         const landmarker = await FL.createFromOptions(vision, {
           baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+            modelAssetPath: "/models/face_landmarker.task",
             delegate: "GPU",
           },
           outputFaceBlendshapes: false,

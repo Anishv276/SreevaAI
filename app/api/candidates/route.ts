@@ -136,7 +136,7 @@ export async function GET(request: Request) {
                 driveId: app.driveId,
                 name: app.fullName,
                 email: app.email,
-                role: app.driveTitle || app.drivetitle || "Unknown Role",
+                role: app.drive?.title || "Unknown Role",
                 score: app.aiScore || 0,
                 status: app.resumeStatus,
                 interviewStatus: app.interviewStatus,

@@ -96,7 +96,7 @@ TECHNICAL SKILLS (6–10 items):
 - List specific tools, technologies, frameworks, and platforms — ordered by how critical they are for this exact role.
 - Do not list generic skills like "Microsoft Office" or "Google Suite" unless truly relevant.
 - For engineering roles: languages, frameworks, databases, cloud platforms, DevOps tools as applicable.
-- For business/operations roles: relevant software, analytics tools, domain-specific platforms.
+- For business/operations roles: relevant software, reporting tools, domain-specific platforms.
 - For leadership roles: include methodologies and frameworks (Agile, OKRs, JIRA, etc.) alongside domain tools.
 
 PERKS & BENEFITS (4–6 items):

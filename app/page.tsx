@@ -56,12 +56,6 @@ export default function Home() {
             color: "from-green-500 to-emerald-500"
         },
         {
-            icon: BarChart3,
-            title: "Deep Analytics",
-            description: "Real-time dashboards showing pipeline health, time-to-hire, conversion rates, and team productivity metrics.",
-            color: "from-purple-500 to-violet-500"
-        },
-        {
             icon: Calendar,
             title: "Smart Scheduling",
             description: "Automated interview scheduling with calendar integration. Candidates book slots that work for everyone.",
@@ -126,7 +120,7 @@ export default function Home() {
             price: "Free",
             period: "forever",
             description: "Perfect for small teams getting started",
-            features: ["Up to 3 job drives", "50 AI screenings/month", "Basic analytics", "Email support"],
+            features: ["Up to 3 job drives", "50 AI screenings/month", "Email support"],
             cta: "Start Free",
             popular: false
         },
@@ -135,7 +129,7 @@ export default function Home() {
             price: "$49",
             period: "/month",
             description: "For growing teams ready to scale",
-            features: ["Unlimited job drives", "500 AI screenings/month", "Voice AI interviews", "Advanced analytics", "Priority support", "Custom workflows"],
+            features: ["Unlimited job drives", "500 AI screenings/month", "Voice AI interviews", "Priority support", "Custom workflows"],
             cta: "Start Trial",
             popular: true
         },
@@ -144,7 +138,7 @@ export default function Home() {
             price: "Custom",
             period: "",
             description: "For large organizations with complex needs",
-            features: ["Everything in Pro", "Unlimited AI screenings", "Dedicated account manager", "Custom integrations", "SLA guarantee", "On-premise deployment"],
+            features: ["Everything in Pro", "Unlimited AI screenings", "Dedicated account manager", "SLA guarantee", "On-premise deployment"],
             cta: "Contact Sales",
             popular: false
         },
@@ -615,7 +609,6 @@ export default function Home() {
                             <div className="flex flex-col gap-4">
                                 <a href="#features" className="text-sm font-bold text-gray-600 hover:text-[#F97316] transition-colors">Features</a>
                                 <a href="#pricing" className="text-sm font-bold text-gray-600 hover:text-[#F97316] transition-colors">Pricing</a>
-                                <a href="#" className="text-sm font-bold text-gray-600 hover:text-[#F97316] transition-colors">Integrations</a>
                                 <a href="#" className="text-sm font-bold text-gray-600 hover:text-[#F97316] transition-colors">API</a>
                             </div>
                         </div>

@@ -23,11 +23,9 @@ import { useSearchParams } from "next/navigation";
 const sections = [
     { id: "profile", icon: User, label: "Profile" },
     { id: "company", icon: Building2, label: "Company" },
-    { id: "notifications", icon: Bell, label: "Notifications" },
     { id: "team", icon: Users, label: "Team Members" },
     { id: "domains", icon: Globe, label: "Domains" },
     { id: "billing", icon: CreditCard, label: "Billing" },
-    { id: "integrations", icon: Plug, label: "Integrations" },
     { id: "password", icon: Lock, label: "Password" },
 ];
 
@@ -127,13 +125,6 @@ export default function SettingsPage() {
         customSenderName: ""
     });
 
-    /* Notifications */
-    const [notifs, setNotifs] = useState({
-        newApplications: true,
-        aiScreeningCompleted: true,
-        candidateShortlisted: false,
-        driveExpiringSoon: true,
-    });
 
     /* Team */
     const [inviteEmail, setInviteEmail] = useState("");
@@ -728,37 +719,6 @@ export default function SettingsPage() {
                             </div>
                         )}
 
-                        {/* ═══ NOTIFICATIONS ═══ */}
-                        {activeSection === "notifications" && (
-                            <SettingsCard title="Email Notifications" description="Choose which events trigger email alerts.">
-                                <div className="space-y-0 divide-y divide-gray-100">
-                                    {[
-                                        { key: "newApplications", icon: Mail, label: "New Applications", desc: "Get notified when a candidate applies." },
-                                        { key: "aiScreeningCompleted", icon: Zap, label: "AI Screening Completed", desc: "Alert when AI finishes scoring." },
-                                        { key: "candidateShortlisted", icon: Check, label: "Candidate Shortlisted", desc: "Notify when a candidate moves to shortlist." },
-                                        { key: "driveExpiringSoon", icon: AlertCircle, label: "Drive Expiring Soon", desc: "Remind 48 hours before close." },
-                                    ].map(({ key, icon: Icon, label, desc }) => (
-                                        <div key={key} className="flex items-center justify-between py-4 first:pt-0 last:pb-0 group">
-                                            <div className="flex items-center gap-4">
-                                                <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center transition-all",
-                                                    notifs[key as keyof typeof notifs] ? "bg-orange-50 text-[#F97316]" : "bg-gray-50 text-gray-400"
-                                                )}>
-                                                    <Icon className="h-4 w-4" />
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-bold text-gray-900">{label}</p>
-                                                    <p className="text-xs text-gray-500 font-medium tracking-tight">{desc}</p>
-                                                </div>
-                                            </div>
-                                            <Toggle
-                                                checked={notifs[key as keyof typeof notifs]}
-                                                onChange={() => setNotifs(n => ({ ...n, [key]: !n[key as keyof typeof notifs] }))}
-                                            />
-                                        </div>
-                                    ))}
-                                </div>
-                            </SettingsCard>
-                        )}
 
                         {/* ═══ DOMAINS ═══ */}
                         {activeSection === "domains" && (
@@ -1208,7 +1168,7 @@ export default function SettingsPage() {
                                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                                     <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
                                         <div>
-                                            <h2 className="text-lg font-bold text-gray-900">Usage Analytics</h2>
+                                            <h2 className="text-lg font-bold text-gray-900">Usage Overview</h2>
                                             <p className="text-sm text-gray-500 font-medium mt-1">Quota utilization for the current cycle</p>
                                         </div>
                                         <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-100 text-gray-500">Feb 2026 Cycle</span>
@@ -1247,7 +1207,7 @@ export default function SettingsPage() {
                                     </div>
                                     <div className="px-6 py-6">
                                         <div className="grid grid-cols-2 gap-y-4 gap-x-8 mb-8">
-                                            {["Unlimited recruitment drives", "Unlimited AI screenings", "Up to 50 team members", "Priority support & SLA", "Custom integrations", "Advanced analytics dashboard"].map(feat => (
+                                            {["Unlimited recruitment drives", "Unlimited AI screenings", "Up to 50 team members", "Priority support & SLA", "Custom integrations", "White-labeled portal"].map(feat => (
                                                 <div key={feat} className="flex items-center gap-3">
                                                     <div className="h-6 w-6 rounded-lg bg-gray-900 flex items-center justify-center flex-shrink-0"><Check className="h-3.5 w-3.5 text-white" /></div>
                                                     <span className="text-sm font-medium text-gray-600">{feat}</span>
@@ -1260,36 +1220,6 @@ export default function SettingsPage() {
                             </div>
                         )}
 
-                        {/* ═══ INTEGRATIONS ═══ */}
-                        {activeSection === "integrations" && (
-                            <SettingsCard title="Available Integrations" description="Connect your tools to streamline your hiring workflow.">
-                                <div className="space-y-3">
-                                    {[
-                                        { icon: Globe, name: "Job Boards", desc: "Sync open drives to LinkedIn, Indeed & Naukri.", color: "bg-blue-50 text-blue-500", connected: true },
-                                        { icon: Calendar, name: "Google Calendar", desc: "Auto-schedule interviews and sync availability.", color: "bg-emerald-50 text-emerald-600", connected: true },
-                                        { icon: MessageSquare, name: "Slack", desc: "Get real-time hiring alerts in your Slack channels.", color: "bg-purple-50 text-purple-600", connected: false },
-                                        { icon: Mail, name: "Gmail / Outlook", desc: "Send emails directly from your platform inbox.", color: "bg-orange-50 text-[#F97316]", connected: false },
-                                        { icon: BarChart3, name: "ATS / HRMS", desc: "Sync candidate data with your existing system.", color: "bg-gray-50 text-gray-500", connected: false },
-                                    ].map(({ icon: Icon, name, desc, color, connected }) => (
-                                        <div key={name} className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 bg-gray-50/30 hover:bg-white hover:border-gray-200 transition-all group">
-                                            <div className={cn("h-11 w-11 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm", color)}><Icon className="h-5 w-5" /></div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="font-bold text-gray-900 text-sm tracking-tight">{name}</p>
-                                                <p className="text-xs text-gray-400 font-medium tracking-tight mt-0.5">{desc}</p>
-                                            </div>
-                                            {connected ? (
-                                                <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100/50">
-                                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                                    <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Active</span>
-                                                </div>
-                                            ) : (
-                                                <Button variant="outline" size="sm" className="h-9 px-4 rounded-lg border-gray-200 text-gray-500 font-bold text-[11px] hover:border-orange-200 hover:text-[#F97316] hover:bg-orange-50 transition-all">Connect</Button>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </SettingsCard>
-                        )}
 
                         {/* ═══ PASSWORD ═══ */}
                         {activeSection === "password" && (
@@ -1336,7 +1266,7 @@ export default function SettingsPage() {
                         )}
 
                         {/* ── Save Button ── */}
-                        {["profile", "company", "notifications"].includes(activeSection) && (
+                        {["profile", "company"].includes(activeSection) && (
                             <div className="flex justify-end pt-4">
                                 <Button onClick={handleSave} disabled={isSaving} className={cn("h-11 px-12 rounded-lg font-bold shadow-md transition-all", saved ? "bg-emerald-500 text-white" : "bg-[#F97316] text-white")}>
                                     {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}

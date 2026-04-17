@@ -11,10 +11,15 @@ import { LiveFeed } from "@/components/admin/live-feed";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { Plus, Archive } from "lucide-react";
 import Link from "next/link";
+import { useJobs } from "@/context/jobs-context";
+import { cn } from "@/lib/utils";
 
 export default function DashboardPage() {
     const [dateRange, setDateRange] = useState<DateRange>({ type: "month" });
     const [mounted, setMounted] = useState(false);
+    const { jobs } = useJobs();
+    const hasNoDrives = jobs.length === 0;
+
     useEffect(() => {
         setMounted(true);
     }, []);
@@ -73,9 +78,12 @@ export default function DashboardPage() {
 
                 {/* Section 4: Active Drives Summary + Top Candidates */}
                 <section className="animate-fade-slide [animation-delay:300ms]">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                    <div className={cn(
+                        "grid gap-6 items-start",
+                        hasNoDrives ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-2"
+                    )}>
                         <ActiveDrivesSummary dateRange={dateRange} />
-                        <TopCandidates dateRange={dateRange} />
+                        {!hasNoDrives && <TopCandidates dateRange={dateRange} />}
                     </div>
                 </section>
 

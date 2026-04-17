@@ -306,7 +306,7 @@ You have complete, real-time access to the organization's hiring database. Every
 | Show hired candidates | get_candidates_by_status (hiringStatus=hired) |
 | Who was not shortlisted? | get_candidates_by_status (hiringStatus=not shortlisted) |
 
-**RANKINGS & ANALYTICS:**
+**RANKINGS & PERFORMANCE:**
 | Question | Tool |
 |---|---|
 | Top candidates / Best scores / Highest rated | get_top_candidates |

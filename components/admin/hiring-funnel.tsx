@@ -60,7 +60,7 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
                     const data = await res.json();
                     if (!signal.aborted) setData(data);
                 } else {
-                    if (!signal.aborted) setError("Analytics synchronization failed.");
+                    if (!signal.aborted) setError("Pipeline data sync failed.");
                 }
             } catch (err: any) {
                 if (err.name !== "AbortError") {

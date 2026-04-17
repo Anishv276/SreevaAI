@@ -652,7 +652,7 @@ export default function OrgsPage() {
                                 <div>
                                     <div className="flex items-center gap-2 mb-1">
                                         <div className="h-2 w-2 rounded-full bg-orange-500 animate-pulse" />
-                                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-orange-600/60">Live Analytics</span>
+                                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-orange-600/60">Live Consumption</span>
                                     </div>
                                     <h3 className="text-2xl font-black text-gray-900 tracking-tight">
                                         {metricsOrg.name} <span className="text-gray-400 font-medium">— AI Consumption</span>

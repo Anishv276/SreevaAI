@@ -63,7 +63,7 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
                     if (!signal.aborted) setStats(data);
                 } else {
                     const d = await res.json().catch(() => ({}));
-                    if (!signal.aborted) setError(d.error || "Analytics connection timeout.");
+                    if (!signal.aborted) setError(d.error || "Stats synchronization error.");
                 }
             } catch (err: any) {
                 if (err.name !== "AbortError") {

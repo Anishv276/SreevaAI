@@ -165,6 +165,121 @@ export function HardwareCheck({
     }, [networkQuality]);
     const [bypassSpeedTest, setBypassSpeedTest] = useState(false);
 
+    // ── Visual Integrity (Signals 4, 5, 6) ──────────────────────────────────
+    const visualLandmarkerRef = useRef<any>(null);
+    const visualRafRef = useRef<number | null>(null);
+    const [visualSignals, setVisualSignals] = useState({
+        alignment: false,
+        proximity: false,
+        lighting: false,
+    });
+    const [visualStatusMsg, setVisualStatusMsg] = useState("Initializing visual integrity check...");
+    const visualReady = visualSignals.alignment && visualSignals.proximity && visualSignals.lighting;
+
+    useEffect(() => {
+        if (cameraStatus !== "granted") return;
+        let cancelled = false;
+
+        const initVisualIntegrity = async () => {
+            try {
+                const { FaceLandmarker: FL, FilesetResolver } = await import("@mediapipe/tasks-vision");
+                const vision = await FilesetResolver.forVisionTasks("/mediapipe");
+                if (cancelled) return;
+                
+                const landmarker = await FL.createFromOptions(vision, {
+                    baseOptions: { modelAssetPath: "/models/face_landmarker.task", delegate: "GPU" },
+                    outputFaceBlendshapes: false,
+                    outputFacialTransformationMatrixes: false,
+                    runningMode: "VIDEO",
+                    numFaces: 1,
+                    minFaceDetectionConfidence: 0.7,
+                    minFacePresenceConfidence: 0.7,
+                    minTrackingConfidence: 0.6,
+                });
+                if (cancelled) { landmarker.close(); return; }
+                visualLandmarkerRef.current = landmarker;
+
+                // Thresholds matching FaceProctoring
+                const CENTER_X_MIN = 0.35, CENTER_X_MAX = 0.65;
+                const CENTER_Y_MIN = 0.25, CENTER_Y_MAX = 0.55;
+                const PROX_MIN = 0.20, PROX_MAX = 0.55;
+                const LIGHT_MIN = 70, LIGHT_MAX = 200;
+
+                // Throttle lighting to avoid canvas layout thrashing every frame
+                let lastLightingCheck = 0;
+                let lastLightGood = false;
+
+                const checkVisuals = () => {
+                    if (cancelled) return;
+                    visualRafRef.current = requestAnimationFrame(checkVisuals);
+                    const video = videoRef.current;
+                    if (!video || video.readyState < 2 || video.paused || !visualLandmarkerRef.current) return;
+
+                    let result;
+                    try { result = visualLandmarkerRef.current.detectForVideo(video, performance.now()); } 
+                    catch { return; }
+
+                    if (!result.faceLandmarks || result.faceLandmarks.length === 0) {
+                        setVisualSignals({ alignment: false, proximity: false, lighting: lastLightGood });
+                        setVisualStatusMsg("No face detected. Please look at the camera.");
+                        return;
+                    }
+
+                    const landmarks = result.faceLandmarks[0];
+                    const xs = landmarks.map((l: any) => l.x);
+                    const ys = landmarks.map((l: any) => l.y);
+                    const minX = Math.min(...xs), maxX = Math.max(...xs);
+                    const minY = Math.min(...ys), maxY = Math.max(...ys);
+
+                    const cx = (minX + maxX) / 2;
+                    const cy = (minY + maxY) / 2;
+                    const isAligned = cx >= CENTER_X_MIN && cx <= CENTER_X_MAX && cy >= CENTER_Y_MIN && cy <= CENTER_Y_MAX;
+
+                    const widthRatio = maxX - minX;
+                    const isProxGood = widthRatio >= PROX_MIN && widthRatio <= PROX_MAX;
+
+                    const now = performance.now();
+                    if (now - lastLightingCheck > 500) {
+                        lastLightingCheck = now;
+                        try {
+                            const lc = document.createElement("canvas");
+                            lc.width = 1; lc.height = 1;
+                            const lctx = lc.getContext("2d");
+                            if (lctx && video.videoWidth > 0) {
+                                // Draw face box scaled down to 1x1
+                                lctx.drawImage(video, minX*video.videoWidth, minY*video.videoHeight, widthRatio*video.videoWidth, (maxY-minY)*video.videoHeight, 0, 0, 1, 1);
+                                const data = lctx.getImageData(0,0,1,1).data;
+                                const brightness = 0.299 * data[0] + 0.587 * data[1] + 0.114 * data[2];
+                                lastLightGood = brightness >= LIGHT_MIN && brightness <= LIGHT_MAX;
+                            }
+                        } catch (e) {}
+                    }
+
+                    setVisualSignals({ alignment: isAligned, proximity: isProxGood, lighting: lastLightGood });
+
+                    if (!isAligned) setVisualStatusMsg(cx < CENTER_X_MIN ? "Move right" : cx > CENTER_X_MAX ? "Move left" : "Center your face");
+                    else if (!isProxGood) setVisualStatusMsg(widthRatio < PROX_MIN ? "Move closer to camera" : "Move further back");
+                    else if (!lastLightGood) setVisualStatusMsg("Lighting is poor. Face a light source.");
+                    else setVisualStatusMsg("Visual integrity is good");
+                };
+                visualRafRef.current = requestAnimationFrame(checkVisuals);
+            } catch (err) {
+                setVisualStatusMsg("Visual check unavailable.");
+            }
+        };
+
+        void initVisualIntegrity();
+
+        return () => {
+            cancelled = true;
+            if (visualRafRef.current) cancelAnimationFrame(visualRafRef.current);
+            if (visualLandmarkerRef.current) {
+                try { visualLandmarkerRef.current.close(); } catch {}
+                visualLandmarkerRef.current = null;
+            }
+        };
+    }, [cameraStatus]);
+
     // Browser compatibility
     const [browserSupported, setBrowserSupported] = useState(true);
     const [browserName, setBrowserName] = useState("");
@@ -195,6 +310,7 @@ export function HardwareCheck({
             (downloadSpeedMbps !== null && downloadSpeedMbps >= 3.0) &&
             (latencyMs !== null && latencyMs < 300)
         )) &&
+        visualReady &&
         consentChecked;
 
     useEffect(() => {
@@ -684,6 +800,7 @@ export function HardwareCheck({
         noiseBypass || noisePassed,
         speakerStatus === "passed" || speakerStatus === "failed",
         bypassSpeedTest || (uploadSpeedMbps !== null && uploadSpeedMbps >= 3.0 && downloadSpeedMbps !== null && downloadSpeedMbps >= 3.0 && latencyMs !== null && latencyMs < 300),
+        visualReady,
     ];
     const readyCount = checks.filter(Boolean).length;
     const progressPct = Math.round((readyCount / checks.length) * 100);
@@ -768,8 +885,39 @@ export function HardwareCheck({
                     </div>
 
                     {/* Video preview */}
-                    <div className="relative bg-gray-950 flex-1 h-[320px] overflow-hidden">
+                    <div className="relative bg-gray-950 flex-1 h-[320px] overflow-hidden group">
                         <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
+                        
+                        {/* Visual Integrity Target Guide Overlay */}
+                        {cameraStatus === "granted" && (
+                            <div className="absolute inset-0 pointer-events-none flex flex-col">
+                                {/* Centering Guide Frame (0.35 to 0.65 width / 0.25 to 0.55 height) */}
+                                {/* We will use flex to create a box representing the center bounds */}
+                                <div className="absolute inset-0 border-[4px] opacity-10 m-auto" 
+                                    style={{ width: "40%", height: "40%", borderColor: "white", borderRadius: "100%" }} />
+                                
+                                <div className="absolute bottom-3 inset-x-0 mx-auto w-max bg-black/60 backdrop-blur-sm shadow overflow-hidden rounded-xl">
+                                    <div className="flex items-center gap-4 px-4 py-2">
+                                        <div className="flex flex-col items-center">
+                                            <div className={`w-2 h-2 rounded-full mb-1 ${visualSignals.alignment ? 'bg-green-500' : 'bg-red-500'}`} />
+                                            <span className="text-[9px] text-white/80 font-bold uppercase tracking-wide">Align</span>
+                                        </div>
+                                        <div className="flex flex-col items-center">
+                                            <div className={`w-2 h-2 rounded-full mb-1 ${visualSignals.proximity ? 'bg-green-500' : 'bg-red-500'}`} />
+                                            <span className="text-[9px] text-white/80 font-bold uppercase tracking-wide">Dist</span>
+                                        </div>
+                                        <div className="flex flex-col items-center">
+                                            <div className={`w-2 h-2 rounded-full mb-1 ${visualSignals.lighting ? 'bg-green-500' : 'bg-red-500'}`} />
+                                            <span className="text-[9px] text-white/80 font-bold uppercase tracking-wide">Light</span>
+                                        </div>
+                                    </div>
+                                    <div className={`px-4 py-1 text-center text-[10px] font-bold truncate transition-colors ${visualReady ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                                        {visualStatusMsg}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {cameraStatus !== "granted" && (
                             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
                                 <Camera className="w-8 h-8 text-gray-500" />
