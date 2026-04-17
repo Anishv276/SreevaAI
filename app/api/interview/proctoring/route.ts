@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 
 const proctoringSignalSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),
-  interviewToken: z.string().min(1, "Security token required"),
+  interviewToken: z.string().optional().default(""),
   events: z.array(z.object({
     eventType: z.string().min(1),
     severity: z.enum(["low", "medium", "high"]).optional(),

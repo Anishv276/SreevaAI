@@ -13,22 +13,54 @@ interface ProctoringEvent {
 
 // Map raw eventType strings to our display categories
 const EVENT_MAP: Record<string, string> = {
-    FACE_NOT_DETECTED:  "face_not_detected",
-    face_not_detected:  "face_not_detected",
-    faceNotDetected:    "face_not_detected",
-    MULTIPLE_FACES:     "multiple_faces",
-    multiple_faces:     "multiple_faces",
-    multipleFaces:      "multiple_faces",
-    AUDIO_FLAG:         "audio_flag",
-    audio_flag:         "audio_flag",
-    audioFlag:          "audio_flag",
-    DUPLICATE_IP:       "duplicate_ip",
-    duplicate_ip:       "duplicate_ip",
-    duplicateIp:        "duplicate_ip",
-    tab_switch:         "tab_switch",
-    tabSwitch:          "tab_switch",
-    fullscreen_exit:    "fullscreen_exit",
-    fullscreenExit:     "fullscreen_exit",
+    // Face proctoring (FaceProctoring.tsx)
+    face_absence:           "face_absence",
+    faceAbsence:            "face_absence",
+    FACE_ABSENCE:           "face_absence",
+    face_not_detected:      "face_absence",   // legacy alias
+    FACE_NOT_DETECTED:      "face_absence",
+    faceNotDetected:        "face_absence",
+    multiple_faces:         "multiple_faces",
+    multipleFaces:          "multiple_faces",
+    MULTIPLE_FACES:         "multiple_faces",
+    gaze_violation:         "gaze_violation",
+    gazeViolation:          "gaze_violation",
+    GAZE_VIOLATION:         "gaze_violation",
+    head_pose_violation:    "head_pose_violation",
+    headPoseViolation:      "head_pose_violation",
+    HEAD_POSE_VIOLATION:    "head_pose_violation",
+    identity_mismatch:      "identity_mismatch",
+    identityMismatch:       "identity_mismatch",
+    IDENTITY_MISMATCH:      "identity_mismatch",
+    // Audio proctoring (AudioProctoring.tsx)
+    AUDIO_FLAG:             "audio_flag",
+    audio_flag:             "audio_flag",
+    audioFlag:              "audio_flag",
+    // Network / session signals
+    DUPLICATE_IP:           "duplicate_ip",
+    duplicate_ip:           "duplicate_ip",
+    duplicateIp:            "duplicate_ip",
+    // Hardware heartbeat signals (HardwareHeartbeat.tsx)
+    camera_disabled:        "camera_disabled",
+    cameraDisabled:         "camera_disabled",
+    CAMERA_DISABLED:        "camera_disabled",
+    microphone_disabled:    "microphone_disabled",
+    microphoneDisabled:     "microphone_disabled",
+    MICROPHONE_DISABLED:    "microphone_disabled",
+    // Connection signals (ConnectionProctoring.tsx)
+    connection_lost:        "connection_lost",
+    connectionLost:         "connection_lost",
+    CONNECTION_LOST:        "connection_lost",
+    connection_restored:    "connection_restored",
+    connectionRestored:     "connection_restored",
+    CONNECTION_RESTORED:    "connection_restored",
+    // Browser signals
+    tab_switch:             "tab_switch",
+    tabSwitch:              "tab_switch",
+    fullscreen_exit:        "fullscreen_exit",
+    fullscreenExit:         "fullscreen_exit",
+    // Metadata-only — never a violation
+    ip_registered:          "__skip__",
 };
 
 function getRangeStart(range: string, from?: string, to?: string): Date {
@@ -93,7 +125,8 @@ export async function GET(req: NextRequest) {
         const total = interviews.length;
 
         // Counters per violation type
-        const violationCounts: Record<string, { incidents: number; candidateIds: Set<string>; durations: number[] }> = {};
+        // duplicate_ip is split into three sub-types sourced from event metadata
+        const violationCounts: Record<string, { incidents: number; candidateIds: Set<string>; durations: number[]; highCount: number }> = {};
 
         let flaggedSet = new Set<string>();   // interview IDs with HIGH severity events
         let lowRiskSet = new Set<string>();   // interview IDs with LOW/MEDIUM severity
@@ -113,17 +146,39 @@ export async function GET(req: NextRequest) {
             let hasAnySeverity = false;
 
             for (const ev of events) {
-                const category = EVENT_MAP[ev.eventType] ?? ev.eventType;
+                const baseCategory = EVENT_MAP[ev.eventType] ?? ev.eventType;
+                // Skip metadata-only events (ip_registered = fingerprint bookkeeping)
+                if (baseCategory === "__skip__") continue;
+
+                // For duplicate_ip, map to sub-tier category based on stored collisionType
+                let category = baseCategory;
+                if (baseCategory === "duplicate_ip") {
+                    const ct = (ev.metadata as any)?.collisionType as string | undefined;
+                    if (ct === "simultaneous_device_match") {
+                        category = "duplicate_ip_simultaneous";
+                    } else if (ct === "sequential_device_reuse") {
+                        category = "duplicate_ip_sequential";
+                    } else {
+                        // shared_network_only or legacy events without collisionType
+                        category = "duplicate_ip_network";
+                    }
+                }
+
                 if (!violationCounts[category]) {
-                    violationCounts[category] = { incidents: 0, candidateIds: new Set(), durations: [] };
+                    violationCounts[category] = { incidents: 0, candidateIds: new Set(), durations: [], highCount: 0 };
                 }
                 violationCounts[category].incidents++;
                 violationCounts[category].candidateIds.add(iv.applicationId);
                 if (ev.durationSeconds) violationCounts[category].durations.push(ev.durationSeconds);
 
-                hasAnySeverity = true;
-                if (ev.severity === "HIGH" || ev.severity === "high") {
+                // Use the actual severity stored on the event (not a hard-coded guess)
+                const sev = (ev.severity ?? "").toLowerCase();
+                if (sev === "high") {
+                    violationCounts[category].highCount++;
                     hasHighSeverity = true;
+                    hasAnySeverity  = true;
+                } else if (sev === "medium" || sev === "low") {
+                    hasAnySeverity = true;
                 }
             }
 
@@ -137,19 +192,49 @@ export async function GET(req: NextRequest) {
         const clean = total - flagged - lowRisk;
         const integrityScore = total > 0 ? Math.round(((clean + lowRisk * 0.5) / total) * 100) : 100;
 
-        // Build ordered violation list
-        const ORDER = ["face_not_detected", "multiple_faces", "tab_switch", "fullscreen_exit", "audio_flag", "duplicate_ip"];
+        const ORDER = [
+            "face_absence",
+            "multiple_faces",
+            "gaze_violation",
+            "head_pose_violation",
+            "identity_mismatch",
+            "audio_flag",
+            "camera_disabled",
+            "microphone_disabled",
+            "tab_switch",
+            "fullscreen_exit",
+            // Smart Collusion Detection — three tiers
+            "duplicate_ip_simultaneous",
+            "duplicate_ip_sequential",
+            "duplicate_ip_network",
+            "connection_lost",
+            "connection_restored",
+        ];
         const LABELS: Record<string, { title: string; abbr: string; getDesc: (v: typeof violationCounts[string]) => string }> = {
-            face_not_detected: { title: "Face not detected",          abbr: "FD", getDesc: v => {
+            face_absence:               { title: "Face not visible",                   abbr: "FA", getDesc: v => {
                 const avgDur = v.durations.length ? Math.round(v.durations.reduce((a, b) => a + b, 0) / v.durations.length) : 0;
                 return `${v.incidents} events${avgDur ? `, avg ${avgDur}s absence` : ""}`;
             }},
-            multiple_faces:    { title: "Multiple faces detected",    abbr: "MF", getDesc: v => `${v.incidents} incidents flagged` },
-            tab_switch:        { title: "Tab switching / App switching", abbr: "TS", getDesc: v => `${v.incidents} switch events recorded` },
-            fullscreen_exit:   { title: "Fullscreen Exit",            abbr: "FE", getDesc: v => `${v.incidents} exits detected` },
-            audio_flag:        { title: "Background audio flags",     abbr: "AU", getDesc: v => `${v.incidents} voice detections` },
-            duplicate_ip:      { title: "Duplicate IP / location flags", abbr: "IP", getDesc: v => `${v.incidents} pairs flagged for collusion check` },
+            multiple_faces:             { title: "Multiple faces detected",             abbr: "MF", getDesc: v => `${v.incidents} incidents flagged` },
+            gaze_violation:             { title: "Gaze off-screen",                     abbr: "GV", getDesc: v => `${v.incidents} gaze violations logged` },
+            head_pose_violation:        { title: "Head pose deviation",                 abbr: "HP", getDesc: v => `${v.incidents} head-turn events logged` },
+            identity_mismatch:          { title: "Identity mismatch",                   abbr: "IM", getDesc: v => `${v.incidents} mismatch checks triggered` },
+            audio_flag:                 { title: "Background audio flags",              abbr: "AU", getDesc: v => `${v.incidents} secondary voice detections` },
+            camera_disabled:            { title: "Camera disabled mid-session",          abbr: "CD", getDesc: v => `${v.incidents} camera disable events` },
+            microphone_disabled:        { title: "Microphone disabled mid-session",      abbr: "MD", getDesc: v => `${v.incidents} mic disable events` },
+            tab_switch:                 { title: "Tab switching / App switching",       abbr: "TS", getDesc: v => `${v.incidents} switch events recorded` },
+            fullscreen_exit:            { title: "Fullscreen Exit",                     abbr: "FE", getDesc: v => `${v.incidents} exits detected` },
+            // Smart Collusion — 3 tiers
+            duplicate_ip_simultaneous:  { title: "🔴 Simultaneous Device Match",        abbr: "SC", getDesc: v => `${v.incidents} HIGH-risk: same device, same time` },
+            duplicate_ip_sequential:    { title: "🟡 Sequential Device Reuse",           abbr: "SR", getDesc: v => `${v.incidents} MEDIUM-risk: same device, different session` },
+            duplicate_ip_network:       { title: "🟢 Shared Network Only",               abbr: "SN", getDesc: v => `${v.incidents} LOW-risk: campus/office shared IP` },
+            connection_lost:            { title: "Connection drops",                   abbr: "CL", getDesc: v => `${v.incidents} connection loss events` },
+            connection_restored:        { title: "Connection restored",                abbr: "CR", getDesc: v => `${v.incidents} restoration events` },
         };
+
+        // Severity determination per category using event data
+        const HIGH_SEVERITY_KEYS   = new Set(["face_absence", "multiple_faces", "identity_mismatch", "camera_disabled", "fullscreen_exit", "duplicate_ip_simultaneous"]);
+        const MEDIUM_SEVERITY_KEYS = new Set(["audio_flag", "gaze_violation", "head_pose_violation", "tab_switch", "microphone_disabled", "connection_lost", "duplicate_ip_sequential"]);
 
         const violations = ORDER
             .filter(k => violationCounts[k] && LABELS[k])
@@ -159,7 +244,9 @@ export async function GET(req: NextRequest) {
                 title: LABELS[k].title,
                 description: LABELS[k].getDesc(violationCounts[k]),
                 count: violationCounts[k].incidents,
-                severity: k === "audio_flag" || k === "face_not_detected" || k === "multiple_faces" ? "medium" : "low",
+                severity: HIGH_SEVERITY_KEYS.has(k) ? "high"
+                        : MEDIUM_SEVERITY_KEYS.has(k) ? "medium"
+                        : "low",
             }));
 
         // Add zero-count rows for all standard types so UI always shows them
@@ -171,7 +258,9 @@ export async function GET(req: NextRequest) {
                     title: LABELS[k].title,
                     description: "No incidents detected",
                     count: 0,
-                    severity: k === "audio_flag" || k === "face_not_detected" || k === "multiple_faces" ? "medium" : "low",
+                    severity: HIGH_SEVERITY_KEYS.has(k) ? "high"
+                            : MEDIUM_SEVERITY_KEYS.has(k) ? "medium"
+                            : "low",
                 });
             }
         }

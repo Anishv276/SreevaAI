@@ -1,12 +1,16 @@
 "use client";
 import { Suspense, useState, use, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users } from "lucide-react";
+import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
 import { HardwareCheck } from "@/components/careers/interview/HardwareCheck";
 import { FaceProctoring } from "@/components/careers/interview/FaceProctoring";
+import { AudioProctoring } from "@/components/careers/interview/AudioProctoring";
+import { HardwareHeartbeat } from "@/components/careers/interview/HardwareHeartbeat";
+import { ConnectionProctoring } from "@/components/careers/interview/ConnectionProctoring";
+import { collectDeviceFingerprint } from "@/lib/device-fingerprint";
 import { useSearchParams } from "next/navigation";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import {
@@ -127,6 +131,18 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [faceViolationAlert, setFaceViolationAlert] = useState<{ type: string; reason: string } | null>(null);
     const faceViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+    // ── Audio Proctoring ──────────────────────────────────────────────────────
+    const [audioViolationAlert, setAudioViolationAlert] = useState<{ reason: string } | null>(null);
+    const audioViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    // ── Hardware Heartbeat ───────────────────────────────────────────────
+    const [hardwareViolationAlert, setHardwareViolationAlert] = useState<{ type: string; reason: string } | null>(null);
+    const hardwareViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    // ── Connection Proctoring ───────────────────────────────────────────
+    const [connectionAlert, setConnectionAlert] = useState<{ eventType: string; reason: string } | null>(null);
+    const connectionAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
+
     const searchParams = useSearchParams();
     const interviewToken = searchParams.get("token") || "";
     const requireInterviewToken = isInterviewTokenRequired();
@@ -170,6 +186,97 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
             } catch { }
         }
+    }, [id, interviewToken]);
+
+    // ── Audio violation handler ───────────────────────────────────────────────
+    const handleAudioViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
+        // 1. Show transient toast to candidate (auto-dismiss after 6s)
+        setAudioViolationAlert({ reason });
+        if (audioViolationTimerRef.current) clearTimeout(audioViolationTimerRef.current);
+        audioViolationTimerRef.current = setTimeout(() => setAudioViolationAlert(null), 6000);
+
+        // 2. Send to backend for audit trail
+        fetch("/api/interview/proctoring", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                applicationId: id,
+                interviewToken,
+                events: [{
+                    eventType,
+                    severity: severity ?? "medium",
+                    timestamp: Date.now(),
+                    reason,
+                }],
+            }),
+        }).catch(() => { });
+
+        // 3. Signal agent via data channel
+        const room = lkRoomRef.current;
+        if (room?.localParticipant) {
+            try {
+                const data = new TextEncoder().encode(JSON.stringify({ type: "audio_proctoring_violation", eventType, timestamp: Date.now() }));
+                room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
+            } catch { }
+        }
+    }, [id, interviewToken]);
+
+    // ── Hardware heartbeat violation handler ─────────────────────────────────
+    const handleHardwareViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
+        // 1. Show transient alert to candidate (8s — longer for high-severity)
+        setHardwareViolationAlert({ type: eventType, reason });
+        if (hardwareViolationTimerRef.current) clearTimeout(hardwareViolationTimerRef.current);
+        hardwareViolationTimerRef.current = setTimeout(() => setHardwareViolationAlert(null), 8000);
+
+        // 2. Send to backend for audit trail
+        fetch("/api/interview/proctoring", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                applicationId: id,
+                interviewToken,
+                events: [{
+                    eventType,
+                    severity: severity ?? "high",
+                    timestamp: Date.now(),
+                    reason,
+                }],
+            }),
+        }).catch(() => { });
+
+        // 3. Signal agent via data channel
+        const room = lkRoomRef.current;
+        if (room?.localParticipant) {
+            try {
+                const data = new TextEncoder().encode(JSON.stringify({ type: "hardware_violation", eventType, timestamp: Date.now() }));
+                room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
+            } catch { }
+        }
+    }, [id, interviewToken]);
+
+    // ── Connection violation handler ──────────────────────────────────────────
+    const handleConnectionViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
+        // 1. Show toast to candidate (5 s for restored, 8 s for lost)
+        const displayMs = eventType === "connection_restored" ? 5000 : 8000;
+        setConnectionAlert({ eventType, reason });
+        if (connectionAlertTimerRef.current) clearTimeout(connectionAlertTimerRef.current);
+        connectionAlertTimerRef.current = setTimeout(() => setConnectionAlert(null), displayMs);
+
+        // 2. Send to backend for audit trail
+        fetch("/api/interview/proctoring", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                applicationId: id,
+                interviewToken,
+                events: [{
+                    eventType,
+                    severity: severity ?? "medium",
+                    timestamp: Date.now(),
+                    reason,
+                }],
+            }),
+        }).catch(() => { });
     }, [id, interviewToken]);
 
     // Countdown ticker — purely visual, counts up for display purposes
@@ -267,6 +374,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
         tokenRequestRef.current = (async () => {
             try {
+                // Collect device fingerprint for Smart Collusion Detection.
+                // This is capability data only (screen res, CPU cores, platform, DPR)
+                // — no PII is sent. The server hashes and never stores raw values.
+                const deviceFingerprint = collectDeviceFingerprint();
+
                 const res = await fetch("/api/interview/token", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -274,6 +386,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         applicationId: id,
                         interviewToken: interviewToken,
                         participantName: "Candidate",
+                        deviceFingerprint,
                     }),
                 });
 
@@ -672,6 +785,22 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 onViolation={handleFaceViolation}
             />
 
+            {/* ── Audio Proctoring (Web Audio API secondary-voice detection) ────── */}
+            <AudioProctoring
+                applicationId={id}
+                interviewToken={interviewToken}
+                isActive={phase === "interview"}
+                onViolation={handleAudioViolation}
+            />
+
+            {/* ── Hardware Heartbeat (MediaStreamTrack API camera/mic monitoring) */}
+            <HardwareHeartbeat
+                applicationId={id}
+                interviewToken={interviewToken}
+                isActive={phase === "interview"}
+                onViolation={handleHardwareViolation}
+            />
+
             {/* Interview room — outside AnimatePresence intentionally.
                 It pre-renders as soon as the launching phase has prepared a token
                 and controls its own visibility via opacity/z-index/pointer-events. */}
@@ -704,6 +833,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
                             onRemoteAgentAudioTrack={handleRemoteAgentAudioTrack}
                             onRoomReady={(room) => { lkRoomRef.current = room; }}
+                        />
+                        {/* ── Connection Proctoring (lives inside LiveKitRoom for useRoomContext) */}
+                        <ConnectionProctoring
+                            isActive={phase === "interview"}
+                            onViolation={handleConnectionViolation}
                         />
                     </LiveKitRoom>
                 </div>
@@ -818,6 +952,104 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 </p>
                                 <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
                                     {faceViolationAlert.reason}
+                                </p>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Audio Proctoring Violation Alert ──────────────────────────── */}
+            <AnimatePresence>
+                {audioViolationAlert && phase === "interview" && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 40 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 40 }}
+                        className="fixed bottom-40 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
+                    >
+                        <div className="flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md border border-yellow-500/30 rounded-2xl px-5 py-3 shadow-2xl max-w-sm">
+                            <div className="w-8 h-8 rounded-xl bg-yellow-500/10 flex items-center justify-center shrink-0">
+                                <Volume2 className="w-4 h-4 text-yellow-400" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-yellow-400">
+                                    Audio Alert
+                                </p>
+                                <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
+                                    {audioViolationAlert.reason}
+                                </p>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Hardware Violation Alert (camera / mic disabled) ────────────── */}
+            <AnimatePresence>
+                {hardwareViolationAlert && phase === "interview" && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 40 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 40 }}
+                        className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
+                    >
+                        <div className="flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md border border-red-500/40 rounded-2xl px-5 py-3 shadow-2xl max-w-sm">
+                            <div className="w-8 h-8 rounded-xl bg-red-500/10 flex items-center justify-center shrink-0">
+                                {hardwareViolationAlert.type === "camera_disabled" ? (
+                                    <VideoOff className="w-4 h-4 text-red-400" />
+                                ) : (
+                                    <MicOff className="w-4 h-4 text-red-400" />
+                                )}
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-red-400">
+                                    {hardwareViolationAlert.type === "camera_disabled" ? "Camera Disabled" : "Microphone Disabled"}
+                                </p>
+                                <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
+                                    {hardwareViolationAlert.reason}
+                                </p>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Connection Alert Toast ──────────────────────────────────────── */}
+            <AnimatePresence>
+                {connectionAlert && phase === "interview" && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 40 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 40 }}
+                        className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
+                    >
+                        <div className={`flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border ${
+                            connectionAlert.eventType === "connection_restored"
+                                ? "border-green-500/30"
+                                : "border-blue-500/30"
+                        }`}>
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                                connectionAlert.eventType === "connection_restored"
+                                    ? "bg-green-500/10"
+                                    : "bg-blue-500/10"
+                            }`}>
+                                <WifiOff className={`w-4 h-4 ${
+                                    connectionAlert.eventType === "connection_restored"
+                                        ? "text-green-400"
+                                        : "text-blue-400"
+                                }`} />
+                            </div>
+                            <div>
+                                <p className={`text-[10px] font-black uppercase tracking-widest ${
+                                    connectionAlert.eventType === "connection_restored"
+                                        ? "text-green-400"
+                                        : "text-blue-400"
+                                }`}>
+                                    {connectionAlert.eventType === "connection_restored" ? "Connection Restored" : "Connection Issue"}
+                                </p>
+                                <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
+                                    {connectionAlert.reason}
                                 </p>
                             </div>
                         </div>
