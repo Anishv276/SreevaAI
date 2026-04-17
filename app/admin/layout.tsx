@@ -70,7 +70,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                         body.reports-mode .recruiter-assistant-btn { display: none !important; }
                     ` }} />
                     <main className="min-h-screen">
-                        {showSidebar && <DomainVerificationBanner />}
+                        {/* {showSidebar && <DomainVerificationBanner />} */}
                         <div className="max-w-full mx-auto p-4 md:p-8 lg:p-10">
                             {children}
                         </div>

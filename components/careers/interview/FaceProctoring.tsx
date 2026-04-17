@@ -31,66 +31,47 @@ import type { FaceLandmarker, FaceLandmarkerResult } from "@mediapipe/tasks-visi
 // Forehead (approx):   10
 // Chin (approx):       152
 
-const LEFT_IRIS_CENTER   = 468;
-const RIGHT_IRIS_CENTER  = 473;
-const LEFT_EYE_OUTER     = 33;
-const LEFT_EYE_INNER     = 133;
-const RIGHT_EYE_INNER    = 362;
-const RIGHT_EYE_OUTER    = 263;
-const NOSE_TIP           = 4;
-const LEFT_EAR           = 454;
-const RIGHT_EAR          = 234;
-const FOREHEAD           = 10;
-const CHIN               = 152;
+const LEFT_IRIS_CENTER = 468;
+const RIGHT_IRIS_CENTER = 473;
+const LEFT_EYE_OUTER = 33;
+const LEFT_EYE_INNER = 133;
+const RIGHT_EYE_INNER = 362;
+const RIGHT_EYE_OUTER = 263;
+const NOSE_TIP = 4;
+const LEFT_EAR = 454;
+const RIGHT_EAR = 234;
+const FOREHEAD = 10;
+const CHIN = 152;
 
 // ─── Thresholds ───────────────────────────────────────────────────────────────
-const ABSENCE_GRACE_MS         = 3_000;  // 3 s no face → flag
-const GAZE_GRACE_MS            = 1_500;  // 1.5 s sustained off-screen gaze → flag
-const HEAD_POSE_GRACE_MS       = 1_500;  // 1.5 s sustained head turn → flag
+const ABSENCE_GRACE_MS = 3_000;  // 3 s no face → flag
+const GAZE_GRACE_MS = 1_500;  // 1.5 s sustained off-screen gaze → flag
+const HEAD_POSE_GRACE_MS = 1_500;  // 1.5 s sustained head turn → flag
 // Nose-offset thresholds (fraction of face width):
 //   |noseOffsetX| > GAZE_X_THRESHOLD  → head turned left/right
 //   noseOffsetY  < GAZE_UP_THRESHOLD   → head tilted up
 //   noseOffsetY  > GAZE_DOWN_THRESHOLD → head tilted down
-const GAZE_X_THRESHOLD         = 0.12;   // ~12% of face width off-center
-const GAZE_UP_THRESHOLD        = -0.06;  // nose 6% above expected neutral Y
-const GAZE_DOWN_THRESHOLD      =  0.08;  // nose 8% below expected neutral Y
-const YAW_THRESHOLD_DEG        = 14;     // ~14° horizontal head turn (moderate)
+const GAZE_X_THRESHOLD = 0.12;   // ~12% of face width off-center
+const GAZE_UP_THRESHOLD = -0.06;  // nose 6% above expected neutral Y
+const GAZE_DOWN_THRESHOLD = 0.08;  // nose 8% below expected neutral Y
+const YAW_THRESHOLD_DEG = 14;     // ~14° horizontal head turn (moderate)
 const PITCH_DOWN_THRESHOLD_DEG = 12;     // ~12° head looking down
-const PITCH_UP_THRESHOLD_DEG   = 10;     // ~10° head looking up
-
-// New Signals (4, 5, 6)
-const CENTER_X_MIN = 0.35;
-const CENTER_X_MAX = 0.65;
-const CENTER_Y_MIN = 0.25;
-const CENTER_Y_MAX = 0.55;
-const CENTERING_GRACE_MS = 3_000;
-
-const PROXIMITY_MIN = 0.20;
-const PROXIMITY_MAX = 0.55;
-const PROXIMITY_GRACE_MS = 3_000;
-
-const LIGHTING_MIN = 70;
-const LIGHTING_MAX = 200;
-const LIGHTING_GRACE_MS = 5_000;
-
-const DETECTION_INTERVAL_MS    = 250;    // run detection 4 fps — fast enough for 3s grace
-const IDENTITY_CHECK_INTERVAL  = 60_000; // face verify every 60 s throughout session
-const IDENTITY_FACE_SIZE       = 64;     // resize face crop to 64×64 for comparison
-const MIN_IDENTITY_PIXEL_DIFF  = 0.22;   // perceptual grayscale diff threshold
+const PITCH_UP_THRESHOLD_DEG = 10;     // ~10° head looking up
+const DETECTION_INTERVAL_MS = 250;    // run detection 4 fps — fast enough for 3s grace
+const IDENTITY_CHECK_INTERVAL = 60_000; // face verify every 60 s throughout session
+const IDENTITY_FACE_SIZE = 64;     // resize face crop to 64×64 for comparison
+const MIN_IDENTITY_PIXEL_DIFF = 0.22;   // perceptual grayscale diff threshold
 // Multiple-face debounce: require this many consecutive detections before flagging.
 // Eliminates one-frame glitches from reflections, portraits, or shadows.
 const MULTI_FACE_CONFIRM_FRAMES = 3;
 
 // ─── Cooldowns (prevent spam) ──────────────────────────────────────────────────
 const COOLDOWNS: Record<string, number> = {
-  face_absence:        10_000,  // re-alert every 10 s if face still gone
-  multiple_faces:       8_000,  // re-alert every 8 s if extra face persists
-  gaze_violation:       8_000,
-  head_pose_violation:  8_000,
-  identity_mismatch:   60_000,
-  centering_violation:  8_000,
-  proximity_violation:  8_000,
-  lighting_violation:  15_000,
+  face_absence: 10_000,  // re-alert every 10 s if face still gone
+  multiple_faces: 8_000,  // re-alert every 8 s if extra face persists
+  gaze_violation: 8_000,
+  head_pose_violation: 8_000,
+  identity_mismatch: 60_000,
 };
 
 interface FaceProctoringProps {
@@ -112,37 +93,31 @@ export function FaceProctoring({
   onViolation,
 }: FaceProctoringProps) {
   // ── Refs ────────────────────────────────────────────────────────────────────
-  const landmarkerRef      = useRef<FaceLandmarker | null>(null);
-  const videoRef           = useRef<HTMLVideoElement | null>(null);
-  const streamRef          = useRef<MediaStream | null>(null);
-  const rafRef             = useRef<number | null>(null);
-  const lastRunRef         = useRef(0);
-  const mountedRef         = useRef(false);
-  const isActiveRef        = useRef(isActive);
+  const landmarkerRef = useRef<FaceLandmarker | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const lastRunRef = useRef(0);
+  const mountedRef = useRef(false);
+  const isActiveRef = useRef(isActive);
 
   // Absence tracking
-  const absenceStartRef       = useRef<number | null>(null);
+  const absenceStartRef = useRef<number | null>(null);
 
   // Sustained-violation timers
-  const gazeViolStartRef      = useRef<number | null>(null);
-  const headPoseViolStartRef  = useRef<number | null>(null);
-  const centeringViolStartRef = useRef<number | null>(null);
-  const proximityViolStartRef = useRef<number | null>(null);
-  const lightingViolStartRef  = useRef<number | null>(null);
+  const gazeViolStartRef = useRef<number | null>(null);
+  const headPoseViolStartRef = useRef<number | null>(null);
 
   // Multiple-face consecutive-frame counter (debounce false positives)
-  const multiFaceCountRef     = useRef(0);
+  const multiFaceCountRef = useRef(0);
 
   // Cooldown timestamps
-  const lastFiredRef       = useRef<Record<string, number>>({});
+  const lastFiredRef = useRef<Record<string, number>>({});
 
   // Identity verification
-  const refCanvasRef       = useRef<HTMLCanvasElement | null>(null);
-  const lastIdentityCheck  = useRef(0);
+  const refCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lastIdentityCheck = useRef(0);
   const identityCheckCount = useRef(0);
-
-  // Lighting check throttle
-  const lastLightingCheckRef = useRef(0);
 
   // Keep isActive in a ref so the RAF loop always reads the latest value
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
@@ -164,28 +139,28 @@ export function FaceProctoring({
   // This works perfectly for detecting head turns toward another screen/notes.
   const classifyGaze = useCallback((landmarks: { x: number; y: number; z: number }[]): "center" | "left" | "right" | "up" | "down" => {
     try {
-      const nose     = landmarks[NOSE_TIP];        // 4
-      const leftOut  = landmarks[LEFT_EYE_OUTER];  // 33
+      const nose = landmarks[NOSE_TIP];        // 4
+      const leftOut = landmarks[LEFT_EYE_OUTER];  // 33
       const rightOut = landmarks[RIGHT_EYE_OUTER]; // 263
       const forehead = landmarks[FOREHEAD];        // 10
-      const chin     = landmarks[CHIN];            // 152
+      const chin = landmarks[CHIN];            // 152
 
       // Horizontal: nose x offset from eye midpoint, normalised by face width
-      const eyeMidX     = (leftOut.x + rightOut.x) / 2;
-      const faceWidth   = Math.abs(leftOut.x - rightOut.x) || 0.1;
+      const eyeMidX = (leftOut.x + rightOut.x) / 2;
+      const faceWidth = Math.abs(leftOut.x - rightOut.x) || 0.1;
       const noseOffsetX = (nose.x - eyeMidX) / faceWidth; // -0.5 to +0.5
 
       // Vertical: nose y offset from neutral (~55% of face height)
-      const faceHeight   = Math.abs(chin.y - forehead.y) || 0.1;
+      const faceHeight = Math.abs(chin.y - forehead.y) || 0.1;
       const neutralNoseY = forehead.y + faceHeight * 0.55;
-      const noseOffsetY  = (nose.y - neutralNoseY) / faceHeight;
+      const noseOffsetY = (nose.y - neutralNoseY) / faceHeight;
 
       // Debug — open F12 DevTools → Console to see live values
       if (process.env.NODE_ENV !== "production") {
         console.debug(`[Gaze] noseX=${noseOffsetX.toFixed(3)} noseY=${noseOffsetY.toFixed(3)} | xThr=±${GAZE_X_THRESHOLD}`);
       }
 
-      if (noseOffsetY < GAZE_UP_THRESHOLD)   return "up";
+      if (noseOffsetY < GAZE_UP_THRESHOLD) return "up";
       if (noseOffsetY > GAZE_DOWN_THRESHOLD) return "down";
       if (Math.abs(noseOffsetX) > GAZE_X_THRESHOLD) return noseOffsetX > 0 ? "left" : "right";
       return "center";
@@ -197,11 +172,11 @@ export function FaceProctoring({
   // ── Head pose calculation (simplified from landmarks) ──────────────────────
   const classifyHeadPose = useCallback((landmarks: { x: number; y: number; z: number }[]): { yaw: number; pitch: number } => {
     try {
-      const nose     = landmarks[NOSE_TIP];
-      const leftEar  = landmarks[LEFT_EAR];
+      const nose = landmarks[NOSE_TIP];
+      const leftEar = landmarks[LEFT_EAR];
       const rightEar = landmarks[RIGHT_EAR];
       const forehead = landmarks[FOREHEAD];
-      const chin     = landmarks[CHIN];
+      const chin = landmarks[CHIN];
 
       // Yaw: asymmetry between nose and ear midpoint
       const earMidX = (leftEar.x + rightEar.x) / 2;
@@ -327,7 +302,7 @@ export function FaceProctoring({
 
       // -- Convert both to normalised grayscale --
       const liveGray = toNormalisedGrayscale(liveResized, pixels);
-      const refGray  = toNormalisedGrayscale(refResized,  pixels);
+      const refGray = toNormalisedGrayscale(refResized, pixels);
 
       // -- Mean Absolute Error --
       let totalDiff = 0;
@@ -383,9 +358,6 @@ export function FaceProctoring({
       // Reset sustained-violation timers
       gazeViolStartRef.current = null;
       headPoseViolStartRef.current = null;
-      centeringViolStartRef.current = null;
-      proximityViolStartRef.current = null;
-      // We don't reset lighting here, it can be tested even with no face
       return;
     }
 
@@ -413,10 +385,10 @@ export function FaceProctoring({
       if (!gazeViolStartRef.current) gazeViolStartRef.current = now;
       if (now - gazeViolStartRef.current > GAZE_GRACE_MS) {
         const dirLabel =
-          gazeDir === "left"  ? "looking left (possible 2nd monitor or notes)" :
-          gazeDir === "right" ? "looking right (possible 2nd monitor or notes)" :
-          gazeDir === "up"    ? "looking up off-screen" :
-                                "looking down (possible phone or notes)";
+          gazeDir === "left" ? "looking left (possible 2nd monitor or notes)" :
+            gazeDir === "right" ? "looking right (possible 2nd monitor or notes)" :
+              gazeDir === "up" ? "looking up off-screen" :
+                "looking down (possible phone or notes)";
         fire("gaze_violation", `Candidate ${dirLabel} for >${GAZE_GRACE_MS / 1000}s`, "medium");
       }
     } else {
@@ -443,73 +415,6 @@ export function FaceProctoring({
       headPoseViolStartRef.current = null;
     }
 
-    // ── 4a. Focus Centering (Signal 4) ────────────────────────────────────────
-    const xsNorm = landmarks.map(l => l.x);
-    const ysNorm = landmarks.map(l => l.y);
-    const minXNorm = Math.min(...xsNorm), maxXNorm = Math.max(...xsNorm);
-    const minYNorm = Math.min(...ysNorm), maxYNorm = Math.max(...ysNorm);
-    const cx = (minXNorm + maxXNorm) / 2;
-    const cy = (minYNorm + maxYNorm) / 2;
-
-    const isCenteringViolated = cx < CENTER_X_MIN || cx > CENTER_X_MAX || cy < CENTER_Y_MIN || cy > CENTER_Y_MAX;
-    if (isCenteringViolated) {
-      if (!centeringViolStartRef.current) centeringViolStartRef.current = now;
-      if (now - centeringViolStartRef.current > CENTERING_GRACE_MS) {
-        fire("centering_violation", `Face outside allowed frame area for >${CENTERING_GRACE_MS / 1000}s`, "medium");
-      }
-    } else {
-      centeringViolStartRef.current = null;
-    }
-
-    // ── 4b. Proximity / Scale (Signal 5) ──────────────────────────────────────
-    const faceWidthRatio = maxXNorm - minXNorm;
-    const isProximityViolated = faceWidthRatio < PROXIMITY_MIN || faceWidthRatio > PROXIMITY_MAX;
-    if (isProximityViolated) {
-      if (!proximityViolStartRef.current) proximityViolStartRef.current = now;
-      if (now - proximityViolStartRef.current > PROXIMITY_GRACE_MS) {
-        const reason = faceWidthRatio < PROXIMITY_MIN ? "Face too far from camera" : "Face too close to camera";
-        fire("proximity_violation", `${reason} for >${PROXIMITY_GRACE_MS / 1000}s`, "medium");
-      }
-    } else {
-      proximityViolStartRef.current = null;
-    }
-
-    // ── 4c. Lighting Quality (Signal 6) ───────────────────────────────────────
-    // Check lighting roughly every 1s
-    if (now - lastLightingCheckRef.current > 1000) {
-      lastLightingCheckRef.current = now;
-      try {
-        const lbCanvas = document.createElement("canvas");
-        lbCanvas.width = 1; lbCanvas.height = 1;
-        const lbCtx = lbCanvas.getContext("2d");
-        if (lbCtx && video.videoWidth > 0 && video.videoHeight > 0) {
-          // Draw face box scaled down to 1x1 pixel (hardware average)
-          const bx = minXNorm * video.videoWidth;
-          const by = minYNorm * video.videoHeight;
-          const bw = faceWidthRatio * video.videoWidth;
-          const bh = (maxYNorm - minYNorm) * video.videoHeight;
-          if (bw > 0 && bh > 0) {
-            lbCtx.drawImage(video, bx, by, bw, bh, 0, 0, 1, 1);
-            const data = lbCtx.getImageData(0, 0, 1, 1).data;
-            // ITU-R BT.601 perceptual brightness (0 - 255)
-            const brightness = 0.299 * data[0] + 0.587 * data[1] + 0.114 * data[2];
-            
-            if (brightness < LIGHTING_MIN || brightness > LIGHTING_MAX) {
-              if (!lightingViolStartRef.current) lightingViolStartRef.current = now;
-              if (now - lightingViolStartRef.current > LIGHTING_GRACE_MS) {
-                 const reason = brightness < LIGHTING_MIN ? "Lighting too dim" : "Lighting too harsh/bright";
-                 fire("lighting_violation", `${reason} (Value: ${brightness.toFixed(0)})`, "low");
-              }
-            } else {
-              lightingViolStartRef.current = null;
-            }
-          }
-        }
-      } catch (err) {
-        // ignore occasional canvas draw errors
-      }
-    }
-
     // ── 5. Periodic Identity Verification ────────────────────────────────────
     // Runs every 60 s for the entire interview session (no arbitrary cap).
     if (referenceSnapshotUrl && now - lastIdentityCheck.current > IDENTITY_CHECK_INTERVAL) {
@@ -529,7 +434,7 @@ export function FaceProctoring({
 
       // Capture the current video frame onto an off-screen canvas
       const capCanvas = document.createElement("canvas");
-      capCanvas.width  = video.videoWidth;
+      capCanvas.width = video.videoWidth;
       capCanvas.height = video.videoHeight;
       const capCtx = capCanvas.getContext("2d");
       if (capCtx) {
@@ -573,8 +478,8 @@ export function FaceProctoring({
           runningMode: "VIDEO",
           numFaces: 2,               // detect up to 2 to catch multiple-face scenario
           minFaceDetectionConfidence: 0.7,  // raise bar — reduces shadow/reflection FPs
-          minFacePresenceConfidence:  0.7,  // must be consistently present
-          minTrackingConfidence:      0.6,  // stable tracking
+          minFacePresenceConfidence: 0.7,  // must be consistently present
+          minTrackingConfidence: 0.6,  // stable tracking
         });
 
         if (cancelled) { landmarker.close(); return; }
@@ -593,7 +498,7 @@ export function FaceProctoring({
         video.srcObject = stream;
         video.muted = true;
         video.playsInline = true;
-        video.width  = 640;
+        video.width = 640;
         video.height = 480;
         await video.play();
         videoRef.current = video;
@@ -601,7 +506,7 @@ export function FaceProctoring({
         // 4. Pre-render reference snapshot to canvas for identity comparison
         if (referenceSnapshotUrl) {
           const refCanvas = document.createElement("canvas");
-          refCanvas.width  = 640;
+          refCanvas.width = 640;
           refCanvas.height = 480;
           const refCtx = refCanvas.getContext("2d");
           if (refCtx) {
