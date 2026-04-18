@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, use } from "react";
 import { JobDetailsView } from "@/components/careers/job-details-view";
@@ -68,3 +68,4 @@ export default function JobDetailsPage({ params }: { params: Promise<{ id: strin
 
     return <JobDetailsView job={job} />;
 }
+

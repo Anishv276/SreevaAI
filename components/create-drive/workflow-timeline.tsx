@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+﻿import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -40,7 +40,7 @@ export function WorkflowTimeline() {
                                     <h4 className="font-medium">{round.name}</h4>
                                     <div className="flex items-center gap-2 text-xs text-gray-500">
                                         <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600">{round.type}</span>
-                                        <span>•</span>
+                                        <span>â€¢</span>
                                         <span>Pass: {round.passCriteria}</span>
                                     </div>
                                 </div>
@@ -96,3 +96,4 @@ export function WorkflowTimeline() {
         </div>
     );
 }
+

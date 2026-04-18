@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -65,14 +65,14 @@ export default function WelcomePage() {
 
     return (
         <main className="relative h-screen w-full overflow-hidden bg-white flex items-center justify-center font-sans tracking-tight">
-            {/* ═══ Background Mesh Gradients ═══ */}
+            {/* â•â•â• Background Mesh Gradients â•â•â• */}
             <div className="absolute inset-0 z-0">
                 <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#F97316]/10 rounded-full blur-[120px] animate-pulse" />
                 <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-500/10 rounded-full blur-[120px] animate-pulse delay-700" />
                 <div className="absolute top-[20%] right-[10%] w-[30%] h-[30%] bg-orange-200/20 rounded-full blur-[100px]" />
             </div>
 
-            {/* ═══ Content ═══ */}
+            {/* â•â•â• Content â•â•â• */}
             <div className="relative z-10 w-full max-w-2xl px-6">
                 <AnimatePresence>
                     <motion.div
@@ -81,7 +81,7 @@ export default function WelcomePage() {
                         transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
                         className="relative"
                     >
-                        {/* ── Outer Glow & Card ── */}
+                        {/* â”€â”€ Outer Glow & Card â”€â”€ */}
                         <div className="absolute inset-x-0 bottom-[-20px] h-20 bg-orange-500/10 blur-[60px] rounded-full" />
                         
                         <div className="bg-white/80 backdrop-blur-3xl border border-white/50 rounded-[3rem] p-12 shadow-[0_40px_100px_rgba(0,0,0,0.08)] relative overflow-hidden group">
@@ -190,3 +190,4 @@ export default function WelcomePage() {
         </main>
     );
 }
+

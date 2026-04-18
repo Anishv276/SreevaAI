@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { use, useEffect, useState, useRef, memo, useCallback } from "react";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import { AuditLogModal } from "@/components/admin/audit-log-modal";
 const Plyr = dynamic(() => import("plyr-react").then((mod) => mod.Plyr), { ssr: false });
 
 
-/* ── Pic 1: Top Summary Cards ────────────────────────── */
+/* â”€â”€ Pic 1: Top Summary Cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const ScoreCard = memo(function ScoreCard({ label, value, status, color = "orange" }: { label: string; value: string; status: string; color?: "orange" | "red" | "emerald" | "slate" }) {
     const bgStyles = {
         orange: "bg-[#FDF9F3] border-[#F5E6D3] text-[#8B5E3C]",
@@ -47,8 +47,8 @@ const ScoreCard = memo(function ScoreCard({ label, value, status, color = "orang
     );
 });
 
-/* ── Pic 2: JD Skill Assessment Cards ─────────────────── */
-/* ── Pic 2: JD Skill Assessment Cards ─────────────────── */
+/* â”€â”€ Pic 2: JD Skill Assessment Cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€ Pic 2: JD Skill Assessment Cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const AssessmentCard = memo(function AssessmentCard({ title, subtitle, confidence, score, status }: { title: string; subtitle: string; confidence: string; score: string; status: "PROVED" | "PARTIAL" | "NOT PROVED" | "NOT TESTED" }) {
     const statusThemes = {
         PROVED: { border: "border-emerald-500", bg: "bg-emerald-50/50", text: "text-emerald-700", label: "PROVED" },
@@ -123,7 +123,7 @@ const RecommendedActionItem = memo(function RecommendedActionItem({ text }: { te
     );
 });
 
-/* ── Pic 2: Chat Entry ───────────────────────────────── */
+/* â”€â”€ Pic 2: Chat Entry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const ChatEntry = memo(function ChatEntry({ role, text, name }: { role: "ai" | "candidate"; text: string; name: string }) {
     const isAi = role === "ai";
     return (
@@ -163,7 +163,7 @@ const ChatEntry = memo(function ChatEntry({ role, text, name }: { role: "ai" | "
     );
 });
 
-/* ── Pic 2: Analysis Entry (Question by Question) ────── */
+/* â”€â”€ Pic 2: Analysis Entry (Question by Question) â”€â”€â”€â”€â”€â”€ */
 const AnalysisEntry = memo(function AnalysisEntry({ qNumber, question, reasoning, depth, score }: { qNumber: string; question: string; reasoning: string; depth: string; score: string }) {
     const scoreVal = parseInt(score.split('/')[0]) || 0;
     
@@ -216,7 +216,7 @@ const AnalysisEntry = memo(function AnalysisEntry({ qNumber, question, reasoning
     );
 });
 
-/* ── Pic 2: Key Moment Entry ─────────────────────────── */
+/* â”€â”€ Pic 2: Key Moment Entry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const MomentEntry = memo(function MomentEntry({ time, type, observation, comment }: { time: string; type: "CONTEXT" | "FLAG" | "CRITICAL"; observation: string; comment: string }) {
     const typeStyles = {
         CONTEXT: "text-slate-400 bg-slate-50 border-slate-100",
@@ -242,7 +242,7 @@ const MomentEntry = memo(function MomentEntry({ time, type, observation, comment
     );
 });
 
-/* ── Pic 4: Verdict Score Box ────────────────────────── */
+/* â”€â”€ Pic 4: Verdict Score Box â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const VerdictScoreBox = memo(function VerdictScoreBox({ label, value, color = "rose" }: { label: string; value: string; color?: "rose" | "orange" | "amber" }) {
     const colors = {
         rose: "text-rose-600 bg-rose-50/30 border-rose-100",
@@ -257,7 +257,7 @@ const VerdictScoreBox = memo(function VerdictScoreBox({ label, value, color = "r
     );
 });
 
-/* ── Pic 5: Deep Dive Log ────────────────────────────── */
+/* â”€â”€ Pic 5: Deep Dive Log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const DeepDiveLog = memo(function DeepDiveLog({ label, description, time, type = "error" }: { label: string; description: string; time: string; type?: "error" | "warning" | "success" }) {
     const styles = {
         error: "bg-red-50 border-red-100 text-red-600",
@@ -275,8 +275,8 @@ const DeepDiveLog = memo(function DeepDiveLog({ label, description, time, type =
     );
 });
 
-/* ── Pic 3: Integrity Logic Row ──────────────────────── */
-/* ── Pic 3: Integrity Logic Row ──────────────────────── */
+/* â”€â”€ Pic 3: Integrity Logic Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â”€â”€ Pic 3: Integrity Logic Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const IntegrityRow = memo(function IntegrityRow({ label, value, status }: { label: string; value: string; status: string }) {
     return (
         <div className="p-6 rounded-[32px] bg-white border border-gray-100 flex flex-col items-center justify-center gap-2 flex-1 shadow-sm">
@@ -289,7 +289,7 @@ const IntegrityRow = memo(function IntegrityRow({ label, value, status }: { labe
     );
 });
 
-/* ── Proctoring Metric Card ─────────────────────────── */
+/* â”€â”€ Proctoring Metric Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const ProctoringMetric = memo(function ProctoringMetric({ value, label, risk }: { value: string; label: string; risk: "NO RISK" | "MEDIUM RISK" | "HIGH RISK" }) {
     const riskStyles = {
         "NO RISK": "bg-[#F0FDF4] text-emerald-600 border-[#DCFCE7]",
@@ -315,7 +315,7 @@ const ProctoringMetric = memo(function ProctoringMetric({ value, label, risk }: 
     );
 });
 
-/* ── Timeline Event Item ────────────────────────────── */
+/* â”€â”€ Timeline Event Item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const TimelineEvent = memo(function TimelineEvent({ time, event, risk, desc, subNote, isSuccess = false }: { time: string; event: string; risk: "CLEAN" | "MEDIUM RISK" | "HIGH RISK"; desc: string; subNote?: string; isSuccess?: boolean }) {
     const riskStyles = {
         CLEAN: "bg-emerald-50 text-emerald-700 border-emerald-100",
@@ -353,7 +353,7 @@ const TimelineEvent = memo(function TimelineEvent({ time, event, risk, desc, sub
     );
 });
 
-/* ── Analysis Signal Item ────────────────────────────── */
+/* â”€â”€ Analysis Signal Item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const AnalysisSignal = memo(function AnalysisSignal({ title, desc, type }: { title: string; desc: string; type: "success" | "warning" }) {
     const theme = type === "success" 
         ? "bg-emerald-50/40 border-emerald-100/60 text-emerald-600 icon-bg-emerald-100" 
@@ -373,7 +373,7 @@ const AnalysisSignal = memo(function AnalysisSignal({ title, desc, type }: { tit
     );
 });
 
-/* ── Premium Score Ring ────────────────────────────── */
+/* â”€â”€ Premium Score Ring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const CircularProgress = memo(function CircularProgress({
     value,
     max = 100,
@@ -452,7 +452,7 @@ const CircularProgress = memo(function CircularProgress({
     );
 });
 
-/* ── Segmented Data Track ────────────────────────────── */
+/* â”€â”€ Segmented Data Track â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const SegmentedProgress = memo(function SegmentedProgress({ candValue, jdValue, label, unit = "YRS" }: { candValue: number; jdValue: number; label: string; unit?: string }) {
     const totalBlocks = Math.max(candValue, jdValue, 8);
     return (
@@ -479,7 +479,7 @@ const SegmentedProgress = memo(function SegmentedProgress({ candValue, jdValue, 
     );
 });
 
-/* ── Communication Donut Chart ────────────────────────── */
+/* â”€â”€ Communication Donut Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const CommunicationDonutChart = memo(function CommunicationDonutChart({ metrics }: { metrics: { label: string; value: number; color: string }[] }) {
     const [hovered, setHovered] = useState<number | null>(null);
     const [animProgress, setAnimProgress] = useState(0);
@@ -627,7 +627,7 @@ const CommunicationDonutChart = memo(function CommunicationDonutChart({ metrics 
     );
 });
 
-/* ── Main Component ─────────────────────────────── */
+/* â”€â”€ Main Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function CandidateProfilePage({ params }: { params: Promise<{ id: string }> }) {
     const resolvedParams = use(params);
     const id = resolvedParams.id;
@@ -1086,16 +1086,16 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
                         ` }} />
 
-            {/* ── Background Aurora Blobs ──────────────── */}
+            {/* â”€â”€ Background Aurora Blobs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden" style={{ transform: 'translateZ(0)' }}>
                 <div className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] bg-purple-500/5 blur-[120px] rounded-full" style={{ willChange: 'opacity' }} />
                 <div className="absolute bottom-[-20%] left-[-10%] w-[600px] h-[600px] bg-blue-500/5 blur-[120px] rounded-full" style={{ willChange: 'opacity' }} />
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-indigo-500/5 blur-[150px] rounded-full" style={{ willChange: 'opacity' }} />
             </div>
 
-            {/* ── Main Content Area ─────────────────────────── */}
+            {/* â”€â”€ Main Content Area â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="flex-1 min-w-0">
-                {/* ── Fixed Navigation Header ─────────────────────────── */}
+                {/* â”€â”€ Fixed Navigation Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 <header className={cn(
                     "fixed top-0 right-0 z-[100] bg-white/80 backdrop-blur-xl border-b border-gray-100/80 px-6 py-3 transition-all  shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)]",
                     isReportsMode ? "left-0" : "left-0 md:left-[240px]"
@@ -1184,11 +1184,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                 </h1>
                                                 <div className="flex items-center gap-2 text-[13px] font-semibold text-gray-400">
                                                     <span>{candidate.drive?.role || candidate.drive?.title || "AI Engineer Interview"}</span>
-                                                    <span>•</span>
+                                                    <span>â€¢</span>
                                                     <span>{mounted ? new Date(candidate.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : "-- --- ----"}</span>
-                                                    <span>•</span>
+                                                    <span>â€¢</span>
                                                     <span className="flex items-center gap-1.5"><MessageSquare className="h-3.5 w-3.5" /> Voice AI</span>
-                                                    <span>•</span>
+                                                    <span>â€¢</span>
                                                     <span>5 min session</span>
                                                 </div>
                                             </div>
@@ -1569,7 +1569,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     </div>
 
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                        {/* ── Career Timeline (Left) ──────────────── */}
+                                        {/* â”€â”€ Career Timeline (Left) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                                         <div className="p-8 spotlight-card bg-white rounded-[40px] shadow-sm flex flex-col h-full border border-slate-100 optimize-scroll">
                                             <div className="flex items-center gap-3 mb-10 px-2">
                                                 <div className="h-10 w-10 rounded-2xl bg-slate-50 flex items-center justify-center border border-slate-100">
@@ -1596,7 +1596,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                                     <div className="space-y-2 pb-2">
                                                                         <div className="flex flex-col gap-0.5">
                                                                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
-                                                                                {role.start_date || role.start_year || "?"} — {isCurrent ? "Present" : (role.end_date || role.end_year || "?")}
+                                                                                {role.start_date || role.start_year || "?"} â€” {isCurrent ? "Present" : (role.end_date || role.end_year || "?")}
                                                                             </span>
                                                                             <h4 className="text-[16px] font-bold text-slate-900 tracking-tight leading-tight group-hover:text-blue-500 transition-colors">
                                                                                 {role.role}
@@ -1615,7 +1615,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                             </div>
                                         </div>
 
-                                        {/* ── Strategic Verdict (Right) ───────────── */}
+                                        {/* â”€â”€ Strategic Verdict (Right) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                                         <div className="p-8 spotlight-card bg-indigo-50/30 rounded-[40px] border border-indigo-100/50 shadow-sm flex flex-col h-full relative overflow-hidden group optimize-scroll">
                                             <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-200/20 blur-[60px] rounded-full -mr-24 -mt-24 pointer-events-none" />
 
@@ -1806,7 +1806,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         />
                                         <div className="p-5 rounded-[24px] bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
                                             <p className="text-[9px] font-bold text-[#A89078] uppercase tracking-[0.3em]">CEFR RATING</p>
-                                            <h4 className="text-xl font-bold text-[#8B5E3C] tracking-tight">{String(interviewReportScores.cefr_level || communicationLevel)} — {String(interviewReportScores.cefr_label || communicationStatus)}</h4>
+                                            <h4 className="text-xl font-bold text-[#8B5E3C] tracking-tight">{String(interviewReportScores.cefr_level || communicationLevel)} â€” {String(interviewReportScores.cefr_label || communicationStatus)}</h4>
                                             <p className="text-[15px] font-medium text-gray-500 leading-relaxed">
                                                 {interviewReportCommunication.cefr_analysis || "Communication analysis will appear here once the interview report is generated."}
                                             </p>
@@ -1861,7 +1861,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     {String(interviewSkillStats.strongest?.title || "No proven skill yet")}
                                                 </p>
                                                 <p className="text-[11px] font-medium text-emerald-700 mt-2">
-                                                    {String(interviewSkillStats.strongest?.score || "—")} · {String(interviewSkillStats.strongest?.status || "N/A")}
+                                                    {String(interviewSkillStats.strongest?.score || "â€”")} Â· {String(interviewSkillStats.strongest?.status || "N/A")}
                                                 </p>
                                             </div>
                                             <div className="p-4 rounded-[24px] bg-rose-50 border border-rose-100 shadow-sm">
@@ -1870,7 +1870,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     {String(interviewSkillStats.biggestGap?.title || "No major gap detected")}
                                                 </p>
                                                 <p className="text-[11px] font-medium text-rose-700 mt-2">
-                                                    {String(interviewSkillStats.biggestGap?.score || "—")} · {String(interviewSkillStats.biggestGap?.status || "N/A")}
+                                                    {String(interviewSkillStats.biggestGap?.score || "â€”")} Â· {String(interviewSkillStats.biggestGap?.status || "N/A")}
                                                 </p>
                                             </div>
                                             <div className="p-4 rounded-[24px] bg-amber-50 border border-amber-100 shadow-sm">
@@ -1890,7 +1890,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     title={s.title}
                                                     subtitle={s.note || ""}
                                                     confidence={s.confidence || ""}
-                                                    score={s.score || "—"}
+                                                    score={s.score || "â€”"}
                                                     status={String(s.status || "").toUpperCase() as any}
                                                 />
                                             ))}
@@ -1916,7 +1916,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                             <p className="text-[14px] font-semibold text-gray-900 leading-relaxed">{item.question || item.title}</p>
                                                         </div>
                                                         <span className="px-3 py-1 rounded-full bg-slate-50 border border-slate-100 text-[10px] font-bold text-slate-600 uppercase tracking-widest whitespace-nowrap">
-                                                            {item.score || "—"}
+                                                            {item.score || "â€”"}
                                                         </span>
                                                     </div>
                                                     <p className="text-[13px] font-medium text-gray-600 leading-relaxed">{item.reasoning || item.verdict || "No reasoning available."}</p>
@@ -1928,14 +1928,14 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Question {String(q.q || i + 1).padStart(2, "0")}</p>
                                                     <p className="text-[14px] font-semibold text-gray-900 leading-relaxed">{q.question || q.title}</p>
                                                     <p className="text-[13px] font-medium text-gray-600 leading-relaxed">{q.reasoning || q.verdict || "No reasoning available."}</p>
-                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{q.score || "—"} {q.confidence ? `• ${q.confidence}` : ""}</p>
+                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{q.score || "â€”"} {q.confidence ? `â€¢ ${q.confidence}` : ""}</p>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
 
                                     <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
-                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof — consistency check</h3>
+                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof â€” consistency check</h3>
                                         <div className="flex-1 overflow-y-auto scrollbar-hide space-y-4">
                                             {(interviewReportConsistency.length > 0 ? interviewReportConsistency : []).map((c: any, i: number) => (
                                                 <div key={i} className="p-5 rounded-3xl border border-gray-100 bg-white shadow-sm space-y-3">
@@ -2030,7 +2030,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                 {activeTab === "interview" && candidate && !hasStructuredInterviewReport && (
                         <div className="space-y-12     pb-20 bg-[#F4F7FF] -mx-8 px-12 pt-16">
                             
-                            {/* ── Section: Performance Analysis ── */}
+                            {/* â”€â”€ Section: Performance Analysis â”€â”€ */}
                             <div className="space-y-12">
                                 <div className="flex flex-col items-center gap-2 text-center mb-4">
                                     <h2 className="text-3xl font-bold text-slate-950 tracking-tight font-inter uppercase">Performance Analysis</h2>
@@ -2054,7 +2054,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <div className="p-5 rounded-[24px] bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
                                             <p className="text-[9px] font-bold text-[#A89078] uppercase tracking-[0.3em]">CEFR RATING</p>
                                             <h4 className="text-xl font-bold text-[#8B5E3C] tracking-tight">
-                                                {(interviewReportScores.cefr_level || communicationLevel)} — {(interviewReportScores.cefr_label || communicationStatus)}
+                                                {(interviewReportScores.cefr_level || communicationLevel)} â€” {(interviewReportScores.cefr_label || communicationStatus)}
                                             </h4>
                                             <p className="text-[15px] font-medium text-gray-500 leading-relaxed">
                                                 {interviewReportCommunication.cefr_analysis || "Communication analysis will appear here once the interview report is generated."}
@@ -2121,18 +2121,18 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         </div>
                                         <div className="flex-1 overflow-y-auto scrollbar-hide pr-1">
                                             {(interviewReportSkills.length > 0 ? interviewReportSkills : [
-                                                { title: "Cycle detection in graphs", subtitle: "So is it totally based on coding? — deflected", confidence: "HIGH — NO ATTEMPT", score: "0/10", status: "NOT PROVED" },
-                                                { title: "Graph traversal (BFS / DFS)", subtitle: "Not reached — session ended early", confidence: "N/A — NOT TESTED", score: "0/10", status: "NOT TESTED" },
-                                                { title: "Edge case handling", subtitle: "Not reached — session ended early", confidence: "N/A — NOT TESTED", score: "0/10", status: "NOT TESTED" },
-                                                { title: "Problem-solving approach", subtitle: "Actually, I'm not good at coding.", confidence: "HIGH — SELF-DECLARED", score: "0/10", status: "NOT PROVED" },
-                                                { title: "Communication clarity", subtitle: "Basic exchanges functional, grammar poor", confidence: "HIGH — FULL DATA", score: "5/10", status: "PARTIAL" }
+                                                { title: "Cycle detection in graphs", subtitle: "So is it totally based on coding? â€” deflected", confidence: "HIGH â€” NO ATTEMPT", score: "0/10", status: "NOT PROVED" },
+                                                { title: "Graph traversal (BFS / DFS)", subtitle: "Not reached â€” session ended early", confidence: "N/A â€” NOT TESTED", score: "0/10", status: "NOT TESTED" },
+                                                { title: "Edge case handling", subtitle: "Not reached â€” session ended early", confidence: "N/A â€” NOT TESTED", score: "0/10", status: "NOT TESTED" },
+                                                { title: "Problem-solving approach", subtitle: "Actually, I'm not good at coding.", confidence: "HIGH â€” SELF-DECLARED", score: "0/10", status: "NOT PROVED" },
+                                                { title: "Communication clarity", subtitle: "Basic exchanges functional, grammar poor", confidence: "HIGH â€” FULL DATA", score: "5/10", status: "PARTIAL" }
                                             ]).map((s: any, i: number) => (
                                                 <AssessmentCard
                                                     key={i}
                                                     title={s.title}
                                                     subtitle={s.note || s.subtitle || ""}
                                                     confidence={s.confidence || ""}
-                                                    score={s.score || "—"}
+                                                    score={s.score || "â€”"}
                                                     status={String(s.status || "").toUpperCase() as any}
                                                 />
                                             ))}
@@ -2177,7 +2177,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                         <div className="h-8 w-8 rounded-xl bg-slate-950 flex items-center justify-center shadow-lg shadow-slate-900/20">
                                                             <MessageSquare className="h-4 w-4 text-white" />
                                                         </div>
-                                                        <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Session Transcript — Analysis Phase</h4>
+                                                        <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Session Transcript â€” Analysis Phase</h4>
                                                     </div>
                                                     
                                                     <div className="flex-1 overflow-y-auto pr-2 space-y-8 custom-scrollbar  py-2">
@@ -2202,10 +2202,10 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                         <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">AI Integrity Breakdown</h4>
                                                     </div>
                                                     {([
-                                                        { qNumber: "QUESTION 01", question: "How would you implement a cycle detection algorithm in a graph for a custom workflow engine?", reasoning: "Candidate immediately deflected technical depth. Question was avoided entirely.", depth: "SHALLOW — NO SIGNAL", score: "0/10" },
-                                                        { qNumber: "QUESTION 02", question: "Can you explain the difference between BFS and DFS in the context of data synchronization?", reasoning: "Candidate stated they are 'not good at coding'. Core competency mismatch identified.", depth: "N/A — SELF-DECLARED", score: "0/10" },
-                                                        { qNumber: "QUESTION 03", question: "How do you handle edge cases in a recursive script for directory processing?", reasoning: "Attempt aborted by AI due to previous declaration of coding deficiency.", depth: "N/A — NOT TESTED", score: "0/10" },
-                                                        { qNumber: "QUESTION 04", question: "What is your experience with tool integration platforms like n8n or Apollo?", reasoning: "Vague response provided. Minimal evidence of strategic tool orchestration depth.", depth: "PARTIAL — WEAK SIGNAL", score: "4/10" }
+                                                        { qNumber: "QUESTION 01", question: "How would you implement a cycle detection algorithm in a graph for a custom workflow engine?", reasoning: "Candidate immediately deflected technical depth. Question was avoided entirely.", depth: "SHALLOW â€” NO SIGNAL", score: "0/10" },
+                                                        { qNumber: "QUESTION 02", question: "Can you explain the difference between BFS and DFS in the context of data synchronization?", reasoning: "Candidate stated they are 'not good at coding'. Core competency mismatch identified.", depth: "N/A â€” SELF-DECLARED", score: "0/10" },
+                                                        { qNumber: "QUESTION 03", question: "How do you handle edge cases in a recursive script for directory processing?", reasoning: "Attempt aborted by AI due to previous declaration of coding deficiency.", depth: "N/A â€” NOT TESTED", score: "0/10" },
+                                                        { qNumber: "QUESTION 04", question: "What is your experience with tool integration platforms like n8n or Apollo?", reasoning: "Vague response provided. Minimal evidence of strategic tool orchestration depth.", depth: "PARTIAL â€” WEAK SIGNAL", score: "4/10" }
                                                     ]).map((q, i) => (
                                                         <AnalysisEntry key={i} {...q as any} />
                                                     ))}
@@ -2216,7 +2216,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     {/* Section 3: Consistency Check (Bottom Left) */}
                                     <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
-                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof — consistency check</h3>
+                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof â€” consistency check</h3>
                                         <div className="grid grid-cols-[1.5fr_1.8fr_120px] gap-6 px-6 mb-6 border-b border-gray-50 pb-6">
                                             <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70">Resume Claimed</span>
                                             <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70">Interview Showed</span>
@@ -2225,8 +2225,8 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <div className="flex-1 overflow-y-auto scrollbar-hide">
                                             {[
                                                 { claim: "Built GTM automation systems at Niti AI", sub: "GTM strategy", proof: "Zero GTM knowledge demonstrated. Could not answer basic GTM question.", status: "MISMATCH" },
-                                                { claim: "n8n, Zapier, Apollo automation experience", sub: "Automation tools", proof: "Not tested in interview — role needed coding.", status: "NOT TESTED" },
-                                                { claim: "Python, Pandas, Power BI — data analysis", sub: "Technical skills", proof: "Self-declared 'not good at coding.' No code written.", status: "CONTRADICTED" },
+                                                { claim: "n8n, Zapier, Apollo automation experience", sub: "Automation tools", proof: "Not tested in interview â€” role needed coding.", status: "NOT TESTED" },
+                                                { claim: "Python, Pandas, Power BI â€” data analysis", sub: "Technical skills", proof: "Self-declared 'not good at coding.' No code written.", status: "CONTRADICTED" },
                                                 { claim: "Problem-solving and analytical thinking", sub: "Soft skill", proof: "Minimal engagement with problem. Disengaged.", status: "WEAK SIGNAL" }
                                             ].map((c, i) => (
                                                 <div key={i} className="grid grid-cols-[1.5fr_1.8fr_120px] gap-8 px-6 py-6 rounded-3xl hover:bg-gray-50/50 transition-all group items-start border-b border-gray-50 last:border-0 relative">
@@ -2265,10 +2265,10 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <div className="flex-1 overflow-y-auto scrollbar-hide pr-2">
                                             {[
                                                 { time: "0:38", type: "CONTEXT", observation: "Minimal engagement at interview start", comment: "Yeah. Sure. - two-word response to interview structure explanation" },
-                                                { time: "1:12", type: "FLAG", observation: "Deflected technical question — asked about format instead", comment: "K. So is it totally based on coding? - avoidance rather than engagement" },
-                                                { time: "1:18", type: "FLAG", observation: "Tab switch detected — at exact moment of deflection", comment: "Proctoring: browser focus lost ~8 sec. Timing aligns with Q1 avoidance behaviour." },
-                                                { time: "2:28", type: "CRITICAL", observation: "Self-declared inability to code — defining moment of session", comment: "Actually, I'm not good at coding. - unprompted, direct self-admission" },
-                                                { time: "3:05", type: "FLAG", observation: "Audio anomaly detected — 3 seconds post-admission", comment: "Voice-like sound. Flagged for correlation." }
+                                                { time: "1:12", type: "FLAG", observation: "Deflected technical question â€” asked about format instead", comment: "K. So is it totally based on coding? - avoidance rather than engagement" },
+                                                { time: "1:18", type: "FLAG", observation: "Tab switch detected â€” at exact moment of deflection", comment: "Proctoring: browser focus lost ~8 sec. Timing aligns with Q1 avoidance behaviour." },
+                                                { time: "2:28", type: "CRITICAL", observation: "Self-declared inability to code â€” defining moment of session", comment: "Actually, I'm not good at coding. - unprompted, direct self-admission" },
+                                                { time: "3:05", type: "FLAG", observation: "Audio anomaly detected â€” 3 seconds post-admission", comment: "Voice-like sound. Flagged for correlation." }
                                             ].map((m, i) => (
                                                 <MomentEntry key={i} {...m as any} />
                                             ))}
@@ -2276,7 +2276,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     </div>
                                 </div>
 
-                                {/* ── Section: Integrity & Proctoring ── */}
+                                {/* â”€â”€ Section: Integrity & Proctoring â”€â”€ */}
                                 <div className="pt-16 border-t border-gray-200 mt-16 space-y-8">
                                     <div className="flex flex-col items-center gap-2 text-center mb-6">
                                         <h2 className="text-2xl font-bold text-slate-950 tracking-tight font-inter uppercase">Integrity and Proctoring</h2>
@@ -2292,7 +2292,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         </Button>
                                     </div>
 
-                                    {/* ── Integrity Verdict Card ── */}
+                                    {/* â”€â”€ Integrity Verdict Card â”€â”€ */}
                                     <div className="grid grid-cols-[260px_1fr] rounded-[40px] bg-white border-2 border-[#F5E6D3]/30 shadow-[0_20px_60px_rgba(139,94,60,0.06)] overflow-hidden border-l-[8px] border-l-[#8B5E3C]">
                                         <div className="bg-[#FAF9F6] p-8 flex flex-col items-center justify-center gap-4 border-r border-[#F5E6D3]/20">
                                             <h4 className="text-[12px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-60 mb-2">Integrity Score</h4>
@@ -2312,7 +2312,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         </div>
                                     </div>
 
-                                    {/* ── Proctoring Metrics Row ── */}
+                                    {/* â”€â”€ Proctoring Metrics Row â”€â”€ */}
                                     <div className="flex gap-6">
                                         <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("tab")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Tab Switches" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("tab") && g.severity === "high") ? "HIGH RISK" : groupedProctoringSignals.some((g: any) => String(g.key).includes("tab")) ? "MEDIUM RISK" : "NO RISK"} />
                                         <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("face")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Face Events" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("face") && g.severity === "high") ? "HIGH RISK" : "NO RISK"} />
@@ -2320,11 +2320,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("gaze")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Gaze Events" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("gaze") && g.severity === "high") ? "HIGH RISK" : groupedProctoringSignals.some((g: any) => String(g.key).includes("gaze")) ? "MEDIUM RISK" : "NO RISK"} />
                                     </div>
 
-                                    {/* ── Correlation Timeline vs Pattern Analysis Grid ── */}
+                                    {/* â”€â”€ Correlation Timeline vs Pattern Analysis Grid â”€â”€ */}
                                     <div className="grid grid-cols-[1.2fr_1fr] gap-8 items-stretch">
                                         {/* Left: Timeline */}
                                         <div className="p-6 rounded-[36px] bg-white border border-gray-100 shadow-sm space-y-8 optimize-scroll">
-                                            <h4 className="text-[14px] font-bold text-gray-900 font-inter tracking-tight mb-5">Event Timeline — Correlated with Interview</h4>
+                                            <h4 className="text-[14px] font-bold text-gray-900 font-inter tracking-tight mb-5">Event Timeline â€” Correlated with Interview</h4>
                                             <div className="space-y-2">
                                                 <TimelineEvent 
                                                     time="0:00" 
@@ -2338,14 +2338,14 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     event="Tab switch" 
                                                     risk="MEDIUM RISK" 
                                                     desc="Browser focus lost for ~8 seconds. Candidate returned to session tab." 
-                                                    subNote="Timed during Q1 deflection — candidate was avoiding the coding question at this exact moment. Most notable signal in session."
+                                                    subNote="Timed during Q1 deflection â€” candidate was avoiding the coding question at this exact moment. Most notable signal in session."
                                                 />
                                                 <TimelineEvent 
                                                     time="3:05" 
                                                     event="Audio anomaly" 
                                                     risk="MEDIUM RISK" 
                                                     desc="Voice-like background sound for ~3 seconds. Could be ambient noise or TV." 
-                                                    subNote="Occurred 37 seconds after self-admission 'not good at coding.' No clear link — flag for awareness only."
+                                                    subNote="Occurred 37 seconds after self-admission 'not good at coding.' No clear link â€” flag for awareness only."
                                                 />
                                                 <TimelineEvent 
                                                     time="5:00" 
@@ -2359,12 +2359,12 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         {/* Right: Pattern Analysis */}
                                         <div className="p-6 rounded-[36px] bg-white border border-gray-100 shadow-sm space-y-8 optimize-scroll">
-                                            <h4 className="text-[15px] font-bold text-gray-900 font-inter tracking-tight mb-6">Pattern Analysis — What signals mean together</h4>
+                                            <h4 className="text-[15px] font-bold text-gray-900 font-inter tracking-tight mb-6">Pattern Analysis â€” What signals mean together</h4>
                                             <div className="space-y-6">
                                                 <AnalysisSignal 
                                                     type="warning" 
                                                     title="Tab switch timing is the key concern" 
-                                                    desc="Not the count (1 is low) but the exact timing — during the technical question at the moment of deflection. This correlation is what matters." 
+                                                    desc="Not the count (1 is low) but the exact timing â€” during the technical question at the moment of deflection. This correlation is what matters." 
                                                 />
                                                 <AnalysisSignal 
                                                     type="success" 
@@ -2373,7 +2373,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                 />
                                                 <AnalysisSignal 
                                                     type="warning" 
-                                                    title="Audio anomaly — insufficient to conclude" 
+                                                    title="Audio anomaly â€” insufficient to conclude" 
                                                     desc="Single 3-second event. No repeated pattern. Cannot conclude external assistance from one event alone." 
                                                 />
                                                 <AnalysisSignal 
@@ -2391,14 +2391,14 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                             <div className="h-1 w-16 bg-indigo-600 rounded-full" />
                                         </div>
 
-                                        {/* ── Score Summary ── */}
+                                        {/* â”€â”€ Score Summary â”€â”€ */}
                                         <div className="grid grid-cols-3 gap-8">
                                             <VerdictScoreCard label="Interview / 10" value="2.1" color="red" />
                                             <VerdictScoreCard label="Integrity / 10" value="5.8" color="orange" />
                                             <VerdictScoreCard label="Combined / 10" value="1.8" color="red" />
                                         </div>
 
-                                        {/* ── Verdict Narrative Card ── */}
+                                        {/* â”€â”€ Verdict Narrative Card â”€â”€ */}
                                         <div className="flex justify-center">
                                             <div className="w-full max-w-[1200px] p-8 rounded-[32px] bg-white border border-gray-100 shadow-sm relative overflow-hidden group">
                                                 <div className="absolute top-0 left-0 w-1.5 h-full bg-rose-500 opacity-60 group-hover:opacity-100 transition-opacity" />
@@ -2432,15 +2432,15 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                             </div>
                                         </div>
 
-                                        {/* ── Recommended Next Actions ── */}
+                                        {/* â”€â”€ Recommended Next Actions â”€â”€ */}
                                         <div className="flex justify-center">
                                             <div className="w-full max-w-[1200px] p-8 rounded-[32px] bg-[#EEF2FF] border border-[#E0E7FF] space-y-6">
                                                 <p className="text-center text-[10px] font-bold text-slate-500 font-black uppercase tracking-[0.4em] mb-3">Recommended Next Action</p>
                                                 <div className="space-y-4 flex flex-col items-center">
                                                     <div className="space-y-3 w-fit">
-                                                        <RecommendedActionItem text="Reject for this AI Engineer role — performance failure is definitive, no further round needed" />
-                                                        <RecommendedActionItem text="Human review of recording recommended before logging integrity verdict — proctoring is inconclusive, not confirmed" />
-                                                        <RecommendedActionItem text="Flag for talent pool as junior automation role candidate — n8n and Apollo experience has value in a different context" />
+                                                        <RecommendedActionItem text="Reject for this AI Engineer role â€” performance failure is definitive, no further round needed" />
+                                                        <RecommendedActionItem text="Human review of recording recommended before logging integrity verdict â€” proctoring is inconclusive, not confirmed" />
+                                                        <RecommendedActionItem text="Flag for talent pool as junior automation role candidate â€” n8n and Apollo experience has value in a different context" />
                                                     </div>
                                                 </div>
                                             </div>
@@ -2553,7 +2553,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-10 space-y-12 bg-white">
-                                {/* ── Tab Detection ── */}
+                                {/* â”€â”€ Tab Detection â”€â”€ */}
                                 <section className="space-y-6">
                                     <div className="flex items-center gap-3">
                                         <div className="h-8 w-8 rounded-xl bg-rose-50 flex items-center justify-center">
@@ -2565,19 +2565,19 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <DeepDiveLog
                                             label="Browser Focus Lost"
                                             description="Candidate switched to another window/tab during 'n8n custom nodes' question."
-                                            time="1:18 AM • 8.2s"
+                                            time="1:18 AM â€¢ 8.2s"
                                             type="error"
                                         />
                                         <DeepDiveLog
                                             label="External Search Likely"
                                             description="Tab switch duration correlates with response improvement."
-                                            time="1:24 AM • 12.0s"
+                                            time="1:24 AM â€¢ 12.0s"
                                             type="warning"
                                         />
                                     </div>
                                 </section>
 
-                                {/* ── Facial & Gaze ── */}
+                                {/* â”€â”€ Facial & Gaze â”€â”€ */}
                                 <section className="space-y-6">
                                     <div className="flex items-center gap-3">
                                         <div className="h-8 w-8 rounded-xl bg-emerald-50 flex items-center justify-center">
@@ -2605,7 +2605,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     </div>
                                 </section>
 
-                                {/* ── Audio Anomalies ── */}
+                                {/* â”€â”€ Audio Anomalies â”€â”€ */}
                                 <section className="space-y-6">
                                     <div className="flex items-center gap-3">
                                         <div className="h-8 w-8 rounded-xl bg-orange-50 flex items-center justify-center">
@@ -2617,7 +2617,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <DeepDiveLog
                                             label="Background Voice Detected"
                                             description="Faint secondary voice captured shortly after candidate admission."
-                                            time="3:05 AM • 3.0s"
+                                            time="3:05 AM â€¢ 3.0s"
                                             type="warning"
                                         />
                                         <DeepDiveLog
@@ -2669,3 +2669,4 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
         </div>
     );
 }
+

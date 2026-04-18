@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { Plus, Trash2, Award, ExternalLink, Upload, FileCheck, X, Loader2 } from "lucide-react";
@@ -219,3 +219,4 @@ export function CertificationInfo({ value, onChange }: CertificationInfoProps) {
         </div>
     );
 }
+

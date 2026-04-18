@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
@@ -67,7 +67,7 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
     }, [open]);
 
     const getLabel = () => {
-        if (value.type === "custom") return `${value.from} – ${value.to}`;
+        if (value.type === "custom") return `${value.from} â€“ ${value.to}`;
         return PRESETS.find(p => p.key === value.type)?.label || "All Time";
     };
 
@@ -123,7 +123,7 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
             ) : (
                 <div className="p-5 space-y-4">
                     <div className="flex items-center justify-between mb-2">
-                        <button onClick={() => setView("presets")} className="text-[11px] font-black text-[#F97316] uppercase tracking-widest hover:opacity-70">← Presets</button>
+                        <button onClick={() => setView("presets")} className="text-[11px] font-black text-[#F97316] uppercase tracking-widest hover:opacity-70">â† Presets</button>
                         <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Custom Scope</span>
                     </div>
                     <div className="space-y-3">
@@ -181,3 +181,4 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
         </div>
     );
 }
+

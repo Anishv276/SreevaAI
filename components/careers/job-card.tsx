@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+﻿import { Button } from "@/components/ui/button";
 import { ArrowRight, Clock, MapPin } from "lucide-react";
 import Link from "next/link";
 import { Job } from "@/context/jobs-context";
@@ -74,3 +74,4 @@ export function JobCard({ job }: { job: Job }) {
         </div>
     );
 }
+

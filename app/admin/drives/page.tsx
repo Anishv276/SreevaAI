@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -682,7 +682,7 @@ export default function DrivesPage() {
                                         <h2 className="text-xl font-bold text-gray-900 tracking-tight">{selectedDrive.title}</h2>
                                         <div className="h-5 px-2 rounded-md bg-gray-100 text-gray-500 border border-gray-200 font-bold text-[9px] uppercase tracking-wider flex items-center">Open</div>
                                     </div>
-                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{selectedDrive.role || "Job Description"} • {selectedDrive.department || "General"}</p>
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{selectedDrive.role || "Job Description"} â€¢ {selectedDrive.department || "General"}</p>
                                 </div>
                             </div>
                             <button
@@ -836,7 +836,7 @@ export default function DrivesPage() {
                         {/* URL bar */}
                         <div className="flex-1 flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1.5 mx-2">
                             <div className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                            <span className="text-[11px] text-gray-400 font-mono truncate select-none">
+                            <span className="text-[11px] text-gray-400 font-sans truncate select-none">
                                 {typeof window !== "undefined" ? window.location.origin : ""}/careers/jobs/{candidatePreviewSlug}
                             </span>
                         </div>
@@ -979,3 +979,4 @@ export default function DrivesPage() {
         </div>
     );
 }
+

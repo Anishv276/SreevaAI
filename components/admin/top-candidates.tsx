@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { Loader2, ChevronRight } from "lucide-react";
@@ -179,3 +179,4 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
         </div>
     );
 }
+

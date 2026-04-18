@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, use, Suspense } from "react";
 import { Button } from "@/components/ui/button";
@@ -345,3 +345,4 @@ export default function ApplicationPage() {
         </Suspense>
     );
 }
+

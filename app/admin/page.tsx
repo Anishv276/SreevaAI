@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { StatsGrid } from "@/components/admin/stats-grid";
@@ -30,7 +30,7 @@ export default function DashboardPage() {
 
     return (
         <div className="space-y-8 pb-12">
-            {/* ── Header: Astral Chrome Architecture ──────────────── */}
+            {/* â”€â”€ Header: Astral Chrome Architecture â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between animate-fade-slide">
                 <div className="flex items-center gap-5 group">
                     <div className="h-14 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.5)] transition-all duration-500 group-hover:h-16 group-hover:shadow-[0_0_25px_rgba(249,115,22,0.6)]" />
@@ -41,7 +41,7 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-3">
                             <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
                             <p className="text-gray-400 font-bold text-[13px] uppercase tracking-[0.2em]">
-                                Hiring Pulse · {mounted ? new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" }) : ""}
+                                Hiring Pulse Â· {mounted ? new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" }) : ""}
                             </p>
                         </div>
                     </div>
@@ -58,10 +58,10 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            {/* ── Stat Cards ─────────────────────────────── */}
+            {/* â”€â”€ Stat Cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <StatsGrid dateRange={dateRange} />
 
-            {/* ── Dashboard Sections ─────────────────── */}
+            {/* â”€â”€ Dashboard Sections â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="space-y-12">
                 {/* Section 2: Hiring Funnel + Score Distribution */}
                 <section className="animate-fade-slide [animation-delay:100ms]">
@@ -125,3 +125,4 @@ function DashboardSkeleton() {
         </div>
     );
 }
+

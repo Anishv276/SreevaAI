@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { Loader2, ChevronRight, Plus } from "lucide-react";
@@ -184,7 +184,7 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                                     <p className="text-[11px] font-bold text-gray-400 flex items-center gap-2 uppercase tracking-wider">
                                                         {drive.department}
                                                         {deadlineLabel && (
-                                                            <span className="flex items-center gap-1.5 before:content-['·'] before:text-gray-200">
+                                                            <span className="flex items-center gap-1.5 before:content-['Â·'] before:text-gray-200">
                                                                 {deadlineLabel}
                                                             </span>
                                                         )}
@@ -251,3 +251,4 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
         </div>
     );
 }
+

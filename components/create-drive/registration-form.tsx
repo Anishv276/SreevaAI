@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+﻿import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -78,7 +78,7 @@ export function RegistrationForm({ customFields, setCustomFields, isPassportRequ
                                         <Input
                                             value={field.label}
                                             onChange={e => updateField(field.id, "label", e.target.value)}
-                                            placeholder="e.g. GitHub Profile URL…"
+                                            placeholder="e.g. GitHub Profile URLâ€¦"
                                             className="h-10 rounded-lg border-gray-200"
                                         />
                                     </div>
@@ -125,3 +125,4 @@ export function RegistrationForm({ customFields, setCustomFields, isPassportRequ
         </div>
     );
 }
+

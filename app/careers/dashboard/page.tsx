@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { PortalHeader } from "@/components/careers/portal-header";
@@ -163,7 +163,7 @@ export default function CandidateDashboard() {
                                                 <div>
                                                     <h2 className="text-xl font-bold">{app.drive?.title || "Unknown Position"}</h2>
                                                     <p className="text-gray-500">
-                                                        {app.drive?.department} • {app.drive?.workMode || "Remote"} • 
+                                                        {app.drive?.department} â€¢ {app.drive?.workMode || "Remote"} â€¢ 
                                                         Applied on {new Date(app.createdAt).toLocaleDateString()}
                                                     </p>
                                                 </div>
@@ -293,3 +293,4 @@ export default function CandidateDashboard() {
         </div>
     );
 }
+

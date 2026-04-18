@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, AlertCircle, X, Info } from "lucide-react";
@@ -120,3 +120,4 @@ export function Toaster() {
         </div>
     );
 }
+

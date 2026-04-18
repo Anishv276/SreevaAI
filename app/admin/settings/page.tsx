@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { useSearchParams } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
 
-/* ── Section nav ──────────────────────────────────── */
+/* â”€â”€ Section nav â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const sections = [
     { id: "profile", icon: User, label: "Profile" },
     { id: "company", icon: Building2, label: "Company" },
@@ -48,7 +48,7 @@ type TeamResponse = {
     pendingInvites: PendingInvite[];
 };
 
-/* ── Reusable card wrapper ────────────────────────── */
+/* â”€â”€ Reusable card wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function SettingsCard({ title, description, children, icon: Icon }: { title: string; description?: string; children: React.ReactNode; icon?: any }) {
     return (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-visible">
@@ -66,7 +66,7 @@ function SettingsCard({ title, description, children, icon: Icon }: { title: str
     );
 }
 
-/* ── Field wrapper ────────────────────────────────── */
+/* â”€â”€ Field wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <div className="space-y-1.5">
@@ -76,7 +76,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     );
 }
 
-/* ── Toggle ───────────────────────────────────────── */
+/* â”€â”€ Toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
     return (
         <button
@@ -97,7 +97,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
     );
 }
 
-/* ── Main Page ────────────────────────────────────── */
+/* â”€â”€ Main Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function SettingsPage() {
     const { user } = useAuth();
     const searchParams = useSearchParams();
@@ -120,7 +120,7 @@ export default function SettingsPage() {
     const [company, setCompany] = useState({
         name: "",
         industry: "SAAS / TECHNOLOGY",
-        size: "51–250 EMPLOYEES",
+        size: "51â€“250 EMPLOYEES",
         website: "",
         location: "",
         logoUrl: "",
@@ -292,7 +292,7 @@ export default function SettingsPage() {
                     setCompany({
                         name: data.name || "",
                         industry: data.industry || "SAAS / TECHNOLOGY",
-                        size: data.size || "1–50 EMPLOYEES",
+                        size: data.size || "1â€“50 EMPLOYEES",
                         website: data.website || "",
                         location: data.location || "",
                         logoUrl: data.logoUrl || "",
@@ -533,7 +533,7 @@ export default function SettingsPage() {
     return (
         <>
             <div className="space-y-8 pb-16">
-                {/* ── Page Header ── */}
+                {/* â”€â”€ Page Header â”€â”€ */}
                 <div className="flex items-center gap-4 group">
                     <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
                     <div>
@@ -545,7 +545,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="flex gap-8 items-start">
-                    {/* ── Left Nav ── */}
+                    {/* â”€â”€ Left Nav â”€â”€ */}
                     <aside className="w-56 flex-shrink-0 sticky top-8">
                         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-2 space-y-0.5">
                             {sections.map((s) => (
@@ -566,10 +566,10 @@ export default function SettingsPage() {
                         </div>
                     </aside>
 
-                    {/* ── Content ── */}
+                    {/* â”€â”€ Content â”€â”€ */}
                     <div className="flex-1 min-w-0 space-y-6">
 
-                        {/* ═══ PROFILE ═══ */}
+                        {/* â•â•â• PROFILE â•â•â• */}
                         {activeSection === "profile" && (
                             <div className="space-y-6">
                                 <SettingsCard title="Personal Information" description="Update your name and contact details.">
@@ -617,7 +617,7 @@ export default function SettingsPage() {
                             </div>
                         )}
 
-                        {/* ═══ COMPANY ═══ */}
+                        {/* â•â•â• COMPANY â•â•â• */}
                         {activeSection === "company" && (
                             <div className="space-y-6">
                                 <SettingsCard title="Company Logo" description="This logo will appear on your recruitment drives, landing pages, and AI interview screens.">
@@ -723,7 +723,7 @@ export default function SettingsPage() {
                                                     onChange={e => setCompany(c => ({ ...c, size: e.target.value }))}
                                                     className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white font-medium text-sm text-gray-900 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all font-sans"
                                                 >
-                                                    {["1–50 EMPLOYEES", "51–250 EMPLOYEES", "251–1000 EMPLOYEES", "1001+"].map(s => <option key={s}>{s}</option>)}
+                                                    {["1â€“50 EMPLOYEES", "51â€“250 EMPLOYEES", "251â€“1000 EMPLOYEES", "1001+"].map(s => <option key={s}>{s}</option>)}
                                                 </select>
                                             </Field>
                                         </div>
@@ -755,14 +755,14 @@ export default function SettingsPage() {
                         )}
 
 
-                        {/* ═══ DOMAINS ═══ */}
+                        {/* â•â•â• DOMAINS â•â•â• */}
                         {activeSection === "domains" && (
                             <div className="space-y-6">
                                 <SettingsCard
                                     title="Custom Email Domain"
                                     description="Connect your business domain to send white-labeled recruitment emails."
                                 >
-                                    {/* ── STEP 1: No domain in DB yet — show input ── */}
+                                    {/* â”€â”€ STEP 1: No domain in DB yet â€” show input â”€â”€ */}
                                     {!domainInfo ? (
                                         <div className="space-y-4">
                                             <div className="flex items-center gap-4 mb-2">
@@ -793,12 +793,12 @@ export default function SettingsPage() {
                                                             const json = await res.json();
                                                             if (res.ok) {
                                                                 if (json.alreadyVerified) {
-                                                                    // Already verified for this org — show success and advance
+                                                                    // Already verified for this org â€” show success and advance
                                                                     setSaved(true);
                                                                     setTimeout(() => setSaved(false), 2500);
                                                                     fetchDomainInfo(); // This will setEmailSubStep(2)
                                                                 } else {
-                                                                    // Registered via our platform (new or resumed) — load and advance
+                                                                    // Registered via our platform (new or resumed) â€” load and advance
                                                                     fetchDomainInfo();
                                                                 }
                                                             } else {
@@ -820,7 +820,7 @@ export default function SettingsPage() {
                                         </div>
                                     ) : (
                                         <div className="space-y-6">
-                                            {/* Domain card — always visible once registered via our platform */}
+                                            {/* Domain card â€” always visible once registered via our platform */}
                                             <div className="flex items-center justify-between p-6 rounded-[2rem] bg-gradient-to-r from-gray-900 via-gray-800 to-gray-950 text-white shadow-2xl relative overflow-hidden">
                                                 <div className="absolute right-0 top-0 h-full w-48 bg-gradient-to-l from-white/[0.03] to-transparent pointer-events-none" />
                                                 <div className="flex items-center gap-6 relative z-10">
@@ -864,7 +864,7 @@ export default function SettingsPage() {
                                                 </div>
                                             </div>
 
-                                            {/* ── STEP 2: DNS records — domain not yet verified ── */}
+                                            {/* â”€â”€ STEP 2: DNS records â€” domain not yet verified â”€â”€ */}
                                             {emailSubStep === 1 && domainInfo.records && (
                                                 <div className="space-y-6 pt-2">
                                                     <div className="space-y-1 border-l-2 border-[#F97316] pl-4">
@@ -889,13 +889,13 @@ export default function SettingsPage() {
                                                                         </div>
                                                                         <div className="w-[20%] pr-3">
                                                                             <div onClick={() => handleCopy(rec.name || "@", i, 'host')} className="relative flex min-h-[32px] w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] text-gray-900 cursor-pointer hover:bg-white hover:border-[#F97316]/50 transition-all group/host shadow-inner">
-                                                                                <span className="font-mono font-bold break-all uppercase leading-tight">{rec.name || "@"}</span>
+                                                                                <span className="font-sans font-bold break-all uppercase leading-tight">{rec.name || "@"}</span>
                                                                                 {copiedIndex?.i === i && copiedIndex?.type === 'host' ? <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" /> : <Copy className="h-3.5 w-3.5 text-gray-400 opacity-0 group-hover/host:opacity-100 transition-opacity shrink-0" />}
                                                                             </div>
                                                                         </div>
                                                                         <div className="flex-1 pr-3 min-w-0">
                                                                             <div onClick={() => handleCopy(rec.value, i, 'value')} className="relative flex min-h-[32px] w-full items-start justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-900 cursor-pointer hover:bg-white hover:border-[#F97316]/50 transition-all group/val shadow-inner">
-                                                                                <span className="font-mono font-medium break-all leading-relaxed whitespace-pre-wrap">{rec.value}</span>
+                                                                                <span className="font-sans font-medium break-all leading-relaxed whitespace-pre-wrap">{rec.value}</span>
                                                                                 {copiedIndex?.i === i && copiedIndex?.type === 'value' ? <Check className="h-3.5 w-3.5 mt-0.5 text-emerald-500 shrink-0" /> : <Copy className="h-3.5 w-3.5 mt-0.5 text-gray-400 opacity-0 group-hover/val:opacity-100 transition-opacity shrink-0" />}
                                                                             </div>
                                                                         </div>
@@ -930,7 +930,7 @@ export default function SettingsPage() {
                                                         {domainCheckResult === "checking" && (
                                                             <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-blue-50 border border-blue-200">
                                                                 <Loader2 className="h-4 w-4 text-blue-500 animate-spin shrink-0" />
-                                                                <p className="text-[11px] font-bold text-blue-700 tracking-wide">Triggering DNS verification with Resend — this may take a few seconds...</p>
+                                                                <p className="text-[11px] font-bold text-blue-700 tracking-wide">Triggering DNS verification with Resend â€” this may take a few seconds...</p>
                                                             </div>
                                                         )}
                                                         {domainCheckResult === "verified" && (
@@ -943,8 +943,8 @@ export default function SettingsPage() {
                                                             <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-orange-50 border border-orange-200">
                                                                 <AlertCircle className="h-4 w-4 text-orange-500 shrink-0 mt-0.5" />
                                                                 <div className="space-y-0.5">
-                                                                    <p className="text-[11px] font-bold text-orange-700 tracking-wide">Not verified yet — some records are still pending.</p>
-                                                                    <p className="text-[10px] text-orange-600 font-medium">DNS changes can take up to 24–48 hours to propagate. If you just added the records, wait a bit and check again.</p>
+                                                                    <p className="text-[11px] font-bold text-orange-700 tracking-wide">Not verified yet â€” some records are still pending.</p>
+                                                                    <p className="text-[10px] text-orange-600 font-medium">DNS changes can take up to 24â€“48 hours to propagate. If you just added the records, wait a bit and check again.</p>
                                                                 </div>
                                                             </div>
                                                         )}
@@ -958,13 +958,13 @@ export default function SettingsPage() {
                                                 </div>
                                             )}
 
-                                            {/* ── STEP 3: Verified — set or edit sender identity ── */}
+                                            {/* â”€â”€ STEP 3: Verified â€” set or edit sender identity â”€â”€ */}
                                             {emailSubStep === 2 && (() => {
                                                 const hasSender = !!(company.customSenderEmail && company.customSenderName);
                                                 const showForm = !hasSender || isEditingSender;
                                                 return (
                                                     <div className="pt-2 space-y-4">
-                                                        {/* Sender form — shown when not set yet OR editing */}
+                                                        {/* Sender form â€” shown when not set yet OR editing */}
                                                         {showForm && (
                                                             <div className="space-y-5 p-6 rounded-2xl bg-gray-50/50 border border-gray-100">
                                                                 <div className="space-y-1 border-l-2 border-emerald-500 pl-4">
@@ -1034,7 +1034,7 @@ export default function SettingsPage() {
                                                             </div>
                                                         )}
 
-                                                        {/* Read-only summary — shown only when sender is set and not editing */}
+                                                        {/* Read-only summary â€” shown only when sender is set and not editing */}
                                                         {hasSender && !isEditingSender && (
                                                             <div className="flex items-center gap-6 px-6 py-4 rounded-2xl bg-gray-50 border border-gray-100">
                                                                 <div className="flex-1 min-w-0">
@@ -1144,7 +1144,7 @@ export default function SettingsPage() {
                             </div>
                         )}
 
-                        {/* ═══ TEAM ═══ */}
+                        {/* â•â•â• TEAM â•â•â• */}
                         {activeSection === "team" && (
                             <div className="space-y-6">
                                 <SettingsCard title="Invite Team Member" description="Send an invitation to join your workspace.">
@@ -1244,7 +1244,7 @@ export default function SettingsPage() {
                             </div>
                         )}
 
-                        {/* ═══ BILLING ═══ */}
+                        {/* â•â•â• BILLING â•â•â• */}
                         {activeSection === "billing" && (
                             <div className="space-y-6">
                                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -1264,7 +1264,7 @@ export default function SettingsPage() {
                                                         <p className="font-bold text-xl tracking-tight">Pro Plan</p>
                                                         <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 bg-emerald-500/20 border border-emerald-400/20 rounded-lg text-emerald-400">Active</span>
                                                     </div>
-                                                    <p className="text-slate-400 text-xs font-medium mt-1">Billed monthly · Renews Mar 20, 2026</p>
+                                                    <p className="text-slate-400 text-xs font-medium mt-1">Billed monthly Â· Renews Mar 20, 2026</p>
                                                 </div>
                                             </div>
                                             <div className="text-right relative z-10">
@@ -1275,7 +1275,7 @@ export default function SettingsPage() {
                                         <div className="grid grid-cols-3 gap-4 mt-4">
                                             {[
                                                 { label: "Next Invoice", value: "Mar 20, 2026" },
-                                                { label: "Payment", value: "•••• 4242" },
+                                                { label: "Payment", value: "â€¢â€¢â€¢â€¢ 4242" },
                                                 { label: "Status", value: "Paid" },
                                             ].map(({ label, value }) => (
                                                 <div key={label} className="p-4 rounded-xl bg-gray-50 border border-gray-100">
@@ -1343,7 +1343,7 @@ export default function SettingsPage() {
                         )}
 
 
-                        {/* ═══ PASSWORD ═══ */}
+                        {/* â•â•â• PASSWORD â•â•â• */}
                         {activeSection === "password" && (
                             <div className="space-y-6">
                                 <SettingsCard title="Change Password" description="Update your password to keep your account secure.">
@@ -1387,7 +1387,7 @@ export default function SettingsPage() {
                             </div>
                         )}
 
-                        {/* ── Save Button ── */}
+                        {/* â”€â”€ Save Button â”€â”€ */}
                         {["profile", "company"].includes(activeSection) && (
                             <div className="flex justify-end pt-4">
                                 <Button onClick={handleSave} disabled={isSaving} className={cn("h-11 px-12 rounded-lg font-bold shadow-md transition-all", saved ? "bg-emerald-500 text-white" : "bg-[#F97316] text-white")}>
@@ -1477,3 +1477,4 @@ export default function SettingsPage() {
         </>
     );
 }
+

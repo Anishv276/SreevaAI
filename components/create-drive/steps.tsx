@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+﻿import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface StepsProps {
@@ -62,3 +62,4 @@ export function Steps({ steps, currentStep, onStepClick, isEditMode, maxStepReac
         </div>
     );
 }
+

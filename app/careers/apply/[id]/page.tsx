@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, Suspense, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
@@ -75,14 +75,14 @@ export default function ApplicationPage() {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysisError, setAnalysisError] = useState<string | null>(null);
 
-    // ── Race condition guards ──────────────────────────────────────────────────
-    // State updates are batched/async; refs are synchronous — use refs as the
+    // â”€â”€ Race condition guards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // State updates are batched/async; refs are synchronous â€” use refs as the
     // authoritative "in-flight" flag so two rapid file-drops cannot both pass
     // the guard before the first setIsAnalyzing(true) has rendered.
     const isAnalyzingRef = useRef(false);
     const isUploadingPassportRef = useRef(false);
     const isSubmittingRef = useRef(false);
-    // ──────────────────────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     const updateFormData = (updates: Partial<typeof formData>) => {
         setFormData(prev => ({ ...prev, ...updates }));
@@ -107,7 +107,7 @@ export default function ApplicationPage() {
         }
     }, [id]);
 
-    // ── Resume analysis (race-condition-safe) ──────────────────────────────────
+    // â”€â”€ Resume analysis (race-condition-safe) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const startAnalysis = async (file: File) => {
         // Synchronous ref check prevents concurrent calls even before React
         // re-renders with the updated isAnalyzing state.
@@ -172,7 +172,7 @@ export default function ApplicationPage() {
         setAnalysisError(null);
     };
 
-    // ── Passport upload (race-condition-safe) ──────────────────────────────────
+    // â”€â”€ Passport upload (race-condition-safe) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const startPassportUpload = async (file: File) => {
         if (isUploadingPassportRef.current) return;
         isUploadingPassportRef.current = true;
@@ -214,7 +214,7 @@ export default function ApplicationPage() {
         }
     };
 
-    // ── Form submission (race-condition-safe) ──────────────────────────────────
+    // â”€â”€ Form submission (race-condition-safe) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const handleSubmit = async () => {
         if (isSubmittingRef.current) return;
 
@@ -290,7 +290,7 @@ export default function ApplicationPage() {
         }
     };
 
-    // ── Render: success state ──────────────────────────────────────────────────
+    // â”€â”€ Render: success state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (isSuccess) {
         return (
             <div className="min-h-screen bg-[#FDFCFB] flex items-center justify-center p-6">
@@ -318,7 +318,7 @@ export default function ApplicationPage() {
         );
     }
 
-    // ── Render: already applied ────────────────────────────────────────────────
+    // â”€â”€ Render: already applied â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (alreadyApplied) {
         return (
             <div className="min-h-screen bg-[#FDFCFB] flex items-center justify-center p-6">
@@ -346,7 +346,7 @@ export default function ApplicationPage() {
         );
     }
 
-    // ── Render: main application form ─────────────────────────────────────────
+    // â”€â”€ Render: main application form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const isPassportRequired = !!(job as any)?.isPassportRequired;
 
     return (
@@ -472,3 +472,4 @@ export default function ApplicationPage() {
         </div>
     );
 }
+

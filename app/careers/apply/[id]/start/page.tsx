@@ -254,3 +254,4 @@ export default function ApplyStartPage({ params }: { params: Promise<{ id: strin
         </div>
     )
 }
+

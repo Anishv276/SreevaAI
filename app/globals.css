@@ -101,17 +101,22 @@
   html {
     color-scheme: light;
     scrollbar-gutter: stable;
-    --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+    --font-sans: var(--font-inter) !important;
   }
 
   body {
     background-color: #F8F9FB; /* Subtly cooler/cleaner background */
     color: #111827;
-    font-family: var(--font-sans);
+    font-family: var(--font-inter) !important;
     font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1, "cv01" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     tracking: -0.01em;
+  }
+
+  /* Universal font enforcement */
+  * {
+    font-family: var(--font-inter) !important;
   }
 
   input, textarea, select {

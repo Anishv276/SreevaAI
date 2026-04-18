@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+﻿import { cn } from "@/lib/utils";
 import { UserPlus, FileCheck, Calendar, XCircle, ChevronRight } from "lucide-react";
 
 const activities = [
@@ -12,7 +12,7 @@ const activities = [
     },
     {
         id: 2,
-        action: "AI interview completed · Score 87%",
+        action: "AI interview completed Â· Score 87%",
         drive: "Product Designer",
         time: "1h ago",
         icon: FileCheck,
@@ -95,3 +95,4 @@ export function RecentActivity() {
         </div>
     );
 }
+

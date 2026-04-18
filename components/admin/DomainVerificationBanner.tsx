@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { ChevronRight, Globe, Zap, AlertCircle } from "lucide-react";
@@ -107,3 +107,4 @@ export function DomainVerificationBanner() {
         </div>
     );
 }
+

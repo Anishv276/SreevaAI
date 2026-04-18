@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { Loader2, ArrowUpRight } from "lucide-react";
@@ -130,7 +130,7 @@ export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
 
     return (
         <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] overflow-hidden transition-all duration-700 hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)] h-full flex flex-col">
-            {/* ── Header ── */}
+            {/* â”€â”€ Header â”€â”€ */}
             <div className="px-8 py-6 border-b border-gray-100/50 flex items-center justify-between">
                 <div>
                     <h3 className="text-xl font-black text-gray-900 tracking-tight text-premium">Session Integrity</h3>
@@ -166,7 +166,7 @@ export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
                 </div>
             ) : !data ? null : (
                 <div className="p-8 space-y-10 flex-1 flex flex-col">
-                    {/* ── Score Overview ── */}
+                    {/* â”€â”€ Score Overview â”€â”€ */}
                     <div className="flex items-center gap-10 flex-wrap lg:flex-nowrap">
                         <IntegrityDonut score={data.integrityScore} />
 

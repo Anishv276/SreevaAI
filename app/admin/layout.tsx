@@ -1,4 +1,4 @@
-import { Sidebar } from "@/components/layout/sidebar";
+﻿import { Sidebar } from "@/components/layout/sidebar";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -41,7 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <>
         <AccountStatusHandler status={orgData.status} />
         <div className="flex min-h-screen bg-[#F8F9FB] relative overflow-hidden font-sans">
-            {/* ── Background Deck: Aurora Blobs ──────────────── */}
+            {/* â”€â”€ Background Deck: Aurora Blobs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
                 <div 
                     className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-orange-100/30 blur-[120px] animate-[aurora-float_18s_infinite_ease-in-out]"
@@ -85,3 +85,4 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </>
     );
 }
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Camera, Mic, CheckCircle2, AlertCircle, Loader2, RefreshCw, Volume2, Activity, ChevronDown, Monitor, AudioLines, Wifi, Shield, Zap, Play } from "lucide-react";
@@ -43,7 +43,7 @@ export function HardwareCheck({
     const animRef = useRef<number | null>(null);
     const recogRef = useRef<any>(null);
     const verifiedRef = useRef(false);
-    const verifiedPhraseRef = useRef(""); // Always holds latest phrase — avoids stale closure in speech effect
+    const verifiedPhraseRef = useRef(""); // Always holds latest phrase â€” avoids stale closure in speech effect
     const snapshotDoneRef = useRef(false);
     const currentStepRef = useRef(0);
     const lastNoiseUpdateTimeRef = useRef(0);
@@ -69,7 +69,7 @@ export function HardwareCheck({
     const [interimTranscript, setInterimTranscript] = useState("");
     const [micRetryToken, setMicRetryToken] = useState(0);
 
-    // Pick a default phrase on mount — "I am ready for the interview" as requested
+    // Pick a default phrase on mount â€” "I am ready for the interview" as requested
     useEffect(() => {
         const defaultPhrase = "I am ready for the interview";
         verifiedPhraseRef.current = defaultPhrase;
@@ -158,7 +158,7 @@ export function HardwareCheck({
 
     const hardwareStatusMsg = useMemo(() => {
         switch (networkQuality) {
-            case "stable": return "Your connection looks good—we should have a smooth interview 👍";
+            case "stable": return "Your connection looks goodâ€”we should have a smooth interview ðŸ‘";
             case "acceptable": return "Your connection is okay, but you might notice slight delays.";
             case "poor": return "Your connection may affect the interview quality. If possible, try switching to a better network.";
             default: return "Analyzing your connection quality...";
@@ -166,7 +166,7 @@ export function HardwareCheck({
     }, [networkQuality]);
     const [bypassSpeedTest, setBypassSpeedTest] = useState(false);
 
-    // ── Visual Integrity (Signals 4, 5, 6) ──────────────────────────────────
+    // â”€â”€ Visual Integrity (Signals 4, 5, 6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const visualLandmarkerRef = useRef<any>(null);
     const visualRafRef = useRef<number | null>(null);
     const [visualSignals, setVisualSignals] = useState({
@@ -257,10 +257,10 @@ export function HardwareCheck({
                     const cx = (minX + maxX) / 2;
                     const cy = (minY + maxY) / 2;
                     
-                    // -- Signal 04: Focus Centering (0.35–0.65 / 0.25–0.55) --
+                    // -- Signal 04: Focus Centering (0.35â€“0.65 / 0.25â€“0.55) --
                     const isAligned = cx >= 0.35 && cx <= 0.65 && cy >= 0.25 && cy <= 0.55;
 
-                    // -- Signal 05: Proximity / Scale (0.20–0.55) --
+                    // -- Signal 05: Proximity / Scale (0.20â€“0.55) --
                     const widthRatio = maxX - minX;
                     const isProxGood = widthRatio >= 0.20 && widthRatio <= 0.55;
 
@@ -275,7 +275,7 @@ export function HardwareCheck({
                                 lctx.drawImage(video, minX*video.videoWidth, minY*video.videoHeight, widthRatio*video.videoWidth, (maxY-minY)*video.videoHeight, 0, 0, 1, 1);
                                 const data = lctx.getImageData(0,0,1,1).data;
                                 const brightness = 0.299 * data[0] + 0.587 * data[1] + 0.114 * data[2];
-                                // -- Signal 06: Lighting Quality (70–200) --
+                                // -- Signal 06: Lighting Quality (70â€“200) --
                                 lastLightGood = brightness >= 70 && brightness <= 200;
                             }
                         } catch (e) {}
@@ -289,7 +289,7 @@ export function HardwareCheck({
                     if (!lastLightGood) errors.push("Lighting is poor");
                     
                     if (errors.length > 0) {
-                        setVisualStatusMsg(errors.join(" • "));
+                        setVisualStatusMsg(errors.join(" â€¢ "));
                     } else {
                         setVisualStatusMsg("Face detected");
                     }
@@ -404,12 +404,12 @@ export function HardwareCheck({
         onComplete();
     }, [uploadSnapshot, onComplete]);
 
-    // ── Speech detection with live transcript display ────────────────────────
+    // â”€â”€ Speech detection with live transcript display â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // KEY BUGS FIXED:
-    // 1. Use event.resultIndex to process ONLY new results — not re-accumulate
+    // 1. Use event.resultIndex to process ONLY new results â€” not re-accumulate
     //    all results from index 0 (which caused "stuck" display as old results
     //    kept overwriting the live text with stale final segments).
-    // 2. Persist finalTranscript across session restarts in a ref — Chrome's
+    // 2. Persist finalTranscript across session restarts in a ref â€” Chrome's
     //    SpeechRecognition stops and restarts frequently; without a ref the
     //    accumulated final text is lost on each restart.
     // 3. Read verifiedPhrase from verifiedPhraseRef (not the state closure) so
@@ -445,11 +445,11 @@ export function HardwareCheck({
             setInterimTranscript(interimText.trim());
 
             const combined = (sessionFinalTextRef.current + " " + interimText).toLowerCase().trim();
-            // Always read from ref — avoids stale closure if phrase was set after effect ran
+            // Always read from ref â€” avoids stale closure if phrase was set after effect ran
             const targetPhrase = verifiedPhraseRef.current.toLowerCase();
             if (!targetPhrase) return;
 
-            // 80% word match — handles accents and partial recognition
+            // 80% word match â€” handles accents and partial recognition
             const targetWords = targetPhrase.split(/\s+/).filter(Boolean);
             const matchedWords = targetWords.filter(w => combined.includes(w));
             const matchRatio = matchedWords.length / targetWords.length;
@@ -464,14 +464,14 @@ export function HardwareCheck({
         };
 
         r.onerror = (event: any) => {
-            // no-speech and aborted are normal during continuous recognition — ignore them
+            // no-speech and aborted are normal during continuous recognition â€” ignore them
             if (event.error === "no-speech" || event.error === "aborted") return;
             console.warn("[SpeechRecog] error:", event.error);
         };
 
         r.onend = () => {
             if (!verifiedRef.current && recogRef.current === r) {
-                // Short delay then restart — keeps recognition running continuously
+                // Short delay then restart â€” keeps recognition running continuously
                 setTimeout(() => {
                     if (!verifiedRef.current && recogRef.current === r) {
                         try { r.start(); } catch { }
@@ -485,11 +485,11 @@ export function HardwareCheck({
         return () => {
             if (recogRef.current === r) { try { r.abort(); } catch { } recogRef.current = null; }
         };
-        // Re-run when micStatus OR micRetryToken changes — forces hard reset of engine
+        // Re-run when micStatus OR micRetryToken changes â€” forces hard reset of engine
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [micStatus, micRetryToken]);
 
-    // ── Audio visualizer ────────────────────────────────────────────────────
+    // â”€â”€ Audio visualizer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const startVisualizer = useCallback(() => {
         const tick = () => {
             if (!analyzerRef.current) return;
@@ -557,10 +557,10 @@ export function HardwareCheck({
 
     // (measureNoiseFloor removed as it's now integrated and continuous)
 
-    // ── Speaker / Audio Playback Test ────────────────────────────────────────
+    // â”€â”€ Speaker / Audio Playback Test â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // ROOT CAUSE OF SILENCE: Chrome creates AudioContext in "suspended" state
     // when a mic AudioContext already exists. The previous code called
-    // scheduleAudio() before resume() had actually resolved — so actx.currentTime
+    // scheduleAudio() before resume() had actually resolved â€” so actx.currentTime
     // was still 0 and the oscillator start/stop times were wrong.
     // FIX: make the entire function async, always await resume(), then schedule.
     // A fresh AudioContext is used every time to avoid any state from the mic ctx.
@@ -806,7 +806,7 @@ export function HardwareCheck({
         }
     }, [startVisualizer]);
 
-    // ── Global Mount Lifecycle ──────────────────────────────────────────────
+    // â”€â”€ Global Mount Lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     useEffect(() => {
         requestPermissions();
         // Run full check on mount
@@ -825,7 +825,7 @@ export function HardwareCheck({
         };
     }, [testNetworkSpeed]); // stable logic
 
-    // ── Readiness score for progress bar ─────────────────────────────────────
+    // â”€â”€ Readiness score for progress bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const checks = [
         cameraStatus === "granted",
         micStatus === "granted" && micVerified,
@@ -837,7 +837,7 @@ export function HardwareCheck({
     const readyCount = checks.filter(Boolean).length;
     const progressPct = Math.round((readyCount / checks.length) * 100);
 
-    // ── Status helpers ────────────────────────────────────────────────────────
+    // â”€â”€ Status helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const StatusIcon = ({ ok, loading, type }: { ok: boolean; loading?: boolean; type?: "success" | "warning" | "error" }) => {
         if (loading) return <Loader2 className="w-4 h-4 animate-spin text-orange-500" />;
 
@@ -871,7 +871,7 @@ export function HardwareCheck({
                 <div className="max-w-6xl mx-auto flex items-center justify-between">
                     <div>
                         <h1 className="text-lg font-semibold text-gray-900">{title}</h1>
-                        <p className="text-sm text-gray-500">Hi {candidateName} — let&apos;s make sure everything is set up before we begin.</p>
+                        <p className="text-sm text-gray-500">Hi {candidateName} â€” let&apos;s make sure everything is set up before we begin.</p>
                     </div>
                     <div className="flex items-center gap-3">
                         <span className="text-sm text-gray-500">{readyCount}/{checks.length} ready</span>
@@ -906,7 +906,7 @@ export function HardwareCheck({
             {/* Main Grid */}
             <div className="max-w-6xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-3 gap-5">
 
-                {/* ── Column 1: Camera ─────────────────────────────────────── */}
+                {/* â”€â”€ Column 1: Camera â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 <div className="bg-white border border-gray-200 shadow-sm rounded-2xl flex flex-col relative">
                     <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between rounded-t-2xl">
                         <div className="flex items-center gap-2">
@@ -954,13 +954,13 @@ export function HardwareCheck({
                             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
                                 <Camera className="w-8 h-8 text-gray-500" />
                                 <span className="text-xs text-gray-400">
-                                    {cameraStatus === "requesting" ? "Requesting access…" : cameraStatus === "denied" ? "Camera denied" : "Camera off"}
+                                    {cameraStatus === "requesting" ? "Requesting accessâ€¦" : cameraStatus === "denied" ? "Camera denied" : "Camera off"}
                                 </span>
                             </div>
                         )}
                         {snapshotUploading && (
                             <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-lg flex items-center gap-1">
-                                <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+                                <Loader2 className="w-3 h-3 animate-spin" /> Savingâ€¦
                             </div>
                         )}
                     </div>
@@ -997,7 +997,7 @@ export function HardwareCheck({
                     </div>
                 </div>
 
-                {/* ── Column 2: Microphone ──────────────────────────────────── */}
+                {/* â”€â”€ Column 2: Microphone â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 <div className="bg-white border border-gray-200 shadow-sm rounded-2xl flex flex-col relative">
                     <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between rounded-t-2xl">
                         <div className="flex items-center gap-2">
@@ -1045,17 +1045,17 @@ export function HardwareCheck({
                             {micVerified ? (
                                 <div className="flex items-center justify-center gap-2 text-green-600">
                                     <CheckCircle2 className="w-4 h-4" />
-                                    <span className="text-sm font-bold tracking-tight">Perfect — clear audio 👍</span>
+                                    <span className="text-sm font-bold tracking-tight">Perfect â€” clear audio ðŸ‘</span>
                                 </div>
                             ) : !speechSupported ? (
                                 <p className="text-[10px] text-red-500 text-center uppercase font-bold">Transcription unsupported</p>
                             ) : micStatus !== "granted" ? (
-                                <p className="text-[10px] text-gray-400 text-center uppercase font-bold tracking-widest">Awaiting access…</p>
+                                <p className="text-[10px] text-gray-400 text-center uppercase font-bold tracking-widest">Awaiting accessâ€¦</p>
                             ) : (
                                 <div className="text-center">
                                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1.5">Hearing you</p>
                                     <p className="text-sm text-gray-700 leading-snug font-medium italic">
-                                        {liveTranscript || <span className="text-gray-300">Wait for cue…</span>}
+                                        {liveTranscript || <span className="text-gray-300">Wait for cueâ€¦</span>}
                                         {interimTranscript && <span className="text-gray-400"> {interimTranscript}</span>}
                                     </p>
                                 </div>
@@ -1090,7 +1090,7 @@ export function HardwareCheck({
                     </div>
                 </div>
 
-                {/* ── Column 3: Noise + Speaker + Network ──────────────────── */}
+                {/* â”€â”€ Column 3: Noise + Speaker + Network â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                 <div className="flex flex-col gap-[18px]">
 
                     {/* Background Noise */}
@@ -1126,9 +1126,9 @@ export function HardwareCheck({
                                     )}>{noiseDb.toFixed(0)} dB</span>
                                 </div>
                                 <div className="flex items-center justify-between gap-1.5">
-                                    {noiseStatusType === "good" && <p className="text-[10px] text-green-600 font-medium">🟢 Clean audio - Excellent</p>}
-                                    {noiseStatusType === "moderate" && <p className="text-[10px] text-yellow-600 font-medium">🟡 Acceptable noise - Please minimize sound</p>}
-                                    {noiseStatusType === "high" && <p className="text-[10px] text-red-500 font-medium">🔴 High noise - Please quiet the room</p>}
+                                    {noiseStatusType === "good" && <p className="text-[10px] text-green-600 font-medium">ðŸŸ¢ Clean audio - Excellent</p>}
+                                    {noiseStatusType === "moderate" && <p className="text-[10px] text-yellow-600 font-medium">ðŸŸ¡ Acceptable noise - Please minimize sound</p>}
+                                    {noiseStatusType === "high" && <p className="text-[10px] text-red-500 font-medium">ðŸ”´ High noise - Please quiet the room</p>}
 
                                     {noiseStatusType === "high" && (
                                         <button onClick={() => setNoiseBypass(true)} className="text-[10px] text-gray-400 hover:text-gray-600 underline">Skip</button>
@@ -1136,7 +1136,7 @@ export function HardwareCheck({
                                 </div>
                             </div>
                         ) : (
-                            <p className="text-xs text-gray-400 italic">Listening for room noise…</p>
+                            <p className="text-xs text-gray-400 italic">Listening for room noiseâ€¦</p>
                         )}
                     </div>
 
@@ -1161,7 +1161,7 @@ export function HardwareCheck({
                                         </button>
                                         {speakerRetryMsg && (
                                             <p className="mt-2 text-[10px] text-gray-500 italic text-center leading-relaxed">
-                                                No worries — let's try that once more. <br />Ensure your volume is up 👍
+                                                No worries â€” let's try that once more. <br />Ensure your volume is up ðŸ‘
                                             </p>
                                         )}
                                     </motion.div>
@@ -1358,7 +1358,7 @@ export function HardwareCheck({
                         </label>
                         <div className="text-[10px] items-center gap-1.5 text-gray-400 font-medium ml-8">
                             {allReady
-                                ? "All checks passed — you're ready to begin!"
+                                ? "All checks passed â€” you're ready to begin!"
                                 : `${checks.length - readyCount} check${checks.length - readyCount !== 1 ? "s" : ""} remaining`}
                         </div>
                     </div>
@@ -1374,7 +1374,7 @@ export function HardwareCheck({
                         )}
                     >
                         {isStarting || snapshotUploading ? (
-                            <><Loader2 className="w-4 h-4 animate-spin" /> {snapshotUploading ? "Securing Session..." : "Starting…"}</>
+                            <><Loader2 className="w-4 h-4 animate-spin" /> {snapshotUploading ? "Securing Session..." : "Startingâ€¦"}</>
                         ) : (
                             <><Zap className="w-4 h-4" /> Begin Interview</>
                         )}

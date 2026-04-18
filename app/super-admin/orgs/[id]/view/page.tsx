@@ -1,4 +1,4 @@
-
+﻿
 "use client";
 
 import { useEffect, useState, use } from "react";
@@ -35,7 +35,7 @@ import { Job } from "@/context/jobs-context";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast-custom";
 
-// ── TypeScript Interfaces ─────────────────────────────────────
+// â”€â”€ TypeScript Interfaces â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface OrgDetail {
     id: string;
     name: string;
@@ -242,7 +242,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                     <h1 className="text-4xl font-black text-gray-900 tracking-tighter leading-none uppercase italic">
                                         {view === "drives" ? "Drives" : "Candidates"}
                                     </h1>
-                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name} · Enterprise Panel</p>
+                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name} Â· Enterprise Panel</p>
                                 </div>
                             </div>
                         </div>
@@ -373,7 +373,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                         {/* Pagination */}
                         <div className="flex items-center justify-between px-12 py-8 mt-4">
-                             <p className="text-gray-300 text-[10px] font-black uppercase tracking-[0.2em] italic">SHOWING {candidates.length} CANDIDATES · PAGE {page} OF {totalPages || 1}</p>
+                             <p className="text-gray-300 text-[10px] font-black uppercase tracking-[0.2em] italic">SHOWING {candidates.length} CANDIDATES Â· PAGE {page} OF {totalPages || 1}</p>
                              <div className="flex items-center gap-4">
                                 <Button 
                                     variant="outline" 
@@ -565,3 +565,4 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
         </div>
     );
 }
+

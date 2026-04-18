@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -57,7 +57,7 @@ export default function NewOrgPage() {
         const endpoint = isCartesia ? "/api/admin/voice/preview" : "/api/admin/voice/preview/sarvam";
         const transcript = isCartesia 
             ? "Hello! I am ready to conduct high-quality AI interviews for your team." 
-            : "नमस्ते, मैं आपकी टीम के लिए उच्च गुणवत्ता वाले साक्षात्कार आयोजित करने के लिए तैयार हूँ।";
+            : "à¤¨à¤®à¤¸à¥à¤¤à¥‡, à¤®à¥ˆà¤‚ à¤†à¤ªà¤•à¥€ à¤Ÿà¥€à¤® à¤•à¥‡ à¤²à¤¿à¤ à¤‰à¤šà¥à¤š à¤—à¥à¤£à¤µà¤¤à¥à¤¤à¤¾ à¤µà¤¾à¤²à¥‡ à¤¸à¤¾à¤•à¥à¤·à¤¾à¤¤à¥à¤•à¤¾à¤° à¤†à¤¯à¥‹à¤œà¤¿à¤¤ à¤•à¤°à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤¤à¥ˆà¤¯à¤¾à¤° à¤¹à¥‚à¤à¥¤";
 
         if (!voiceId) return;
         
@@ -353,8 +353,8 @@ export default function NewOrgPage() {
                                     onChange={e => setForm(prev => ({ ...prev, ttsProvider: e.target.value }))}
                                     className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none"
                                 >
-                                    <option value="CARTESIA">⚡ Cartesia (Ultra-Low Latency)</option>
-                                    <option value="SARVAM">🇮🇳 Sarvam AI (Indian Regional)</option>
+                                    <option value="CARTESIA">âš¡ Cartesia (Ultra-Low Latency)</option>
+                                    <option value="SARVAM">ðŸ‡®ðŸ‡³ Sarvam AI (Indian Regional)</option>
                                 </select>
                             </div>
                             <div className="flex items-end pb-1">
@@ -416,7 +416,7 @@ export default function NewOrgPage() {
                                             value={form.cartesiaVoiceId}
                                             onChange={e => setForm(prev => ({ ...prev, cartesiaVoiceId: e.target.value }))}
                                             placeholder="Paste custom ID here (e.g. 9626c3...)"
-                                            className="h-11 w-full rounded-xl border border-purple-200 bg-purple-50 shrink-0 px-3 text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none mt-2 font-mono placeholder:text-purple-300 text-purple-900"
+                                            className="h-11 w-full rounded-xl border border-purple-200 bg-purple-50 shrink-0 px-3 text-sm font-bold focus:ring-2 focus:ring-purple-200 outline-none mt-2 font-sans placeholder:text-purple-300 text-purple-900"
                                         />
                                     )}
                                 </div>
@@ -542,8 +542,8 @@ export default function NewOrgPage() {
                                     onChange={e => setForm(prev => ({ ...prev, sttProvider: e.target.value }))}
                                     className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none"
                                 >
-                                    <option value="DEEPGRAM">🛸 Deepgram (Elite Latency)</option>
-                                    <option value="SARVAM">🇮🇳 Sarvam AI (Regional Saaras)</option>
+                                    <option value="DEEPGRAM">ðŸ›¸ Deepgram (Elite Latency)</option>
+                                    <option value="SARVAM">ðŸ‡®ðŸ‡³ Sarvam AI (Regional Saaras)</option>
                                 </select>
                             </div>
                             <div className="flex items-end pb-1">
@@ -565,15 +565,15 @@ export default function NewOrgPage() {
                                         onChange={e => setForm(prev => ({ ...prev, deepgramModel: e.target.value }))}
                                         className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none"
                                     >
-                                        <optgroup label="🛸 Flux (Lowest Latency)">
+                                        <optgroup label="ðŸ›¸ Flux (Lowest Latency)">
                                             <option value="flux-general-en">Flux General (English)</option>
                                         </optgroup>
-                                        <optgroup label="🧠 Nova-3 (Next Gen)">
+                                        <optgroup label="ðŸ§  Nova-3 (Next Gen)">
                                             <option value="nova-3-general">Nova-3 General</option>
                                             <option value="nova-3">Nova-3 (Balanced)</option>
                                             <option value="nova-3-medical">Nova-3 Medical</option>
                                         </optgroup>
-                                        <optgroup label="⚡ Nova-2 (Standard)">
+                                        <optgroup label="âš¡ Nova-2 (Standard)">
                                             <option value="nova-2-general">Nova-2 General</option>
                                             <option value="nova-2-phonecall">Nova-2 Phonecall</option>
                                             <option value="nova-2-voicemail">Nova-2 Voicemail</option>
@@ -586,14 +586,14 @@ export default function NewOrgPage() {
                                             <option value="nova-2-drivethru">Nova-2 Drivethru</option>
                                             <option value="nova-2-atc">Nova-2 Air Traffic Control</option>
                                         </optgroup>
-                                        <optgroup label="🌬️ Whisper (Benchmarked)">
+                                        <optgroup label="ðŸŒ¬ï¸ Whisper (Benchmarked)">
                                             <option value="whisper-large">Whisper Large</option>
                                             <option value="whisper-medium">Whisper Medium</option>
                                             <option value="whisper-small">Whisper Small</option>
                                             <option value="whisper-base">Whisper Base</option>
                                             <option value="whisper-tiny">Whisper Tiny</option>
                                         </optgroup>
-                                        <optgroup label="📂 Legacy / Enhanced">
+                                        <optgroup label="ðŸ“‚ Legacy / Enhanced">
                                             <option value="enhanced-general">Enhanced General</option>
                                             <option value="enhanced-phonecall">Enhanced Phonecall</option>
                                             <option value="nova-general">Nova-1 General</option>
@@ -617,11 +617,11 @@ export default function NewOrgPage() {
                                         onChange={e => setForm(prev => ({ ...prev, sarvamSttModel: e.target.value }))}
                                         className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none"
                                     >
-                                        <optgroup label="💎 Premium">
+                                        <optgroup label="ðŸ’Ž Premium">
                                             <option value="saaras:v3">Saaras v3 (High Quality)</option>
                                             <option value="saarika:v2.5">Saarika v2.5 (Streaming USM)</option>
                                         </optgroup>
-                                        <optgroup label="📚 Legacy">
+                                        <optgroup label="ðŸ“š Legacy">
                                             <option value="saaras:v2">Saaras v2 (Standard)</option>
                                         </optgroup>
                                     </select>
@@ -651,7 +651,7 @@ export default function NewOrgPage() {
                                     onChange={e => setForm(prev => ({ ...prev, llmProvider: e.target.value }))}
                                     className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold focus:ring-2 focus:ring-blue-100 outline-none"
                                 >
-                                    <option value="OPENAI">🤖 OpenAI (Global Standard)</option>
+                                    <option value="OPENAI">ðŸ¤– OpenAI (Global Standard)</option>
                                 </select>
                             </div>
                             <div className="space-y-4">
@@ -732,3 +732,4 @@ export default function NewOrgPage() {
         </div>
     );
 }
+

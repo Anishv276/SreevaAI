@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -136,3 +136,4 @@ export function ScreeningSettings({ config, setConfig, aiEnabled, setAiEnabled, 
         </div>
     );
 }
+

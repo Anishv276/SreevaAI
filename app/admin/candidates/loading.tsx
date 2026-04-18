@@ -1,4 +1,4 @@
-import { Skeleton } from "@/components/ui/skeleton";
+﻿import { Skeleton } from "@/components/ui/skeleton";
 
 export default function CandidatesLoading() {
     return (
@@ -47,3 +47,4 @@ export default function CandidatesLoading() {
         </div>
     );
 }
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { Loader2 } from "lucide-react";
@@ -31,7 +31,7 @@ function rangeLabel(range: DateRange) {
     if (range.type === "today") return "Today";
     if (range.type === "week") return "This week";
     if (range.type === "month") return "This month";
-    return "from" in range ? `${(range as any).from} – ${(range as any).to}` : "Custom";
+    return "from" in range ? `${(range as any).from} â€“ ${(range as any).to}` : "Custom";
 }
 
 const STAGES = [
@@ -104,7 +104,7 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
                     <h3 className="text-xl font-black text-gray-900 tracking-tight text-premium">Hiring Funnel</h3>
                     <p className="text-[12px] font-bold text-gray-400 mt-1 uppercase tracking-widest">
                         {data
-                            ? `${rangeLabel(dateRange)} · ${data.activeDrives} active drives`
+                            ? `${rangeLabel(dateRange)} Â· ${data.activeDrives} active drives`
                             : rangeLabel(dateRange)}
                     </p>
                 </div>
@@ -188,3 +188,4 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
         </div>
     );
 }
+

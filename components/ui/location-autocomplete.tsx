@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { MapPin as MapPinIcon, Loader2, Search, X } from "lucide-react";
@@ -168,3 +168,4 @@ export function LocationAutocomplete({
         </div>
     );
 }
+

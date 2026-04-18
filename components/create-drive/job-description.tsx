@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef } from "react";
 import { Upload, Loader2, FileText, X, CheckCircle2, PenLine, Eye, Search, ChevronDown } from "lucide-react";
@@ -22,16 +22,16 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 
 
 const currencies = [
-    { code: "INR", symbol: "₹", name: "Indian Rupee" },
+    { code: "INR", symbol: "â‚¹", name: "Indian Rupee" },
     { code: "USD", symbol: "$", name: "US Dollar" },
-    { code: "EUR", symbol: "€", name: "Euro" },
-    { code: "GBP", symbol: "£", name: "British Pound" },
+    { code: "EUR", symbol: "â‚¬", name: "Euro" },
+    { code: "GBP", symbol: "Â£", name: "British Pound" },
     { code: "AUD", symbol: "A$", name: "Australian Dollar" },
     { code: "CAD", symbol: "C$", name: "Canadian Dollar" },
     { code: "SGD", symbol: "S$", name: "Singapore Dollar" },
-    { code: "AED", symbol: "د.إ", name: "UAE Dirham" },
-    { code: "JPY", symbol: "¥", name: "Japanese Yen" },
-    { code: "CNY", symbol: "¥", name: "Chinese Yuan" },
+    { code: "AED", symbol: "Ø¯.Ø¥", name: "UAE Dirham" },
+    { code: "JPY", symbol: "Â¥", name: "Japanese Yen" },
+    { code: "CNY", symbol: "Â¥", name: "Chinese Yuan" },
     { code: "CHF", symbol: "Fr", name: "Swiss Franc" },
     { code: "HKD", symbol: "HK$", name: "Hong Kong Dollar" },
     { code: "NZD", symbol: "NZ$", name: "New Zealand Dollar" },
@@ -177,7 +177,7 @@ export function JobDescription({
                     <X className="h-4 w-4" /> {analysisError}
                 </div>
             )}
-            {/* ── TOP: Upload JD ─────────────── */}
+            {/* â”€â”€ TOP: Upload JD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <section>
                 {mode === 'form' && (
                     <div className="flex items-center gap-3 mb-3 font-bold text-gray-900 uppercase tracking-widest text-[13px]">
@@ -201,7 +201,7 @@ export function JobDescription({
                                 <Loader2 className="h-8 w-8 text-[#F97316] animate-spin flex-shrink-0" />
                                 <div className="flex-1">
                                     <p className="text-[13px] font-semibold text-gray-700 truncate max-w-[200px]">
-                                        Analyzing {formData.jdFileName || "document"}…
+                                        Analyzing {formData.jdFileName || "document"}â€¦
                                     </p>
                                     <p className="text-[11px] text-gray-400">AI extraction in progress</p>
                                 </div>
@@ -239,7 +239,7 @@ export function JobDescription({
                                     <p className="text-[13px] font-semibold text-gray-700">
                                         {dragOver ? "Drop to upload!" : "Drag & drop your JD here"}
                                     </p>
-                                    <p className="text-[11px] text-gray-400">PDF, DOCX, or TXT · Max 10MB · Auto-extracts skills & responsibilities</p>
+                                    <p className="text-[11px] text-gray-400">PDF, DOCX, or TXT Â· Max 10MB Â· Auto-extracts skills & responsibilities</p>
                                 </div>
                                 <span className="flex-shrink-0 rounded-lg border border-[#F97316] px-3 py-1.5 text-[12px] font-semibold text-[#F97316] hover:bg-orange-50 transition-colors">
                                     Browse
@@ -265,7 +265,7 @@ export function JobDescription({
                                 ) : (
                                     <>
                                         <CheckCircle2 className="h-3 w-3 text-green-500" />
-                                        <p className="text-[11px] text-green-600 font-medium">Analyzed — fields auto-filled below</p>
+                                        <p className="text-[11px] text-green-600 font-medium">Analyzed â€” fields auto-filled below</p>
                                     </>
                                 )}
                             </div>
@@ -303,7 +303,7 @@ export function JobDescription({
                         <div className="flex-1 h-px bg-gray-100" />
                     </div>
 
-                    {/* ── BOTTOM: Write & Edit JD ────────────────────── */}
+                    {/* â”€â”€ BOTTOM: Write & Edit JD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                     <section className="space-y-4">
                         <div className="flex items-center gap-3 mb-4">
                             <span className="h-5 w-1 rounded-full bg-[#F97316]" />
@@ -318,7 +318,7 @@ export function JobDescription({
                                     <PenLine className="absolute left-3 top-3 h-3.5 w-3.5 text-gray-300 pointer-events-none" />
                                     <textarea
                                         rows={6}
-                                        placeholder="Describe the role, expectations, and ideal candidate…"
+                                        placeholder="Describe the role, expectations, and ideal candidateâ€¦"
                                         value={formData.description || ""}
                                         onChange={(e) => updateFormData((prev: any) => ({ ...prev, description: e.target.value }))}
                                         className={`${textareaClass} pl-9 ${isAnalyzing && !formData.description ? "bg-orange-50/20" : ""}`}
@@ -339,7 +339,7 @@ export function JobDescription({
                                 <FieldLabel required>Key Responsibilities {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
                                 <textarea
                                     rows={6}
-                                    placeholder="• Define clear objectives&#10;• Collaborate with cross-functional teams&#10;• ..."
+                                    placeholder="â€¢ Define clear objectives&#10;â€¢ Collaborate with cross-functional teams&#10;â€¢ ..."
                                     value={formData.responsibilities || ""}
                                     onChange={(e) => updateFormData((prev: any) => ({ ...prev, responsibilities: e.target.value }))}
                                     className={`${textareaClass} ${isAnalyzing && !formData.responsibilities ? "bg-orange-50/20" : ""}`}
@@ -353,7 +353,7 @@ export function JobDescription({
                                 <FieldLabel required>Required Skills {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
                                 <textarea
                                     rows={4}
-                                    placeholder="• React.js & Next.js&#10;• TypeScript & Node.js&#10;• AWS / Cloud Infrastructure"
+                                    placeholder="â€¢ React.js & Next.js&#10;â€¢ TypeScript & Node.js&#10;â€¢ AWS / Cloud Infrastructure"
                                     value={formData.skills || ""}
                                     onChange={(e) => updateFormData((prev: any) => ({ ...prev, skills: e.target.value }))}
                                     className={`${textareaClass} ${isAnalyzing && !formData.skills ? "bg-orange-50/20" : ""}`}
@@ -364,7 +364,7 @@ export function JobDescription({
                                 <FieldLabel required>Requirements {isAnalyzing && <Loader2 className="h-3 w-3 text-orange-400 animate-spin inline ml-1" />}</FieldLabel>
                                 <textarea
                                     rows={4}
-                                    placeholder="• Bachelor's degree in CS or related field&#10;• 3+ years of experience in...&#10;• ..."
+                                    placeholder="â€¢ Bachelor's degree in CS or related field&#10;â€¢ 3+ years of experience in...&#10;â€¢ ..."
                                     value={formData.requirements || ""}
                                     onChange={(e) => updateFormData((prev: any) => ({ ...prev, requirements: e.target.value }))}
                                     className={`${textareaClass} ${isAnalyzing && !formData.requirements ? "bg-orange-50/20" : ""}`}
@@ -378,7 +378,7 @@ export function JobDescription({
                                 <FieldLabel required>Experience (Yrs)</FieldLabel>
                                 <input
                                     type="text"
-                                    placeholder="e.g. 2–5 years"
+                                    placeholder="e.g. 2â€“5 years"
                                     value={formData.experience || ""}
                                     onChange={(e) => updateFormData((prev: any) => ({ ...prev, experience: e.target.value }))}
                                     className={`${inputClass} ${isAnalyzing && !formData.experience ? "bg-orange-50/20" : ""}`}
@@ -387,14 +387,14 @@ export function JobDescription({
                             <div>
                                 {(() => {
                                     const curr = (formData.salary || "").split(" ")[2] || (formData.salary || "").split(" ")[1] || "INR";
-                                    const label = curr === "INR" ? "Salary Range (LPA · INR)" : `Salary Range (${curr})`;
+                                    const label = curr === "INR" ? "Salary Range (LPA Â· INR)" : `Salary Range (${curr})`;
                                     return <FieldLabel required>{label}</FieldLabel>;
                                 })()}
                                 <div className="flex items-center gap-2">
                                     <div className="relative flex-1">
                                         <input
                                             type="text"
-                                            placeholder="e.g. 12–18"
+                                            placeholder="e.g. 12â€“18"
                                             value={(formData.salary || "").split(" ")[0] || ""}
                                             onChange={(e) => {
                                                 const val = e.target.value;
@@ -428,7 +428,7 @@ export function JobDescription({
                                     <PenLine className="h-5 w-5 text-[#F97316] animate-pulse" />
                                 </div>
                                 <div>
-                                    <p className="text-[13px] font-bold text-gray-900">Background Extraction Active…</p>
+                                    <p className="text-[13px] font-bold text-gray-900">Background Extraction Activeâ€¦</p>
                                     <p className="text-[11px] text-orange-600 font-medium">JD info and skills are being filled end-to-end</p>
                                 </div>
                             </div>
@@ -439,3 +439,4 @@ export function JobDescription({
         </div>
     );
 }
+

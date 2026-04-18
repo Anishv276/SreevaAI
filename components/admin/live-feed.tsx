@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import {
@@ -10,7 +10,7 @@ import { motion } from "framer-motion";
 import { ErrorState } from "./error-state";
 import { type DateRange } from "./date-filter";
 
-/* ── Activity types ──────────────────────────────────── */
+/* â”€â”€ Activity types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 type ActivityType = "application" | "interview_completed" | "rejection";
 
 interface FeedItem {
@@ -108,7 +108,7 @@ const insights = [
     },
     {
         id: 3,
-        text: "Application conversion is 2× higher from your careers page vs LinkedIn referrals this month.",
+        text: "Application conversion is 2Ã— higher from your careers page vs LinkedIn referrals this month.",
         drive: "All Drives",
     },
 ];
@@ -117,14 +117,14 @@ const alerts = [
     {
         id: 1,
         text: "Drive closing in 5 days",
-        meta: "Product Designer · 23 candidates pending",
+        meta: "Product Designer Â· 23 candidates pending",
         time: "5d left",
         level: "amber",
     },
     {
         id: 2,
         text: "2 candidates dropped off during interview",
-        meta: "Backend Engineer · interview timeout",
+        meta: "Backend Engineer Â· interview timeout",
         time: "3h ago",
         level: "red",
     },
@@ -146,7 +146,7 @@ export function LiveFeed({ dateRange }: LiveFeedProps) {
 
     return (
         <div className="pb-12">
-            {/* ── ACTIVITY FEED ─────────────────────────── */}
+            {/* â”€â”€ ACTIVITY FEED â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <div className="flex flex-col h-[600px] bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)] transition-all duration-700 overflow-hidden">
                 <div className="py-6 px-8 border-b border-gray-100/50 flex flex-row items-center justify-between bg-white/20">
                     <div className="flex items-center gap-4">
@@ -218,3 +218,4 @@ export function LiveFeed({ dateRange }: LiveFeedProps) {
         </div>
     );
 }
+

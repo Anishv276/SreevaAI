@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -389,3 +389,4 @@ export function Sidebar() {
         </>
     );
 }
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useAuth } from "@/context/auth-context";
 import Link from "next/link";
@@ -157,3 +157,4 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
         </div>
     );
 }
+

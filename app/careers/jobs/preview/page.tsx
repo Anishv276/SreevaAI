@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { JobDetailsView } from "@/components/careers/job-details-view";
@@ -63,3 +63,4 @@ export default function JobPreviewPage() {
 
     return <JobDetailsView job={job} isDraft={true} />;
 }
+

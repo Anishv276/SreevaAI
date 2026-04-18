@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -287,7 +287,7 @@ export default function OnboardingPage() {
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.06),0_1px_4px_rgba(0,0,0,0.04)] border-t-[4px] border-t-[#F97316]">
                     <div className="p-8">
 
-                        {/* ═══ STEP 0: PROFILE & SECURITY ═══ */}
+                        {/* â•â•â• STEP 0: PROFILE & SECURITY â•â•â• */}
                         {currentStep === 0 && (
                             <div className="space-y-10 animate-in-slide">
                                 <div className="flex items-center gap-4 mb-2">
@@ -352,7 +352,7 @@ export default function OnboardingPage() {
                                     <div className="flex items-center gap-3 mb-4">
                                         <Lock className="h-4 w-4 text-gray-400" />
                                         <span className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Set Account Password</span>
-                                        <span className="text-[10px] text-gray-400 font-medium">(optional — skip if already set)</span>
+                                        <span className="text-[10px] text-gray-400 font-medium">(optional â€” skip if already set)</span>
                                     </div>
                                     <div className="grid md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
@@ -361,7 +361,7 @@ export default function OnboardingPage() {
                                                 <input
                                                     type={showPw.current ? "text" : "password"}
                                                     className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 pr-10 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 transition-all placeholder:text-gray-300"
-                                                    placeholder="••••••••"
+                                                    placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                                                     value={passwords.current}
                                                     onChange={e => setPasswords({ ...passwords, current: e.target.value })}
                                                 />
@@ -390,7 +390,7 @@ export default function OnboardingPage() {
                             </div>
                         )}
 
-                        {/* ═══ STEP 1: COMPANY IDENTITY ═══ */}
+                        {/* â•â•â• STEP 1: COMPANY IDENTITY â•â•â• */}
                         {currentStep === 1 && (
                             <div className="space-y-10 animate-in-slide">
                                 <div className="flex items-center gap-4 mb-2">
@@ -470,9 +470,9 @@ export default function OnboardingPage() {
                                         <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Company Size <span className="text-[#F97316]">*</span></label>
                                         <select className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-[14px] font-medium shadow-sm hover:border-orange-300 transition-all focus:outline-none" value={company.size || ""} onChange={e => setCompany({ ...company, size: e.target.value })}>
                                             <option value="">Select Size</option>
-                                            <option>1–50 EMPLOYEES</option>
-                                            <option>51–250 EMPLOYEES</option>
-                                            <option>251–1000 EMPLOYEES</option>
+                                            <option>1â€“50 EMPLOYEES</option>
+                                            <option>51â€“250 EMPLOYEES</option>
+                                            <option>251â€“1000 EMPLOYEES</option>
                                             <option>1001+</option>
                                         </select>
                                     </div>
@@ -488,7 +488,7 @@ export default function OnboardingPage() {
                             </div>
                         )}
 
-                        {/* ═══ STEP 2: HIRING GOALS ═══ */}
+                        {/* â•â•â• STEP 2: HIRING GOALS â•â•â• */}
                         {currentStep === 2 && (
                             <div className="space-y-10 animate-in-slide">
                                 <div className="flex items-center gap-4 mb-2">
@@ -558,7 +558,7 @@ export default function OnboardingPage() {
                             </div>
                         )}
 
-                        {/* ═══ STEP 3: PROCEED / READY ═══ */}
+                        {/* â•â•â• STEP 3: PROCEED / READY â•â•â• */}
                         {currentStep === 3 && (
                             <div className="py-8 space-y-12 animate-in-fade-slide">
                                 <div className="text-center space-y-4">
@@ -645,3 +645,4 @@ export default function OnboardingPage() {
         </div>
     );
 }
+

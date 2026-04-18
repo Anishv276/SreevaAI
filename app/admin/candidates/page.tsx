@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -36,7 +36,7 @@ import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { motion } from "framer-motion";
 import { PremiumFilter } from "@/components/admin/premium-filter";
 
-// ── Email Composer Modal ───────────────────────────────────────────────
+// â”€â”€ Email Composer Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const VARIABLES = [
     { label: "{{name}}", desc: "Candidate full name" },
     { label: "{{role}}", desc: "Job title" },
@@ -88,7 +88,7 @@ function EmailComposer({
                 <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-50">
                     <div>
                         <h2 className="text-lg font-black text-gray-900 tracking-tight">Compose Email</h2>
-                        <p className="text-[11px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">To: {candidate.name} · {candidate.email}</p>
+                        <p className="text-[11px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">To: {candidate.name} Â· {candidate.email}</p>
                     </div>
                     <button onClick={onClose} className="h-8 w-8 rounded-xl flex items-center justify-center hover:bg-gray-100 text-gray-400 transition-colors">
                         <X className="h-4 w-4" />
@@ -298,7 +298,7 @@ export default function CandidatesPage() {
         try {
             const res = await fetch(`/api/candidates/${candidate.id}/resend-interview`, { method: "POST" });
             const data = await res.json();
-            if (res.ok) toast.success("Interview link resent — email delivered successfully");
+            if (res.ok) toast.success("Interview link resent â€” email delivered successfully");
             else toast.error(data.error || "Failed to resend interview link");
         } catch { toast.error("Failed to resend interview link"); }
         finally { setResendingId(null); }
@@ -397,9 +397,9 @@ export default function CandidatesPage() {
             }
 
             fetchCandidates(pagination.page, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
-            const msg = pendingAction === "hire" ? `${count} candidate(s) hired — emails sent`
-                : pendingAction === "reject" ? `${count} candidate(s) marked as not hired — emails sent`
-                : pendingAction === "shortlist" ? `${count} candidate(s) shortlisted — interview emails sent`
+            const msg = pendingAction === "hire" ? `${count} candidate(s) hired â€” emails sent`
+                : pendingAction === "reject" ? `${count} candidate(s) marked as not hired â€” emails sent`
+                : pendingAction === "shortlist" ? `${count} candidate(s) shortlisted â€” interview emails sent`
                 : pendingAction === "not_hired" ? `${count} candidate(s) marked as not hired`
                 : `${count} candidate(s) deleted`;
             toast.success(msg);
@@ -474,7 +474,7 @@ export default function CandidatesPage() {
                                 a.click();
                                 a.remove();
                                 window.URL.revokeObjectURL(downloadUrl);
-                                toast.success("Export successful — Your CSV file has been downloaded.");
+                                toast.success("Export successful â€” Your CSV file has been downloaded.");
                             } catch (err: any) {
                                 console.error("Export error:", err);
                                 toast.error(`Export Failed: ${err.message || "Failed to download export."}`);
@@ -490,7 +490,7 @@ export default function CandidatesPage() {
                 </div>
             </div>
 
-            {/* ── Bulk Action Bar ─────────────────────────────────── */}
+            {/* â”€â”€ Bulk Action Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             {isSelectionMode && (
                 <div className="flex items-center gap-3 flex-wrap p-4 bg-white/60 backdrop-blur-xl rounded-2xl border border-white/40 shadow-sm">
                     <button
@@ -564,7 +564,7 @@ export default function CandidatesPage() {
                 </div>
             )}
 
-            {/* ── KPI Stats Row ─────────────────────────────────── */}
+            {/* â”€â”€ KPI Stats Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <CandidateStatsRow />
 
             {error && (
@@ -876,13 +876,13 @@ export default function CandidatesPage() {
                                                             {/* Hire Group */}
                                                             <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Hire</DropdownMenuLabel>
                                                             <DropdownMenuItem
-                                                                onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${candidate.name} hired — confirmation email sent`)}
+                                                                onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${candidate.name} hired â€” confirmation email sent`)}
                                                                 className="rounded-lg px-3 py-2 font-bold cursor-pointer text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
                                                             >
                                                                 Hire this person
                                                             </DropdownMenuItem>
                                                             <DropdownMenuItem
-                                                                onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "not hired" }, `${candidate.name} marked as Not Hired — email sent`)}
+                                                                onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "not hired" }, `${candidate.name} marked as Not Hired â€” email sent`)}
                                                                 className="rounded-lg px-3 py-2 font-bold cursor-pointer text-gray-600 focus:text-gray-900 focus:bg-gray-50 transition-colors"
                                                             >
                                                                 <UserX className="h-4 w-4 mr-2" />
@@ -963,3 +963,4 @@ export default function CandidatesPage() {
         </div>
     );
 }
+

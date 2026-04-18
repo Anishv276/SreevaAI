@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
@@ -172,7 +172,7 @@ export default function OrgsPage() {
         }
     };
 
-    // Debounced search — waits 300ms after user stops typing before hitting the API
+    // Debounced search â€” waits 300ms after user stops typing before hitting the API
     useEffect(() => {
         const timer = setTimeout(() => {
             setSearch(searchInput);
@@ -273,7 +273,7 @@ export default function OrgsPage() {
                     <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
                     <div>
                         <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Organizations</h1>
-                        <p className="text-gray-500 font-medium mt-1 text-base">Partner registry · {total} organizations</p>
+                        <p className="text-gray-500 font-medium mt-1 text-base">Partner registry Â· {total} organizations</p>
                     </div>
                 </div>
                 <Link
@@ -542,7 +542,7 @@ export default function OrgsPage() {
                         <div className="px-6 py-4 bg-gray-50/50 flex items-center justify-between border-t border-gray-100">
                             <p className="text-gray-400 text-[11px] font-semibold uppercase tracking-widest flex items-center gap-3">
                                 <Layers className="h-4 w-4" />
-                                SHOWING {orgs.length} OF {total} PARTNERS · PAGE {page} OF {totalPages || 1}
+                                SHOWING {orgs.length} OF {total} PARTNERS Â· PAGE {page} OF {totalPages || 1}
                             </p>
                             <div className="flex items-center gap-2">
                                 <button
@@ -655,7 +655,7 @@ export default function OrgsPage() {
                                         <span className="text-[10px] font-black uppercase tracking-[0.3em] text-orange-600/60">Live Consumption</span>
                                     </div>
                                     <h3 className="text-2xl font-black text-gray-900 tracking-tight">
-                                        {metricsOrg.name} <span className="text-gray-400 font-medium">— AI Consumption</span>
+                                        {metricsOrg.name} <span className="text-gray-400 font-medium">â€” AI Consumption</span>
                                     </h3>
                                 </div>
                             </div>
@@ -669,7 +669,7 @@ export default function OrgsPage() {
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-10 space-y-12">
-                            {/* ── LLM PROCESSING SECTION ────────────────── */}
+                            {/* â”€â”€ LLM PROCESSING SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                             <div className="space-y-6">
                                 <div className="flex items-center gap-4">
                                     <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400 whitespace-nowrap">Core Processing Units</h4>
@@ -725,7 +725,7 @@ export default function OrgsPage() {
                                 </div>
                             </div>
 
-                            {/* ── VOICE & SPEECH SECTION ────────────────── */}
+                            {/* â”€â”€ VOICE & SPEECH SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                             <div className="grid gap-10 md:grid-cols-2">
                                 {/* TTS Section */}
                                 <div className="space-y-6">
@@ -804,7 +804,7 @@ export default function OrgsPage() {
                                 </div>
                             </div>
 
-                            {/* ── OVERALL INTERVIEW SECTION ────────────────── */}
+                            {/* â”€â”€ OVERALL INTERVIEW SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                             <div className="pt-2">
                                 <div className="flex items-center gap-4 mb-6">
                                     <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400 whitespace-nowrap">Pipeline Summary</h4>
@@ -933,3 +933,4 @@ export default function OrgsPage() {
         </div>
     );
 }
+

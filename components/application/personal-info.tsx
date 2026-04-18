@@ -1,4 +1,4 @@
-import { Input } from "@/components/ui/input";
+﻿import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ResumeUpload } from "./resume-upload";
 import { PhoneInput } from "./phone-input";
@@ -191,3 +191,4 @@ export function PersonalInfo({
         </div>
     );
 }
+

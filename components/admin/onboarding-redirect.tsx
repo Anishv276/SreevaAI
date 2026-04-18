@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
@@ -29,3 +29,4 @@ export function OnboardingRedirect({ needsOnboarding }: Props) {
 
     return null;
 }
+

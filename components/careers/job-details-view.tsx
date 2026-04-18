@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { PortalHeader } from "@/components/careers/portal-header";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
         : [];
 
     const requirements = job.requirements
-        ? job.requirements.split("\n").map((s: string) => s.replace(/^[•\-\*]\s*/, '').trim()).filter((s: string) => s.length > 0)
+        ? job.requirements.split("\n").map((s: string) => s.replace(/^[â€¢\-\*]\s*/, '').trim()).filter((s: string) => s.length > 0)
         : [];
 
     const skills = job.skills
@@ -289,3 +289,4 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
         </div>
     );
 }
+

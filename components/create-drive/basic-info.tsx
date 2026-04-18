@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
@@ -131,7 +131,7 @@ function PremiumSelect({
 }
 
 
-/* ── Premium text input ──────────────────────────────────── */
+/* â”€â”€ Premium text input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function PremiumInput({
     label,
     icon: Icon,
@@ -163,7 +163,7 @@ function PremiumInput({
     );
 }
 
-/* ── Premium Calendar Date Picker ───────────────────────── */
+/* â”€â”€ Premium Calendar Date Picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const DAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MONTHS = ["January","February","March","April","May","June",
     "July","August","September","October","November","December"];
@@ -262,7 +262,7 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
             }}
             className="rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden"
         >
-            {/* Header — clean white */}
+            {/* Header â€” clean white */}
             <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 bg-white">
                 <button type="button" onClick={prevMonth}
                     className="h-7 w-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
@@ -351,7 +351,7 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
     );
 }
 
-/* ── Position counter ────────────────────────────────────── */
+/* â”€â”€ Position counter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function PositionCounter({ label, icon: Icon, value, onChange, error }: { label: string; icon: React.ElementType; value: number; onChange: (v: number) => void; error?: string }) {
     const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
         const val = parseInt(e.target.value);
@@ -377,7 +377,7 @@ function PositionCounter({ label, icon: Icon, value, onChange, error }: { label:
                     onClick={() => onChange(Math.max(1, value - 1))}
                     className="flex h-full w-10 items-center justify-center text-gray-500 hover:bg-orange-50 hover:text-[#F97316] transition-colors duration-100 text-xl font-light flex-shrink-0 border-r border-gray-100"
                 >
-                    −
+                    âˆ’
                 </button>
                 <input
                     type="number"
@@ -399,7 +399,7 @@ function PositionCounter({ label, icon: Icon, value, onChange, error }: { label:
     );
 }
 
-/* ── Departments & options ───────────────────────────────── */
+/* â”€â”€ Departments & options â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const DEPARTMENTS = [
     "Product", "Design", "Marketing",
     "Sales", "HR", "Finance", "Operations", "Legal",
@@ -407,7 +407,7 @@ const DEPARTMENTS = [
 const EMPLOYMENT_TYPES = ["Full-time", "Part-time", "Contract", "Internship", "Freelance"];
 const WORK_MODES = ["Remote", "Hybrid", "On-site"];
 
-/* ── Main component ─────────────────────────────────────── */
+/* â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 interface BasicInfoProps {
     formData: any;
     updateFormData: (data: any) => void;
@@ -442,13 +442,13 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                             <Layers className="h-5 w-5 text-[#F97316] animate-pulse" />
                         </div>
                         <div>
-                            <p className="text-[13px] font-bold text-gray-900">Scanning JD in Background…</p>
+                            <p className="text-[13px] font-bold text-gray-900">Scanning JD in Backgroundâ€¦</p>
                             <p className="text-[11px] text-orange-600 font-medium">Fields will auto-fill as AI extracts details</p>
                         </div>
                     </div>
                 </div>
             )}
-            {/* ── Role Details ──────────────────── */}
+            {/* â”€â”€ Role Details â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <section>
                 <div className="flex items-center gap-3 mb-3">
                     <span className="h-6 w-1 rounded-full bg-[#F97316]" />
@@ -480,7 +480,7 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                 </div>
             </section>
 
-            {/* ── Team & Work Mode ──────────────── */}
+            {/* â”€â”€ Team & Work Mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <section>
                 <div className="flex items-center gap-3 mb-3">
                     <span className="h-6 w-1 rounded-full bg-[#F97316]" />
@@ -525,7 +525,7 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                 </div>
             </section>
 
-            {/* ── Hiring Plan ───────────────────── */}
+            {/* â”€â”€ Hiring Plan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
             <section>
                 <div className="flex items-center gap-3 mb-3">
                     <span className="h-6 w-1 rounded-full bg-[#F97316]" />
@@ -561,3 +561,4 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
         </div>
     );
 }
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { Search, ChevronDown } from "lucide-react";
@@ -163,3 +163,4 @@ export function PhoneInput({ value = "", onChange, className }: PhoneInputProps)
         </div>
     );
 }
+

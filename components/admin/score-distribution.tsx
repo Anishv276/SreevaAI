@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { Loader2 } from "lucide-react";
@@ -183,3 +183,4 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
         </div>
     );
 }
+

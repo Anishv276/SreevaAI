@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+﻿import { Search } from "lucide-react";
 
 export function Header() {
     return (
@@ -19,3 +19,4 @@ export function Header() {
         </header>
     );
 }
+

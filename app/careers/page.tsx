@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { PortalHeader } from "@/components/careers/portal-header";
 import { JobCard } from "@/components/careers/job-card";

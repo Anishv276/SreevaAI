@@ -1,18 +1,18 @@
-"use client";
+﻿"use client";
 
 /**
  * FaceProctoring.tsx
- * ─────────────────────────────────────────────────────────────────────────────
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * Silent, background AI proctoring engine powered by MediaPipe FaceLandmarker.
- * Runs entirely in the browser — no video data is ever sent to the server.
+ * Runs entirely in the browser â€” no video data is ever sent to the server.
  * Only violation *events* (type + reason + timestamp) are sent to the API.
  *
  * Detects:
- *  1. Face absence        — no face for > 3 s
- *  2. Multiple faces      — > 1 face in frame
- *  3. Gaze violation      — iris looking left/right/up-off-screen for > 3 s
- *  4. Head pose violation — yaw/pitch deviation > threshold for > 3 s
- *  5. Identity mismatch   — face-aligned, grayscale, brightness-normalized
+ *  1. Face absence        â€” no face for > 3 s
+ *  2. Multiple faces      â€” > 1 face in frame
+ *  3. Gaze violation      â€” iris looking left/right/up-off-screen for > 3 s
+ *  4. Head pose violation â€” yaw/pitch deviation > threshold for > 3 s
+ *  5. Identity mismatch   â€” face-aligned, grayscale, brightness-normalized
  *                           perceptual diff vs reference snapshot taken during
  *                           hardware check. Runs every 60 s for the full session.
  */
@@ -20,7 +20,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import type { FaceLandmarker, FaceLandmarkerResult } from "@mediapipe/tasks-vision";
 
-// ─── Landmark indices (MediaPipe 478-point model) ─────────────────────────────
+// â”€â”€â”€ Landmark indices (MediaPipe 478-point model) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Iris   left eye:  468 (center), 469 R, 470 B, 471 L, 472 T
 // Iris  right eye:  473 (center), 474 R, 475 B, 476 L, 477 T
 // Eye corners (left):  33 outer, 133 inner
@@ -43,29 +43,29 @@ const RIGHT_EAR = 234;
 const FOREHEAD = 10;
 const CHIN = 152;
 
-// ─── Thresholds ───────────────────────────────────────────────────────────────
-const ABSENCE_GRACE_MS = 3_000;  // 3 s no face → flag
-const GAZE_GRACE_MS = 1_500;  // 1.5 s sustained off-screen gaze → flag
-const HEAD_POSE_GRACE_MS = 1_500;  // 1.5 s sustained head turn → flag
+// â”€â”€â”€ Thresholds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+const ABSENCE_GRACE_MS = 3_000;  // 3 s no face â†’ flag
+const GAZE_GRACE_MS = 1_500;  // 1.5 s sustained off-screen gaze â†’ flag
+const HEAD_POSE_GRACE_MS = 1_500;  // 1.5 s sustained head turn â†’ flag
 // Nose-offset thresholds (fraction of face width):
-//   |noseOffsetX| > GAZE_X_THRESHOLD  → head turned left/right
-//   noseOffsetY  < GAZE_UP_THRESHOLD   → head tilted up
-//   noseOffsetY  > GAZE_DOWN_THRESHOLD → head tilted down
+//   |noseOffsetX| > GAZE_X_THRESHOLD  â†’ head turned left/right
+//   noseOffsetY  < GAZE_UP_THRESHOLD   â†’ head tilted up
+//   noseOffsetY  > GAZE_DOWN_THRESHOLD â†’ head tilted down
 const GAZE_X_THRESHOLD = 0.12;   // ~12% of face width off-center
 const GAZE_UP_THRESHOLD = -0.06;  // nose 6% above expected neutral Y
 const GAZE_DOWN_THRESHOLD = 0.08;  // nose 8% below expected neutral Y
-const YAW_THRESHOLD_DEG = 14;     // ~14° horizontal head turn (moderate)
-const PITCH_DOWN_THRESHOLD_DEG = 12;     // ~12° head looking down
-const PITCH_UP_THRESHOLD_DEG = 10;     // ~10° head looking up
-const DETECTION_INTERVAL_MS = 250;    // run detection 4 fps — fast enough for 3s grace
+const YAW_THRESHOLD_DEG = 14;     // ~14Â° horizontal head turn (moderate)
+const PITCH_DOWN_THRESHOLD_DEG = 12;     // ~12Â° head looking down
+const PITCH_UP_THRESHOLD_DEG = 10;     // ~10Â° head looking up
+const DETECTION_INTERVAL_MS = 250;    // run detection 4 fps â€” fast enough for 3s grace
 const IDENTITY_CHECK_INTERVAL = 60_000; // face verify every 60 s throughout session
-const IDENTITY_FACE_SIZE = 64;     // resize face crop to 64×64 for comparison
+const IDENTITY_FACE_SIZE = 64;     // resize face crop to 64Ã—64 for comparison
 const MIN_IDENTITY_PIXEL_DIFF = 0.22;   // perceptual grayscale diff threshold
 // Multiple-face debounce: require this many consecutive detections before flagging.
 // Eliminates one-frame glitches from reflections, portraits, or shadows.
 const MULTI_FACE_CONFIRM_FRAMES = 3;
 
-// ─── Cooldowns (prevent spam) ──────────────────────────────────────────────────
+// â”€â”€â”€ Cooldowns (prevent spam) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const COOLDOWNS: Record<string, number> = {
   face_absence: 10_000,  // re-alert every 10 s if face still gone
   multiple_faces: 8_000,  // re-alert every 8 s if extra face persists
@@ -79,7 +79,7 @@ interface FaceProctoringProps {
   interviewToken: string;
   /** Set to true only while the interview phase is active */
   isActive: boolean;
-  /** base64 dataURL captured during HardwareCheck — used for identity verification */
+  /** base64 dataURL captured during HardwareCheck â€” used for identity verification */
   referenceSnapshotUrl: string | null;
   /** Called whenever a violation is detected; parent handles UI + API call */
   onViolation: (eventType: string, reason: string, severity?: "low" | "medium" | "high") => void;
@@ -92,7 +92,7 @@ export function FaceProctoring({
   referenceSnapshotUrl,
   onViolation,
 }: FaceProctoringProps) {
-  // ── Refs ────────────────────────────────────────────────────────────────────
+  // â”€â”€ Refs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const landmarkerRef = useRef<FaceLandmarker | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -123,7 +123,7 @@ export function FaceProctoring({
   // Keep isActive in a ref so the RAF loop always reads the latest value
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
-  // ── Cooldown helper ─────────────────────────────────────────────────────────
+  // â”€â”€ Cooldown helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const canFire = useCallback((type: string): boolean => {
     const last = lastFiredRef.current[type] ?? 0;
     return Date.now() - last > (COOLDOWNS[type] ?? 15_000);
@@ -135,7 +135,7 @@ export function FaceProctoring({
     onViolation(type, reason, severity);
   }, [canFire, onViolation]);
 
-  // ── Gaze classification (nose-offset — reliable, mirror-invariant) ──────────────
+  // â”€â”€ Gaze classification (nose-offset â€” reliable, mirror-invariant) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Tracks where the NOSE TIP (lm 4) sits relative to the eye midpoint.
   // This works perfectly for detecting head turns toward another screen/notes.
   const classifyGaze = useCallback((landmarks: { x: number; y: number; z: number }[]): "center" | "left" | "right" | "up" | "down" => {
@@ -156,9 +156,9 @@ export function FaceProctoring({
       const neutralNoseY = forehead.y + faceHeight * 0.55;
       const noseOffsetY = (nose.y - neutralNoseY) / faceHeight;
 
-      // Debug — open F12 DevTools → Console to see live values
+      // Debug â€” open F12 DevTools â†’ Console to see live values
       if (process.env.NODE_ENV !== "production") {
-        console.debug(`[Gaze] noseX=${noseOffsetX.toFixed(3)} noseY=${noseOffsetY.toFixed(3)} | xThr=±${GAZE_X_THRESHOLD}`);
+        console.debug(`[Gaze] noseX=${noseOffsetX.toFixed(3)} noseY=${noseOffsetY.toFixed(3)} | xThr=Â±${GAZE_X_THRESHOLD}`);
       }
 
       if (noseOffsetY < GAZE_UP_THRESHOLD) return "up";
@@ -170,7 +170,7 @@ export function FaceProctoring({
     }
   }, []);
 
-  // ── Head pose calculation (simplified from landmarks) ──────────────────────
+  // â”€â”€ Head pose calculation (simplified from landmarks) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const classifyHeadPose = useCallback((landmarks: { x: number; y: number; z: number }[]): { yaw: number; pitch: number } => {
     try {
       const nose = landmarks[NOSE_TIP];
@@ -185,10 +185,10 @@ export function FaceProctoring({
       const yawNorm = earSpan < 0.001 ? 0 : (nose.x - earMidX) / earSpan;
       const yaw = yawNorm * 90; // crude degree estimate
 
-      // Pitch: nose vertical position relative to forehead–chin span
+      // Pitch: nose vertical position relative to foreheadâ€“chin span
       const faceHeight = Math.abs(chin.y - forehead.y);
       const noseRelY = faceHeight < 0.001 ? 0 : (nose.y - forehead.y) / faceHeight;
-      // When looking down noseRelY increases; normal ≈ 0.55
+      // When looking down noseRelY increases; normal â‰ˆ 0.55
       const pitch = (noseRelY - 0.55) * 100; // positive = looking down
 
       return { yaw, pitch };
@@ -197,12 +197,12 @@ export function FaceProctoring({
     }
   }, []);
 
-  // ── Helpers: grayscale + brightness normalization ──────────────────────────
+  // â”€â”€ Helpers: grayscale + brightness normalization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /**
    * Converts raw RGBA ImageData to a Float32Array of grayscale values [0..1].
    * Then normalises brightness so that lighting changes don't trigger false positives:
-   *   • compute mean brightness of all pixels
-   *   • shift every pixel by (0.5 - mean) so the average is always 0.5
+   *   â€¢ compute mean brightness of all pixels
+   *   â€¢ shift every pixel by (0.5 - mean) so the average is always 0.5
    * This ensures that if the room gets brighter/darker between the reference snapshot
    * and the current frame, the diff remains low for the same person.
    */
@@ -226,21 +226,21 @@ export function FaceProctoring({
 
   /**
    * Draws a region of an ImageData onto a temporary canvas, then scales it to
-   * IDENTITY_FACE_SIZE × IDENTITY_FACE_SIZE and returns the pixel data.
+   * IDENTITY_FACE_SIZE Ã— IDENTITY_FACE_SIZE and returns the pixel data.
    */
   const cropAndResize = useCallback((
     src: ImageData,
     sx: number, sy: number, sw: number, sh: number,
   ): Uint8ClampedArray | null => {
     try {
-      // Source canvas — draw only the face crop
+      // Source canvas â€” draw only the face crop
       const srcCanvas = document.createElement("canvas");
       srcCanvas.width = sw; srcCanvas.height = sh;
       const srcCtx = srcCanvas.getContext("2d");
       if (!srcCtx) return null;
       srcCtx.putImageData(src, -sx, -sy); // offset so the crop region lands at (0,0)
 
-      // Destination canvas — scale to IDENTITY_FACE_SIZE
+      // Destination canvas â€” scale to IDENTITY_FACE_SIZE
       const dstCanvas = document.createElement("canvas");
       dstCanvas.width = IDENTITY_FACE_SIZE;
       dstCanvas.height = IDENTITY_FACE_SIZE;
@@ -253,12 +253,12 @@ export function FaceProctoring({
     }
   }, []);
 
-  // ── Identity verification (face-aligned perceptual diff) ───────────────────
+  // â”€â”€ Identity verification (face-aligned perceptual diff) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /**
    * Algorithm:
    *  1. Use the MediaPipe face bounding box to crop only the face from both
    *     the reference snapshot (pre-rendered onto refCanvasRef) and the current frame.
-   *  2. Resize both crops to 64×64 pixels.
+   *  2. Resize both crops to 64Ã—64 pixels.
    *  3. Convert to grayscale and normalise brightness.
    *  4. Compute the Mean Absolute Error between the two grayscale images.
    *  5. Flag identity_mismatch if MAE > MIN_IDENTITY_PIXEL_DIFF.
@@ -287,14 +287,14 @@ export function FaceProctoring({
       const bw = Math.min(vw - bx, Math.max(32, Math.floor(faceBox.w)));
       const bh = Math.min(vh - by, Math.max(32, Math.floor(faceBox.h)));
 
-      if (bw < 32 || bh < 32) return; // face too small — skip
+      if (bw < 32 || bh < 32) return; // face too small â€” skip
 
-      // -- Current live frame crop → 64×64 --
+      // -- Current live frame crop â†’ 64Ã—64 --
       const liveResized = cropAndResize(currentFrame, bx, by, bw, bh);
       if (!liveResized) return;
 
-      // -- Reference snapshot crop → 64×64 --
-      // The reference canvas is 640×480, same coordinate space as the video.
+      // -- Reference snapshot crop â†’ 64Ã—64 --
+      // The reference canvas is 640Ã—480, same coordinate space as the video.
       const refFrame = refCtx.getImageData(0, 0, refCanvas.width, refCanvas.height);
       const refResized = cropAndResize(refFrame, bx, by, bw, bh);
       if (!refResized) return;
@@ -317,16 +317,16 @@ export function FaceProctoring({
       if (mae > MIN_IDENTITY_PIXEL_DIFF) {
         fire(
           "identity_mismatch",
-          `Face structure differs from verified identity (diff ${(mae * 100).toFixed(0)}%) — possible person swap`,
+          `Face structure differs from verified identity (diff ${(mae * 100).toFixed(0)}%) â€” possible person swap`,
           "high",
         );
       }
     } catch {
-      // Silently ignore — identity check is best-effort
+      // Silently ignore â€” identity check is best-effort
     }
   }, [referenceSnapshotUrl, fire, cropAndResize, toNormalisedGrayscale]);
 
-  // ── Main detection loop ─────────────────────────────────────────────────────
+  // â”€â”€ Main detection loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const detectFrame = useCallback(() => {
     if (!mountedRef.current) return;
     rafRef.current = requestAnimationFrame(detectFrame);
@@ -356,7 +356,7 @@ export function FaceProctoring({
     const validFrames = faceCountHistoryRef.current.filter(c => c === 1).length;
     const isIdentityLocked = validFrames >= 3;
 
-    // ── 1. Face Absence ───────────────────────────────────────────────────────
+    // â”€â”€ 1. Face Absence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // If consensus is lost and current frame is 0, start absence timer
     if (numFaces === 0) {
       if (!absenceStartRef.current) absenceStartRef.current = now;
@@ -372,7 +372,7 @@ export function FaceProctoring({
 
     absenceStartRef.current = null;
 
-    // ── 2. Multiple Faces ─────────────────────────────────────────────────────
+    // â”€â”€ 2. Multiple Faces â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // If consensus is lost and current frame is > 1, track multiple faces
     if (numFaces > 1) {
       multiFaceCountRef.current += 1;
@@ -390,7 +390,7 @@ export function FaceProctoring({
     const landmarks = result.faceLandmarks[0];
     if (!landmarks || landmarks.length < 478) return;
 
-    // ── 3. Gaze Tracking ──────────────────────────────────────────────────────
+    // â”€â”€ 3. Gaze Tracking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const gazeDir = classifyGaze(landmarks);
     if (gazeDir !== "center") {
       if (!gazeViolStartRef.current) gazeViolStartRef.current = now;
@@ -406,7 +406,7 @@ export function FaceProctoring({
       gazeViolStartRef.current = null;
     }
 
-    // ── 4. Head Pose ──────────────────────────────────────────────────────────
+    // â”€â”€ 4. Head Pose â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const { yaw, pitch } = classifyHeadPose(landmarks);
     const isHeadPoseViolation =
       Math.abs(yaw) > YAW_THRESHOLD_DEG ||
@@ -417,16 +417,16 @@ export function FaceProctoring({
       if (!headPoseViolStartRef.current) headPoseViolStartRef.current = now;
       if (now - headPoseViolStartRef.current > HEAD_POSE_GRACE_MS) {
         let reason = "";
-        if (Math.abs(yaw) > YAW_THRESHOLD_DEG) reason = `Head turned ${yaw > 0 ? "right" : "left"} (yaw ${yaw.toFixed(0)}°)`;
-        else if (pitch > PITCH_DOWN_THRESHOLD_DEG) reason = `Looking down — possible phone/notes (pitch ${pitch.toFixed(0)}°)`;
-        else reason = `Head tilted up off-screen (pitch ${pitch.toFixed(0)}°)`;
+        if (Math.abs(yaw) > YAW_THRESHOLD_DEG) reason = `Head turned ${yaw > 0 ? "right" : "left"} (yaw ${yaw.toFixed(0)}Â°)`;
+        else if (pitch > PITCH_DOWN_THRESHOLD_DEG) reason = `Looking down â€” possible phone/notes (pitch ${pitch.toFixed(0)}Â°)`;
+        else reason = `Head tilted up off-screen (pitch ${pitch.toFixed(0)}Â°)`;
         fire("head_pose_violation", reason, "medium");
       }
     } else {
       headPoseViolStartRef.current = null;
     }
 
-    // ── 5. Periodic Identity Verification ────────────────────────────────────
+    // â”€â”€ 5. Periodic Identity Verification â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Runs every 60 s for the entire interview session (no arbitrary cap).
     if (referenceSnapshotUrl && now - lastIdentityCheck.current > IDENTITY_CHECK_INTERVAL) {
       lastIdentityCheck.current = now;
@@ -461,7 +461,7 @@ export function FaceProctoring({
     }
   }, [classifyGaze, classifyHeadPose, verifyIdentity, fire, referenceSnapshotUrl, cropAndResize, toNormalisedGrayscale]);
 
-  // ── Bootstrap: load model + camera ─────────────────────────────────────────
+  // â”€â”€ Bootstrap: load model + camera â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!isActive) return;
     mountedRef.current = true;
@@ -488,7 +488,7 @@ export function FaceProctoring({
           outputFacialTransformationMatrixes: false,
           runningMode: "VIDEO",
           numFaces: 2,               // detect up to 2 to catch multiple-face scenario
-          minFaceDetectionConfidence: 0.7,  // raise bar — reduces shadow/reflection FPs
+          minFaceDetectionConfidence: 0.7,  // raise bar â€” reduces shadow/reflection FPs
           minFacePresenceConfidence: 0.7,  // must be consistently present
           minTrackingConfidence: 0.6,  // stable tracking
         });
@@ -532,7 +532,7 @@ export function FaceProctoring({
         rafRef.current = requestAnimationFrame(detectFrame);
 
       } catch (err) {
-        // Silently fail — proctoring is best-effort
+        // Silently fail â€” proctoring is best-effort
         if (process.env.NODE_ENV !== "production") {
           console.warn("[FaceProctoring] bootstrap error:", err);
         }
@@ -556,6 +556,7 @@ export function FaceProctoring({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive]);
 
-  // This component renders nothing — it's a pure side-effect engine
+  // This component renders nothing â€” it's a pure side-effect engine
   return null;
 }
+

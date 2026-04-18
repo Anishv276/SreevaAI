@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -301,7 +301,7 @@ function CreateDriveForm() {
                     const skills = extracted.skills;
                     const salary = extracted.salary;
 
-                    // ── SKILLS MAPPING ─────────────────────────
+                    // â”€â”€ SKILLS MAPPING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     // Extract 'skill' string from new object schema
                     const mustHaveArr = Array.isArray(skills?.must_have)
                         ? skills.must_have.map((s: any) => typeof s === 'object' ? s.skill : s)
@@ -311,19 +311,19 @@ function CreateDriveForm() {
                         : [];
                     const allSkills = [...mustHaveArr, ...goodToHaveArr].filter(Boolean).join(", ");
 
-                    // ── DESCRIPTION MAPPING ─────────────────────
+                    // â”€â”€ DESCRIPTION MAPPING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     const desc = extracted.role_summary || extracted.summary || extracted.description || extracted.job_description || text || prev.description;
 
-                    // ── EXPERIENCE MAPPING ──────────────────────
+                    // â”€â”€ EXPERIENCE MAPPING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     // Convert numeric years to readable string
                     const minExp = experience?.min_years;
                     const maxExp = experience?.max_years;
                     let expText = prev.experience;
                     if (typeof minExp === 'number') {
-                        expText = `${minExp}${maxExp ? `–${maxExp}` : "+"}`;
+                        expText = `${minExp}${maxExp ? `â€“${maxExp}` : "+"}`;
                     }
 
-                    // ── SALARY MAPPING ──────────────────────────
+                    // â”€â”€ SALARY MAPPING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     // Convert raw numbers (500000) back to LPA (5) for the UI if possible
                     // Or just use a clean string. The user wants "{amount} {currency} LPA"
                     const salaryMin = salary?.min;
@@ -335,17 +335,17 @@ function CreateDriveForm() {
                         // Convert to LPA if it's a large number, or keep if already small
                         const minLPA = salaryMin > 1000 ? (salaryMin / 100000).toFixed(1).replace(/\.0$/, "") : salaryMin;
                         const maxLPA = salaryMax ? (salaryMax > 1000 ? (salaryMax / 100000).toFixed(1).replace(/\.0$/, "") : salaryMax) : null;
-                        salaryText = `${minLPA}${maxLPA ? `–${maxLPA}` : ""} LPA ${currency}`;
+                        salaryText = `${minLPA}${maxLPA ? `â€“${maxLPA}` : ""} LPA ${currency}`;
                     }
 
-                    // ── RESPONSIBILITIES & REQUIREMENTS ──────────
+                    // â”€â”€ RESPONSIBILITIES & REQUIREMENTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     // Use new 'responsibilities_flat' if available
                     const respArr = extracted.responsibilities_flat || extracted.responsibilities;
                     const resp = Array.isArray(respArr)
                         ? respArr.map((r: any) => typeof r === 'object' ? r.task : r).join("\n")
                         : (typeof respArr === 'string' ? respArr : (prev.responsibilities || ""));
 
-                    // ── REQUIREMENTS ────────────────────────────────
+                    // â”€â”€ REQUIREMENTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     // Use extracted requirements; synthesize from education + skills as robust fallback
                     let reqArr: string[] = [];
                     if (Array.isArray(extracted.requirements)) {
@@ -567,7 +567,7 @@ function CreateDriveForm() {
             return;
         }
 
-        // Safely parse interviewQuestions — DB returns it as a JSON string, Zod expects an array
+        // Safely parse interviewQuestions â€” DB returns it as a JSON string, Zod expects an array
         let parsedQuestions = currentFormData.interviewQuestions || [];
         if (typeof parsedQuestions === "string") {
             try { parsedQuestions = JSON.parse(parsedQuestions); } catch { parsedQuestions = []; }
@@ -656,7 +656,7 @@ function CreateDriveForm() {
 
     const previewTarget = publishedSlug || publishedDriveId || (isEditMode ? driveId : null);
 
-    // ── Choice Gate (Selection Screen) ───────────────────────
+    // â”€â”€ Choice Gate (Selection Screen) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (!isEditMode && creationMethod === null) {
         return (
             <div className="max-w-4xl mx-auto py-12 space-y-12 animate-in-fade">
@@ -727,7 +727,7 @@ function CreateDriveForm() {
         );
     }
 
-    // ── AI Scan Initial Screen ────────────────────────────────
+    // â”€â”€ AI Scan Initial Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (creationMethod === 'scan') {
         return (
             <div className="max-w-3xl mx-auto py-12 space-y-8 animate-in-fade">
@@ -784,7 +784,7 @@ function CreateDriveForm() {
         );
     }
 
-    // ── Success screen ──────────────────────────────────────
+    // â”€â”€ Success screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (published) {
         return (
             <div className="max-w-2xl mx-auto py-12 flex flex-col items-center gap-8 text-center">
@@ -798,7 +798,7 @@ function CreateDriveForm() {
                 </div>
 
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Your Drive is {isEditMode ? "Updated" : "Live"}! 🎉</h1>
+                    <h1 className="text-2xl font-bold text-gray-900">Your Drive is {isEditMode ? "Updated" : "Live"}! ðŸŽ‰</h1>
                     <p className="text-gray-500 mt-2 text-[15px]">
                         Candidates can now apply. Share the link below to start receiving applications.
                     </p>
@@ -808,7 +808,7 @@ function CreateDriveForm() {
                     style={{ boxShadow: "0 0 24px rgba(249,115,22,0.15)" }}>
                     <p className="text-[11px] font-bold text-[#F97316] uppercase tracking-widest">Candidate Link</p>
                     <div className="flex items-center gap-3 rounded-xl bg-white border border-orange-200 px-4 py-3">
-                        <span className="flex-1 text-[13px] font-mono text-gray-700 text-left truncate">
+                        <span className="flex-1 text-[13px] font-sans text-gray-700 text-left truncate">
                             {publishedDriveId
                                 ? `${typeof window !== 'undefined' ? window.location.origin : ''}/careers/jobs/${publishedSlug || publishedDriveId}`
                                 : "Generating link..."}
@@ -838,7 +838,7 @@ function CreateDriveForm() {
         );
     }
 
-    // ── Form screen ─────────────────────────────────────────
+    // â”€â”€ Form screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     return (
         <div className="max-w-4xl mx-auto py-4 space-y-4">
             <button
@@ -1049,7 +1049,7 @@ function CreateDriveForm() {
                         </div>
                         <div className="flex-1 flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1.5 mx-2">
                             <div className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                            <span className="text-[11px] text-gray-400 font-mono truncate select-none">
+                            <span className="text-[11px] text-gray-400 font-sans truncate select-none">
                                 {typeof window !== "undefined" ? window.location.origin : ""}/careers/jobs/{candidatePreviewSlug}
                             </span>
                         </div>
@@ -1084,3 +1084,4 @@ function CreateDriveForm() {
         </div>
     );
 }
+

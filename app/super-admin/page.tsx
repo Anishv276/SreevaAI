@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+﻿import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -17,7 +17,7 @@ async function getStats() {
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-    // Single consolidated query — fetches all KPI counts in one DB round-trip
+    // Single consolidated query â€” fetches all KPI counts in one DB round-trip
     const [statsResult, activeOrgs] = await Promise.all([
         prisma.$queryRaw<[{
             org_count: bigint;
@@ -88,7 +88,7 @@ export default async function SuperAdminDashboard() {
                             Dashboard
                         </h1>
                         <p className="text-gray-500 font-medium mt-1 text-base">
-                            Hiring Pulse · {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}
+                            Hiring Pulse Â· {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}
                         </p>
                     </div>
                 </div>
@@ -223,3 +223,4 @@ export default async function SuperAdminDashboard() {
         </div>
     );
 }
+

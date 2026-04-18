@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { 
@@ -28,13 +28,13 @@ import { Button } from "@/components/ui/button";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { cn } from "@/lib/utils";
 
-/* ── Section nav ──────────────────────────────────── */
+/* â”€â”€ Section nav â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const sections = [
     { id: "password", icon: Lock, label: "Password" },
     { id: "domains", icon: Globe, label: "Platform Domain" },
 ];
 
-/* ── Reusable card wrapper ────────────────────────── */
+/* â”€â”€ Reusable card wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function SettingsCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
     return (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-visible">
@@ -464,13 +464,13 @@ export default function SuperAdminSettingsPage() {
                                                             <div className="w-[10%] pt-1.5"><Badge className="bg-gray-900 text-white border-0 text-[9px] font-black italic px-2 py-0.5 rounded tracking-widest">{rec.type}</Badge></div>
                                                             <div className="w-[20%] pr-3">
                                                                 <div onClick={() => handleCopy(rec.name || "@", i, 'host')} className="relative flex min-h-[32px] w-full items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] text-gray-900 cursor-pointer hover:border-[#F97316]/50 transition-all group/host">
-                                                                    <span className="font-mono font-bold break-all uppercase leading-tight truncate">{rec.name || "@"}</span>
+                                                                    <span className="font-sans font-bold break-all uppercase leading-tight truncate">{rec.name || "@"}</span>
                                                                     {copiedIndex?.i === i && copiedIndex?.type === 'host' ? <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" /> : <Copy className="h-3.5 w-3.5 text-gray-400 opacity-0 group-hover/host:opacity-100 transition-opacity shrink-0" />}
                                                                 </div>
                                                             </div>
                                                             <div className="flex-1 pr-3 min-w-0">
                                                                 <div onClick={() => handleCopy(rec.value, i, 'value')} className="relative flex min-h-[32px] w-full items-start justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-900 cursor-pointer hover:border-[#F97316]/50 transition-all group/val">
-                                                                    <span className="font-mono font-medium break-all leading-relaxed line-clamp-2">{rec.value}</span>
+                                                                    <span className="font-sans font-medium break-all leading-relaxed line-clamp-2">{rec.value}</span>
                                                                     {copiedIndex?.i === i && copiedIndex?.type === 'value' ? <Check className="h-3.5 w-3.5 mt-0.5 text-emerald-500 shrink-0" /> : <Copy className="h-3.5 w-3.5 mt-0.5 text-gray-400 opacity-0 group-hover/val:opacity-100 transition-opacity shrink-0" />}
                                                                 </div>
                                                             </div>
@@ -589,3 +589,4 @@ export default function SuperAdminSettingsPage() {
         </div>
     );
 }
+

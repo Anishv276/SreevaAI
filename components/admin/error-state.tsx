@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { AlertCircle, RefreshCw, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -54,3 +54,4 @@ export function ErrorState({
         </div>
     );
 }
+

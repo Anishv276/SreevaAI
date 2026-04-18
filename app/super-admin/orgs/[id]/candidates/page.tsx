@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
@@ -110,3 +110,4 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
         </div>
     );
 }
+
