@@ -1,55 +1,54 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
     try {
         const session = await getSession();
-        if (!session || session.role !== "ADMIN") {
+        if (!session?.orgId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
+        const orgId = session.orgId;
         const { searchParams } = new URL(req.url);
-        const range = searchParams.get("range") || "all";
+        const range = searchParams.get("range") ?? "month";
+        const from = searchParams.get("from") ?? undefined;
+        const to = searchParams.get("to") ?? undefined;
 
-        // Calculate date filter based on range
-        let dateFilter = {};
+        let startTime = new Date(0);
         const now = new Date();
-        if (range === "today") {
-            dateFilter = { gte: new Date(now.setHours(0, 0, 0, 0)) };
-        } else if (range === "week") {
-            const lastWeek = new Date();
-            lastWeek.setDate(now.getDate() - 7);
-            dateFilter = { gte: lastWeek };
+
+        if (range === "today") startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        else if (range === "week") {
+            startTime = new Date(now);
+            startTime.setDate(now.getDate() - 7);
         } else if (range === "month") {
-            const lastMonth = new Date();
-            lastMonth.setMonth(now.getMonth() - 1);
-            dateFilter = { gte: lastMonth };
+            startTime = new Date(now);
+            startTime.setMonth(now.getMonth() - 1);
+        } else if (range === "custom" && from) {
+            startTime = new Date(from);
         }
 
-        // Fetch interviews with proctoring events
-        // Note: Application model has fullName and drive relation. 
-        // Interview has application relation and proctoringEvents/snapshots.
         const interviews = await prisma.interview.findMany({
             where: {
+                status: "COMPLETED",
+                completedAt: { gte: startTime },
                 application: {
-                    drive: {
-                        orgId: session.orgId
-                    }
-                },
-                proctoringEvents: {
-                    not: null
-                },
-                ...(Object.keys(dateFilter).length > 0 ? { startedAt: dateFilter } : {})
+                    drive: { orgId }
+                }
             },
             select: {
                 id: true,
+                applicationId: true,
+                status: true,
+                startedAt: true,
+                completedAt: true,
                 proctoringEvents: true,
                 snapshots: true,
-                startedAt: true,
                 application: {
                     select: {
                         fullName: true,
+                        email: true,
                         drive: {
                             select: {
                                 title: true
@@ -59,42 +58,29 @@ export async function GET(req: Request) {
                 }
             },
             orderBy: {
-                startedAt: "desc"
+                completedAt: "desc"
             }
         });
 
-        // Format response
-        const logs = interviews.map(intv => {
-            let signals = [];
-            try {
-                const raw = intv.proctoringEvents;
-                signals = Array.isArray(raw) ? raw : JSON.parse(raw as string);
-            } catch {
-                signals = [];
-            }
+        // Filter and format for the audit log
+        const formattedLogs = interviews.map((iv) => {
+            const rawEvents = iv.proctoringEvents as any[] || [];
 
-            // Calculate a basic "integrity status" for the log list
-            const hasHighSeverity = signals.some((s: any) => s.severity?.toLowerCase() === "high");
-            const integrityScore = hasHighSeverity ? 20 : 85; // Placeholder or simplified logic
-
+            // Re-map event types using similar logic as main integrity API
             return {
-                id: intv.id,
-                candidateName: intv.application?.fullName || "Unknown",
-                role: intv.application?.drive?.title || "Unknown",
-                startedAt: intv.startedAt,
-                integrityScore: integrityScore,
-                signals: signals,
-                snapshots: Array.isArray(intv.snapshots) 
-                    ? intv.snapshots 
-                    : typeof intv.snapshots === 'string'
-                        ? JSON.parse(intv.snapshots)
-                        : []
+                id: iv.id,
+                candidateName: iv.application.fullName,
+                candidateEmail: iv.application.email,
+                role: iv.application.drive?.title || "N/A",
+                startedAt: iv.startedAt,
+                completedAt: iv.completedAt,
+                snapshots: iv.snapshots,
+                events: rawEvents
             };
-        });
-
-        return NextResponse.json(logs);
-    } catch (error) {
-        console.error("[INTEGRITY_LOGS_GET]", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        }).filter(log => log.events.length > 0 || log.snapshots.length > 0);
+        return NextResponse.json(formattedLogs);
+    } catch (error: any) {
+        console.error("[INTEGRITY_LOGS_API_ERROR]", error);
+        return NextResponse.json({ error: "Failed to fetch detailed logs" }, { status: 500 });
     }
 }
