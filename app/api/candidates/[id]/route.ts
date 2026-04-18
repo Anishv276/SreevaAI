@@ -27,7 +27,8 @@ export async function GET(
                         title: true,
                         department: true,
                         type: true,
-                        orgId: true
+                        orgId: true,
+                        extractedDetails: true
                     }
                 },
                 interview: true
@@ -38,8 +39,21 @@ export async function GET(
             return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
         }
 
+        const interviewReportRows = await prisma.$queryRaw<Array<{ interviewReport: unknown; strategicVerdict: unknown }>>`
+            SELECT "interviewReport", "strategicVerdict"
+            FROM "Interview"
+            WHERE "applicationId" = ${id}
+            LIMIT 1
+        `;
+        const interviewReport = interviewReportRows?.[0]?.interviewReport ?? null;
+        const strategicVerdict = interviewReportRows?.[0]?.strategicVerdict ?? null;
+        const interview = candidate.interview
+            ? { ...(candidate.interview as any), interviewReport, strategicVerdict }
+            : candidate.interview;
+
         return NextResponse.json({
             ...candidate,
+            interview,
             formattedDate: new Date(candidate.createdAt).toLocaleDateString(),
             driveTitle: candidate.drive?.title || "Role N/A"
         });

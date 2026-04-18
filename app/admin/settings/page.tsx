@@ -25,9 +25,6 @@ const sections = [
     { id: "profile", icon: User, label: "Profile" },
     { id: "company", icon: Building2, label: "Company" },
     { id: "team", icon: Users, label: "Team Members" },
-    { id: "domains", icon: Globe, label: "Domains" },
-    { id: "integrations", icon: Plug, label: "Integrations" },
-    { id: "billing", icon: CreditCard, label: "Billing" },
     { id: "password", icon: Lock, label: "Password" },
 ];
 

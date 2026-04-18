@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { resumeQueue } from "@/lib/queue";
 import { getSession } from "@/lib/auth";
+import { spawn } from "child_process";
+import { writeFile, unlink } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
 
 export async function POST(
     request: Request,
@@ -31,36 +34,69 @@ export async function POST(
             }, { status: 400 });
         }
 
-        // Clear existing AI report to show "Processing" state on frontend
-        await prisma.application.update({
+        let resumeText = (application as any).resumeText || "";
+        if (!resumeText && application.aiReport) {
+            try {
+                const report = JSON.parse(application.aiReport);
+                resumeText = report.text || "";
+            } catch {}
+        }
+
+        if (!resumeText) {
+            return NextResponse.json({ error: "No resume text found to scan. Please re-upload resume." }, { status: 400 });
+        }
+
+        const threshold = Number(drive.screeningThreshold ?? 0);
+        const scoringInput = {
+            resume: application.structuredResume ? JSON.parse(application.structuredResume as string) : {},
+            jd: drive.extractedDetails ? (typeof drive.extractedDetails === "string" ? JSON.parse(drive.extractedDetails) : drive.extractedDetails) : {},
+            resume_raw_text: resumeText,
+            jd_raw_text: jdText,
+            threshold,
+        };
+
+        const tempInputPath = join(tmpdir(), `rescan_${id}_${Date.now()}.json`);
+        await writeFile(tempInputPath, JSON.stringify(scoringInput));
+
+        const pythonCmd = process.platform === "win32" ? "python" : "python3";
+        const pythonProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempInputPath, "SCORE"]);
+
+        let outputData = "";
+        let errorData = "";
+
+        await new Promise((resolve, reject) => {
+            pythonProcess.stdout.on("data", (data) => (outputData += data.toString()));
+            pythonProcess.stderr.on("data", (data) => (errorData += data.toString()));
+            pythonProcess.on("close", (code) => {
+                if (code !== 0) reject(new Error(errorData || `Python exited with code ${code}`));
+                else resolve(null);
+            });
+        });
+
+        await unlink(tempInputPath).catch(() => {});
+
+        const parsed = JSON.parse(outputData);
+        const aiResult = parsed.data || parsed;
+        const score: number = typeof aiResult.score === "number" ? aiResult.score : parseInt(aiResult.score || "0") || 0;
+        const resumeStatus: "SHORTLISTED" | "REJECTED" = score >= threshold ? "SHORTLISTED" : "REJECTED";
+
+        const updated = await prisma.application.update({
             where: { id },
-            data: { 
-                resumeStatus: "pending",
-                aiScore: null,
-                aiReport: null 
-            }
+            data: {
+                resumeStatus,
+                aiScore: score,
+                aiReport: JSON.stringify(aiResult),
+                ...(resumeStatus === "REJECTED" && {
+                    interviewStatus: "Not Qualified",
+                    hiringStatus: "Not Shortlisted",
+                }),
+            },
         });
 
-        // Add to queue
-        await resumeQueue.add('process-new-candidate', {
-            applicationId: application.id,
-            resumeText: application.resumeText,
-            resumeUrl: application.resumeUrl,
-            structuredResume: application.structuredResume ? JSON.parse(application.structuredResume as string) : null,
-            jdText,
-            drive, // drive is passed as is, worker will fetch latest from DB
-            applicantEmail: application.email,
-            applicantName: application.fullName,
-            force: true
-        }, {
-            jobId: `resume-rescan-${application.id}-${Date.now()}`,
-            attempts: 3,
-            backoff: { type: 'exponential', delay: 2000 },
-            removeOnComplete: true,
-            removeOnFail: { count: 10 }
+        return NextResponse.json({
+            message: "Rescan completed successfully",
+            application: updated,
         });
-
-        return NextResponse.json({ message: "Rescan triggered successfully" });
     } catch (error) {
         console.error("Error triggering rescan:", error);
         return NextResponse.json({ error: "Failed to trigger rescan" }, { status: 500 });

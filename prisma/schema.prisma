@@ -196,6 +196,8 @@ model Interview {
   updatedAt             DateTime    @updatedAt
   interviewDuration     Int?
   aiSummary             String?
+  interviewReport       Json?       @default("{}")
+  strategicVerdict      Json?       @default("{}")
   snapshots             String[]    @default([])
   candidateFeedback     String?
   candidateRating       Int?
@@ -218,4 +220,4 @@ model ProcessedWebhook {
   id          String   @id
   processedAt DateTime @default(now())
 }
-
+

@@ -270,3 +270,22 @@ html {
     display: none;
   }
 }
+
+@utility custom-scrollbar {
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  &::-webkit-scrollbar-track {
+    background: #F9FAFB;
+    border-radius: 10px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: #D1D5DB;
+    border-radius: 10px;
+    border: 2px solid #F9FAFB;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: #9CA3AF;
+  }
+}

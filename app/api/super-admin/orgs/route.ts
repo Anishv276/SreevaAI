@@ -77,6 +77,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "orgName, slug, adminEmail, and adminPassword are required" }, { status: 400 });
         }
 
+        // Plan Validation
+        if (plan && !["STARTER", "PROFESSIONAL", "ENTERPRISE", "TRIAL", "ENTERPRISE_CUSTOM"].includes(String(plan).toUpperCase())) {
+            return NextResponse.json({ error: "Invalid organization plan" }, { status: 400 });
+        }
+
         // Email Validation
         const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!EMAIL_REGEX.test(adminEmail)) {

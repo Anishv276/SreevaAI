@@ -58,8 +58,8 @@ export async function GET(request: Request) {
             // START: Fire and forget initial check to avoid blocking the stream response
             checkForUpdates();
             
-            // Poll every 15 seconds
-            const interval = setInterval(checkForUpdates, 15000);
+            // Poll every 30 seconds to reduce DB connection pool pressure
+            const interval = setInterval(checkForUpdates, 30000);
 
             request.signal.addEventListener("abort", () => {
                 closed = true;

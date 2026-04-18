@@ -8,7 +8,7 @@ const basePrisma =
         log: ['error', 'warn'],
     })
 
-export const prisma = basePrisma.$extends({
+const extendedPrisma = basePrisma.$extends({
     query: {
         async $allOperations({ model, operation, args, query }) {
             const TIMEOUT_MS = 20000; // 20 seconds hard limit
@@ -24,7 +24,12 @@ export const prisma = basePrisma.$extends({
             ])
         },
     },
-}) as unknown as PrismaClient
+})
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = basePrisma
+export const prisma = extendedPrisma as unknown as PrismaClient
+
+if (process.env.NODE_ENV !== 'production') {
+    globalForPrisma.prisma = basePrisma
+}
+
 

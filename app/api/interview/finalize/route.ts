@@ -5,6 +5,7 @@ import { interviewFinalizeSchema } from "@/lib/validation";
 import crypto from "crypto";
 import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { generateInterviewReport } from "@/lib/interview-analysis";
 
 export const runtime = "nodejs";
 
@@ -43,6 +44,43 @@ async function persistInterviewUpdateRaw(params: {
     finalStatus,
     recordingUrl || null,
     transcript || null
+  );
+}
+
+async function persistInterviewReportRaw(params: {
+  applicationId: string;
+  interviewReport: unknown;
+  aiSummary?: string | null;
+}) {
+  const { applicationId, interviewReport, aiSummary } = params;
+  await prisma.$executeRawUnsafe(
+    `
+    UPDATE "Interview"
+    SET "interviewReport" = $1::jsonb,
+        "aiSummary" = COALESCE($2::text, "Interview"."aiSummary"),
+        "updatedAt" = NOW()
+    WHERE "applicationId" = $3
+    `,
+    JSON.stringify(interviewReport),
+    aiSummary || null,
+    applicationId
+  );
+}
+
+async function persistStrategicVerdictRaw(params: {
+  applicationId: string;
+  strategicVerdict: unknown;
+}) {
+  const { applicationId, strategicVerdict } = params;
+  await prisma.$executeRawUnsafe(
+    `
+    UPDATE "Interview"
+    SET "strategicVerdict" = $1::jsonb,
+        "updatedAt" = NOW()
+    WHERE "applicationId" = $2
+    `,
+    JSON.stringify(strategicVerdict),
+    applicationId
   );
 }
 
@@ -93,6 +131,103 @@ export async function POST(req: Request) {
       finalAppStatus,
       applicationId
     );
+
+    try {
+      const app = await prisma.application.findUnique({
+        where: { id: applicationId },
+        select: {
+          fullName: true,
+          resumeText: true,
+          structuredResume: true,
+          aiReport: true,
+          drive: {
+            select: {
+              title: true,
+              description: true,
+              requirements: true,
+              skills: true,
+              extractedDetails: true,
+              orgId: true,
+            },
+          },
+          interview: {
+            select: {
+              proctoringEvents: true,
+              interviewDuration: true,
+              interviewTranscript: true,
+            },
+          },
+        },
+      });
+
+      if (app) {
+        const resumeText =
+          app.resumeText?.trim() ||
+          (() => {
+            if (!app.aiReport) return "";
+            try {
+              const parsed = JSON.parse(app.aiReport);
+              return String(parsed?.text || parsed?.resume_text || "");
+            } catch {
+              return "";
+            }
+          })();
+
+        const structuredResume = app.structuredResume
+          ? (typeof app.structuredResume === "string" ? JSON.parse(app.structuredResume) : app.structuredResume)
+          : {};
+        const driveDetails = app.drive?.extractedDetails
+          ? (typeof app.drive.extractedDetails === "string" ? JSON.parse(app.drive.extractedDetails) : app.drive.extractedDetails)
+          : {};
+        const jdText = [
+          app.drive?.title || "",
+          app.drive?.description || "",
+          app.drive?.requirements || "",
+          app.drive?.skills || "",
+          JSON.stringify(driveDetails || {}),
+        ].filter(Boolean).join("\n\n");
+        const transcriptForReport = finalTranscript || app.interview?.interviewTranscript || "";
+        const durationForReport = finalDuration ?? app.interview?.interviewDuration ?? 0;
+        const proctoringEvents = Array.isArray(app.interview?.proctoringEvents)
+          ? app.interview?.proctoringEvents
+          : [];
+
+        if (transcriptForReport) {
+          const report = await generateInterviewReport({
+            transcript: transcriptForReport,
+            resumeText,
+            jdText,
+            role: app.drive?.title || "Interview Role",
+            candidateName: app.fullName,
+            durationSeconds: durationForReport,
+            proctoringEvents,
+            orgId: app.drive?.orgId || undefined,
+          });
+
+          await persistInterviewReportRaw({
+            applicationId,
+            interviewReport: report,
+            aiSummary: report.recording?.summary || report.verdict?.summary || null,
+          });
+          await persistStrategicVerdictRaw({
+            applicationId,
+            strategicVerdict: report.strategic_verdict || {
+              decision:
+                report.verdict?.recommendation === "Strong Yes" || report.verdict?.recommendation === "Yes"
+                  ? "Hire"
+                  : report.verdict?.recommendation === "No"
+                    ? "Do Not Hire"
+                    : "Maybe",
+              summary: report.verdict?.summary || "",
+              rationale: report.verdict?.recommendation_reason ? [report.verdict.recommendation_reason] : [],
+              next_actions: [],
+            },
+          });
+        }
+      }
+    } catch (reportError) {
+      console.error("[INTERVIEW FINALIZE] Failed to generate interview report", reportError);
+    }
 
     let jobId: string | number | undefined;
     try {
