@@ -34,6 +34,7 @@ import { useEffect, useRef } from "react";
 import { RecruiterAssistant } from "@/components/admin/RecruiterAssistant";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { motion } from "framer-motion";
+import { PremiumFilter } from "@/components/admin/premium-filter";
 
 // ── Email Composer Modal ───────────────────────────────────────────────
 const VARIABLES = [
@@ -411,7 +412,7 @@ export default function CandidatesPage() {
     };
 
     return (
-        <div className="space-y-8 pb-12 animate-in-fade">
+        <div className="space-y-10 pb-12 animate-in fade-in duration-700 font-sans">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-2">
                 <div className="flex items-center gap-5 group">
                     <div className="h-14 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-16" />
@@ -537,7 +538,7 @@ export default function CandidatesPage() {
                                     onClick={() => handleBulkAction("hire")}
                                     className="h-9 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
                                 >
-                                    <Award className="h-3.5 w-3.5" /> Hire
+                                    Hire
                                 </Button>
                                 <Button
                                     size="sm"
@@ -583,7 +584,7 @@ export default function CandidatesPage() {
                 </div>
             )}
 
-            <div className="group relative bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)] overflow-hidden transition-all duration-700 hover:shadow-[0_20px_60px_rgba(0,0,0,0.08)]">
+            <div className="group relative bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)] overflow-hidden transition-all duration-700 hover:shadow-[0_20px_60px_rgba(0,0,0,0.08)] mt-10">
                 {/* Decorative top accent */}
                 <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-400/0 via-[#F97316]/40 to-orange-400/0" />
                 <div className="p-3 border-b border-white/40 bg-white/20">
@@ -603,65 +604,58 @@ export default function CandidatesPage() {
                                 onChange={setTimeline}
                             />
 
-                            <Select value={resumeFilter} onValueChange={setResumeFilter}>
-                                <SelectTrigger className="h-12 min-w-[150px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-bold hover:text-[#F97316] transition-all shadow-inner">
-                                    <div className="flex items-center gap-2">
-                                        <Target className="h-4 w-4" />
-                                        <SelectValue placeholder="Resume" />
-                                    </div>
-                                </SelectTrigger>
-                                <SelectContent className="rounded-2xl border-gray-100 shadow-2xl">
-                                    <SelectItem value="all" className="rounded-xl font-bold uppercase text-[10px] tracking-widest">All Resume</SelectItem>
-                                    <SelectItem value="pending" className="rounded-xl font-bold uppercase text-[10px] tracking-widest text-amber-600">Pending</SelectItem>
-                                    <SelectItem value="shortlisted" className="rounded-xl font-bold uppercase text-[10px] tracking-widest text-emerald-600">Shortlisted</SelectItem>
-                                    <SelectItem value="rejected" className="rounded-xl font-bold uppercase text-[10px] tracking-widest text-rose-600">Rejected</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <PremiumFilter
+                                value={resumeFilter}
+                                onChange={setResumeFilter}
+                                icon={Target}
+                                placeholder="Resume"
+                                options={[
+                                    { value: "all", label: "All Resume" },
+                                    { value: "pending", label: "Pending", colorClass: "text-amber-600" },
+                                    { value: "shortlisted", label: "Shortlisted", colorClass: "text-emerald-600" },
+                                    { value: "rejected", label: "Rejected", colorClass: "text-rose-600" },
+                                ]}
+                            />
 
-                            <Select value={interviewFilter} onValueChange={setInterviewFilter}>
-                                <SelectTrigger className="h-12 min-w-[160px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-bold hover:text-[#F97316] transition-all shadow-inner">
-                                    <div className="flex items-center gap-2">
-                                        <Radio className="h-4 w-4" />
-                                        <SelectValue placeholder="Interview" />
-                                    </div>
-                                </SelectTrigger>
-                                <SelectContent className="rounded-2xl border-gray-100 shadow-2xl">
-                                    <SelectItem value="all" className="rounded-xl font-bold uppercase text-[10px] tracking-widest">All Interview</SelectItem>
-                                    <SelectItem value="pending" className="rounded-xl font-bold uppercase text-[10px] tracking-widest text-amber-600">Pending</SelectItem>
-                                    <SelectItem value="inprogress" className="rounded-xl font-bold uppercase text-[10px] tracking-widest text-orange-600">In Progress</SelectItem>
-                                    <SelectItem value="finished" className="rounded-xl font-bold uppercase text-[10px] tracking-widest text-indigo-600">Finished</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <PremiumFilter
+                                value={interviewFilter}
+                                onChange={setInterviewFilter}
+                                icon={Radio}
+                                placeholder="Interview"
+                                options={[
+                                    { value: "all", label: "All Interview" },
+                                    { value: "pending", label: "Pending", colorClass: "text-amber-600" },
+                                    { value: "inprogress", label: "In Progress", colorClass: "text-orange-600" },
+                                    { value: "finished", label: "Finished", colorClass: "text-indigo-600" },
+                                ]}
+                            />
 
-                            <Select value={hiringFilter} onValueChange={setHiringFilter}>
-                                <SelectTrigger className="h-12 min-w-[150px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-bold hover:text-[#F97316] transition-all shadow-inner">
-                                    <div className="flex items-center gap-2">
-                                        <Award className="h-4 w-4" />
-                                        <SelectValue placeholder="Hiring" />
-                                    </div>
-                                </SelectTrigger>
-                                <SelectContent className="rounded-2xl border-gray-100 shadow-2xl">
-                                    <SelectItem value="all" className="rounded-xl font-bold uppercase text-[10px] tracking-widest">All Hiring</SelectItem>
-                                    <SelectItem value="pending" className="rounded-xl font-bold uppercase text-[10px] tracking-widest text-amber-600">Decision Pending</SelectItem>
-                                    <SelectItem value="hired" className="rounded-xl font-bold uppercase text-[10px] tracking-widest text-emerald-600">Hired</SelectItem>
-                                    <SelectItem value="not hired" className="rounded-xl font-bold uppercase text-[10px] tracking-widest text-rose-600">Not Hired</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <PremiumFilter
+                                value={hiringFilter}
+                                onChange={setHiringFilter}
+                                icon={Award}
+                                placeholder="Hiring"
+                                options={[
+                                    { value: "all", label: "All Hiring" },
+                                    { value: "pending", label: "Decision Pending", colorClass: "text-amber-600" },
+                                    { value: "hired", label: "Hired", colorClass: "text-emerald-600" },
+                                    { value: "not hired", label: "Not Hired", colorClass: "text-rose-600" },
+                                ]}
+                            />
 
-                            <Select value={roleFilter} onValueChange={setRoleFilter}>
-                                <SelectTrigger className="h-12 min-w-[180px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-bold hover:text-[#F97316] transition-all shadow-inner">
-                                    <div className="flex items-center gap-2">
-                                        <Briefcase className="h-4 w-4" />
-                                        <SelectValue placeholder="All Job Roles" />
-                                    </div>
-                                </SelectTrigger>
-                                <SelectContent className="rounded-2xl border-gray-100 shadow-2xl">
-                                    <SelectItem value="all" className="rounded-xl font-bold">All Job Roles</SelectItem>
-                                    {jobs.map(job => (
-                                        <SelectItem key={job.id} value={job.id.toString()} className="rounded-xl font-bold">{job.role || job.title}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <PremiumFilter
+                                value={roleFilter}
+                                onChange={setRoleFilter}
+                                icon={Briefcase}
+                                placeholder="All Job Roles"
+                                options={[
+                                    { value: "all", label: "All Job Roles" },
+                                    ...jobs.map(job => ({
+                                        value: job.id.toString(),
+                                        label: job.role || job.title || "Unknown Job"
+                                    }))
+                                ]}
+                            />
                         </div>
                     </div>
                 </div>
@@ -678,14 +672,14 @@ export default function CandidatesPage() {
                                         />
                                     </TableHead>
                                 )}
-                                <TableHead className={cn("w-[280px] h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400", !isSelectionMode && "pl-8")}>Candidate</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400">Job Role</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400 text-center">Status</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400 text-center">Interview</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400 text-center">Decision</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400 text-center">Applied Date</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400 text-center">Reports</TableHead>
-                                <TableHead className="text-right pr-8 h-14 font-black uppercase tracking-[0.15em] text-[10px] text-gray-400">Actions</TableHead>
+                                <TableHead className={cn("w-[280px] h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700", !isSelectionMode && "pl-8")}>Candidate</TableHead>
+                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700">Job Role</TableHead>
+                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700 text-center">Status</TableHead>
+                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700 text-center">Interview</TableHead>
+                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700 text-center">Decision</TableHead>
+                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700 text-center">Applied Date</TableHead>
+                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700 text-center">Reports</TableHead>
+                                <TableHead className="text-right pr-8 h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <tbody className="[&_tr:last-child]:border-0">
@@ -737,10 +731,10 @@ export default function CandidatesPage() {
                                                         </Avatar>
                                                         <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-green-500" />
                                                     </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{candidate.name}</span>
-                                                        <span className="text-[11px] text-gray-400 font-bold mt-0.5">{candidate.email}</span>
-                                                    </div>
+                                                        <div className="flex flex-col relative">
+                                                            <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{candidate.name}</span>
+                                                            <span className="text-[11px] text-gray-400 font-bold mt-0.5">{candidate.email}</span>
+                                                        </div>
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5">
@@ -751,8 +745,20 @@ export default function CandidatesPage() {
                                                     )}
                                                 </div>
                                             </TableCell>
-                                            <TableCell className="py-5 text-center">
-                                                <div className="flex justify-center items-center h-full">
+                                            <TableCell className="pt-3 pb-5 text-center align-top">
+                                                <div className="flex flex-col items-center gap-1.5">
+                                                    <div className="h-4 flex items-center justify-center">
+                                                        {candidate.score > 0 && (
+                                                            <div className={cn(
+                                                                "text-[11px] font-black tracking-tight",
+                                                                candidate.score >= 80 ? "text-emerald-600" :
+                                                                candidate.score >= 50 ? "text-amber-500" :
+                                                                "text-rose-500"
+                                                            )}>
+                                                                {candidate.score}%
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                     <Badge variant="secondary" className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all",
                                                         mainStatus === 'rejected' ? 'bg-rose-50 text-rose-700' :
@@ -795,7 +801,9 @@ export default function CandidatesPage() {
                                                             Not Shortlisted
                                                         </Badge>
                                                     ) : (
-                                                        <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest italic">Pending</span>
+                                                        <Badge variant="outline" className="bg-slate-50/50 text-slate-400 border-slate-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest">
+                                                            Pending
+                                                        </Badge>
                                                     )}
                                                 </div>
                                             </TableCell>
@@ -871,7 +879,6 @@ export default function CandidatesPage() {
                                                                 onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${candidate.name} hired — confirmation email sent`)}
                                                                 className="rounded-lg px-3 py-2 font-bold cursor-pointer text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
                                                             >
-                                                                <Award className="h-4 w-4 mr-2" />
                                                                 Hire this person
                                                             </DropdownMenuItem>
                                                             <DropdownMenuItem

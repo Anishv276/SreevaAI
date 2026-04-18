@@ -101,7 +101,7 @@
   html {
     color-scheme: light;
     scrollbar-gutter: stable;
-    --font-sans: var(--font-jakarta), system-ui, -apple-system, sans-serif;
+    --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
   }
 
   body {
@@ -176,11 +176,9 @@
 }
 
 @utility glass-card {
-  background: rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04);
+  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.03);
 }
 
 @utility glass-border {
@@ -263,4 +261,12 @@
 /* Smooth Scrolling */
 html {
   scroll-behavior: smooth;
+}
+
+@utility scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }

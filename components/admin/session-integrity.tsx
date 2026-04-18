@@ -70,9 +70,9 @@ function IntegrityDonut({ score }: { score: number }) {
                 <span className="text-xl font-black text-gray-900 leading-none">{score}%</span>
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Health</span>
             </div>
-            
+
             {/* Soft Glow */}
-            <div 
+            <div
                 className="absolute inset-0 rounded-full blur-xl opacity-20 transition-opacity duration-700 group-hover:opacity-40"
                 style={{ backgroundColor: color }}
             />
@@ -81,9 +81,9 @@ function IntegrityDonut({ score }: { score: number }) {
 }
 
 const SEVERITY_COLORS: Record<string, { bg: string, bar: string, text: string }> = {
-    high:   { bg: "bg-red-50", bar: "#EF4444", text: "text-red-500" },
+    high: { bg: "bg-red-50", bar: "#EF4444", text: "text-red-500" },
     medium: { bg: "bg-amber-50", bar: "#F59E0B", text: "text-amber-600" },
-    low:    { bg: "bg-gray-50", bar: "#9CA3AF", text: "text-gray-400" },
+    low: { bg: "bg-gray-50", bar: "#9CA3AF", text: "text-gray-400" },
 };
 
 export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
@@ -141,7 +141,7 @@ export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
                     )}
                 </div>
                 {data && data.flagged > 0 && (
-                    <motion.div 
+                    <motion.div
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
                         className="px-4 py-1.5 rounded-full bg-amber-50 border border-amber-100/50 text-[11px] font-black text-amber-600 shadow-sm"
@@ -157,10 +157,10 @@ export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
                 </div>
             ) : error ? (
                 <div className="flex-1 flex items-center justify-center p-8">
-                    <ErrorState 
-                        message={error} 
-                        onRetry={handleRetry} 
-                        compact 
+                    <ErrorState
+                        message={error}
+                        onRetry={handleRetry}
+                        compact
                         className="bg-transparent border-none shadow-none"
                     />
                 </div>
@@ -169,7 +169,7 @@ export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
                     {/* ── Score Overview ── */}
                     <div className="flex items-center gap-10 flex-wrap lg:flex-nowrap">
                         <IntegrityDonut score={data.integrityScore} />
-                        
+
                         <div className="flex-1 min-w-[200px]">
                             <div className="grid grid-cols-3 gap-4">
                                 {[
@@ -177,81 +177,15 @@ export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
                                     { label: "Review", value: data.review, color: "amber" },
                                     { label: "Flagged", value: data.flagged, color: "red" },
                                 ].map((item) => (
-                                    <div key={item.label} className="space-y-1">
-                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{item.label}</p>
-                                        <p className={`text-2xl font-black text-${item.color}-600 leading-none`}>{item.value}</p>
+                                    <div key={item.label} className="bg-gray-50/50 p-6 rounded-[2rem] border border-gray-100/50 flex flex-col items-center justify-center space-y-2">
+                                        <p className="text-[12px] font-black text-gray-400 uppercase tracking-widest">{item.label}</p>
+                                        <p className={`text-4xl font-black text-${item.color}-600 leading-none tabular-nums`}>{item.value}</p>
                                     </div>
                                 ))}
                             </div>
                         </div>
                     </div>
 
-                    {/* ── Violation Matrix ── */}
-                    <div className="flex-1">
-                        <motion.div 
-                            initial="hidden"
-                            animate="visible"
-                            variants={{
-                                hidden: { opacity: 0 },
-                                visible: {
-                                    opacity: 1,
-                                    transition: { staggerChildren: 0.1 }
-                                }
-                            }}
-                            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-                        >
-                            {data.violations.map((v) => {
-                                const pct = Math.round((v.count / maxCount) * 100);
-                                const style = SEVERITY_COLORS[v.severity];
-                                return (
-                                    <motion.div
-                                        key={v.key}
-                                        variants={{
-                                            hidden: { opacity: 0, y: 10 },
-                                            visible: { opacity: 1, y: 0 }
-                                        }}
-                                        className="group relative flex items-start gap-4 p-4 rounded-3xl bg-white border border-gray-50/50 hover:border-orange-100 transition-all duration-500 hover:shadow-[0_15px_30px_rgba(0,0,0,0.03)]"
-                                    >
-                                        {/* Abbr Hex */}
-                                        <div className="h-10 w-10 rounded-2xl bg-gray-50 flex items-center justify-center flex-shrink-0 border border-gray-100 group-hover:bg-white group-hover:rotate-6 transition-all shadow-sm">
-                                            <span className="text-[10px] font-black text-gray-400 tracking-tighter group-hover:text-orange-500 transition-colors uppercase">{v.abbr}</span>
-                                        </div>
-
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between mb-1">
-                                                <p className="text-[13px] font-black text-gray-900 truncate leading-none">{v.title}</p>
-                                                <span className={`text-[13px] font-black ${style.text} tabular-nums`}>{v.count}</span>
-                                            </div>
-                                            <p className="text-[11px] font-bold text-gray-400 leading-none mb-3 truncate">{v.description}</p>
-                                            
-                                            {/* Progress Bar */}
-                                            <div className="h-1.5 bg-gray-50 rounded-full w-full overflow-hidden border border-gray-100/50">
-                                                <motion.div
-                                                    initial={{ width: 0 }}
-                                                    animate={{ width: `${v.count > 0 ? pct : 0}%` }}
-                                                    transition={{ duration: 1, ease: "easeOut" }}
-                                                    className="h-full rounded-full"
-                                                    style={{ backgroundColor: style.bar }}
-                                                />
-                                            </div>
-                                        </div>
-                                    </motion.div>
-                                );
-                            })}
-                        </motion.div>
-                    </div>
-
-                    {/* ── Footer ── */}
-                    {data.review > 0 && (
-                        <div className="pt-2 flex justify-center">
-                            <Link href="/admin/candidates?filter=flagged" className="w-full">
-                                <button className="w-full flex items-center justify-center gap-2 px-8 py-4 rounded-2xl bg-gray-900 text-[13px] font-black text-white hover:bg-orange-600 transition-all shadow-xl shadow-gray-200/50 active:scale-[0.98]">
-                                    Analyze {data.review} High-Risk Sessions
-                                    <ArrowUpRight className="h-4 w-4" />
-                                </button>
-                            </Link>
-                        </div>
-                    )}
                 </div>
             )}
         </div>

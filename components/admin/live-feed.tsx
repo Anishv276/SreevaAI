@@ -145,9 +145,9 @@ export function LiveFeed({ dateRange }: LiveFeedProps) {
     const { feedItems, loading, error, fetchFeed } = useActivityFeed(dateRange);
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-12">
+        <div className="pb-12">
             {/* ── ACTIVITY FEED ─────────────────────────── */}
-            <div className="flex flex-col h-[520px] bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)] transition-all duration-700 overflow-hidden">
+            <div className="flex flex-col h-[600px] bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)] transition-all duration-700 overflow-hidden">
                 <div className="py-6 px-8 border-b border-gray-100/50 flex flex-row items-center justify-between bg-white/20">
                     <div className="flex items-center gap-4">
                         <div className="h-10 w-10 rounded-2xl bg-orange-500/10 flex items-center justify-center text-[#F97316] border border-orange-500/20">
@@ -187,14 +187,14 @@ export function LiveFeed({ dateRange }: LiveFeedProps) {
                                         animate={{ opacity: 1, x: 0 }}
                                         transition={{ delay: idx * 0.05 }}
                                         key={item.id}
-                                        className="p-4 rounded-[1.75rem] flex items-center gap-4 bg-white/50 border border-white hover:bg-white hover:border-orange-100 hover:shadow-sm transition-all duration-300 group"
+                                        className="p-5 rounded-[2rem] flex items-center gap-5 bg-white/50 border border-white hover:bg-white hover:border-orange-100 hover:shadow-xl hover:shadow-orange-500/5 transition-all duration-300 group relative"
                                     >
-                                        <div className={cn("h-10 w-10 rounded-2xl flex items-center justify-center shrink-0 border transition-transform group-hover:scale-110", bg, border)}>
-                                            <Icon className="h-4 w-4" style={{ color }} />
+                                        <div className={cn("h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 border transition-transform group-hover:scale-110", bg, border)}>
+                                            <Icon className="h-5 w-5" style={{ color }} />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 mb-1">
-                                                <p className="text-[13px] font-black text-gray-900 truncate leading-none">{item.action}</p>
+                                                <p className="text-[14px] font-black text-gray-900 truncate leading-none">{item.action}</p>
                                                 {item.isDemo && (
                                                     <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-gray-100 text-[8px] font-black text-gray-400 uppercase tracking-widest border border-gray-200/50">
                                                         System
@@ -202,101 +202,17 @@ export function LiveFeed({ dateRange }: LiveFeedProps) {
                                                 )}
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight truncate">{item.drive}</span>
+                                                <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tight truncate">{item.drive}</span>
                                                 <span className="h-1 w-1 rounded-full bg-gray-200" />
                                                 <span className="text-[10px] font-black text-gray-300 uppercase shrink-0">{item.time}</span>
                                             </div>
                                         </div>
+                                        <ChevronRight className="h-5 w-5 text-gray-200 group-hover:text-orange-400 group-hover:translate-x-1 transition-all" />
                                     </motion.div>
                                 );
                             })}
                         </div>
                     )}
-                </div>
-            </div>
-
-            {/* ── AI INSIGHTS ─────────────────────── */}
-            <div className="flex flex-col h-[520px] bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] hover:shadow-[0_20px_60px_rgba(249,115,22,0.06)] transition-all duration-700 overflow-hidden group">
-                <div className="py-6 px-8 border-b border-gray-100/50 flex flex-row items-center justify-between bg-white/20">
-                    <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-2xl bg-orange-500 flex items-center justify-center text-white shadow-[0_0_15px_rgba(249,115,22,0.4)] animate-pulse">
-                            <Sparkles className="h-5 w-5" />
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-black text-gray-900 tracking-tight leading-none">AI Insights</h3>
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Strategic Analysis</p>
-                        </div>
-                    </div>
-                </div>
-                <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5 custom-scrollbar">
-                    {insights.map((ins, idx) => (
-                        <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: idx * 0.1 }}
-                            key={ins.id}
-                            className="p-5 rounded-[2rem] border border-gray-100/50 bg-white/80 hover:bg-white hover:border-[#F97316]/30 hover:shadow-md transition-all duration-500"
-                        >
-                            <div className="flex items-start gap-4 mb-3">
-                                <div className="h-1.5 w-1.5 rounded-full bg-[#F97316] mt-2 shrink-0" />
-                                <p className="text-[12.5px] font-bold text-gray-800 leading-relaxed">{ins.text}</p>
-                            </div>
-                            <div className="flex items-center justify-between pl-5">
-                                <span className="text-[10px] font-black text-[#F97316] uppercase tracking-widest">{ins.drive}</span>
-                                <ChevronRight className="h-4 w-4 text-gray-200" />
-                            </div>
-                        </motion.div>
-                    ))}
-                    <div className="pt-2 px-5">
-                        <div className="h-px bg-gradient-to-r from-transparent via-gray-100 to-transparent w-full" />
-                        <p className="text-[9px] font-black text-gray-300 uppercase tracking-[0.3em] text-center mt-6">End of Neural Loop</p>
-                    </div>
-                </div>
-            </div>
-
-            {/* ── ALERTS CARD ─────────────────────────── */}
-            <div className="flex flex-col h-[520px] bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] hover:shadow-[0_20px_60px_rgba(239,68,68,0.06)] transition-all duration-700 overflow-hidden">
-                <div className="py-6 px-8 border-b border-gray-100/50 flex flex-row items-center justify-between bg-white/20">
-                    <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-2xl bg-red-500/10 flex items-center justify-center text-red-500 border border-red-500/20">
-                            <TriangleAlert className="h-5 w-5" />
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-black text-gray-900 tracking-tight leading-none">Matrix Alerts</h3>
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Anomaly Detection</p>
-                        </div>
-                    </div>
-                    {alerts.length > 0 && (
-                        <div className="h-6 w-6 rounded-lg bg-red-500 text-white text-[11px] font-black flex items-center justify-center shadow-lg shadow-red-500/20">{alerts.length}</div>
-                    )}
-                </div>
-                <div className="flex-1 overflow-y-auto px-6 py-4 custom-scrollbar">
-                    <div className="space-y-4">
-                        {alerts.map((alert, idx) => (
-                            <motion.div 
-                                initial={{ opacity: 0, scale: 0.95 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                transition={{ delay: idx * 0.1 }}
-                                key={alert.id} 
-                                className="px-6 py-5 rounded-[2rem] flex items-start gap-4 bg-white/50 border border-white hover:bg-white hover:border-red-100 transition-all duration-300"
-                            >
-                                <span
-                                    className={cn(
-                                        "h-2 w-2 rounded-full flex-shrink-0 mt-1.5 shadow-[0_0_8px_currentColor]",
-                                        alert.level === "red" ? "text-red-500 shadow-red-500/50" : "text-amber-500 shadow-amber-500/50"
-                                    )}
-                                    style={{ backgroundColor: "currentColor" }}
-                                />
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-[13px] font-black text-gray-900 leading-tight mb-2">{alert.text}</p>
-                                    <div className="flex items-center justify-between">
-                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter truncate max-w-[150px]">{alert.meta}</p>
-                                        <span className="text-[10px] font-black text-gray-300 uppercase">{alert.time}</span>
-                                    </div>
-                                </div>
-                            </motion.div>
-                        ))}
-                    </div>
                 </div>
             </div>
         </div>

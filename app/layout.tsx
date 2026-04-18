@@ -1,15 +1,14 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { JobsProvider } from "@/context/jobs-context";
 import { AuthProvider } from "@/context/auth-context";
 import { CandidatesProvider } from "@/context/candidates-context";
 import { Toaster } from "@/components/ui/toast-custom";
 
-const jakarta = Plus_Jakarta_Sans({ 
+const inter = Inter({ 
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-  variable: '--font-jakarta',
+  variable: '--font-inter',
 });
 
 export const metadata: Metadata = {
@@ -23,7 +22,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning className={jakarta.variable}>
+    <html lang="en" suppressHydrationWarning className={inter.variable}>
 
       <head>
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />

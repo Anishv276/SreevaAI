@@ -274,7 +274,7 @@ export default function DrivesPage() {
     };
 
     return (
-        <div className="space-y-8 pb-12 animate-in fade-in duration-700">
+        <div className="space-y-8 pb-12 animate-in fade-in duration-700 font-sans">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-10">
                 <div className="flex items-center gap-5 group">
                     <div className="h-14 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-16" />
@@ -382,14 +382,14 @@ export default function DrivesPage() {
                                         />
                                     </TableHead>
                                 )}
-                                <TableHead className={cn("w-[320px] h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400", !isSelectionMode && "pl-8")}>Drive / Campaign</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400 text-center">Role</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400 text-center">Pool</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400 text-center">Deadline</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400 text-center">Status</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400 text-center">Candidates</TableHead>
-                                <TableHead className="h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400 text-center">Details</TableHead>
-                                <TableHead className="text-right pr-8 h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-400">More</TableHead>
+                                <TableHead className={cn("w-[320px] h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700", !isSelectionMode && "pl-8")}>Drive / Campaign</TableHead>
+                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700 text-center">Role</TableHead>
+                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700 text-center">Pool</TableHead>
+                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700 text-center">Deadline</TableHead>
+                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700 text-center">Status</TableHead>
+                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700 text-center">Candidates</TableHead>
+                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700 text-center">Details</TableHead>
+                                <TableHead className="text-right pr-8 h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700">More</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody className="[&_tr:last-child]:border-0">
@@ -545,34 +545,38 @@ export default function DrivesPage() {
                                                             <MoreHorizontal className="h-4 w-4" />
                                                         </Button>
                                                     </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end" className="w-56 p-2 rounded-2xl bg-white border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.12)] z-[60]">
+                                                    <DropdownMenuContent align="end" className="w-52 p-1.5 rounded-3xl bg-white/95 backdrop-blur-xl border border-white/20 shadow-[0_20px_60px_rgba(0,0,0,0.12)] z-[60] animate-in fade-in zoom-in-95 duration-200">
+                                                        <div className="px-3 py-2 border-b border-gray-50/50 mb-1">
+                                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em]">Actions</p>
+                                                        </div>
                                                         <DropdownMenuItem
-                                                            className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700 font-bold uppercase text-[10px] tracking-widest"
+                                                            className="cursor-pointer rounded-2xl py-3 px-3 focus:bg-[#F97316]/5 focus:text-[#F97316] font-bold uppercase text-[10px] tracking-widest transition-all group"
                                                             onClick={() => setCandidatePreviewSlug(drive.slug || drive.id)}
                                                         >
-                                                            <Eye className="mr-2 h-4 w-4" /> Preview Portal
+                                                            <Eye className="mr-3 h-4 w-4 opacity-50 group-focus:opacity-100 transition-opacity" /> Preview Portal
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
-                                                            className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700 font-bold uppercase text-[10px] tracking-widest"
+                                                            className="cursor-pointer rounded-2xl py-3 px-3 focus:bg-[#F97316]/5 focus:text-[#F97316] font-bold uppercase text-[10px] tracking-widest transition-all group"
                                                             onClick={() => router.push(`/admin/create-drive?id=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`)}
                                                         >
-                                                            <Edit className="mr-2 h-4 w-4" /> Edit Details
+                                                            <Edit className="mr-3 h-4 w-4 opacity-50 group-focus:opacity-100 transition-opacity" /> Edit Details
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
-                                                            className="cursor-pointer rounded-lg py-2.5 focus:bg-orange-50 focus:text-orange-700 font-bold uppercase text-[10px] tracking-widest"
+                                                            className="cursor-pointer rounded-2xl py-3 px-3 focus:bg-[#F97316]/5 focus:text-[#F97316] font-bold uppercase text-[10px] tracking-widest transition-all group"
                                                             onClick={async () => {
                                                                 const link = `${window.location.origin}/careers/jobs/${drive.slug || drive.id}`;
                                                                 await navigator.clipboard.writeText(link);
                                                                 toast.success("Link copied!");
                                                             }}
                                                         >
-                                                            <LinkIcon className="mr-2 h-4 w-4" /> Copy Link
+                                                            <LinkIcon className="mr-3 h-4 w-4 opacity-50 group-focus:opacity-100 transition-opacity" /> Copy Link
                                                         </DropdownMenuItem>
+                                                        <div className="h-px bg-gray-50 my-1 mx-2" />
                                                         <DropdownMenuItem
-                                                            className="text-red-600 focus:text-red-700 focus:bg-red-50 cursor-pointer rounded-lg py-2.5 font-bold uppercase text-[10px] tracking-widest"
+                                                            className="text-red-500 focus:text-red-600 focus:bg-red-50/50 cursor-pointer rounded-2xl py-3 px-3 font-bold uppercase text-[10px] tracking-widest transition-all group"
                                                             onClick={() => handleDelete(drive.id)}
                                                         >
-                                                            <Trash2 className="mr-2 h-4 w-4" /> Delete Drive
+                                                            <Trash2 className="mr-3 h-4 w-4 opacity-50 group-focus:opacity-100 transition-opacity" /> Delete Drive
                                                         </DropdownMenuItem>
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>

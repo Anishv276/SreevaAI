@@ -673,7 +673,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     }, [phase]);
 
     return (
-        <div ref={containerRef} className="min-h-screen bg-white text-gray-900 flex flex-col font-sans relative overflow-hidden">
+        <div ref={containerRef} className="min-h-screen bg-white text-gray-900 flex flex-col font-sans relative overflow-hidden" style={{ transform: 'translateZ(0)' }}>
             <AnimatePresence mode="wait">
                 {phase === "check" && (
                     <motion.div
@@ -703,11 +703,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         className="flex-1 min-h-screen w-full flex items-center justify-center bg-[#0e0e10] z-[120] absolute inset-0"
                     >
                         <div className="flex flex-col items-center gap-8 text-center px-6">
-                            <div className="relative h-32 w-32">
-                                <div className="absolute inset-0 rounded-full border-2 border-orange-500/20 animate-ping" />
-                                <div className="absolute inset-2 rounded-full border-2 border-orange-500/30 animate-ping" style={{ animationDelay: "0.3s" }} />
-                                <div className="relative h-full w-full rounded-full border-2 border-orange-500/40 bg-zinc-900/80 backdrop-blur-xl flex items-center justify-center shadow-[0_0_60px_rgba(249,115,22,0.2)]">
-                                    <Sparkles className="h-10 w-10 text-orange-500 animate-pulse" />
+                            <div className="relative h-32 w-32" style={{ transform: 'translateZ(0)' }}>
+                                <div className="absolute inset-0 rounded-full border-2 border-orange-500/10" />
+                                <div className="absolute inset-2 rounded-full border-2 border-orange-500/20" />
+                                <div className="relative h-full w-full rounded-full border-2 border-orange-500/40 bg-zinc-900/90 flex items-center justify-center shadow-[0_0_60px_rgba(249,115,22,0.1)]">
+                                    <Sparkles className="h-10 w-10 text-orange-500" />
                                 </div>
                             </div>
                             <div className="space-y-3">
@@ -846,10 +846,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
             {/* Connection Bridge Status - Stable outside loop */}
             {phase === "check" && shouldConnect && (
-                <div key="connection-pulse" className="fixed bottom-4 left-4 z-[200] flex items-center gap-2 px-3 py-1 bg-black/10 backdrop-blur-md rounded-full border border-black/5 shadow-sm">
+                <div key="connection-pulse" className="fixed bottom-4 left-4 z-[200] flex items-center gap-2 px-3 py-1 bg-black/80 rounded-full border border-black/5 shadow-sm" style={{ transform: 'translateZ(0)' }}>
                     <div className={cn(
                         "w-1.5 h-1.5 rounded-full",
-                        token ? "bg-green-500 animate-pulse" : "bg-gray-300"
+                        token ? "bg-green-500" : "bg-gray-300"
                     )} />
                     <span className="text-[8px] font-black uppercase tracking-[0.2em] text-gray-400">
                         {token ? "AI Link Ready" : "Warming System..."}
@@ -1348,7 +1348,7 @@ function InterviewRoomContent({
 
             {/* Role Context - TOP LEFT */}
             <div className="absolute top-10 left-10 z-[60]">
-                <div className="flex items-center gap-4 bg-zinc-900/40 backdrop-blur-xl px-6 py-4 rounded-[2rem] border border-white/5 shadow-2xl">
+                <div className="flex items-center gap-4 bg-zinc-900/90 px-6 py-4 rounded-[2rem] border border-white/5 shadow-2xl">
                     <div className="w-10 h-10 rounded-full bg-orange-500/10 flex items-center justify-center border border-orange-500/30">
                         <Sparkles className="w-5 h-5 text-orange-500" />
                     </div>
@@ -1361,7 +1361,7 @@ function InterviewRoomContent({
 
             {/* Premium Timer - TOP MIDDLE */}
             <div className="absolute top-10 left-1/2 -translate-x-1/2 z-[60]">
-                <div className="bg-zinc-900/80 backdrop-blur-2xl px-10 py-4 rounded-[2rem] border border-white/5 shadow-[0_20px_60px_rgba(0,0,0,0.5)] flex flex-col items-center min-w-[200px]">
+                <div className="bg-zinc-900/95 px-10 py-4 rounded-[2rem] border border-white/5 shadow-[0_20px_60px_rgba(0,0,0,0.5)] flex flex-col items-center min-w-[200px]">
                     <p className="text-[10px] font-black uppercase tracking-[0.4em] text-orange-500/80 mb-1">Session Protocol</p>
                     <p className="text-4xl font-black text-white tabular-nums tracking-tight italic">
                         {timeLabel}
@@ -1369,7 +1369,7 @@ function InterviewRoomContent({
                 </div>
             </div>
 
-            <div className="absolute top-10 right-10 z-50 w-96 aspect-[4/3] bg-zinc-900 rounded-[2.5rem] p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.6)] group border border-white/10 ring-1 ring-white/5">
+            <div className="absolute top-10 right-10 z-50 w-96 aspect-[4/3] bg-zinc-900 rounded-[2.5rem] p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.6)] group border border-white/10 ring-1 ring-white/5" style={{ transform: 'translateZ(0)' }}>
                 <div className="w-full h-full rounded-[2rem] overflow-hidden bg-zinc-950 relative">
                     {localCameraTrack ? (
                         <div className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover [&>canvas]:w-full [&>canvas]:h-full [&>canvas]:object-cover scale-x-[-1]">
@@ -1377,11 +1377,11 @@ function InterviewRoomContent({
                         </div>
                     ) : (
                         <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-zinc-900/50">
-                            <Camera className="w-8 h-8 text-zinc-800 animate-pulse" />
+                            <Camera className="w-8 h-8 text-zinc-800" />
                         </div>
                     )}
-                    <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-full border border-white/10">
-                        <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_20px_rgba(34,197,94,0.6)]" />
+                    <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 bg-black/80 rounded-full border border-white/10">
+                        <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_20px_rgba(34,197,94,0.3)]" />
                         <p className="text-[10px] font-black uppercase tracking-widest text-white drop-shadow-md">You (Live)</p>
                     </div>
                 </div>
@@ -1391,15 +1391,16 @@ function InterviewRoomContent({
             <div className="flex-1 flex flex-col items-center justify-center p-8 relative">
                 <motion.div
                     animate={{
-                        scale: isAiSpeaking ? [1, 1.04, 1.01, 1.06, 1] : (isAiThinking ? [1, 1.02, 1] : [1, 1.01, 1]),
-                        borderColor: isAiSpeaking ? "rgba(249, 115, 34, 0.6)" : (isAiThinking ? "rgba(249, 115, 34, 0.3)" : "rgba(249, 115, 34, 0.2)"),
+                        scale: isAiSpeaking ? [1, 1.02, 1] : [1, 1.01, 1],
+                        borderColor: isAiSpeaking ? "rgba(249, 115, 34, 0.4)" : "rgba(249, 115, 34, 0.2)",
                     }}
                     transition={{
-                        duration: isAiSpeaking ? 0.8 : 4,
+                        duration: isAiSpeaking ? 1.5 : 4,
                         repeat: Infinity,
                         ease: "easeInOut"
                     }}
                     className="w-64 h-64 rounded-full border-2 flex items-center justify-center relative isolate group"
+                    style={{ transform: 'translateZ(0)' }}
                 >
                     {/* Advanced Shader Aura Visualizer (Real-time Audio Reactive) */}
                     <div className="absolute inset-0 rounded-full overflow-hidden pointer-events-none">
@@ -1440,11 +1441,11 @@ function InterviewRoomContent({
                         </p>
                         {isAiSpeaking && (
                             <motion.div
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
                                 className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full"
                             >
-                                <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                                <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
                                 <span className="text-[8px] font-black uppercase tracking-widest text-green-500">Live Voice Stream</span>
                             </motion.div>
                         )}
@@ -1490,7 +1491,7 @@ function InterviewRoomContent({
                                         )}
                                     >
                                         <div className={cn(
-                                            "bg-white/95 backdrop-blur-xl border border-black/[0.03] rounded-[1.8rem] p-5 relative overflow-hidden",
+                                            "bg-white border border-black/[0.03] rounded-[1.8rem] p-5 relative overflow-hidden",
                                             group.isCandidate ? "rounded-br-none" : "rounded-bl-none"
                                         )}>
                                             {/* Header */}
@@ -1504,7 +1505,7 @@ function InterviewRoomContent({
                                                     {group.isCandidate ? (
                                                         <User className="w-4 h-4 text-white" />
                                                     ) : (
-                                                        <Sparkles className="w-4 h-4 text-white animate-pulse" />
+                                                        <Sparkles className="w-4 h-4 text-white" />
                                                     )}
                                                 </div>
                                                 <div className="flex flex-col">
@@ -1546,7 +1547,7 @@ function InterviewRoomContent({
             </div>
 
             {/* Bottom Navigation & Premium Timer */}
-            <div className="h-44 bg-zinc-900/20 backdrop-blur-3xl p-8 grid grid-cols-3 items-center relative z-10">
+            <div className="h-44 bg-zinc-900/80 p-8 grid grid-cols-3 items-center relative z-10">
 
                 {/* Left: Status */}
                 <div className="flex items-center gap-6">
