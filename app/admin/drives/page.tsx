@@ -29,6 +29,8 @@ import {
     MapPin,
     AlertCircle,
     FileText,
+    Laptop,
+    Check,
     Link as LinkIcon
 } from "lucide-react";
 import {
@@ -464,7 +466,6 @@ export default function DrivesPage() {
                                                     </div>
                                                     <div className="flex flex-col">
                                                         <span className="text-gray-900 font-black text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{drive.title}</span>
-                                                        <span className="text-[11px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">{drive.department || "General Recruitment"}</span>
                                                     </div>
                                                 </div>
                                             </TableCell>
@@ -491,22 +492,73 @@ export default function DrivesPage() {
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (!isSelectionMode) setStatusModalDrive({ id: drive.id, currentStatus: statusLabel });
-                                                    }}
-                                                    className={cn(
-                                                        "flex items-center gap-2 px-3 py-1 rounded-lg border transition-all hover:opacity-70 cursor-pointer",
-                                                        statusBadgeBg,
-                                                        statusBadgeBorder
-                                                    )}
-                                                >
-                                                    <div className={cn("h-1.5 w-1.5 rounded-full", dotColor)} />
-                                                    <span className={cn("text-[10px] font-black uppercase tracking-widest", statusColor)}>
-                                                        {statusLabel}
-                                                    </span>
-                                                </button>
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <button
+                                                            className={cn(
+                                                                "flex items-center gap-2.5 px-4 py-2 rounded-xl border-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer mx-auto shadow-sm",
+                                                                statusBadgeBg === "bg-green-50/50" ? "bg-green-50 border-green-200" : 
+                                                                statusBadgeBg === "bg-red-50" ? "bg-red-50 border-red-200" : 
+                                                                "bg-orange-50 border-orange-200"
+                                                            )}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            <div className={cn("h-2 w-2 rounded-full", dotColor)} />
+                                                            <span className={cn("text-[11px] font-black uppercase tracking-wider", statusColor)}>
+                                                                {statusLabel}
+                                                            </span>
+                                                        </button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="center" className="w-52 p-2 rounded-2xl shadow-xl border-gray-100 bg-white/95 backdrop-blur-xl">
+                                                        <div className="px-3 py-2 border-b border-gray-50 mb-1">
+                                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Change Status</p>
+                                                        </div>
+                                                        <DropdownMenuItem 
+                                                            className={cn(
+                                                                "rounded-xl px-3 py-2.5 font-bold text-xs cursor-pointer gap-2",
+                                                                statusLabel === "Active" ? "bg-green-50 text-green-700" : "text-gray-600 hover:bg-gray-50"
+                                                            )}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (statusLabel !== "Active") setStatusModalDrive({ id: drive.id, currentStatus: statusLabel === "Expired" ? "Expired" : "Closed" });
+                                                            }}
+                                                        >
+                                                            <div className={cn("h-1.5 w-1.5 rounded-full", statusLabel === "Active" ? "bg-green-500" : "bg-gray-300")} />
+                                                            Mark as Live (Active)
+                                                            {statusLabel === "Active" && <Check className="ml-auto h-3.5 w-3.5" />}
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem 
+                                                            className={cn(
+                                                                "rounded-xl px-3 py-2.5 font-bold text-xs cursor-pointer gap-2",
+                                                                statusLabel === "Closed" ? "bg-red-50 text-red-700" : "text-gray-600 hover:bg-gray-50"
+                                                            )}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (statusLabel !== "Closed") setStatusModalDrive({ id: drive.id, currentStatus: "Active" });
+                                                            }}
+                                                        >
+                                                            <div className={cn("h-1.5 w-1.5 rounded-full", statusLabel === "Closed" ? "bg-red-500" : "bg-gray-300")} />
+                                                            Mark as Closed
+                                                            {statusLabel === "Closed" && <Check className="ml-auto h-3.5 w-3.5" />}
+                                                        </DropdownMenuItem>
+
+                                                        {statusLabel === "Expired" && (
+                                                            <>
+                                                                <div className="h-px bg-gray-50 my-1 mx-2" />
+                                                                <DropdownMenuItem 
+                                                                    className="rounded-xl px-3 py-2.5 text-orange-600 font-bold text-xs cursor-pointer focus:bg-orange-50 focus:text-orange-700 gap-2"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setStatusModalDrive({ id: drive.id, currentStatus: "Expired" });
+                                                                    }}
+                                                                >
+                                                                    <Clock className="h-3.5 w-3.5" />
+                                                                    Extend Deadline
+                                                                </DropdownMenuItem>
+                                                            </>
+                                                        )}
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
                                             </TableCell>
                                             <TableCell className="py-5 text-center">
                                                 <Button
@@ -617,106 +669,81 @@ export default function DrivesPage() {
                 </div>
             </div>
 
-            {/* Premium Job Details Slide-over */}
+            {/* Premium Job Details Modal Popup */}
             {selectedDrive && (
-                <>
+                <div className="fixed inset-0 z-[101] flex items-center justify-center p-4 sm:p-6">
                     <div
-                        className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] transition-opacity duration-300"
+                        className="absolute inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-300"
                         onClick={() => setPreviewDriveId(null)}
                     />
                     <div
-                        className="fixed inset-y-0 right-0 w-full sm:w-[540px] bg-white shadow-[0_0_60px_rgba(0,0,0,0.1)] z-[101] transform transition-transform duration-500 ease-out border-l border-gray-100 flex flex-col"
-                        style={{ transform: previewDriveId ? 'translateX(0)' : 'translateX(100%)' }}
+                        className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-[3rem] shadow-[0_32px_120px_rgba(0,0,0,0.4)] overflow-hidden flex flex-col animate-in-zoom"
                     >
-                        {/* Drawer Header */}
-                        <div className="p-6 border-b border-gray-50 bg-gray-50/30 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-xl bg-orange-100 flex items-center justify-center text-[#F97316]">
-                                    <Briefcase className="h-5 w-5" />
+                        {/* Modal Header */}
+                        <div className="p-8 border-b border-gray-100 flex items-center justify-between bg-white shrink-0">
+                            <div className="flex items-center gap-5">
+                                <div className="h-12 w-12 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400 border border-gray-100">
+                                    <Briefcase className="h-6 w-6" />
                                 </div>
-                                <div>
-                                    <h2 className="text-xl font-extrabold text-gray-900 leading-tight">Job Details</h2>
-                                    <p className="text-[10px] text-gray-400 font-black uppercase tracking-[0.15em]">Admin Preview</p>
+                                <div className="space-y-0.5">
+                                    <div className="flex items-center gap-3">
+                                        <h2 className="text-xl font-bold text-gray-900 tracking-tight">{selectedDrive.title}</h2>
+                                        <div className="h-5 px-2 rounded-md bg-gray-100 text-gray-500 border border-gray-200 font-bold text-[9px] uppercase tracking-wider flex items-center">Open</div>
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{selectedDrive.role || "Job Description"} • {selectedDrive.department || "General"}</p>
                                 </div>
                             </div>
                             <button
                                 onClick={() => setPreviewDriveId(null)}
-                                className="h-10 w-10 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-all"
+                                className="h-10 w-10 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-900 hover:bg-gray-50 transition-colors border border-gray-100"
                             >
                                 <X className="h-5 w-5" />
                             </button>
                         </div>
 
-                        {/* Drawer Content */}
-                        <div className="flex-1 overflow-y-auto p-8 space-y-10 custom-scrollbar relative">
+                        {/* Modal Content */}
+                        <div className="flex-1 overflow-y-auto p-10 space-y-12 custom-scrollbar bg-white">
                             {isFetchingFresh && (
-                                <div className="absolute top-4 right-14 z-50">
-                                    <div className="bg-white/80 backdrop-blur-sm border border-orange-100 rounded-full px-3 py-1 flex items-center gap-2 shadow-sm">
+                                <div className="absolute top-8 right-24 z-50">
+                                    <div className="bg-white/90 backdrop-blur-sm border border-gray-100 rounded-full px-4 py-1.5 flex items-center gap-2 shadow-sm">
                                         <Loader2 className="h-3 w-3 text-orange-500 animate-spin" />
-                                        <span className="text-[9px] font-bold text-orange-600 uppercase tracking-widest">
-                                            {freshDriveDetails ? "Updating..." : "Syncing..."}
-                                        </span>
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Syncing...</span>
                                     </div>
                                 </div>
                             )}
-                            {/* Title Section */}
-                            <div className="space-y-4">
+
+                            {/* Section 1: Job Metadata (Simple) */}
+                            <div className="flex flex-wrap gap-x-12 gap-y-6">
                                 <div className="space-y-1">
-                                    <h1 className="text-3xl font-black text-gray-900 leading-tight">{selectedDrive.role || selectedDrive.title}</h1>
-                                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{selectedDrive.role ? selectedDrive.title : "Recruitment Drive"}</p>
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Work Mode</p>
+                                    <p className="text-[16px] font-bold text-gray-900">{selectedDrive.workMode || "Not specified"}</p>
                                 </div>
-                                <div className="flex flex-wrap gap-2">
-                                    <Badge variant="secondary" className="px-3 py-1 bg-orange-50 text-[#F97316] border-0 font-bold uppercase text-[10px] tracking-widest">{selectedDrive.department}</Badge>
-                                    <Badge variant="secondary" className="px-3 py-1 bg-gray-100 text-gray-600 border-0 font-bold uppercase text-[10px] tracking-widest">{selectedDrive.type}</Badge>
-                                    <Badge variant="secondary" className="px-3 py-1 bg-green-50 text-green-600 border-0 font-bold uppercase text-[10px] tracking-widest flex items-center gap-1.5 leading-none h-6 px-2.5">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                                        Active
-                                    </Badge>
+                                <div className="space-y-1">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Location</p>
+                                    <p className="text-[16px] font-bold text-gray-900">{selectedDrive.location || "Remote"}</p>
                                 </div>
-                            </div>
-
-                            {/* Info Grid */}
-                            <div className="grid grid-cols-2 gap-6 p-6 bg-gray-50 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden group/grid">
-                                <div className="absolute inset-0 bg-gradient-to-br from-orange-50/0 via-orange-50/0 to-orange-100/30 opacity-0 group-hover/grid:opacity-100 transition-opacity duration-700" />
-
-                                <div className="space-y-1.5 relative z-10">
-                                    <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">
-                                        <DollarSign className="h-3 w-3" /> Salary
-                                    </div>
-                                    <p className="font-bold text-gray-900 text-sm">{selectedDrive.salary || "As per policy"}</p>
+                                <div className="space-y-1">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Expected Salary</p>
+                                    <p className="text-[16px] font-bold text-gray-900">{selectedDrive.salary || "As per policy"}</p>
                                 </div>
-                                <div className="space-y-1.5 relative z-10">
-                                    <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">
-                                        <Clock className="h-3 w-3" /> Experience
-                                    </div>
-                                    <p className="font-bold text-gray-900 text-sm">{selectedDrive.experience || "Not specified"}</p>
-                                </div>
-                                <div className="space-y-1.5 relative z-10">
-                                    <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">
-                                        <Calendar className="h-3 w-3" /> Posted On
-                                    </div>
-                                    <p className="font-bold text-gray-900 text-sm">{new Date(selectedDrive.createdAt).toLocaleDateString()}</p>
+                                <div className="space-y-1">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Experience</p>
+                                    <p className="text-[16px] font-bold text-gray-900">{selectedDrive.experience || "Not specified"}</p>
                                 </div>
                             </div>
 
-
-                            {/* Public Job Link Section */}
-                            <div className="p-6 bg-orange-50/30 rounded-2xl border border-orange-100/50 space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2 text-[11px] font-black text-gray-500 uppercase tracking-[0.2em]">
-                                        <LinkIcon className="h-3.5 w-3.5 text-[#F97316]" /> Public Job Link
-                                    </div>
-                                    <Badge variant="secondary" className="text-[9px] font-bold bg-white text-green-600 border-green-100 h-5">LIVE</Badge>
-                                </div>
-                                <div className="flex gap-2">
-                                    <div className="flex-1 bg-white border border-gray-100 rounded-xl px-4 py-3 flex items-center overflow-hidden">
-                                        <span className="text-[12px] font-medium text-gray-500 truncate select-all">
+                            {/* Section 2: Public Job Link (Simple) */}
+                            <div className="space-y-4 pt-6 border-t border-gray-50">
+                                <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Application Link</p>
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <div className="flex-1 bg-gray-50 border border-gray-100 rounded-2xl px-5 py-4 flex items-center overflow-hidden">
+                                        <span className="text-sm font-medium text-gray-500 truncate select-all">
                                             {`${typeof window !== 'undefined' ? window.location.origin : ''}/careers/jobs/${selectedDrive.slug || selectedDrive.id}`}
                                         </span>
                                     </div>
                                     <Button
                                         variant="outline"
-                                        className="rounded-xl border-gray-100 hover:border-orange-200 hover:bg-orange-50 h-auto py-3 px-4 transition-all"
+                                        className="h-auto py-4 px-8 rounded-2xl border-gray-200 text-gray-900 hover:bg-gray-50 font-bold text-xs gap-2 transition-all active:scale-95 shadow-sm"
                                         onClick={async () => {
                                             const link = `${window.location.origin}/careers/jobs/${selectedDrive.slug || selectedDrive.id}`;
                                             await navigator.clipboard.writeText(link);
@@ -724,87 +751,77 @@ export default function DrivesPage() {
                                             setTimeout(() => setCopySuccess(false), 2000);
                                         }}
                                     >
-                                        {copySuccess ? (
-                                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                                        ) : (
-                                            <Copy className="h-4 w-4 text-gray-400" />
-                                        )}
+                                        {copySuccess ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4 text-gray-400" />}
+                                        {copySuccess ? "Copied" : "Copy Link"}
                                     </Button>
                                 </div>
-                                {copySuccess && (
-                                    <p className="text-[10px] text-green-600 font-bold uppercase tracking-widest text-center animate-in-fade">Copied to clipboard!</p>
-                                )}
                             </div>
 
-
-                            {/* Job Brief */}
-                            <div className="space-y-4">
-                                <div className="flex items-center gap-2 text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">
-                                    <FileText className="h-3.5 w-3.5" /> Job Brief
-                                </div>
-                                <p className="text-sm text-gray-600 leading-relaxed font-medium">
+                            {/* Section 3: Job Description */}
+                            <div className="space-y-6 pt-8 border-t border-gray-100 w-full">
+                                <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">About the Role</p>
+                                <div className="text-[16px] font-medium text-gray-600 leading-relaxed whitespace-pre-wrap w-full">
                                     {selectedDrive.description}
-                                </p>
+                                </div>
                             </div>
 
-                            {/* Detailed Points */}
-                            <div className="grid grid-cols-1 gap-8">
-                                {selectedDrive.skills && (
-                                    <div className="space-y-4">
-                                        <div className="flex items-center gap-2 text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Required Skills</div>
-                                        <div className="flex flex-wrap gap-2">
-                                            {selectedDrive.skills.split(',').map((s: string, i: number) => (
-                                                <Badge key={i} variant="outline" className="px-3 py-1.5 rounded-lg border-gray-100 font-bold text-gray-600 bg-gray-50/50">{s.trim()}</Badge>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
+                            {/* Section 4: Responsibilities */}
+                            {selectedDrive.responsibilities && (
+                                <div className="space-y-6 pt-6 border-t border-gray-50">
+                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Key Responsibilities</p>
+                                    <ul className="space-y-4">
+                                        {selectedDrive.responsibilities.split('\n').map((line: string, i: number) => line.trim() && (
+                                            <li key={i} className="flex gap-4">
+                                                <div className="h-2 w-2 rounded-full bg-gray-200 mt-2 shrink-0" />
+                                                <span className="text-[15px] text-gray-600 font-medium leading-relaxed">{line.trim()}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
 
-                                {selectedDrive.responsibilities && (
-                                    <div className="space-y-4">
-                                        <div className="flex items-center gap-2 text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Responsibilities</div>
-                                        <ul className="space-y-3">
-                                            {selectedDrive.responsibilities.split('\n').map((line: string, i: number) => line.trim() && (
-                                                <li key={i} className="flex gap-3 text-sm text-gray-600 font-medium">
-                                                    <div className="h-5 w-5 rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0 mt-0.5">
-                                                        <ChevronRight className="h-3 w-3 text-[#F97316]" />
-                                                    </div>
-                                                    {line.trim()}
-                                                </li>
-                                            ))}
-                                        </ul>
+                            {/* Section 5: Skills */}
+                            {selectedDrive.skills && (
+                                <div className="space-y-6 pt-6 border-t border-gray-50">
+                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Required Expertise</p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {selectedDrive.skills.split(',').map((s: string, i: number) => (
+                                            <span key={i} className="px-4 py-2 rounded-xl bg-gray-50 text-gray-600 border border-gray-200 font-bold text-[11px] uppercase tracking-wider">
+                                                {s.trim()}
+                                            </span>
+                                        ))}
                                     </div>
-                                )}
-                            </div>
+                                </div>
+                            )}
                         </div>
 
-                        {/* Drawer Footer */}
-                        <div className="p-6 border-t border-gray-50 flex gap-3 bg-white/50 backdrop-blur-md">
+                        {/* Modal Footer */}
+                        <div className="p-8 border-t border-gray-100 flex gap-4 bg-gray-50/50 shrink-0">
                             <Button
-                                className="flex-1 bg-gradient-to-r from-[#F97316] to-orange-500 hover:from-orange-600 hover:to-orange-500 text-white font-black uppercase text-[10px] tracking-[0.2em] h-12 shadow-lg shadow-orange-500/20"
-                                onClick={() => router.push(`/admin/candidates?driveId=${selectedDrive.id}`)}
+                                className="flex-1 h-14 bg-gray-900 hover:bg-black text-white rounded-xl font-bold uppercase text-[11px] tracking-widest shadow-sm"
+                                onClick={() => router.push(`/admin/candidates?driveId=${selectedDrive.id}${orgId ? `&orgId=${orgId}` : ''}`)}
                             >
-                                View Applicants ({selectedDrive.applicants || 0})
+                                <Users className="h-4 w-4 mr-3" />
+                                Talent Pipeline ({selectedDrive.applicants || 0})
                             </Button>
                             <Button
                                 variant="outline"
-                                className="h-12 px-4 rounded-xl flex items-center gap-2 border-orange-200 text-orange-500 hover:bg-orange-50 hover:text-orange-600 font-bold text-[11px] uppercase tracking-wider"
-                                title="Preview as Candidate"
+                                className="h-14 px-8 rounded-xl border-gray-200 text-gray-900 hover:bg-white font-bold text-[11px] uppercase tracking-widest transition-all shadow-sm"
                                 onClick={() => setCandidatePreviewSlug(selectedDrive.slug || selectedDrive.id)}
                             >
                                 <Eye className="h-4 w-4" />
-                                Preview
+                                Portal View
                             </Button>
                             <Button
                                 variant="outline"
-                                className="h-12 w-12 rounded-xl flex items-center justify-center p-0 border-gray-200 text-gray-400 hover:text-gray-900 overflow-hidden"
+                                className="h-14 w-14 rounded-xl flex items-center justify-center p-0 border-gray-200 text-gray-400 hover:text-gray-900 hover:bg-white transition-all shadow-sm"
                                 onClick={() => router.push(`/admin/create-drive?id=${selectedDrive.id}${orgId ? `&orgId=${orgId}` : ''}`)}
                             >
-                                <Edit className="h-5 w-5" />
+                                <Edit className="h-4 w-4" />
                             </Button>
                         </div>
                     </div>
-                </>
+                </div>
             )}
 
             {/* Candidate Portal Preview Modal */}

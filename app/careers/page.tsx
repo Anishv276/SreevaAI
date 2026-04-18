@@ -73,7 +73,7 @@ export default function PortalPage() {
 
                     {/* Quick Filters / Categories */}
                     <div className="flex flex-wrap items-center justify-center gap-3 pt-4">
-                        {["All Jobs", "Engineering", "Design", "Product", "Sales", "Operations"].map((cat) => (
+                        {["All Jobs", "Design", "Product", "Sales", "Operations"].map((cat) => (
                             <button 
                                 key={cat}
                                 onClick={() => setActiveCategory(cat)}
