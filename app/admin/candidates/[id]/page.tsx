@@ -656,6 +656,9 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
     const interviewRecordingUrl = candidate?.interview?.interviewRecordingUrl || candidate?.assessment?.interviewRecordingUrl || "";
     const interviewAiSummary = candidate?.interview?.aiSummary || candidate?.assessment?.aiSummary || "";
     const interviewTranscript = candidate?.interview?.interviewTranscript || candidate?.assessment?.interviewTranscript || "";
+    
+    // Calculate Word Count
+    const wordCount = interviewTranscript ? interviewTranscript.split(/\s+/).filter((w: string) => w.length > 0).length : 0;
 
     useEffect(() => {
         const dbDuration = candidate?.interview?.interviewDuration || candidate?.assessment?.interviewDuration;
@@ -1352,11 +1355,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
                                     {/* communication */}
-                                    <div className="p-12 rounded-[48px] bg-white border border-gray-100 shadow-sm space-y-10">
+                                    <div className="p-6 rounded-[32px] bg-white border border-gray-100 shadow-sm space-y-6 flex flex-col scale-[0.98] origin-top-left">
                                         <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Communication Analysis</p>
-                                        <div className="flex justify-center py-6">
+                                        <div className="flex justify-center py-2 flex-1 items-center">
                                             <CommunicationDonutChart
                                                 metrics={[
                                                     { label: "CLARITY", value: 60, color: "#6366F1" },
@@ -1366,9 +1369,9 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                 ]}
                                             />
                                         </div>
-                                        <div className="p-10 rounded-[40px] bg-[#FAF9F6] border border-[#F5E6D3]/50 space-y-4">
+                                        <div className="p-5 rounded-[24px] bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
                                             <p className="text-[9px] font-black text-[#A89078] uppercase tracking-[0.3em]">CEFR RATING</p>
-                                            <h4 className="text-3xl font-black text-[#8B5E3C] tracking-tight">B1 — Intermediate</h4>
+                                            <h4 className="text-xl font-black text-[#8B5E3C] tracking-tight">B1 — Intermediate</h4>
                                             <p className="text-[15px] font-medium text-gray-500 leading-relaxed">
                                                 Can handle simple direct exchanges. Frequent grammatical errors and choppy fluency prevent B2. Insufficient for a senior role requiring complex technical explanation.
                                             </p>
@@ -1376,8 +1379,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     </div>
 
                                     {/* video */}
-                                    <div className="p-4 rounded-[52px] bg-white border border-gray-100 shadow-sm flex flex-col justify-center min-h-[480px]">
-                                        <div className="aspect-video w-full rounded-[44px] border-[8px] border-gray-900 bg-black overflow-hidden shadow-2xl relative">
+                                    <div className="p-6 rounded-[32px] bg-white border border-gray-100 shadow-sm flex flex-col space-y-5 scale-[0.98] origin-top-right">
+                                        <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Interview Recording</p>
+                                        
+                                        <div className="space-y-6 flex-1 flex flex-col">
+                                            <div className="aspect-video w-full rounded-[24px] border-[5px] border-gray-900 bg-black overflow-hidden shadow-2xl relative">
                                             {interviewRecordingUrl ? (
                                                 <Plyr
                                                     key={interviewRecordingUrl}
@@ -1391,13 +1397,32 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     }}
                                                 />
                                             ) : (
-                                                <div className="h-full w-full flex items-center justify-center text-gray-500">Video Loading...</div>
+                                                <div className="h-full w-full flex items-center justify-center text-gray-500 text-[10px] font-black uppercase tracking-widest bg-gray-900/50">Video Loading...</div>
                                             )}
                                         </div>
-                                        <div className="pt-6 text-center">
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="p-5 rounded-[24px] bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-2">
+                                                <div className="flex items-center gap-2 text-[#6366F1]">
+                                                    <Calendar className="h-3.5 w-3.5" />
+                                                    <span className="text-[9px] font-black uppercase tracking-widest">Total duration</span>
+                                                </div>
+                                                <p className="text-xl font-black text-gray-900 leading-none">{recordingDurationSec ? formatDuration(recordingDurationSec) : "--:--min"}</p>
+                                            </div>
+                                            <div className="p-5 rounded-[24px] bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-2">
+                                                <div className="flex items-center gap-2 text-[#F97316]">
+                                                    <MessageSquare className="h-3.5 w-3.5" />
+                                                    <span className="text-[9px] font-black uppercase tracking-widest">Words Spoken</span>
+                                                </div>
+                                                <p className="text-xl font-black text-gray-900 leading-none">{wordCount > 0 ? wordCount.toLocaleString() : "N/A"}</p>
+                                            </div>
+                                        </div>
+                                        <div className="py-1 text-center">
                                             <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.4em]">Secure Cloudflare R2 Recording</p>
                                         </div>
                                     </div>
+                                    <div className="h-2" /> {/* Spacer */}
+                                </div>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-8">
@@ -1645,8 +1670,8 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     </div>
                                                 </div>
                                             </div>
-                                </div>
                             </div>
+                        </div>
                         )}
                 {showSubmissionPreview && (
                     <div className="fixed inset-0 z-[100] flex justify-end">

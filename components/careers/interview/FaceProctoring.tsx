@@ -110,6 +110,7 @@ export function FaceProctoring({
 
   // Multiple-face consecutive-frame counter (debounce false positives)
   const multiFaceCountRef = useRef(0);
+  const faceCountHistoryRef = useRef<number[]>([]); // 5-frame buffer for temporal consensus
 
   // Cooldown timestamps
   const lastFiredRef = useRef<Record<string, number>>({});
@@ -348,14 +349,22 @@ export function FaceProctoring({
 
     const numFaces = result.faceLandmarks?.length ?? 0;
 
+    // -- Signal 03: Identity Lock (Temporal Consensus 3/5) --
+    faceCountHistoryRef.current.push(numFaces);
+    if (faceCountHistoryRef.current.length > 5) faceCountHistoryRef.current.shift();
+
+    const validFrames = faceCountHistoryRef.current.filter(c => c === 1).length;
+    const isIdentityLocked = validFrames >= 3;
+
     // ── 1. Face Absence ───────────────────────────────────────────────────────
+    // If consensus is lost and current frame is 0, start absence timer
     if (numFaces === 0) {
       if (!absenceStartRef.current) absenceStartRef.current = now;
       if (now - absenceStartRef.current > ABSENCE_GRACE_MS) {
         const durSec = Math.round((now - absenceStartRef.current) / 1000);
         fire("face_absence", `No face detected for ${durSec}s during interview`, "high");
       }
-      // Reset sustained-violation timers
+      // Reset other sustained timers
       gazeViolStartRef.current = null;
       headPoseViolStartRef.current = null;
       return;
@@ -364,16 +373,18 @@ export function FaceProctoring({
     absenceStartRef.current = null;
 
     // ── 2. Multiple Faces ─────────────────────────────────────────────────────
-    // Require MULTI_FACE_CONFIRM_FRAMES consecutive detections before flagging.
-    // This eliminates false positives from reflections, shadows, or portrait images.
+    // If consensus is lost and current frame is > 1, track multiple faces
     if (numFaces > 1) {
       multiFaceCountRef.current += 1;
       if (multiFaceCountRef.current >= MULTI_FACE_CONFIRM_FRAMES) {
         fire("multiple_faces", `${numFaces} people detected in frame`, "high");
       }
     } else {
-      multiFaceCountRef.current = 0; // reset counter as soon as it goes back to 1
+      multiFaceCountRef.current = 0;
     }
+
+    // Only proceed to Gaze/Pose if Identity is Locked (1 face stable)
+    if (!isIdentityLocked) return;
 
     // Use primary face (index 0) for gaze + pose
     const landmarks = result.faceLandmarks[0];

@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useState, use, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff } from "lucide-react";
+import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
@@ -833,6 +833,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
                             onRemoteAgentAudioTrack={handleRemoteAgentAudioTrack}
                             onRoomReady={(room) => { lkRoomRef.current = room; }}
+                            candidateName={"Candidate"} 
                         />
                         {/* ── Connection Proctoring (lives inside LiveKitRoom for useRoomContext) */}
                         <ConnectionProctoring
@@ -1073,6 +1074,7 @@ function InterviewRoomContent({
     onRemoteAgentAudioTrack,
     onAgentReady,
     onRoomReady,
+    candidateName,
 }: {
     id: string,
     onFinish: () => void,
@@ -1085,6 +1087,7 @@ function InterviewRoomContent({
     onRemoteAgentAudioTrack: (track: MediaStreamTrack | null) => void,
     onAgentReady?: (isReady: boolean) => void,
     onRoomReady?: (room: Room) => void,
+    candidateName?: string;
 }) {
     const { localParticipant } = useLocalParticipant();
     const cameraTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
@@ -1447,64 +1450,92 @@ function InterviewRoomContent({
                         )}
                     </div>
                 </motion.div>
-                {/* Floating Vanishing Transcript - Bottom Left Anchor */}
-                <div className="absolute left-16 bottom-24 z-[65] w-[450px] pointer-events-none">
-                    <div
-                        className="flex flex-col-reverse gap-1.5 max-h-[500px] overflow-hidden py-10"
+                {/* Floating Box Transcript - Left of AI Avatar */}
+                <div className="absolute left-10 bottom-44 z-[65] w-[420px] pointer-events-none">
+                    <div 
+                        className="flex flex-col-reverse gap-4 max-h-[550px] overflow-hidden p-6 pb-20"
                         style={{
-                            maskImage: 'linear-gradient(to top, black 30%, transparent 95%)',
-                            WebkitMaskImage: 'linear-gradient(to top, black 30%, transparent 95%)'
+                            maskImage: 'linear-gradient(to top, black 40%, transparent 95%)',
+                            WebkitMaskImage: 'linear-gradient(to top, black 40%, transparent 95%)'
                         }}
                     >
                         <AnimatePresence mode="popLayout">
-                            {groupedTranscriptions.slice(-8).reverse().map((group, idx) => {
+                            {groupedTranscriptions.slice(-4).reverse().map((group, idx) => {
                                 const isGroupFinal = group.segments.every(s => s.isFinal);
                                 const combinedText = group.segments.map(s => s.text.trim()).join(" ");
 
                                 return (
                                     <motion.div
                                         key={group.id}
-                                        initial={{ opacity: 0, x: -20, scale: 0.95 }}
+                                        initial={{ opacity: 0, x: -30, scale: 0.9 }}
                                         animate={{
-                                            opacity: Math.max(0.1, 1 - (idx * 0.15)),
+                                            opacity: Math.max(0.1, 1 - (idx * 0.25)),
                                             x: 0,
                                             scale: 1
                                         }}
                                         exit={{
                                             opacity: 0,
-                                            y: -60,
-                                            scale: 0.9,
-                                            transition: { duration: 0.5 }
+                                            y: -50,
+                                            scale: 0.95,
+                                            transition: { duration: 0.4 }
                                         }}
                                         transition={{
                                             type: "spring",
-                                            stiffness: 150,
-                                            damping: 20
+                                            stiffness: 200,
+                                            damping: 24
                                         }}
                                         className={cn(
-                                            "flex flex-col gap-0.5 max-w-[90%]",
-                                            "self-start items-start" // Both now on the left for consistent LTR growth
+                                            "w-full filter drop-shadow-[0_10px_30px_rgba(0,0,0,0.15)]",
+                                            "pointer-events-auto"
                                         )}
                                     >
-                                        <p className={cn(
-                                            "text-[8px] font-black uppercase tracking-[0.2em] opacity-30 mx-2",
-                                            group.isCandidate ? "text-orange-500" : "text-zinc-500"
-                                        )}>
-                                            {group.isCandidate ? "You" : "Ishita"}{!isGroupFinal && " •••"}
-                                        </p>
                                         <div className={cn(
-                                            "px-4 py-2.5 rounded-[1.4rem] backdrop-blur-md relative",
-                                            group.isCandidate
-                                                ? "bg-orange-500/10 border border-orange-500/20 rounded-tl-[0.25rem] text-left"
-                                                : "bg-zinc-800/40 border border-white/5 rounded-tl-[0.25rem] text-left"
+                                            "bg-white/95 backdrop-blur-xl border border-black/[0.03] rounded-[1.8rem] p-5 relative overflow-hidden",
+                                            group.isCandidate ? "rounded-br-none" : "rounded-bl-none"
                                         )}>
-                                            <StreamingText
-                                                text={combinedText}
-                                                className={cn(
-                                                    "text-sm font-bold italic tracking-tight leading-snug",
-                                                    group.isCandidate ? "text-orange-100" : "text-white"
-                                                )}
-                                            />
+                                            {/* Header */}
+                                            <div className="flex items-center gap-3 mb-3">
+                                                <div className={cn(
+                                                    "w-7 h-7 rounded-full flex items-center justify-center shrink-0 border border-black/[0.05]",
+                                                    group.isCandidate 
+                                                        ? "bg-gradient-to-br from-orange-400 to-orange-600" 
+                                                        : "bg-gradient-to-br from-indigo-500 to-blue-700"
+                                                )}>
+                                                    {group.isCandidate ? (
+                                                        <User className="w-4 h-4 text-white" />
+                                                    ) : (
+                                                        <Sparkles className="w-4 h-4 text-white animate-pulse" />
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <p className={cn(
+                                                        "text-[10px] font-black uppercase tracking-[0.15em] leading-none",
+                                                        group.isCandidate ? "text-orange-600" : "text-indigo-600"
+                                                    )}>
+                                                        {group.isCandidate ? (candidateName || "Candidate") : "AI Interviewer"}
+                                                    </p>
+                                                    <p className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">
+                                                        {group.isCandidate ? "Speaker" : "Expert AI"}{!isGroupFinal && " •••"}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* Body */}
+                                            <div className="pl-0">
+                                                <StreamingText
+                                                    text={combinedText}
+                                                    className={cn(
+                                                        "text-[14px] font-medium tracking-normal leading-relaxed",
+                                                        "text-slate-700"
+                                                    )}
+                                                />
+                                            </div>
+
+                                            {/* Subtle Decorative Gradient */}
+                                            <div className={cn(
+                                                "absolute bottom-0 right-0 w-24 h-24 opacity-[0.03] pointer-events-none",
+                                                group.isCandidate ? "bg-orange-500 rounded-full blur-3xl" : "bg-indigo-500 rounded-full blur-3xl"
+                                            )} />
                                         </div>
                                     </motion.div>
                                 );

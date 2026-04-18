@@ -50,6 +50,7 @@ export function HardwareCheck({
     const smoothDbRef = useRef<number | null>(null);
     const noiseHistoryRef = useRef<number[]>([]);
     const sessionFinalTextRef = useRef("");
+    const faceCountHistoryRef = useRef<number[]>([]); // 5-frame buffer for temporal consensus
 
     const [cameraStatus, setCameraStatus] = useState<CheckStatus>("idle");
     const [micStatus, setMicStatus] = useState<CheckStatus>("idle");
@@ -219,24 +220,49 @@ export function HardwareCheck({
                     try { result = visualLandmarkerRef.current.detectForVideo(video, performance.now()); } 
                     catch { return; }
 
-                    if (!result.faceLandmarks || result.faceLandmarks.length === 0) {
+                    const numFaces = result.faceLandmarks?.length ?? 0;
+                    
+                    // -- Signal 03: Identity Lock (Temporal Consensus 3/5) --
+                    // We require exactly 1 face for stability.
+                    faceCountHistoryRef.current.push(numFaces);
+                    if (faceCountHistoryRef.current.length > 5) faceCountHistoryRef.current.shift();
+                    
+                    const validFrames = faceCountHistoryRef.current.filter(c => c === 1).length;
+                    const isIdentityLocked = validFrames >= 3;
+
+                    if (!isIdentityLocked || numFaces !== 1) {
                         setVisualSignals({ alignment: false, proximity: false, lighting: lastLightGood });
-                        setVisualStatusMsg("No face detected. Please look at the camera.");
+                        if (numFaces === 0) setVisualStatusMsg("No face detected. Please look at the camera.");
+                        else if (numFaces > 1) setVisualStatusMsg("Multiple faces detected. Please ensure you are alone.");
+                        else setVisualStatusMsg("Stabilizing visual identity...");
                         return;
                     }
 
+                    // -- Defensive Check: Ensure landmarks exist and are an array --
                     const landmarks = result.faceLandmarks[0];
-                    const xs = landmarks.map((l: any) => l.x);
-                    const ys = landmarks.map((l: any) => l.y);
+                    if (!landmarks || !Array.isArray(landmarks) || landmarks.length === 0) {
+                        setVisualSignals({ alignment: false, proximity: false, lighting: lastLightGood });
+                        return;
+                    }
+
+                    // Use numeric filtering to be 100% safe
+                    const xs = landmarks.filter(l => l && typeof l.x === 'number').map(l => l.x);
+                    const ys = landmarks.filter(l => l && typeof l.y === 'number').map(l => l.y);
+                    
+                    if (xs.length === 0 || ys.length === 0) return;
+
                     const minX = Math.min(...xs), maxX = Math.max(...xs);
                     const minY = Math.min(...ys), maxY = Math.max(...ys);
 
                     const cx = (minX + maxX) / 2;
                     const cy = (minY + maxY) / 2;
-                    const isAligned = cx >= CENTER_X_MIN && cx <= CENTER_X_MAX && cy >= CENTER_Y_MIN && cy <= CENTER_Y_MAX;
+                    
+                    // -- Signal 04: Focus Centering (0.35–0.65 / 0.25–0.55) --
+                    const isAligned = cx >= 0.35 && cx <= 0.65 && cy >= 0.25 && cy <= 0.55;
 
+                    // -- Signal 05: Proximity / Scale (0.20–0.55) --
                     const widthRatio = maxX - minX;
-                    const isProxGood = widthRatio >= PROX_MIN && widthRatio <= PROX_MAX;
+                    const isProxGood = widthRatio >= 0.20 && widthRatio <= 0.55;
 
                     const now = performance.now();
                     if (now - lastLightingCheck > 500) {
@@ -246,21 +272,27 @@ export function HardwareCheck({
                             lc.width = 1; lc.height = 1;
                             const lctx = lc.getContext("2d");
                             if (lctx && video.videoWidth > 0) {
-                                // Draw face box scaled down to 1x1
                                 lctx.drawImage(video, minX*video.videoWidth, minY*video.videoHeight, widthRatio*video.videoWidth, (maxY-minY)*video.videoHeight, 0, 0, 1, 1);
                                 const data = lctx.getImageData(0,0,1,1).data;
                                 const brightness = 0.299 * data[0] + 0.587 * data[1] + 0.114 * data[2];
-                                lastLightGood = brightness >= LIGHT_MIN && brightness <= LIGHT_MAX;
+                                // -- Signal 06: Lighting Quality (70–200) --
+                                lastLightGood = brightness >= 70 && brightness <= 200;
                             }
                         } catch (e) {}
                     }
 
                     setVisualSignals({ alignment: isAligned, proximity: isProxGood, lighting: lastLightGood });
 
-                    if (!isAligned) setVisualStatusMsg(cx < CENTER_X_MIN ? "Move right" : cx > CENTER_X_MAX ? "Move left" : "Center your face");
-                    else if (!isProxGood) setVisualStatusMsg(widthRatio < PROX_MIN ? "Move closer to camera" : "Move further back");
-                    else if (!lastLightGood) setVisualStatusMsg("Lighting is poor. Face a light source.");
-                    else setVisualStatusMsg("Visual integrity is good");
+                    const errors: string[] = [];
+                    if (!isAligned) errors.push(cx < 0.35 ? "Move right" : cx > 0.65 ? "Move left" : "Center your face");
+                    if (!isProxGood) errors.push(widthRatio < 0.20 ? "Move closer" : "Move further back");
+                    if (!lastLightGood) errors.push("Lighting is poor");
+                    
+                    if (errors.length > 0) {
+                        setVisualStatusMsg(errors.join(" • "));
+                    } else {
+                        setVisualStatusMsg("Face detected");
+                    }
                 };
                 visualRafRef.current = requestAnimationFrame(checkVisuals);
             } catch (err) {
@@ -888,34 +920,34 @@ export function HardwareCheck({
                     <div className="relative bg-gray-950 flex-1 h-[320px] overflow-hidden group">
                         <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
                         
-                        {/* Visual Integrity Target Guide Overlay */}
+                        {/* Visual Integrity Alert Notification (Simple bottom bar replacement) */}
                         {cameraStatus === "granted" && (
-                            <div className="absolute inset-0 pointer-events-none flex flex-col">
-                                {/* Centering Guide Frame (0.35 to 0.65 width / 0.25 to 0.55 height) */}
-                                {/* We will use flex to create a box representing the center bounds */}
-                                <div className="absolute inset-0 border-[4px] opacity-10 m-auto" 
-                                    style={{ width: "40%", height: "40%", borderColor: "white", borderRadius: "100%" }} />
-                                
-                                <div className="absolute bottom-3 inset-x-0 mx-auto w-max bg-black/60 backdrop-blur-sm shadow overflow-hidden rounded-xl">
-                                    <div className="flex items-center gap-4 px-4 py-2">
-                                        <div className="flex flex-col items-center">
-                                            <div className={`w-2 h-2 rounded-full mb-1 ${visualSignals.alignment ? 'bg-green-500' : 'bg-red-500'}`} />
-                                            <span className="text-[9px] text-white/80 font-bold uppercase tracking-wide">Align</span>
+                            <AnimatePresence>
+                                {visualStatusMsg && (
+                                    <motion.div 
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: 10 }}
+                                        className="absolute bottom-4 inset-x-4 z-20 flex justify-center pointer-events-none"
+                                    >
+                                        <div className={cn(
+                                            "text-white px-4 py-2.5 rounded-xl shadow-lg border flex items-center gap-2.5 max-w-[90%] pointer-events-auto transition-colors duration-300",
+                                            visualReady ? "bg-green-600 border-green-500/50" : "bg-orange-500 border-orange-400/50"
+                                        )}>
+                                            <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                                                {visualReady ? (
+                                                    <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                                                ) : (
+                                                    <AlertCircle className="w-3.5 h-3.5 text-white" />
+                                                )}
+                                            </div>
+                                            <p className="text-[11px] font-black uppercase tracking-widest leading-none drop-shadow-sm">
+                                                {visualStatusMsg}
+                                            </p>
                                         </div>
-                                        <div className="flex flex-col items-center">
-                                            <div className={`w-2 h-2 rounded-full mb-1 ${visualSignals.proximity ? 'bg-green-500' : 'bg-red-500'}`} />
-                                            <span className="text-[9px] text-white/80 font-bold uppercase tracking-wide">Dist</span>
-                                        </div>
-                                        <div className="flex flex-col items-center">
-                                            <div className={`w-2 h-2 rounded-full mb-1 ${visualSignals.lighting ? 'bg-green-500' : 'bg-red-500'}`} />
-                                            <span className="text-[9px] text-white/80 font-bold uppercase tracking-wide">Light</span>
-                                        </div>
-                                    </div>
-                                    <div className={`px-4 py-1 text-center text-[10px] font-bold truncate transition-colors ${visualReady ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
-                                        {visualStatusMsg}
-                                    </div>
-                                </div>
-                            </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         )}
 
                         {cameraStatus !== "granted" && (

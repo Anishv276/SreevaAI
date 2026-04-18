@@ -174,6 +174,16 @@ _TOOL_ALIAS_CATALOG: dict[str, list[str]] = {
     "Clay": ["clay", "kley"],
 }
 
+# --- Proctoring Risk Weights (Phase 5) ---
+# Browser-side proctoring signals sent via LiveKit data channel
+PROCTORING_WEIGHTS: dict[str, int] = {
+    "tab_switch": 5,           # candidate switched to another tab
+    "face_absent": 10,         # face not detected >3s
+    "gaze_violation": 8,       # eye contact broken consistently
+    "multiple_faces": 30,      # multiple people detected (suspicious)
+    "clipboard_paste": 15,     # detected clipboard paste event
+}
+
 
 def build_term_alias_hints(*text_blocks: str, max_lines: int = 10) -> str:
     combined = " ".join(block for block in text_blocks if isinstance(block, str)).lower()
@@ -215,7 +225,6 @@ def infer_candidate_band(structured_resume_raw: Any, resume_text_block: str) -> 
     """
     years: Optional[float] = None
     parsed_resume = None
-
     try:
         parsed_resume = (
             json.loads(structured_resume_raw)
@@ -1705,10 +1714,22 @@ async def get_interview_context(app_id: str):
 
 
 async def persist_transcript(
-    app_id: str, transcript_lines: list, start_time: Optional[float]
+    app_id: str,
+    transcript_lines: list,
+    start_time: Optional[float],
+    proctoring_data: Optional[dict] = None,
+    final_status: str = "COMPLETED",
 ):
-    """Save transcript + duration to Interview table via asyncpg."""
-    if not transcript_lines:
+    """Save transcript + duration + proctoring report to Interview table via asyncpg.
+
+    Args:
+        app_id: Application ID
+        transcript_lines: List of transcript line strings
+        start_time: Session start time (perf_counter)
+        proctoring_data: Dict with role_category, candidate_band, suspicion_score, events, etc.
+        final_status: Interview status ('COMPLETED', 'NO_SHOW', 'ABANDONED')
+    """
+    if not transcript_lines and final_status != "NO_SHOW":
         logger.info(
             "[TRANSCRIPT] No lines captured — skipping save to avoid overwriting existing data"
         )
@@ -1718,31 +1739,47 @@ async def persist_transcript(
         logger.warning("[TRANSCRIPT] No DATABASE_URL — skipping save")
         return
     try:
-        full_text = "\n".join(transcript_lines)
+        full_text = "\n".join(transcript_lines) if transcript_lines else ""
         duration = int(time.time() - start_time) if start_time else 0
+
+        # Build proctoring report (Phase 5 audit trail)
+        proctor_report = None
+        if proctoring_data:
+            proctor_report = {
+                "role_category": proctoring_data.get("role_category"),
+                "candidate_band": proctoring_data.get("candidate_band"),
+                "total_turns": proctoring_data.get("total_turns", 0),
+                "final_suspicion_score": proctoring_data.get("suspicion_score", 0),
+                "final_mode": proctoring_data.get("current_mode", "normal"),
+                "exit_reason": proctoring_data.get("exit_reason", "normal_completion"),
+                "events": proctoring_data.get("events", []),
+            }
 
         conn_str = normalize_postgres_dsn(DATABASE_URL)
         conn = await asyncpg.connect(conn_str)
         try:
-            # Update Interview table
+            # Update Interview table with transcript, duration, status, and proctoring report
             await conn.execute(
                 """
                 UPDATE "Interview"
                 SET
                     "interviewTranscript" = $1,
                     "interviewDuration"   = $2,
-                    status                = 'COMPLETED',
+                    status                = $3,
+                    "proctorReport"       = $4,
                     "completedAt"         = NOW(),
                     "updatedAt"           = NOW()
-                WHERE "applicationId" = $3
+                WHERE "applicationId" = $5
                 """,
                 full_text,
                 duration,
+                final_status,
+                json.dumps(proctor_report) if proctor_report else None,
                 app_id,
             )
             logger.info(
                 f"[TRANSCRIPT] Saved {len(transcript_lines)} lines, "
-                f"{duration}s duration for app {app_id}"
+                f"{duration}s duration, status={final_status} for app {app_id}"
             )
         finally:
             await conn.close()
@@ -3085,7 +3122,130 @@ WHAT NOT TO WRITE:
 BAD: "That's really interesting — and it makes me think about the broader question of how you've navigated ambiguity; specifically in environments where the goalposts were constantly shifting."
 GOOD: "That is interesting. How have you handled it when the goalposts keep shifting? What does that feel like from the inside?"
 
-## CLOSING THE SESSION — MAKE IT FEEL EARNED
+## HOW YOU DETECT AND INTERRUPT REHEARSED ANSWERS
+
+This is one of your most powerful tools. Use it with precision — not suspicion.
+
+Real candidates have texture in their answers: they hesitate, self-correct, trail off, remember something mid-sentence, give imperfect details. Rehearsed or AI-assisted answers are too clean. They flow perfectly, follow structure, and contain no friction.
+
+CHEAT SIGNAL PATTERN — interrupt when you see 2 or more of these in the same answer:
+  Signal 1 — Perfect structure: "Firstly... Secondly... Finally..." with no hesitation at all
+  Signal 2 — No specifics: no name, no number, no date, no team size — only archetypes and generalities
+  Signal 3 — Universal positive outcome: "performance improved significantly", "the team was aligned", "results were great"
+  Signal 4 — Answered a slightly different question than what you asked (prepped for a similar version)
+  Signal 5 — Zero disfluency: flows from start to finish without a single "um", pause, or self-correction
+
+When 2+ signals appear in the same answer — interrupt. Do not wait for them to finish.
+
+HOW TO INTERRUPT — sound genuinely curious, never accusatory:
+  Target the MOST SPECIFIC CLAIM in the sentence just before you interrupt.
+  Pull them backwards into memory, not forwards into their prepared story.
+
+  They said: "Firstly I identified the root cause, secondly I communicated with stakeholders..."
+  Interrupt on "root cause": "wait, sorry — the root cause part. before you had any data,
+  what was your first instinct about what was wrong?"
+
+  They said: "We improved the system performance significantly..."
+  Interrupt on "improved": "actually hold on — improved from what to what, specifically?
+  like what was the number before?"
+
+  They said: "I led the team through the migration successfully..."
+  Interrupt on "led": "sorry, just on that — when you say you led it, what did that
+  actually look like day to day? who was on the team?"
+
+A real candidate stumbles slightly, then recalls the real detail. Imperfection is the signal of real memory.
+An AI-assisted candidate has no real memory — they stall, repeat the generic version, or suddenly cannot remember.
+
+FREQUENCY RULES — this is a scalpel, not a hammer:
+  Maximum once every 5 turns. Never twice in a row.
+  Never when the candidate is visibly nervous or already struggling.
+  Never in the first 3 turns — let them settle first.
+  If it did not reveal anything suspicious, treat it as normal clarification and move on warmly.
+
+## HOW YOU USE LOGIC TRAPS
+
+A logic trap is a subtle false assumption embedded in your question. A real practitioner corrects it.
+A faker agrees with it because they have no real experience to contradict it.
+
+This is not about trick questions. It is about testing genuine familiarity.
+
+HOW IT WORKS:
+  You embed a plausible-sounding but incorrect assumption into a natural question.
+  If they know the domain, they will correct you without thinking twice.
+  If they are faking, they will agree — because the assumption sounds reasonable and they have nothing real to contradict it with.
+
+EXAMPLES BY ROLE:
+
+Engineering: "So once you moved to microservices, the deployment complexity basically went away, right?"
+  Real engineer: "Actually it got more complex — you trade monolith complexity for distributed systems complexity."
+  Faker: "Yes, exactly, deployment became much simpler."
+
+Sales: "So after your champion signed off internally, the deal was basically closed, right?"
+  Real AE: "Not quite — the champion is rarely the economic buyer. Still need CFO sign-off."
+  Faker: "Yes, after that it was mostly paperwork."
+
+Customer Success: "Once onboarding is done and the customer is live, the hard part is over, right?"
+  Real CSM: "That is actually when churn risk peaks — first 90 days post-go-live is the most critical."
+  Faker: "Yes, once they are set up it is mostly about maintaining the relationship."
+
+Marketing: "SEO results are pretty immediate once you start publishing content regularly, right?"
+  Real marketer: "No, organic SEO typically takes 6-12 months to compound — it is a long game."
+  Faker: "Yes, consistent content usually shows results quickly."
+
+Operations: "Once a process is documented and rolled out, people generally follow it consistently, right?"
+  Real ops person: "Rarely — adoption is the hardest part. Documentation is just the start."
+  Faker: "Yes, a good process document is usually enough."
+
+RULES FOR LOGIC TRAPS:
+  Use at most once per interview. Never reveal it was a test.
+  Only after rapport is established — never in the first 4 turns.
+  Frame it as a natural conversational assumption, not a formal question.
+  If they correct you: "right, yeah, fair point — I oversimplified that" and move on naturally.
+  If they agree: note it internally. It is a signal, not a conviction. Combine with other signals.
+
+## HOW YOU ADAPT YOUR INTERVIEW MODE
+
+Your interview mode shifts based on what you observe. You never announce a mode change.
+You simply behave differently. The candidate should not feel an abrupt shift — only a gradual change in the texture of your questions.
+
+NORMAL MODE (default — use when nothing suspicious is observed):
+  Warm, natural, balanced depth.
+  Full rapport-building. Breadth and depth in balance.
+  Follow-up selector runs normally across all five modes.
+  Personality bridges and open exploratory questions are welcome here.
+
+DEEP MODE (triggered by exceptional genuine depth from the candidate):
+  Candidate is showing real expertise — do not leave it.
+  Push to depth spiral levels 4, 5, 6 on this topic before moving on.
+  Skip breadth pressure temporarily — state injection may say "DEPTH SIGNAL."
+  Treat them as a peer. Match their level of technical or domain precision.
+  Return to normal mode after the deep topic is fully explored.
+
+PRESSURE MODE (triggered when mild suspicion signals accumulate):
+  Signals: repeated vague answers, no specifics across 3+ turns, polished structure with no texture,
+  moderate ownership language mismatch.
+  Behaviour shift (subtle, not interrogative):
+    Shorter questions. More direct. Less warmth in preamble.
+    Every answer gets a specificity probe or ownership probe.
+    One mutation question within the next 3 turns.
+    Reduce open-ended questions — ask for facts, sequences, numbers.
+  Still warm. Still professional. Just more precise and less exploratory.
+
+VERIFICATION MODE (triggered by strong suspicion — contradiction detected, logic trap accepted,
+  or multiple cheat signals in same answer):
+  Behaviour shift (firm but never accusatory):
+    Sequence recall questions: "walk me through exactly what happened — step one, step two"
+    Memory-based probes: "what did you actually say to them in that first message?"
+    Contradiction surfacing using MODE D (genuine confusion framing)
+    Interruption allowed on polished answers
+    No small talk. No exploratory questions. Every turn is verification.
+    Still respectful. The tone is precise and focused, not aggressive.
+
+MODE IS COMMUNICATED TO YOU via the [INTERVIEW STATE UPDATE] system message every 3 turns.
+When the state update includes ISHITA_MODE: [mode], shift to that mode for the next 3-4 exchanges.
+You do not need to decide the mode yourself — the supervisor tells you. You execute it.
+
+
 
 Do not follow a checklist. Good interviews end the way good conversations end — organically.
 
@@ -3313,6 +3473,9 @@ The best interviews do not feel like interviews. They feel like a conversation t
     interview_marked_finished = False
     turn_count = 0           # counts assistant turns for state injection cadence
     last_injection_turn = 0  # tracks which turn last received a state injection
+    suspicion_score = 0      # accumulated anti-cheat risk score (0-100)
+    current_interview_mode = "normal"  # normal / pressure / verification / deep
+    proctoring_events: list = []       # timeline of risk signals for final report
     ready_event = asyncio.Event()
     ready_signal_received_at: Optional[float] = None
 
@@ -3350,7 +3513,9 @@ The best interviews do not feel like interviews. They feel like a conversation t
     def on_data_received(*event_args):
         nonlocal \
             interview_marked_finished, \
-            ready_signal_received_at
+            ready_signal_received_at, \
+            suspicion_score, \
+            proctoring_events
         try:
             raw_data = None
 
@@ -3397,7 +3562,23 @@ The best interviews do not feel like interviews. They feel like a conversation t
                 interview_marked_finished = True
                 interview_finished_event.set()
                 disconnect_event.set()  # Resolve hang
-        except Exception as e:      
+
+            elif payload.get("type") == "proctor_event":
+                # Phase 5: Browser-side proctoring signals (tab switch, face absent, etc.)
+                event_name = payload.get("event")
+                event_weight = PROCTORING_WEIGHTS.get(event_name, 0)
+                if event_weight > 0:
+                    suspicion_score = min(100, suspicion_score + event_weight)
+                    proctoring_events.append({
+                        "event": event_name,
+                        "timestamp": time.time(),
+                        "score_delta": event_weight,
+                        "score_after": suspicion_score,
+                    })
+                    logger.info(
+                        f"[PROCTOR] {event_name} from browser. score={suspicion_score}"
+                    )
+        except Exception as e:
             logger.debug(f"Ignored malformed data packet: {e}")
             return
 
@@ -3456,9 +3637,13 @@ The best interviews do not feel like interviews. They feel like a conversation t
                     # Estimate total expected turns from time limit (avg ~2 turns/min)
                     expected_total = max(time_limit_mins * 2, 10)
 
+                    mode_snap = current_interview_mode
+
                     async def _inject_state(
-                        snap=lines_snap, q_list=q_list_snap, t=current_turn, exp=expected_total
+                        snap=lines_snap, q_list=q_list_snap, t=current_turn, exp=expected_total,
+                        mode=mode_snap
                     ):
+                        nonlocal suspicion_score, current_interview_mode
                         try:
                             oai_client = AsyncOpenAI()
                             state = await generate_interview_state_summary(
@@ -3473,7 +3658,70 @@ The best interviews do not feel like interviews. They feel like a conversation t
                                 llm_model=analysis_openai_model,
                             )
                             if state:
-                                # Remove old state injections — keep only the latest 2
+                                # --- Parse proctoring signals from state text ---
+                                if "CONTRADICTION DETECTED" in state:
+                                    suspicion_score = min(100, suspicion_score + 20)
+                                    proctoring_events.append({
+                                        "event": "contradiction_detected",
+                                        "turn": t,
+                                        "score_delta": 20,
+                                        "score_after": suspicion_score,
+                                    })
+                                    logger.info(f"[PROCTOR] contradiction_detected turn={t} score={suspicion_score}")
+
+                                depth_match = re.search(r"ANSWER_DEPTH:\s*\[(SURFACE|SPECIFIC|DEEP)\]", state)
+                                if depth_match:
+                                    depth_level = depth_match.group(1)
+                                    if depth_level == "SURFACE":
+                                        suspicion_score = min(100, suspicion_score + 5)
+                                        proctoring_events.append({
+                                            "event": "answer_surface",
+                                            "turn": t,
+                                            "score_delta": 5,
+                                            "score_after": suspicion_score,
+                                        })
+                                    logger.info(f"[PROCTOR] answer_depth={depth_level} turn={t} score={suspicion_score}")
+
+                                if "MOVE ON NOW" in state:
+                                    proctoring_events.append({
+                                        "event": "stuck_alert",
+                                        "turn": t,
+                                        "score_delta": 0,
+                                        "score_after": suspicion_score,
+                                    })
+                                    logger.info(f"[PROCTOR] stuck_alert turn={t}")
+
+                                if "PACE CRITICAL" in state:
+                                    proctoring_events.append({
+                                        "event": "pace_critical",
+                                        "turn": t,
+                                        "score_delta": 0,
+                                        "score_after": suspicion_score,
+                                    })
+
+                                # --- Determine interview mode from suspicion score ---
+                                if suspicion_score >= 41:
+                                    new_mode = "verification"
+                                elif suspicion_score >= 21:
+                                    new_mode = "pressure"
+                                else:
+                                    new_mode = mode  # keep existing (could be "deep" from genuine depth)
+
+                                if new_mode != current_interview_mode:
+                                    logger.info(
+                                        f"[PROCTOR] mode_change {current_interview_mode}→{new_mode} "
+                                        f"score={suspicion_score} turn={t}"
+                                    )
+                                    current_interview_mode = new_mode
+                                    proctoring_events.append({
+                                        "event": "mode_change",
+                                        "turn": t,
+                                        "from": mode,
+                                        "to": new_mode,
+                                        "score": suspicion_score,
+                                    })
+
+                                # --- Remove old state injections — keep only the latest 2 ---
                                 state_msgs = [
                                     m
                                     for m in chat_ctx.messages
@@ -3491,6 +3739,8 @@ The best interviews do not feel like interviews. They feel like a conversation t
 
                                 injection_text = (
                                     f"[INTERVIEW STATE UPDATE — Turn {t}]\n"
+                                    f"ISHITA_MODE: {current_interview_mode.upper()}\n"
+                                    f"SUSPICION_SCORE: {suspicion_score}\n"
                                     f"{state}\n"
                                     "Use this to guide your next 3-4 exchanges. "
                                     "Do not reference this note aloud."
@@ -3499,7 +3749,8 @@ The best interviews do not feel like interviews. They feel like a conversation t
                                     role="system", content=injection_text
                                 )
                                 logger.info(
-                                    f"[STATE_INJECT] Injected state at turn {t}: "
+                                    f"[STATE_INJECT] Injected state at turn {t} "
+                                    f"mode={current_interview_mode} score={suspicion_score}: "
                                     f"{state[:80]}..."
                                 )
                         except Exception as e:
@@ -3615,8 +3866,29 @@ The best interviews do not feel like interviews. They feel like a conversation t
     participant = await wait_for_human_participant(max_wait_seconds=300)
     if not participant:
         logger.warning(
-            f"[TIMEOUT] No candidate joined room for app {app_id} within 300s. Releasing slot."
+            f"[TIMEOUT] No candidate joined room for app {app_id} within 300s. Recording NO_SHOW."
         )
+        # Phase 5: Mark interview as NO_SHOW in database
+        try:
+            proctoring_data = {
+                "role_category": role_category if 'role_category' in locals() else None,
+                "candidate_band": candidate_band if 'candidate_band' in locals() else None,
+                "total_turns": turn_count,
+                "suspicion_score": suspicion_score,
+                "current_mode": current_interview_mode,
+                "exit_reason": "no_show_timeout",
+                "events": proctoring_events,
+            }
+            await persist_transcript(
+                app_id,
+                [],
+                session_start_time,
+                proctoring_data=proctoring_data,
+                final_status="NO_SHOW",
+            )
+        except Exception as e:
+            logger.error(f"[TRANSCRIPT] Failed to record NO_SHOW status: {e}")
+
         disconnect_event.set()
         try:
             await session.aclose()
@@ -3845,7 +4117,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
         )
         if candidate_turns_final >= 4:
             goodbye_text = (
-                f"Thanks so much for your time today, {candidate_name}. "
+                f"Thanks so much for your time today, {candidate_name}."
                 "It was genuinely great speaking with you. Take care, and all the best!"
             )
         else:
@@ -3877,8 +4149,23 @@ The best interviews do not feel like interviews. They feel like a conversation t
     )
     await asyncio.sleep(1)
 
-    # ✅ Final definitive save
-    await persist_transcript(app_id, transcript_lines, session_start_time)
+    # ✅ Final definitive save — Phase 5 includes proctoring report
+    proctoring_data = {
+        "role_category": role_category,
+        "candidate_band": candidate_band,
+        "total_turns": turn_count,
+        "suspicion_score": suspicion_score,
+        "current_mode": current_interview_mode,
+        "exit_reason": "time_expired" if time_expired else "interview_finished",
+        "events": proctoring_events,
+    }
+    await persist_transcript(
+        app_id,
+        transcript_lines,
+        session_start_time,
+        proctoring_data=proctoring_data,
+        final_status="COMPLETED",
+    )
     selected_tts_model = org_sarvam_model if org_tts_provider == "SARVAM" else org_cartesia_model
     selected_stt_model = org_sarvam_stt_model if org_stt_provider == "SARVAM" else org_deepgram_model
     await persist_org_usage_metrics(
