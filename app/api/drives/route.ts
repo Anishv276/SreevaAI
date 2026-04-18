@@ -124,7 +124,8 @@ export async function GET(request: Request) {
                     enabled: (drive as any).aiScreeningEnabled
                 },
                 registrationFields: drive.registrationFields ? JSON.parse(drive.registrationFields) : [],
-                extractedDetails: drive.extractedDetails ? JSON.parse(drive.extractedDetails) : {}
+                extractedDetails: drive.extractedDetails ? JSON.parse(drive.extractedDetails) : {},
+                interviewQuestions: drive.interviewQuestions ? JSON.parse(drive.interviewQuestions) : []
             };
         });
 
@@ -175,6 +176,7 @@ export async function POST(request: Request) {
                 department: data.department,
                 type: data.employmentType || data.type || "Full-time",
                 workMode: data.workMode || "Remote",
+                location: data.location || "Remote",
                 positions: data.positions || 1,
                 deadline: deadline,
                 aiScreeningEnabled: data.aiScreening?.enabled ?? true,

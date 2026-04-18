@@ -12,7 +12,8 @@ import { RegistrationForm, CustomField } from "@/components/create-drive/registr
 import { FinalPreview } from "@/components/create-drive/final-preview";
 import { InterviewSetup } from "@/components/create-drive/interview-setup";
 import { useJobs } from "@/context/jobs-context";
-import { Copy, CheckCircle2, Rocket, AlertCircle, X, Eye, PenLine, Sparkles, ChevronLeft, ChevronRight, Upload, Bot, ExternalLink } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Copy, CheckCircle2, Rocket, AlertCircle, X, Eye, PenLine, Sparkles, ChevronLeft, ChevronRight, Upload, Bot, ExternalLink, Loader2 } from "lucide-react";
 
 const STEPS = [
     "Basic Info",
@@ -60,6 +61,7 @@ function CreateDriveForm() {
         role: "",
         department: "",
         workMode: "Remote",
+        location: "Remote",
         employmentType: "Full-time",
         deadline: "",
         description: "",
@@ -97,23 +99,45 @@ function CreateDriveForm() {
     // Track which steps have been explicitly completed
     const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
     const [syncedFromAi, setSyncedFromAi] = useState(false);
+    const [isSavingDraft, setIsSavingDraft] = useState(false);
     const formRef = useRef<HTMLDivElement>(null);
     const analysisAbortRef = useRef<AbortController | null>(null);
     const hasInitialLoadedRef = useRef<string | null>(null);
+    const formDataRef = useRef<any>(formData);
+
+    // Keep ref in sync with state for use in async handlers
+    useEffect(() => {
+        formDataRef.current = formData;
+    }, [formData]);
+
+    // Fetch org constraints to set default location
+    useEffect(() => {
+        if (!isEditMode && !formData.location) {
+            fetch("/api/admin/organization")
+                .then(res => res.json())
+                .then(data => {
+                    if (data.location) {
+                        setFormData((prev: any) => ({ ...prev, location: data.location }));
+                    }
+                })
+                .catch(() => { });
+        }
+    }, [isEditMode, formData.location]);
 
     // Initial load for edit mode
     useEffect(() => {
         if (isEditMode && jobs.length > 0 && hasInitialLoadedRef.current !== driveId) {
             const drive = jobs.find(j => j.id === driveId);
-                if (drive) {
-                    hasInitialLoadedRef.current = driveId;
-                    setPublishedDriveId(drive.id);
-                    setFormData((prev: any) => ({
+            if (drive) {
+                hasInitialLoadedRef.current = driveId;
+                setPublishedDriveId(drive.id);
+                setFormData((prev: any) => ({
                     ...prev,
                     title: drive.title,
                     role: (drive as any).role || drive.title,
                     department: drive.department,
                     workMode: (drive as any).workMode || "Remote",
+                    location: (drive as any).location || "Remote",
                     employmentType: drive.type,
                     deadline: (drive as any).deadline ? new Date((drive as any).deadline).toISOString().split('T')[0] : "",
                     description: drive.description,
@@ -127,25 +151,24 @@ function CreateDriveForm() {
                     interviewTime: (drive as any).interviewTime || 10,
                     interviewAntiCheat: (drive as any).proctoringLevel || "Medium",
                     interviewFollowUp: (drive as any).aiFollowUpDepth || 3,
-                    interviewQuestions: typeof (drive as any).interviewQuestions === 'string' 
-                        ? JSON.parse((drive as any).interviewQuestions) 
+                    interviewQuestions: typeof (drive as any).interviewQuestions === 'string'
+                        ? JSON.parse((drive as any).interviewQuestions)
                         : ((drive as any).interviewQuestions || []),
                     extractedDetails: (drive as any).extractedDetails || {},
                     jdFileName: (drive as any).jdFileName || "",
                     jdPreviewUrl: (drive as any).jdPreviewUrl || "",
                 }));
-                
-                // Prioritize the top-level database columns first
-                const loadedWeights = (drive as any).aiScreeningWeights 
-                    ? (typeof (drive as any).aiScreeningWeights === 'string' ? JSON.parse((drive as any).aiScreeningWeights) : (drive as any).aiScreeningWeights)
-                    : (drive as any).aiScreening?.weights;
 
-                if (loadedWeights) {
-                    setWeights(loadedWeights);
-                    setAiEnabled(true);
-                } else if ((drive as any).screeningThreshold !== undefined) {
-                    setWeights({ threshold: (drive as any).screeningThreshold });
-                }
+                // Load screening configuration correctly
+                const dbThreshold = (drive as any).screeningThreshold;
+                const dbAiEnabled = (drive as any).aiScreeningEnabled;
+                // Set weights, giving priority to the specific threshold column
+                setWeights({
+                    threshold: typeof dbThreshold === 'number' ? dbThreshold : 60
+                });
+
+                // Set AI enabled status
+                setAiEnabled(dbAiEnabled ?? true);
                 if ((drive as any).registrationFields) {
                     try {
                         const fields = typeof (drive as any).registrationFields === 'string'
@@ -158,6 +181,9 @@ function CreateDriveForm() {
                 if ((drive as any).shortlistMode) {
                     setShortlistMode((drive as any).shortlistMode as "automatic" | "manual");
                 }
+
+                // Unlock all steps if we have a drive ID (Edit Mode)
+                setCompletedSteps(new Set([0, 1, 2, 3, 4]));
             }
         }
     }, [isEditMode, driveId, jobs]);
@@ -195,8 +221,9 @@ function CreateDriveForm() {
                     title: "",
                     role: "",
                     department: "",
-                    workMode: "Remote",
-                    employmentType: "Full-time",
+                    workMode: "",
+                    location: "",
+                    employmentType: "",
                     deadline: "",
                     description: "",
                     salary: "",
@@ -223,18 +250,18 @@ function CreateDriveForm() {
     const startAnalysis = async ({ file, url }: { file?: File, url?: string }) => {
         setIsAnalyzing(true);
         setAnalysisError(null);
-        
+
         // FORCE UPDATE NEW FILENAME IMMEDIATELY
         if (file) {
-            setFormData((prev: any) => ({ 
-                ...prev, 
+            setFormData((prev: any) => ({
+                ...prev,
                 jdFileName: file.name,
                 jdFile: file,
                 jdPreviewUrl: URL.createObjectURL(file)
             }));
         } else if (url) {
-            setFormData((prev: any) => ({ 
-                ...prev, 
+            setFormData((prev: any) => ({
+                ...prev,
                 jdFileName: "Extracted from Link",
                 jdPreviewUrl: url
             }));
@@ -251,10 +278,10 @@ function CreateDriveForm() {
 
         try {
             console.log("Starting analysis for:", file?.name || url);
-            const res = await fetch("/api/extract", { 
-                method: "POST", 
+            const res = await fetch("/api/extract", {
+                method: "POST",
                 body: data,
-                signal: controller.signal 
+                signal: controller.signal
             });
             if (res.ok) {
                 const responseData = await res.json();
@@ -268,11 +295,11 @@ function CreateDriveForm() {
 
                     // ── SKILLS MAPPING ─────────────────────────
                     // Extract 'skill' string from new object schema
-                    const mustHaveArr = Array.isArray(skills?.must_have) 
-                        ? skills.must_have.map((s: any) => typeof s === 'object' ? s.skill : s) 
+                    const mustHaveArr = Array.isArray(skills?.must_have)
+                        ? skills.must_have.map((s: any) => typeof s === 'object' ? s.skill : s)
                         : [];
-                    const goodToHaveArr = Array.isArray(skills?.good_to_have) 
-                        ? skills.good_to_have.map((s: any) => typeof s === 'object' ? s.skill : s) 
+                    const goodToHaveArr = Array.isArray(skills?.good_to_have)
+                        ? skills.good_to_have.map((s: any) => typeof s === 'object' ? s.skill : s)
                         : [];
                     const allSkills = [...mustHaveArr, ...goodToHaveArr].filter(Boolean).join(", ");
 
@@ -306,15 +333,15 @@ function CreateDriveForm() {
                     // ── RESPONSIBILITIES & REQUIREMENTS ──────────
                     // Use new 'responsibilities_flat' if available
                     const respArr = extracted.responsibilities_flat || extracted.responsibilities;
-                    const resp = Array.isArray(respArr) 
-                        ? respArr.map((r: any) => typeof r === 'object' ? r.task : r).join("\n") 
+                    const resp = Array.isArray(respArr)
+                        ? respArr.map((r: any) => typeof r === 'object' ? r.task : r).join("\n")
                         : (typeof respArr === 'string' ? respArr : (prev.responsibilities || ""));
-                    
+
                     // ── REQUIREMENTS ────────────────────────────────
                     // Use extracted requirements; synthesize from education + skills as robust fallback
                     let reqArr: string[] = [];
                     if (Array.isArray(extracted.requirements)) {
-                         reqArr = [...extracted.requirements];
+                        reqArr = [...extracted.requirements];
                     }
 
                     // 1. Ensure Education is mentioned
@@ -359,7 +386,7 @@ function CreateDriveForm() {
                         employmentType: extracted.employment_type || prev.employmentType,
                         responsibilities: resp,
                         requirements: req,
-                        extractedDetails: extracted, 
+                        extractedDetails: extracted,
                         // Keep the R2 URL if available, otherwise keep the existing blob URL for in-session preview
                         jdPreviewUrl: r2Url || prev.jdPreviewUrl,
                     };
@@ -390,7 +417,7 @@ function CreateDriveForm() {
         if (step === 1) {
             // Only allow proceeding if not currently mid-analysis
             if (isAnalyzing) return true;
-            
+
             const description = formData.description?.trim() || "";
             // Must have a description and it must meet the minimum word count
             return countWords(description) >= MIN_JD_WORDS;
@@ -407,7 +434,75 @@ function CreateDriveForm() {
         return true;
     };
 
-    const nextStep = () => {
+    const autoSaveDrive = async () => {
+        const currentFormData = formDataRef.current;
+        // Collect data
+        let parsedQuestions = currentFormData.interviewQuestions || [];
+        if (typeof parsedQuestions === "string") {
+            try { parsedQuestions = JSON.parse(parsedQuestions); } catch { parsedQuestions = []; }
+        }
+
+        const jobData = {
+            title: currentFormData.title || "Untitled Drive",
+            description: currentFormData.description || "",
+            role: currentFormData.role || "",
+            department: currentFormData.department || "",
+            employmentType: currentFormData.employmentType || "Full-time",
+            workMode: currentFormData.workMode || "Remote",
+            location: currentFormData.location || "Remote",
+            positions: currentFormData.positions || 1,
+            deadline: currentFormData.deadline || null,
+            salary: currentFormData.salary || "",
+            experience: currentFormData.experience || "",
+            skills: currentFormData.skills || "",
+            responsibilities: currentFormData.responsibilities || "",
+            requirements: currentFormData.requirements || "",
+            jdFileName: currentFormData.jdFileName || null,
+            jdPreviewUrl: currentFormData.jdPreviewUrl,
+            interviewEnabled: currentFormData.interviewEnabled,
+            interviewLanguage: currentFormData.interviewLanguage,
+            interviewTime: currentFormData.interviewTime,
+            interviewAntiCheat: currentFormData.interviewAntiCheat,
+            interviewFollowUp: currentFormData.interviewFollowUp,
+            interviewQuestions: parsedQuestions,
+            registrationFields: customFields,
+            extractedDetails: currentFormData.extractedDetails || {},
+            screeningThreshold: weights?.threshold || 0,
+            isPassportRequired: isPassportRequired,
+            shortlistMode: shortlistMode,
+            aiScreening: {
+                enabled: aiEnabled
+            },
+        };
+
+        try {
+            setIsSavingDraft(true);
+            if (isEditMode) {
+                await updateJob(driveId!, jobData);
+            } else {
+                // If it's a new drive, we only save if we have at least the basic fields from step 0
+                if (formData.title && formData.role && formData.department) {
+                    const result = await addJob({
+                        ...jobData,
+                        status: "ACTIVE",
+                        postedAt: new Date().toISOString(),
+                    } as any);
+                    if (result?.id) {
+                        // Update URL to include the new ID
+                        const params = new URLSearchParams(window.location.search);
+                        params.set("id", result.id);
+                        router.replace(`${window.location.pathname}?${params.toString()}`);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Auto-save failed:", error);
+        } finally {
+            setIsSavingDraft(false);
+        }
+    };
+
+    const nextStep = async () => {
         if (currentStep === STEPS.length - 1) {
             handlePublish();
             return;
@@ -416,13 +511,20 @@ function CreateDriveForm() {
             toast.error(STEP_VALIDATION_HINTS[currentStep]);
             return;
         }
+
+        // Auto-save progress on every "Save & Continue"
+        await autoSaveDrive();
+
         setCompletedSteps(prev => new Set(prev).add(currentStep));
         setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1));
     };
 
-    // Allow navigating to any step in edit mode, otherwise only BACK to already-completed steps
-    const handleStepClick = (index: number) => {
-        if (isEditMode || index < currentStep) {
+    // Allow navigating to any step in edit mode or previously completed steps
+    const handleStepClick = async (index: number) => {
+        if (isSavingDraft) return;
+        if (isEditMode || index < currentStep || completedSteps.has(index)) {
+            // Auto-save before jumping to another step
+            await autoSaveDrive();
             setCurrentStep(index);
         }
     };
@@ -430,7 +532,9 @@ function CreateDriveForm() {
     const prevStep = () => setCurrentStep(prev => Math.max(prev - 1, 0));
 
     const handlePublish = async () => {
-        const description = formData.description?.trim() || "";
+        const currentFormData = formDataRef.current;
+        setIsSavingDraft(true);
+        const description = currentFormData.description?.trim() || "";
         const jdWordCount = countWords(description);
         if (jdWordCount < MIN_JD_WORDS) {
             toast.error(`Job description must be at least ${MIN_JD_WORDS} words before publishing.`);
@@ -439,43 +543,47 @@ function CreateDriveForm() {
         }
 
         // Safely parse interviewQuestions — DB returns it as a JSON string, Zod expects an array
-        let parsedQuestions = formData.interviewQuestions || [];
+        let parsedQuestions = currentFormData.interviewQuestions || [];
         if (typeof parsedQuestions === "string") {
             try { parsedQuestions = JSON.parse(parsedQuestions); } catch { parsedQuestions = []; }
         }
 
         // Explicitly pick only the fields that match the Zod schema
         const jobData = {
-            title: formData.title,
-            description: formData.description,
-            role: formData.role,
-            department: formData.department,
-            employmentType: formData.employmentType,
-            workMode: formData.workMode,
-            positions: formData.positions,
-            deadline: formData.deadline || null,
-            salary: formData.salary,
-            experience: formData.experience,
-            skills: formData.skills,
-            responsibilities: formData.responsibilities,
-            requirements: formData.requirements,
-            jdFileName: formData.jdFileName,
-            jdPreviewUrl: formData.jdPreviewUrl,
-            interviewEnabled: formData.interviewEnabled,
-            interviewLanguage: formData.interviewLanguage,
-            interviewTime: formData.interviewTime,
-            interviewAntiCheat: formData.interviewAntiCheat,
-            interviewFollowUp: formData.interviewFollowUp,
+            title: currentFormData.title,
+            description: currentFormData.description,
+            role: currentFormData.role,
+            department: currentFormData.department,
+            employmentType: currentFormData.employmentType,
+            workMode: currentFormData.workMode,
+            location: currentFormData.location,
+            positions: currentFormData.positions,
+            deadline: currentFormData.deadline || null,
+            salary: currentFormData.salary,
+            experience: currentFormData.experience,
+            skills: currentFormData.skills,
+            responsibilities: currentFormData.responsibilities,
+            requirements: currentFormData.requirements,
+            jdFileName: currentFormData.jdFileName,
+            jdPreviewUrl: currentFormData.jdPreviewUrl,
+            interviewEnabled: currentFormData.interviewEnabled,
+            interviewLanguage: currentFormData.interviewLanguage,
+            interviewTime: currentFormData.interviewTime,
+            interviewAntiCheat: currentFormData.interviewAntiCheat,
+            interviewFollowUp: currentFormData.interviewFollowUp,
             interviewQuestions: parsedQuestions,
             registrationFields: customFields,
-            extractedDetails: formData.extractedDetails || {},
+            extractedDetails: currentFormData.extractedDetails || {},
             screeningThreshold: weights?.threshold || 0,
             isPassportRequired: isPassportRequired,
             shortlistMode: shortlistMode,
+            aiScreening: {
+                enabled: aiEnabled
+            },
         };
-        
+
         console.log("handlePublish called. isEditMode:", isEditMode, "Data:", jobData);
-        
+
         try {
             let result;
             let savedId: string | null = null;
@@ -509,6 +617,8 @@ function CreateDriveForm() {
             console.error("Save process failed:", error);
             const msg = error.details ? `${error.message}: ${JSON.stringify(error.details)}` : error.message;
             toast.error(msg || "Failed to save drive details. Please try again.");
+        } finally {
+            setIsSavingDraft(false);
         }
     };
 
@@ -596,13 +706,13 @@ function CreateDriveForm() {
     if (creationMethod === 'scan') {
         return (
             <div className="max-w-3xl mx-auto py-12 space-y-8 animate-in-fade">
-                <button 
+                <button
                     onClick={() => setCreationMethod(null)}
                     className="flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors"
                 >
                     <ChevronLeft className="h-4 w-4" /> Back to Selection
                 </button>
-                
+
                 <div className="bg-white p-12 rounded-[2.5rem] border-2 border-dashed border-gray-200 hover:border-orange-300 transition-all duration-500">
                     <div className="text-center space-y-6">
                         <>
@@ -615,9 +725,9 @@ function CreateDriveForm() {
                             </div>
                         </>
 
-                        <JobDescription 
-                            formData={formData} 
-                            updateFormData={setFormData} 
+                        <JobDescription
+                            formData={formData}
+                            updateFormData={setFormData}
                             isAnalyzing={isAnalyzing}
                             analysisError={analysisError}
                             startAnalysis={(params) => {
@@ -634,7 +744,7 @@ function CreateDriveForm() {
 
                         {formData.jdFileName && !isAnalyzing && (
                             <div className="pt-4 animate-in-fade">
-                                <Button 
+                                <Button
                                     onClick={() => { setCreationMethod('manual'); setCurrentStep(0); }}
                                     className="bg-gray-900 hover:bg-gray-800 text-white px-10 h-12 rounded-2xl font-bold text-[15px] shadow-xl hover:shadow-2xl transition-all active:scale-95 flex items-center gap-2 mx-auto"
                                 >
@@ -674,7 +784,7 @@ function CreateDriveForm() {
                     <p className="text-[11px] font-bold text-[#F97316] uppercase tracking-widest">Candidate Link</p>
                     <div className="flex items-center gap-3 rounded-xl bg-white border border-orange-200 px-4 py-3">
                         <span className="flex-1 text-[13px] font-mono text-gray-700 text-left truncate">
-                            {publishedDriveId 
+                            {publishedDriveId
                                 ? `${typeof window !== 'undefined' ? window.location.origin : ''}/careers/jobs/${publishedSlug || publishedDriveId}`
                                 : "Generating link..."}
                         </span>
@@ -732,16 +842,16 @@ function CreateDriveForm() {
             >
                 <div className="p-8">
                     {currentStep === 0 && (
-                        <BasicInfo 
-                            formData={formData} 
-                            updateFormData={setFormData} 
-                            isAnalyzing={isAnalyzing} 
+                        <BasicInfo
+                            formData={formData}
+                            updateFormData={setFormData}
+                            isAnalyzing={isAnalyzing}
                         />
                     )}
                     {currentStep === 1 && (
-                        <JobDescription 
-                            formData={formData} 
-                            updateFormData={setFormData} 
+                        <JobDescription
+                            formData={formData}
+                            updateFormData={setFormData}
                             isAnalyzing={isAnalyzing}
                             analysisError={analysisError}
                             startAnalysis={startAnalysis}
@@ -789,9 +899,9 @@ function CreateDriveForm() {
                 {/* Footer Actions */}
                 <div className="flex justify-between items-center px-8 py-4 bg-white border-t border-gray-100">
                     {currentStep === 0 ? (
-                        <Button 
-                            variant="outline" 
-                            size="sm" 
+                        <Button
+                            variant="outline"
+                            size="sm"
                             onClick={() => {
                                 if (isEditMode) {
                                     router.push("/admin");
@@ -819,7 +929,7 @@ function CreateDriveForm() {
 
                     {currentStep === STEPS.length - 1 ? (
                         <div className="flex gap-3">
-                            <Button 
+                            <Button
                                 type="button"
                                 variant="outline"
                                 onClick={() => {
@@ -836,9 +946,9 @@ function CreateDriveForm() {
                                         location: formData.workMode || "Remote",
                                         type: formData.employmentType || "Full-time"
                                     };
-                                    
+
                                     localStorage.setItem("candidate_preview_data", JSON.stringify(previewPayload));
-                                    
+
                                     if (!previewTarget) {
                                         setCandidatePreviewSlug("preview");
                                     } else {
@@ -853,20 +963,29 @@ function CreateDriveForm() {
                             <button
                                 type="button"
                                 onClick={handlePublish}
-                                className="flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95"
+                                disabled={isSavingDraft}
+                                className={cn(
+                                    "flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed",
+                                    !isSavingDraft && "hover:shadow-lg"
+                                )}
                                 style={{
                                     background: "linear-gradient(135deg, #F97316, #ea6608)",
-                                    animation: "pulse-glow 2s infinite",
+                                    animation: isSavingDraft ? "none" : "pulse-glow 2s infinite",
                                 }}
                             >
-                                <Rocket className="h-5 w-5" />
-                                {isEditMode ? "Update Drive" : "Publish Drive"}
+                                {isSavingDraft ? <Loader2 className="h-5 w-5 animate-spin" /> : <Rocket className="h-5 w-5" />}
+                                {isSavingDraft ? "Saving..." : (isEditMode ? "Update Drive" : "Publish Drive")}
                             </button>
                         </div>
                     ) : (
-                        <Button onClick={nextStep} size="sm"
-                            className="bg-gradient-to-r from-[#F97316] to-orange-500 hover:from-orange-600 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all duration-200 px-6 h-9">
-                            Save & Continue
+                        <Button
+                            onClick={nextStep}
+                            disabled={isSavingDraft}
+                            size="sm"
+                            className="bg-gradient-to-r from-[#F97316] to-orange-500 hover:from-orange-600 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all duration-200 px-6 h-9 min-w-[140px]"
+                        >
+                            {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                            {isSavingDraft ? "Saving..." : "Save & Continue"}
                         </Button>
                     )}
                 </div>

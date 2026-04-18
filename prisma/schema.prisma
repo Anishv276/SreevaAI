@@ -42,6 +42,10 @@ model Organization {
   llmTemperature     Float?      @default(0.7)
   cartesiaModel      String?     @default("sonic-english")
   usageMetrics       Json?       @default("{}")
+  googleAccessToken  String?
+  googleRefreshToken String?
+  googleTokenExpiresAt DateTime?
+  googleEmail        String?
   drives             Drive[]
   invites            OrgInvite[]
   users              User[]
@@ -141,14 +145,7 @@ model Drive {
   id                   String        @id
   shortlistMode        String        @default("automatic")
   location             String        @default("Remote")
-  aiScreeningWeights   String?       @default("{}")
-  assessmentCount      Int           @default(5)
-  assessmentDifficulty String        @default("Medium")
-  assessmentTypes      String        @default("MIXED")
-  assessmentTime       Int           @default(15)
-  assessmentMode       String        @default("TEST")
-  proctoringEnabled    Boolean       @default(true)
-  webcamMonitoring     Boolean       @default(true)
+
   applications         Application[]
   creator              User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
   organization         Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)

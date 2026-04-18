@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
     Briefcase, Users, Calendar, Laptop, Layers, Building2, ChevronDown, Check,
-    ChevronLeft, ChevronRight,
+    ChevronLeft, ChevronRight, MapPin,
 } from "lucide-react";
+import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 
 function PremiumSelect({
     label,
@@ -485,7 +486,7 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                     <span className="h-6 w-1 rounded-full bg-[#F97316]" />
                     <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest">Team &amp; Work Mode</p>
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-3">
                     <PremiumSelect
                         label="Department"
                         icon={Building2}
@@ -495,6 +496,23 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                         error={getError("department")}
                         placeholder="Select Department"
                     />
+                    <div className="space-y-2">
+                        <Label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
+                            <MapPin className="h-3 w-3 text-[#F97316]" />
+                            Work Location
+                            <span className="text-[#F97316] ml-0.5">*</span>
+                        </Label>
+                        <div className={cn("rounded-lg relative transition-all duration-150", 
+                            getError("location") ? "border border-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.1)]" : "")}>
+                            <LocationAutocomplete
+                                value={formData.location || ""}
+                                onChange={(v) => { handleChange("location", v); handleBlur("location"); }}
+                                placeholder="Search location..."
+                                icon={<MapPin className="h-4 w-4" />}
+                            />
+                        </div>
+                        {getError("location") && <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest px-1">{getError("location")}</p>}
+                    </div>
                     <PremiumSelect
                         label="Work Mode"
                         icon={Laptop}

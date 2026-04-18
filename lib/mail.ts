@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import { prisma } from "@/lib/prisma";
+import { sendGmailEmail } from './google-auth';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -250,12 +251,29 @@ export async function sendApplicationStatusEmail({
 
     const org = await prisma.organization.findUnique({
         where: { id: orgId },
-        select: { id: true, customSenderEmail: true, customDomain: true, isDomainVerified: true, resendDomainId: true, name: true }
+        select: { id: true, googleAccessToken: true, customSenderEmail: true, customDomain: true, isDomainVerified: true, resendDomainId: true, name: true }
     });
 
     if (!org?.id) {
         console.warn(`[MAIL BLOCKED] Org not found: ${orgId}`);
         return { success: false, error: "Organization not found." };
+    }
+
+    // PRIORITIZE GMAIL INTEGRATION
+    if (org.googleAccessToken) {
+        try {
+            await sendGmailEmail({
+                orgId: org.id,
+                to: email,
+                subject,
+                html
+            });
+            console.log(`[MAIL] Status email sent to ${email} via GMAIL API`);
+            return { success: true };
+        } catch (error) {
+            console.error(`[MAIL GMAIL FAILED] Falling back to Resend...`, error);
+            // Fall through to Resend logic
+        }
     }
 
     const { from, reason } = await resolveVerifiedSender(org.id);
@@ -330,6 +348,29 @@ export async function sendTeamInviteEmail({
 
     const sender = await resolveVerifiedSender(orgId);
     const inviteFrom = sender.from;
+
+    // PRIORITIZE GMAIL INTEGRATION
+    if (orgId) {
+        const org = await prisma.organization.findUnique({
+            where: { id: orgId },
+            select: { googleAccessToken: true }
+        });
+
+        if (org?.googleAccessToken) {
+            try {
+                await sendGmailEmail({
+                    orgId,
+                    to: email,
+                    subject,
+                    html
+                });
+                console.log(`[INVITE EMAIL] Sent to ${email} via GMAIL API`);
+                return { success: true };
+            } catch (error) {
+                console.error(`[INVITE EMAIL GMAIL FAILED] Falling back to Resend...`, error);
+            }
+        }
+    }
 
     if (!inviteFrom) {
         return {

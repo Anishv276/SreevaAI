@@ -94,6 +94,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             updateData.type = data.employmentType || data.type;
         }
         if (data.workMode !== undefined) updateData.workMode = data.workMode;
+        if (data.location !== undefined) updateData.location = data.location;
         if (positions !== undefined) updateData.positions = positions;
         if (deadline !== undefined) updateData.deadline = deadline;
         

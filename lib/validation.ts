@@ -37,6 +37,7 @@ export const createDriveSchema = z.object({
     if (lower.includes("site") || lower.includes("office")) return "On-site";
     return val;
   }, z.enum(["Remote", "Hybrid", "On-site", "Onsite", "on-site", "onsite"])).transform(v => v.toLowerCase().includes("site") ? "On-site" : v.charAt(0).toUpperCase() + v.slice(1)).optional(),
+  location: z.string().optional(),
   positions: z.coerce.number().int().min(1).optional(),
   deadline: z.string().nullable().optional(),
   salary: z.string().optional(),

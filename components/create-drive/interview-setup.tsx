@@ -181,6 +181,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                                 value={newQuestion}
                                 onChange={(e) => setNewQuestion(e.target.value)}
                                 onKeyDown={(e) => e.key === "Enter" && addQuestion()}
+                                onBlur={() => addQuestion()}
                                 placeholder="Add a question..."
                                 className="flex-1 h-10 px-4 rounded-lg border border-gray-200 bg-white text-sm font-medium focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] transition-all"
                             />

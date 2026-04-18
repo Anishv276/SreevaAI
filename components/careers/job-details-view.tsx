@@ -2,18 +2,18 @@
 
 import { PortalHeader } from "@/components/careers/portal-header";
 import { Button } from "@/components/ui/button";
-import { 
-    ArrowLeft, Clock, MapPin, Share2, Briefcase, FileText, 
-    UserCircle2, 
+import {
+    ArrowLeft, Clock, MapPin, Share2, Briefcase, FileText,
+    UserCircle2,
     Link as LinkIcon, Send, Globe, Building2, Users2, Info, Sparkles, AlertCircle
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "@/components/ui/toast-custom";
-import { 
-    DropdownMenu, 
-    DropdownMenuContent, 
-    DropdownMenuItem, 
-    DropdownMenuTrigger 
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 
 interface JobDetailsViewProps {
@@ -25,10 +25,10 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
     if (!job) return null;
 
     const org = job.organization || {};
-    const responsibilities = job.responsibilities 
+    const responsibilities = job.responsibilities
         ? job.responsibilities.split("\n").filter((l: string) => l.trim().length > 0)
         : [];
-    
+
     const requirements = job.requirements
         ? job.requirements.split("\n").map((s: string) => s.replace(/^[•\-\*]\s*/, '').trim()).filter((s: string) => s.length > 0)
         : [];
@@ -61,55 +61,57 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
                 <div className="mb-10 flex items-center justify-between">
                     <Link href="/careers">
                         <Button variant="outline" className="h-10 px-4 rounded-xl border-gray-100 bg-white/50 text-gray-500 text-[10px] font-black uppercase tracking-widest hover:bg-white hover:text-[#F97316] hover:border-orange-100 transition-all shadow-sm group">
-                            <ArrowLeft className="h-4 w-4 mr-2 transition-transform group-hover:-translate-x-1" /> 
+                            <ArrowLeft className="h-4 w-4 mr-2 transition-transform group-hover:-translate-x-1" />
                             BACK TO JOBS
                         </Button>
                     </Link>
                 </div>
 
                 <div className="flex flex-col lg:flex-row gap-12 items-start relative">
-                    
+
                     {/* LEFT COLUMN: SCROLLABLE CONTENT */}
                     <div className="flex-1 space-y-12 pb-24">
-                        
-                        {/* Job Hero */}
-                        <div className="bg-white rounded-[2.5rem] border border-orange-100 p-8 lg:p-12 shadow-[0_20px_50px_rgba(249,115,22,0.05)] relative overflow-hidden group">
-                            <div className="absolute top-0 right-0 w-64 h-64 bg-orange-50/50 rounded-full -mr-32 -mt-32 blur-3xl transition-all group-hover:bg-orange-100/50" />
-                            
-                            <div className="relative z-10 flex flex-col gap-6">
-                                <div className="flex flex-wrap gap-3 items-center">
-                                    <div className="px-4 py-1.5 rounded-full bg-orange-100/50 text-[#F97316] text-[10px] font-black uppercase tracking-[0.2em] border border-orange-200/50 flex items-center gap-2">
-                                        <Building2 className="h-3 w-3" />
-                                        {job.department}
-                                    </div>
-                                    <div className="px-4 py-1.5 rounded-full bg-gray-50 text-gray-500 text-[10px] font-black uppercase tracking-[0.2em] border border-gray-100 flex items-center gap-2 text-nowrap">
-                                        <Briefcase className="h-3 w-3" />
-                                        {job.type}
-                                    </div>
-                                </div>
 
-                                <h1 className="text-4xl lg:text-5xl font-black text-gray-900 tracking-tight leading-[1.1]">
+                        {/* Job Hero */}
+                        <div className="bg-white rounded-3xl border border-orange-100 p-8 shadow-sm relative overflow-hidden group">
+                            <div className="relative z-10">
+                                <h1 className="text-3xl lg:text-4xl font-black text-gray-900 tracking-tight leading-tight">
                                     {job.title}
                                 </h1>
+                            </div>
+                        </div>
 
-                                <div className="flex flex-wrap gap-8 pt-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-10 w-10 rounded-xl bg-orange-50 text-[#F97316] flex items-center justify-center shadow-sm">
-                                            <MapPin className="h-5 w-5" />
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] font-black text-gray-900 uppercase tracking-widest leading-none mb-1">Work Location</p>
-                                            <p className="text-gray-900 font-bold">{job.location || "Remote"}</p>
-                                        </div>
+                        {/* Job Highlights Section */}
+                        <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                <div className="space-y-1">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Work Location</p>
+                                    <div className="flex items-center gap-2">
+                                        <MapPin className="h-3.5 w-3.5 text-[#F97316]" />
+                                        <p className="text-[13px] font-bold text-gray-900">{job.location || "Remote"}</p>
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-10 w-10 rounded-xl bg-green-50 text-green-600 flex items-center justify-center shadow-sm">
-                                            <FileText className="h-5 w-5" />
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] font-black text-gray-900 uppercase tracking-widest leading-none mb-1">Salary Range</p>
-                                            <p className="text-gray-900 font-bold">{job.salary || "Competitive"}</p>
-                                        </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Salary (LPA)</p>
+                                    <div className="flex items-center gap-2">
+                                        <Clock className="h-3.5 w-3.5 text-green-500" />
+                                        <p className="text-[13px] font-bold text-gray-900">
+                                            {job.salary ? (job.salary.toLowerCase().includes('lpa') ? job.salary : `${job.salary} LPA`) : "Competitive"}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Work Mode</p>
+                                    <div className="flex items-center gap-2">
+                                        <Globe className="h-3.5 w-3.5 text-blue-500" />
+                                        <p className="text-[13px] font-bold text-gray-900">{job.workMode || "Remote"}</p>
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Job Type</p>
+                                    <div className="flex items-center gap-2">
+                                        <Briefcase className="h-3.5 w-3.5 text-orange-500" />
+                                        <p className="text-[13px] font-bold text-gray-900">{job.type || job.employmentType || "Full-time"}</p>
                                     </div>
                                 </div>
                             </div>
@@ -118,10 +120,10 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
                         {/* Description */}
                         <section className="space-y-6 px-4">
                             <div className="flex items-center gap-3">
-                                <span className="h-10 w-1.5 bg-[#F97316] rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)]" />
-                                <h2 className="text-2xl font-black text-gray-900 tracking-tight">About the Role</h2>
+                                <span className="h-6 w-1 bg-[#F97316] rounded-full" />
+                                <h2 className="text-lg font-black text-gray-900 tracking-tight uppercase">About the Role</h2>
                             </div>
-                            <div className="prose prose-orange max-w-none text-gray-600 leading-[1.8] text-base font-medium whitespace-pre-wrap selection:bg-orange-100">
+                            <div className="prose prose-orange max-w-none text-gray-600 leading-relaxed text-[13px] font-medium whitespace-pre-wrap">
                                 {job.description || `We are looking for a ${job.title} to join our growing team.`}
                             </div>
                         </section>
@@ -129,11 +131,11 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
                         {/* Responsibilities & Requirements */}
                         <div className="grid md:grid-cols-2 gap-8 pt-4">
                             <div className="bg-white rounded-[2rem] border border-gray-100 p-8 shadow-sm hover:shadow-md transition-all">
-                                <div className="flex items-center gap-3 mb-8">
-                                    <div className="h-10 w-10 rounded-xl bg-orange-50 text-[#F97316] flex items-center justify-center">
-                                        <Sparkles className="h-5 w-5" />
+                                <div className="flex items-center gap-2 mb-6">
+                                    <div className="h-8 w-8 rounded-lg bg-orange-50 text-[#F97316] flex items-center justify-center">
+                                        <Sparkles className="h-4 w-4" />
                                     </div>
-                                    <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight">What you'll do</h3>
+                                    <h3 className="text-sm font-black text-gray-900 uppercase tracking-tight">What you'll do</h3>
                                 </div>
                                 <ul className="space-y-4">
                                     {responsibilities.length > 0 ? responsibilities.map((item: string, idx: number) => (
@@ -148,11 +150,11 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
                             </div>
                             <div className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-sm hover:shadow-md transition-all relative overflow-hidden group/who">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-orange-50 rounded-full blur-3xl opacity-50 group-hover/who:scale-110 transition-transform duration-700" />
-                                <div className="flex items-center gap-3 mb-8 relative z-10">
-                                    <div className="h-10 w-10 rounded-xl bg-gray-50 text-[#F97316] flex items-center justify-center border border-gray-100">
-                                        <UserCircle2 className="h-5 w-5" />
+                                <div className="flex items-center gap-2 mb-6">
+                                    <div className="h-8 w-8 rounded-lg bg-gray-50 text-[#F97316] flex items-center justify-center border border-gray-100">
+                                        <UserCircle2 className="h-4 w-4" />
                                     </div>
-                                    <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight">Who you are</h3>
+                                    <h3 className="text-sm font-black text-gray-900 uppercase tracking-tight">Who you are</h3>
                                 </div>
                                 <ul className="space-y-4 relative z-10">
                                     {requirements.length > 0 ? requirements.map((item: string, idx: number) => (
@@ -169,10 +171,10 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
 
                         {/* Skills Section */}
                         {skills.length > 0 && (
-                            <section className="space-y-8 px-4 pt-4">
+                            <section className="space-y-6 px-4 pt-4">
                                 <div className="flex items-center gap-3">
-                                    <span className="h-10 w-1.5 bg-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)]" />
-                                    <h2 className="text-2xl font-black text-gray-900 tracking-tight uppercase">Required Skills</h2>
+                                    <span className="h-6 w-1 bg-orange-500 rounded-full" />
+                                    <h2 className="text-lg font-black text-gray-900 tracking-tight uppercase">Required Skills</h2>
                                 </div>
                                 <div className="flex flex-wrap gap-3">
                                     {skills.map((skill: string, i: number) => (
@@ -183,56 +185,18 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
                                 </div>
                             </section>
                         )}
-
-                        {/* Hiring Process */}
-                        <section className="px-4 pt-8">
-                           <div className="rounded-[2.5rem] bg-white border border-orange-100 p-10 shadow-[0_20px_50px_rgba(249,115,22,0.03)] relative overflow-hidden group">
-                                <div className="absolute bottom-0 right-0 w-64 h-64 bg-orange-50 rounded-full blur-3xl opacity-50 group-hover:scale-110 transition-transform duration-700" />
-                                <h4 className="text-xl font-black text-gray-900 mb-10 uppercase tracking-[0.2em] flex items-center gap-4 relative z-10">
-                                    <span className="h-8 w-1.5 bg-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.3)]" />
-                                    OUR PROCESS
-                                </h4>
-                                <div className="flex flex-col md:flex-row items-center justify-center gap-12 md:gap-20 relative z-10 max-w-6xl mx-auto">
-                                    {[
-                                        { title: "Review", desc: "Expert evaluation" },
-                                        { title: "Voice AI", desc: "Interactive screening" },
-                                        { title: "Technical", desc: "Deep dive round" },
-                                        { title: "Onboarding", desc: "The final offer" }
-                                    ].map((step, i, arr) => (
-                                        <div key={i} className="flex flex-col items-center text-center relative group/step">
-                                            <div className="mb-6 h-14 w-14 rounded-2xl bg-orange-50 border border-orange-100 text-[#F97316] flex items-center justify-center font-black text-xl transition-all group-hover/step:bg-[#F97316] group-hover/step:text-white group-hover/step:scale-110 shadow-sm relative z-10">
-                                                {i + 1}
-                                            </div>
-                                            <div className="space-y-1 relative z-10">
-                                                <p className="font-black text-gray-900 text-xs uppercase tracking-[0.2em]">{step.title}</p>
-                                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest whitespace-nowrap">{step.desc}</p>
-                                            </div>
-                                            
-                                            {/* Phase Transition Arrow */}
-                                            {i < arr.length - 1 && (
-                                                <div className="hidden md:flex absolute top-7 -right-12 translate-x-1/2 text-gray-200 group-hover/step:text-orange-300 transition-colors">
-                                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                                                        <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
-                                                    </svg>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                           </div>
-                        </section>
                     </div>
 
                     {/* RIGHT COLUMN: FIXED SIDEBAR */}
-                    <aside className="w-full lg:w-[420px] lg:sticky lg:top-8 space-y-6">
-                        
+                    <aside className="w-full lg:w-[320px] lg:sticky lg:top-8 space-y-4">
+
                         {/* Application Card */}
                         <div className="bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.04)] space-y-8 relative overflow-hidden">
                             <div className="absolute top-0 right-0 w-32 h-32 bg-orange-50/50 rounded-full blur-3xl pointer-events-none" />
-                            
-                            <div className="space-y-4 relative z-10">
-                                <h3 className="text-2xl font-black text-gray-900 leading-tight">Ready to build the future?</h3>
-                                <p className="text-gray-500 font-medium leading-relaxed">Join a team that values speed, high-fidelity engineering, and AI innovation.</p>
+
+                            <div className="space-y-3 relative z-10">
+                                <h3 className="text-xl font-black text-gray-900 leading-tight">Ready to build the future?</h3>
+                                <p className="text-gray-500 font-medium leading-relaxed text-[13px]">Join a team that values speed, high-fidelity engineering, and AI innovation.</p>
                             </div>
 
                             <div className="space-y-4 relative z-10">
@@ -242,19 +206,19 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
                                     </Button>
                                 ) : (
                                     <Link href={isDraft ? "#" : `/careers/apply/${job.id}/start`} className="block w-full">
-                                        <Button className="w-full h-16 bg-[#F97316] hover:bg-orange-600 text-white font-inter font-bold text-xl rounded-2xl shadow-[0_15px_40px_rgba(249,115,22,0.3)] hover:scale-[1.02] active:scale-95 transition-all tracking-[0.02em] group shadow-orange-500/10">
+                                        <Button className="w-full h-14 bg-[#F97316] hover:bg-orange-600 text-white font-inter font-bold text-base rounded-2xl shadow-[0_15px_40px_rgba(249,115,22,0.1)] hover:scale-[1.02] active:scale-95 transition-all tracking-[0.02em] group">
                                             Apply for role
-                                            <ArrowLeft className="ml-2 h-5 w-5 rotate-180 transition-transform group-hover:translate-x-1" />
+                                            <ArrowLeft className="ml-2 h-4 w-4 rotate-180 transition-transform group-hover:translate-x-1" />
                                         </Button>
                                     </Link>
                                 )}
-                                <Button 
-                                    variant="outline" 
+                                <Button
+                                    variant="outline"
                                     onClick={() => job.jdPreviewUrl && window.open(job.jdPreviewUrl, '_blank')}
                                     disabled={!job.jdPreviewUrl}
-                                    className="w-full h-14 rounded-2xl border-gray-100 text-gray-500 text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all shadow-sm"
+                                    className="w-full h-12 rounded-2xl border-gray-100 text-gray-500 text-[9px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all shadow-sm"
                                 >
-                                    <FileText className="h-4 w-4 mr-2" /> FULL JD
+                                    <FileText className="h-3.5 w-3.5 mr-2" /> FULL JD
                                 </Button>
                             </div>
 
@@ -307,9 +271,9 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
                                         <Globe className="h-4 w-4 text-[#F97316]" />
                                         <span className="text-xs font-black text-gray-900 uppercase tracking-widest">Website</span>
                                     </div>
-                                    <a 
-                                        href={org.website ? (org.website.startsWith('http') ? org.website : `https://${org.website}`) : '#'} 
-                                        target="_blank" 
+                                    <a
+                                        href={org.website ? (org.website.startsWith('http') ? org.website : `https://${org.website}`) : '#'}
+                                        target="_blank"
                                         className="text-xs font-black text-[#F97316] hover:underline flex items-center gap-1"
                                     >
                                         Visit Website <LinkIcon className="h-3 w-3" />

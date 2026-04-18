@@ -219,11 +219,20 @@ export default function ApplicationPage() {
         if (isSubmittingRef.current) return;
 
         // Basic validation
-        if (!formData.fullName.trim()) { showAlert("Full name is required"); return; }
-        if (!formData.email.trim()) { showAlert("Email address is required"); return; }
-        if (!formData.phone.trim()) { showAlert("Phone number is required"); return; }
-        if (!formData.resumeUrl && !formData.resumeUploaded) {
-            showAlert("Please upload your resume before submitting");
+        const missing = [];
+        if (!formData.fullName.trim()) missing.push("Full Name");
+        if (!formData.email.trim()) missing.push("Email Address");
+        if (!formData.phone.trim()) missing.push("Phone Number");
+        if (!formData.location.trim()) missing.push("Current Location");
+        if (!formData.resumeUrl && !formData.resumeUploaded) missing.push("Resume");
+        
+        if (missing.length > 0) {
+            showAlert(`Please fill required fields: ${missing.join(", ")}`);
+            return;
+        }
+
+        if (!formData.agreedToTerms) {
+            showAlert("Please agree to the terms to proceed");
             return;
         }
 
@@ -433,22 +442,31 @@ export default function ApplicationPage() {
                         onAgreedToTermsChange={(checked) => updateFormData({ agreedToTerms: checked })}
                     />
 
-                    <div className="pt-4 flex justify-end">
-                        <Button
-                            onClick={handleSubmit}
-                            disabled={isSubmitting || isAnalyzing}
-                            className="h-14 px-10 rounded-2xl bg-[#F97316] hover:bg-orange-600 text-white font-black text-sm uppercase tracking-widest shadow-xl shadow-orange-500/20 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                            {isSubmitting ? (
-                                <>
-                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    Submitting...
-                                </>
-                            ) : (
-                                "Submit Application"
-                            )}
-                        </Button>
-                    </div>
+                    <AnimatePresence>
+                        {formData.agreedToTerms && (
+                            <motion.div 
+                                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                                className="pt-4 flex justify-end"
+                            >
+                                <Button
+                                    onClick={handleSubmit}
+                                    disabled={isSubmitting || isAnalyzing}
+                                    className="h-14 px-10 rounded-2xl bg-[#F97316] hover:bg-orange-600 text-white font-black text-sm uppercase tracking-widest shadow-xl shadow-orange-500/20 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                                >
+                                    {isSubmitting ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                            Submitting...
+                                        </>
+                                    ) : (
+                                        "Submit Application"
+                                    )}
+                                </Button>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
             </main>
         </div>

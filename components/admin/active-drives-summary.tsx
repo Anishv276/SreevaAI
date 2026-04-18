@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { Loader2, ChevronRight, Plus, Rocket, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2, ChevronRight, Plus } from "lucide-react";
 import { ErrorState } from "./error-state";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { type DateRange } from "./date-filter";
 
 interface DriveSummary {
@@ -27,9 +27,9 @@ interface DriveSummary {
 
 // Bar color based on threshold proximity
 function barColor(pct: number, threshold: number) {
-    if (pct >= threshold) return "#10B981";       // emerald – above threshold
-    if (pct >= threshold * 0.75) return "#F97316"; // orange – close
-    return "#F59E0B";                              // amber – behind
+    if (pct >= threshold) return "#10B981";
+    if (pct >= threshold * 0.75) return "#F97316";
+    return "#F59E0B";
 }
 
 interface ActiveDrivesSummaryProps {
@@ -63,8 +63,8 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                 if (res.ok) {
                     const data = await res.json();
                     if (!signal.aborted) setDrives(data.drives ?? []);
-                } else {
-                    if (!signal.aborted) setError("Neural pipeline sync failed.");
+                } else if (!signal.aborted) {
+                    setError("Neural pipeline sync failed.");
                 }
             } catch (err: any) {
                 if (err.name !== "AbortError") {
@@ -93,7 +93,6 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                     <p className="text-[11px] font-bold text-gray-400 mt-1 uppercase tracking-[0.2em]">Neural Pipeline Sync</p>
                 </div>
                 <Link href="/admin/drives">
-                <Link href="/admin/drives">
                     <button className="text-[11px] font-black text-gray-400 border border-gray-100 rounded-xl px-5 py-2 hover:border-orange-200 hover:text-orange-500 hover:bg-white transition-all shadow-sm uppercase tracking-widest">
                         View All Drives
                     </button>
@@ -108,17 +107,17 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                     </div>
                 ) : error ? (
                     <div className="flex items-center justify-center h-48 py-8">
-                        <ErrorState 
-                            message={error} 
-                            onRetry={handleRetry} 
-                            compact 
+                        <ErrorState
+                            message={error}
+                            onRetry={handleRetry}
+                            compact
                             className="bg-transparent border-none shadow-none"
                         />
                     </div>
                 ) : (
                     <div className="flex flex-col h-full">
                         {drives.length === 0 ? (
-                            <motion.div 
+                            <motion.div
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 className="flex items-center justify-center h-full py-12"
@@ -131,7 +130,9 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                         </div>
                                         <div>
                                             <h4 className="text-[14px] font-black text-gray-900 uppercase tracking-tight mb-1">Create Drive</h4>
-                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed px-4">Initialize your first AI-driven recruitment pipeline</p>
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed px-4">
+                                                Initialize your first AI-driven recruitment pipeline
+                                            </p>
                                         </div>
                                         <div className="mt-2 px-6 py-2 bg-gray-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest group-hover/card:bg-[#F97316] group-hover/card:shadow-lg group-hover/card:shadow-orange-500/20 transition-all">
                                             Get Started
@@ -140,101 +141,110 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                 </Link>
                             </motion.div>
                         ) : (
-                            <motion.div 
+                            <motion.div
                                 initial="hidden"
                                 animate="visible"
                                 variants={{
                                     hidden: { opacity: 0 },
                                     visible: {
                                         opacity: 1,
-                                        transition: { staggerChildren: 0.1 }
-                                    }
+                                        transition: { staggerChildren: 0.1 },
+                                    },
                                 }}
                                 className="space-y-4"
                             >
-                        {drives.map((drive) => {
-                            const color = barColor(drive.screeningPct, drive.screeningThreshold);
-                            const deadlineLabel = drive.deadline
-                                ? `${new Date(drive.deadline).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
-                                : null;
+                                {drives.map((drive) => {
+                                    const color = barColor(drive.screeningPct, drive.screeningThreshold);
+                                    const deadlineLabel = drive.deadline
+                                        ? `${new Date(drive.deadline).toLocaleDateString(undefined, {
+                                              month: "short",
+                                              day: "numeric",
+                                          })}`
+                                        : null;
 
-                            return (
-                                <motion.div
-                                    key={drive.id}
-                                    variants={{
-                                        hidden: { opacity: 0, x: -10 },
-                                        visible: { opacity: 1, x: 0 }
-                                    }}
-                                    className="p-5 rounded-[2rem] bg-white border border-gray-50/50 hover:border-orange-100 hover:shadow-[0_15px_40px_rgba(0,0,0,0.03)] transition-all duration-500 cursor-pointer group"
-                                    onClick={() => router.push(`/admin/candidates?driveId=${drive.id}`)}
-                                >
-                                    {/* Title row */}
-                                    <div className="flex items-start justify-between gap-4 mb-4">
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <h4 className="text-[15px] font-black text-gray-800 group-hover:text-orange-600 transition-colors truncate tracking-tight">
-                                                    {drive.title}
-                                                </h4>
-                                                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                                            </div>
-                                            <p className="text-[11px] font-bold text-gray-400 flex items-center gap-2 uppercase tracking-wider">
-                                                {drive.department}
-                                                {deadlineLabel && (
-                                                    <span className="flex items-center gap-1.5 before:content-['·'] before:text-gray-200">
-                                                        {deadlineLabel}
-                                                    </span>
-                                                )}
-                                            </p>
-                                        </div>
-                                        <div className={cn(
-                                            "shrink-0 px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-[0.15em]",
-                                            drive.isClosingSoon
-                                                ? "bg-amber-50 text-amber-600 border-amber-100"
-                                                : "bg-emerald-50 text-emerald-600 border-emerald-100"
-                                        )}>
-                                            {drive.isClosingSoon ? "Closing" : "Optimal"}
-                                        </div>
-                                    </div>
-
-                                    {/* Metrics Grid */}
-                                    <div className="grid grid-cols-4 gap-4 mb-5">
-                                        {[
-                                            { label: "Pool", value: drive.applied },
-                                            { label: "Check", value: drive.screened },
-                                            { label: "Live", value: drive.interviewed },
-                                            { label: "Pick", value: drive.shortlisted },
-                                        ].map((stat) => (
-                                            <div key={stat.label} className="flex flex-col">
-                                                <span className="text-xl font-black text-gray-900 leading-none tracking-tighter tabular-nums">{stat.value}</span>
-                                                <span className="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-widest">{stat.label}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    {/* Neural Progress Bar */}
-                                    <div className="relative h-2 bg-gray-50 rounded-full overflow-hidden border border-gray-100/50">
+                                    return (
                                         <motion.div
-                                            initial={{ width: 0 }}
-                                            animate={{ width: `${Math.min(drive.screeningPct, 100)}%` }}
-                                            transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-                                            className="h-full rounded-full relative z-10"
-                                            style={{ backgroundColor: color }}
+                                            key={drive.id}
+                                            variants={{
+                                                hidden: { opacity: 0, x: -10 },
+                                                visible: { opacity: 1, x: 0 },
+                                            }}
+                                            className="p-5 rounded-[2rem] bg-white border border-gray-50/50 hover:border-orange-100 hover:shadow-[0_15px_40px_rgba(0,0,0,0.03)] transition-all duration-500 cursor-pointer group"
+                                            onClick={() => router.push(`/admin/candidates?driveId=${drive.id}`)}
                                         >
-                                            <div className="absolute top-0 left-0 right-0 h-1/2 bg-white/20 rounded-t-full" />
-                                        </motion.div>
-                                    </div>
+                                            {/* Title row */}
+                                            <div className="flex items-start justify-between gap-4 mb-4">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <h4 className="text-[15px] font-black text-gray-800 group-hover:text-orange-600 transition-colors truncate tracking-tight">
+                                                            {drive.title}
+                                                        </h4>
+                                                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                                                    </div>
+                                                    <p className="text-[11px] font-bold text-gray-400 flex items-center gap-2 uppercase tracking-wider">
+                                                        {drive.department}
+                                                        {deadlineLabel && (
+                                                            <span className="flex items-center gap-1.5 before:content-['·'] before:text-gray-200">
+                                                                {deadlineLabel}
+                                                            </span>
+                                                        )}
+                                                    </p>
+                                                </div>
+                                                <div
+                                                    className={cn(
+                                                        "shrink-0 px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-[0.15em]",
+                                                        drive.isClosingSoon
+                                                            ? "bg-amber-50 text-amber-600 border-amber-100"
+                                                            : "bg-emerald-50 text-emerald-600 border-emerald-100",
+                                                    )}
+                                                >
+                                                    {drive.isClosingSoon ? "Closing" : "Optimal"}
+                                                </div>
+                                            </div>
 
-                                    <div className="flex items-center justify-between mt-2.5">
-                                        <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">
-                                            Efficiency: <span className="text-gray-600">{drive.screeningPct}%</span>
-                                        </span>
-                                        <ChevronRight className="h-4 w-4 text-gray-200 group-hover:text-orange-400 group-hover:translate-x-1 transition-all" />
-                                    </div>
-                                </motion.div>
-                            );
-                        })}
-                    </motion.div>
-                )}
+                                            {/* Metrics Grid */}
+                                            <div className="grid grid-cols-4 gap-4 mb-5">
+                                                {[
+                                                    { label: "Pool", value: drive.applied },
+                                                    { label: "Check", value: drive.screened },
+                                                    { label: "Live", value: drive.interviewed },
+                                                    { label: "Pick", value: drive.shortlisted },
+                                                ].map((stat) => (
+                                                    <div key={stat.label} className="flex flex-col">
+                                                        <span className="text-xl font-black text-gray-900 leading-none tracking-tighter tabular-nums">
+                                                            {stat.value}
+                                                        </span>
+                                                        <span className="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-widest">
+                                                            {stat.label}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {/* Neural Progress Bar */}
+                                            <div className="relative h-2 bg-gray-50 rounded-full overflow-hidden border border-gray-100/50">
+                                                <motion.div
+                                                    initial={{ width: 0 }}
+                                                    animate={{ width: `${Math.min(drive.screeningPct, 100)}%` }}
+                                                    transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
+                                                    className="h-full rounded-full relative z-10"
+                                                    style={{ backgroundColor: color }}
+                                                >
+                                                    <div className="absolute top-0 left-0 right-0 h-1/2 bg-white/20 rounded-t-full" />
+                                                </motion.div>
+                                            </div>
+
+                                            <div className="flex items-center justify-between mt-2.5">
+                                                <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">
+                                                    Efficiency: <span className="text-gray-600">{drive.screeningPct}%</span>
+                                                </span>
+                                                <ChevronRight className="h-4 w-4 text-gray-200 group-hover:text-orange-400 group-hover:translate-x-1 transition-all" />
+                                            </div>
+                                        </motion.div>
+                                    );
+                                })}
+                            </motion.div>
+                        )}
                     </div>
                 )}
             </div>
