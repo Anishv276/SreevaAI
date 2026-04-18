@@ -351,6 +351,8 @@ def detect_role_subtype(job_title: str, role_category: str) -> str:
             return "qa"
         if any(k in title for k in ["full stack", "fullstack"]):
             return "fullstack"
+        if any(k in title for k in ["solutions", "gtm", "presales", "pre-sales", "field engineer"]):
+            return "solutions"
         return "backend"
 
     if role_category == "sales":
@@ -483,6 +485,14 @@ FULLSTACK-SPECIFIC SIGNALS:
   Strong signal: honest about which layer they find harder
   Probe: "If you had to specialise tomorrow — backend or frontend — which would you choose and why?"
   Probe: "Walk me through a feature you built end-to-end — what was the hardest seam to connect?"
+""",
+        "solutions": """
+SOLUTIONS/GTM-SPECIFIC SIGNALS:
+  Look for: technical-to-business translation, integration strategy, stakeholder confidence
+  Strong signal: can explain a complex architecture to a non-technical audience without losing nuance
+  Strong signal: has handled a "save the deal" technical escalation or complex Proof of Concept (PoC)
+  Probe: "Describe a time you had to push back on a customer's requested architecture because it was wrong for them."
+  Probe: "How do you define the ROI of a technical solution when speaking to a CFO vs a CTO?"
 """,
     }
 
