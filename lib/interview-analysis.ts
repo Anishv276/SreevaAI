@@ -4,17 +4,17 @@ import { recordOrgBillingFromOpenAICompletion } from "@/lib/usage-metrics";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 /**
- * Full structured interview report â€” covers all 9 UI sections.
+ * Full structured interview report -- covers all 9 UI sections.
  * Stored as Interview.interviewReport (JSONB).
  */
 export interface InterviewReport {
   // â”€â”€ Section 2: Performance Scorecards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   scores: {
-    interview_score: number;          // 0â€“10, one decimal
+    interview_score: number;          // 0--10, one decimal
     interview_label: string;          // "Poor" | "Below Average" | "Average" | "Good" | "Excellent"
     cefr_level: string;               // "A1" | "A2" | "B1" | "B2" | "C1" | "C2"
     cefr_label: string;               // "Basic" | "Elementary" | "Intermediate" | etc.
-    combined_score: number;           // 0â€“100 aggregate
+    combined_score: number;           // 0--100 aggregate
   };
 
   recording?: {
@@ -40,7 +40,7 @@ export interface InterviewReport {
 
   // â”€â”€ Section 4: Communication Breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   communication: {
-    clarity: number;                  // 0â€“100
+    clarity: number;                  // 0--100
     fluency: number;
     grammar: number;
     depth: number;
@@ -51,9 +51,9 @@ export interface InterviewReport {
   skills_proof: Array<{
     title: string;                    // skill name from JD
     note: string;                     // direct quote or observation
-    confidence: string;               // e.g. "Confidence: High â€” self-declared"
+    confidence: string;               // e.g. "Confidence: High -- self-declared"
     status: "Proved" | "Not proved" | "Partial" | "Not tested";
-    score: string;                    // e.g. "8/10" or "â€”"
+    score: string;                    // e.g. "8/10" or "--"
     color: string;                    // Tailwind classes for badge
   }>;
 
@@ -62,7 +62,7 @@ export interface InterviewReport {
     q: number;
     title: string;
     tags: string[];
-    score: string;                    // e.g. "7/10" or "â€”"
+    score: string;                    // e.g. "7/10" or "--"
     scoreColor: string;               // Tailwind class
     verdict: string;
     confidence: string;
@@ -128,7 +128,7 @@ function momentColor(tag: string): string {
 }
 
 function scoreColor(score: string): string {
-  if (score === "â€”") return "text-gray-300";
+  if (score === "--") return "text-gray-300";
   const n = parseFloat(score);
   if (n >= 7) return "text-emerald-600";
   if (n >= 4) return "text-orange-500";
@@ -155,7 +155,7 @@ export async function generateInterviewReport(opts: {
   const durationMin = Math.round(durationSeconds / 60);
   const wordCount = transcript.split(/\s+/).filter(Boolean).length;
 
-  const systemPrompt = `You are a senior technical recruiter and psycholinguist producing a confidential, bias-free post-interview evaluation report. You analyse the interview transcript rigorously and produce structured JSON output that powers a hiring dashboard. Every field must be grounded in direct transcript evidence. Never fabricate quotes â€” use paraphrase when exact wording is unavailable. Be brutally honest but professional.`;
+  const systemPrompt = `You are a senior technical recruiter and psycholinguist producing a confidential, bias-free post-interview evaluation report. You analyse the interview transcript rigorously and produce structured JSON output that powers a hiring dashboard. Every field must be grounded in direct transcript evidence. Never fabricate quotes -- use paraphrase when exact wording is unavailable. Be brutally honest but professional. Always populate ALL arrays fully -- never return empty arrays if there is any data to work with. Every section must be filled.`;
 
   const userPrompt = `
 ## CANDIDATE
@@ -174,7 +174,7 @@ ${jdText.slice(0, 3000)}
 ${resumeText.slice(0, 3000)}
 
 ## INTERVIEW TRANSCRIPT
-${transcript.slice(0, 8000)}
+${transcript.slice(0, 10000)}
 
 ---
 
@@ -193,20 +193,25 @@ Rules:
 - Do not hardcode placeholder values or generic defaults when evidence exists.
 - Keep the four score cards internally consistent with each other.
 - Make the strategic verdict decisive and evidence-backed. If the answer is hire or no hire, say it plainly.
-- Ground the strategic verdict in the interview content, resume claims, and proctoring signals together.
-- The rationale should read like an executive review note, not generic filler.
-- The next actions should be specific enough to guide a recruiter or hiring manager immediately.
+- Ground the strategic verdict in the interview content, resume claims, AND proctoring signals together.
+- The rationale array must have 3-5 bullets, each referencing specific interview evidence, resume claims, or proctoring signals.
+- The next_actions array must have 2-4 concrete, actionable bullets specific to this candidate and role.
 - When the transcript is short or sparse, lower confidence and say so directly.
 - Use precise, recruiter-grade language, not vague fluff.
 - Prefer concrete examples, exact tool names, and specific interview moments.
+- skills_proof MUST have 5-8 items covering all major JD skills -- pull skill names directly from the JD text.
+- session_log MUST have one entry per distinct question the AI asked in the transcript.
+- qa_blocks MUST mirror session_log topics with expanded verdict text.
+- consistency MUST check 3-5 specific resume claims against what the interview revealed.
+- key_moments MUST have 4-7 chronological entries: best answer, biggest gap, notable behaviour, session quality.
 
 {
   "scores": {
-    "interview_score": number,          // 0.0â€“10.0, one decimal, based on transcript evidence only
+    "interview_score": number,          // 0.0--10.0, one decimal, based on transcript evidence only
     "interview_label": string,          // "Poor" | "Below Average" | "Average" | "Good" | "Excellent"
     "cefr_level": string,               // "A1"|"A2"|"B1"|"B2"|"C1"|"C2"
     "cefr_label": string,               // single word: "Basic"|"Elementary"|"Intermediate"|"Upper-Intermediate"|"Advanced"|"Proficient"
-    "combined_score": number            // 0â€“100 weighted: technical, communication, engagement, and proctoring signals
+    "combined_score": number            // 0--100 weighted: technical, communication, engagement, and proctoring signals
   },
 
   "recording": {
@@ -230,33 +235,33 @@ Rules:
   },
 
   "communication": {
-    "clarity": number,                  // 0â€“100
-    "fluency": number,                  // 0â€“100
-    "grammar": number,                  // 0â€“100
-    "depth": number,                    // 0â€“100 (technical detail level)
-    "cefr_analysis": string             // 2â€“3 sentences explaining the CEFR rating with transcript evidence
+    "clarity": number,                  // 0--100
+    "fluency": number,                  // 0--100
+    "grammar": number,                  // 0--100
+    "depth": number,                    // 0--100 (technical detail level)
+    "cefr_analysis": string             // 2--3 sentences explaining the CEFR rating with transcript evidence
   },
 
-  "skills_proof": [                     // one entry per major JD skill/requirement (4â€“7 items)
+  "skills_proof": [                     // one entry per major JD skill/requirement (4--7 items)
     {
       "title": string,                  // skill name
-      "note": string,                   // transcript evidence or "Not reached â€” session ended early"
-      "confidence": string,             // e.g. "Confidence: High â€” self-declared"
+      "note": string,                   // transcript evidence or "Not reached -- session ended early"
+      "confidence": string,             // e.g. "Confidence: High -- self-declared"
       "status": "Proved"|"Not proved"|"Partial"|"Not tested",
-      "score": string,                  // e.g. "7/10" or "â€”"
-      "color": string                   // leave as "" â€” will be set server-side
+      "score": string,                  // e.g. "7/10" or "--"
+      "color": string                   // leave as "" -- will be set server-side
     }
   ],
 
-  "qa_blocks": [                        // one per interview question asked (1â€“4 items)
+  "qa_blocks": [                        // one per interview question asked (1--4 items)
     {
       "q": number,
       "title": string,                  // question title / topic
-      "tags": string[],                 // 2â€“4 skill tags e.g. ["Algorithm Design", "Problem Solving"]
-      "score": string,                  // e.g. "6/10" or "â€”"
-      "scoreColor": string,             // leave as "" â€” will be set server-side
-      "verdict": string,                // 2â€“4 sentences: what candidate did/said, quality of answer
-      "confidence": string              // e.g. "Confidence level: High â€” sufficient session data"
+      "tags": string[],                 // 2--4 skill tags e.g. ["Algorithm Design", "Problem Solving"]
+      "score": string,                  // e.g. "6/10" or "--"
+      "scoreColor": string,             // leave as "" -- will be set server-side
+      "verdict": string,                // 2--4 sentences: what candidate did/said, quality of answer
+      "confidence": string              // e.g. "Confidence level: High -- sufficient session data"
     }
   ],
 
@@ -270,23 +275,23 @@ Rules:
     }
   ],
 
-  "consistency": [                      // one per key resume claim (3â€“5 items)
+  "consistency": [                      // one per key resume claim (3--5 items)
     {
       "claim": string,                  // exact claim from resume
       "sub": string,                    // e.g. "Claimed: GTM strategy"
       "proof": string,                  // what interview revealed
       "status": "Verified"|"Mismatch"|"Contradicted"|"Not tested"|"Weak signal",
-      "statusColor": string             // leave as "" â€” will be set server-side
+      "statusColor": string             // leave as "" -- will be set server-side
     }
   ],
 
-  "key_moments": [                      // 4â€“7 timestamped behavioral observations
+  "key_moments": [                      // 4--7 timestamped behavioral observations
     {
       "time": string,                   // estimate from transcript position e.g. "1:32"
       "tag": "Context"|"Flag"|"Critical"|"Positive",
-      "tagColor": string,               // leave as "" â€” will be set server-side
+      "tagColor": string,               // leave as "" -- will be set server-side
       "title": string,                  // short descriptive title
-      "note": string                    // 1â€“2 sentences with direct evidence
+      "note": string                    // 1--2 sentences with direct evidence
     }
   ],
 
@@ -300,10 +305,10 @@ Rules:
 - recording.word_count must reflect the transcript length as closely as possible
   - recording.summary should be the short AI summary box displayed below the video, written in 3-4 lines only
   - Keep the summary concise, direct, and skimmable; do not write a long paragraph
-- All scores must reflect ONLY what is in the transcript, resume text, JD text, duration, and proctoring events â€” do not extrapolate
+- All scores must reflect ONLY what is in the transcript, resume text, JD text, duration, and proctoring events -- do not extrapolate
 - If transcript is very short (<200 words), mark most skills as "Not tested" and lower scores accordingly
 - Key moments must be in chronological order
-- qa_blocks: if a question was never reached, set score "â€”" and verdict "Not reached â€” session ended before this question"
+- qa_blocks: if a question was never reached, set score "--" and verdict "Not reached -- session ended before this question"
 - session_log should contain the full session trace with question, reasoning, and score for each major question
 - consistency should use concrete resume claims from the resume and what the interview proved or contradicted
 - key_moments should capture the strongest interview moments, including the best proof, biggest concern, and turning points
@@ -312,7 +317,7 @@ Rules:
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
     temperature: 0.15,
-    max_tokens: 3000,
+    max_tokens: 5000,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },

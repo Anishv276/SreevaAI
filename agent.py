@@ -1766,7 +1766,7 @@ async def persist_transcript(
                     "interviewTranscript" = $1,
                     "interviewDuration"   = $2,
                     status                = $3,
-                    "proctorReport"       = $4,
+                    "proctoringReport"    = $4,
                     "completedAt"         = NOW(),
                     "updatedAt"           = NOW()
                 WHERE "applicationId" = $5

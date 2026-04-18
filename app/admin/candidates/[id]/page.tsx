@@ -21,7 +21,7 @@ import { AuditLogModal } from "@/components/admin/audit-log-modal";
 const Plyr = dynamic(() => import("plyr-react").then((mod) => mod.Plyr), { ssr: false });
 
 
-/* â”€â”€ Pic 1: Top Summary Cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Pic 1: Top Summary Cards â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 const ScoreCard = memo(function ScoreCard({ label, value, status, color = "orange" }: { label: string; value: string; status: string; color?: "orange" | "red" | "emerald" | "slate" }) {
     const bgStyles = {
         orange: "bg-[#FDF9F3] border-[#F5E6D3] text-[#8B5E3C]",
@@ -47,8 +47,8 @@ const ScoreCard = memo(function ScoreCard({ label, value, status, color = "orang
     );
 });
 
-/* â”€â”€ Pic 2: JD Skill Assessment Cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-/* â”€â”€ Pic 2: JD Skill Assessment Cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Pic 2: JD Skill Assessment Cards â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
+/* â"€â"€ Pic 2: JD Skill Assessment Cards â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 const AssessmentCard = memo(function AssessmentCard({ title, subtitle, confidence, score, status }: { title: string; subtitle: string; confidence: string; score: string; status: "PROVED" | "PARTIAL" | "NOT PROVED" | "NOT TESTED" }) {
     const statusThemes = {
         PROVED: { border: "border-emerald-500", bg: "bg-emerald-50/50", text: "text-emerald-700", label: "PROVED" },
@@ -123,7 +123,7 @@ const RecommendedActionItem = memo(function RecommendedActionItem({ text }: { te
     );
 });
 
-/* â”€â”€ Pic 2: Chat Entry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Pic 2: Chat Entry â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 const ChatEntry = memo(function ChatEntry({ role, text, name }: { role: "ai" | "candidate"; text: string; name: string }) {
     const isAi = role === "ai";
     return (
@@ -163,7 +163,7 @@ const ChatEntry = memo(function ChatEntry({ role, text, name }: { role: "ai" | "
     );
 });
 
-/* â”€â”€ Pic 2: Analysis Entry (Question by Question) â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Pic 2: Analysis Entry (Question by Question) â"€â"€â"€â"€â"€â"€ */
 const AnalysisEntry = memo(function AnalysisEntry({ qNumber, question, reasoning, depth, score }: { qNumber: string; question: string; reasoning: string; depth: string; score: string }) {
     const scoreVal = parseInt(score.split('/')[0]) || 0;
     
@@ -216,7 +216,7 @@ const AnalysisEntry = memo(function AnalysisEntry({ qNumber, question, reasoning
     );
 });
 
-/* â”€â”€ Pic 2: Key Moment Entry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Pic 2: Key Moment Entry â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 const MomentEntry = memo(function MomentEntry({ time, type, observation, comment }: { time: string; type: "CONTEXT" | "FLAG" | "CRITICAL"; observation: string; comment: string }) {
     const typeStyles = {
         CONTEXT: "text-slate-400 bg-slate-50 border-slate-100",
@@ -242,7 +242,7 @@ const MomentEntry = memo(function MomentEntry({ time, type, observation, comment
     );
 });
 
-/* â”€â”€ Pic 4: Verdict Score Box â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Pic 4: Verdict Score Box â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 const VerdictScoreBox = memo(function VerdictScoreBox({ label, value, color = "rose" }: { label: string; value: string; color?: "rose" | "orange" | "amber" }) {
     const colors = {
         rose: "text-rose-600 bg-rose-50/30 border-rose-100",
@@ -257,7 +257,7 @@ const VerdictScoreBox = memo(function VerdictScoreBox({ label, value, color = "r
     );
 });
 
-/* â”€â”€ Pic 5: Deep Dive Log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Pic 5: Deep Dive Log â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 const DeepDiveLog = memo(function DeepDiveLog({ label, description, time, type = "error" }: { label: string; description: string; time: string; type?: "error" | "warning" | "success" }) {
     const styles = {
         error: "bg-red-50 border-red-100 text-red-600",
@@ -275,8 +275,8 @@ const DeepDiveLog = memo(function DeepDiveLog({ label, description, time, type =
     );
 });
 
-/* â”€â”€ Pic 3: Integrity Logic Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-/* â”€â”€ Pic 3: Integrity Logic Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Pic 3: Integrity Logic Row â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
+/* â"€â"€ Pic 3: Integrity Logic Row â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 const IntegrityRow = memo(function IntegrityRow({ label, value, status }: { label: string; value: string; status: string }) {
     return (
         <div className="p-6 rounded-[32px] bg-white border border-gray-100 flex flex-col items-center justify-center gap-2 flex-1 shadow-sm">
@@ -289,7 +289,7 @@ const IntegrityRow = memo(function IntegrityRow({ label, value, status }: { labe
     );
 });
 
-/* â”€â”€ Proctoring Metric Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Proctoring Metric Card â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 const ProctoringMetric = memo(function ProctoringMetric({ value, label, risk }: { value: string; label: string; risk: "NO RISK" | "MEDIUM RISK" | "HIGH RISK" }) {
     const riskStyles = {
         "NO RISK": "bg-[#F0FDF4] text-emerald-600 border-[#DCFCE7]",
@@ -315,7 +315,7 @@ const ProctoringMetric = memo(function ProctoringMetric({ value, label, risk }: 
     );
 });
 
-/* â”€â”€ Timeline Event Item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Timeline Event Item â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 const TimelineEvent = memo(function TimelineEvent({ time, event, risk, desc, subNote, isSuccess = false }: { time: string; event: string; risk: "CLEAN" | "MEDIUM RISK" | "HIGH RISK"; desc: string; subNote?: string; isSuccess?: boolean }) {
     const riskStyles = {
         CLEAN: "bg-emerald-50 text-emerald-700 border-emerald-100",
@@ -353,7 +353,7 @@ const TimelineEvent = memo(function TimelineEvent({ time, event, risk, desc, sub
     );
 });
 
-/* â”€â”€ Analysis Signal Item â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Analysis Signal Item â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 const AnalysisSignal = memo(function AnalysisSignal({ title, desc, type }: { title: string; desc: string; type: "success" | "warning" }) {
     const theme = type === "success" 
         ? "bg-emerald-50/40 border-emerald-100/60 text-emerald-600 icon-bg-emerald-100" 
@@ -373,7 +373,7 @@ const AnalysisSignal = memo(function AnalysisSignal({ title, desc, type }: { tit
     );
 });
 
-/* â”€â”€ Premium Score Ring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Premium Score Ring â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 const CircularProgress = memo(function CircularProgress({
     value,
     max = 100,
@@ -452,7 +452,7 @@ const CircularProgress = memo(function CircularProgress({
     );
 });
 
-/* â”€â”€ Segmented Data Track â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Segmented Data Track â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 const SegmentedProgress = memo(function SegmentedProgress({ candValue, jdValue, label, unit = "YRS" }: { candValue: number; jdValue: number; label: string; unit?: string }) {
     const totalBlocks = Math.max(candValue, jdValue, 8);
     return (
@@ -479,7 +479,7 @@ const SegmentedProgress = memo(function SegmentedProgress({ candValue, jdValue, 
     );
 });
 
-/* â”€â”€ Communication Donut Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Communication Donut Chart â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 const CommunicationDonutChart = memo(function CommunicationDonutChart({ metrics }: { metrics: { label: string; value: number; color: string }[] }) {
     const [hovered, setHovered] = useState<number | null>(null);
     const [animProgress, setAnimProgress] = useState(0);
@@ -627,7 +627,7 @@ const CommunicationDonutChart = memo(function CommunicationDonutChart({ metrics 
     );
 });
 
-/* â”€â”€ Main Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* â"€â"€ Main Component â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */
 export default function CandidateProfilePage({ params }: { params: Promise<{ id: string }> }) {
     const resolvedParams = use(params);
     const id = resolvedParams.id;
@@ -1086,16 +1086,16 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
                         ` }} />
 
-            {/* â”€â”€ Background Aurora Blobs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/* â"€â"€ Background Aurora Blobs â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */}
             <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden" style={{ transform: 'translateZ(0)' }}>
                 <div className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] bg-purple-500/5 blur-[120px] rounded-full" style={{ willChange: 'opacity' }} />
                 <div className="absolute bottom-[-20%] left-[-10%] w-[600px] h-[600px] bg-blue-500/5 blur-[120px] rounded-full" style={{ willChange: 'opacity' }} />
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-indigo-500/5 blur-[150px] rounded-full" style={{ willChange: 'opacity' }} />
             </div>
 
-            {/* â”€â”€ Main Content Area â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/* â"€â"€ Main Content Area â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */}
             <div className="flex-1 min-w-0">
-                {/* â”€â”€ Fixed Navigation Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                {/* â"€â"€ Fixed Navigation Header â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */}
                 <header className={cn(
                     "fixed top-0 right-0 z-[100] bg-white/80 backdrop-blur-xl border-b border-gray-100/80 px-6 py-3 transition-all  shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)]",
                     isReportsMode ? "left-0" : "left-0 md:left-[240px]"
@@ -1569,7 +1569,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     </div>
 
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                        {/* â”€â”€ Career Timeline (Left) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                                        {/* â"€â"€ Career Timeline (Left) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */}
                                         <div className="p-8 spotlight-card bg-white rounded-[40px] shadow-sm flex flex-col h-full border border-slate-100 optimize-scroll">
                                             <div className="flex items-center gap-3 mb-10 px-2">
                                                 <div className="h-10 w-10 rounded-2xl bg-slate-50 flex items-center justify-center border border-slate-100">
@@ -1596,7 +1596,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                                     <div className="space-y-2 pb-2">
                                                                         <div className="flex flex-col gap-0.5">
                                                                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
-                                                                                {role.start_date || role.start_year || "?"} â€” {isCurrent ? "Present" : (role.end_date || role.end_year || "?")}
+                                                                                {role.start_date || role.start_year || "?"} -- {isCurrent ? "Present" : (role.end_date || role.end_year || "?")}
                                                                             </span>
                                                                             <h4 className="text-[16px] font-bold text-slate-900 tracking-tight leading-tight group-hover:text-blue-500 transition-colors">
                                                                                 {role.role}
@@ -1615,7 +1615,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                             </div>
                                         </div>
 
-                                        {/* â”€â”€ Strategic Verdict (Right) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                                        {/* â"€â"€ Strategic Verdict (Right) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */}
                                         <div className="p-8 spotlight-card bg-indigo-50/30 rounded-[40px] border border-indigo-100/50 shadow-sm flex flex-col h-full relative overflow-hidden group optimize-scroll">
                                             <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-200/20 blur-[60px] rounded-full -mr-24 -mt-24 pointer-events-none" />
 
@@ -1806,7 +1806,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         />
                                         <div className="p-5 rounded-[24px] bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
                                             <p className="text-[9px] font-bold text-[#A89078] uppercase tracking-[0.3em]">CEFR RATING</p>
-                                            <h4 className="text-xl font-bold text-[#8B5E3C] tracking-tight">{String(interviewReportScores.cefr_level || communicationLevel)} â€” {String(interviewReportScores.cefr_label || communicationStatus)}</h4>
+                                            <h4 className="text-xl font-bold text-[#8B5E3C] tracking-tight">{String(interviewReportScores.cefr_level || communicationLevel)} -- {String(interviewReportScores.cefr_label || communicationStatus)}</h4>
                                             <p className="text-[15px] font-medium text-gray-500 leading-relaxed">
                                                 {interviewReportCommunication.cefr_analysis || "Communication analysis will appear here once the interview report is generated."}
                                             </p>
@@ -1861,7 +1861,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     {String(interviewSkillStats.strongest?.title || "No proven skill yet")}
                                                 </p>
                                                 <p className="text-[11px] font-medium text-emerald-700 mt-2">
-                                                    {String(interviewSkillStats.strongest?.score || "â€”")} Â· {String(interviewSkillStats.strongest?.status || "N/A")}
+                                                    {String(interviewSkillStats.strongest?.score || "--")} Â· {String(interviewSkillStats.strongest?.status || "N/A")}
                                                 </p>
                                             </div>
                                             <div className="p-4 rounded-[24px] bg-rose-50 border border-rose-100 shadow-sm">
@@ -1870,7 +1870,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     {String(interviewSkillStats.biggestGap?.title || "No major gap detected")}
                                                 </p>
                                                 <p className="text-[11px] font-medium text-rose-700 mt-2">
-                                                    {String(interviewSkillStats.biggestGap?.score || "â€”")} Â· {String(interviewSkillStats.biggestGap?.status || "N/A")}
+                                                    {String(interviewSkillStats.biggestGap?.score || "--")} Â· {String(interviewSkillStats.biggestGap?.status || "N/A")}
                                                 </p>
                                             </div>
                                             <div className="p-4 rounded-[24px] bg-amber-50 border border-amber-100 shadow-sm">
@@ -1890,7 +1890,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     title={s.title}
                                                     subtitle={s.note || ""}
                                                     confidence={s.confidence || ""}
-                                                    score={s.score || "â€”"}
+                                                    score={s.score || "--"}
                                                     status={String(s.status || "").toUpperCase() as any}
                                                 />
                                             ))}
@@ -1916,7 +1916,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                             <p className="text-[14px] font-semibold text-gray-900 leading-relaxed">{item.question || item.title}</p>
                                                         </div>
                                                         <span className="px-3 py-1 rounded-full bg-slate-50 border border-slate-100 text-[10px] font-bold text-slate-600 uppercase tracking-widest whitespace-nowrap">
-                                                            {item.score || "â€”"}
+                                                            {item.score || "--"}
                                                         </span>
                                                     </div>
                                                     <p className="text-[13px] font-medium text-gray-600 leading-relaxed">{item.reasoning || item.verdict || "No reasoning available."}</p>
@@ -1928,14 +1928,14 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                     <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Question {String(q.q || i + 1).padStart(2, "0")}</p>
                                                     <p className="text-[14px] font-semibold text-gray-900 leading-relaxed">{q.question || q.title}</p>
                                                     <p className="text-[13px] font-medium text-gray-600 leading-relaxed">{q.reasoning || q.verdict || "No reasoning available."}</p>
-                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{q.score || "â€”"} {q.confidence ? `â€¢ ${q.confidence}` : ""}</p>
+                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{q.score || "--"} {q.confidence ? `â€¢ ${q.confidence}` : ""}</p>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
 
                                     <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
-                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof â€” consistency check</h3>
+                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof -- consistency check</h3>
                                         <div className="flex-1 overflow-y-auto scrollbar-hide space-y-4">
                                             {(interviewReportConsistency.length > 0 ? interviewReportConsistency : []).map((c: any, i: number) => (
                                                 <div key={i} className="p-5 rounded-3xl border border-gray-100 bg-white shadow-sm space-y-3">
@@ -2030,7 +2030,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                 {activeTab === "interview" && candidate && !hasStructuredInterviewReport && (
                         <div className="space-y-12     pb-20 bg-[#F4F7FF] -mx-8 px-12 pt-16">
                             
-                            {/* â”€â”€ Section: Performance Analysis â”€â”€ */}
+                            {/* â"€â"€ Section: Performance Analysis â"€â"€ */}
                             <div className="space-y-12">
                                 <div className="flex flex-col items-center gap-2 text-center mb-4">
                                     <h2 className="text-3xl font-bold text-slate-950 tracking-tight font-inter uppercase">Performance Analysis</h2>
@@ -2054,7 +2054,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <div className="p-5 rounded-[24px] bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
                                             <p className="text-[9px] font-bold text-[#A89078] uppercase tracking-[0.3em]">CEFR RATING</p>
                                             <h4 className="text-xl font-bold text-[#8B5E3C] tracking-tight">
-                                                {(interviewReportScores.cefr_level || communicationLevel)} â€” {(interviewReportScores.cefr_label || communicationStatus)}
+                                                {(interviewReportScores.cefr_level || communicationLevel)} -- {(interviewReportScores.cefr_label || communicationStatus)}
                                             </h4>
                                             <p className="text-[15px] font-medium text-gray-500 leading-relaxed">
                                                 {interviewReportCommunication.cefr_analysis || "Communication analysis will appear here once the interview report is generated."}
@@ -2121,18 +2121,18 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         </div>
                                         <div className="flex-1 overflow-y-auto scrollbar-hide pr-1">
                                             {(interviewReportSkills.length > 0 ? interviewReportSkills : [
-                                                { title: "Cycle detection in graphs", subtitle: "So is it totally based on coding? â€” deflected", confidence: "HIGH â€” NO ATTEMPT", score: "0/10", status: "NOT PROVED" },
-                                                { title: "Graph traversal (BFS / DFS)", subtitle: "Not reached â€” session ended early", confidence: "N/A â€” NOT TESTED", score: "0/10", status: "NOT TESTED" },
-                                                { title: "Edge case handling", subtitle: "Not reached â€” session ended early", confidence: "N/A â€” NOT TESTED", score: "0/10", status: "NOT TESTED" },
-                                                { title: "Problem-solving approach", subtitle: "Actually, I'm not good at coding.", confidence: "HIGH â€” SELF-DECLARED", score: "0/10", status: "NOT PROVED" },
-                                                { title: "Communication clarity", subtitle: "Basic exchanges functional, grammar poor", confidence: "HIGH â€” FULL DATA", score: "5/10", status: "PARTIAL" }
+                                                { title: "Cycle detection in graphs", subtitle: "So is it totally based on coding? -- deflected", confidence: "HIGH -- NO ATTEMPT", score: "0/10", status: "NOT PROVED" },
+                                                { title: "Graph traversal (BFS / DFS)", subtitle: "Not reached -- session ended early", confidence: "N/A -- NOT TESTED", score: "0/10", status: "NOT TESTED" },
+                                                { title: "Edge case handling", subtitle: "Not reached -- session ended early", confidence: "N/A -- NOT TESTED", score: "0/10", status: "NOT TESTED" },
+                                                { title: "Problem-solving approach", subtitle: "Actually, I'm not good at coding.", confidence: "HIGH -- SELF-DECLARED", score: "0/10", status: "NOT PROVED" },
+                                                { title: "Communication clarity", subtitle: "Basic exchanges functional, grammar poor", confidence: "HIGH -- FULL DATA", score: "5/10", status: "PARTIAL" }
                                             ]).map((s: any, i: number) => (
                                                 <AssessmentCard
                                                     key={i}
                                                     title={s.title}
                                                     subtitle={s.note || s.subtitle || ""}
                                                     confidence={s.confidence || ""}
-                                                    score={s.score || "â€”"}
+                                                    score={s.score || "--"}
                                                     status={String(s.status || "").toUpperCase() as any}
                                                 />
                                             ))}
@@ -2177,20 +2177,22 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                         <div className="h-8 w-8 rounded-xl bg-slate-950 flex items-center justify-center shadow-lg shadow-slate-900/20">
                                                             <MessageSquare className="h-4 w-4 text-white" />
                                                         </div>
-                                                        <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Session Transcript â€” Analysis Phase</h4>
+                                                        <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Session Transcript -- Analysis Phase</h4>
                                                     </div>
                                                     
                                                     <div className="flex-1 overflow-y-auto pr-2 space-y-8 custom-scrollbar  py-2">
-                                                        {([
-                                                            { role: "ai", name: "Ishita", text: "Hey Vamsi Test Applicant, welcome! Really glad you could make it today. I'm Ishita, and I'll be having a conversation with you about the GTM Engineer role. How are you doing today?" },
-                                                            { role: "candidate", name: candidate.fullName, text: "Wait... is it based on coding? I thought this was for GTM." },
-                                                            { role: "ai", name: "Ishita", text: "It's a GTM Engineer role, so it involves both technical implementation and strategy. Let's start with something fundamental." },
-                                                            { role: "candidate", name: candidate.fullName, text: "Actually, to be honest, I'm not good at coding. I handle the strategy side mostly." },
-                                                            { role: "ai", name: "Ishita", text: "I appreciate the honesty. Let's look at how you approach tool integration then. Have you worked with n8n or Apollo?" },
-                                                            { role: "candidate", name: candidate.fullName, text: "I've used them, but... let's see how it goes." }
-                                                        ]).map((m, i) => (
-                                                            <ChatEntry key={i} {...m as any} />
-                                                        ))}
+                                                        {interviewReportSessionLog && interviewReportSessionLog.length > 0 ? (
+                                                            interviewReportSessionLog.map((item: any, i: number) => (
+                                                                <div key={i} className="space-y-4">
+                                                                    <ChatEntry role="ai" name="Ishita" text={item.question} />
+                                                                    <ChatEntry role="candidate" name={candidate.fullName} text={item.reasoning || "Candidate response - see analysis tab for details."} />
+                                                                </div>
+                                                            ))
+                                                        ) : (
+                                                            <>
+                                                                <ChatEntry role="ai" name="Ishita" text="Interview session transcript will appear here once the interview report is generated." />
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </div>
                                             ) : (
@@ -2202,10 +2204,10 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                         <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">AI Integrity Breakdown</h4>
                                                     </div>
                                                     {([
-                                                        { qNumber: "QUESTION 01", question: "How would you implement a cycle detection algorithm in a graph for a custom workflow engine?", reasoning: "Candidate immediately deflected technical depth. Question was avoided entirely.", depth: "SHALLOW â€” NO SIGNAL", score: "0/10" },
-                                                        { qNumber: "QUESTION 02", question: "Can you explain the difference between BFS and DFS in the context of data synchronization?", reasoning: "Candidate stated they are 'not good at coding'. Core competency mismatch identified.", depth: "N/A â€” SELF-DECLARED", score: "0/10" },
-                                                        { qNumber: "QUESTION 03", question: "How do you handle edge cases in a recursive script for directory processing?", reasoning: "Attempt aborted by AI due to previous declaration of coding deficiency.", depth: "N/A â€” NOT TESTED", score: "0/10" },
-                                                        { qNumber: "QUESTION 04", question: "What is your experience with tool integration platforms like n8n or Apollo?", reasoning: "Vague response provided. Minimal evidence of strategic tool orchestration depth.", depth: "PARTIAL â€” WEAK SIGNAL", score: "4/10" }
+                                                        { qNumber: "QUESTION 01", question: "How would you implement a cycle detection algorithm in a graph for a custom workflow engine?", reasoning: "Candidate immediately deflected technical depth. Question was avoided entirely.", depth: "SHALLOW -- NO SIGNAL", score: "0/10" },
+                                                        { qNumber: "QUESTION 02", question: "Can you explain the difference between BFS and DFS in the context of data synchronization?", reasoning: "Candidate stated they are 'not good at coding'. Core competency mismatch identified.", depth: "N/A -- SELF-DECLARED", score: "0/10" },
+                                                        { qNumber: "QUESTION 03", question: "How do you handle edge cases in a recursive script for directory processing?", reasoning: "Attempt aborted by AI due to previous declaration of coding deficiency.", depth: "N/A -- NOT TESTED", score: "0/10" },
+                                                        { qNumber: "QUESTION 04", question: "What is your experience with tool integration platforms like n8n or Apollo?", reasoning: "Vague response provided. Minimal evidence of strategic tool orchestration depth.", depth: "PARTIAL -- WEAK SIGNAL", score: "4/10" }
                                                     ]).map((q, i) => (
                                                         <AnalysisEntry key={i} {...q as any} />
                                                     ))}
@@ -2216,7 +2218,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     {/* Section 3: Consistency Check (Bottom Left) */}
                                     <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
-                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof â€” consistency check</h3>
+                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof -- consistency check</h3>
                                         <div className="grid grid-cols-[1.5fr_1.8fr_120px] gap-6 px-6 mb-6 border-b border-gray-50 pb-6">
                                             <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70">Resume Claimed</span>
                                             <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70">Interview Showed</span>
@@ -2225,8 +2227,8 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <div className="flex-1 overflow-y-auto scrollbar-hide">
                                             {[
                                                 { claim: "Built GTM automation systems at Niti AI", sub: "GTM strategy", proof: "Zero GTM knowledge demonstrated. Could not answer basic GTM question.", status: "MISMATCH" },
-                                                { claim: "n8n, Zapier, Apollo automation experience", sub: "Automation tools", proof: "Not tested in interview â€” role needed coding.", status: "NOT TESTED" },
-                                                { claim: "Python, Pandas, Power BI â€” data analysis", sub: "Technical skills", proof: "Self-declared 'not good at coding.' No code written.", status: "CONTRADICTED" },
+                                                { claim: "n8n, Zapier, Apollo automation experience", sub: "Automation tools", proof: "Not tested in interview -- role needed coding.", status: "NOT TESTED" },
+                                                { claim: "Python, Pandas, Power BI -- data analysis", sub: "Technical skills", proof: "Self-declared 'not good at coding.' No code written.", status: "CONTRADICTED" },
                                                 { claim: "Problem-solving and analytical thinking", sub: "Soft skill", proof: "Minimal engagement with problem. Disengaged.", status: "WEAK SIGNAL" }
                                             ].map((c, i) => (
                                                 <div key={i} className="grid grid-cols-[1.5fr_1.8fr_120px] gap-8 px-6 py-6 rounded-3xl hover:bg-gray-50/50 transition-all group items-start border-b border-gray-50 last:border-0 relative">
@@ -2265,10 +2267,10 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <div className="flex-1 overflow-y-auto scrollbar-hide pr-2">
                                             {[
                                                 { time: "0:38", type: "CONTEXT", observation: "Minimal engagement at interview start", comment: "Yeah. Sure. - two-word response to interview structure explanation" },
-                                                { time: "1:12", type: "FLAG", observation: "Deflected technical question â€” asked about format instead", comment: "K. So is it totally based on coding? - avoidance rather than engagement" },
-                                                { time: "1:18", type: "FLAG", observation: "Tab switch detected â€” at exact moment of deflection", comment: "Proctoring: browser focus lost ~8 sec. Timing aligns with Q1 avoidance behaviour." },
-                                                { time: "2:28", type: "CRITICAL", observation: "Self-declared inability to code â€” defining moment of session", comment: "Actually, I'm not good at coding. - unprompted, direct self-admission" },
-                                                { time: "3:05", type: "FLAG", observation: "Audio anomaly detected â€” 3 seconds post-admission", comment: "Voice-like sound. Flagged for correlation." }
+                                                { time: "1:12", type: "FLAG", observation: "Deflected technical question -- asked about format instead", comment: "K. So is it totally based on coding? - avoidance rather than engagement" },
+                                                { time: "1:18", type: "FLAG", observation: "Tab switch detected -- at exact moment of deflection", comment: "Proctoring: browser focus lost ~8 sec. Timing aligns with Q1 avoidance behaviour." },
+                                                { time: "2:28", type: "CRITICAL", observation: "Self-declared inability to code -- defining moment of session", comment: "Actually, I'm not good at coding. - unprompted, direct self-admission" },
+                                                { time: "3:05", type: "FLAG", observation: "Audio anomaly detected -- 3 seconds post-admission", comment: "Voice-like sound. Flagged for correlation." }
                                             ].map((m, i) => (
                                                 <MomentEntry key={i} {...m as any} />
                                             ))}
@@ -2276,7 +2278,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                     </div>
                                 </div>
 
-                                {/* â”€â”€ Section: Integrity & Proctoring â”€â”€ */}
+                                {/* â"€â"€ Section: Integrity & Proctoring â"€â"€ */}
                                 <div className="pt-16 border-t border-gray-200 mt-16 space-y-8">
                                     <div className="flex flex-col items-center gap-2 text-center mb-6">
                                         <h2 className="text-2xl font-bold text-slate-950 tracking-tight font-inter uppercase">Integrity and Proctoring</h2>
@@ -2292,7 +2294,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         </Button>
                                     </div>
 
-                                    {/* â”€â”€ Integrity Verdict Card â”€â”€ */}
+                                    {/* â"€â"€ Integrity Verdict Card â"€â"€ */}
                                     <div className="grid grid-cols-[260px_1fr] rounded-[40px] bg-white border-2 border-[#F5E6D3]/30 shadow-[0_20px_60px_rgba(139,94,60,0.06)] overflow-hidden border-l-[8px] border-l-[#8B5E3C]">
                                         <div className="bg-[#FAF9F6] p-8 flex flex-col items-center justify-center gap-4 border-r border-[#F5E6D3]/20">
                                             <h4 className="text-[12px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-60 mb-2">Integrity Score</h4>
@@ -2312,7 +2314,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         </div>
                                     </div>
 
-                                    {/* â”€â”€ Proctoring Metrics Row â”€â”€ */}
+                                    {/* â"€â"€ Proctoring Metrics Row â"€â"€ */}
                                     <div className="flex gap-6">
                                         <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("tab")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Tab Switches" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("tab") && g.severity === "high") ? "HIGH RISK" : groupedProctoringSignals.some((g: any) => String(g.key).includes("tab")) ? "MEDIUM RISK" : "NO RISK"} />
                                         <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("face")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Face Events" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("face") && g.severity === "high") ? "HIGH RISK" : "NO RISK"} />
@@ -2320,67 +2322,109 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                         <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("gaze")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Gaze Events" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("gaze") && g.severity === "high") ? "HIGH RISK" : groupedProctoringSignals.some((g: any) => String(g.key).includes("gaze")) ? "MEDIUM RISK" : "NO RISK"} />
                                     </div>
 
-                                    {/* â”€â”€ Correlation Timeline vs Pattern Analysis Grid â”€â”€ */}
+                                    {/* â"€â"€ Correlation Timeline vs Pattern Analysis Grid â"€â"€ */}
                                     <div className="grid grid-cols-[1.2fr_1fr] gap-8 items-stretch">
-                                        {/* Left: Timeline */}
-                                        <div className="p-6 rounded-[36px] bg-white border border-gray-100 shadow-sm space-y-8 optimize-scroll">
-                                            <h4 className="text-[14px] font-bold text-gray-900 font-inter tracking-tight mb-5">Event Timeline â€” Correlated with Interview</h4>
+                                        {/* Left: Dynamic Event Timeline */}
+                                        <div className="p-6 rounded-[36px] bg-white border border-gray-100 shadow-sm space-y-4 optimize-scroll">
+                                            <h4 className="text-[14px] font-bold text-gray-900 font-inter tracking-tight mb-5">Event Timeline -- Correlated with Interview</h4>
                                             <div className="space-y-2">
-                                                <TimelineEvent 
-                                                    time="0:00" 
-                                                    event="Session started" 
-                                                    risk="CLEAN" 
-                                                    desc="Camera on. Single face detected. Browser focus confirmed. Audio levels normal." 
-                                                    isSuccess 
+                                                <TimelineEvent
+                                                    time="0:00"
+                                                    event="Session started"
+                                                    risk="CLEAN"
+                                                    desc="Camera initialized. Browser focus confirmed. Interview session began."
+                                                    isSuccess
                                                 />
-                                                <TimelineEvent 
-                                                    time="1:18" 
-                                                    event="Tab switch" 
-                                                    risk="MEDIUM RISK" 
-                                                    desc="Browser focus lost for ~8 seconds. Candidate returned to session tab." 
-                                                    subNote="Timed during Q1 deflection â€” candidate was avoiding the coding question at this exact moment. Most notable signal in session."
-                                                />
-                                                <TimelineEvent 
-                                                    time="3:05" 
-                                                    event="Audio anomaly" 
-                                                    risk="MEDIUM RISK" 
-                                                    desc="Voice-like background sound for ~3 seconds. Could be ambient noise or TV." 
-                                                    subNote="Occurred 37 seconds after self-admission 'not good at coding.' No clear link â€” flag for awareness only."
-                                                />
-                                                <TimelineEvent 
-                                                    time="5:00" 
-                                                    event="Session ended" 
-                                                    risk="CLEAN" 
-                                                    desc="No further anomalies. Face present entire session. Gaze consistent with genuine attempt." 
+                                                {proctoringSignals.map((ev: any, idx: number) => {
+                                                    const ts = typeof ev?.timestamp === "number" ? ev.timestamp : 0;
+                                                    const sessionStart = proctoringSignals[0]?.timestamp ?? ts;
+                                                    const offsetSec = Math.max(0, Math.round((ts - sessionStart) / 1000));
+                                                    const mins = Math.floor(offsetSec / 60);
+                                                    const secs = offsetSec % 60;
+                                                    const timeLabel = `${mins}:${String(secs).padStart(2, "0")}`;
+                                                    const sev = String(ev?.severity || "low").toLowerCase();
+                                                    const reason = String(ev?.reason || ev?.eventType || "Signal detected");
+                                                    const eventType = String(ev?.eventType || "signal").replace(/_/g, " ");
+                                                    const riskLabel: "HIGH RISK" | "MEDIUM RISK" | "CLEAN" = sev === "high" ? "HIGH RISK" : sev === "medium" ? "MEDIUM RISK" : "CLEAN";
+                                                    return (
+                                                        <TimelineEvent
+                                                            key={idx}
+                                                            time={timeLabel}
+                                                            event={eventType}
+                                                            risk={riskLabel}
+                                                            desc={reason}
+                                                        />
+                                                    );
+                                                })}
+                                                {proctoringSignals.length === 0 && (
+                                                    <TimelineEvent
+                                                        time="--"
+                                                        event="No signals recorded"
+                                                        risk="CLEAN"
+                                                        desc="No proctoring events were captured during this session."
+                                                        isSuccess
+                                                    />
+                                                )}
+                                                <TimelineEvent
+                                                    time={recordingDurationSec ? `${Math.floor(recordingDurationSec / 60)}:${String(recordingDurationSec % 60).padStart(2, "0")}` : "--"}
+                                                    event="Session ended"
+                                                    risk="CLEAN"
+                                                    desc="Interview session completed."
                                                     isSuccess
                                                 />
                                             </div>
                                         </div>
 
-                                        {/* Right: Pattern Analysis */}
-                                        <div className="p-6 rounded-[36px] bg-white border border-gray-100 shadow-sm space-y-8 optimize-scroll">
-                                            <h4 className="text-[15px] font-bold text-gray-900 font-inter tracking-tight mb-6">Pattern Analysis â€” What signals mean together</h4>
-                                            <div className="space-y-6">
-                                                <AnalysisSignal 
-                                                    type="warning" 
-                                                    title="Tab switch timing is the key concern" 
-                                                    desc="Not the count (1 is low) but the exact timing â€” during the technical question at the moment of deflection. This correlation is what matters." 
-                                                />
-                                                <AnalysisSignal 
-                                                    type="success" 
-                                                    title="No proxy candidate risk" 
-                                                    desc="Face present 100% of session. Single face only. No deepfake indicators detected. Candidate was physically present throughout." 
-                                                />
-                                                <AnalysisSignal 
-                                                    type="warning" 
-                                                    title="Audio anomaly â€” insufficient to conclude" 
-                                                    desc="Single 3-second event. No repeated pattern. Cannot conclude external assistance from one event alone." 
-                                                />
-                                                <AnalysisSignal 
-                                                    type="success" 
-                                                    title="Gaze pattern supports genuine attempt" 
-                                                    desc="Eye movement consistent with reading the problem and thinking. No sustained off-screen reference pattern detected." 
-                                                />
+                                        {/* Right: Dynamic Pattern Analysis */}
+                                        <div className="p-6 rounded-[36px] bg-white border border-gray-100 shadow-sm space-y-4 optimize-scroll">
+                                            <h4 className="text-[15px] font-bold text-gray-900 font-inter tracking-tight mb-6">Pattern Analysis -- What signals mean together</h4>
+                                            <div className="space-y-5">
+                                                {(() => {
+                                                    const tabCount = groupedProctoringSignals.filter((g: any) => String(g.key).includes("tab")).reduce((n: number, g: any) => n + g.count, 0);
+                                                    const gazeCount = groupedProctoringSignals.filter((g: any) => String(g.key).includes("gaze")).reduce((n: number, g: any) => n + g.count, 0);
+                                                    const headCount = groupedProctoringSignals.filter((g: any) => String(g.key).includes("head")).reduce((n: number, g: any) => n + g.count, 0);
+                                                    const fullscreenCount = groupedProctoringSignals.filter((g: any) => String(g.key).includes("fullscreen")).reduce((n: number, g: any) => n + g.count, 0);
+                                                    const highCount = groupedProctoringSignals.filter((g: any) => g.severity === "high").reduce((n: number, g: any) => n + g.count, 0);
+                                                    const signals: { type: "warning" | "success"; title: string; desc: string }[] = [];
+
+                                                    if (tabCount > 2) {
+                                                        signals.push({ type: "warning", title: `${tabCount} tab switches detected`, desc: `Repeated loss of browser focus (${tabCount} times) is a moderate concern. Review recording timestamps to check correlation with question timing.` });
+                                                    } else if (tabCount > 0) {
+                                                        signals.push({ type: "warning", title: `Tab switch detected (${tabCount}x)`, desc: "Single or low tab-switch count alone is not conclusive. Timing correlation with questions is the deciding factor." });
+                                                    } else {
+                                                        signals.push({ type: "success", title: "No tab switches", desc: "Browser focus held throughout the session. No window-switching behaviour detected." });
+                                                    }
+
+                                                    if (fullscreenCount > 0) {
+                                                        signals.push({ type: "warning", title: "Fullscreen exit detected", desc: `Candidate exited fullscreen ${fullscreenCount} time${fullscreenCount > 1 ? "s" : ""}. This is a high-risk signal -- review recording for concurrent behaviour.` });
+                                                    }
+
+                                                    if (gazeCount > 5) {
+                                                        signals.push({ type: "warning", title: `Repeated gaze violations (${gazeCount}x)`, desc: "Sustained off-screen gaze detected multiple times. Could indicate reference material. Consider in context of answer quality." });
+                                                    } else if (gazeCount > 0) {
+                                                        signals.push({ type: "warning", title: `Gaze drift detected (${gazeCount}x)`, desc: "Occasional off-screen gaze. Low count — insufficient alone to conclude reference use." });
+                                                    } else {
+                                                        signals.push({ type: "success", title: "Gaze consistent with genuine attempt", desc: "Eye movement pattern normal throughout session. No sustained off-screen reference behaviour detected." });
+                                                    }
+
+                                                    if (headCount > 3) {
+                                                        signals.push({ type: "warning", title: `Head pose violations (${headCount}x)`, desc: "Repeated head turn events. May indicate reading from a second screen. Review with recording." });
+                                                    } else if (headCount > 0) {
+                                                        signals.push({ type: "success", title: `Minor head movement (${headCount}x)`, desc: "Low head-pose event count. Within normal range for a voice interview environment." });
+                                                    }
+
+                                                    if (highCount === 0 && tabCount === 0 && gazeCount === 0) {
+                                                        signals.push({ type: "success", title: "No proxy candidate risk", desc: "No high-severity signals detected. Session telemetry is clean. Physical presence confirmed throughout." });
+                                                    }
+
+                                                    if (signals.length === 0) {
+                                                        signals.push({ type: "success", title: "Session looks clean", desc: "No significant proctoring signals recorded. No action required from telemetry alone." });
+                                                    }
+
+                                                    return signals.map((s, i) => (
+                                                        <AnalysisSignal key={i} type={s.type} title={s.title} desc={s.desc} />
+                                                    ));
+                                                })()}
                                             </div>
                                         </div>
                                     </div>
@@ -2391,40 +2435,62 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                             <div className="h-1 w-16 bg-indigo-600 rounded-full" />
                                         </div>
 
-                                        {/* â”€â”€ Score Summary â”€â”€ */}
+                                        {/* â"€â"€ Score Summary â"€â"€ */}
                                         <div className="grid grid-cols-3 gap-8">
-                                            <VerdictScoreCard label="Interview / 10" value="2.1" color="red" />
-                                            <VerdictScoreCard label="Integrity / 10" value="5.8" color="orange" />
-                                            <VerdictScoreCard label="Combined / 10" value="1.8" color="red" />
+                                            <VerdictScoreCard label="Interview / 10" value={String(interviewReportScores.interview_score ?? interviewScore.toFixed(1))} color={interviewScore >= 7 ? "green" : interviewScore >= 4 ? "orange" : "red"} />
+                                            <VerdictScoreCard label="Integrity / 10" value={(integrityScore / 10).toFixed(1)} color={integrityScore >= 85 ? "green" : integrityScore >= 70 ? "orange" : "red"} />
+                                            <VerdictScoreCard label="Combined / 10" value={String(interviewReportScores.combined_score ? (interviewReportScores.combined_score / 10).toFixed(1) : combinedScore.toFixed(1))} color={combinedScore >= 7 ? "green" : combinedScore >= 4 ? "orange" : "red"} />
                                         </div>
 
-                                        {/* â”€â”€ Verdict Narrative Card â”€â”€ */}
+                                        {/* â"€â"€ Verdict Narrative Card â"€â"€ */}
                                         <div className="flex justify-center">
                                             <div className="w-full max-w-[1200px] p-8 rounded-[32px] bg-white border border-gray-100 shadow-sm relative overflow-hidden group">
-                                                <div className="absolute top-0 left-0 w-1.5 h-full bg-rose-500 opacity-60 group-hover:opacity-100 transition-opacity" />
+                                                <div className={cn(
+                                                    "absolute top-0 left-0 w-1.5 h-full opacity-60 group-hover:opacity-100 transition-opacity",
+                                                    String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not") ? "bg-rose-500" :
+                                                    String(interviewStrategicVerdict.decision || "").toLowerCase() === "hire" ? "bg-emerald-500" : "bg-amber-500"
+                                                )} />
                                                 <div className="flex flex-col gap-6">
                                                     <div className="flex items-center justify-between">
                                                         <h4 className="text-[12px] font-bold text-slate-400 uppercase tracking-[0.4em]">Strategic Rationale</h4>
                                                         <div className="flex items-center gap-3">
-                                                            <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
-                                                            <span className="px-5 py-2 rounded-full bg-rose-50 border border-rose-100 text-[10px] font-bold text-rose-600 uppercase tracking-widest shadow-sm">
-                                                                Final Recommendation: Reject
+                                                            <span className={cn(
+                                                                "h-2 w-2 rounded-full animate-pulse",
+                                                                String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not") ? "bg-rose-500" :
+                                                                String(interviewStrategicVerdict.decision || "").toLowerCase() === "hire" ? "bg-emerald-500" : "bg-amber-500"
+                                                            )} />
+                                                            <span className={cn(
+                                                                "px-5 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-sm border",
+                                                                String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not") ? "bg-rose-50 border-rose-100 text-rose-600" :
+                                                                String(interviewStrategicVerdict.decision || "").toLowerCase() === "hire" ? "bg-emerald-50 border-emerald-100 text-emerald-700" :
+                                                                "bg-amber-50 border-amber-100 text-amber-700"
+                                                            )}>
+                                                                Final Recommendation: {interviewStrategicVerdict.decision || interviewReportVerdict.recommendation || "Pending"}
                                                             </span>
                                                         </div>
                                                     </div>
-                                                    
+
                                                     <div className="space-y-4">
                                                         <p className="text-[15px] font-medium text-slate-700 leading-[1.7] tracking-tight text-left font-inter">
-                                                            The candidate demonstrated limited ability to articulate their experience and impact in the domain of B2B go-to-market strategies, providing only a brief and unclear response regarding their involvement with a "report strategy since sales systems." This suggests an area to explore further, particularly to understand the depth of their practical experience and specific contributions to lead generation or revenue growth.
+                                                            {interviewStrategicVerdict.summary || interviewReportVerdict.summary || interviewAiSummary || "Strategic analysis will appear here once the interview report is generated."}
                                                         </p>
-                                                        
-                                                        <p className="text-[15px] font-medium text-slate-700 leading-[1.7] tracking-tight text-left font-inter">
-                                                            Communication during the interview was notably minimal and lacked elaboration, which may impact their effectiveness in a role that requires clear and proactive collaboration with cross-functional teams. While the candidate remained engaged, their responses did not convey a strong command of the subject matter or a confident attitude toward the role's responsibilities. Given these observations, the candidate's fit for the GTM Engineer role appears limited at this stage.
-                                                        </p>
-                                                        
+                                                        {Array.isArray(interviewStrategicVerdict.rationale) && interviewStrategicVerdict.rationale.length > 0 && (
+                                                            <ul className="space-y-2 pt-2">
+                                                                {interviewStrategicVerdict.rationale.map((item: string, idx: number) => (
+                                                                    <li key={idx} className="flex items-start gap-3">
+                                                                        <span className="mt-2 h-1.5 w-1.5 rounded-full bg-slate-400 shrink-0" />
+                                                                        <p className="text-[14px] font-medium text-slate-600 leading-[1.7]">{item}</p>
+                                                                    </li>
+                                                                ))}
+                                                            </ul>
+                                                        )}
                                                         <div className="pt-4 border-t border-slate-50">
-                                                            <p className="text-[14px] font-bold text-rose-600 uppercase tracking-widest">
-                                                                Verdict: Performance Threshold Not Met
+                                                            <p className={cn(
+                                                                "text-[14px] font-bold uppercase tracking-widest",
+                                                                String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not") ? "text-rose-600" :
+                                                                String(interviewStrategicVerdict.decision || "").toLowerCase() === "hire" ? "text-emerald-600" : "text-amber-600"
+                                                            )}>
+                                                                {interviewReportVerdict.recommendation_reason || (interviewStrategicVerdict.decision ? `Verdict: ${interviewStrategicVerdict.decision}` : "Awaiting report generation")}
                                                             </p>
                                                         </div>
                                                     </div>
@@ -2432,15 +2498,22 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                             </div>
                                         </div>
 
-                                        {/* â”€â”€ Recommended Next Actions â”€â”€ */}
+                                        {/* â"€â"€ Recommended Next Actions â"€â"€ */}
                                         <div className="flex justify-center">
                                             <div className="w-full max-w-[1200px] p-8 rounded-[32px] bg-[#EEF2FF] border border-[#E0E7FF] space-y-6">
                                                 <p className="text-center text-[10px] font-bold text-slate-500 font-black uppercase tracking-[0.4em] mb-3">Recommended Next Action</p>
                                                 <div className="space-y-4 flex flex-col items-center">
-                                                    <div className="space-y-3 w-fit">
-                                                        <RecommendedActionItem text="Reject for this AI Engineer role â€” performance failure is definitive, no further round needed" />
-                                                        <RecommendedActionItem text="Human review of recording recommended before logging integrity verdict â€” proctoring is inconclusive, not confirmed" />
-                                                        <RecommendedActionItem text="Flag for talent pool as junior automation role candidate â€” n8n and Apollo experience has value in a different context" />
+                                                    <div className="space-y-3 w-full max-w-[900px]">
+                                                        {Array.isArray(interviewStrategicVerdict.next_actions) && interviewStrategicVerdict.next_actions.length > 0
+                                                            ? interviewStrategicVerdict.next_actions.map((item: string, idx: number) => (
+                                                                <RecommendedActionItem key={idx} text={item} />
+                                                            ))
+                                                            : (
+                                                                <p className="text-[14px] font-medium text-indigo-700 leading-[1.7] text-center">
+                                                                    {interviewReportVerdict.recommendation_reason || "Next action recommendations will appear once the interview report is generated."}
+                                                                </p>
+                                                            )
+                                                        }
                                                     </div>
                                                 </div>
                                             </div>
@@ -2553,81 +2626,191 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-10 space-y-12 bg-white">
-                                {/* â”€â”€ Tab Detection â”€â”€ */}
-                                <section className="space-y-6">
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-8 w-8 rounded-xl bg-rose-50 flex items-center justify-center">
-                                            <MonitorSmartphone className="h-4 w-4 text-rose-500" />
-                                        </div>
-                                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest">Tab Detection Logs</h3>
-                                    </div>
-                                    <div className="space-y-4">
-                                        <DeepDiveLog
-                                            label="Browser Focus Lost"
-                                            description="Candidate switched to another window/tab during 'n8n custom nodes' question."
-                                            time="1:18 AM â€¢ 8.2s"
-                                            type="error"
-                                        />
-                                        <DeepDiveLog
-                                            label="External Search Likely"
-                                            description="Tab switch duration correlates with response improvement."
-                                            time="1:24 AM â€¢ 12.0s"
-                                            type="warning"
-                                        />
-                                    </div>
-                                </section>
+                                {(() => {
+                                    const sessionStart = parsedProctoringEvents[0]?.timestamp ?? null;
+                                    const formatTime = (ts: number) => {
+                                        if (!sessionStart) return new Date(ts).toLocaleTimeString();
+                                        const sec = Math.max(0, Math.round((ts - sessionStart) / 1000));
+                                        return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")} into session`;
+                                    };
 
-                                {/* â”€â”€ Facial & Gaze â”€â”€ */}
-                                <section className="space-y-6">
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-8 w-8 rounded-xl bg-emerald-50 flex items-center justify-center">
-                                            <UserCheck className="h-4 w-4 text-emerald-500" />
-                                        </div>
-                                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest">Facial & Gaze Analysis</h3>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="p-6 rounded-3xl bg-emerald-50 border border-emerald-100 space-y-1">
-                                            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Face Presence</p>
-                                            <p className="text-xl font-bold text-gray-900">100.0%</p>
-                                        </div>
-                                        <div className="p-6 rounded-3xl bg-emerald-50 border border-emerald-100 space-y-1">
-                                            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Multiple Faces</p>
-                                            <p className="text-xl font-bold text-gray-900">0.0%</p>
-                                        </div>
-                                        <div className="p-6 rounded-3xl bg-orange-50 border border-orange-100 space-y-1">
-                                            <p className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">Gaze Deviation</p>
-                                            <p className="text-xl font-bold text-gray-900">14.2%</p>
-                                        </div>
-                                        <div className="p-6 rounded-3xl bg-emerald-50 border border-emerald-100 space-y-1">
-                                            <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Head Pose Stability</p>
-                                            <p className="text-xl font-bold text-gray-900">High</p>
-                                        </div>
-                                    </div>
-                                </section>
+                                    const tabEvents = parsedProctoringEvents.filter((e: any) => e.eventType === "tab_switch");
+                                    const gazeEvents = parsedProctoringEvents.filter((e: any) => e.eventType === "gaze_violation");
+                                    const headEvents = parsedProctoringEvents.filter((e: any) => e.eventType === "head_pose_violation");
+                                    const audioEvents = parsedProctoringEvents.filter((e: any) => e.eventType === "audio_flag");
+                                    const fullscreenEvents = parsedProctoringEvents.filter((e: any) => e.eventType === "fullscreen_exit");
+                                    const faceEvents = parsedProctoringEvents.filter((e: any) => e.eventType === "face_absence" || e.eventType === "multiple_faces");
+                                    const otherEvents = parsedProctoringEvents.filter((e: any) =>
+                                        !["tab_switch","gaze_violation","head_pose_violation","audio_flag","fullscreen_exit","face_absence","multiple_faces"].includes(e.eventType)
+                                    );
 
-                                {/* â”€â”€ Audio Anomalies â”€â”€ */}
-                                <section className="space-y-6">
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-8 w-8 rounded-xl bg-orange-50 flex items-center justify-center">
-                                            <Volume2 className="h-4 w-4 text-orange-500" />
-                                        </div>
-                                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest">Audio Anomalies</h3>
-                                    </div>
-                                    <div className="space-y-4">
-                                        <DeepDiveLog
-                                            label="Background Voice Detected"
-                                            description="Faint secondary voice captured shortly after candidate admission."
-                                            time="3:05 AM â€¢ 3.0s"
-                                            type="warning"
-                                        />
-                                        <DeepDiveLog
-                                            label="Clean Session Audio"
-                                            description="No major shouting or hardware disconnects detected."
-                                            time="4:12 AM"
-                                            type="success"
-                                        />
-                                    </div>
-                                </section>
+                                    const totalEvents = parsedProctoringEvents.length;
+                                    const gazeCount = gazeEvents.length;
+                                    const headCount = headEvents.length;
+                                    const faceAbsenceCount = parsedProctoringEvents.filter((e: any) => e.eventType === "face_absence").length;
+                                    const multipleFaceCount = parsedProctoringEvents.filter((e: any) => e.eventType === "multiple_faces").length;
+                                    const gazePercent = totalEvents > 0 ? ((gazeCount / totalEvents) * 100).toFixed(1) : "0.0";
+                                    const headStability = headCount === 0 ? "High" : headCount <= 3 ? "Medium" : "Low";
+
+                                    return (
+                                        <>
+                                            {/* Tab Detection */}
+                                            {tabEvents.length > 0 && (
+                                                <section className="space-y-6">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="h-8 w-8 rounded-xl bg-rose-50 flex items-center justify-center">
+                                                            <MonitorSmartphone className="h-4 w-4 text-rose-500" />
+                                                        </div>
+                                                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest">Tab Detection Logs ({tabEvents.length})</h3>
+                                                    </div>
+                                                    <div className="space-y-4">
+                                                        {tabEvents.map((e: any, i: number) => (
+                                                            <DeepDiveLog
+                                                                key={i}
+                                                                label={e.reason || "Browser Focus Lost"}
+                                                                description={`Event type: ${e.eventType} | Severity: ${e.severity || "medium"}`}
+                                                                time={e.timestamp ? formatTime(e.timestamp) : "--"}
+                                                                type={e.severity === "high" ? "error" : "warning"}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                </section>
+                                            )}
+
+                                            {/* Fullscreen Exits */}
+                                            {fullscreenEvents.length > 0 && (
+                                                <section className="space-y-6">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="h-8 w-8 rounded-xl bg-rose-50 flex items-center justify-center">
+                                                            <MonitorSmartphone className="h-4 w-4 text-rose-600" />
+                                                        </div>
+                                                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest">Fullscreen Exits ({fullscreenEvents.length})</h3>
+                                                    </div>
+                                                    <div className="space-y-4">
+                                                        {fullscreenEvents.map((e: any, i: number) => (
+                                                            <DeepDiveLog
+                                                                key={i}
+                                                                label={e.reason || "Fullscreen Exited"}
+                                                                description={`Severity: ${e.severity || "high"} -- candidate manually exited fullscreen mode`}
+                                                                time={e.timestamp ? formatTime(e.timestamp) : "--"}
+                                                                type="error"
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                </section>
+                                            )}
+
+                                            {/* Facial & Gaze */}
+                                            <section className="space-y-6">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="h-8 w-8 rounded-xl bg-emerald-50 flex items-center justify-center">
+                                                        <UserCheck className="h-4 w-4 text-emerald-500" />
+                                                    </div>
+                                                    <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest">Facial & Gaze Analysis</h3>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div className={cn("p-6 rounded-3xl border space-y-1", faceAbsenceCount === 0 ? "bg-emerald-50 border-emerald-100" : "bg-rose-50 border-rose-100")}>
+                                                        <p className={cn("text-[10px] font-bold uppercase tracking-widest", faceAbsenceCount === 0 ? "text-emerald-600" : "text-rose-600")}>Face Absence Events</p>
+                                                        <p className="text-xl font-bold text-gray-900">{faceAbsenceCount}</p>
+                                                    </div>
+                                                    <div className={cn("p-6 rounded-3xl border space-y-1", multipleFaceCount === 0 ? "bg-emerald-50 border-emerald-100" : "bg-rose-50 border-rose-100")}>
+                                                        <p className={cn("text-[10px] font-bold uppercase tracking-widest", multipleFaceCount === 0 ? "text-emerald-600" : "text-rose-600")}>Multiple Faces Detected</p>
+                                                        <p className="text-xl font-bold text-gray-900">{multipleFaceCount}</p>
+                                                    </div>
+                                                    <div className={cn("p-6 rounded-3xl border space-y-1", gazeCount <= 2 ? "bg-emerald-50 border-emerald-100" : "bg-orange-50 border-orange-100")}>
+                                                        <p className={cn("text-[10px] font-bold uppercase tracking-widest", gazeCount <= 2 ? "text-emerald-600" : "text-orange-600")}>Gaze Violations</p>
+                                                        <p className="text-xl font-bold text-gray-900">{gazeCount} ({gazePercent}% of events)</p>
+                                                    </div>
+                                                    <div className={cn("p-6 rounded-3xl border space-y-1", headStability === "High" ? "bg-emerald-50 border-emerald-100" : headStability === "Medium" ? "bg-orange-50 border-orange-100" : "bg-rose-50 border-rose-100")}>
+                                                        <p className={cn("text-[10px] font-bold uppercase tracking-widest", headStability === "High" ? "text-emerald-600" : headStability === "Medium" ? "text-orange-600" : "text-rose-600")}>Head Pose Stability</p>
+                                                        <p className="text-xl font-bold text-gray-900">{headStability} ({headCount} events)</p>
+                                                    </div>
+                                                </div>
+                                                {gazeEvents.length > 0 && (
+                                                    <div className="space-y-3 mt-4">
+                                                        {gazeEvents.map((e: any, i: number) => (
+                                                            <DeepDiveLog
+                                                                key={i}
+                                                                label={e.reason || "Gaze Off-Screen"}
+                                                                description={`Severity: ${e.severity || "medium"}`}
+                                                                time={e.timestamp ? formatTime(e.timestamp) : "--"}
+                                                                type={e.severity === "high" ? "error" : "warning"}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {headEvents.length > 0 && (
+                                                    <div className="space-y-3 mt-2">
+                                                        {headEvents.map((e: any, i: number) => (
+                                                            <DeepDiveLog
+                                                                key={i}
+                                                                label={e.reason || "Head Pose Deviation"}
+                                                                description={`Severity: ${e.severity || "medium"}`}
+                                                                time={e.timestamp ? formatTime(e.timestamp) : "--"}
+                                                                type="warning"
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </section>
+
+                                            {/* Audio Anomalies */}
+                                            {audioEvents.length > 0 && (
+                                                <section className="space-y-6">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="h-8 w-8 rounded-xl bg-orange-50 flex items-center justify-center">
+                                                            <Volume2 className="h-4 w-4 text-orange-500" />
+                                                        </div>
+                                                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest">Audio Anomalies ({audioEvents.length})</h3>
+                                                    </div>
+                                                    <div className="space-y-4">
+                                                        {audioEvents.map((e: any, i: number) => (
+                                                            <DeepDiveLog
+                                                                key={i}
+                                                                label={e.reason || "Audio Anomaly"}
+                                                                description={`Severity: ${e.severity || "medium"}`}
+                                                                time={e.timestamp ? formatTime(e.timestamp) : "--"}
+                                                                type={e.severity === "high" ? "error" : "warning"}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                </section>
+                                            )}
+
+                                            {/* Other / Unknown event types */}
+                                            {otherEvents.length > 0 && (
+                                                <section className="space-y-6">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="h-8 w-8 rounded-xl bg-slate-50 flex items-center justify-center">
+                                                            <AlertCircle className="h-4 w-4 text-slate-500" />
+                                                        </div>
+                                                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-widest">Other Signals ({otherEvents.length})</h3>
+                                                    </div>
+                                                    <div className="space-y-4">
+                                                        {otherEvents.map((e: any, i: number) => (
+                                                            <DeepDiveLog
+                                                                key={i}
+                                                                label={e.reason || e.eventType || "Signal"}
+                                                                description={`Event: ${e.eventType} | Severity: ${e.severity || "low"}`}
+                                                                time={e.timestamp ? formatTime(e.timestamp) : "--"}
+                                                                type={e.severity === "high" ? "error" : e.severity === "medium" ? "warning" : "success"}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                </section>
+                                            )}
+
+                                            {parsedProctoringEvents.length === 0 && (
+                                                <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                                                    <div className="h-14 w-14 rounded-2xl bg-emerald-50 flex items-center justify-center">
+                                                        <UserCheck className="h-7 w-7 text-emerald-500" />
+                                                    </div>
+                                                    <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No proctoring events recorded</p>
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()}
                             </div>
 
                             <div className="p-10 border-t border-gray-100 bg-gray-50/50">

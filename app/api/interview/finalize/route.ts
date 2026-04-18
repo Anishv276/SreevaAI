@@ -117,22 +117,34 @@ export async function POST(req: Request) {
 
     await persistInterviewUpdateRaw({ applicationId, recordingUrl, transcript: finalTranscript, interviewStatus });
 
-    if (finalDuration !== null && !isNaN(finalDuration)) {
+    // Duration: use client-sent value, else compute from startedAt
+    let resolvedDuration = finalDuration;
+    if ((resolvedDuration === null || isNaN(resolvedDuration as number))) {
+      const startedAtRows = await prisma.$queryRaw<Array<{ startedAt: Date | null }>>`
+        SELECT "startedAt" FROM "Interview" WHERE "applicationId" = ${applicationId} LIMIT 1
+      `;
+      const startedAt = startedAtRows?.[0]?.startedAt;
+      if (startedAt) {
+        resolvedDuration = Math.round((Date.now() - new Date(startedAt).getTime()) / 1000);
+      }
+    }
+    if (resolvedDuration !== null && !isNaN(resolvedDuration as number)) {
       await prisma.$executeRawUnsafe(
         `UPDATE "Interview" SET "interviewDuration" = $1, "updatedAt" = NOW() WHERE "applicationId" = $2`,
-        finalDuration,
+        resolvedDuration,
         applicationId
       );
     }
 
     const finalAppStatus = appStatus || "COMPLETED";
     await prisma.$executeRawUnsafe(
-      'UPDATE "Application" SET status = $1, "updatedAt" = NOW() WHERE id = $2',
+      'UPDATE "Application" SET "interviewStatus" = $1, "updatedAt" = NOW() WHERE id = $2',
       finalAppStatus,
       applicationId
     );
 
     try {
+      // Re-fetch AFTER saves so we get the latest transcript (agent.py may have already saved it)
       const app = await prisma.application.findUnique({
         where: { id: applicationId },
         select: {
@@ -186,8 +198,9 @@ export async function POST(req: Request) {
           app.drive?.skills || "",
           JSON.stringify(driveDetails || {}),
         ].filter(Boolean).join("\n\n");
+        // Use transcript from client first, then DB (agent.py may have saved it already)
         const transcriptForReport = finalTranscript || app.interview?.interviewTranscript || "";
-        const durationForReport = finalDuration ?? app.interview?.interviewDuration ?? 0;
+        const durationForReport = resolvedDuration ?? app.interview?.interviewDuration ?? 0;
         const proctoringEvents = Array.isArray(app.interview?.proctoringEvents)
           ? app.interview?.proctoringEvents
           : [];
