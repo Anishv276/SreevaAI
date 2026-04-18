@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -31,7 +31,8 @@ import {
     FileText,
     Laptop,
     Check,
-    Link as LinkIcon
+    Link as LinkIcon,
+    Bot
 } from "lucide-react";
 import {
     Select,
@@ -336,7 +337,7 @@ export default function DrivesPage() {
                         />
 
                         <Select value={statusFilter} onValueChange={setStatusFilter}>
-                            <SelectTrigger className="h-12 min-w-[150px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-bold hover:text-[#F97316] transition-all shadow-inner">
+                            <SelectTrigger className="h-12 min-w-[140px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-medium transition-all shadow-inner">
                                 <div className="flex items-center gap-2">
                                     <Filter className="h-4 w-4" />
                                     <SelectValue placeholder="Status" />
@@ -351,7 +352,7 @@ export default function DrivesPage() {
                         </Select>
 
                         <Select value={typeFilter} onValueChange={setTypeFilter}>
-                            <SelectTrigger className="h-12 min-w-[150px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-bold hover:text-[#F97316] transition-all shadow-inner">
+                            <SelectTrigger className="h-12 min-w-[140px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-medium transition-all shadow-inner">
                                 <SelectValue placeholder="Job Type" />
                             </SelectTrigger>
                             <SelectContent className="rounded-2xl border-gray-100 shadow-2xl">
@@ -458,11 +459,11 @@ export default function DrivesPage() {
                                             )}
                                             <TableCell className={cn("py-5", !isSelectionMode && "pl-8")}>
                                                 <div className="flex flex-col">
-                                                    <span className="text-gray-900 font-black text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{drive.title}</span>
+                                                    <span className="text-gray-900 font-bold text-[15px] leading-tight transition-colors">{drive.title}</span>
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center">
-                                                <Badge variant="secondary" className="px-3 py-1 rounded-lg bg-orange-50/30 text-[#F97316] text-[11px] font-black uppercase tracking-wider border border-orange-100/30">
+                                                <Badge variant="secondary" className="px-3 py-1 rounded-lg bg-gray-50/50 text-gray-700 text-[11px] font-bold uppercase tracking-wider border border-gray-100/30">
                                                     {drive.role || "Not Specified"}
                                                 </Badge>
                                             </TableCell>
@@ -489,9 +490,9 @@ export default function DrivesPage() {
                                                         <button
                                                             className={cn(
                                                                 "flex items-center gap-2.5 px-4 py-2 rounded-xl border-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer mx-auto shadow-sm",
-                                                                statusBadgeBg === "bg-green-50/50" ? "bg-green-50 border-green-200" : 
-                                                                statusBadgeBg === "bg-red-50" ? "bg-red-50 border-red-200" : 
-                                                                "bg-orange-50 border-orange-200"
+                                                                statusBadgeBg === "bg-green-50/50" ? "bg-green-50 border-green-200" :
+                                                                    statusBadgeBg === "bg-red-50" ? "bg-red-50 border-red-200" :
+                                                                        "bg-orange-50 border-orange-200"
                                                             )}
                                                             onClick={(e) => e.stopPropagation()}
                                                         >
@@ -505,7 +506,7 @@ export default function DrivesPage() {
                                                         <div className="px-3 py-2 border-b border-gray-50 mb-1">
                                                             <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Change Status</p>
                                                         </div>
-                                                        <DropdownMenuItem 
+                                                        <DropdownMenuItem
                                                             className={cn(
                                                                 "rounded-xl px-3 py-2.5 font-bold text-xs cursor-pointer gap-2",
                                                                 statusLabel === "Active" ? "bg-green-50 text-green-700" : "text-gray-600 hover:bg-gray-50"
@@ -519,7 +520,7 @@ export default function DrivesPage() {
                                                             Mark as Live (Active)
                                                             {statusLabel === "Active" && <Check className="ml-auto h-3.5 w-3.5" />}
                                                         </DropdownMenuItem>
-                                                        <DropdownMenuItem 
+                                                        <DropdownMenuItem
                                                             className={cn(
                                                                 "rounded-xl px-3 py-2.5 font-bold text-xs cursor-pointer gap-2",
                                                                 statusLabel === "Closed" ? "bg-red-50 text-red-700" : "text-gray-600 hover:bg-gray-50"
@@ -537,7 +538,7 @@ export default function DrivesPage() {
                                                         {statusLabel === "Expired" && (
                                                             <>
                                                                 <div className="h-px bg-gray-50 my-1 mx-2" />
-                                                                <DropdownMenuItem 
+                                                                <DropdownMenuItem
                                                                     className="rounded-xl px-3 py-2.5 text-orange-600 font-bold text-xs cursor-pointer focus:bg-orange-50 focus:text-orange-700 gap-2"
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
@@ -635,8 +636,8 @@ export default function DrivesPage() {
 
                 {/* Pagination Footer */}
                 <div className="flex items-center justify-between px-8 py-6 border-t border-white/20 bg-white/10">
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
-                        Showing <span className="text-gray-900">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="text-gray-900">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="text-gray-900">{pagination.total}</span> drives
+                    <p className="text-[13px] font-medium text-gray-500">
+                        Showing <span className="text-gray-900 font-bold">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="text-gray-900 font-bold">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="text-gray-900 font-bold">{pagination.total}</span> drives
                     </p>
                     <div className="flex gap-3">
                         <Button
