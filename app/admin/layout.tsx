@@ -16,14 +16,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         redirect("/login?from=admin");
     }
 
-    // Fetch account status in real-time
-    let orgStatus = "ACTIVE";
+    // Fetch account status and onboarding completion in real-time
+    let orgData = { status: "ACTIVE", onboardingComplete: session.onboardingComplete === true };
     if (session.orgId) {
         const org = await prisma.organization.findUnique({
             where: { id: session.orgId },
-            select: { status: true }
+            select: { status: true, onboardingComplete: true }
         } as any);
-        orgStatus = org?.status || "ACTIVE";
+        if (org) orgData = org;
     }
 
     // Allow Super Admins to access admin routes for "inspections"
@@ -33,13 +33,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         redirect("/login");
     }
 
-    // PERFORMANCE: Use session-cached onboarding flag to avoid redundant DB rounds on navigation
-    const needsOnboarding = session.onboardingComplete !== true;
+    // Real-time synchronization: prioritize DB state over session cookie for onboarding UI
+    const needsOnboarding = orgData.onboardingComplete !== true;
     const showSidebar = !needsOnboarding;
 
     return (
         <>
-        <AccountStatusHandler status={orgStatus} />
+        <AccountStatusHandler status={orgData.status} />
         <div className="flex min-h-screen bg-[#F8F9FB] relative overflow-hidden font-sans">
             {/* ── Background Deck: Aurora Blobs ──────────────── */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">

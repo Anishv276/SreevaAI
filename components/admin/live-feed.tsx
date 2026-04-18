@@ -173,9 +173,9 @@ export function LiveFeed({ dateRange }: LiveFeedProps) {
                     ) : !loading && feedItems.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full text-gray-300 gap-3">
                             <div className="h-12 w-12 rounded-full bg-gray-50 flex items-center justify-center">
-                                <UserPlus className="h-6 w-6" />
+                                <TriangleAlert className="h-6 w-6 text-gray-300" />
                             </div>
-                            <p className="text-[11px] font-black uppercase tracking-widest">Awaiting Pulse...</p>
+                            <p className="text-[11px] font-black uppercase tracking-widest">We still don't have metrics</p>
                         </div>
                     ) : (
                         <div className="space-y-4">

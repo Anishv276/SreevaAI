@@ -25,8 +25,6 @@ export async function GET() {
                 onboardingStep: true,
                 onboardingComplete: true,
                 location: true,
-                phone: true,
-                jobTitle: true,
                 expectedDrives: true,
                 expectedCandidates: true,
                 expectedInterviews: true,
@@ -61,7 +59,6 @@ export async function PATCH(req: Request) {
         if (size !== undefined) data.size = size;
         if (website !== undefined) data.website = website;
         if (location !== undefined) data.location = location;
-        if (phone !== undefined) data.phone = phone;
         if (customSenderEmail !== undefined) data.customSenderEmail = customSenderEmail;
         if (customSenderName !== undefined) data.customSenderName = customSenderName;
 

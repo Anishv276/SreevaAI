@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import {
     User, Building2, Bell, Users, CreditCard, Plug,
     Camera, Check, ChevronRight, Plus, Trash2, Crown,
-    MessageSquare, Calendar, Globe, Mail, Phone, Shield,
+    MessageSquare, Calendar, Globe, Mail, Phone, Shield, Briefcase,
     BarChart3, AlertCircle, Zap, ExternalLink, Upload, Lock, Eye, EyeOff,
     Loader2, Copy, X, MapPin as MapPinIcon
 } from "lucide-react";
@@ -110,7 +110,7 @@ export default function SettingsPage() {
     const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
     /* Profile */
-    const [profile, setProfile] = useState({ name: "", email: "", phone: "" });
+    const [profile, setProfile] = useState({ name: "", email: "", phone: "", jobTitle: "" });
 
     /* Company */
     const [company, setCompany] = useState({
@@ -119,7 +119,6 @@ export default function SettingsPage() {
         size: "51–250 EMPLOYEES",
         website: "",
         location: "",
-        phone: "",
         logoUrl: "",
         customSenderEmail: "",
         customSenderName: ""
@@ -276,7 +275,6 @@ export default function SettingsPage() {
                         size: data.size || "1–50 EMPLOYEES",
                         website: data.website || "",
                         location: data.location || "",
-                        phone: data.phone || "",
                         logoUrl: data.logoUrl || "",
                         customSenderEmail: data.customSenderEmail || "",
                         customSenderName: data.customSenderName || ""
@@ -290,7 +288,8 @@ export default function SettingsPage() {
                     setProfile({
                         name: profData.name || "",
                         email: profData.email || "",
-                        phone: profData.phone || ""
+                        phone: profData.phone || "",
+                        jobTitle: profData.jobTitle || ""
                     });
                 }
             } catch (err) {
@@ -383,7 +382,7 @@ export default function SettingsPage() {
                 await fetch("/api/auth/profile", {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name: profile.name, phone: profile.phone })
+                    body: JSON.stringify({ name: profile.name, phone: profile.phone, jobTitle: profile.jobTitle })
                 });
             }
             setSaved(true);
@@ -567,6 +566,16 @@ export default function SettingsPage() {
                                                     type="email"
                                                     className="pl-10 h-10 rounded-lg border-gray-200 bg-gray-50 font-medium opacity-60"
                                                     value={profile.email}
+                                                />
+                                            </div>
+                                        </Field>
+                                        <Field label="Job Title">
+                                            <div className="relative">
+                                                <Briefcase className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                                <Input
+                                                    className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
+                                                    value={profile.jobTitle}
+                                                    onChange={e => setProfile(p => ({ ...p, jobTitle: e.target.value }))}
                                                 />
                                             </div>
                                         </Field>

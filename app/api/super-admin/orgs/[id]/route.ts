@@ -227,22 +227,19 @@ export async function DELETE(
             console.error("Failed to clear Pinecone embeddings for org:", id, pineconeError);
         }
 
-        // ── STEP 3: DATABASE CLEANUP (Transaction) ──────────────────────────
-
-        await prisma.$transaction([
-            // Delete interviews linked to these applications
-            prisma.interview.deleteMany({ where: { applicationId: { in: appIds } } }),
-            // Delete applications linked to these drives
-            prisma.application.deleteMany({ where: { driveId: { in: driveIds } } }),
-            // Delete drives
-            prisma.drive.deleteMany({ where: { orgId: id } }),
-            // Delete org invites
-            prisma.orgInvite.deleteMany({ where: { orgId: id } }),
-            // Delete users linked to this org
-            prisma.user.deleteMany({ where: { orgId: id } }),
-            // Finally delete the organization itself
-            prisma.organization.delete({ where: { id } }),
-        ]);
+        // ── STEP 3: DATABASE CLEANUP (Cascading) ───────────────────────────
+        
+        // With the new schema-level onDelete: Cascade, deleting the organization 
+        // will automatically purge:
+        // 1. All Users tied to this Org (Admins, HR)
+        // 2. All Drives associated with this Org
+        // 3. All Applications associated with those Drives (Cascade)
+        // 4. All Interviews associated with those Applications (Cascade)
+        // 5. All OrgInvites associated with this Org
+        
+        await prisma.organization.delete({
+            where: { id }
+        });
 
         return NextResponse.json({ success: true });
     } catch (error) {

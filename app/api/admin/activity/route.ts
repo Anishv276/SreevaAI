@@ -166,40 +166,8 @@ export async function GET(req: Request) {
         // Sort by most recent first
         activities.sort((a, b) => b.timestamp - a.timestamp);
 
-        // --- Demo Mode Fallback ---
-        // If no real activity in 7 days, provide some standard system events
-        if (activities.length === 0) {
-            const now = Date.now();
-            activities.push(
-                {
-                    id: "demo_1",
-                    type: "application",
-                    action: "5 new applications received",
-                    drive: "Backend Engineer",
-                    time: "10m ago",
-                    timestamp: now - 10 * 60 * 1000,
-                    isDemo: true,
-                },
-                {
-                    id: "demo_2",
-                    type: "interview_completed",
-                    action: "AI interview completed · Score 88%",
-                    drive: "Product Designer",
-                    time: "2h ago",
-                    timestamp: now - 2 * 60 * 60 * 1000,
-                    isDemo: true,
-                },
-                {
-                    id: "demo_3",
-                    type: "application",
-                    action: "12 new applications received",
-                    drive: "Frontend Intern",
-                    time: "5h ago",
-                    timestamp: now - 5 * 60 * 60 * 1000,
-                    isDemo: true,
-                }
-            );
-        }
+        // Sorted by most recent first
+        activities.sort((a, b) => b.timestamp - a.timestamp);
 
         const feed = activities.slice(0, 20);
         return NextResponse.json({ feed });

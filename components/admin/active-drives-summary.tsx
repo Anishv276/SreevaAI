@@ -93,8 +93,9 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                     <p className="text-[11px] font-bold text-gray-400 mt-1 uppercase tracking-[0.2em]">Neural Pipeline Sync</p>
                 </div>
                 <Link href="/admin/drives">
+                <Link href="/admin/drives">
                     <button className="text-[11px] font-black text-gray-400 border border-gray-100 rounded-xl px-5 py-2 hover:border-orange-200 hover:text-orange-500 hover:bg-white transition-all shadow-sm uppercase tracking-widest">
-                        Matrix View
+                        View All Drives
                     </button>
                 </Link>
             </div>
@@ -120,10 +121,10 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                             <motion.div 
                                 initial={{ opacity: 0, y: 20 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                className="grid grid-cols-1 md:grid-cols-3 gap-5 h-full"
+                                className="flex items-center justify-center h-full py-12"
                             >
                                 {/* Card 1: Create Drive */}
-                                <Link href="/admin/create-drive" className="group/card flex-1">
+                                <Link href="/admin/create-drive" className="group/card w-full max-w-md">
                                     <div className="h-full min-h-[220px] p-8 rounded-[2.5rem] border-2 border-dashed border-gray-100 bg-gray-50/30 flex flex-col items-center justify-center text-center gap-4 group-hover/card:border-orange-300 group-hover/card:bg-orange-50/30 transition-all duration-500">
                                         <div className="h-16 w-16 rounded-[1.5rem] bg-orange-100/50 flex items-center justify-center text-[#F97316] group-hover/card:scale-110 group-hover/card:rotate-6 transition-all duration-500">
                                             <Plus className="h-8 w-8" />
@@ -137,32 +138,6 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                         </div>
                                     </div>
                                 </Link>
-
-                                {/* Card 2: Placeholder - Candidates */}
-                                <div className="group/card flex-1 cursor-not-allowed opacity-60">
-                                    <div className="h-full min-h-[220px] p-8 rounded-[2.5rem] border border-gray-100 bg-white shadow-sm flex flex-col items-center justify-center text-center gap-4 transition-all duration-500">
-                                        <div className="h-16 w-16 rounded-[1.5rem] bg-gray-50 flex items-center justify-center text-gray-300">
-                                            <Rocket className="h-7 w-7" />
-                                        </div>
-                                        <div>
-                                            <h4 className="text-[13px] font-extrabold text-gray-400 uppercase tracking-tight mb-1 italic">Source Talent</h4>
-                                            <p className="text-[9px] font-bold text-gray-300 uppercase tracking-widest leading-relaxed px-4">Automated outreach will synchronize here</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Card 3: Placeholder - Insights */}
-                                <div className="group/card flex-1 cursor-not-allowed opacity-60">
-                                    <div className="h-full min-h-[220px] p-8 rounded-[2.5rem] border border-gray-100 bg-white shadow-sm flex flex-col items-center justify-center text-center gap-4 transition-all duration-500">
-                                        <div className="h-16 w-16 rounded-[1.5rem] bg-gray-50 flex items-center justify-center text-gray-300">
-                                            <Sparkles className="h-7 w-7" />
-                                        </div>
-                                        <div>
-                                            <h4 className="text-[13px] font-extrabold text-gray-400 uppercase tracking-tight mb-1 italic">AI Insights</h4>
-                                            <p className="text-[9px] font-bold text-gray-300 uppercase tracking-widest leading-relaxed px-4">Neural matching patterns load post-activity</p>
-                                        </div>
-                                    </div>
-                                </div>
                             </motion.div>
                         ) : (
                             <motion.div 

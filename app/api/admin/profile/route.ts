@@ -10,25 +10,19 @@ export async function GET() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const [org, user] = await Promise.all([
-            prisma.organization.findUnique({
-                where: { id: session.orgId },
-                select: { name: true, phone: true, jobTitle: true }
-            }),
-            prisma.user.findUnique({
-                where: { id: session.userId },
-                select: { email: true }
-            })
-        ]);
+        const user = await prisma.user.findUnique({
+            where: { id: session.userId },
+            select: { name: true, phone: true, jobTitle: true, email: true }
+        });
 
-        if (!org || !user) {
+        if (!user) {
             return NextResponse.json({ error: "Not found" }, { status: 404 });
         }
 
         return NextResponse.json({
-            name: org.name || "",
-            phone: org.phone || "",
-            jobTitle: org.jobTitle || "",
+            name: user.name || "",
+            phone: user.phone || "",
+            jobTitle: user.jobTitle || "",
             email: user.email || "",
         });
     } catch (error) {
@@ -41,15 +35,15 @@ export async function GET() {
 export async function PATCH(req: Request) {
     try {
         const session = await getSession();
-        if (!session?.orgId) {
+        if (!session?.userId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
         const body = await req.json();
         const { name, phone, jobTitle } = body;
 
-        const updatedOrg = await prisma.organization.update({
-            where: { id: session.orgId },
+        const updatedUser = await prisma.user.update({
+            where: { id: session.userId },
             data: {
                 name: name || undefined,
                 phone: phone || undefined,
@@ -58,7 +52,7 @@ export async function PATCH(req: Request) {
             select: { name: true, phone: true, jobTitle: true }
         });
 
-        return NextResponse.json(updatedOrg);
+        return NextResponse.json(updatedUser);
     } catch (error) {
         console.error("Error updating profile:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

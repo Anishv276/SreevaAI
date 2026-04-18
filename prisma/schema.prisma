@@ -20,8 +20,6 @@ model Organization {
   size               String?
   website            String?
   location           String?
-  phone              String?
-  jobTitle           String?
   expectedDrives     Int?
   expectedCandidates Int?
   expectedInterviews Int?
@@ -71,6 +69,7 @@ model User {
   email           String        @unique
   name            String?
   phone           String?
+  jobTitle        String?
   role            String        @default("CANDIDATE")
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -81,7 +80,7 @@ model User {
   drives          Drive[]       @relation("CreatedDrives")
   acceptedInvites OrgInvite[]   @relation("AcceptedInvites")
   sentInvites     OrgInvite[]   @relation("SentInvites")
-  organization    Organization? @relation(fields: [orgId], references: [id])
+  organization    Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
 }
 
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
@@ -152,7 +151,7 @@ model Drive {
   webcamMonitoring     Boolean       @default(true)
   applications         Application[]
   creator              User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
-  organization         Organization? @relation(fields: [orgId], references: [id])
+  organization         Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId, status])
   @@index([slug])

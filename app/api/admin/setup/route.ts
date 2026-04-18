@@ -46,15 +46,19 @@ export async function POST(req: Request) {
                     });
                 }
 
-                // Save name/phone/jobTitle to Organization table
-                await prisma.organization.update({
-                    where: { id: session.orgId },
+                // Save name/phone/jobTitle to User table
+                await prisma.user.update({
+                    where: { id: session.userId },
                     data: {
                         ...(name !== undefined && { name }),
                         ...(phone !== undefined && { phone: phone || null }),
                         ...(jobTitle !== undefined && { jobTitle: jobTitle || null }),
-                        onboardingStep: 1
                     }
+                });
+                // Still update onboarding step on Organization
+                await prisma.organization.update({
+                    where: { id: session.orgId },
+                    data: { onboardingStep: 1 }
                 });
                 break;
             }

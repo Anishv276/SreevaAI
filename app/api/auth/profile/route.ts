@@ -22,7 +22,7 @@ export async function GET() {
             // ADMIN or others (regular users)
             user = await prisma.user.findUnique({
                 where: { id: session.userId },
-                select: { name: true, email: true, phone: true }
+                select: { name: true, email: true, phone: true, jobTitle: true }
             });
         }
 
@@ -44,7 +44,7 @@ export async function PATCH(request: Request) {
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
         const body = await request.json();
-        const { name, phone, newPassword, currentPassword, otp } = body;
+        const { name, phone, jobTitle, newPassword, currentPassword, otp } = body;
 
         console.log(`[Profile API] Updating profile for userId: ${session.userId}, role: ${session.role}`);
 
@@ -54,6 +54,9 @@ export async function PATCH(request: Request) {
         // Only include phone if updating a non-SuperAdmin user (or if we eventually add it to SuperAdmin)
         if (phone !== undefined && session.role !== "SUPER_ADMIN") {
             updateData.phone = phone;
+        }
+        if (jobTitle !== undefined && session.role !== "SUPER_ADMIN") {
+            updateData.jobTitle = jobTitle;
         }
 
         // 1. Password Update Logic
