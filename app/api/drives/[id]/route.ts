@@ -195,14 +195,31 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
             console.error("[DELETE_SINGLE_DRIVE_PINECONE_ERROR]:", pineconeErr);
         }
 
-        await prisma.$transaction([
-            prisma.application.deleteMany({
+        await prisma.$transaction(async (tx) => {
+            // 1. Get all application IDs for this drive
+            const apps = await tx.application.findMany({
                 where: { driveId },
-            }),
-            prisma.drive.delete({
+                select: { id: true }
+            });
+            const appIds = apps.map(a => a.id);
+
+            if (appIds.length > 0) {
+                // 2. Delete all Interviews for these applications
+                await tx.interview.deleteMany({
+                    where: { applicationId: { in: appIds } }
+                });
+
+                // 3. Delete all Applications
+                await tx.application.deleteMany({
+                    where: { id: { in: appIds } }
+                });
+            }
+
+            // 4. Finally delete the Drive
+            await tx.drive.delete({
                 where: { id: driveId },
-            }),
-        ]);
+            });
+        });
 
         return NextResponse.json({ message: "Drive deleted successfully" });
     } catch (error) {

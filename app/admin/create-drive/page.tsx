@@ -60,9 +60,9 @@ function CreateDriveForm() {
         title: "",
         role: "",
         department: "",
-        workMode: "Remote",
-        location: "Remote",
-        employmentType: "Full-time",
+        workMode: "",
+        location: "",
+        employmentType: "",
         deadline: "",
         description: "",
         salary: "",
@@ -97,7 +97,8 @@ function CreateDriveForm() {
     const [candidatePreviewSlug, setCandidatePreviewSlug] = useState<string | null>(null);
 
     // Track which steps have been explicitly completed
-    const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+    const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set(isEditMode ? [0, 1, 2, 3, 4, 5] : []));
+    const [maxStepReached, setMaxStepReached] = useState(isEditMode ? 5 : 0);
     const [syncedFromAi, setSyncedFromAi] = useState(false);
     const [isSavingDraft, setIsSavingDraft] = useState(false);
     const formRef = useRef<HTMLDivElement>(null);
@@ -110,7 +111,8 @@ function CreateDriveForm() {
         formDataRef.current = formData;
     }, [formData]);
 
-    // Fetch org constraints to set default location
+    // Organization location fetch disabled to prevent unwanted defaults
+    /*
     useEffect(() => {
         if (!isEditMode && !formData.location) {
             fetch("/api/admin/organization")
@@ -123,6 +125,15 @@ function CreateDriveForm() {
                 .catch(() => { });
         }
     }, [isEditMode, formData.location]);
+    */
+
+    // Sync completed steps if we enter edit mode (e.g. after first save)
+    useEffect(() => {
+        if (isEditMode) {
+            setCompletedSteps(new Set([0, 1, 2, 3, 4, 5]));
+            setMaxStepReached(5);
+        }
+    }, [isEditMode]);
 
     // Initial load for edit mode
     useEffect(() => {
@@ -181,9 +192,6 @@ function CreateDriveForm() {
                 if ((drive as any).shortlistMode) {
                     setShortlistMode((drive as any).shortlistMode as "automatic" | "manual");
                 }
-
-                // Unlock all steps if we have a drive ID (Edit Mode)
-                setCompletedSteps(new Set([0, 1, 2, 3, 4]));
             }
         }
     }, [isEditMode, driveId, jobs]);
@@ -516,16 +524,33 @@ function CreateDriveForm() {
         await autoSaveDrive();
 
         setCompletedSteps(prev => new Set(prev).add(currentStep));
-        setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1));
+        const next = Math.min(currentStep + 1, STEPS.length - 1);
+        setMaxStepReached(prev => Math.max(prev, next));
+        setCurrentStep(next);
     };
 
     // Allow navigating to any step in edit mode or previously completed steps
     const handleStepClick = async (index: number) => {
         if (isSavingDraft) return;
-        if (isEditMode || index < currentStep || completedSteps.has(index)) {
-            // Auto-save before jumping to another step
+        
+        // In edit mode or if the step was previously reached/completed, just jump
+        if (isEditMode || index <= maxStepReached || completedSteps.has(index)) {
+            // Auto-save before jumping to ensure no data loss
             await autoSaveDrive();
             setCurrentStep(index);
+            return;
+        }
+
+        // If it's the next immediate step beyond what we've reached, check if current is valid
+        if (index === currentStep + 1) {
+            if (isStepValid(currentStep)) {
+                await autoSaveDrive();
+                setCompletedSteps(prev => new Set(prev).add(currentStep));
+                setMaxStepReached(prev => Math.max(prev, index));
+                setCurrentStep(index);
+            } else {
+                toast.error(STEP_VALIDATION_HINTS[currentStep]);
+            }
         }
     };
 
@@ -667,8 +692,8 @@ function CreateDriveForm() {
                             <Bot className="h-8 w-8 sm:h-10 sm:w-10" />
                         </div>
                         <div className="space-y-2 text-center">
-                            <h3 className="text-xl sm:text-2xl font-bold text-gray-900 group-hover:text-[#F97316] transition-colors">AI Assistant</h3>
-                            <p className="text-gray-500 text-[13px] sm:text-sm leading-relaxed">Design your Job Description instantly through a pro AI chat architect.</p>
+                            <h3 className="text-xl sm:text-2xl font-bold text-gray-900 group-hover:text-[#F97316] transition-colors">JD Assistant</h3>
+                            <p className="text-gray-500 text-[13px] sm:text-sm leading-relaxed">Design your Job Description instantly through a pro AI chat creator.</p>
                         </div>
                         <div className="absolute bottom-6 right-6 h-10 w-10 rounded-full border border-gray-100 flex items-center justify-center text-gray-300 group-hover:bg-[#F97316] group-hover:text-white group-hover:border-transparent transition-all duration-500">
                             <ChevronRight className="h-5 w-5" />
@@ -710,7 +735,7 @@ function CreateDriveForm() {
                     onClick={() => setCreationMethod(null)}
                     className="flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                    <ChevronLeft className="h-4 w-4" /> Back to Selection
+                    <ChevronLeft className="h-4 w-4" /> Back to Creation Methods
                 </button>
 
                 <div className="bg-white p-12 rounded-[2.5rem] border-2 border-dashed border-gray-200 hover:border-orange-300 transition-all duration-500">
@@ -816,6 +841,16 @@ function CreateDriveForm() {
     // ── Form screen ─────────────────────────────────────────
     return (
         <div className="max-w-4xl mx-auto py-4 space-y-4">
+            <button
+                onClick={() => {
+                    if (!isEditMode) setCreationMethod(null);
+                    else router.push("/admin/drives");
+                }}
+                className="mb-6 flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors"
+            >
+                <ChevronLeft className="h-4 w-4" />
+                {isEditMode ? "Back to All Drives" : "Back to Creation Methods"}
+            </button>
             <div className="mb-10 group">
                 <div className="flex items-center gap-4 mb-3">
                     <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
@@ -830,7 +865,7 @@ function CreateDriveForm() {
                 </div>
             </div>
 
-            <Steps steps={STEPS} currentStep={currentStep} onStepClick={handleStepClick} isEditMode={isEditMode} />
+            <Steps steps={STEPS} currentStep={currentStep} onStepClick={handleStepClick} isEditMode={isEditMode} maxStepReached={maxStepReached} />
 
             <div
                 className="rounded-2xl bg-white transition-all duration-300 relative"

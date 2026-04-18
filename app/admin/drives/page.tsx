@@ -352,10 +352,7 @@ export default function DrivesPage() {
 
                         <Select value={typeFilter} onValueChange={setTypeFilter}>
                             <SelectTrigger className="h-12 min-w-[150px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-bold hover:text-[#F97316] transition-all shadow-inner">
-                                <div className="flex items-center gap-2">
-                                    <Briefcase className="h-4 w-4" />
-                                    <SelectValue placeholder="Job Type" />
-                                </div>
+                                <SelectValue placeholder="Job Type" />
                             </SelectTrigger>
                             <SelectContent className="rounded-2xl border-gray-100 shadow-2xl">
                                 <SelectItem value="all" className="rounded-xl font-bold uppercase text-[10px] tracking-widest">All Types</SelectItem>
@@ -409,7 +406,7 @@ export default function DrivesPage() {
                                     <TableCell colSpan={isSelectionMode ? 9 : 8} className="py-20 text-center">
                                         <div className="flex flex-col items-center gap-4">
                                             <div className="h-16 w-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                                                <Briefcase className="h-8 w-8 text-gray-400" />
+                                                <Bot className="h-8 w-8 text-gray-400" />
                                             </div>
                                             <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight italic">No drives found</h3>
                                             <p className="text-gray-500 font-bold text-sm tracking-widest">Get started by creating a new recruitment drive.</p>
@@ -460,13 +457,8 @@ export default function DrivesPage() {
                                                 </TableCell>
                                             )}
                                             <TableCell className={cn("py-5", !isSelectionMode && "pl-8")}>
-                                                <div className="flex items-center gap-5">
-                                                    <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-orange-50 to-white flex items-center justify-center text-[#F97316] shadow-sm border border-orange-100 group-hover:rotate-6 transition-all duration-300">
-                                                        <Briefcase className="h-6 w-6" />
-                                                    </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-gray-900 font-black text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{drive.title}</span>
-                                                    </div>
+                                                <div className="flex flex-col">
+                                                    <span className="text-gray-900 font-black text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{drive.title}</span>
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center">

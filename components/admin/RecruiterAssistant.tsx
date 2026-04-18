@@ -306,7 +306,7 @@ export function RecruiterAssistant() {
                                                 <img src="/avatars/ishita.png" alt="Ishita" className="h-full w-full object-cover" />
                                             </div>
                                             <div className="flex flex-col gap-2">
-                                                <span className="text-[10px] font-black text-[#F97316] uppercase tracking-widest leading-none">AI is typing…</span>
+                                                <span className="text-[10px] font-black text-[#F97316] uppercase tracking-widest leading-none">Ishita is typing…</span>
                                                 <div className="flex gap-1.5 p-4 rounded-2xl bg-white border border-gray-100 shadow-sm items-center">
                                                     <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1 }} className="h-2 w-2 rounded-full bg-orange-400" />
                                                     <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="h-2 w-2 rounded-full bg-orange-300" />

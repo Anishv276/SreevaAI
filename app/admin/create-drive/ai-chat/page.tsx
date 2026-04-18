@@ -8,7 +8,7 @@ import {
     ArrowLeft, CheckCircle2, Loader2, 
     Zap, Rocket, MessageSquare, 
     RefreshCcw, FileText, Check,
-    Plus, ExternalLink, ChevronRight, X
+    Plus, ExternalLink, ChevronRight, ChevronLeft, X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -239,7 +239,7 @@ export default function AiChatJdPage() {
             </div>
 
             <div style="margin-top: 50px; border-top: 1px solid #F3F4F6; padding-top: 20px; text-align: center;">
-                <p style="font-size: 10px; font-weight: 700; color: #D1D5DB; text-transform: uppercase; letter-spacing: 0.2em;">Architected by Hirer.ai Neural Engine</p>
+                <p style="font-size: 10px; font-weight: 700; color: #D1D5DB; text-transform: uppercase; letter-spacing: 0.2em;">Created by Hirer.ai Neural Engine</p>
             </div>
         `;
         
@@ -278,7 +278,7 @@ export default function AiChatJdPage() {
                                 </div>
                                 <div>
                                     <h1 className="text-xl font-black text-gray-900 tracking-tight leading-none mb-1">
-                                        Hirer AI Architect
+                                        Create Drive
                                     </h1>
                                     <div className="flex items-center gap-2">
                                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -295,16 +295,17 @@ export default function AiChatJdPage() {
                                     <RefreshCcw className="h-4 w-4 transition-transform group-hover:rotate-180" />
                                     <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">Reset</span>
                                 </button>
-                                <button 
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
                                     onClick={() => {
                                         clearChat();
-                                        router.push("/admin/create-drive");
+                                        router.push("/admin/drives");
                                     }}
-                                    className="group flex items-center gap-3 px-8 py-3 rounded-xl border-2 border-gray-900 text-gray-900 font-bold hover:bg-gray-900 hover:text-white transition-all duration-500 shadow-xl shadow-gray-200/20 active:scale-95"
+                                    className="h-10 w-10 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
                                 >
-                                    <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest leading-none">Exit Architect</span>
-                                </button>
+                                    <X className="h-6 w-6" />
+                                </Button>
                             </div>
                         </div>
                     </motion.header>
@@ -322,8 +323,14 @@ export default function AiChatJdPage() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0, scale: 0.95 }}
-                        className="min-h-[85vh] flex flex-col items-center justify-center px-8 text-center max-w-5xl mx-auto"
+                        className="min-h-[85vh] flex flex-col items-center justify-center px-8 text-center max-w-5xl mx-auto relative"
                     >
+                        <button
+                            onClick={() => router.push("/admin/create-drive")}
+                            className="absolute top-12 left-0 flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <ChevronLeft className="h-4 w-4" /> Back to Methods
+                        </button>
                         <motion.div 
                             initial={{ opacity: 0, y: 30 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -334,7 +341,7 @@ export default function AiChatJdPage() {
                                 <div className="flex flex-col items-center gap-4">
                                     <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-14" />
                                     <h1 className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tighter leading-none mb-2">
-                                        Architect Your Vision
+                                        Create your JD
                                     </h1>
                                     <p className="text-gray-400 font-bold text-[11px] uppercase tracking-[0.6em]">
                                         Hirer AI Neural Synthesis Online
@@ -362,7 +369,7 @@ export default function AiChatJdPage() {
                                             background: "linear-gradient(135deg, #F97316, #ea6608)",
                                         }}
                                     >
-                                        <span className="text-[11px] font-black uppercase tracking-widest">Architect</span>
+                                        <span className="text-[11px] font-black uppercase tracking-widest">Create Drive</span>
                                         <Zap className="h-4 w-4" />
                                     </button>
                                 </div>
@@ -436,7 +443,8 @@ export default function AiChatJdPage() {
                                 m.role === "user" ? "items-end" : "items-start"
                             )}>
                                 {m.status === "thinking" ? (
-                                    <div className="bg-white border border-orange-100 p-6 rounded-3xl rounded-tl-none shadow-2xl flex items-center gap-4 w-max">
+                                    <div className="bg-white border border-orange-100 p-6 rounded-3xl rounded-tl-none shadow-2xl flex flex-col gap-3 w-max">
+                                        <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest leading-none">Ishita is typing…</p>
                                         <div className="flex gap-1.5 items-center">
                                             <span className="h-2 w-2 bg-orange-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
                                             <span className="h-2 w-2 bg-orange-400 rounded-full animate-bounce [animation-delay:-0.15s]" />

@@ -10,7 +10,7 @@ export const createDriveSchema = z.object({
   role: z.string().optional(),
   department: z.string().min(1, "Department is required"),
   employmentType: z.preprocess((val) => {
-    if (!val || typeof val !== "string") return val;
+    if (!val || val === "" || typeof val !== "string") return undefined;
     const lower = val.toLowerCase();
     if (lower.includes("full") || lower.includes("permanent")) return "Full-time";
     if (lower.includes("part")) return "Part-time";
@@ -18,9 +18,9 @@ export const createDriveSchema = z.object({
     if (lower.includes("intern")) return "Internship";
     if (lower.includes("freelance")) return "Freelance";
     return val;
-  }, z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance", "full-time", "part-time", "contract", "internship", "freelance"])).transform(v => v.charAt(0).toUpperCase() + v.slice(1).replace("-t", "-T")).optional(),
+  }, z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance", "full-time", "part-time", "contract", "internship", "freelance"]).optional()).transform(v => v ? (v.charAt(0).toUpperCase() + v.slice(1).replace("-t", "-T")) : undefined).optional(),
   type: z.preprocess((val) => {
-    if (!val || typeof val !== "string") return val;
+    if (!val || val === "" || typeof val !== "string") return undefined;
     const lower = val.toLowerCase();
     if (lower.includes("full") || lower.includes("permanent")) return "Full-time";
     if (lower.includes("part")) return "Part-time";
@@ -28,15 +28,15 @@ export const createDriveSchema = z.object({
     if (lower.includes("intern")) return "Internship";
     if (lower.includes("freelance")) return "Freelance";
     return val;
-  }, z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance", "full-time", "part-time", "contract", "internship", "freelance"])).transform(v => v.charAt(0).toUpperCase() + v.slice(1).replace("-t", "-T")).optional(),
+  }, z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance", "full-time", "part-time", "contract", "internship", "freelance"]).optional()).transform(v => v ? (v.charAt(0).toUpperCase() + v.slice(1).replace("-t", "-T")) : undefined).optional(),
   workMode: z.preprocess((val) => {
-    if (!val || typeof val !== "string") return val;
+    if (!val || val === "" || typeof val !== "string") return undefined;
     const lower = val.toLowerCase();
     if (lower.includes("remote")) return "Remote";
     if (lower.includes("hybrid")) return "Hybrid";
     if (lower.includes("site") || lower.includes("office")) return "On-site";
     return val;
-  }, z.enum(["Remote", "Hybrid", "On-site", "Onsite", "on-site", "onsite"])).transform(v => v.toLowerCase().includes("site") ? "On-site" : v.charAt(0).toUpperCase() + v.slice(1)).optional(),
+  }, z.enum(["Remote", "Hybrid", "On-site", "Onsite", "on-site", "onsite"]).optional()).transform(v => v ? (v.toLowerCase().includes("site") ? "On-site" : v.charAt(0).toUpperCase() + v.slice(1)) : undefined).optional(),
   location: z.string().optional(),
   positions: z.coerce.number().int().min(1).optional(),
   deadline: z.string().nullable().optional(),
