@@ -326,9 +326,27 @@ def compute_score(jd_data, resume_data, threshold=70):
 
     raw_must = jd_skills.get("must_have", [])
     if raw_must and isinstance(raw_must[0], dict):
-        jd_must_have = [(s["skill"], s.get("weight", "high")) for s in raw_must]
+        jd_must_have = [
+            {
+                "skill": s["skill"],
+                "weight": s.get("weight", "high"),
+                "proof_expectation": s.get("proof_expectation", "project_evidence"),
+                "expected_depth": s.get("expected_depth", "medium"),
+                "expected_ownership": s.get("expected_ownership", "either"),
+            }
+            for s in raw_must
+        ]
     else:
-        jd_must_have = [(s, "high") for s in raw_must]
+        jd_must_have = [
+            {
+                "skill": s,
+                "weight": "high",
+                "proof_expectation": "project_evidence",
+                "expected_depth": "medium",
+                "expected_ownership": "either",
+            }
+            for s in raw_must
+        ]
 
     raw_good = jd_skills.get("good_to_have", [])
     if raw_good and isinstance(raw_good[0], dict):
@@ -356,7 +374,12 @@ def compute_score(jd_data, resume_data, threshold=70):
             yrs = s.get("years_of_use")
             if name:
                 skill_evidence_map[normalize_skill(name)] = {
-                    "evidence": evidence, "years": yrs, "confidence": "high"
+                    "evidence": evidence,
+                    "years": yrs,
+                    "confidence": "medium",
+                    "source": "skill_list",
+                    "ownership": "unclear",
+                    "impact_strength": "low",
                 }
         resume_technical = [s["skill"] for s in raw_tech]
     else:
@@ -376,7 +399,10 @@ def compute_score(jd_data, resume_data, threshold=70):
                     skill_evidence_map[norm] = {
                         "evidence": evidence,
                         "years": None,
-                        "confidence": confidence
+                        "confidence": "medium",
+                        "source": "skill_list",
+                        "ownership": "unclear",
+                        "impact_strength": "low",
                     }
     else:
         resume_tools = raw_tools
@@ -392,6 +418,8 @@ def compute_score(jd_data, resume_data, threshold=70):
     all_resume_skills = list(resume_technical) + resume_tools
 
     for job in work_history:
+        job_ownership = job.get("ownership_level", "unclear")
+        job_impact_strength = job.get("impact_strength", "low")
         for tech in job.get("technologies_used", []):
             if tech and isinstance(tech, str):
                 all_resume_skills.append(tech)
@@ -401,10 +429,14 @@ def compute_score(jd_data, resume_data, threshold=70):
                     skill_evidence_map[norm] = {
                         "evidence": job.get("company", "work history"),
                         "years": None,
-                        "confidence": "high"
+                        "confidence": "high",
+                        "source": "work_history",
+                        "ownership": job_ownership,
+                        "impact_strength": job_impact_strength,
                     }
 
     for proj in resume_data.get("projects", []):
+        proj_impact_strength = proj.get("impact_strength", "low")
         for tech in proj.get("technologies", []):
             if tech and isinstance(tech, str):
                 all_resume_skills.append(tech)
@@ -413,7 +445,10 @@ def compute_score(jd_data, resume_data, threshold=70):
                     skill_evidence_map[norm] = {
                         "evidence": proj.get("name", "project"),
                         "years": None,
-                        "confidence": "medium"
+                        "confidence": "medium",
+                        "source": "project",
+                        "ownership": "contributor",
+                        "impact_strength": proj_impact_strength,
                     }
 
     for kw in resume_data.get("keywords", []):
@@ -430,6 +465,29 @@ def compute_score(jd_data, resume_data, threshold=70):
         if norm and norm not in resume_normalized:
             resume_normalized[norm] = s
 
+    # Skill-depth and uncertainty maps used for explicit scoring penalties/bonuses
+    resume_skill_depth_map = {}
+    for item in resume_skills.get("skill_depth", []) or []:
+        if isinstance(item, dict):
+            skill_name = item.get("skill")
+            depth = item.get("depth")
+            if skill_name and depth in ("low", "medium", "high"):
+                resume_skill_depth_map[normalize_skill(skill_name)] = depth
+
+    uncertain_text = " ".join(
+        str(item.get(key, ""))
+        for item in (resume_data.get("uncertain_areas", []) or [])
+        if isinstance(item, dict)
+        for key in ("area", "reason", "probe_question")
+    ).lower()
+
+    core_claims_text = " ".join(
+        str(item.get(key, ""))
+        for item in (resume_data.get("core_claims", []) or [])
+        if isinstance(item, dict)
+        for key in ("claim", "evidence")
+    ).lower()
+
     # Full resume text for text-based matching
     resume_all_text = " ".join(filter(None, [
         resume_data.get("candidate_summary", ""),
@@ -442,6 +500,71 @@ def compute_score(jd_data, resume_data, threshold=70):
         " ".join(s for s in domain_skills if s),
     ])).lower()
 
+    def _contains_text(haystack: str, needle: str) -> bool:
+        if not haystack or not needle:
+            return False
+        return normalize_skill(needle) in normalize_skill(haystack) or needle.lower() in haystack.lower()
+
+    def _proof_base(proof_expectation: str, source: str, confidence: str) -> float:
+        if proof_expectation == "production_evidence":
+            if source == "work_history" and confidence == "high":
+                return 1.0
+            if source == "project":
+                return 0.5
+            if source == "skill_list":
+                return 0.2
+            return 0.3
+        if proof_expectation == "project_evidence":
+            if source == "work_history" and confidence == "high":
+                return 0.95
+            if source == "project":
+                return 0.8
+            if source == "skill_list":
+                return 0.35
+            return 0.45
+        # keyword_only
+        if source == "skill_list":
+            return 0.7
+        if source == "project":
+            return 0.55
+        if source == "work_history":
+            return 0.65
+        return 0.3
+
+    def _depth_adjustment(expected_depth: str, actual_depth: str | None) -> float:
+        if not actual_depth:
+            actual_depth = "medium"
+        if expected_depth == "high":
+            return {"high": 0.12, "medium": 0.0, "low": -0.2}.get(actual_depth, 0.0)
+        if expected_depth == "medium":
+            return {"high": 0.05, "medium": 0.08, "low": -0.12}.get(actual_depth, 0.0)
+        return {"high": 0.02, "medium": 0.04, "low": 0.05}.get(actual_depth, 0.0)
+
+    def _ownership_adjustment(expected_ownership: str, actual_ownership: str | None) -> float:
+        if not actual_ownership:
+            actual_ownership = "unclear"
+        if expected_ownership == "owner":
+            return {"owner": 0.15, "contributor": -0.15, "unclear": -0.25}.get(actual_ownership, -0.15)
+        if expected_ownership == "contributor":
+            return {"owner": 0.05, "contributor": 0.1, "unclear": -0.1}.get(actual_ownership, 0.0)
+        return {"owner": 0.0, "contributor": 0.0, "unclear": 0.0}.get(actual_ownership, 0.0)
+
+    def _impact_adjustment(impact_strength: str | None) -> float:
+        if impact_strength == "high":
+            return 0.12
+        if impact_strength == "medium":
+            return 0.04
+        if impact_strength == "low":
+            return -0.12
+        return 0.0
+
+    def _uncertainty_penalty(skill_name: str) -> float:
+        if not uncertain_text:
+            return 0.0
+        if _contains_text(uncertain_text, skill_name):
+            return -0.18
+        return 0.0
+
     # ── 1. Must-have skill matching (45 pts) ──────────────────
     # Weight: critical=3, high=2, medium=1
     # Depth multiplier: skill backed by work history evidence gets 1.2x
@@ -452,22 +575,43 @@ def compute_score(jd_data, resume_data, threshold=70):
     total_weight = 0
     matched_weight = 0
 
-    for skill, weight in jd_must_have:
+    for item in jd_must_have:
+        skill = item["skill"]
+        weight = item["weight"]
+        proof_expectation = item.get("proof_expectation", "project_evidence")
+        expected_depth = item.get("expected_depth", "medium")
+        expected_ownership = item.get("expected_ownership", "either")
         w = weight_map.get(weight, 2)
         total_weight += w
         norm = normalize_skill(str(skill))
-        if norm in resume_normalized:
-            matched_must.append(skill)
-            # Depth bonus: if evidenced in work history = 1.2x, project = 1.1x, medium confidence = 1.0x
-            ev = skill_evidence_map.get(norm, {})
-            if ev.get("confidence") == "high" and ev.get("evidence", "") not in ("mentioned in resume", ""):
-                matched_weight += w * 1.2
-            elif ev.get("confidence") == "medium":
-                matched_weight += w * 1.0
-            else:
-                matched_weight += w * 0.85  # mentioned only, no context
-        else:
+        if norm not in resume_normalized:
             missing_must.append(skill)
+            continue
+
+        matched_must.append(skill)
+        ev = skill_evidence_map.get(norm, {})
+        source = ev.get("source", "skill_list")
+        confidence = ev.get("confidence", "medium")
+        actual_depth = resume_skill_depth_map.get(norm)
+        actual_ownership = ev.get("ownership", "unclear")
+        impact_strength = ev.get("impact_strength", "low")
+
+        evidence_score = _proof_base(proof_expectation, source, confidence)
+        evidence_score += _depth_adjustment(expected_depth, actual_depth)
+        evidence_score += _ownership_adjustment(expected_ownership, actual_ownership)
+        evidence_score += _impact_adjustment(impact_strength)
+        evidence_score += _uncertainty_penalty(skill)
+        if _contains_text(core_claims_text, skill):
+            evidence_score += 0.05
+
+        # Strong proof expectations should materially reduce keyword-only matches.
+        if proof_expectation == "production_evidence" and source != "work_history":
+            evidence_score -= 0.15
+        elif proof_expectation == "project_evidence" and source == "skill_list":
+            evidence_score -= 0.1
+
+        evidence_score = max(0.0, min(1.2, evidence_score))
+        matched_weight += w * evidence_score
 
     if total_weight > 0:
         skills_score = round((matched_weight / total_weight) * 45)
@@ -574,6 +718,27 @@ def compute_score(jd_data, resume_data, threshold=70):
         career_score += 3
     elif total_impact_signals >= 1:
         career_score += 1
+
+    # Ownership and impact strength add evidence that the candidate actually led outcomes.
+    role_ownership_levels = [job.get("ownership_level") for job in work_history]
+    role_impact_strengths = [job.get("impact_strength") for job in work_history]
+    if any(level == "owner" for level in role_ownership_levels):
+        career_score += 1
+    if role_impact_strengths.count("high") >= 2:
+        career_score += 1
+    if work_history and all(level in (None, "contributor", "unclear") for level in role_ownership_levels):
+        career_score -= 1
+
+    # Uncertainty penalty: vague resumes should not cruise on keyword coverage.
+    relevant_uncertainty_hits = sum(1 for item in jd_must_have if _contains_text(uncertain_text, item["skill"]))
+    if relevant_uncertainty_hits >= 3:
+        career_score -= 3
+    elif relevant_uncertainty_hits == 2:
+        career_score -= 2
+    elif relevant_uncertainty_hits == 1:
+        career_score -= 1
+    if len(resume_data.get("uncertain_areas", []) or []) >= 3:
+        career_score -= 1
 
     # Career progression
     if career_pattern == "growing":
@@ -699,12 +864,32 @@ def compute_score(jd_data, resume_data, threshold=70):
             else 100,
             "must_have_details": [
                 {
-                    "name": s[0],
-                    "weight": s[1],
-                    "status": "found" if normalize_skill(s[0]) in resume_normalized and skill_evidence_map.get(normalize_skill(s[0]), {}).get("confidence") == "high" and skill_evidence_map.get(normalize_skill(s[0]), {}).get("evidence", "") not in ("mentioned in resume", "") 
-                              else "mentioned" if normalize_skill(s[0]) in resume_normalized 
-                              else "not_found"
-                } for s in jd_must_have
+                    "name": item["skill"],
+                    "weight": item["weight"],
+                    "proof_expectation": item.get("proof_expectation", "project_evidence"),
+                    "expected_depth": item.get("expected_depth", "medium"),
+                    "expected_ownership": item.get("expected_ownership", "either"),
+                    "status": (
+                        "found"
+                        if (
+                            normalize_skill(item["skill"]) in resume_normalized
+                            and (
+                                (
+                                    item.get("proof_expectation", "project_evidence") == "production_evidence"
+                                    and skill_evidence_map.get(normalize_skill(item["skill"]), {}).get("source") == "work_history"
+                                )
+                                or (
+                                    item.get("proof_expectation", "project_evidence") == "project_evidence"
+                                    and skill_evidence_map.get(normalize_skill(item["skill"]), {}).get("source") in ("work_history", "project")
+                                )
+                                or item.get("proof_expectation", "project_evidence") == "keyword_only"
+                            )
+                        )
+                        else "mentioned"
+                        if normalize_skill(item["skill"]) in resume_normalized
+                        else "not_found"
+                    )
+                } for item in jd_must_have
             ]
         },
         "exp_status": exp_status,
@@ -734,10 +919,48 @@ def generate_report(
     candidate_years = score_result["candidate_years"]
     jd_min_years = score_result["jd_min_years"]
     exp_status = score_result["exp_status"]
+    report_work_history = resume_data.get("work_history", []) or []
+    report_projects = resume_data.get("projects", []) or []
+    report_core_claims = resume_data.get("core_claims", []) or []
+    report_uncertain_areas = resume_data.get("uncertain_areas", []) or []
+    report_impact_signals = sum(len(job.get("impact_signals", [])) for job in report_work_history)
+    report_high_impact_roles = sum(1 for job in report_work_history if job.get("impact_strength") == "high")
+    report_owner_roles = sum(1 for job in report_work_history if job.get("ownership_level") == "owner")
+    report_contributor_roles = sum(1 for job in report_work_history if job.get("ownership_level") == "contributor")
+    report_unverified_claim_proxy = max(0, len(report_core_claims) - report_high_impact_roles)
+    evidence_density = (
+        len(report_work_history) * 2
+        + len(report_projects)
+        + len(report_core_claims)
+        + report_impact_signals
+        + report_owner_roles
+        - len(report_uncertain_areas) * 2
+    )
+    if evidence_density >= 10 and report_impact_signals >= 3 and len(report_uncertain_areas) <= 1:
+        report_confidence_hint = "high"
+    elif evidence_density >= 5 and len(report_uncertain_areas) <= 3:
+        report_confidence_hint = "medium"
+    else:
+        report_confidence_hint = "low"
+
+    if report_owner_roles > report_contributor_roles:
+        ownership_profile_hint = "owner"
+    elif report_contributor_roles > report_owner_roles and report_contributor_roles > 0:
+        ownership_profile_hint = "contributor"
+    elif report_owner_roles > 0 and report_contributor_roles > 0:
+        ownership_profile_hint = "mixed"
+    else:
+        ownership_profile_hint = "unclear"
 
     # Build work history context for the LLM to annotate
     work_history_raw = resume_data.get("work_history", [])
     work_history_str = json.dumps(work_history_raw, indent=2) if work_history_raw else "[]"
+    core_claims_raw = resume_data.get("core_claims", [])
+    core_claims_str = json.dumps(core_claims_raw, indent=2) if core_claims_raw else "[]"
+    skill_depth_raw = resume_data.get("skills", {}).get("skill_depth", [])
+    skill_depth_str = json.dumps(skill_depth_raw, indent=2) if skill_depth_raw else "[]"
+    uncertain_areas_raw = resume_data.get("uncertain_areas", [])
+    uncertain_areas_str = json.dumps(uncertain_areas_raw, indent=2) if uncertain_areas_raw else "[]"
 
     prompt = f"""You are a senior technical recruiter writing a world-class candidate evaluation report.
 
@@ -754,6 +977,8 @@ Experience Score: {breakdown["exp_score"]}/{breakdown["exp_max"]}
 Good-to-have    : {breakdown["good_score"]}/{breakdown["good_max"]}
 Career Quality  : {breakdown["career_score"]}/{breakdown["career_max"]}
 Domain Fit      : {breakdown.get("domain_score", 0)}/{breakdown.get("domain_max", 10)}
+Report Confidence Hint: {report_confidence_hint}
+Ownership Profile Hint: {ownership_profile_hint}
 
 Must-have matched : {json.dumps(matched)}
 Must-have missing : {json.dumps(missing)}
@@ -778,6 +1003,21 @@ WORK HISTORY (structured — annotate each role)
 {work_history_str}
 
 ═══════════════════════════════════════
+CLAIM SIGNALS (what the resume is asserting)
+═══════════════════════════════════════
+{core_claims_str}
+
+═══════════════════════════════════════
+SKILL DEPTH SIGNALS (surface vs real depth)
+═══════════════════════════════════════
+{skill_depth_str}
+
+═══════════════════════════════════════
+UNCERTAIN AREAS (what should be probed)
+═══════════════════════════════════════
+{uncertain_areas_str}
+
+═══════════════════════════════════════
 FIELD-BY-FIELD INSTRUCTIONS — READ EVERY LINE
 ═══════════════════════════════════════
 
@@ -786,22 +1026,55 @@ FIELD-BY-FIELD INSTRUCTIONS — READ EVERY LINE
    - State what the person is actually capable of doing today.
    - Name the deepest expertise areas, the strongest evidence, and the biggest gap in the same paragraph.
    - Use company names, tools, projects, and measurable evidence. No vague adjectives.
+   - Prefer core_claims, ownership_level, and impact_strength over generic duties.
    - This section should answer: "What can this candidate do, and what are they not ready for yet?"
 
-2. strengths (MUST return MINIMUM 3, MAXIMUM 5):
+2. validated_strengths (MUST return MINIMUM 3, MAXIMUM 5):
    - Each strength must be a distinct, specific capability with hard evidence.
    - "point": headline (e.g., "Proven Python backend at scale")
    - "evidence": cite company, project, tool, or metric. Pattern: "At [Company], [built/led/shipped] [thing] using [tool] — [outcome or scale]."
+   - Prefer strengths that are supported by core_claims, owner roles, high impact_strength, or high skill_depth.
    - FORBIDDEN: "strong communicator", "team player", "passionate", "has experience with"
 
-3. concerns (MUST return MINIMUM 3, MAXIMUM 5):
+3. unverified_claims (MUST return MINIMUM 2, MAXIMUM 5):
+   - Each claim must be a candidate strength or assertion that is not fully proven.
+   - "claim": the asserted strength or accomplishment
+   - "evidence": the existing evidence, or note that it is weak
+   - "why_unverified": what is missing to treat it as proven
+   - Do not repeat already validated strengths here.
+
+4. ownership_profile:
+   - Choose one of: owner / contributor / mixed / unclear
+   - owner = mostly led or built end-to-end
+   - contributor = mostly supported or participated
+   - mixed = both owner and contributor signals exist
+   - unclear = the resume does not make ownership clear
+
+5. score_limiters:
+   - Return the top 2-3 reasons the score is not higher.
+   - Keep these short and specific.
+   - Examples: "No production AWS evidence", "Unclear system ownership", "Only keyword-level React evidence"
+
+6. must_verify_in_interview:
+   - Return a risk-prioritized list of 3-5 interview checks.
+   - Each item should be a direct question or verification step tied to the biggest uncertainty.
+   - Examples: "Ask for one API they designed end-to-end", "Validate scale handled in the last role"
+
+7. report_confidence:
+   - Choose one of: high / medium / low
+   - high = strong evidence density, multiple proven outcomes, low uncertainty
+   - medium = some proof, some gaps, moderate uncertainty
+   - low = vague resume, few measurable outcomes, high uncertainty
+
+8. concerns (MUST return MINIMUM 3, MAXIMUM 5):
    - Each concern must be a concrete, role-specific gap — not a vague statement.
    - "point": the gap headline (e.g., "No enterprise AWS deployment experience")
    - "missing_skills": list the exact skill names missing (use same normalized names as JD must-haves)
    - "impact": explain precisely WHY this gap matters for THIS role. Name what they'd fail to do on day 1.
+   - Prefer concerns that are supported by uncertain_areas, contributor/unclear ownership, or low impact_strength.
    - If the candidate is weak on the role, make the concern sharp enough that HR can see why they should not move forward.
 
-4. work_history_annotated — ANNOTATE EVERY ROLE:
+9. work_history_annotated — ANNOTATE EVERY ROLE:
    For EACH role in the WORK HISTORY section above, produce one entry:
    - "company": exact company name from the resume
    - "role": exact job title from the resume
@@ -812,55 +1085,68 @@ FIELD-BY-FIELD INSTRUCTIONS — READ EVERY LINE
    - "company_type": classify as one of: "Product Startup", "Service Company", "Fortune 500", "MNC", "Agency", "Freelance/Contract", "Research/Academia", "Early Stage Startup", "Government/PSU"
    - "recruiter_summary": 2-3 sentences. What did they actually BUILD or DO here? Name tools, scope, outcomes. Pattern: "Built X using Y for Z users/clients. Led/Contributed to [initiative]. Key outcome: [metric or impact]."
    - "technologies_used": list of tech/tools actually used in this role (from resume context)
+   - "ownership_level": use owner / contributor / unclear based on verbs and outcomes.
+   - "impact_strength": use low / medium / high based on scale, metrics, and clarity of outcomes.
    - "overlap_note": if this role's dates overlap with another role, flag it. Format: "Overlaps with [Company] by ~N months." Otherwise null.
 
-5. integrity_signals — DATE MATH & EVIDENCE:
+10. integrity_signals — DATE MATH & EVIDENCE:
    - Calculate ALL role overlaps from start/end dates. Do NOT skip any.
    - For each signal: "level" = Low/Medium/High, "label" = short title, "summary" = 1 line, "details" = specific evidence.
    - Short tenures (<8 months) get a Low or Medium flag with context (intern/contract/layoff = Low; unexplained exit = Medium).
    - If resume has no anomalies → return ONE Low signal: {{ "level": "Low", "label": "No anomalies detected", "summary": "All dates consistent and verifiable", "details": "No gaps, overlaps, or title inflation identified." }}
 
-6. suitability_analysis — HYPER-SPECIFIC:
+11. suitability_analysis — HYPER-SPECIFIC:
    - suggestions: 3-5 items. Each must name a SPECIFIC tool, platform, or project type.
      BAD: "Learn cloud computing"
      GOOD: "Get AWS Solutions Architect Associate certified — this role requires independent infra ownership"
    - readiness_timeline: realistic range like "Immediately — strong match", "3-6 months", "6-12 months", "12-18 months"
    - The output should help HR decide whether this candidate is worth moving to the next step or whether the gap is too large.
 
-7. candidate_potential:
+12. candidate_potential:
    - "for_this_role" must be Low / Medium / High.
    - "reasoning" must explain what the candidate is capable of right now, not generic potential.
    - This should read like a recruiter's one-line fit assessment.
 
-8. seniority_alignment:
+13. seniority_alignment:
    - candidate_level and jd_level: 0=Intern, 1=Junior, 2=Mid, 3=Senior, 4=Lead/Principal
    - candidate_label and jd_label: human-readable e.g., "Mid-level", "Senior", "Lead"
 
-9. career_progression_details:
+14. career_progression_details:
    - pattern: e.g., "Linear Upward", "Cross-functional Pivot", "Lateral (same level)", "Declining", "Freelance/Portfolio"
    - role_flow: one sentence describing the career arc (e.g., "SDE → Senior SDE → Tech Lead at increasing company sizes")
    - company_types: comma-separated summary (e.g., "Early Stage Startup, Product Startup, MNC")
    - tenure_avg: e.g., "14 months average" — calculate from actual durations
    - pattern_note, company_note, tenure_note: one-line recruiter commentary on each dimension
 
-10. decision_reason — THE SHARP LINE:
+15. decision_reason — THE SHARP LINE:
    - EXACTLY 1 sentence. The single most decisive reason for the status verdict.
    - If Shortlisted: "What clinches it." e.g., "5 of 6 must-haves confirmed with direct project evidence across 3 companies."
    - If Borderline: "What tips it." e.g., "Strong Python depth but zero cloud deployment experience in a role that requires day-1 AWS ownership."
    - If Rejected: "The hard stopper." e.g., "Missing 4 of 5 must-have skills with no transferable evidence across any role."
    - No hedging. No softening. One precise, recruiter-grade sentence.
 
-11. ai_verdict:
+16. ai_verdict:
     - 3-5 sentences. This is the Expert Synthesis section for HR.
     - Must combine: what the candidate can do, how well they match the must-have criteria, the deepest expertise signal, and whether they should move to the next step.
     - Name companies and skills. Ground every claim in evidence from the resume.
     - State clearly why shortlisted / why not shortlisted.
     - If there is a clear role mismatch, say it plainly; if there is a strong fit, say what gives confidence.
+    - Explicitly call out any weakly supported claim or uncertain area that needs probing.
 
 Return ONLY valid JSON in this EXACT schema (no markdown, no code fences):
 
 {{
   "recruiter_snapshot": "string",
+  "validated_strengths": [
+    {{ "point": "string", "evidence": "string" }}
+  ],
+  "unverified_claims": [
+    {{ "claim": "string", "evidence": "string", "why_unverified": "string" }}
+  ],
+  "ownership_profile": "owner | contributor | mixed | unclear",
+  "score_limiters": ["string"],
+  "must_verify_in_interview": ["string"],
+  "report_confidence": "high | medium | low",
   "decision_breakdown": [
     {{
       "criteria": "string",
@@ -1098,6 +1384,17 @@ BEFORE YOU EXTRACT — MANDATORY PRE-CHECKS
     Example: ["Bachelor's degree in Computer Science", "AWS Solutions Architect certificate", "5+ years experience in high-traffic Python apps"]
     DO NOT leave 'requirements' empty if the JD mentions qualifications.
 
+12. JD HIRING BAR SIGNALS
+    Turn vague requirements into explicit evaluation signals.
+    - proof_expectation: for each must-have, specify the proof level needed to count as real evidence.
+      Use only: keyword_only, project_evidence, production_evidence.
+    - expected_depth: for each must-have, specify low / medium / high based on the actual bar implied by the JD.
+    - expected_ownership: for each must-have, specify owner / contributor / either.
+    - critical_probe_areas: convert must-have requirements into direct interview probes.
+    - success_outcomes: state what the candidate should be able to do if they succeed in the role.
+    - If a must-have is only mentioned once in the JD and no production language appears, do not inflate the proof bar.
+    If the JD does not clearly imply a bar, choose the lowest honest signal rather than inventing a stronger one.
+
 ════════════════════════════════════════════════
 OUTPUT SCHEMA
 ════════════════════════════════════════════════
@@ -1140,7 +1437,10 @@ Return ONLY valid JSON matching this schema exactly. No markdown. No explanation
       {{
         "skill": string,
         "why_needed": string,
-        "weight": "critical" | "high" | "medium"
+        "weight": "critical" | "high" | "medium",
+        "proof_expectation": "keyword_only" | "project_evidence" | "production_evidence",
+        "expected_depth": "low" | "medium" | "high",
+        "expected_ownership": "owner" | "contributor" | "either"
       }}
     ],
     "good_to_have": [
@@ -1183,6 +1483,17 @@ Return ONLY valid JSON matching this schema exactly. No markdown. No explanation
       "why_it_matters": string
     }}
   ],
+
+  "critical_probe_areas": [
+    {{
+      "skill": string,
+      "probe_question": string,
+      "expected_answer_signal": string,
+      "why_it_matters": string
+    }}
+  ],
+
+  "success_outcomes": [string],
 
   "salary": {{
     "min": number | null,
@@ -1310,6 +1621,20 @@ MANDATORY PRE-CHECKS — READ BEFORE EXTRACTING
     - If no "Present" role exists, current_company should be the most recent employer.
     - Never leave current_company null if there is any work history.
 
+12. CLAIMS, DEPTH, OWNERSHIP, AND UNCERTAINTY
+    Separate what the candidate is claiming from what is actually evidenced.
+    - core_claims: capture the strongest claims the candidate is making about their strengths.
+      Each claim must cite evidence from work_history or projects and include a confidence level.
+    - skill_depth: rate important skills and tools as low / medium / high based on repetition,
+      recency, role breadth, and evidence quality.
+    - ownership_level: for every work_history role, classify as owner / contributor / unclear
+      based on verbs, outcomes, and the degree of personal responsibility shown.
+    - impact_strength: for every work_history role and project, classify as low / medium / high
+      using measurable outcomes, scale, ownership, and outcome clarity.
+    - uncertain_areas: surface the resume sections that should be probed because the evidence is
+      vague, missing scale, missing outcomes, or internally inconsistent.
+    If a signal is not present, return [] rather than inventing it.
+
 ════════════════════════════════════════════════
 OUTPUT SCHEMA
 ════════════════════════════════════════════════
@@ -1365,6 +1690,12 @@ Return ONLY valid JSON matching this schema exactly. No markdown. No explanation
       // OUTCOMES and DELIVERABLES — not tool lists.
       "technologies_used": [string],
       "impact_signals": [string],
+      "ownership_level": "owner" | "contributor" | "unclear",
+      // owner = clearly led or built the work; contributor = involved but not clearly owner;
+      // unclear = evidence does not show responsibility clearly.
+      "impact_strength": "low" | "medium" | "high",
+      // high = explicit metrics or scale plus ownership; medium = clear outcome without hard metrics;
+      // low = vague outcome or no measurable result.
       "seniority_signal": "intern" | "junior" | "mid" | "senior" | null
     }}
   ],
@@ -1396,6 +1727,17 @@ Return ONLY valid JSON matching this schema exactly. No markdown. No explanation
     "soft_skills": [string]
     // ONLY: communication, leadership, collaboration, ownership, problem-solving, etc.
     // See Pre-check #2 for full rules.
+
+    "skill_depth": [
+      {{
+        "skill": string,
+        "depth": "low" | "medium" | "high",
+        "evidence": string,
+        "reason": string
+      }}
+    ]
+    // Use this for the skills that matter most. low = used once or mentioned only;
+    // medium = repeated or role-backed; high = repeated across roles or tied to strong outcomes.
   }},
 
   "education": [
@@ -1417,8 +1759,27 @@ Return ONLY valid JSON matching this schema exactly. No markdown. No explanation
       // Extract from description text if not listed explicitly. Never leave [] if tools are named.
       "impact": string | null,
       // Only if explicitly stated. null otherwise.
-      "scale": string | null
+      "scale": string | null,
+      "impact_strength": "low" | "medium" | "high"
+      // high = measurable outcome or clear scale; medium = outcome but limited metric detail;
+      // low = implied benefit or vague impact
       // Only if explicitly stated. null otherwise.
+    }}
+  ],
+
+  "core_claims": [
+    {{
+      "claim": string,
+      "evidence": string,
+      "confidence": "high" | "medium" | "low"
+    }}
+  ],
+
+  "uncertain_areas": [
+    {{
+      "area": string,
+      "reason": string,
+      "probe_question": string
     }}
   ],
 
@@ -1443,6 +1804,7 @@ Return ONLY valid JSON matching this schema exactly. No markdown. No explanation
   // 2–3 sentences written like a recruiter briefing a colleague.
   // Must name: specific tools/skills, at least one company, and the domain they work in.
   // Must state their actual seniority level based on evidence — not their title.
+  // Prefer claims backed by core_claims and ownership_level rather than only duties.
   // Bias-neutral. No gendered language.
   // Do NOT copy their resume objective or summary section.
 
@@ -1457,6 +1819,7 @@ DEDUCTIVE REASONING STEPS FOR EXPERIENCE:
 4. Merge overlapping periods to avoid double counting.
 5. Sum merged intervals and divide by 12.0.
 6. Provide the result in "total_years".
+7. Use the extracted ownership, impact strength, claims, and uncertainty fields to inform the report and recruiter summary.
 
 ════════════════════════════════════════════════
 Resume:
@@ -1522,6 +1885,15 @@ Resume:
                 "jd_min_years": score_result["jd_min_years"],
                 # Include raw work_history from resume as fallback for older UI reads
                 "work_history": resume_data.get("work_history", []),
+                "core_claims": resume_data.get("core_claims", []),
+                "uncertain_areas": resume_data.get("uncertain_areas", []),
+                "skill_depth": resume_data.get("skills", {}).get("skill_depth", []),
+                "validated_strengths": report.get("validated_strengths", report.get("strengths", [])),
+                "unverified_claims": report.get("unverified_claims", []),
+                "ownership_profile": report.get("ownership_profile", ownership_profile_hint),
+                "score_limiters": report.get("score_limiters", []),
+                "must_verify_in_interview": report.get("must_verify_in_interview", []),
+                "report_confidence": report.get("report_confidence", report_confidence_hint),
                 **report,  # Spread all LLM report fields (includes experience_assessment, work_history_annotated, decision_reason, etc.)
                 # Backward-compat: if LLM still emits old key, promote it
                 "experience_assessment": report.get("experience_assessment") or report.get("experience_analysis") or {},
@@ -1534,6 +1906,12 @@ Resume:
                     **score_result,
                     "recruiter_snapshot": f"Automated evaluation completed with score {score_result['score']}.",
                     "ai_verdict": f"Status: {score_result['status']}. Score: {score_result['score']}.",
+                    "validated_strengths": [],
+                    "unverified_claims": [],
+                    "ownership_profile": ownership_profile_hint,
+                    "score_limiters": [],
+                    "must_verify_in_interview": [],
+                    "report_confidence": report_confidence_hint,
                 },
                 "usage": {
                     "model": llm_model_override or "gpt-4o",

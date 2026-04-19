@@ -159,8 +159,8 @@ APP_BASE_URL = (
     or "http://localhost:3000"
 ).rstrip("/")
 
-MAX_FOLLOW_UP_DEPTH = 2
-MIN_FOLLOW_UP_DEPTH = 1
+# follow_up_depth from DB is now advisory context for the system prompt only.
+# Actual probing is controlled per-turn by evaluate_answer_and_decide().
 
 _TOOL_ALIAS_CATALOG: dict[str, list[str]] = {
     "n8n": ["n8n", "nh10", "n h 10", "en 8 en", "nan"],
@@ -1880,6 +1880,8 @@ async def persist_transcript(
                 "final_mode": proctoring_data.get("current_mode", "normal"),
                 "exit_reason": proctoring_data.get("exit_reason", "normal_completion"),
                 "events": proctoring_data.get("events", []),
+                "contradictions": proctoring_data.get("contradictions", []),
+                "claim_ledger": proctoring_data.get("claim_ledger", []),
             }
 
         conn_str = normalize_postgres_dsn(DATABASE_URL)
@@ -1940,6 +1942,66 @@ async def mark_interview_started(app_id: str):
             await conn.close()
     except Exception as e:
         logger.error(f"[INTERVIEW] Failed to update application status to started: {e}")
+
+
+async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
+    """Save structured answer quality scores to Interview.answerScores JSONB."""
+    if not app_id or not DATABASE_URL or not answer_scores:
+        return
+    try:
+        conn_str = normalize_postgres_dsn(DATABASE_URL)
+        conn = await asyncpg.connect(conn_str, statement_cache_size=0)
+        try:
+            # Compute aggregate metrics
+            total_answers = len(answer_scores)
+            avg_clarity = sum(s.get("clarity", 5) for s in answer_scores) / max(total_answers, 1)
+            avg_depth = sum(s.get("depth", 5) for s in answer_scores) / max(total_answers, 1)
+            avg_specificity = sum(s.get("specificity", 5) for s in answer_scores) / max(total_answers, 1)
+            avg_grounding = sum(s.get("grounding", 5) for s in answer_scores) / max(total_answers, 1)
+            avg_overall = sum(s.get("overall", 5) for s in answer_scores) / max(total_answers, 1)
+
+            # Count signal/concern occurrences
+            all_signals = {}
+            all_concerns = {}
+            for score in answer_scores:
+                for sig in score.get("signals", []):
+                    all_signals[sig] = all_signals.get(sig, 0) + 1
+                for concern in score.get("concerns", []):
+                    all_concerns[concern] = all_concerns.get(concern, 0) + 1
+
+            answer_scores_payload = {
+                "totalAnswers": total_answers,
+                "averages": {
+                    "clarity": round(avg_clarity, 2),
+                    "depth": round(avg_depth, 2),
+                    "specificity": round(avg_specificity, 2),
+                    "grounding": round(avg_grounding, 2),
+                    "overall": round(avg_overall, 2),
+                },
+                "signalCounts": all_signals,
+                "concernCounts": all_concerns,
+                "allAnswers": answer_scores,
+            }
+
+            await conn.execute(
+                """
+                UPDATE "Interview"
+                SET "answerScores" = $1::jsonb,
+                    "updatedAt" = NOW()
+                WHERE "applicationId" = $2
+                """,
+                json.dumps(answer_scores_payload),
+                app_id,
+            )
+            logger.info(
+                f"[SCORE] Saved {total_answers} answer scores for {app_id}: "
+                f"clarity={avg_clarity:.1f}, depth={avg_depth:.1f}, specificity={avg_specificity:.1f}, "
+                f"grounding={avg_grounding:.1f}"
+            )
+        finally:
+            await conn.close()
+    except Exception as e:
+        logger.error(f"[SCORE] Failed to persist answer scores for {app_id}: {e}")
 
 
 async def update_interview_status(app_id: str):
@@ -2252,6 +2314,378 @@ async def generate_candidate_brief(
         return ""
 
 
+async def score_answer_quality(
+    candidate_answer: str,
+    last_question: str,
+    transcript_lines: list,
+    client,
+    org_id: Optional[str] = None,
+    llm_model: str = "gpt-4o-mini",
+) -> dict:
+    """
+    Structured answer quality scorer. Runs after every candidate response.
+    Returns numeric and categorical scores across 4 dimensions.
+
+    Score fields (0-10 each):
+      clarity: How easy is the answer to understand? (0=confusing/rambling, 10=crystal clear)
+      depth: How much reasoning/detail? (0=surface/generic, 10=deep thinking evident)
+      specificity: Named things, numbers, dates, real examples? (0=all generic, 10=highly specific)
+      grounding: Tied to real work/experience vs theory? (0=theoretical, 10=from lived experience)
+
+    Additional fields:
+      overall: Average of the four scores (0-10)
+      signals: ["has_numbers", "has_names", "has_reasoning", "has_failure", "has_tradeoff"]
+      concerns: ["vague", "rehearsed", "ownership_unclear", "contradiction", "incomplete"]
+    """
+    if not candidate_answer or not candidate_answer.strip():
+        return {
+            "clarity": 2, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.5,
+            "signals": [], "concerns": ["empty_answer"],
+            "turn": 0,
+        }
+
+    recent_context = "\n".join(transcript_lines[-8:]) if transcript_lines else ""
+
+    try:
+        completion = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=llm_model,
+                temperature=0.0,
+                max_tokens=200,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Score a candidate's interview answer on 4 dimensions (0-10 each).\n"
+                            "Output ONLY valid JSON with these exact fields:\n"
+                            '{\n'
+                            '  "clarity": 0-10,\n'
+                            '  "depth": 0-10,\n'
+                            '  "specificity": 0-10,\n'
+                            '  "grounding": 0-10,\n'
+                            '  "signals": ["list", "of", "observed", "strengths"],\n'
+                            '  "concerns": ["list", "of", "observed", "weaknesses"]\n'
+                            '}\n\n'
+                            "SCORING GUIDE:\n"
+                            "clarity (0-10): How easy to understand?\n"
+                            "  0-2: Rambling, incoherent, hard to follow\n"
+                            "  3-5: Somewhat clear but could be more direct\n"
+                            "  6-8: Clear and well-structured\n"
+                            "  9-10: Crystal clear, perfectly articulated\n\n"
+                            "depth (0-10): How much reasoning/thinking shown?\n"
+                            "  0-2: Surface-level, pure facts\n"
+                            "  3-5: Some reasoning, but shallow\n"
+                            "  6-8: Good reasoning, explores tradeoffs\n"
+                            "  9-10: Deep thinking, systems thinking, anticipates implications\n\n"
+                            "specificity (0-10): Real names, numbers, dates, examples?\n"
+                            "  0-2: All generic, no proper nouns or numbers\n"
+                            "  3-5: Some specifics but could be more concrete\n"
+                            "  6-8: Named real projects, companies, or numbers\n"
+                            "  9-10: Heavily grounded in specific details\n\n"
+                            "grounding (0-10): Tied to real experience vs theory?\n"
+                            "  0-2: Sounds theoretical, no lived experience evident\n"
+                            "  3-5: Mix of theory and real experience\n"
+                            "  6-8: Clearly from real work\n"
+                            "  9-10: Rich, textured description of lived experience\n\n"
+                            "signals: Strengths observed. Pick from:\n"
+                            '  "has_numbers", "has_names", "has_reasoning", "has_failure", '
+                            '"has_tradeoff", "has_ownership", "has_emotion", "has_learning"\n\n'
+                            "concerns: Weaknesses observed. Pick from:\n"
+                            '  "vague", "rehearsed", "ownership_unclear", "contradiction", '
+                            '"incomplete", "generic", "bragging", "overly_cautious"'
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"QUESTION: {last_question}\n\n"
+                            f"CANDIDATE ANSWER: {candidate_answer}\n\n"
+                            f"RECENT CONTEXT:\n{recent_context}"
+                        ),
+                    },
+                ],
+            ),
+            timeout=3.0,
+        )
+        await persist_org_manual_billing_usage(
+            org_id, "interview", _extract_openai_completion_usage(completion)
+        )
+        raw = completion.choices[0].message.content or ""
+        parsed = json.loads(raw.strip())
+        # Validate and clamp scores
+        for key in ("clarity", "depth", "specificity", "grounding"):
+            parsed[key] = max(0, min(10, int(parsed.get(key, 5))))
+        parsed["overall"] = (parsed["clarity"] + parsed["depth"] + parsed["specificity"] + parsed["grounding"]) / 4.0
+        parsed["signals"] = parsed.get("signals", [])
+        parsed["concerns"] = parsed.get("concerns", [])
+        return parsed
+    except asyncio.TimeoutError:
+        logger.debug("[SCORE] Answer scorer timed out — returning neutral scores")
+        return {
+            "clarity": 5, "depth": 5, "specificity": 5, "grounding": 5, "overall": 5.0,
+            "signals": [], "concerns": ["timeout"],
+        }
+    except Exception as e:
+        logger.debug(f"[SCORE] Answer scorer failed: {e}")
+        return {
+            "clarity": 5, "depth": 5, "specificity": 5, "grounding": 5, "overall": 5.0,
+            "signals": [], "concerns": ["error"],
+        }
+
+
+async def evaluate_answer_and_decide(
+    candidate_answer: str,
+    last_question: str,
+    topic_follow_up_count: int,
+    transcript_lines: list,
+    client,
+    org_id: Optional[str] = None,
+    llm_model: str = "gpt-4o-mini",
+) -> dict:
+    """
+    Per-turn answer evaluator. Runs after every candidate response, before Ishita speaks.
+    Returns a structured decision: probe deeper OR move to next topic.
+
+    Decision fields:
+      action: "PROBE" | "MOVE_ON"
+      probe_mode: "specificity" | "depth" | "ownership" | "contradiction" | "verification" | None
+      reason: short internal note (not shown to candidate)
+      depth_signal: "SURFACE" | "SPECIFIC" | "DEEP"
+    """
+    if not candidate_answer or not candidate_answer.strip():
+        return {"action": "MOVE_ON", "probe_mode": None, "reason": "empty answer", "depth_signal": "SURFACE"}
+
+    recent_context = "\n".join(transcript_lines[-10:]) if transcript_lines else ""
+
+    try:
+        completion = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=llm_model,
+                temperature=0.0,
+                max_tokens=120,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an interview quality evaluator. Analyze a candidate's answer and decide "
+                            "whether the interviewer should probe deeper or move to the next topic.\n\n"
+                            "Output ONLY valid JSON with these exact fields:\n"
+                            '{"action": "PROBE" or "MOVE_ON", '
+                            '"probe_mode": "specificity" | "depth" | "ownership" | "contradiction" | "verification" | null, '
+                            '"reason": "one short sentence", '
+                            '"depth_signal": "SURFACE" | "SPECIFIC" | "DEEP"}\n\n'
+                            "MOVE_ON when: answer has real specifics (names/numbers/dates), clear reasoning, "
+                            "OR topic already had 3+ follow-ups, OR candidate said I don't know twice.\n"
+                            "PROBE when: answer is vague, generic, no real example, no numbers, "
+                            "uses only 'we' with no personal ownership, or sounds rehearsed.\n"
+                            "probe_mode:\n"
+                            "  specificity = missing numbers/names/dates\n"
+                            "  depth = has facts but no reasoning/tradeoff\n"
+                            "  ownership = 'we did' but unclear what they personally did\n"
+                            "  contradiction = conflicts with something said earlier\n"
+                            "  verification = suspiciously perfect/rehearsed, probe memory\n"
+                            "depth_signal: SURFACE=generic/vague, SPECIFIC=named real thing, DEEP=specifics+reasoning"
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"QUESTION ASKED: {last_question}\n\n"
+                            f"CANDIDATE ANSWER: {candidate_answer}\n\n"
+                            f"FOLLOW-UPS ALREADY ASKED ON THIS TOPIC: {topic_follow_up_count}\n\n"
+                            f"RECENT CONVERSATION:\n{recent_context}"
+                        ),
+                    },
+                ],
+            ),
+            timeout=4.0,
+        )
+        await persist_org_manual_billing_usage(
+            org_id, "interview", _extract_openai_completion_usage(completion)
+        )
+        raw = completion.choices[0].message.content or ""
+        parsed = json.loads(raw.strip())
+        # Validate required fields
+        if parsed.get("action") not in ("PROBE", "MOVE_ON"):
+            parsed["action"] = "MOVE_ON"
+        if parsed.get("depth_signal") not in ("SURFACE", "SPECIFIC", "DEEP"):
+            parsed["depth_signal"] = "SURFACE"
+        return parsed
+    except asyncio.TimeoutError:
+        logger.debug("[EVAL] Per-turn evaluator timed out — defaulting to MOVE_ON")
+        return {"action": "MOVE_ON", "probe_mode": None, "reason": "timeout", "depth_signal": "SURFACE"}
+    except Exception as e:
+        logger.debug(f"[EVAL] Per-turn evaluator failed: {e}")
+        return {"action": "MOVE_ON", "probe_mode": None, "reason": str(e), "depth_signal": "SURFACE"}
+
+
+async def extract_claims(
+    candidate_answer: str,
+    turn: int,
+    client,
+    org_id: Optional[str] = None,
+    llm_model: str = "gpt-4o-mini",
+) -> list[dict]:
+    """
+    Extract verifiable factual claims from a single candidate answer.
+    Returns a list of structured claim objects for cross-turn contradiction checking.
+
+    Claim schema:
+      {type, value, turn, quote, context}
+
+    Tracked claim types:
+      team_size            — number of people on the team
+      years_experience     — total years in field/role
+      tenure_at_company    — how long at a specific company
+      role_title           — job title claimed
+      project_ownership    — solo vs team, degree of ownership
+      reporting_structure  — reports to / managed N people
+      outcome_metric       — a specific result/number claimed
+      tech_stack           — primary tools/stack claimed
+      company_name         — employer or client name
+      timeline             — when something happened
+    """
+    if not candidate_answer or len(candidate_answer.strip()) < 20:
+        return []
+
+    try:
+        completion = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=llm_model,
+                temperature=0.0,
+                max_tokens=300,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Extract verifiable factual claims from an interview answer. "
+                            "Only extract claims that are specific and checkable — skip vague statements.\n\n"
+                            "Output a JSON array. Each item has:\n"
+                            '  "type": one of [team_size, years_experience, tenure_at_company, role_title, '
+                            "project_ownership, reporting_structure, outcome_metric, tech_stack, company_name, timeline]\n"
+                            '  "value": the specific claim value as a short string (e.g. "2 people", "5 years", "solo")\n'
+                            '  "quote": the exact phrase from the answer that contains this claim (max 15 words)\n'
+                            '  "context": which company/project this refers to (or "general" if unclear)\n\n'
+                            "RULES:\n"
+                            "- Only extract claims with specific values. Skip: 'a small team', 'a few years'.\n"
+                            "- Include: 'team of 2', '5 years', 'I was the only engineer'.\n"
+                            "- If no specific claims, return [].\n"
+                            "- Maximum 5 claims per answer."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": f"CANDIDATE ANSWER (turn {turn}):\n{candidate_answer}",
+                    },
+                ],
+            ),
+            timeout=3.0,
+        )
+        await persist_org_manual_billing_usage(
+            org_id, "interview", _extract_openai_completion_usage(completion)
+        )
+        raw = completion.choices[0].message.content or "[]"
+        claims = json.loads(raw.strip())
+        if not isinstance(claims, list):
+            return []
+        # Attach turn number to each claim
+        for claim in claims:
+            claim["turn"] = turn
+        return claims[:5]
+    except Exception as e:
+        logger.debug(f"[CLAIMS] Claim extraction failed at turn {turn}: {e}")
+        return []
+
+
+def check_contradiction(
+    new_claim: dict,
+    existing_claims: list[dict],
+) -> Optional[dict]:
+    """
+    Compare a new claim against all existing claims of the same type and context.
+    Returns a contradiction dict if a conflict is found, else None.
+
+    Contradiction conditions by type:
+      team_size            — different numbers for same project/company
+      years_experience     — values differ by >2 years
+      tenure_at_company    — different durations for same company
+      project_ownership    — "solo" vs "team" for same project
+      reporting_structure  — different headcount for same role
+      outcome_metric       — conflicting numbers for same metric
+    """
+    claim_type = new_claim.get("type")
+    new_value = str(new_claim.get("value", "")).lower().strip()
+    new_context = str(new_claim.get("context", "general")).lower().strip()
+    new_turn = new_claim.get("turn", 0)
+
+    if not claim_type or not new_value:
+        return None
+
+    for old in existing_claims:
+        if old.get("type") != claim_type:
+            continue
+        old_context = str(old.get("context", "general")).lower().strip()
+        # Only compare claims about the same context (same company/project)
+        if new_context != "general" and old_context != "general" and new_context != old_context:
+            continue
+
+        old_value = str(old.get("value", "")).lower().strip()
+        old_turn = old.get("turn", 0)
+
+        if old_value == new_value:
+            continue  # same claim, consistent
+
+        # Extract numbers from values for numeric comparison
+        def _extract_number(s: str) -> Optional[float]:
+            m = re.search(r"(\d+(?:\.\d+)?)", s)
+            return float(m.group(1)) if m else None
+
+        new_num = _extract_number(new_value)
+        old_num = _extract_number(old_value)
+
+        is_contradiction = False
+
+        if claim_type == "team_size":
+            if new_num is not None and old_num is not None and abs(new_num - old_num) >= 3:
+                is_contradiction = True
+        elif claim_type == "years_experience":
+            if new_num is not None and old_num is not None and abs(new_num - old_num) > 2:
+                is_contradiction = True
+        elif claim_type == "project_ownership":
+            solo_words = {"solo", "alone", "only", "just me", "myself"}
+            team_words = {"team", "we", "group", "together", "collective"}
+            new_is_solo = any(w in new_value for w in solo_words)
+            new_is_team = any(w in new_value for w in team_words)
+            old_is_solo = any(w in old_value for w in solo_words)
+            old_is_team = any(w in old_value for w in team_words)
+            if (new_is_solo and old_is_team) or (new_is_team and old_is_solo):
+                is_contradiction = True
+        elif claim_type in ("tenure_at_company", "reporting_structure", "outcome_metric", "timeline"):
+            if new_num is not None and old_num is not None and abs(new_num - old_num) / max(old_num, 1) > 0.4:
+                is_contradiction = True
+        else:
+            # For role_title, tech_stack, company_name — flag only clear mismatches
+            if new_value != old_value and new_num is None and old_num is None:
+                # Only flag if values are clearly different (not just phrased differently)
+                if len(set(new_value.split()) & set(old_value.split())) == 0:
+                    is_contradiction = True
+
+        if is_contradiction:
+            return {
+                "type": claim_type,
+                "context": new_context,
+                "old_turn": old_turn,
+                "old_value": old.get("value"),
+                "old_quote": old.get("quote", ""),
+                "new_turn": new_turn,
+                "new_value": new_claim.get("value"),
+                "new_quote": new_claim.get("quote", ""),
+                "detected_at": time.time(),
+            }
+
+    return None
+
+
 async def notify_sync_engine(app_id: str):
     """
     Calls the Next.js API to trigger Pinecone indexing for this candidate.
@@ -2410,13 +2844,9 @@ async def entrypoint(ctx: JobContext):
     interview_lang = require_db_value("language")
     time_limit_mins = int(require_db_value("timeLimit"))
     raw_follow_up_depth = int(require_db_value("followUpDepth"))
-    follow_up_depth = max(
-        MIN_FOLLOW_UP_DEPTH, min(MAX_FOLLOW_UP_DEPTH, raw_follow_up_depth)
-    )
-    if follow_up_depth != raw_follow_up_depth:
-        logger.info(
-            f"[PROMPT_GUARD] follow_up_depth clamped from {raw_follow_up_depth} to {follow_up_depth}"
-        )
+    # follow_up_depth is now advisory only — the per-turn decision engine controls
+    # actual probing dynamically based on answer quality. No hard clamp applied.
+    follow_up_depth = max(1, min(5, raw_follow_up_depth))
     questions_raw = context.get("questions")
     custom_questions: list[Any] = (
         questions_raw if isinstance(questions_raw, list) else []
@@ -3608,6 +4038,16 @@ The best interviews do not feel like interviews. They feel like a conversation t
     ready_event = asyncio.Event()
     ready_signal_received_at: Optional[float] = None
 
+    # Per-turn decision engine state
+    _last_interviewer_question = ""   # most recent question Ishita asked
+    _topic_follow_up_count = 0        # consecutive follow-ups on same topic
+    _oai_eval_client = AsyncOpenAI()  # reused client for per-turn evaluations
+    answer_scores: list[dict] = []    # log of all answer quality scores for final DB save
+
+    # Cross-turn consistency engine state
+    _claim_ledger: list[dict] = []        # all extracted claims across interview
+    _contradictions_found: list[dict] = [] # all detected contradictions for final report
+
     @ctx.room.on("disconnected")
     def on_disconnected(reason):
         disconnect_event.set()
@@ -3773,7 +4213,8 @@ The best interviews do not feel like interviews. They feel like a conversation t
 
     @session.on("conversation_item_added")
     def on_conversation_item_added(event) -> None:
-        nonlocal session_start_time, turn_count, last_injection_turn
+        nonlocal session_start_time, turn_count, last_injection_turn, \
+            _last_interviewer_question, _topic_follow_up_count
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -3866,6 +4307,173 @@ The best interviews do not feel like interviews. They feel like a conversation t
             speaker = "Interviewer" if role == "assistant" else "Candidate"
             append_transcript_line(speaker, content)
             logger.info(f"[TRANSCRIPT] {speaker}: {content[:60]}...")
+
+            # --- Track last Ishita question (for per-turn evaluator) ---
+            if role == "assistant":
+                # Extract the last sentence ending in "?" as the question
+                sentences = [s.strip() for s in content.split("?") if s.strip()]
+                if sentences:
+                    _last_interviewer_question = sentences[-1] + "?"
+
+            # --- Per-Turn Answer Evaluator (Decision Engine) ---
+            # Fires on every candidate response. Evaluates answer quality in real-time
+            # and injects a NEXT_TURN_DIRECTIVE before Ishita generates her next response.
+            # Decision: PROBE (which mode) or MOVE_ON — fully signal-driven, no fixed depth.
+            if role == "user" and _last_interviewer_question and turn_count > 1:
+                answer_snap = content
+                question_snap = _last_interviewer_question
+                follow_up_snap = _topic_follow_up_count
+                lines_snap_eval = list(transcript_lines)
+
+                async def _evaluate_and_inject(
+                    answer=answer_snap,
+                    question=question_snap,
+                    follow_ups=follow_up_snap,
+                    lines=lines_snap_eval,
+                    turn=turn_count,
+                ):
+                    nonlocal _topic_follow_up_count, suspicion_score, current_interview_mode, \
+                        answer_scores, _claim_ledger, _contradictions_found
+                    try:
+                        # Step 1: Score answer quality on 4 dimensions
+                        quality_score = await score_answer_quality(
+                            candidate_answer=answer,
+                            last_question=question,
+                            transcript_lines=lines,
+                            client=_oai_eval_client,
+                            org_id=org_id,
+                            llm_model=analysis_openai_model,
+                        )
+                        quality_score["turn"] = turn
+                        quality_score["question"] = question
+                        answer_scores.append(quality_score)
+
+                        # Step 2: Extract claims and check consistency
+                        new_claims = await extract_claims(
+                            candidate_answer=answer,
+                            turn=turn,
+                            client=_oai_eval_client,
+                            org_id=org_id,
+                            llm_model=analysis_openai_model,
+                        )
+                        contradiction_alert: Optional[dict] = None
+                        for claim in new_claims:
+                            contradiction = check_contradiction(claim, _claim_ledger)
+                            if contradiction and not contradiction_alert:
+                                contradiction_alert = contradiction
+                                _contradictions_found.append(contradiction)
+                                suspicion_score = min(100, suspicion_score + 20)
+                                proctoring_events.append({
+                                    "event": "contradiction_detected",
+                                    "turn": turn,
+                                    "type": contradiction["type"],
+                                    "old_turn": contradiction["old_turn"],
+                                    "old_value": contradiction["old_value"],
+                                    "new_value": contradiction["new_value"],
+                                    "score_delta": 20,
+                                    "score_after": suspicion_score,
+                                })
+                                logger.warning(
+                                    f"[CONSISTENCY] Contradiction: {contradiction['type']} "
+                                    f"turn {contradiction['old_turn']} ({contradiction['old_value']!r}) "
+                                    f"vs turn {turn} ({contradiction['new_value']!r})"
+                                )
+                        # Append new claims to ledger after checking (so we don't flag self)
+                        _claim_ledger.extend(new_claims)
+
+                        # Step 3: Decide probe vs move-on based on quality
+                        decision = await evaluate_answer_and_decide(
+                            candidate_answer=answer,
+                            last_question=question,
+                            topic_follow_up_count=follow_ups,
+                            transcript_lines=lines,
+                            client=_oai_eval_client,
+                            org_id=org_id,
+                            llm_model=analysis_openai_model,
+                        )
+
+                        action = decision.get("action", "MOVE_ON")
+                        probe_mode = decision.get("probe_mode")
+                        reason = decision.get("reason", "")
+                        depth_signal = decision.get("depth_signal", "SURFACE")
+
+                        # Update follow-up counter
+                        if action == "PROBE":
+                            _topic_follow_up_count += 1
+                        else:
+                            _topic_follow_up_count = 0
+
+                        # Feed depth signal into suspicion scoring
+                        if depth_signal == "SURFACE":
+                            suspicion_score = min(100, suspicion_score + 3)
+                        elif depth_signal == "DEEP" and current_interview_mode == "normal":
+                            current_interview_mode = "deep"
+
+                        # Build the directive injected into Ishita's context
+                        # Contradiction always overrides normal probe/move-on decision
+                        if contradiction_alert:
+                            old_t = contradiction_alert["old_turn"]
+                            old_v = contradiction_alert["old_value"]
+                            new_v = contradiction_alert["new_value"]
+                            claim_t = contradiction_alert["type"].replace("_", " ")
+                            directive = (
+                                f"[NEXT_TURN_DIRECTIVE — DO NOT SAY ALOUD]\n"
+                                f"DECISION: CONTRADICTION SURFACE\n"
+                                f"INCONSISTENCY DETECTED: {claim_t}\n"
+                                f"  Earlier (turn {old_t}): '{old_v}'\n"
+                                f"  Just now (turn {turn}): '{new_v}'\n"
+                                f"ACTION: Surface this with genuine confusion — not accusation. "
+                                f"Say something like: 'wait, I want to make sure I understood this right — "
+                                f"earlier it sounded like {old_v}, but just now it sounds more like {new_v}. "
+                                f"Help me connect those two.' "
+                                f"If they clarify convincingly, accept it and move on. "
+                                f"If they stall or contradict again, note it internally and continue."
+                            )
+                        elif action == "PROBE" and probe_mode:
+                            probe_instructions = {
+                                "specificity": "Ask for a specific number, name, date, or concrete example. Do not accept generalities.",
+                                "depth": "They gave facts but no reasoning. Ask WHY they chose that approach, or what tradeoff they accepted.",
+                                "ownership": "They said 'we'. Ask what THEY specifically owned, built, or decided — not the team.",
+                                "contradiction": "Something doesn't add up with what they said earlier. Surface it naturally with genuine confusion, not accusation.",
+                                "verification": "Answer sounded rehearsed. Pull them into a specific memory — ask what happened right before, or what the low point was.",
+                            }
+                            probe_text = probe_instructions.get(probe_mode, "Probe deeper on this answer.")
+                            directive = (
+                                f"[NEXT_TURN_DIRECTIVE — DO NOT SAY ALOUD]\n"
+                                f"DECISION: PROBE ({probe_mode.upper()})\n"
+                                f"ANSWER DEPTH: {depth_signal}\n"
+                                f"REASON: {reason}\n"
+                                f"ACTION: {probe_text}\n"
+                                f"Follow-ups on this topic so far: {_topic_follow_up_count}. "
+                                f"If this reaches 3, move on regardless."
+                            )
+                        else:
+                            directive = (
+                                f"[NEXT_TURN_DIRECTIVE — DO NOT SAY ALOUD]\n"
+                                f"DECISION: MOVE ON\n"
+                                f"ANSWER DEPTH: {depth_signal}\n"
+                                f"REASON: {reason}\n"
+                                f"ACTION: This topic is sufficiently covered. Move to the next uncovered area from your interview plan. "
+                                f"Do not ask another follow-up on this topic."
+                            )
+
+                        # Remove previous directive to keep context clean
+                        for old_msg in list(chat_ctx.messages):
+                            if getattr(old_msg, "role", "") == "system" and "[NEXT_TURN_DIRECTIVE" in (getattr(old_msg, "content", "") or ""):
+                                try:
+                                    chat_ctx.messages.remove(old_msg)
+                                except (ValueError, AttributeError):
+                                    pass
+
+                        chat_ctx.add_message(role="system", content=directive)
+                        logger.info(
+                            f"[EVAL] turn={turn_count} action={action} probe={probe_mode} "
+                            f"depth={depth_signal} follow_ups={_topic_follow_up_count}"
+                        )
+                    except Exception as e:
+                        logger.debug(f"[EVAL] Evaluator injection failed: {e}")
+
+                spawn_background_task(_evaluate_and_inject(), f"eval_turn_{turn_count}")
 
             # --- Dynamic Interview State Injection (every 3 assistant turns) ---
             # Every 3 turns, a lightweight gpt-4o-mini call generates a coverage + pace summary
@@ -4393,7 +5001,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
     )
     await asyncio.sleep(1)
 
-    # ✅ Final definitive save — Phase 5 includes proctoring report
+    # ✅ Final definitive save — Phase 5 includes proctoring report + answer scores
     proctoring_data = {
         "role_category": role_category,
         "candidate_band": candidate_band,
@@ -4402,6 +5010,8 @@ The best interviews do not feel like interviews. They feel like a conversation t
         "current_mode": current_interview_mode,
         "exit_reason": "time_expired" if time_expired else "interview_finished",
         "events": proctoring_events,
+        "contradictions": _contradictions_found,
+        "claim_ledger": _claim_ledger,
     }
     await persist_transcript(
         app_id,
@@ -4410,6 +5020,10 @@ The best interviews do not feel like interviews. They feel like a conversation t
         proctoring_data=proctoring_data,
         final_status="COMPLETED",
     )
+
+    # Save answer quality scores
+    await persist_answer_scores(app_id, answer_scores)
+
     selected_tts_model = org_sarvam_model if org_tts_provider == "SARVAM" else org_cartesia_model
     selected_stt_model = org_sarvam_stt_model if org_stt_provider == "SARVAM" else org_deepgram_model
     await persist_org_usage_metrics(
