@@ -2,27 +2,13 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
-const DEV_JWT_SECRET = "dev-only-jwt-secret-change-me";
-let warnedAboutMissingSecret = false;
-
 function getJwtSecret(): string {
     const secret = process.env.JWT_SECRET?.trim();
     if (secret) return secret;
 
-    if (process.env.NODE_ENV === "production") {
-        throw new Error(
-            "JWT_SECRET is required in production. Set a strong secret in your environment before starting the app."
-        );
-    }
-
-    if (!warnedAboutMissingSecret) {
-        console.warn(
-            "[auth] JWT_SECRET is not set. Using a development-only fallback secret."
-        );
-        warnedAboutMissingSecret = true;
-    }
-
-    return DEV_JWT_SECRET;
+    throw new Error(
+        "JWT_SECRET is required. Please set a strong secret in your .env file."
+    );
 }
 
 function getSecretKey() {

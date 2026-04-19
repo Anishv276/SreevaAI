@@ -7,6 +7,7 @@ import { sanitizeObject } from "@/lib/utils";
 import { deleteCandidateEmbeddings } from "@/lib/pinecone";
 import { submissionLimiter } from "@/lib/rate-limit";
 import { generateId } from "@/lib/ids";
+import { deleteUrlTargets } from "@/lib/delete-utils";
 
 export async function GET(request: Request) {
     try {
@@ -356,18 +357,26 @@ export async function DELETE(request: Request) {
         try {
             const candidatesToCleanup = await prisma.application.findMany({
                 where: { id: { in: validIds } },
-                select: { resumeUrl: true }
+                select: {
+                    resumeUrl: true,
+                    passportUrl: true,
+                    interview: {
+                        select: {
+                            interviewRecordingUrl: true,
+                            snapshots: true
+                        }
+                    }
+                }
             });
 
-            const { deleteObject, getKeyFromUrl } = await import("@/lib/s3");
-            const bucket = process.env.R2_RESUMES_BUCKET || "resumes";
-
+            const urls: string[] = [];
             for (const cand of candidatesToCleanup) {
-                if (cand.resumeUrl) {
-                    const key = getKeyFromUrl(cand.resumeUrl);
-                    if (key) await deleteObject(bucket, key);
-                }
+                if (cand.resumeUrl) urls.push(cand.resumeUrl);
+                if (cand.passportUrl) urls.push(cand.passportUrl);
+                if (cand.interview?.interviewRecordingUrl) urls.push(cand.interview.interviewRecordingUrl);
+                if (cand.interview?.snapshots?.length) urls.push(...cand.interview.snapshots);
             }
+            await deleteUrlTargets(urls);
         } catch (storageErr) {
             console.error("[DELETE_CANDIDATE_STORAGE_ERROR]:", storageErr);
         }
@@ -392,8 +401,13 @@ export async function DELETE(request: Request) {
             console.warn("[DELETE] Could not clean queue jobs:", queueErr);
         }
 
-        await prisma.application.deleteMany({
-            where: { id: { in: validIds } }
+        await prisma.$transaction(async (tx) => {
+            await tx.interview.deleteMany({
+                where: { applicationId: { in: validIds } }
+            });
+            await tx.application.deleteMany({
+                where: { id: { in: validIds } }
+            });
         });
 
         return NextResponse.json({ message: `${validIds.length} candidates deleted successfully` });

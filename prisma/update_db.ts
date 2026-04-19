@@ -13,6 +13,12 @@ async function main() {
     `)
     console.log('✅ Column "aiSummary" ensured.')
 
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Interview"
+      ADD COLUMN IF NOT EXISTS "interviewTurns" JSONB NOT NULL DEFAULT '[]'::jsonb;
+    `)
+    console.log('✅ Column "interviewTurns" ensured.')
+
     // Add aiScore column if it doesn't exist
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "Interview" 

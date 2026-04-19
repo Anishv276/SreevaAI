@@ -25,9 +25,6 @@ export async function GET() {
                 onboardingStep: true,
                 onboardingComplete: true,
                 location: true,
-                expectedDrives: true,
-                expectedCandidates: true,
-                expectedInterviews: true,
             }
         });
 

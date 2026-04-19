@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { updateDriveSchema } from "@/lib/validation";
 import { deleteDriveEmbeddings } from "@/lib/pinecone";
+import { deleteUrlTargets } from "@/lib/delete-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -162,27 +163,30 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
                 select: {
                     jdPreviewUrl: true,
                     applications: {
-                        select: { resumeUrl: true }
+                        select: {
+                            resumeUrl: true,
+                            passportUrl: true,
+                            interview: {
+                                select: {
+                                    interviewRecordingUrl: true,
+                                    snapshots: true
+                                }
+                            }
+                        }
                     }
                 }
             });
 
             if (driveWithApps) {
-                const { deleteObject, getKeyFromUrl } = await import("@/lib/s3");
-                
-                // Cleanup JD from "jds" bucket
-                if (driveWithApps.jdPreviewUrl) {
-                    const key = getKeyFromUrl(driveWithApps.jdPreviewUrl);
-                    if (key) await deleteObject(process.env.R2_JDS_BUCKET || "jds", key);
-                }
-
-                // Cleanup all Resumes from "resumes" bucket
+                const urls: string[] = [];
+                if (driveWithApps.jdPreviewUrl) urls.push(driveWithApps.jdPreviewUrl);
                 for (const app of driveWithApps.applications) {
-                    if (app.resumeUrl) {
-                        const key = getKeyFromUrl(app.resumeUrl);
-                        if (key) await deleteObject(process.env.R2_RESUMES_BUCKET || "resumes", key);
-                    }
+                    if (app.resumeUrl) urls.push(app.resumeUrl);
+                    if (app.passportUrl) urls.push(app.passportUrl);
+                    if (app.interview?.interviewRecordingUrl) urls.push(app.interview.interviewRecordingUrl);
+                    if (app.interview?.snapshots?.length) urls.push(...app.interview.snapshots);
                 }
+                await deleteUrlTargets(urls);
             }
         } catch (storageErr) {
             console.error("[DELETE_SINGLE_DRIVE_STORAGE_ERROR]:", storageErr);

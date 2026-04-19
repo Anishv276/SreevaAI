@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { sendApplicationStatusEmail } from "@/lib/mail";
 import { deleteCandidateEmbeddings } from "@/lib/pinecone";
+import { deleteUrlTargets } from "@/lib/delete-utils";
 
 export async function GET(
     request: Request,
@@ -83,7 +84,14 @@ export async function DELETE(
             },
             select: { 
                 id: true,
-                resumeUrl: true 
+                resumeUrl: true,
+                passportUrl: true,
+                interview: {
+                    select: {
+                        interviewRecordingUrl: true,
+                        snapshots: true
+                    }
+                }
             }
         });
 
@@ -93,12 +101,12 @@ export async function DELETE(
 
         // ── STORAGE CLEANUP: Purge Resume from R2 ──────────
         try {
-            if (candidate.resumeUrl) {
-                const { deleteObject, getKeyFromUrl } = await import("@/lib/s3");
-                const bucket = process.env.R2_RESUMES_BUCKET || "resumes";
-                const key = getKeyFromUrl(candidate.resumeUrl);
-                if (key) await deleteObject(bucket, key);
-            }
+            const urls: string[] = [];
+            if (candidate.resumeUrl) urls.push(candidate.resumeUrl);
+            if (candidate.passportUrl) urls.push(candidate.passportUrl);
+            if (candidate.interview?.interviewRecordingUrl) urls.push(candidate.interview.interviewRecordingUrl);
+            if (candidate.interview?.snapshots?.length) urls.push(...candidate.interview.snapshots);
+            await deleteUrlTargets(urls);
         } catch (storageErr) {
             console.error("[DELETE_SINGLE_CANDIDATE_STORAGE_ERROR]:", storageErr);
         }
@@ -111,8 +119,13 @@ export async function DELETE(
         }
 
         // ── DATABASE DELETION ─────────────────────────────
-        await prisma.application.delete({
-            where: { id }
+        await prisma.$transaction(async (tx) => {
+            await tx.interview.deleteMany({
+                where: { applicationId: id }
+            });
+            await tx.application.delete({
+                where: { id }
+            });
         });
 
         return NextResponse.json({ message: "Candidate deleted successfully" });
@@ -144,7 +157,7 @@ export async function PATCH(
         }
 
         // ── UPDATE ─────────────────────────────────────────
-        let dataToUpdate: any = {
+        const dataToUpdate: any = {
             ...(body.resumeStatus !== undefined && { resumeStatus: body.resumeStatus }),
             ...(body.interviewStatus !== undefined && { interviewStatus: body.interviewStatus }),
             ...(body.hiringStatus !== undefined && { hiringStatus: body.hiringStatus }),

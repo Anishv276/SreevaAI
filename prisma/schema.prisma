@@ -20,9 +20,6 @@ model Organization {
   size               String?
   website            String?
   location           String?
-  expectedDrives     Int?
-  expectedCandidates Int?
-  expectedInterviews Int?
   onboardingStep     Int         @default(0)
   onboardingComplete Boolean     @default(false)
   customDomain       String?
@@ -80,6 +77,8 @@ model User {
   password        String?
   orgId           String?
   orgRole         String?
+  resetOtp        String?
+  resetOtpExpires DateTime?
   applications    Application[]
   drives          Drive[]       @relation("CreatedDrives")
   acceptedInvites OrgInvite[]   @relation("AcceptedInvites")
@@ -197,6 +196,7 @@ model Interview {
   interviewDuration     Int?
   aiSummary             String?
   interviewReport       Json?       @default("{}")
+  interviewTurns        Json?       @default("[]")
   strategicVerdict      Json?       @default("{}")
   snapshots             String[]    @default([])
   candidateFeedback     String?

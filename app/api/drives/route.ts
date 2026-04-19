@@ -6,6 +6,8 @@ import { createDriveSchema, bulkDeleteSchema, driveQuerySchema } from "@/lib/val
 import { getSession } from "@/lib/auth";
 import { sanitizeObject } from "@/lib/utils";
 import { generateId } from "@/lib/ids";
+import { deleteUrlTargets } from "@/lib/delete-utils";
+import { deleteDriveEmbeddings } from "@/lib/pinecone";
 
 export async function GET(request: Request) {
     try {
@@ -22,7 +24,7 @@ export async function GET(request: Request) {
         const endDate = searchParams.get("endDate");
         const now = new Date();
 
-        let where: any = {};
+        const where: any = {};
 
         if (startDate) {
             where.createdAt = {
@@ -250,27 +252,31 @@ export async function DELETE(request: Request) {
                 select: {
                     jdPreviewUrl: true,
                     applications: {
-                        select: { resumeUrl: true }
+                        select: {
+                            resumeUrl: true,
+                            passportUrl: true,
+                            interview: {
+                                select: {
+                                    interviewRecordingUrl: true,
+                                    snapshots: true
+                                }
+                            }
+                        }
                     }
                 }
             });
 
-            const { deleteObject, getKeyFromUrl } = await import("@/lib/s3");
-            const jdBucket = process.env.R2_JDS_BUCKET || "jds";
-            const resumeBucket = process.env.R2_RESUMES_BUCKET || "resumes";
-
+            const urls: string[] = [];
             for (const drive of drivesWithApps) {
-                if (drive.jdPreviewUrl) {
-                    const key = getKeyFromUrl(drive.jdPreviewUrl);
-                    if (key) await deleteObject(jdBucket, key);
-                }
+                if (drive.jdPreviewUrl) urls.push(drive.jdPreviewUrl);
                 for (const app of drive.applications) {
-                    if (app.resumeUrl) {
-                        const key = getKeyFromUrl(app.resumeUrl);
-                        if (key) await deleteObject(resumeBucket, key);
-                    }
+                    if (app.resumeUrl) urls.push(app.resumeUrl);
+                    if (app.passportUrl) urls.push(app.passportUrl);
+                    if (app.interview?.interviewRecordingUrl) urls.push(app.interview.interviewRecordingUrl);
+                    if (app.interview?.snapshots?.length) urls.push(...app.interview.snapshots);
                 }
             }
+            await deleteUrlTargets(urls);
         } catch (storageErr) {
             console.error("[DELETE_DRIVE_STORAGE_ERROR]:", storageErr);
         }
@@ -281,6 +287,14 @@ export async function DELETE(request: Request) {
             select: { id: true }
         });
         const appIds = applications.map(a => a.id);
+
+        try {
+            for (const driveId of validIds) {
+                await deleteDriveEmbeddings(driveId);
+            }
+        } catch (pineconeErr) {
+            console.error("[BULK_DELETE_DRIVE_PINECONE_ERROR]:", pineconeErr);
+        }
 
         await prisma.$transaction(async (tx) => {
             if (appIds.length > 0) {

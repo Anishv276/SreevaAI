@@ -44,12 +44,13 @@ export async function PATCH(request: Request) {
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
         const body = await request.json();
-        const { name, phone, jobTitle, newPassword, currentPassword, otp } = body;
+        const { name, email, phone, jobTitle, newPassword, currentPassword, otp } = body;
 
         console.log(`[Profile API] Updating profile for userId: ${session.userId}, role: ${session.role}`);
 
         const updateData: any = {};
         if (name !== undefined) updateData.name = name;
+        if (email !== undefined && session.role === "SUPER_ADMIN") updateData.email = email;
         
         // Only include phone if updating a non-SuperAdmin user (or if we eventually add it to SuperAdmin)
         if (phone !== undefined && session.role !== "SUPER_ADMIN") {

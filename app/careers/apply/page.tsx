@@ -61,7 +61,21 @@ function ApplicationContent() {
         }
     };
 
-    const nextStep = () => setStep(prev => prev + 1);
+    const nextStep = () => {
+        if (step === 1) {
+            if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone || !formData.location) {
+                alert("Please fill in all required personal information fields.");
+                return;
+            }
+        }
+        if (step === 2) {
+            if (!formData.qualification || !formData.experience || !formData.noticePeriod || !formData.expectedCtc) {
+                alert("Please fill in all professional details before continuing.");
+                return;
+            }
+        }
+        setStep(prev => prev + 1);
+    };
     const prevStep = () => setStep(prev => prev - 1);
 
     const handleSubmit = async () => {

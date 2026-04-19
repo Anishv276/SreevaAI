@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
@@ -377,7 +377,7 @@ function PositionCounter({ label, icon: Icon, value, onChange, error }: { label:
                     onClick={() => onChange(Math.max(1, value - 1))}
                     className="flex h-full w-10 items-center justify-center text-gray-500 hover:bg-orange-50 hover:text-[#F97316] transition-colors duration-100 text-xl font-light flex-shrink-0 border-r border-gray-100"
                 >
-                    âˆ’
+                    -
                 </button>
                 <input
                     type="number"

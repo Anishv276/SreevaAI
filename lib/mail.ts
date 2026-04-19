@@ -48,7 +48,7 @@ export async function getPlatformSender() {
                             customSenderEmail: senderEmail,
                             customSenderName: senderName,
                         },
-                    }).catch(() => { });
+                    }).catch(err => { console.error("[MAIL_AUTO_SAVE_ERROR]:", err); })
                 }
 
                 return `${senderName} <${senderEmail}>`;
@@ -85,7 +85,7 @@ async function getVerifiedPlatformSenderWithReason(): Promise<SenderResolution> 
                     await prisma.superAdmin.update({
                         where: { id: settings.id },
                         data: { isDomainVerified: false }
-                    }).catch(() => { });
+                    }).catch(err => { console.error("[MAIL_AUTO_SAVE_ERROR]:", err); })
                 }
                 return {
                     from: null,
@@ -97,7 +97,7 @@ async function getVerifiedPlatformSenderWithReason(): Promise<SenderResolution> 
                 await prisma.superAdmin.update({
                     where: { id: settings.id },
                     data: { isDomainVerified: resendVerified }
-                }).catch(() => { });
+                }).catch(err => { console.error("[MAIL_AUTO_SAVE_ERROR]:", err); })
             }
         }
 
@@ -141,7 +141,7 @@ export async function resolveVerifiedSender(orgId?: string): Promise<SenderResol
                                 customSenderEmail: orgSenderEmail,
                                 customSenderName: displayName,
                             },
-                        }).catch(() => { });
+                        }).catch(err => { console.error("[MAIL_AUTO_SAVE_ERROR]:", err); })
                     }
                     return { from: `${displayName} <${orgSenderEmail}>` };
                 }
@@ -302,6 +302,61 @@ export async function sendApplicationStatusEmail({
         return { success: true };
     } catch (error) {
         console.error(`[MAIL EXCEPTION] Failed to send email to ${email}:`, error);
+        return { success: false, error };
+    }
+}
+
+export async function sendOrgWelcomeEmail({
+    email,
+    orgName,
+    adminName,
+}: {
+    email: string;
+    orgName: string;
+    adminName: string;
+}) {
+    const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || ''}/login`;
+    const subject = "Welcome to Lumoscale: Your Workspace is Ready";
+    const html = `
+        <div style="font-family: Inter, Arial, sans-serif; max-width: 620px; margin: 0 auto; padding: 40px; border: 1px solid #f1f5f9; border-radius: 24px; background: #ffffff; text-align: center;">
+            <div style="margin-bottom: 30px;">
+                <div style="display: inline-block; background: #FFF7ED; padding: 16px; border-radius: 20px;">
+                    <span style="font-size: 32px;">🚀</span>
+                </div>
+            </div>
+            <h1 style="margin: 0 0 12px; color: #111827; font-size: 26px; font-weight: 800; letter-spacing: -0.02em;">Welcome to the Future of Hiring</h1>
+            <p style="margin: 0 0 30px; color: #4b5563; font-size: 16px; line-height: 1.6;">
+                Hi ${adminName}, your workspace for <strong>${orgName}</strong> has been successfully provisioned on Lumoscale Cloud.
+            </p>
+            
+            <div style="padding: 32px; border: 1px solid #f97316; border-radius: 20px; background: #fffaf5; margin-bottom: 30px; border-style: dashed;">
+                <p style="margin: 0 0 8px; color: #7c2d12; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em;">Next Step</p>
+                <p style="margin: 0 0 24px; color: #9a3412; font-size: 15px; font-weight: 500;">Please log in to your dashboard to complete your onboarding and start your first recruitment drive.</p>
+                <a href="${loginUrl}" style="display: inline-block; background: #f97316; color: #fff; text-decoration: none; font-weight: 800; font-size: 15px; padding: 16px 36px; border-radius: 14px; box-shadow: 0 10px 25px rgba(249,115,22,0.25);">
+                    Access Workspace
+                </a>
+            </div>
+
+            <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">
+                If you have any questions, reply to this email or contact your platform administrator.
+            </p>
+        </div>
+    `;
+
+    const { from } = await resolveVerifiedSender();
+    const finalFrom = from || "Lumoscale Platform <security@lumoscale.com>";
+
+    try {
+        await resend.emails.send({
+            from: finalFrom,
+            to: email,
+            subject,
+            html,
+        });
+        console.log(`[WELCOME EMAIL] Sent to ${email} for org ${orgName}`);
+        return { success: true };
+    } catch (error) {
+        console.error(`[WELCOME EMAIL FAILED] ${email}:`, error);
         return { success: false, error };
     }
 }

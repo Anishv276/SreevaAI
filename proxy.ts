@@ -21,7 +21,7 @@ export async function proxy(req: NextRequest) {
     // Public paths - no auth needed
     const publicPaths = ["/careers", "/org", "/api/auth", "/api/invitations", "/invite", "/interview", "/_next", "/favicon"];
     if (publicPaths.some(p => pathname.startsWith(p))) {
-        let res = NextResponse.next({ request: { headers: requestHeaders } });
+        const res = NextResponse.next({ request: { headers: requestHeaders } });
         return await refreshSessionCookie(req, res);
     }
 
@@ -29,7 +29,7 @@ export async function proxy(req: NextRequest) {
 
     // Single login page for all roles
     if (pathname === "/login" || pathname === "/login/") {
-        let res = NextResponse.next({ request: { headers: requestHeaders } });
+        const res = NextResponse.next({ request: { headers: requestHeaders } });
         return await refreshSessionCookie(req, res);
     }
 
@@ -40,7 +40,7 @@ export async function proxy(req: NextRequest) {
             if (isAdminRole(session.role)) return NextResponse.redirect(new URL("/admin", req.url));
             return NextResponse.redirect(new URL("/login", req.url));
         }
-        let res = NextResponse.next({ request: { headers: requestHeaders } });
+        const res = NextResponse.next({ request: { headers: requestHeaders } });
         return await refreshSessionCookie(req, res);
     }
 
@@ -61,7 +61,7 @@ export async function proxy(req: NextRequest) {
             return NextResponse.redirect(new URL("/admin", req.url));
         }
 
-        let res = NextResponse.next({ request: { headers: requestHeaders } });
+        const res = NextResponse.next({ request: { headers: requestHeaders } });
         return await refreshSessionCookie(req, res);
     }
 
@@ -70,11 +70,11 @@ export async function proxy(req: NextRequest) {
         if (!session || !isSuperAdminRole(session.role)) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
-        let res = NextResponse.next({ request: { headers: requestHeaders } });
+        const res = NextResponse.next({ request: { headers: requestHeaders } });
         return await refreshSessionCookie(req, res);
     }
 
-    let res = NextResponse.next({ request: { headers: requestHeaders } });
+    const res = NextResponse.next({ request: { headers: requestHeaders } });
     return await refreshSessionCookie(req, res);
 }
 

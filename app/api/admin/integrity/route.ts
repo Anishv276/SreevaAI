@@ -128,8 +128,8 @@ export async function GET(req: NextRequest) {
         // duplicate_ip is split into three sub-types sourced from event metadata
         const violationCounts: Record<string, { incidents: number; candidateIds: Set<string>; durations: number[]; highCount: number }> = {};
 
-        let flaggedSet = new Set<string>();   // interview IDs with HIGH severity events
-        let lowRiskSet = new Set<string>();   // interview IDs with LOW/MEDIUM severity
+        const flaggedSet = new Set<string>();   // interview IDs with HIGH severity events
+        const lowRiskSet = new Set<string>();   // interview IDs with LOW/MEDIUM severity
 
         for (const iv of interviews) {
             const raw = iv.proctoringEvents;

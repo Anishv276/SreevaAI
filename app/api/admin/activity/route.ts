@@ -166,9 +166,6 @@ export async function GET(req: Request) {
         // Sort by most recent first
         activities.sort((a, b) => b.timestamp - a.timestamp);
 
-        // Sorted by most recent first
-        activities.sort((a, b) => b.timestamp - a.timestamp);
-
         const feed = activities.slice(0, 20);
         return NextResponse.json({ feed });
     } catch (error: any) {

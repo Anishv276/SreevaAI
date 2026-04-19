@@ -302,7 +302,7 @@ export function AudioProctoring({
     };
 
     // Only re-run when isActive flips — same pattern as FaceProctoring
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isActive]);
 
   // This component renders nothing — it's a pure side-effect engine

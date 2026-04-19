@@ -13,7 +13,7 @@ import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { PhoneInput } from "@/components/application/phone-input";
 import { cn } from "@/lib/utils";
 
-const STEPS = ["Profile", "Company", "Hiring Goals", "Proceed"];
+const STEPS = ["Profile", "Company", "Proceed"];
 
 export default function OnboardingPage() {
     const router = useRouter();
@@ -35,13 +35,6 @@ export default function OnboardingPage() {
         website: "", 
         location: "",
         logoUrl: "",
-    });
-
-    // Step 2: Hiring Goals
-    const [goals, setGoals] = useState({
-        expectedDrives: "",
-        expectedCandidates: "",
-        expectedInterviews: "",
     });
     
     // UI Helpers
@@ -67,13 +60,7 @@ export default function OnboardingPage() {
                         if (sanitized[key] === null) sanitized[key] = "";
                     });
                     setCompany(prev => ({ ...prev, ...sanitized }));
-                    setGoals({
-                        expectedDrives: sanitized.expectedDrives || "",
-                        expectedCandidates: sanitized.expectedCandidates || "",
-                        expectedInterviews: sanitized.expectedInterviews || "",
-                    });
                     
-                    // COMPLETION CHECK
                     if (data.onboardingComplete === true || data.onboardingStep >= 5) {
                         router.replace("/admin");
                         return;
@@ -98,10 +85,17 @@ export default function OnboardingPage() {
                 // LOCAL RECOVERY
                 const draft = localStorage.getItem("onboarding_draft");
                 if (draft) {
-                    const { company: draftCo, profile: draftProfile, goals: draftGoals } = JSON.parse(draft);
-                    if (draftCo) setCompany(prev => ({ ...prev, ...draftCo }));
-                    if (draftProfile) setProfile(prev => ({ ...prev, ...draftProfile }));
-                    if (draftGoals) setGoals(prev => ({ ...prev, ...draftGoals }));
+                    try {
+                        const parsed = JSON.parse(draft);
+                        if (parsed && typeof parsed === 'object') {
+                            const { company: draftCo, profile: draftProfile } = parsed;
+                            if (draftCo) setCompany(prev => ({ ...prev, ...draftCo }));
+                            if (draftProfile) setProfile(prev => ({ ...prev, ...draftProfile }));
+                        }
+                    } catch (e) {
+                        console.warn("Failed to parse onboarding draft:", e);
+                        localStorage.removeItem("onboarding_draft");
+                    }
                 }
             } catch (err) {
                 console.error(err);
@@ -114,10 +108,14 @@ export default function OnboardingPage() {
 
     // AUTO-SAVE
     useEffect(() => {
-        if (!isLoading) {
-            localStorage.setItem("onboarding_draft", JSON.stringify({ company, profile, goals }));
-        }
-    }, [company, profile, goals, isLoading]);
+        if (isLoading) return;
+        
+        const timer = setTimeout(() => {
+            localStorage.setItem("onboarding_draft", JSON.stringify({ company, profile }));
+        }, 1000);
+
+        return () => clearTimeout(timer);
+    }, [company, profile, isLoading]);
 
     const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -196,15 +194,8 @@ export default function OnboardingPage() {
                 if (!res.ok) { const d = await res.json(); setError(d.error || "Company profile save failed."); setIsSaving(false); return; }
             }
 
-            // STEP 2: Hiring Goals
-            if (currentStep === 2) {
-                const res = await fetch("/api/admin/setup", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ phase: "goals", data: goals })
-                });
-                if (!res.ok) { const d = await res.json(); setError(d.error || "Goals save failed."); setIsSaving(false); return; }
-            }
+            // REMOVED STEP 2 (Hiring Goals)
+
 
             // STEP 3: Proceed (final)
             if (currentStep === STEPS.length - 1) {
@@ -287,7 +278,7 @@ export default function OnboardingPage() {
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.06),0_1px_4px_rgba(0,0,0,0.04)] border-t-[4px] border-t-[#F97316]">
                     <div className="p-8">
 
-                        {/* â•â•â• STEP 0: PROFILE & SECURITY â•â•â• */}
+                        {/* --- STEP 0: PROFILE & SECURITY --- */}
                         {currentStep === 0 && (
                             <div className="space-y-10 animate-in-slide">
                                 <div className="flex items-center gap-4 mb-2">
@@ -390,7 +381,7 @@ export default function OnboardingPage() {
                             </div>
                         )}
 
-                        {/* â•â•â• STEP 1: COMPANY IDENTITY â•â•â• */}
+                        {/* --- STEP 1: COMPANY IDENTITY --- */}
                         {currentStep === 1 && (
                             <div className="space-y-10 animate-in-slide">
                                 <div className="flex items-center gap-4 mb-2">
@@ -488,77 +479,12 @@ export default function OnboardingPage() {
                             </div>
                         )}
 
-                        {/* â•â•â• STEP 2: HIRING GOALS â•â•â• */}
-                        {currentStep === 2 && (
-                            <div className="space-y-10 animate-in-slide">
-                                <div className="flex items-center gap-4 mb-2">
-                                    <span className="w-1.5 h-8 bg-[#F97316] rounded-full shadow-sm" />
-                                    <div>
-                                        <h3 className="text-[12px] font-bold uppercase tracking-widest text-gray-500">3. Hiring Goals</h3>
-                                        <p className="text-xs text-gray-400 mt-0.5">Help us personalize your dashboard with your hiring targets</p>
-                                    </div>
-                                </div>
-                                <div className="grid md:grid-cols-3 gap-6">
-                                    {/* Drives Goal */}
-                                    <div className="space-y-3 p-6 rounded-2xl border border-gray-100 bg-gray-50/50 hover:bg-white hover:shadow-md hover:border-orange-100 transition-all group">
-                                        <div className="h-12 w-12 rounded-xl bg-orange-50 text-[#F97316] flex items-center justify-center group-hover:scale-110 transition-transform">
-                                            <Briefcase className="h-6 w-6" />
-                                        </div>
-                                        <div>
-                                            <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Job Drives</label>
-                                            <p className="text-[10px] text-gray-400 mt-1">How many job drives do you plan to run?</p>
-                                        </div>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            className="h-11 w-full rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 focus:border-[#F97316] transition-all"
-                                            placeholder="e.g. 10"
-                                            value={goals.expectedDrives}
-                                            onChange={e => setGoals({ ...goals, expectedDrives: e.target.value })}
-                                        />
-                                    </div>
-                                    {/* Candidates Goal */}
-                                    <div className="space-y-3 p-6 rounded-2xl border border-gray-100 bg-gray-50/50 hover:bg-white hover:shadow-md hover:border-orange-100 transition-all group">
-                                        <div className="h-12 w-12 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                            <Users className="h-6 w-6" />
-                                        </div>
-                                        <div>
-                                            <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Candidates</label>
-                                            <p className="text-[10px] text-gray-400 mt-1">Expected number of applicants per month?</p>
-                                        </div>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            className="h-11 w-full rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 focus:border-[#F97316] transition-all"
-                                            placeholder="e.g. 500"
-                                            value={goals.expectedCandidates}
-                                            onChange={e => setGoals({ ...goals, expectedCandidates: e.target.value })}
-                                        />
-                                    </div>
-                                    {/* Interviews Goal */}
-                                    <div className="space-y-3 p-6 rounded-2xl border border-gray-100 bg-gray-50/50 hover:bg-white hover:shadow-md hover:border-orange-100 transition-all group">
-                                        <div className="h-12 w-12 rounded-xl bg-emerald-50 text-emerald-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                            <BarChart3 className="h-6 w-6" />
-                                        </div>
-                                        <div>
-                                            <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">AI Interviews</label>
-                                            <p className="text-[10px] text-gray-400 mt-1">Target number of AI interviews per month?</p>
-                                        </div>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            className="h-11 w-full rounded-xl border border-gray-200 bg-white px-4 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 focus:border-[#F97316] transition-all"
-                                            placeholder="e.g. 200"
-                                            value={goals.expectedInterviews}
-                                            onChange={e => setGoals({ ...goals, expectedInterviews: e.target.value })}
-                                        />
-                                    </div>
-                                </div>
-                                <p className="text-[11px] text-gray-400 text-center">These can be updated anytime in your Settings. This helps us tailor your dashboard.</p>
-                            </div>
-                        )}
+                        {/* --- STEP 2: HIRING GOALS --- */}
+                        {/* REMOVED STEP 2 (Hiring Goals) */}
 
-                        {/* â•â•â• STEP 3: PROCEED / READY â•â•â• */}
+
+
+                        {/* --- STEP 3: PROCEED / READY --- */}
                         {currentStep === 3 && (
                             <div className="py-8 space-y-12 animate-in-fade-slide">
                                 <div className="text-center space-y-4">

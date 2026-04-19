@@ -296,7 +296,7 @@ export function HardwareHeartbeat({
     };
 
     // Re-runs only when isActive flips — same lifecycle as FaceProctoring
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isActive]);
 
   // This component renders nothing — pure side-effect engine

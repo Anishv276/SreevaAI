@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { deleteObject, getKeyFromUrl } from "@/lib/s3";
 import { deleteOrgEmbeddings } from "@/lib/pinecone";
+import { deleteResendDomain, deleteUrlTargets } from "@/lib/delete-utils";
 
 // GET /api/super-admin/orgs/[id] — fetch org for editing
 export async function GET(
@@ -52,7 +52,7 @@ export async function PATCH(
         const body = await request.json();
         const {
             name, plan, status, logoUrl, slug, location,
-            phone, expectedDrives, expectedCandidates, expectedInterviews,
+            adminName, adminEmail,
             ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice,
             sttProvider, deepgramModel, sarvamSttModel,
             llmProvider, llmModel, llmTemperature,
@@ -80,10 +80,6 @@ export async function PATCH(
         if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
         if (slug !== undefined) updateData.slug = slug;
         if (location !== undefined) updateData.location = location;
-        if (phone !== undefined) updateData.phone = phone || null;
-        if (expectedDrives !== undefined) updateData.expectedDrives = expectedDrives !== "" ? parseInt(expectedDrives) : null;
-        if (expectedCandidates !== undefined) updateData.expectedCandidates = expectedCandidates !== "" ? parseInt(expectedCandidates) : null;
-        if (expectedInterviews !== undefined) updateData.expectedInterviews = expectedInterviews !== "" ? parseInt(expectedInterviews) : null;
 
         // TTS — save exact values the user chose, null out the other provider's fields
         if (ttsProvider !== undefined) {
@@ -136,9 +132,35 @@ export async function PATCH(
             }
         }
 
-        const updated = await prisma.organization.update({
-            where: { id },
-            data: updateData,
+        // ── TRANSACTION: Update Org & Admin ──────────────────
+        const updated = await prisma.$transaction(async (tx) => {
+            // 1. Update Org
+            const org = await tx.organization.update({
+                where: { id },
+                data: updateData,
+            });
+
+            // 2. Update Primary Admin if name/email provided
+            if (adminName !== undefined || adminEmail !== undefined) {
+                // Find the first ORG_ADMIN
+                const admin = await tx.user.findFirst({
+                    where: { orgId: id, role: "ORG_ADMIN" },
+                    orderBy: { createdAt: "asc" }
+                });
+
+                if (admin) {
+                    const adminUpdate: any = {};
+                    if (adminName) adminUpdate.name = adminName;
+                    if (adminEmail) adminUpdate.email = adminEmail;
+
+                    await tx.user.update({
+                        where: { id: admin.id },
+                        data: adminUpdate
+                    });
+                }
+            }
+
+            return org;
         });
 
         return NextResponse.json(updated);
@@ -164,7 +186,10 @@ export async function DELETE(
         // ── STEP 1: DISCOVERY (Find all associated assets) ──────────────────
 
         // 1. Get Organization for Logo
-        const org = await prisma.organization.findUnique({ where: { id }, select: { logoUrl: true } });
+        const org = await prisma.organization.findUnique({
+            where: { id },
+            select: { logoUrl: true, customDomain: true, resendDomainId: true }
+        });
 
         // 2. Get all drives to find associated applications and interviews
         const drives = await prisma.drive.findMany({ 
@@ -204,21 +229,7 @@ export async function DELETE(
             }
         });
 
-        // Trigger R2 Deletions (Parallel-ish but safe)
-        // Note: We don't block the whole process if one deletion fails, but we log it.
-        await Promise.allSettled(fileUrlsToDelete.map(async (url) => {
-            const key = getKeyFromUrl(url);
-            if (!key) return;
-
-            // Determine bucket from URL or key heuristics
-            let bucket = process.env.R2_RESUMES_BUCKET || "resumes";
-            if (url.includes("logo")) bucket = process.env.R2_LOGOS_BUCKET || "logos";
-            else if (url.includes("jd")) bucket = process.env.R2_JDS_BUCKET || "jds";
-            else if (url.includes("passport")) bucket = process.env.R2_PASSPORTS_BUCKET || "passports";
-            else if (url.includes("interview")) bucket = process.env.R2_INTERVIEW_BUCKET || "interviews";
-
-            return deleteObject(bucket, key);
-        }));
+        await deleteUrlTargets(fileUrlsToDelete);
 
         // Trigger Pinecone Cleanup
         try {
@@ -227,18 +238,33 @@ export async function DELETE(
             console.error("Failed to clear Pinecone embeddings for org:", id, pineconeError);
         }
 
+        try {
+            await deleteResendDomain(org?.resendDomainId);
+        } catch (domainError) {
+            console.error("Failed to remove org domain from Resend:", domainError);
+        }
+
         // ── STEP 3: DATABASE CLEANUP (Cascading) ───────────────────────────
         
-        // With the new schema-level onDelete: Cascade, deleting the organization 
-        // will automatically purge:
-        // 1. All Users tied to this Org (Admins, HR)
-        // 2. All Drives associated with this Org
-        // 3. All Applications associated with those Drives (Cascade)
-        // 4. All Interviews associated with those Applications (Cascade)
-        // 5. All OrgInvites associated with this Org
-        
-        await prisma.organization.delete({
-            where: { id }
+        await prisma.$transaction(async (tx) => {
+            await tx.interview.deleteMany({
+                where: { application: { drive: { orgId: id } } }
+            });
+            await tx.application.deleteMany({
+                where: { drive: { orgId: id } }
+            });
+            await tx.drive.deleteMany({
+                where: { orgId: id }
+            });
+            await tx.orgInvite.deleteMany({
+                where: { orgId: id }
+            });
+            await tx.user.deleteMany({
+                where: { orgId: id }
+            });
+            await tx.organization.delete({
+                where: { id }
+            });
         });
 
         return NextResponse.json({ success: true });

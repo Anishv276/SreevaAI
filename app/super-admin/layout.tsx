@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useAuth } from "@/context/auth-context";
 import Link from "next/link";
@@ -14,6 +14,7 @@ import {
     ShieldAlert,
     Loader2
 } from "lucide-react";
+import { Toaster } from "@/components/ui/toast-custom";
 
 export default function SuperAdminLayout({ children }: { children: React.ReactNode }) {
     const { user, logout } = useAuth();
@@ -154,6 +155,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
                     {children}
                 </div>
             </main>
+            <Toaster />
         </div>
     );
 }

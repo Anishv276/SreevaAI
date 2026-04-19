@@ -18,10 +18,10 @@ export default function PortalPage() {
 
     const filteredJobs = useMemo(() => {
         return jobs.filter(job => {
-            const matchesSearch = job.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                                 job.department.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchesSearch = job.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                 job.department?.toLowerCase().includes(searchQuery.toLowerCase());
             const matchesCategory = activeCategory === "All Jobs" || 
-                                   job.department.toLowerCase() === activeCategory.toLowerCase();
+                                   job.department?.toLowerCase() === activeCategory.toLowerCase();
             
             return matchesSearch && matchesCategory;
         });

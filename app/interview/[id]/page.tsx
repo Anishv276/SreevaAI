@@ -113,7 +113,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [remainingSeconds, setRemainingSeconds] = useState(INTERVIEW_DURATION_SECONDS);
     const [timerExpired, setTimerExpired] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
-    const launchIntervalRef = useRef<number | null>(null);
     const agentReadyCommittedRef = useRef(false);
     const launchStartedAtRef = useRef<number | null>(null);
     const lkRoomRef = useRef<Room | null>(null);
@@ -373,7 +372,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         soundViolationTimerRef.current = setTimeout(() => setSoundViolationAlert(null), 8000);
     }, []);
 
-    // Countdown ticker â€” purely visual, counts up for display purposes
+    // Countdown ticker — purely visual, counts up for display purposes
     useEffect(() => {
         if (phase !== "launching") return;
         setLaunchTimeoutCheck(0);
@@ -603,15 +602,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             setIsJoining(false);
         }
     };
-
-    useEffect(() => {
-        return () => {
-            if (launchIntervalRef.current) {
-                window.clearTimeout(launchIntervalRef.current);
-                launchIntervalRef.current = null;
-            }
-        };
-    }, []);
 
 
     useEffect(() => {
@@ -1126,22 +1116,22 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
                     >
                         <div className={`flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border ${connectionAlert.eventType === "connection_restored"
-                                ? "border-green-500/30"
-                                : "border-blue-500/30"
+                            ? "border-green-500/30"
+                            : "border-blue-500/30"
                             }`}>
                             <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${connectionAlert.eventType === "connection_restored"
-                                    ? "bg-green-500/10"
-                                    : "bg-blue-500/10"
+                                ? "bg-green-500/10"
+                                : "bg-blue-500/10"
                                 }`}>
                                 <WifiOff className={`w-4 h-4 ${connectionAlert.eventType === "connection_restored"
-                                        ? "text-green-400"
-                                        : "text-blue-400"
+                                    ? "text-green-400"
+                                    : "text-blue-400"
                                     }`} />
                             </div>
                             <div>
                                 <p className={`text-[10px] font-black uppercase tracking-widest ${connectionAlert.eventType === "connection_restored"
-                                        ? "text-green-400"
-                                        : "text-blue-400"
+                                    ? "text-green-400"
+                                    : "text-blue-400"
                                     }`}>
                                     {connectionAlert.eventType === "connection_restored" ? "Connection Restored" : "Connection Issue"}
                                 </p>
@@ -1188,30 +1178,30 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
                     >
                         <div className={`flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border ${mouseViolationAlert.severity === "high"
-                                ? "border-red-500/40"
-                                : mouseViolationAlert.severity === "low"
-                                    ? "border-zinc-500/30"
-                                    : "border-purple-500/30"
+                            ? "border-red-500/40"
+                            : mouseViolationAlert.severity === "low"
+                                ? "border-zinc-500/30"
+                                : "border-purple-500/30"
                             }`}>
                             <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${mouseViolationAlert.severity === "high"
-                                    ? "bg-red-500/10"
-                                    : mouseViolationAlert.severity === "low"
-                                        ? "bg-zinc-500/10"
-                                        : "bg-purple-500/10"
+                                ? "bg-red-500/10"
+                                : mouseViolationAlert.severity === "low"
+                                    ? "bg-zinc-500/10"
+                                    : "bg-purple-500/10"
                                 }`}>
                                 <MousePointer2 className={`w-4 h-4 ${mouseViolationAlert.severity === "high"
-                                        ? "text-red-400"
-                                        : mouseViolationAlert.severity === "low"
-                                            ? "text-zinc-400"
-                                            : "text-purple-400"
+                                    ? "text-red-400"
+                                    : mouseViolationAlert.severity === "low"
+                                        ? "text-zinc-400"
+                                        : "text-purple-400"
                                     }`} />
                             </div>
                             <div>
                                 <p className={`text-[10px] font-black uppercase tracking-widest ${mouseViolationAlert.severity === "high"
-                                        ? "text-red-400"
-                                        : mouseViolationAlert.severity === "low"
-                                            ? "text-zinc-400"
-                                            : "text-purple-400"
+                                    ? "text-red-400"
+                                    : mouseViolationAlert.severity === "low"
+                                        ? "text-zinc-400"
+                                        : "text-purple-400"
                                     }`}>
                                     {mouseViolationAlert.eventType === "mouse_erratic"
                                         ? "Erratic Mouse Activity"

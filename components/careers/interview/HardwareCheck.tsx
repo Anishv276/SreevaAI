@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Camera, Mic, CheckCircle2, AlertCircle, Loader2, RefreshCw, Volume2, Activity, ChevronDown, Monitor, AudioLines, Wifi, Shield, Zap, Play } from "lucide-react";
@@ -486,7 +486,7 @@ export function HardwareCheck({
             if (recogRef.current === r) { try { r.abort(); } catch { } recogRef.current = null; }
         };
         // Re-run when micStatus OR micRetryToken changes — forces hard reset of engine
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [micStatus, micRetryToken]);
 
     //  Audio visualizer 
@@ -1126,9 +1126,9 @@ export function HardwareCheck({
                                     )}>{noiseDb.toFixed(0)} dB</span>
                                 </div>
                                 <div className="flex items-center justify-between gap-1.5">
-                                    {noiseStatusType === "good" && <p className="text-[10px] text-green-600 font-medium">ðŸŸ¢ Clean audio - Excellent</p>}
-                                    {noiseStatusType === "moderate" && <p className="text-[10px] text-yellow-600 font-medium">ðŸŸ¡ Acceptable noise - Please minimize sound</p>}
-                                    {noiseStatusType === "high" && <p className="text-[10px] text-red-500 font-medium">ðŸ”´ High noise - Please quiet the room</p>}
+                                    {noiseStatusType === "good" && <p className="text-[10px] text-green-600 font-medium">🟢 Clean audio - Excellent</p>}
+                                    {noiseStatusType === "moderate" && <p className="text-[10px] text-yellow-600 font-medium">🟡 Acceptable noise - Please minimize sound</p>}
+                                    {noiseStatusType === "high" && <p className="text-[10px] text-red-500 font-medium">🔴 High noise - Please quiet the room</p>}
 
                                     {noiseStatusType === "high" && (
                                         <button onClick={() => setNoiseBypass(true)} className="text-[10px] text-gray-400 hover:text-gray-600 underline">Skip</button>

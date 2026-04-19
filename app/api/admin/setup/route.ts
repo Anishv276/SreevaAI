@@ -16,7 +16,7 @@ export async function POST(req: Request) {
 
         console.log(`[ONBOARDING API] Phase: ${phase}`, data);
 
-        let response = NextResponse.json({ success: true });
+        const response = NextResponse.json({ success: true });
 
         switch (phase) {
             case "profile": {
@@ -107,19 +107,7 @@ export async function POST(req: Request) {
                         website: data.website,
                         location: data.location,
                         logoUrl: data.logoUrl,
-                        onboardingStep: 3
-                    }
-                });
-                break;
-
-            case "goals":
-                await prisma.organization.update({
-                    where: { id: session.orgId },
-                    data: {
-                        expectedDrives: data.expectedDrives ? parseInt(data.expectedDrives) : null,
-                        expectedCandidates: data.expectedCandidates ? parseInt(data.expectedCandidates) : null,
-                        expectedInterviews: data.expectedInterviews ? parseInt(data.expectedInterviews) : null,
-                        onboardingStep: 4
+                        onboardingStep: 2
                     }
                 });
                 break;
@@ -128,7 +116,7 @@ export async function POST(req: Request) {
                 await prisma.organization.update({
                     where: { id: session.orgId },
                     data: {
-                        onboardingStep: 3
+                        onboardingStep: 2
                     }
                 });
                 break;

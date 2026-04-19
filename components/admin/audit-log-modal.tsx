@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import {
@@ -170,6 +170,20 @@ export function AuditLogModal({
         return `${mins}:${secs.toString().padStart(2, '0')} into session`;
     };
 
+    const formatAbsoluteTime = (ts: number) => {
+        if (!ts) return "";
+        try {
+            return new Date(ts).toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            });
+        } catch {
+            return "";
+        }
+    };
+
     const handleRecordingLoadedMetadata = () => {
         if (pendingSeekRef.current == null || !recordingRef.current) return;
         const seconds = pendingSeekRef.current;
@@ -326,7 +340,10 @@ export function AuditLogModal({
                                                     >
                                                         <div className="flex items-center justify-between mb-1.5">
                                                             <span className="text-[9px] font-black text-gray-400">FRAME #{i+1}</span>
-                                                            <span className="text-[11px] font-bold text-orange-500">{formatRelativeTime(ev.timestamp || 0)}</span>
+                                                            <span className="text-[11px] font-bold text-orange-500">
+                                                                {formatRelativeTime(ev.timestamp || 0)} 
+                                                                <span className="ml-2 text-gray-400 font-medium">@ {formatAbsoluteTime(ev.timestamp || 0)}</span>
+                                                            </span>
                                                         </div>
                                                         <p className="text-[13px] font-bold text-gray-900 leading-snug">{ev.reason || "High risk detection."}</p>
                                                     </button>

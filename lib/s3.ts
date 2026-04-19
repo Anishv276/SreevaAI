@@ -5,16 +5,16 @@ const r2AccessKey = process.env.R2_ACCESS_KEY_ID;
 const r2SecretKey = process.env.R2_SECRET_ACCESS_KEY;
 
 if (!r2Endpoint || !r2AccessKey || !r2SecretKey) {
-  throw new Error("CRITICAL_CONFIGURATION_MISSING: R2_ENDPOINT, R2_ACCESS_KEY_ID, or R2_SECRET_ACCESS_KEY is not defined.");
+  console.warn("WARNING: S3/R2 configuration is incomplete. Uploads and deletions will fail until R2_ENDPOINT, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY are set in .env.");
 }
 
 const r2Client = new S3Client({
   region: "auto",
-  endpoint: r2Endpoint,
+  endpoint: r2Endpoint || "",
   forcePathStyle: true,
   credentials: {
-    accessKeyId: r2AccessKey,
-    secretAccessKey: r2SecretKey,
+    accessKeyId: r2AccessKey || "",
+    secretAccessKey: r2SecretKey || "",
   },
 });
 
@@ -30,6 +30,9 @@ export const putObject = async (bucket: string, key: string, body: Buffer, conte
   });
 
   try {
+    if (!process.env.R2_ENDPOINT) {
+      throw new Error("S3_UPLOAD_FAILED: Cloudflare R2 is not configured. Please set R2_ENDPOINT in your environment.");
+    }
     await r2Client.send(command);
 
     // Construct the public URL based on the BUCKET TYPE
@@ -74,7 +77,10 @@ export const deleteObject = async (bucket: string, key: string) => {
     });
 
     try {
-        await r2Client.send(command);
+        if (!process.env.R2_ENDPOINT) {
+      throw new Error("S3_UPLOAD_FAILED: Cloudflare R2 is not configured. Please set R2_ENDPOINT in your environment.");
+    }
+    await r2Client.send(command);
         console.log(`Successfully deleted ${normalizedKey} from bucket ${bucket}`);
         return true;
     } catch (error) {
@@ -92,7 +98,7 @@ export const getKeyFromUrl = (url: string) => {
     try {
         const urlObj = new URL(url);
         // The pathname usually starts with /, we strip it to get the S3 Key
-        let key = urlObj.pathname.substring(1);
+        const key = urlObj.pathname.substring(1);
         
         // Handle cases where the public URL includes the bucket name as the first segment
         // e.g. https://pub-abc.r2.dev/resumes/my-key.pdf -> resumes/my-key.pdf

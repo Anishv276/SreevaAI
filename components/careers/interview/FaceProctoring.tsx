@@ -553,7 +553,7 @@ export function FaceProctoring({
       videoRef.current = null;
     };
     // We intentionally run this only when isActive flips to true
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isActive]);
 
   // This component renders nothing — it's a pure side-effect engine

@@ -21,15 +21,23 @@ export interface CandidateMetadata {
 const apiKey = process.env.PINECONE_API_KEY;
 const indexName = process.env.PINECONE_INDEX_NAME || "transcripts";
 
+let pc: any = null;
+let index: any = null;
+
 if (!apiKey) {
-    throw new Error("CRITICAL_CONFIGURATION_MISSING: PINECONE_API_KEY is not defined.");
+    console.warn("WARNING: PINECONE_API_KEY is not defined. Semantic features will safely degrade.");
+    // Export a mock index to prevent crashes when methods are called
+    index = {
+        upsert: async () => {},
+        query: async () => ({ matches: [] }),
+        deleteMany: async () => {},
+    };
+} else {
+    pc = new Pinecone({ apiKey });
+    index = pc.index(indexName);
 }
 
-const pc = new Pinecone({
-    apiKey,
-});
-
-export const pineconeIndex = pc.index(indexName);
+export const pineconeIndex = index;
 
 /**
  * Helpers for managing embeddings in Pinecone

@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { generateId } from "../lib/ids";
 
 const prisma = new PrismaClient();
 
@@ -25,6 +26,7 @@ async function main() {
             name,
         },
         create: {
+            id: generateId("usr", name),
             email,
             password: hashedPassword,
             role: "ADMIN",

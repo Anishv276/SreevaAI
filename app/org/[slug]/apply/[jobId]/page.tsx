@@ -1,4 +1,4 @@
-﻿import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
@@ -33,7 +33,7 @@ export default async function BrandedApplyPage({ params }: { params: Promise<{ s
                     </div>
                 </div>
                 <Link href={`/org/${slug}/job/${jobId}`} className="text-[11px] font-black text-gray-400 hover:text-orange-600 uppercase tracking-widest transition-colors flex items-center gap-2">
-                    â† Back to Job Detail
+                    ← Back to Job Detail
                 </Link>
             </nav>
 

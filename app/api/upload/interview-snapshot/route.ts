@@ -25,7 +25,7 @@ export async function POST(request: Request) {
             if (!interview || interview.accessToken !== interviewToken) {
                 return NextResponse.json({ error: "Unauthorized: Invalid session token" }, { status: 401 });
             }
-            if (interview.status !== "INPROGRESS" && interview.status !== "PENDING") {
+            if (interview.status !== "IN_PROGRESS" && interview.status !== "PENDING") {
                 return NextResponse.json({ error: "Unauthorized: Interview is not in an active state" }, { status: 403 });
             }
         }

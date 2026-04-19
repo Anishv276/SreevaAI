@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/auth-context";
+import Link from "next/link";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -25,7 +26,7 @@ export default function LoginPage() {
                 body: JSON.stringify({ email, password }),
             });
 
-            const data = await res.json();
+            const data = await res.json().catch(() => ({ error: "Invalid server response" }));
 
             if (!res.ok) {
                 setError(data.error || "Login failed");
@@ -78,6 +79,12 @@ export default function LoginPage() {
                         <div className="space-y-2">
                             <div className="flex items-center justify-between">
                                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Security Password</label>
+                                <Link 
+                                    href="/login/forgot-password"
+                                    className="text-[10px] font-black text-[#F97316] hover:text-orange-600 uppercase tracking-widest transition-colors"
+                                >
+                                    Forgot?
+                                </Link>
                             </div>
                             <div className="relative">
                                 <input

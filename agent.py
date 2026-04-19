@@ -317,6 +317,71 @@ def infer_candidate_band(structured_resume_raw: Any, resume_text_block: str) -> 
     return "mid"
 
 
+def build_interview_turns(transcript_lines: list[Any]) -> list[dict[str, Any]]:
+    """Group raw transcript lines into question/answer turns."""
+    blocks: list[dict[str, Any]] = []
+
+    def _append_block(speaker: str, text: str) -> None:
+        text = (text or "").strip()
+        if not text:
+            return
+        if blocks and blocks[-1]["speaker"] == speaker:
+            blocks[-1]["text"] = f'{blocks[-1]["text"]} {text}'.strip()
+        else:
+            blocks.append({"speaker": speaker, "text": text})
+
+    for raw_line in transcript_lines or []:
+        if not isinstance(raw_line, str):
+            continue
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("Interviewer:"):
+            _append_block("Interviewer", line[len("Interviewer:"):].strip())
+        elif line.startswith("Candidate:"):
+            _append_block("Candidate", line[len("Candidate:"):].strip())
+        else:
+            _append_block("Interviewer", line)
+
+    turns: list[dict[str, Any]] = []
+    current_question: Optional[str] = None
+    current_answer_parts: list[str] = []
+    turn_index = 0
+
+    def _flush_turn() -> None:
+        nonlocal current_question, current_answer_parts, turn_index
+        question = (current_question or "").strip()
+        answer = " ".join(part.strip() for part in current_answer_parts if part.strip()).strip()
+        if question or answer:
+            turn_index += 1
+            turns.append({
+                "turn": turn_index,
+                "question": question,
+                "answer": answer,
+                "questionSpeaker": "Interviewer",
+                "answerSpeaker": "Candidate" if answer else None,
+            })
+        current_question = None
+        current_answer_parts = []
+
+    for block in blocks:
+        speaker = block["speaker"]
+        text = block["text"]
+        if speaker == "Interviewer":
+            if current_question is not None or current_answer_parts:
+                _flush_turn()
+            current_question = text
+        else:
+            if current_question is None:
+                current_question = ""
+            current_answer_parts.append(text)
+
+    if current_question is not None or current_answer_parts:
+        _flush_turn()
+
+    return turns
+
+
 def detect_role_category(job_title: str) -> str:
     """
     Classifies a job title into one of 5 role categories.
@@ -1802,6 +1867,7 @@ async def persist_transcript(
     try:
         full_text = "\n".join(transcript_lines) if transcript_lines else ""
         duration = int(time.time() - start_time) if start_time else 0
+        interview_turns = build_interview_turns(transcript_lines)
 
         # Build proctoring report (Phase 5 audit trail)
         proctor_report = None
@@ -1828,19 +1894,21 @@ async def persist_transcript(
                     "interviewDuration"   = $2,
                     status                = $3,
                     "proctoringReport"    = $4,
+                    "interviewTurns"      = $5,
                     "completedAt"         = NOW(),
                     "updatedAt"           = NOW()
-                WHERE "applicationId" = $5
+                WHERE "applicationId" = $6
                 """,
                 full_text,
                 duration,
                 final_status,
                 json.dumps(proctor_report) if proctor_report else None,
+                json.dumps(interview_turns),
                 app_id,
             )
             logger.info(
                 f"[TRANSCRIPT] Saved {len(transcript_lines)} lines, "
-                f"{duration}s duration, status={final_status} for app {app_id}"
+                f"{duration}s duration, {len(interview_turns)} turn(s), status={final_status} for app {app_id}"
             )
         finally:
             await conn.close()

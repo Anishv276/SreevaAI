@@ -66,7 +66,7 @@ export async function GET(req: Request) {
             const displayStatus = statusMap[compositeStatus] ?? statusMap[compositeStatus.toUpperCase()] ?? "Reviewing";
 
             // Initials from name
-            const initials = app.fullName
+            const initials = (app.fullName || "")
                 .split(" ")
                 .map((w) => w[0])
                 .join("")

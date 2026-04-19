@@ -11,17 +11,24 @@ const basePrisma =
 const extendedPrisma = basePrisma.$extends({
     query: {
         async $allOperations({ model, operation, args, query }) {
-            const TIMEOUT_MS = 20000; // 20 seconds hard limit
-            
-            return Promise.race([
-                query(args),
-                new Promise((_, reject) =>
-                    setTimeout(() => 
-                        reject(new Error(`Database Timeout: ${model ? `${model}.` : ''}${operation} exceeded ${TIMEOUT_MS}ms`)), 
-                        TIMEOUT_MS
-                    )
-                ),
-            ])
+            const TIMEOUT_MS = 20000;
+            let timeoutId: any;
+
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() =>
+                    reject(new Error(`Database Timeout: ${model ? `${model}.` : ''}${operation} exceeded ${TIMEOUT_MS}ms`)),
+                    TIMEOUT_MS
+                );
+            });
+
+            try {
+                const result = await Promise.race([query(args), timeoutPromise]);
+                clearTimeout(timeoutId);
+                return result;
+            } catch (err) {
+                clearTimeout(timeoutId);
+                throw err;
+            }
         },
     },
 })

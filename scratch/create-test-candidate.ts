@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { generateId } from "../lib/ids";
 
 const prisma = new PrismaClient();
 
@@ -11,6 +12,7 @@ async function main() {
 
   const application = await prisma.application.create({
     data: {
+      id: generateId("app", "Vamsi Fresh Test"),
       fullName: 'Vamsi Fresh Test',
       email: 'vamsi_fresh@example.com',
       phone: '9999999999',

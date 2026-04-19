@@ -246,7 +246,7 @@ async function searchCandidates(message: string, orgId: string) {
         };
     }
     
-    let where: any = { drive: { orgId } };
+    const where: any = { drive: { orgId } };
     
     // For skill search like "n8n" - search in resume skills, summary, and drive
     if (skill || name) {
@@ -345,7 +345,7 @@ async function searchCandidates(message: string, orgId: string) {
 async function filterByScore(message: string, orgId: string) {
     const { min, max } = extractScoreThreshold(message);
     
-    let where: any = { drive: { orgId } };
+    const where: any = { drive: { orgId } };
     
     if (min !== undefined) where.aiScore = { gte: min };
     if (max !== undefined) where.aiScore = { ...where.aiScore, lte: max };

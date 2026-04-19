@@ -1,4 +1,5 @@
-﻿import { Sidebar } from "@/components/layout/sidebar";
+import { Sidebar } from "@/components/layout/sidebar";
+import { Suspense } from "react";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -58,7 +59,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <OnboardingRedirect needsOnboarding={needsOnboarding} />
             
              <div className="relative z-10 flex w-full">
-                {showSidebar && <Sidebar />}
+                {showSidebar && (
+                    <Suspense fallback={<div className="w-64 bg-white/50 animate-pulse" />}>
+                        <Sidebar />
+                    </Suspense>
+                )}
                 
                 <div id="admin-main-wrapper" className={cn(
                     "flex-1 min-w-0 transition-all duration-500 ease-in-out", 

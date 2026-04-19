@@ -1,4 +1,5 @@
-﻿import type { Metadata } from "next";
+import { Suspense } from "react";
+import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { JobsProvider } from "@/context/jobs-context";
@@ -29,12 +30,14 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased" suppressHydrationWarning>
         <AuthProvider>
-          <JobsProvider>
-            <CandidatesProvider>
-              {children}
-              <Toaster />
-            </CandidatesProvider>
-          </JobsProvider>
+          <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#F8F9FB] animate-pulse">Loading Hirer.ai...</div>}>
+            <JobsProvider>
+              <CandidatesProvider>
+                {children}
+                <Toaster />
+              </CandidatesProvider>
+            </JobsProvider>
+          </Suspense>
         </AuthProvider>
       </body>
     </html>

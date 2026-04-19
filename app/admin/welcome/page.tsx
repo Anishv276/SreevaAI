@@ -26,8 +26,8 @@ export default function WelcomePage() {
                     fetch("/api/admin/organization")
                 ]);
                 
-                const prof = await profRes.json();
-                const org = await orgRes.json();
+                const prof = profRes.ok ? await profRes.json().catch(() => ({})) : {};
+                const org = orgRes.ok ? await orgRes.json().catch(() => ({})) : {};
                 
                 setData({
                     name: prof.name || "Admin",
@@ -65,14 +65,14 @@ export default function WelcomePage() {
 
     return (
         <main className="relative h-screen w-full overflow-hidden bg-white flex items-center justify-center font-sans tracking-tight">
-            {/* â•â•â• Background Mesh Gradients â•â•â• */}
+            {/* --- Background Mesh Gradients --- */}
             <div className="absolute inset-0 z-0">
                 <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#F97316]/10 rounded-full blur-[120px] animate-pulse" />
                 <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-500/10 rounded-full blur-[120px] animate-pulse delay-700" />
                 <div className="absolute top-[20%] right-[10%] w-[30%] h-[30%] bg-orange-200/20 rounded-full blur-[100px]" />
             </div>
 
-            {/* â•â•â• Content â•â•â• */}
+            {/* --- Content --- */}
             <div className="relative z-10 w-full max-w-2xl px-6">
                 <AnimatePresence>
                     <motion.div

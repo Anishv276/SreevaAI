@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw, Play, Pause } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon } from "lucide-react";
+import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
+import { toast } from "@/components/ui/toast-custom";
 import { CARTESIA_VOICES } from "@/lib/constants/voices";
 
 const PLANS = [
@@ -23,6 +25,7 @@ export default function NewOrgPage() {
     const [form, setForm] = useState({
         orgName: "",
         slug: "",
+        location: "",
         plan: "STARTER",
         adminName: "",
         adminEmail: "",
@@ -110,16 +113,17 @@ export default function NewOrgPage() {
                 body: JSON.stringify(form),
             });
 
-            const data = await res.json();
-
             if (!res.ok) {
-                setError(data.error || "Failed to create organization");
+                const data = await res.json();
+                toast.error(data.error || "Failed to create organization");
                 return;
             }
 
+            const result = await res.json();
+            toast.success("Client account provisioned successfully!");
             setSuccess({ orgName: form.orgName, adminEmail: form.adminEmail });
         } catch {
-            setError("Connection error. Try again.");
+            toast.error("Initialization failed. Check network connectivity.");
         } finally {
             setLoading(false);
         }
@@ -156,7 +160,7 @@ export default function NewOrgPage() {
 
                     <div className="flex flex-col sm:flex-row gap-4 pt-4">
                         <button
-                            onClick={() => { setSuccess(null); setForm({ orgName: "", slug: "", plan: "STARTER", adminName: "", adminEmail: "", adminPassword: "", ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", cartesiaModel: "sonic-english", sarvamModel: "bulbul:v3", sarvamVoice: "shubh", sttProvider: "DEEPGRAM", deepgramModel: "nova-3-general", sarvamSttModel: "saaras:v3", llmProvider: "OPENAI", llmModel: "gpt-4o", llmTemperature: 0.7 }); }}
+                            onClick={() => { setSuccess(null); setForm({ orgName: "", slug: "", location: "", plan: "STARTER", adminName: "", adminEmail: "", adminPassword: "", ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", cartesiaModel: "sonic-english", sarvamModel: "bulbul:v3", sarvamVoice: "shubh", sttProvider: "DEEPGRAM", deepgramModel: "nova-3-general", sarvamSttModel: "saaras:v3", llmProvider: "OPENAI", llmModel: "gpt-4o", llmTemperature: 0.7 }); }}
                             className="flex-1 h-10 rounded-xl border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50"
                         >
                             Add Another
@@ -253,30 +257,43 @@ export default function NewOrgPage() {
                             </div>
                         </div>
 
-                        <div className="space-y-4">
-                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 block">Select Enterprise Plan</label>
-                            <div className="grid gap-3">
-                                {PLANS.map(plan => (
-                                    <button
-                                        key={plan.id}
-                                        type="button"
-                                        onClick={() => setForm(prev => ({ ...prev, plan: plan.id }))}
-                                        className={`flex items-center justify-between p-3 rounded-xl border transition-all text-left ${
-                                            form.plan === plan.id 
-                                                ? `${plan.border} ${plan.bg} shadow-md` 
-                                                : "border-gray-50 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-100 opacity-60 hover:opacity-100"
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-2 h-2 rounded-full ${form.plan === plan.id ? "bg-[#F97316] animate-pulse" : "bg-gray-300"}`} />
-                                            <div>
-                                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-900">{plan.label}</p>
-                                                <p className="text-[10px] font-bold text-gray-400 mt-0.5">{plan.desc}</p>
+                        <div className="space-y-6">
+                            <div className="space-y-2">
+                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2 leading-none">
+                                    <MapPinIcon className="h-3 w-3" /> Physical Headquarters
+                                </label>
+                                <LocationAutocomplete
+                                    value={form.location || ""}
+                                    onChange={val => setForm({ ...form, location: val })}
+                                    placeholder="e.g. Bangalore, India"
+                                />
+                            </div>
+
+                            <div className="space-y-4">
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 block">Select Enterprise Plan</label>
+                                <div className="grid gap-3">
+                                    {PLANS.map(plan => (
+                                        <button
+                                            key={plan.id}
+                                            type="button"
+                                            onClick={() => setForm(prev => ({ ...prev, plan: plan.id }))}
+                                            className={`flex items-center justify-between p-3 rounded-xl border transition-all text-left ${
+                                                form.plan === plan.id
+                                                    ? `${plan.border} ${plan.bg} shadow-md`
+                                                    : "border-gray-50 bg-gray-50/50 hover:bg-gray-50 hover:border-gray-100 opacity-60 hover:opacity-100"
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-2 h-2 rounded-full ${form.plan === plan.id ? "bg-[#F97316] animate-pulse" : "bg-gray-300"}`} />
+                                                <div>
+                                                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-900">{plan.label}</p>
+                                                    <p className="text-[10px] font-bold text-gray-400 mt-0.5">{plan.desc}</p>
+                                                </div>
                                             </div>
-                                        </div>
-                                        {form.plan === plan.id && <ShieldCheck className="h-4 w-4 text-[#F97316]" />}
-                                    </button>
-                                ))}
+                                            {form.plan === plan.id && <ShieldCheck className="h-4 w-4 text-[#F97316]" />}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     </div>

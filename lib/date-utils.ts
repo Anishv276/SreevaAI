@@ -48,8 +48,9 @@ export function getRangeWindow(range: string, from?: string, to?: string): { sta
     if (range === "custom" && from && to) {
         const start = new Date(from);
         const end = new Date(to);
-        const diff = end.getTime() - start.getTime();
-        const prevStart = new Date(start.getTime() - diff);
+        const diffDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        const prevStart = new Date(start);
+        prevStart.setDate(start.getDate() - diffDays);
         return { start, prevStart, prevEnd: new Date(start) };
     }
     

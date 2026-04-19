@@ -39,10 +39,10 @@ async function migrate() {
     });
 
     for (const drive of drivesWithDetails) {
-        let details = drive.extractedDetails;
+        const details = drive.extractedDetails;
         if (!details) continue;
 
-        let detailsStr = typeof details === 'string' ? details : JSON.stringify(details);
+        const detailsStr = typeof details === 'string' ? details : JSON.stringify(details);
         const regex = /(\d+(?:\s*[–—-]\s*\d+)?)\s*INR\s*LPA/gi;
 
         if (regex.test(detailsStr)) {
@@ -60,10 +60,10 @@ async function migrate() {
 
     console.log(`Checking ${applications.length} applications for submissionData...`);
     for (const app of applications) {
-        let data = app.submissionData;
+        const data = app.submissionData;
         if (!data) continue;
 
-        let dataStr = JSON.stringify(data);
+        const dataStr = JSON.stringify(data);
         const regex = /(\d+(?:\s*[–—-]\s*\d+)?)\s*INR\s*LPA/gi;
 
         if (regex.test(dataStr)) {

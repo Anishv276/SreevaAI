@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import { 
@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 
 /*  Section nav  */
 const sections = [
+    { id: "profile", icon: ShieldCheck, label: "Profile" },
     { id: "password", icon: Lock, label: "Password" },
     { id: "domains", icon: Globe, label: "Platform Domain" },
 ];
@@ -48,7 +49,11 @@ function SettingsCard({ title, description, children }: { title: string; descrip
 }
 
 export default function SuperAdminSettingsPage() {
-    const [activeSection, setActiveSection] = useState("password");
+    const [activeSection, setActiveSection] = useState("profile");
+    
+    // Profile state
+    const [profile, setProfile] = useState({ name: "", email: "" });
+    const [isLoadingProfile, setIsLoadingProfile] = useState(true);
     
     // Password state
     const [currentPassword, setCurrentPassword] = useState("");
@@ -148,7 +153,23 @@ export default function SuperAdminSettingsPage() {
         }
     };
 
+    const fetchProfile = async () => {
+        setIsLoadingProfile(true);
+        try {
+            const res = await fetch("/api/auth/profile");
+            if (res.ok) {
+                const data = await res.json();
+                setProfile({ name: data.name || "", email: data.email || "" });
+            }
+        } catch (err) {
+            console.error("Profile fetch failed:", err);
+        } finally {
+            setIsLoadingProfile(false);
+        }
+    };
+
     useEffect(() => {
+        fetchProfile();
         fetchDomainInfo();
     }, []);
 
@@ -218,6 +239,29 @@ export default function SuperAdminSettingsPage() {
         }
     };
 
+    const handleSaveProfile = async () => {
+        setIsSaving(true);
+        setError("");
+        try {
+            const res = await fetch("/api/auth/profile", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(profile)
+            });
+            if (res.ok) {
+                setSaved(true);
+                setTimeout(() => setSaved(false), 3000);
+            } else {
+                const data = await res.json();
+                setError(data.error || "Failed to update profile");
+            }
+        } catch (err) {
+            setError("Network error");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-[#FDFDFD] p-8 lg:p-12 animate-fade-slide text-gray-900 font-medium pb-24">
             
@@ -253,6 +297,67 @@ export default function SuperAdminSettingsPage() {
                 </aside>
 
                 <div className="space-y-12 min-h-[600px]">
+                    {/* Profile Section */}
+                    {activeSection === "profile" && (
+                        <div className="bg-white border border-gray-100 rounded-xl p-8 shadow-sm relative pb-32 animate-in slide-in-from-bottom-2 duration-300">
+                            <div className="space-y-2 mb-14">
+                                <h2 className="text-2xl font-black text-gray-950 tracking-tight uppercase italic leading-none">Super Admin Profile</h2>
+                                <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px] italic opacity-60">Manage your root administrative identity</p>
+                            </div>
+
+                            <div className="space-y-10 max-w-4xl">
+                                <div className="grid md:grid-cols-2 gap-10">
+                                    <div className="space-y-4">
+                                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Full Name</label>
+                                        <div className="relative group">
+                                            <Input
+                                                value={profile.name}
+                                                onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
+                                                placeholder="Enter Name"
+                                                className="w-full h-10 pl-6 rounded-xl border border-gray-200 bg-white text-[14px] font-medium shadow-sm hover:border-orange-300 focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] transition-all"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Email Address</label>
+                                        <div className="relative group">
+                                            <Input
+                                                type="email"
+                                                value={profile.email}
+                                                onChange={e => setProfile(p => ({ ...p, email: e.target.value }))}
+                                                placeholder="admin@lumoscale.com"
+                                                className="w-full h-10 pl-6 rounded-xl border border-gray-200 bg-white text-[14px] font-medium shadow-sm hover:border-orange-300 focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] transition-all"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {error && (
+                                    <div className="p-6 rounded-2xl bg-red-50 border border-red-100 text-red-600 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-4 animate-shake">
+                                        <AlertCircle className="h-5 w-5 opacity-70" /> {error}
+                                    </div>
+                                )}
+
+                                {saved && (
+                                    <div className="p-6 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-600 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-4 animate-in-up">
+                                        <CheckCircle2 className="h-5 w-5 opacity-70" /> Profile Synchronized Successfully
+                                    </div>
+                                )}
+
+                                {/* CTA Button */}
+                                <div className="absolute bottom-12 right-12">
+                                    <button
+                                        onClick={handleSaveProfile}
+                                        disabled={isSaving || !profile.name || !profile.email}
+                                        className="h-10 px-6 rounded-xl font-bold text-[13px] shadow-md hover:shadow-lg transition-all bg-[#F97316] text-white disabled:opacity-50 flex items-center justify-center italic"
+                                    >
+                                        {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : "Update Profile"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Password Section */}
                     {activeSection === "password" && (
                         <div className="bg-white border border-gray-100 rounded-xl p-8 shadow-sm relative pb-32 animate-in slide-in-from-bottom-2 duration-300">

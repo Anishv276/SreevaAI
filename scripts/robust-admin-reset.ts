@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { generateId } from "../lib/ids";
 
 const prisma = new PrismaClient();
 
@@ -19,13 +20,13 @@ async function main() {
     const u1 = await prisma.user.upsert({
         where: { email: email1 },
         update: { password: hashedPassword, role: "ADMIN", orgId: orgId, name },
-        create: { email: email1, password: hashedPassword, role: "ADMIN", orgId: orgId, name },
+        create: { id: generateId("usr", name), email: email1, password: hashedPassword, role: "ADMIN", orgId: orgId, name },
     });
 
     const u2 = await prisma.user.upsert({
         where: { email: email2 },
         update: { password: hashedPassword, role: "ADMIN", orgId: orgId, name },
-        create: { email: email2, password: hashedPassword, role: "ADMIN", orgId: orgId, name },
+        create: { id: generateId("usr", name), email: email2, password: hashedPassword, role: "ADMIN", orgId: orgId, name },
     });
 
     console.log(`\n✅ SUCCESS: Admin Accounts are Ready!`);

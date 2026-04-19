@@ -3,7 +3,10 @@ import OpenAI from "openai";
 
 // Initialize OpenAI client
 // Ensure OPENAI_API_KEY is set in .env
-const apiKey = process.env.OPENAI_API_KEY || "dummy-key-for-mock-mode";
+const apiKey = process.env.OPENAI_API_KEY;
+if (!apiKey || apiKey === "dummy-key-for-mock-mode") {
+    throw new Error("CRITICAL_CONFIGURATION_ERROR: OPENAI_API_KEY is missing from environment variables. Please set a valid key in .env to use AI features.");
+}
 const openai = new OpenAI({
     apiKey: apiKey,
 });

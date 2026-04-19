@@ -9,13 +9,124 @@ import { generateInterviewReport } from "@/lib/interview-analysis";
 
 export const runtime = "nodejs";
 
+function buildInterviewTurns(transcript: string): Array<{
+  turn: number;
+  question: string;
+  answer: string;
+  questionSpeaker: "Interviewer";
+  answerSpeaker: "Candidate" | null;
+}> {
+  const lines = (transcript || "").split(/\r?\n/);
+  const blocks: Array<{ speaker: "Interviewer" | "Candidate"; text: string }> = [];
+
+  const pushBlock = (speaker: "Interviewer" | "Candidate", text: string) => {
+    const cleaned = text.trim();
+    if (!cleaned) return;
+    const last = blocks[blocks.length - 1];
+    if (last && last.speaker === speaker) {
+      last.text = `${last.text} ${cleaned}`.trim();
+      return;
+    }
+    blocks.push({ speaker, text: cleaned });
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.toLowerCase().startsWith("interviewer:")) {
+      pushBlock("Interviewer", line.slice("Interviewer:".length));
+    } else if (line.toLowerCase().startsWith("candidate:")) {
+      pushBlock("Candidate", line.slice("Candidate:".length));
+    } else {
+      pushBlock("Interviewer", line);
+    }
+  }
+
+  const turns: Array<{
+    turn: number;
+    question: string;
+    answer: string;
+    questionSpeaker: "Interviewer";
+    answerSpeaker: "Candidate" | null;
+  }> = [];
+  let currentQuestion = "";
+  let currentAnswerParts: string[] = [];
+  let turnIndex = 0;
+
+  const flush = () => {
+    const question = currentQuestion.trim();
+    const answer = currentAnswerParts.join(" ").trim();
+    if (!question && !answer) return;
+    turnIndex += 1;
+    turns.push({
+      turn: turnIndex,
+      question,
+      answer,
+      questionSpeaker: "Interviewer",
+      answerSpeaker: answer ? "Candidate" : null,
+    });
+    currentQuestion = "";
+    currentAnswerParts = [];
+  };
+
+  for (const block of blocks) {
+    if (block.speaker === "Interviewer") {
+      if (currentQuestion || currentAnswerParts.length) flush();
+      currentQuestion = block.text;
+    } else {
+      if (!currentQuestion) currentQuestion = "";
+      currentAnswerParts.push(block.text);
+    }
+  }
+
+  if (currentQuestion || currentAnswerParts.length) flush();
+  return turns;
+}
+
+function normalizeReportTurns(interviewTurns: Array<{
+  turn?: number;
+  question?: string;
+  answer?: string;
+}>) {
+  return interviewTurns
+    .map((turn, idx) => {
+      const question = String(turn.question || "").trim();
+      const answer = String(turn.answer || "").trim();
+      const shortAnswer = answer || "Candidate response was not captured clearly.";
+      const reasoning = answer
+        ? "Transcript captured for this answer; analytical reasoning was not generated."
+        : "Candidate response was not captured clearly.";
+      const lowConfidence = answer.length < 40 ? "Confidence: Low -- brief answer" : "Confidence: Medium -- transcript-backed";
+      const score = !answer
+        ? "--"
+        : /i don't know|i do not know|not sure|no idea|not good at/i.test(answer)
+          ? "0/10"
+          : answer.length < 25
+            ? "1/10"
+            : answer.length < 80
+              ? "3/10"
+              : "5/10";
+
+      return {
+        q: Number(turn.turn || idx + 1),
+        question: question || `Question ${idx + 1}`,
+        answer: shortAnswer,
+        reasoning,
+        score,
+        confidence: lowConfidence,
+      };
+    })
+    .filter((row) => row.question || row.reasoning || row.answer);
+}
+
 async function persistInterviewUpdateRaw(params: {
   applicationId: string;
   recordingUrl?: string;
   transcript?: string;
   interviewStatus?: string;
+  interviewTurns?: unknown;
 }) {
-  const { applicationId, recordingUrl, transcript, interviewStatus } = params;
+  const { applicationId, recordingUrl, transcript, interviewStatus, interviewTurns } = params;
   const finalStatus = interviewStatus || "COMPLETED";
 
   const app = await prisma.application.findUnique({
@@ -27,14 +138,15 @@ async function persistInterviewUpdateRaw(params: {
 
   await prisma.$executeRawUnsafe(
     `
-    INSERT INTO "Interview" (id, "applicationId", "accessToken", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "completedAt", "createdAt", "updatedAt")
-    VALUES ($1, $2, $3, COALESCE($4::text, 'COMPLETED'), $5, CASE WHEN $5::text IS NOT NULL THEN NOW() ELSE NULL END, $6, CASE WHEN COALESCE($4::text, 'COMPLETED') = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
+    INSERT INTO "Interview" (id, "applicationId", "accessToken", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "interviewTurns", "completedAt", "createdAt", "updatedAt")
+    VALUES ($1, $2, $3, COALESCE($4::text, 'COMPLETED'), $5, CASE WHEN $5::text IS NOT NULL THEN NOW() ELSE NULL END, $6, COALESCE($7::jsonb, '[]'::jsonb), CASE WHEN COALESCE($4::text, 'COMPLETED') = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
     ON CONFLICT ("applicationId")
     DO UPDATE SET
       status = COALESCE($4::text, 'COMPLETED'),
       "interviewRecordingUrl" = COALESCE($5::text, "Interview"."interviewRecordingUrl"),
       "interviewRecordedAt" = CASE WHEN $5::text IS NOT NULL THEN NOW() ELSE "Interview"."interviewRecordedAt" END,
       "interviewTranscript" = COALESCE($6::text, "Interview"."interviewTranscript"),
+      "interviewTurns" = COALESCE($7::jsonb, "Interview"."interviewTurns"),
       "completedAt" = CASE WHEN COALESCE($4::text, 'COMPLETED') = 'COMPLETED' THEN NOW() ELSE "Interview"."completedAt" END,
       "updatedAt" = NOW()
     `,
@@ -43,7 +155,8 @@ async function persistInterviewUpdateRaw(params: {
     accessToken,
     finalStatus,
     recordingUrl || null,
-    transcript || null
+    transcript || null,
+    JSON.stringify(interviewTurns ?? []),
   );
 }
 
@@ -111,11 +224,18 @@ export async function POST(req: Request) {
     
     const transcriptRaw = transcript;
     const finalTranscript = transcriptRaw?.trim();
+    const interviewTurns = finalTranscript ? buildInterviewTurns(finalTranscript) : [];
     const finalDuration = typeof duration === 'number' ? duration : (duration ? parseInt(String(duration)) : null);
 
     console.log(`[FINALIZE] ${applicationId} | status=${interviewStatus} | duration=${finalDuration}s`);
 
-    await persistInterviewUpdateRaw({ applicationId, recordingUrl, transcript: finalTranscript, interviewStatus });
+    await persistInterviewUpdateRaw({
+      applicationId,
+      recordingUrl,
+      transcript: finalTranscript,
+      interviewStatus,
+      interviewTurns,
+    });
 
     // Duration: use client-sent value, else compute from startedAt
     let resolvedDuration = finalDuration;
@@ -216,6 +336,19 @@ export async function POST(req: Request) {
             proctoringEvents,
             orgId: app.drive?.orgId || undefined,
           });
+
+          const turnRows = normalizeReportTurns(interviewTurns.length > 0 ? interviewTurns : buildInterviewTurns(transcriptForReport));
+          if (!Array.isArray(report.qa_blocks) || report.qa_blocks.length === 0) {
+            report.qa_blocks = turnRows.map((row) => ({
+              q: row.q,
+              title: row.question,
+              tags: ["Transcript", "Interview"],
+              score: row.score,
+              scoreColor: row.score === "--" ? "text-gray-300" : "text-orange-500",
+              verdict: row.reasoning,
+              confidence: row.confidence,
+            }));
+          }
 
           await persistInterviewReportRaw({
             applicationId,

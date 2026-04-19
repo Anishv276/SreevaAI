@@ -3,6 +3,8 @@
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Building2, ShieldCheck, Globe, Loader2, User, Mail, ShieldAlert, RefreshCw, Lock, Play, Pause, MapPin as MapPinIcon } from "lucide-react";
+import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
+import { toast } from "@/components/ui/toast-custom";
 import { CARTESIA_VOICES } from "@/lib/constants/voices";
 
 
@@ -18,7 +20,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
-    const [saved, setSaved] = useState(false);
 
 
     const [form, setForm] = useState({
@@ -26,10 +27,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         slug: "",
         plan: "STARTER",
         location: "",
-        phone: "",
-        expectedDrives: "",
-        expectedCandidates: "",
-        expectedInterviews: "",
+        adminName: "",
+        adminEmail: "",
         ttsProvider: "CARTESIA",
         cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
         cartesiaModel: "sonic-english",
@@ -61,10 +60,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         slug: data.slug || "",
                         plan: data.plan || "STARTER",
                         location: data.location || "",
-                        phone: data.phone || "",
-                        expectedDrives: data.expectedDrives != null ? String(data.expectedDrives) : "",
-                        expectedCandidates: data.expectedCandidates != null ? String(data.expectedCandidates) : "",
-                        expectedInterviews: data.expectedInterviews != null ? String(data.expectedInterviews) : "",
+                        adminName: data.users && data.users.length > 0 ? data.users[0].name : "",
+                        adminEmail: data.users && data.users.length > 0 ? data.users[0].email : "",
                         ttsProvider: data.ttsProvider || "CARTESIA",
                         cartesiaVoiceId: data.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
                         cartesiaModel: data.cartesiaModel || "sonic-english",
@@ -144,8 +141,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
-        setError("");
-        setSaved(false);
 
         try {
             const payload = {
@@ -160,14 +155,13 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
 
             if (!res.ok) {
                 const data = await res.json();
-                setError(data.error || "Failed to update records");
+                toast.error(data.error || "Failed to update records");
                 return;
             }
 
-            setSaved(true);
-            setTimeout(() => setSaved(false), 3000);
+            toast.success("Organization configuration synchronized.");
         } catch {
-            setError("Connection error. Try again.");
+            toast.error("Connection error. Try again.");
         } finally {
             setSaving(false);
         }
@@ -264,42 +258,11 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                 <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2 leading-none">
                                     <MapPinIcon className="h-3 w-3" /> Physical Headquarters
                                 </label>
-                                <input
-                                    value={form.location}
-                                    onChange={e => setForm(prev => ({ ...prev, location: e.target.value }))}
+                                <LocationAutocomplete
+                                    value={form.location || ""}
+                                    onChange={val => setForm({ ...form, location: val })}
                                     placeholder="e.g. Bangalore, India"
-                                    className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium focus:ring-2 focus:ring-[#F97316]/30"
                                 />
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Phone</label>
-                                <input
-                                    value={form.phone}
-                                    onChange={e => setForm(prev => ({ ...prev, phone: e.target.value }))}
-                                    placeholder="e.g. +91 9999999999"
-                                    className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium focus:ring-2 focus:ring-[#F97316]/30"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-3 gap-3">
-                                {[
-                                    { key: "expectedDrives", label: "Expected Drives" },
-                                    { key: "expectedCandidates", label: "Candidates" },
-                                    { key: "expectedInterviews", label: "Interviews" },
-                                ].map(({ key, label }) => (
-                                    <div key={key} className="space-y-2">
-                                        <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest leading-none">{label}</label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            value={(form as any)[key]}
-                                            onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
-                                            placeholder="0"
-                                            className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium focus:ring-2 focus:ring-[#F97316]/30"
-                                        />
-                                    </div>
-                                ))}
                             </div>
 
                             
@@ -342,25 +305,30 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     </div>
 
                     <div className="grid md:grid-cols-2 gap-8 bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
-                        <div className="space-y-2 opacity-60 blur-[0.3px]">
+                        <div className="space-y-2">
                             <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2 leading-none">
                                 <User className="h-3 w-3" /> Full Name
                             </label>
-                            <div className="h-10 w-full rounded-xl border border-gray-100 bg-gray-50 px-3 text-sm font-bold flex items-center text-gray-400">
-                                {adminInfo?.name || "N/A"}
-                            </div>
+                            <input
+                                value={form.adminName}
+                                onChange={e => setForm(prev => ({ ...prev, adminName: e.target.value }))}
+                                placeholder="Admin Name"
+                                className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium focus:ring-2 focus:ring-[#F97316]/30"
+                            />
                         </div>
 
-                        <div className="space-y-2 opacity-60 blur-[0.3px]">
+                        <div className="space-y-2">
                             <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2 leading-none">
                                 <Mail className="h-3 w-3" /> Business Email
                             </label>
-                            <div className="h-10 w-full rounded-xl border border-gray-100 bg-gray-50 px-3 text-sm font-bold flex items-center text-gray-400">
-                                {adminInfo?.email || "N/A"}
-                            </div>
+                            <input
+                                type="email"
+                                value={form.adminEmail}
+                                onChange={e => setForm(prev => ({ ...prev, adminEmail: e.target.value }))}
+                                placeholder="admin@company.com"
+                                className="h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium focus:ring-2 focus:ring-[#F97316]/30"
+                            />
                         </div>
-
-
                     </div>
                 </div>
 
@@ -721,28 +689,14 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     </div>
                 </div>
 
-                {error && (
-                    <div className="p-6 rounded-2xl bg-red-50 border border-red-100 text-red-500 text-xs font-black uppercase tracking-widest flex items-center gap-4 animate-in-up">
-                        <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
-                        {error}
-                    </div>
-                )}
-
-                <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-6 border-t border-gray-50">
-                    <div className="flex items-center gap-4">
-                        {saved && (
-                            <div className="flex items-center gap-2 text-emerald-500 text-[10px] font-black uppercase tracking-widest animate-in-up">
-                                <CheckCircle2 className="h-4 w-4" /> Config Synced
-                            </div>
-                        )}
-                    </div>
+                <div className="pt-4 flex flex-col sm:flex-row items-center justify-end gap-6 border-t border-gray-50">
                     <div className="flex gap-4 w-full sm:w-auto">
                         <button
                             type="button"
                             onClick={() => router.back()}
                             className="flex-1 sm:px-10 h-10 rounded-xl border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50 transition-all font-bold"
                         >
-                            Abandon
+                            Cancel
                         </button>
                         <button
                             type="submit"

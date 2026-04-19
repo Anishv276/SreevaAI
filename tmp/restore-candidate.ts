@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { generateId } from "../lib/ids";
 const prisma = new PrismaClient();
 
 async function restore() {
@@ -6,6 +7,7 @@ async function restore() {
         where: { applicationId: 'cmnpvrbwt000311x3ehtyxytw' },
         update: { status: 'PENDING' },
         create: {
+            id: generateId("int", "restore-candidate"),
             applicationId: 'cmnpvrbwt000311x3ehtyxytw',
             status: 'PENDING'
         }

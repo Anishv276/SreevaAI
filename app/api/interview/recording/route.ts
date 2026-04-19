@@ -191,7 +191,7 @@ export async function POST(req: Request) {
                     await prisma.application.update({
                         where: { id: applicationId },
                         data: { 
-                            interviewStatus: 'finished',
+                            interviewStatus: 'COMPLETED',
                             updatedAt: new Date(),
                         },
                     });

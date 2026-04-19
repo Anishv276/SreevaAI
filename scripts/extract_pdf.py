@@ -783,8 +783,10 @@ FIELD-BY-FIELD INSTRUCTIONS — READ EVERY LINE
 
 1. recruiter_snapshot:
    - EXACTLY 2-3 sentences. Start with the candidate's name if known, otherwise "This candidate".
-   - Name actual companies and skills. Be direct. No vague adjectives.
-   - Example: "Aditya brings 4 years of Python and React experience across two product startups (Zepto, Groww). Strong backend depth with measurable delivery but no enterprise-scale exposure, which is the primary gap for this role."
+   - State what the person is actually capable of doing today.
+   - Name the deepest expertise areas, the strongest evidence, and the biggest gap in the same paragraph.
+   - Use company names, tools, projects, and measurable evidence. No vague adjectives.
+   - This section should answer: "What can this candidate do, and what are they not ready for yet?"
 
 2. strengths (MUST return MINIMUM 3, MAXIMUM 5):
    - Each strength must be a distinct, specific capability with hard evidence.
@@ -797,6 +799,7 @@ FIELD-BY-FIELD INSTRUCTIONS — READ EVERY LINE
    - "point": the gap headline (e.g., "No enterprise AWS deployment experience")
    - "missing_skills": list the exact skill names missing (use same normalized names as JD must-haves)
    - "impact": explain precisely WHY this gap matters for THIS role. Name what they'd fail to do on day 1.
+   - If the candidate is weak on the role, make the concern sharp enough that HR can see why they should not move forward.
 
 4. work_history_annotated — ANNOTATE EVERY ROLE:
    For EACH role in the WORK HISTORY section above, produce one entry:
@@ -822,28 +825,37 @@ FIELD-BY-FIELD INSTRUCTIONS — READ EVERY LINE
      BAD: "Learn cloud computing"
      GOOD: "Get AWS Solutions Architect Associate certified — this role requires independent infra ownership"
    - readiness_timeline: realistic range like "Immediately — strong match", "3-6 months", "6-12 months", "12-18 months"
+   - The output should help HR decide whether this candidate is worth moving to the next step or whether the gap is too large.
 
-7. seniority_alignment:
+7. candidate_potential:
+   - "for_this_role" must be Low / Medium / High.
+   - "reasoning" must explain what the candidate is capable of right now, not generic potential.
+   - This should read like a recruiter's one-line fit assessment.
+
+8. seniority_alignment:
    - candidate_level and jd_level: 0=Intern, 1=Junior, 2=Mid, 3=Senior, 4=Lead/Principal
    - candidate_label and jd_label: human-readable e.g., "Mid-level", "Senior", "Lead"
 
-8. career_progression_details:
+9. career_progression_details:
    - pattern: e.g., "Linear Upward", "Cross-functional Pivot", "Lateral (same level)", "Declining", "Freelance/Portfolio"
    - role_flow: one sentence describing the career arc (e.g., "SDE → Senior SDE → Tech Lead at increasing company sizes")
    - company_types: comma-separated summary (e.g., "Early Stage Startup, Product Startup, MNC")
    - tenure_avg: e.g., "14 months average" — calculate from actual durations
    - pattern_note, company_note, tenure_note: one-line recruiter commentary on each dimension
 
-9. decision_reason — THE SHARP LINE:
+10. decision_reason — THE SHARP LINE:
    - EXACTLY 1 sentence. The single most decisive reason for the status verdict.
    - If Shortlisted: "What clinches it." e.g., "5 of 6 must-haves confirmed with direct project evidence across 3 companies."
    - If Borderline: "What tips it." e.g., "Strong Python depth but zero cloud deployment experience in a role that requires day-1 AWS ownership."
    - If Rejected: "The hard stopper." e.g., "Missing 4 of 5 must-have skills with no transferable evidence across any role."
    - No hedging. No softening. One precise, recruiter-grade sentence.
 
-10. ai_verdict:
-    - 3-5 sentences. Executive summary combining score, key strengths, critical gaps, and recommendation.
+11. ai_verdict:
+    - 3-5 sentences. This is the Expert Synthesis section for HR.
+    - Must combine: what the candidate can do, how well they match the must-have criteria, the deepest expertise signal, and whether they should move to the next step.
     - Name companies and skills. Ground every claim in evidence from the resume.
+    - State clearly why shortlisted / why not shortlisted.
+    - If there is a clear role mismatch, say it plainly; if there is a strong fit, say what gives confidence.
 
 Return ONLY valid JSON in this EXACT schema (no markdown, no code fences):
 
