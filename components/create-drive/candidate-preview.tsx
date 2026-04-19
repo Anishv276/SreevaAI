@@ -29,13 +29,13 @@ export function CandidatePreview({ formData, customFields = [], regFieldCount, o
         : ["Build scalable AI solutions", "Collaborate with cross-functional teams", "Design and implement new features"];
 
     const requirements = formData.requirements
-        ? formData.requirements.split("\n").map((s: string) => s.replace(/^[â€¢\-\*]\s*/, '').trim()).filter((s: string) => s.length > 0)
+        ? formData.requirements.split("\n").map((s: string) => s.replace(/^[•\-\*]\s*/, '').trim()).filter((s: string) => s.length > 0)
         : ["Bachelor's degree in CS", "3+ years of experience"];
 
     const skills = formData.skills
         ? formData.skills.indexOf(',') !== -1 
             ? formData.skills.split(",").map((s: string) => s.trim()).filter((s: string) => s.length > 0)
-            : formData.skills.split("\n").map((s: string) => s.trim().replace(/^[â€¢\-\*]\s*/, '')).filter((s: string) => s.length > 0)
+            : formData.skills.split("\n").map((s: string) => s.trim().replace(/^[•\-\*]\s*/, '')).filter((s: string) => s.length > 0)
         : ["React", "Node.js", "TypeScript", "Next.js", "PostgreSQL"];
 
     const inputClass = "h-12 w-full rounded-2xl border border-gray-100 bg-gray-50/50 px-5 text-sm font-medium text-gray-500 placeholder:text-gray-300 flex items-center transition-all hover:border-orange-100 hover:bg-white";

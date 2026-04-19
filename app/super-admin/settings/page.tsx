@@ -28,13 +28,13 @@ import { Button } from "@/components/ui/button";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { cn } from "@/lib/utils";
 
-/* â”€â”€ Section nav â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/*  Section nav  */
 const sections = [
     { id: "password", icon: Lock, label: "Password" },
     { id: "domains", icon: Globe, label: "Platform Domain" },
 ];
 
-/* â”€â”€ Reusable card wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/*  Reusable card wrapper  */
 function SettingsCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
     return (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-visible">

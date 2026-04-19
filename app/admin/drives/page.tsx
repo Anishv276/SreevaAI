@@ -683,7 +683,7 @@ export default function DrivesPage() {
                                         <h2 className="text-xl font-bold text-gray-900 tracking-tight">{selectedDrive.title}</h2>
                                         <div className="h-5 px-2 rounded-md bg-gray-100 text-gray-500 border border-gray-200 font-bold text-[9px] uppercase tracking-wider flex items-center">Open</div>
                                     </div>
-                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{selectedDrive.role || "Job Description"} â€¢ {selectedDrive.department || "General"}</p>
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{selectedDrive.role || "Job Description"} • {selectedDrive.department || "General"}</p>
                                 </div>
                             </div>
                             <button

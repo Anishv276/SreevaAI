@@ -127,7 +127,7 @@ export function FinalPreview({ formData, aiEnabled, weights, regFieldCount }: Fi
                                         <div>
                                             <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Limit & Questions</p>
                                             <p className="font-bold text-gray-700 mt-0.5">
-                                                {formData.interviewTime || 10} Mins â€¢ {(() => {
+                                                {formData.interviewTime || 10} Mins • {(() => {
                                                     const qs = formData.interviewQuestions;
                                                     if (Array.isArray(qs)) return qs.length;
                                                     if (typeof qs === 'string' && qs.trim()) {

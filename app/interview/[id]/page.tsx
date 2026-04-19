@@ -126,20 +126,20 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [isTabViolation, setIsTabViolation] = useState(false);
     const [isFullscreenViolation, setIsFullscreenViolation] = useState(false);
 
-    // â”€â”€ AI Face Proctoring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  AI Face Proctoring 
     const [referenceSnapshotUrl, setReferenceSnapshotUrl] = useState<string | null>(null);
     const [faceViolationAlert, setFaceViolationAlert] = useState<{ type: string; reason: string } | null>(null);
     const faceViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    // â”€â”€ Audio Proctoring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  Audio Proctoring 
     const [audioViolationAlert, setAudioViolationAlert] = useState<{ reason: string } | null>(null);
     const audioViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    // â”€â”€ Hardware Heartbeat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  Hardware Heartbeat 
     const [hardwareViolationAlert, setHardwareViolationAlert] = useState<{ type: string; reason: string } | null>(null);
     const hardwareViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    // â”€â”€ Connection Proctoring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  Connection Proctoring 
     const [connectionAlert, setConnectionAlert] = useState<{ eventType: string; reason: string } | null>(null);
     const connectionAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -155,7 +155,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         } catch { }
     }, []);
 
-    // â”€â”€ Face violation handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  Face violation handler 
     const handleFaceViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
         // 1. Show transient alert to candidate (auto-dismiss after 6s)
         setFaceViolationAlert({ type: eventType, reason });
@@ -178,7 +178,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             }),
         }).catch(() => { });
 
-        // 3. Signal agent via data channel (optional â€” agent can adjust)
+        // 3. Signal agent via data channel (optional — agent can adjust)
         const room = lkRoomRef.current;
         if (room?.localParticipant) {
             try {
@@ -188,7 +188,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
     }, [id, interviewToken]);
 
-    // â”€â”€ Audio violation handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  Audio violation handler 
     const handleAudioViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
         // 1. Show transient toast to candidate (auto-dismiss after 6s)
         setAudioViolationAlert({ reason });
@@ -221,9 +221,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
     }, [id, interviewToken]);
 
-    // â”€â”€ Hardware heartbeat violation handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  Hardware heartbeat violation handler 
     const handleHardwareViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
-        // 1. Show transient alert to candidate (8s â€” longer for high-severity)
+        // 1. Show transient alert to candidate (8s — longer for high-severity)
         setHardwareViolationAlert({ type: eventType, reason });
         if (hardwareViolationTimerRef.current) clearTimeout(hardwareViolationTimerRef.current);
         hardwareViolationTimerRef.current = setTimeout(() => setHardwareViolationAlert(null), 8000);
@@ -254,7 +254,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
     }, [id, interviewToken]);
 
-    // â”€â”€ Connection violation handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    //  Connection violation handler 
     const handleConnectionViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
         // 1. Show toast to candidate (5 s for restored, 8 s for lost)
         const displayMs = eventType === "connection_restored" ? 5000 : 8000;
@@ -279,7 +279,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }).catch(() => { });
     }, [id, interviewToken]);
 
-    // Countdown ticker â€” purely visual, counts up for display purposes
+    // Countdown ticker — purely visual, counts up for display purposes
     useEffect(() => {
         if (phase !== "launching") return;
         setLaunchTimeoutCheck(0);
@@ -376,7 +376,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             try {
                 // Collect device fingerprint for Smart Collusion Detection.
                 // This is capability data only (screen res, CPU cores, platform, DPR)
-                // â€” no PII is sent. The server hashes and never stores raw values.
+                // — no PII is sent. The server hashes and never stores raw values.
                 const deviceFingerprint = collectDeviceFingerprint();
 
                 const res = await fetch("/api/interview/token", {
@@ -717,7 +717,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.25em] max-w-[300px]">
                                     {isAgentReady
                                         ? `Agent ready in ${agentReadyLatencyMs ?? 0}ms. Starting interview...`
-                                        : "Please wait â€” connecting your AI interviewer."}
+                                        : "Please wait — connecting your AI interviewer."}
                                 </p>
                             </div>
                             <div className="flex items-center gap-2">
@@ -776,7 +776,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 )}
             </AnimatePresence>
 
-            {/* â”€â”€ AI Face Proctoring (runs silently during interview) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/*  AI Face Proctoring (runs silently during interview)  */}
             <FaceProctoring
                 applicationId={id}
                 interviewToken={interviewToken}
@@ -785,7 +785,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 onViolation={handleFaceViolation}
             />
 
-            {/* â”€â”€ Audio Proctoring (Web Audio API secondary-voice detection) â”€â”€â”€â”€â”€â”€ */}
+            {/*  Audio Proctoring (Web Audio API secondary-voice detection)  */}
             <AudioProctoring
                 applicationId={id}
                 interviewToken={interviewToken}
@@ -793,7 +793,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 onViolation={handleAudioViolation}
             />
 
-            {/* â”€â”€ Hardware Heartbeat (MediaStreamTrack API camera/mic monitoring) */}
+            {/*  Hardware Heartbeat (MediaStreamTrack API camera/mic monitoring) */}
             <HardwareHeartbeat
                 applicationId={id}
                 interviewToken={interviewToken}
@@ -801,7 +801,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 onViolation={handleHardwareViolation}
             />
 
-            {/* Interview room â€” outside AnimatePresence intentionally.
+            {/* Interview room — outside AnimatePresence intentionally.
                 It pre-renders as soon as the launching phase has prepared a token
                 and controls its own visibility via opacity/z-index/pointer-events. */}
             {token && serverUrl && phase !== "completed" && (
@@ -835,7 +835,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             onRoomReady={(room) => { lkRoomRef.current = room; }}
                             candidateName={"Candidate"} 
                         />
-                        {/* â”€â”€ Connection Proctoring (lives inside LiveKitRoom for useRoomContext) */}
+                        {/*  Connection Proctoring (lives inside LiveKitRoom for useRoomContext) */}
                         <ConnectionProctoring
                             isActive={phase === "interview"}
                             onViolation={handleConnectionViolation}
@@ -925,7 +925,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 )}
             </AnimatePresence>
 
-            {/* â”€â”€ AI Proctoring Violation Alert (face / gaze / pose) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/*  AI Proctoring Violation Alert (face / gaze / pose)  */}
             <AnimatePresence>
                 {faceViolationAlert && phase === "interview" && (
                     <motion.div
@@ -960,7 +960,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 )}
             </AnimatePresence>
 
-            {/* â”€â”€ Audio Proctoring Violation Alert â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/*  Audio Proctoring Violation Alert  */}
             <AnimatePresence>
                 {audioViolationAlert && phase === "interview" && (
                     <motion.div
@@ -986,7 +986,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 )}
             </AnimatePresence>
 
-            {/* â”€â”€ Hardware Violation Alert (camera / mic disabled) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/*  Hardware Violation Alert (camera / mic disabled)  */}
             <AnimatePresence>
                 {hardwareViolationAlert && phase === "interview" && (
                     <motion.div
@@ -1016,7 +1016,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 )}
             </AnimatePresence>
 
-            {/* â”€â”€ Connection Alert Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/*  Connection Alert Toast  */}
             <AnimatePresence>
                 {connectionAlert && phase === "interview" && (
                     <motion.div
@@ -1117,7 +1117,7 @@ function InterviewRoomContent({
     }, [localParticipant, isMicEnabled]);
 
     // startAudio is now called from handleHardwareComplete (user gesture) in the parent.
-    // This useEffect is a fallback only â€” if the room reconnects mid-interview.
+    // This useEffect is a fallback only — if the room reconnects mid-interview.
     useEffect(() => {
         if (connectionState === "connected" && lkRoom) {
             lkRoom.startAudio().catch(() => { });
@@ -1159,7 +1159,7 @@ function InterviewRoomContent({
         // Start recording the moment audio flows
         if (!recordingStartedRef.current) {
             recordingStartedRef.current = true;
-            console.log("[Recording] Agent speaking â€” starting recording");
+            console.log("[Recording] Agent speaking — starting recording");
             fetch("/api/interview/start-recording", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1516,7 +1516,7 @@ function InterviewRoomContent({
                                                         {group.isCandidate ? (candidateName || "Candidate") : "AI Interviewer"}
                                                     </p>
                                                     <p className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">
-                                                        {group.isCandidate ? "Speaker" : "Expert AI"}{!isGroupFinal && " â€¢â€¢â€¢"}
+                                                        {group.isCandidate ? "Speaker" : "Expert AI"}{!isGroupFinal && " •••"}
                                                     </p>
                                                 </div>
                                             </div>
@@ -1639,7 +1639,7 @@ function InterviewPage({ params }: InterviewPageProps) {
 
 export default InterviewPage;
 
-// â”€â”€ Inlined Components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//  Inlined Components 
 
 
 function VideoTrack({ trackRef }: { trackRef: TrackReference }) {

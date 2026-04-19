@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
@@ -380,8 +380,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                     onChange={e => setForm(prev => ({ ...prev, ttsProvider: e.target.value }))}
                                     className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none"
                                 >
-                                    <option value="CARTESIA">âš¡ Cartesia (Ultra-Low Latency)</option>
-                                    <option value="SARVAM">ðŸ‡®ðŸ‡³ Sarvam AI (Indian Regional)</option>
+                                    <option value="CARTESIA">Cartesia (Ultra-Low Latency)</option>
+                                    <option value="SARVAM">Sarvam AI (Indian Regional)</option>
                                 </select>
                             </div>
                             <div className="flex items-end pb-1">
@@ -567,8 +567,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                     onChange={e => setForm(prev => ({ ...prev, sttProvider: e.target.value }))}
                                     className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none"
                                 >
-                                    <option value="DEEPGRAM">ðŸ›¸ Deepgram (Elite Latency)</option>
-                                    <option value="SARVAM">ðŸ‡®ðŸ‡³ Sarvam AI (Regional Saaras)</option>
+                                    <option value="DEEPGRAM">Deepgram (Elite Latency)</option>
+                                    <option value="SARVAM">Sarvam AI (Regional Saaras)</option>
                                 </select>
                             </div>
                             <div className="flex items-end pb-1">
@@ -589,15 +589,15 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                         onChange={e => setForm(prev => ({ ...prev, deepgramModel: e.target.value }))}
                                         className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none"
                                     >
-                                        <optgroup label="ðŸ›¸ Flux (Lowest Latency)">
+                                        <optgroup label="Flux (Lowest Latency)">
                                             <option value="flux-general-en">Flux General (English)</option>
                                         </optgroup>
-                                        <optgroup label="ðŸ§  Nova-3 (Next Gen)">
+                                        <optgroup label="Nova-3 (Next Gen)">
                                             <option value="nova-3-general">Nova-3 General</option>
                                             <option value="nova-3">Nova-3 (Balanced)</option>
                                             <option value="nova-3-medical">Nova-3 Medical</option>
                                         </optgroup>
-                                        <optgroup label="âš¡ Nova-2 (Standard)">
+                                        <optgroup label="Nova-2 (Standard)">
                                             <option value="nova-2-general">Nova-2 General</option>
                                             <option value="nova-2-phonecall">Nova-2 Phonecall</option>
                                             <option value="nova-2-voicemail">Nova-2 Voicemail</option>
@@ -610,7 +610,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                             <option value="nova-2-drivethru">Nova-2 Drivethru</option>
                                             <option value="nova-2-atc">Nova-2 Air Traffic Control</option>
                                         </optgroup>
-                                        <optgroup label="ðŸŒ¬ï¸ Whisper (Benchmarked)">
+                                        <optgroup label=" Whisper (Benchmarked)">
                                             <option value="whisper-large">Whisper Large</option>
                                             <option value="whisper-medium">Whisper Medium</option>
                                             <option value="whisper-small">Whisper Small</option>
@@ -634,11 +634,11 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                         onChange={e => setForm(prev => ({ ...prev, sarvamSttModel: e.target.value }))}
                                         className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none"
                                     >
-                                        <optgroup label="ðŸ’Ž Premium">
+                                        <optgroup label="Premium">
                                             <option value="saaras:v3">Saaras v3 (High Quality)</option>
                                             <option value="saarika:v2.5">Saarika v2.5 (Streaming USM)</option>
                                         </optgroup>
-                                        <optgroup label="ðŸ“š Legacy">
+                                        <optgroup label="Legacy">
                                             <option value="saaras:v2">Saaras v2 (Standard)</option>
                                         </optgroup>
                                     </select>
@@ -664,7 +664,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                     onChange={e => setForm(prev => ({ ...prev, llmProvider: e.target.value }))}
                                     className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold focus:ring-2 focus:ring-blue-100 outline-none"
                                 >
-                                    <option value="OPENAI">ðŸ¤– OpenAI (Global Standard)</option>
+                                    <option value="OPENAI">🤖 OpenAI (Global Standard)</option>
                                 </select>
                             </div>
                             <div className="space-y-4">
@@ -754,7 +754,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                     <Loader2 className="h-3 w-3 animate-spin" />
                                     Updating...
                                 </>
-                            ) : "APPLY CHANGES â†’"}
+                            ) : "APPLY CHANGES →"}
                         </button>
                     </div>
                 </div>

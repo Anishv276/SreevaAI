@@ -78,7 +78,7 @@ export function RegistrationForm({ customFields, setCustomFields, isPassportRequ
                                         <Input
                                             value={field.label}
                                             onChange={e => updateField(field.id, "label", e.target.value)}
-                                            placeholder="e.g. GitHub Profile URLâ€¦"
+                                            placeholder="e.g. GitHub Profile URL..."
                                             className="h-10 rounded-lg border-gray-200"
                                         />
                                     </div>

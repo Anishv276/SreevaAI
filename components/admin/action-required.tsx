@@ -45,7 +45,7 @@ export function ActionRequired() {
             <div className="bg-white border border-[#EAEAEA] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.06)] overflow-hidden">
                 {actions.length === 0 ? (
                     <div className="px-5 py-6 text-center">
-                        <p className="text-[14px] font-medium text-green-600">You&apos;re all caught up ðŸŽ‰</p>
+                        <p className="text-[14px] font-medium text-green-600">You&apos;re all caught up 🎉</p>
                         <p className="text-[12px] text-[#6B7280] mt-1">Nothing needs your attention right now.</p>
                     </div>
                 ) : (
@@ -86,4 +86,4 @@ export function ActionRequired() {
         </div>
     );
 }
-
+

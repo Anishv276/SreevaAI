@@ -41,7 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <>
         <AccountStatusHandler status={orgData.status} />
         <div className="flex min-h-screen bg-[#F8F9FB] relative overflow-hidden font-sans">
-            {/* â”€â”€ Background Deck: Aurora Blobs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+            {/*  Background Deck: Aurora Blobs  */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
                 <div 
                     className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-orange-100/30 blur-[120px] animate-[aurora-float_18s_infinite_ease-in-out]"

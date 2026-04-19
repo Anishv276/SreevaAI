@@ -81,7 +81,7 @@ export default function WelcomePage() {
                         transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
                         className="relative"
                     >
-                        {/* â”€â”€ Outer Glow & Card â”€â”€ */}
+                        {/*  Outer Glow & Card  */}
                         <div className="absolute inset-x-0 bottom-[-20px] h-20 bg-orange-500/10 blur-[60px] rounded-full" />
                         
                         <div className="bg-white/80 backdrop-blur-3xl border border-white/50 rounded-[3rem] p-12 shadow-[0_40px_100px_rgba(0,0,0,0.08)] relative overflow-hidden group">

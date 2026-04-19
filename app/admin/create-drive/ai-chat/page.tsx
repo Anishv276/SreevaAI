@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -48,7 +48,7 @@ export default function AiChatJdPage() {
                 {
                     id: "1",
                     role: "assistant" as const,
-                    content: "Hey! Tell me about the role you're hiring for â€” the title, what kind of experience you're looking for, compensation range, and whether it's remote or in-office. The more context you give me upfront, the sharper the JD will be. I'll ask if anything's missing.",
+                    content: "Hey! Tell me about the role you're hiring for — the title, what kind of experience you're looking for, compensation range, and whether it's remote or in-office. The more context you give me upfront, the sharper the JD will be. I'll ask if anything's missing.",
                 }
             ]);
         }
@@ -198,7 +198,7 @@ export default function AiChatJdPage() {
         element.innerHTML = `
             <div style="border-bottom: 2px solid #F97316; padding-bottom: 20px; margin-bottom: 30px;">
                 <h1 style="font-size: 28px; font-weight: 900; margin: 0; letter-spacing: -0.025em;">${escapeHtml(jd.job_title)}</h1>
-                <p style="color: #6B7280; font-weight: 700; text-transform: uppercase; font-size: 10px; margin-top: 8px; letter-spacing: 0.1em;">${escapeHtml(jd.department)} â€¢ ${escapeHtml(jd.work_mode)}</p>
+                <p style="color: #6B7280; font-weight: 700; text-transform: uppercase; font-size: 10px; margin-top: 8px; letter-spacing: 0.1em;">${escapeHtml(jd.department)} • ${escapeHtml(jd.work_mode)}</p>
             </div>
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
@@ -389,10 +389,10 @@ export default function AiChatJdPage() {
                                 className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-4xl mt-20"
                             >
                                 {[
-                                    { text: "Senior React Developer, 4yrs exp, 12-15 LPA INR", icon: "âš›ï¸" },
-                                    { text: "Backend Engineer, Node.js + Postgre, 20 LPA INR", icon: "âš¡" },
-                                    { text: "Product Manager, B2B SaaS, Hybrid", icon: "ðŸ“¦" },
-                                    { text: "UX Architect, Figma Pro, 5+ years", icon: "ðŸŽ¨" },
+                                    { text: "Senior React Developer, 4yrs exp, 12-15 LPA INR", icon: "⚛️" },
+                                    { text: "Backend Engineer, Node.js + Postgre, 20 LPA INR", icon: "⚡" },
+                                    { text: "Product Manager, B2B SaaS, Hybrid", icon: "📦" },
+                                    { text: "UX Architect, Figma Pro, 5+ years", icon: "🎨" },
                                 ].map((s, idx) => (
                                     <motion.button 
                                         key={idx}
@@ -444,7 +444,7 @@ export default function AiChatJdPage() {
                             )}>
                                 {m.status === "thinking" ? (
                                     <div className="bg-white border border-orange-100 p-6 rounded-3xl rounded-tl-none shadow-2xl flex flex-col gap-3 w-max">
-                                        <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest leading-none">Ishita is typingâ€¦</p>
+                                        <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest leading-none">Ishita is typing...</p>
                                         <div className="flex gap-1.5 items-center">
                                             <span className="h-2 w-2 bg-orange-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
                                             <span className="h-2 w-2 bg-orange-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
@@ -475,7 +475,7 @@ export default function AiChatJdPage() {
                                                         <div>
                                                             <p className="text-[10px] font-black text-orange-400 uppercase tracking-[0.3em] mb-2">Architect Complete</p>
                                                             <h3 className="text-2xl font-black text-gray-900 tracking-tight leading-none">{m.data.job_title}</h3>
-                                                            <p className="text-sm font-bold text-gray-400 mt-1">{m.data.role_name} Â· {m.data.department}</p>
+                                                            <p className="text-sm font-bold text-gray-400 mt-1">{m.data.role_name} · {m.data.department}</p>
                                                         </div>
                                                         <div className="flex flex-wrap gap-2 mt-1">
                                                             <span className="px-4 py-2 rounded-full bg-orange-100 text-orange-700 text-[11px] font-black uppercase tracking-widest">{m.data.work_mode}</span>
@@ -542,7 +542,7 @@ export default function AiChatJdPage() {
                                                         <ul className="space-y-2.5">
                                                             {m.data.candidate_requirements.map((req: string, i: number) => (
                                                                 <li key={i} className="flex gap-3 text-[13px] text-gray-700 font-medium leading-relaxed">
-                                                                    <span className="text-orange-400 font-black mt-0.5">â€¢</span>
+                                                                    <span className="text-orange-400 font-black mt-0.5">•</span>
                                                                     {req}
                                                                 </li>
                                                             ))}
@@ -662,4 +662,3 @@ export default function AiChatJdPage() {
         </div>
     );
 }
-

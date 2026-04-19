@@ -8,7 +8,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
  * Stored as Interview.interviewReport (JSONB).
  */
 export interface InterviewReport {
-  // â”€â”€ Section 2: Performance Scorecards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  //  Section 2: Performance Scorecards 
   scores: {
     interview_score: number;          // 0--10, one decimal
     interview_label: string;          // "Poor" | "Below Average" | "Average" | "Good" | "Excellent"
@@ -24,7 +24,7 @@ export interface InterviewReport {
     summary: string; // Keep to 3-4 short lines in the UI summary box.
   };
 
-  // â”€â”€ Section 3: Interview Performance Verdict â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  //  Section 3: Interview Performance Verdict 
   verdict: {
     summary: string;                  // 3-5 sentence AI synthesis
     recommendation: "Strong Yes" | "Yes" | "Maybe" | "No";
@@ -38,7 +38,7 @@ export interface InterviewReport {
     next_actions: string[];
   };
 
-  // â”€â”€ Section 4: Communication Breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  //  Section 4: Communication Breakdown 
   communication: {
     clarity: number;                  // 0--100
     fluency: number;
@@ -47,7 +47,7 @@ export interface InterviewReport {
     cefr_analysis: string;            // paragraph explaining the CEFR rating
   };
 
-  // â”€â”€ Section 6: JD Skills Proof Checklist â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  //  Section 6: JD Skills Proof Checklist 
   skills_proof: Array<{
     title: string;                    // skill name from JD
     note: string;                     // direct quote or observation
@@ -57,7 +57,7 @@ export interface InterviewReport {
     color: string;                    // Tailwind classes for badge
   }>;
 
-  // â”€â”€ Section 7: Session Transcript Q&A â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  //  Section 7: Session Transcript Q&A 
   qa_blocks: Array<{
     q: number;
     title: string;
@@ -76,7 +76,7 @@ export interface InterviewReport {
     confidence: string;
   }>;
 
-  // â”€â”€ Section 8: Consistency Check (Resume vs Interview) â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  //  Section 8: Consistency Check (Resume vs Interview) 
   consistency: Array<{
     claim: string;                    // what resume says
     sub: string;                      // e.g. "Claimed: GTM strategy"
@@ -85,7 +85,7 @@ export interface InterviewReport {
     statusColor: string;              // Tailwind classes
   }>;
 
-  // â”€â”€ Section 9: Key Moments Timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  //  Section 9: Key Moments Timeline 
   key_moments: Array<{
     time: string;                     // e.g. "1:32"
     tag: "Context" | "Flag" | "Critical" | "Positive";
@@ -94,12 +94,12 @@ export interface InterviewReport {
     note: string;
   }>;
 
-  // â”€â”€ Meta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  //  Meta 
   generated_at: string;               // ISO timestamp
   model: string;
 }
 
-// â”€â”€ Colour helpers (kept server-side so UI stays in sync) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//  Colour helpers (kept server-side so UI stays in sync) 
 function skillColor(status: string): string {
   switch (status) {
     case "Proved":     return "text-emerald-600 bg-emerald-50 border-emerald-100";
@@ -135,7 +135,7 @@ function scoreColor(score: string): string {
   return "text-[#E63946]";
 }
 
-// â”€â”€ Main export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//  Main export 
 export async function generateInterviewReport(opts: {
   transcript: string;
   resumeText: string;
@@ -300,7 +300,7 @@ Rules:
 }
 
 Rules:
-- skills_proof color, consistency statusColor, key_moments tagColor, qa_blocks scoreColor â†’ leave as "" (populated post-parse)
+- skills_proof color, consistency statusColor, key_moments tagColor, qa_blocks scoreColor → leave as "" (populated post-parse)
 - recording.duration_label should be human-readable and compact, e.g. "5 min" or "12 min"
 - recording.word_count must reflect the transcript length as closely as possible
   - recording.summary should be the short AI summary box displayed below the video, written in 3-4 lines only
@@ -334,7 +334,7 @@ Rules:
 
   const raw = JSON.parse(response.choices[0].message.content!);
 
-  // â”€â”€ Post-parse: inject colour tokens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  //  Post-parse: inject colour tokens 
   raw.skills_proof = (raw.skills_proof || []).map((s: any) => ({
     ...s,
     color: skillColor(s.status),

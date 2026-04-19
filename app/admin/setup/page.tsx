@@ -352,7 +352,7 @@ export default function OnboardingPage() {
                                     <div className="flex items-center gap-3 mb-4">
                                         <Lock className="h-4 w-4 text-gray-400" />
                                         <span className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Set Account Password</span>
-                                        <span className="text-[10px] text-gray-400 font-medium">(optional â€” skip if already set)</span>
+                                        <span className="text-[10px] text-gray-400 font-medium">(optional — skip if already set)</span>
                                     </div>
                                     <div className="grid md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
@@ -361,7 +361,7 @@ export default function OnboardingPage() {
                                                 <input
                                                     type={showPw.current ? "text" : "password"}
                                                     className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 pr-10 text-[14px] text-gray-900 font-medium shadow-sm hover:border-orange-300 transition-all placeholder:text-gray-300"
-                                                    placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                                                    placeholder="••••••••"
                                                     value={passwords.current}
                                                     onChange={e => setPasswords({ ...passwords, current: e.target.value })}
                                                 />
@@ -470,9 +470,9 @@ export default function OnboardingPage() {
                                         <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest leading-none">Company Size <span className="text-[#F97316]">*</span></label>
                                         <select className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-[14px] font-medium shadow-sm hover:border-orange-300 transition-all focus:outline-none" value={company.size || ""} onChange={e => setCompany({ ...company, size: e.target.value })}>
                                             <option value="">Select Size</option>
-                                            <option>1â€“50 EMPLOYEES</option>
-                                            <option>51â€“250 EMPLOYEES</option>
-                                            <option>251â€“1000 EMPLOYEES</option>
+                                            <option>1–50 EMPLOYEES</option>
+                                            <option>51–250 EMPLOYEES</option>
+                                            <option>251–1000 EMPLOYEES</option>
                                             <option>1001+</option>
                                         </select>
                                     </div>

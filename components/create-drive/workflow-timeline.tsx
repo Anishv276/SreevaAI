@@ -40,7 +40,7 @@ export function WorkflowTimeline() {
                                     <h4 className="font-medium">{round.name}</h4>
                                     <div className="flex items-center gap-2 text-xs text-gray-500">
                                         <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600">{round.type}</span>
-                                        <span>â€¢</span>
+                                        <span>•</span>
                                         <span>Pass: {round.passCriteria}</span>
                                     </div>
                                 </div>

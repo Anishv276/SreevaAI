@@ -163,7 +163,7 @@ export default function CandidateDashboard() {
                                                 <div>
                                                     <h2 className="text-xl font-bold">{app.drive?.title || "Unknown Position"}</h2>
                                                     <p className="text-gray-500">
-                                                        {app.drive?.department} â€¢ {app.drive?.workMode || "Remote"} â€¢ 
+                                                        {app.drive?.department} • {app.drive?.workMode || "Remote"} • 
                                                         Applied on {new Date(app.createdAt).toLocaleDateString()}
                                                     </p>
                                                 </div>

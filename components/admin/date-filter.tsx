@@ -67,7 +67,7 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
     }, [open]);
 
     const getLabel = () => {
-        if (value.type === "custom") return `${value.from} â€“ ${value.to}`;
+        if (value.type === "custom") return `${value.from} – ${value.to}`;
         return PRESETS.find(p => p.key === value.type)?.label || "All Time";
     };
 

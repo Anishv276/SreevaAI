@@ -170,7 +170,7 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
         },
         {
             label: "Avg. time to hire",
-            value: s.avgTimeToHire != null ? `${s.avgTimeToHire}d` : "â€”",
+            value: s.avgTimeToHire != null ? `${s.avgTimeToHire}d` : "—",
             subtext: s.timeToHireDiff != null ? `${s.timeToHireDiff > 0 ? "+" : ""}${s.timeToHireDiff}d vs last mo.` : "Steady vs last mo.",
             icon: Clock,
             accent: "#0EA5E9",
@@ -179,7 +179,7 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
         },
         {
             label: "Candidate Satisfaction",
-            value: s.avgRating > 0 ? s.avgRating.toFixed(1) : "â€”",
+            value: s.avgRating > 0 ? s.avgRating.toFixed(1) : "—",
             subtext: "Avg. candidate rating (1-5)",
             icon: Star,
             accent: "#F59E0B",
