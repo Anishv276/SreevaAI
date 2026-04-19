@@ -1,13 +1,14 @@
-﻿"use client";
+"use client";
 import { Suspense, useState, use, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User } from "lucide-react";
+import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User, MousePointer2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
 import { HardwareCheck } from "@/components/careers/interview/HardwareCheck";
 import { FaceProctoring } from "@/components/careers/interview/FaceProctoring";
 import { AudioProctoring } from "@/components/careers/interview/AudioProctoring";
+import { MouseProctoring } from "@/components/careers/interview/MouseProctoring";
 import { HardwareHeartbeat } from "@/components/careers/interview/HardwareHeartbeat";
 import { ConnectionProctoring } from "@/components/careers/interview/ConnectionProctoring";
 import { collectDeviceFingerprint } from "@/lib/device-fingerprint";
@@ -142,6 +143,18 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     //  Connection Proctoring 
     const [connectionAlert, setConnectionAlert] = useState<{ eventType: string; reason: string } | null>(null);
     const connectionAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    // ── Mouse Proctoring (+ Deepgram Nova-3 cross-signal) ────────────────
+    const [mouseViolationAlert, setMouseViolationAlert] = useState<{ eventType: string; reason: string; severity: string } | null>(null);
+    const mouseViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const [soundViolationAlert, setSoundViolationAlert] = useState<{ eventType: string; reason: string; severity: string } | null>(null);
+    const soundViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
+    /**
+     * Shared ref updated by InterviewRoomContent whenever a candidate transcript
+     * segment arrives from Deepgram Nova-3. MouseProctoring reads this to
+     * calculate candidate-silence windows for cross-signal correlation.
+     */
+    const lastCandidateTranscriptAtRef = useRef<number | null>(null);
 
     const searchParams = useSearchParams();
     const interviewToken = searchParams.get("token") || "";
@@ -279,7 +292,88 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }).catch(() => { });
     }, [id, interviewToken]);
 
-    // Countdown ticker — purely visual, counts up for display purposes
+    // ── Mouse violation handler (Deepgram Nova-3 cross-signal) ─────────────────
+    const handleMouseViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
+        // Determine display duration by severity
+        const displayMs = severity === "high" ? 9000 : severity === "low" ? 5000 : 7000;
+
+        // 1. Show transient toast to candidate
+        setMouseViolationAlert({ eventType, reason, severity: severity ?? "medium" });
+        if (mouseViolationTimerRef.current) clearTimeout(mouseViolationTimerRef.current);
+        mouseViolationTimerRef.current = setTimeout(() => setMouseViolationAlert(null), displayMs);
+
+        // 2. Send to backend for audit trail
+        fetch("/api/interview/proctoring", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                applicationId: id,
+                interviewToken,
+                events: [{
+                    eventType,
+                    severity: severity ?? "medium",
+                    timestamp: Date.now(),
+                    reason,
+                }],
+            }),
+        }).catch(() => { });
+
+        // 3. Signal agent via data channel
+        const room = lkRoomRef.current;
+        if (room?.localParticipant) {
+            try {
+                const data = new TextEncoder().encode(
+                    JSON.stringify({ type: "mouse_proctoring_violation", eventType, severity, timestamp: Date.now() })
+                );
+                room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
+            } catch { }
+        }
+    }, [id, interviewToken]);
+
+    // ── Clipboard Paste violation handler ─────────────────────────────────────
+    const handlePasteViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
+        // 1. Show transient alert to candidate
+        setMouseViolationAlert({ eventType: "behavior_flag", reason, severity: "medium" });
+        if (mouseViolationTimerRef.current) clearTimeout(mouseViolationTimerRef.current);
+        mouseViolationTimerRef.current = setTimeout(() => setMouseViolationAlert(null), 6000);
+
+        // 2. Send to backend for audit trail
+        fetch("/api/interview/proctoring", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                applicationId: id,
+                interviewToken,
+                events: [{
+                    eventType,
+                    severity: severity ?? "medium",
+                    timestamp: Date.now(),
+                    reason,
+                }],
+            }),
+        }).catch(() => { });
+
+        // 3. Signal agent via data channel
+        const room = lkRoomRef.current;
+        if (room?.localParticipant) {
+            try {
+                const data = new TextEncoder().encode(
+                    JSON.stringify({ type: "clipboard_paste", eventType, timestamp: Date.now() })
+                );
+                room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
+            } catch { }
+        }
+    }, [id, interviewToken]);
+
+    // ── Generic Agent-Detected Violation handler (Syncs Agent events to Candidate UI) ──
+    const handleAgentDetectedViolation = useCallback((eventType: string, reason: string, severity?: string) => {
+        // This is called when the Agent sends a 'proctoring_violation' packet over the data channel
+        setSoundViolationAlert({ eventType, reason, severity: severity ?? "medium" });
+        if (soundViolationTimerRef.current) clearTimeout(soundViolationTimerRef.current);
+        soundViolationTimerRef.current = setTimeout(() => setSoundViolationAlert(null), 8000);
+    }, []);
+
+    // Countdown ticker â€” purely visual, counts up for display purposes
     useEffect(() => {
         if (phase !== "launching") return;
         setLaunchTimeoutCheck(0);
@@ -315,9 +409,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 fetch("/api/interview/shutdown", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         applicationId: id,
-                        interviewToken: interviewToken 
+                        interviewToken: interviewToken
                     }),
                     keepalive: true,
                 }).catch(() => { });
@@ -833,7 +927,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
                             onRemoteAgentAudioTrack={handleRemoteAgentAudioTrack}
                             onRoomReady={(room) => { lkRoomRef.current = room; }}
-                            candidateName={"Candidate"} 
+                            candidateName={"Candidate"}
+                            onCandidateTranscript={() => {
+                                // Deepgram Nova-3 fired a candidate segment — update silence clock
+                                lastCandidateTranscriptAtRef.current = Date.now();
+                            }}
+                            onAgentDetectedViolation={handleAgentDetectedViolation}
+                            onPasteViolation={handlePasteViolation}
                         />
                         {/*  Connection Proctoring (lives inside LiveKitRoom for useRoomContext) */}
                         <ConnectionProctoring
@@ -948,8 +1048,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">
                                     {faceViolationAlert.type === "multiple_faces" ? "Multiple People Detected"
                                         : faceViolationAlert.type === "face_absence" ? "Face Not Visible"
-                                        : faceViolationAlert.type === "identity_mismatch" ? "Identity Check"
-                                        : "Attention Required"}
+                                            : faceViolationAlert.type === "identity_mismatch" ? "Identity Check"
+                                                : "Attention Required"}
                                 </p>
                                 <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
                                     {faceViolationAlert.reason}
@@ -1025,32 +1125,130 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         exit={{ opacity: 0, y: 40 }}
                         className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
                     >
-                        <div className={`flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border ${
-                            connectionAlert.eventType === "connection_restored"
+                        <div className={`flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border ${connectionAlert.eventType === "connection_restored"
                                 ? "border-green-500/30"
                                 : "border-blue-500/30"
-                        }`}>
-                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                                connectionAlert.eventType === "connection_restored"
+                            }`}>
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${connectionAlert.eventType === "connection_restored"
                                     ? "bg-green-500/10"
                                     : "bg-blue-500/10"
-                            }`}>
-                                <WifiOff className={`w-4 h-4 ${
-                                    connectionAlert.eventType === "connection_restored"
+                                }`}>
+                                <WifiOff className={`w-4 h-4 ${connectionAlert.eventType === "connection_restored"
                                         ? "text-green-400"
                                         : "text-blue-400"
-                                }`} />
+                                    }`} />
                             </div>
                             <div>
-                                <p className={`text-[10px] font-black uppercase tracking-widest ${
-                                    connectionAlert.eventType === "connection_restored"
+                                <p className={`text-[10px] font-black uppercase tracking-widest ${connectionAlert.eventType === "connection_restored"
                                         ? "text-green-400"
                                         : "text-blue-400"
-                                }`}>
+                                    }`}>
                                     {connectionAlert.eventType === "connection_restored" ? "Connection Restored" : "Connection Issue"}
                                 </p>
                                 <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
                                     {connectionAlert.reason}
+                                </p>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Behavior / Clipboard Violation Alert ── */}
+            <AnimatePresence>
+                {mouseViolationAlert && mouseViolationAlert.eventType === "behavior_flag" && phase === "interview" && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 40 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 40 }}
+                        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
+                    >
+                        <div className="flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border border-orange-500/40">
+                            <div className="w-8 h-8 rounded-xl bg-orange-500/10 flex items-center justify-center shrink-0">
+                                <Zap className="w-4 h-4 text-orange-400" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-orange-400">Behavioral Flag</p>
+                                <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
+                                    {mouseViolationAlert.reason}
+                                </p>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Mouse Proctoring Violation Alert (Deepgram Nova-3 correlated) ── */}
+            <AnimatePresence>
+                {mouseViolationAlert && mouseViolationAlert.eventType !== "behavior_flag" && phase === "interview" && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 40 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 40 }}
+                        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
+                    >
+                        <div className={`flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border ${mouseViolationAlert.severity === "high"
+                                ? "border-red-500/40"
+                                : mouseViolationAlert.severity === "low"
+                                    ? "border-zinc-500/30"
+                                    : "border-purple-500/30"
+                            }`}>
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${mouseViolationAlert.severity === "high"
+                                    ? "bg-red-500/10"
+                                    : mouseViolationAlert.severity === "low"
+                                        ? "bg-zinc-500/10"
+                                        : "bg-purple-500/10"
+                                }`}>
+                                <MousePointer2 className={`w-4 h-4 ${mouseViolationAlert.severity === "high"
+                                        ? "text-red-400"
+                                        : mouseViolationAlert.severity === "low"
+                                            ? "text-zinc-400"
+                                            : "text-purple-400"
+                                    }`} />
+                            </div>
+                            <div>
+                                <p className={`text-[10px] font-black uppercase tracking-widest ${mouseViolationAlert.severity === "high"
+                                        ? "text-red-400"
+                                        : mouseViolationAlert.severity === "low"
+                                            ? "text-zinc-400"
+                                            : "text-purple-400"
+                                    }`}>
+                                    {mouseViolationAlert.eventType === "mouse_erratic"
+                                        ? "Erratic Mouse Activity"
+                                        : mouseViolationAlert.eventType === "mouse_snap"
+                                            ? "Unnatural Mouse Snap"
+                                            : "Cursor Anomaly Detected"}
+                                </p>
+                                <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
+                                    {/* Strip the Deepgram note for display brevity if present */}
+                                    {mouseViolationAlert.reason.split(" [Deepgram")[0]}
+                                    {mouseViolationAlert.severity === "high" && (
+                                        <span className="ml-1 text-red-400">· Deepgram Nova-3 corroborated</span>
+                                    )}
+                                </p>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* ── Sound Anomaly Alert (Synced from AI Agent) ───────────────── */}
+            <AnimatePresence>
+                {soundViolationAlert && phase === "interview" && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 40 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 40 }}
+                        className="fixed bottom-40 left-1/2 -translate-x-1/2 z-[230] pointer-events-none"
+                    >
+                        <div className="flex items-center gap-4 bg-zinc-950/90 backdrop-blur-2xl border border-red-500/40 rounded-[2rem] px-6 py-4 shadow-[0_25px_50px_-12px_rgba(239,68,68,0.5)] max-w-sm">
+                            <div className="w-10 h-10 rounded-2xl bg-red-500/10 flex items-center justify-center shrink-0 border border-red-500/20">
+                                <MicOff className="w-5 h-5 text-red-500" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-red-500">Sound Anomaly</p>
+                                <p className="text-[12px] font-bold text-white leading-tight mt-1 tracking-tight">
+                                    {soundViolationAlert.reason}
                                 </p>
                             </div>
                         </div>
@@ -1075,6 +1273,9 @@ function InterviewRoomContent({
     onAgentReady,
     onRoomReady,
     candidateName,
+    onCandidateTranscript,
+    onAgentDetectedViolation,
+    onPasteViolation,
 }: {
     id: string,
     onFinish: () => void,
@@ -1088,6 +1289,14 @@ function InterviewRoomContent({
     onAgentReady?: (isReady: boolean) => void,
     onRoomReady?: (room: Room) => void,
     candidateName?: string;
+    /**
+     * Called by InterviewRoomContent each time Deepgram Nova-3 emits a
+     * candidate transcript segment. The parent uses this to track silence
+     * windows for MouseProctoring cross-signal correlation.
+     */
+    onCandidateTranscript?: () => void;
+    onAgentDetectedViolation?: (eventType: string, reason: string, severity?: string) => void;
+    onPasteViolation?: (eventType: string, reason: string, severity?: "low" | "medium" | "high") => void;
 }) {
     const { localParticipant } = useLocalParticipant();
     const cameraTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
@@ -1229,6 +1438,23 @@ function InterviewRoomContent({
         return groups;
     }, [transcriptions, localIdentity]);
 
+    // ── Deepgram Nova-3 → Mouse cross-signal: ping parent on candidate speech ──
+    // Fires whenever a new transcript segment from the candidate arrives, resetting
+    // the silence window that MouseProctoring uses for cross-signal correlation.
+    const prevTranscriptCountRef = useRef(0);
+    useEffect(() => {
+        if (!onCandidateTranscript) return;
+        let candidateSegments = 0;
+        for (const seg of transcriptions as TranscriptionSegment[]) {
+            const identity = seg.participantInfo?.identity || "";
+            if (identity === localIdentity && seg.text.trim()) candidateSegments++;
+        }
+        if (candidateSegments > prevTranscriptCountRef.current) {
+            onCandidateTranscript();
+        }
+        prevTranscriptCountRef.current = candidateSegments;
+    }, [transcriptions, localIdentity, onCandidateTranscript]);
+
     // Ensure camera is explicitly enabled when interview becomes active
     useEffect(() => {
         if (isInterviewActive && localParticipant && !localParticipant.isCameraEnabled) {
@@ -1299,6 +1525,14 @@ function InterviewRoomContent({
                 const packet = JSON.parse(decoder.decode(payload));
                 if (packet.type === "interview_terminated") {
                     setRemoteForceFinish(true);
+                } else if (packet.type === "proctoring_violation") {
+                    // Agent detected something (e.g. background voice, phrase)
+                    // Sync to candidate UI for immediate feedback
+                    onAgentDetectedViolation?.(
+                        packet.eventType || "audio_leak",
+                        packet.reason || "Sound anomaly detected",
+                        packet.severity || "medium"
+                    );
                 }
             } catch {
                 // Ignore non-JSON packets.
@@ -1309,7 +1543,24 @@ function InterviewRoomContent({
         return () => {
             lkRoom.off(RoomEvent.DataReceived, onDataReceived);
         };
-    }, [lkRoom]);
+    }, [lkRoom, onAgentDetectedViolation]);
+
+    // ── Clipboard Paste Detection ─────────────────────────────────────────────
+    useEffect(() => {
+        if (!isInterviewActive) return;
+
+        const handlePaste = (e: ClipboardEvent) => {
+            // High-precision detection: multiple pastes in a short window
+            // or large blocks of text usually indicate cheating / prep-reading.
+            onPasteViolation?.(
+                "clipboard_paste",
+                "Unnatural input detected (clipboard paste). Please provide your answers naturally and verbally."
+            );
+        };
+
+        window.addEventListener("paste", handlePaste as any);
+        return () => window.removeEventListener("paste", handlePaste as any);
+    }, [isInterviewActive, onPasteViolation]);
 
     useEffect(() => {
         if (!transcriptPanelRef.current) return;
@@ -1453,7 +1704,7 @@ function InterviewRoomContent({
                 </motion.div>
                 {/* Floating Box Transcript - Left of AI Avatar */}
                 <div className="absolute left-10 bottom-44 z-[65] w-[420px] pointer-events-none">
-                    <div 
+                    <div
                         className="flex flex-col-reverse gap-4 max-h-[550px] overflow-hidden p-6 pb-20"
                         style={{
                             maskImage: 'linear-gradient(to top, black 40%, transparent 95%)',
@@ -1498,8 +1749,8 @@ function InterviewRoomContent({
                                             <div className="flex items-center gap-3 mb-3">
                                                 <div className={cn(
                                                     "w-7 h-7 rounded-full flex items-center justify-center shrink-0 border border-black/[0.05]",
-                                                    group.isCandidate 
-                                                        ? "bg-gradient-to-br from-orange-400 to-orange-600" 
+                                                    group.isCandidate
+                                                        ? "bg-gradient-to-br from-orange-400 to-orange-600"
                                                         : "bg-gradient-to-br from-indigo-500 to-blue-700"
                                                 )}>
                                                     {group.isCandidate ? (
@@ -1711,10 +1962,10 @@ function CompletionView({ id, interviewToken }: { id: string; interviewToken: st
             await fetch(`/api/interview/${id}/feedback`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ 
-                    rating, 
+                body: JSON.stringify({
+                    rating,
                     feedback,
-                    interviewToken 
+                    interviewToken
                 }),
             });
             setStep("thanks");

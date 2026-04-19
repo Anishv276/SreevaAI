@@ -182,7 +182,41 @@ PROCTORING_WEIGHTS: dict[str, int] = {
     "gaze_violation": 8,       # eye contact broken consistently
     "multiple_faces": 30,      # multiple people detected (suspicious)
     "clipboard_paste": 15,     # detected clipboard paste event
+    "background_voice": 25,    # second speaker diarized by Deepgram Nova-3
+    "audio_leak": 35,          # helper phrase detected in transcript (e.g. "the answer is")
 }
+
+# --- Audio Proctoring: Keyterms for Nova-3 boost + helper-phrase patterns ---
+# Keyterms tell Deepgram Nova-3 to specifically "listen out" for these words.
+# Even quiet whispers are more likely to be captured accurately.
+DEEPGRAM_KEYTERMS: list[str] = [
+    "the answer is",
+    "tell her",
+    "tell him",
+    "say that",
+    "just say",
+    "option A",
+    "option B",
+    "option C",
+    "option D",
+    "click on",
+    "choose",
+    "select",
+]
+
+# Regex patterns that indicate a third party is providing answers (helper instructions).
+# Applied to candidate transcript segments in real-time.
+import re as _re
+_HELPER_PHRASE_PATTERNS: list[_re.Pattern] = [
+    _re.compile(r"\bthe answer is\b", _re.IGNORECASE),
+    _re.compile(r"\btell (her|him|them)\b", _re.IGNORECASE),
+    _re.compile(r"\bjust say\b", _re.IGNORECASE),
+    _re.compile(r"\bsay that\b", _re.IGNORECASE),
+    _re.compile(r"\bclick (on|that)\b", _re.IGNORECASE),
+    _re.compile(r"\b(option|choice)\s+[ABCD]\b", _re.IGNORECASE),
+    _re.compile(r"\brepeat after me\b", _re.IGNORECASE),
+    _re.compile(r"\byou should say\b", _re.IGNORECASE),
+]
 
 
 def build_term_alias_hints(*text_blocks: str, max_lines: int = 10) -> str:
@@ -888,6 +922,14 @@ def build_sarvam_tts(
 
 
 def build_stt(language_code: str = "en-US", model: str = STT_MODEL):
+    """Build Deepgram Nova-3 STT with diarization and keyterm detection.
+
+    - enable_diarization: Labels each speech segment with a speaker_id (e.g. 0, 1).
+      If speaker_id > 0 appears during the candidate's turn it means a second
+      person is speaking in the room — triggers a 'background_voice' proctor event.
+    - keyterm: Deepgram Nova-3 specific feature that boosts transcription accuracy
+      for these phrases. Even quiet whispers of "the answer is..." are captured.
+    """
     stt_kwargs: dict[str, Any] = {
         "model": model,
         "smart_format": True,
@@ -896,15 +938,34 @@ def build_stt(language_code: str = "en-US", model: str = STT_MODEL):
         "punctuate": True,
     }
 
+    # Add diarization and keyterms only for Nova-3 models (not Sarvam/legacy).
+    if "nova" in model.lower():
+        stt_kwargs["keyterm"] = DEEPGRAM_KEYTERMS
+        # Note: enable_diarization may not be supported in all livekit-plugins-deepgram
+        # versions. We add it defensively and fall back gracefully if rejected.
+        stt_kwargs["enable_diarization"] = True
+
     # livekit.plugins.deepgram versions differ in endpointing keyword support.
-    try:
-        modern_kwargs = dict(stt_kwargs)
-        modern_kwargs["endpointing_ms"] = 300  # Faster response
-        return deepgram.STT(**modern_kwargs)
-    except TypeError:
-        legacy_kwargs = dict(stt_kwargs)
-        legacy_kwargs["endpointing"] = 300
-        return deepgram.STT(**legacy_kwargs)
+    # Try modern kwarg first, fall back to legacy, then fall back without diarization.
+    for attempt in range(3):
+        try:
+            attempt_kwargs = dict(stt_kwargs)
+            if attempt == 0:
+                attempt_kwargs["endpointing_ms"] = 300
+            elif attempt == 1:
+                attempt_kwargs["endpointing"] = 300
+            else:
+                # Final fallback: strip diarization in case it's unsupported
+                attempt_kwargs.pop("enable_diarization", None)
+                attempt_kwargs.pop("keyterm", None)
+                attempt_kwargs["endpointing_ms"] = 300
+            return deepgram.STT(**attempt_kwargs)
+        except TypeError:
+            if attempt == 2:
+                raise
+            continue
+    # Should be unreachable
+    return deepgram.STT(**{"model": model, "language": language_code})
 
 
 def build_sarvam_stt(language: str = "en-IN", model: str = "saaras:v3"):
@@ -3518,6 +3579,55 @@ The best interviews do not feel like interviews. They feel like a conversation t
             proctoring_events
         try:
             raw_data = None
+            
+            # --- Real-time Proctoring Sync Helpers ---
+            async def _report_proctoring_realtime(evt_type: str, reason: str, score_delta: int, sev: str = "medium"):
+                """Persist a single violation to the DB in real-time."""
+                if not DATABASE_URL: return
+                try:
+                    conn_str = normalize_postgres_dsn(DATABASE_URL)
+                    conn = await asyncpg.connect(conn_str, statement_cache_size=0)
+                    try:
+                        # Append the new event to the existing proctoringReport.events JSONB array
+                        await conn.execute(
+                            """
+                            UPDATE "Interview"
+                            SET "proctoringReport" = jsonb_set(
+                                COALESCE("proctoringReport", '{"events": []}'::jsonb),
+                                '{events}',
+                                COALESCE("proctoringReport"->'events', '[]'::jsonb) || $1::jsonb
+                            ),
+                            "updatedAt" = NOW()
+                            WHERE "applicationId" = $2
+                            """,
+                            json.dumps({
+                                "eventType": evt_type,
+                                "reason": reason,
+                                "timestamp": int(time.time() * 1000),
+                                "severity": sev,
+                                "score_delta": score_delta
+                            }),
+                            app_id
+                        )
+                    finally:
+                        await conn.close()
+                except Exception as e:
+                    logger.warning(f"[PROCTOR] Real-time persistence failed: {e}")
+
+            async def _signal_client_proctoring_violation(evt_type: str, reason: str, sev: str = "medium"):
+                """Send a data packet back to the candidate UI to trigger a toast."""
+                if not ctx.room.local_participant: return
+                try:
+                    payload = json.dumps({
+                        "type": "proctoring_violation",
+                        "eventType": evt_type,
+                        "reason": reason,
+                        "severity": sev,
+                        "timestamp": int(time.time() * 1000)
+                    }).encode("utf-8")
+                    await ctx.room.local_participant.publish_data(payload, reliable=True)
+                except Exception as e:
+                    logger.warning(f"[PROCTOR] Client signaling failed: {e}")
 
             if not event_args:
                 return
@@ -3618,6 +3728,72 @@ The best interviews do not feel like interviews. They feel like a conversation t
                             f"{len(unique_words)} unique): '{content[:60]}...'"
                         )
                         return
+
+            # --- Deepgram Diarization: Secondary Speaker Detection ---
+            # When diarization is enabled, Deepgram labels segments with a speaker_id.
+            # Any segment with speaker_id > 0 during a candidate turn means a second
+            # person is speaking — this is our "background_voice" proctoring signal.
+            if role == "user":
+                # Try to extract speaker_id from the event metadata if available
+                try:
+                    speaker_id = None
+                    raw_event = getattr(event, "item", event)
+                    # Deepgram speaker info may surface in alternatives or metadata
+                    for attr in ("speaker", "speaker_id", "channel"):
+                        speaker_id = getattr(raw_event, attr, None)
+                        if speaker_id is not None:
+                            break
+                    
+                    if speaker_id is not None and int(speaker_id) > 0:
+                        # A second speaker (speaker_id >= 1) was detected
+                        delta = PROCTORING_WEIGHTS["background_voice"]
+                        suspicion_score = min(100, suspicion_score + delta)
+                        reason = f"Multiple speakers detected in session (Speaker ID: {speaker_id})"
+                        proctoring_events.append({
+                            "event": "background_voice",
+                            "timestamp": time.time(),
+                            "speaker_id": int(speaker_id),
+                            "score_delta": delta,
+                            "score_after": suspicion_score,
+                            "snippet": content[:80],
+                        })
+                        logger.warning(
+                            f"[PROCTOR] background_voice detected: speaker_id={speaker_id} "
+                            f"score={suspicion_score} snippet='{content[:60]}'"
+                        )
+                        # Sync real-time
+                        spawn_background_task(_report_proctoring_realtime("background_voice", reason, delta), "report_bg_voice")
+                        spawn_background_task(_signal_client_proctoring_violation("background_voice", "Background voice detected. Please ensure you are in a quiet, private space."), "signal_bg_voice")
+                except Exception:
+                    pass  # Diarization metadata not available — silent skip
+
+            # --- Audio Leak: Helper Phrase Detection ---
+            # Scan every transcribed segment for phrases that indicate a third party
+            # is providing answers (e.g. "the answer is X", "tell her to say...").
+            # This catches cases where the candidate's mic picks up a roommate
+            # whispering instructions that Deepgram can transcribe.
+            if role == "user" and content:
+                for pattern in _HELPER_PHRASE_PATTERNS:
+                    if pattern.search(content):
+                        delta = PROCTORING_WEIGHTS["audio_leak"]
+                        suspicion_score = min(100, suspicion_score + delta)
+                        reason = f"Helper phrase detected via Deepgram: '{content[:50]}...'"
+                        proctoring_events.append({
+                            "event": "audio_leak",
+                            "timestamp": time.time(),
+                            "matched_pattern": pattern.pattern,
+                            "score_delta": delta,
+                            "score_after": suspicion_score,
+                            "snippet": content[:120],
+                        })
+                        logger.warning(
+                            f"[PROCTOR] audio_leak detected: pattern='{pattern.pattern}' "
+                            f"score={suspicion_score} snippet='{content[:80]}'"
+                        )
+                        # Sync real-time
+                        spawn_background_task(_report_proctoring_realtime("audio_leak", reason, delta, sev="high"), "report_audio_leak")
+                        spawn_background_task(_signal_client_proctoring_violation("audio_leak", "Sound anomaly detected. Please ensure you are performing the interview without external assistance.", sev="high"), "signal_audio_leak")
+                        break  # one flag per segment is enough
 
             speaker = "Interviewer" if role == "assistant" else "Candidate"
             append_transcript_line(speaker, content)
