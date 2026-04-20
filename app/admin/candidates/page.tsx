@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, XCircle, RefreshCw, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, CheckSquare, Square, Send, Loader2 } from "lucide-react";
+import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, XCircle, RefreshCw, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, CheckSquare, Square, Send, Loader2, Lock } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
@@ -231,7 +231,25 @@ export default function CandidatesPage() {
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
     const searchParams = useSearchParams();
     const router = useRouter();
-    const driveIdParam = searchParams.get("driveId");
+    const driveIdParam = searchParams.get("driveId");
+
+    // Organization Status
+    const [orgStatus, setOrgStatus] = useState<string>("ACTIVE");
+    useEffect(() => {
+        const fetchOrgStatus = async () => {
+            try {
+                const res = await fetch("/api/admin/organization");
+                if (res.ok) {
+                    const data = await res.json();
+                    setOrgStatus(data.status || "ACTIVE");
+                }
+            } catch (error) {
+                console.error("Failed to fetch organization status:", error);
+            }
+        };
+        fetchOrgStatus();
+    }, []);
+    const isSuspended = orgStatus === "SUSPENDED" || orgStatus === "CLOSED";
 
     // Initialize role filter from URL if present
     useEffect(() => {
@@ -366,6 +384,13 @@ export default function CandidatesPage() {
 
     const confirmBulkAction = async () => {
         if (!pendingAction) return;
+        if (isSuspended && (pendingAction === "hire" || pendingAction === "shortlist" || pendingAction === "reject" || pendingAction === "not_hired")) {
+            toast.error("Actions are restricted. Please resolve your account status.");
+            setIsActionModalOpen(false);
+            setPendingAction(null);
+            return;
+        }
+
         setIsBulkLoading(true);
         try {
             const res = await fetch("/api/candidates/bulk-action", {
@@ -857,10 +882,10 @@ export default function CandidatesPage() {
                                                                         handleResendInterview({ id: candidate.id, interviewStatus: candidate.interviewStatus });
                                                                     }
                                                                 }}
-                                                                disabled={resendingId === candidate.id}
-                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-blue-600 focus:bg-blue-50"
+                                                                disabled={resendingId === candidate.id || isSuspended}
+                                                                className={cn("rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors", isSuspended ? "text-gray-400 opacity-70" : "text-blue-600 focus:bg-blue-50")}
                                                             >
-                                                                <RefreshCw className={cn("h-4 w-4 mr-2", resendingId === candidate.id && "animate-spin")} />
+                                                                {isSuspended ? <Lock className="h-4 w-4 mr-2" /> : <RefreshCw className={cn("h-4 w-4 mr-2", resendingId === candidate.id && "animate-spin")} />}
                                                                 {resendingId === candidate.id ? "Sending..." : "Resend Interview Link"}
                                                             </DropdownMenuItem>
                                                             <DropdownMenuItem

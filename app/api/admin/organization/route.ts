@@ -22,9 +22,9 @@ export async function GET() {
                 isDomainVerified: true,
                 customSenderEmail: true,
                 customSenderName: true,
-                onboardingStep: true,
                 onboardingComplete: true,
                 location: true,
+                status: true,
             }
         });
 

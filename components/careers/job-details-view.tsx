@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { PortalHeader } from "@/components/careers/portal-header";
 import { Button } from "@/components/ui/button";
@@ -201,7 +201,7 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
 
                             <div className="space-y-4 relative z-10">
                                 {isActuallyClosed ? (
-                                    <Button disabled className="w-full h-16 bg-gray-100 text-gray-400 font-black text-lg rounded-2xl cursor-not-allowed uppercase tracking-widest italic border-gray-100">
+                                    <Button disabled className="w-full h-16 bg-gray-100 text-gray-400 font-inter font-black text-lg rounded-2xl cursor-not-allowed uppercase tracking-widest border-gray-100">
                                         APPLICATIONS CLOSED
                                     </Button>
                                 ) : (
@@ -225,7 +225,7 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
                             <div className="pt-6 border-t border-gray-50 flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                     <div className={`h-2 w-2 rounded-full ${isActuallyClosed ? 'bg-red-500' : 'bg-green-500 animate-pulse'}`} />
-                                    <span className="text-[10px] font-black text-gray-900 uppercase tracking-widest">
+                                    <span className="text-[10px] font-inter font-black text-gray-900 uppercase tracking-widest">
                                         {isActuallyClosed ? (isExpired ? 'Applications Expired' : 'Applications Closed') : 'Accepting Applications'}
                                     </span>
                                 </div>

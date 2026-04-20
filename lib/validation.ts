@@ -5,20 +5,20 @@ export const driveIdSchema = z.object({
 });
 
 export const createDriveSchema = z.object({
-  title: z.string().min(1, "Title is required").max(200),
+  title: z.preprocess((val) => (typeof val === 'string' && val.trim() !== '') ? val : "Untitled Drive", z.string().min(1).max(200)),
   description: z.string().max(5000).optional().default(""),
   role: z.string().optional(),
-  department: z.string().min(1, "Department is required"),
+  department: z.preprocess((val) => (typeof val === 'string' && val.trim() !== '') ? val : "General", z.string().min(1)),
   employmentType: z.preprocess((val) => {
-    if (!val || val === "" || typeof val !== "string") return undefined;
+    if (!val || val === "" || typeof val !== "string") return "Full-time";
     const lower = val.toLowerCase();
     if (lower.includes("full") || lower.includes("permanent")) return "Full-time";
     if (lower.includes("part")) return "Part-time";
     if (lower.includes("contract")) return "Contract";
     if (lower.includes("intern")) return "Internship";
     if (lower.includes("freelance")) return "Freelance";
-    return val;
-  }, z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance", "full-time", "part-time", "contract", "internship", "freelance"]).optional()).transform(v => v ? (v.charAt(0).toUpperCase() + v.slice(1).replace("-t", "-T")) : undefined).optional(),
+    return "Full-time"; // Fallback to default
+  }, z.string().optional()).default("Full-time"),
   type: z.preprocess((val) => {
     if (!val || val === "" || typeof val !== "string") return undefined;
     const lower = val.toLowerCase();
@@ -28,30 +28,42 @@ export const createDriveSchema = z.object({
     if (lower.includes("intern")) return "Internship";
     if (lower.includes("freelance")) return "Freelance";
     return val;
-  }, z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance", "full-time", "part-time", "contract", "internship", "freelance"]).optional()).transform(v => v ? (v.charAt(0).toUpperCase() + v.slice(1).replace("-t", "-T")) : undefined).optional(),
+  }, z.string().optional()),
   workMode: z.preprocess((val) => {
-    if (!val || val === "" || typeof val !== "string") return undefined;
+    if (!val || val === "" || typeof val !== "string") return "Remote";
     const lower = val.toLowerCase();
     if (lower.includes("remote")) return "Remote";
     if (lower.includes("hybrid")) return "Hybrid";
-    if (lower.includes("site") || lower.includes("office")) return "On-site";
-    return val;
-  }, z.enum(["Remote", "Hybrid", "On-site", "Onsite", "on-site", "onsite"]).optional()).transform(v => v ? (v.toLowerCase().includes("site") ? "On-site" : v.charAt(0).toUpperCase() + v.slice(1)) : undefined).optional(),
+    if (lower.includes("site") || lower.includes("office") || lower.includes("present")) return "On-site";
+    return "Remote"; // Fallback to safe default
+  }, z.string().optional()).default("Remote"),
   location: z.string().optional(),
-  positions: z.coerce.number().int().min(1).optional(),
-  deadline: z.string().nullable().optional(),
+  positions: z.preprocess((val) => {
+    if (val === null || val === undefined || val === "") return 1;
+    const n = Number(val);
+    return isNaN(n) ? 1 : n;
+  }, z.coerce.number().int().min(1).optional()).default(1),
+  deadline: z.preprocess((val) => (val === "" || val === undefined) ? null : val, z.string().nullable().optional()),
   salary: z.string().optional(),
   experience: z.string().optional(),
   skills: z.string().optional(),
   responsibilities: z.string().optional(),
   requirements: z.string().optional(),
-  jdFileName: z.string().optional(),
-  jdPreviewUrl: z.string().optional(),
+  jdFileName: z.string().nullable().optional(),
+  jdPreviewUrl: z.string().nullable().optional(),
   interviewEnabled: z.boolean().optional(),
   interviewLanguage: z.string().optional(),
-  interviewTime: z.coerce.number().int().optional(),
+  interviewTime: z.preprocess((val) => {
+    if (val === null || val === undefined || val === "") return 10;
+    const n = Number(val);
+    return isNaN(n) ? 10 : n;
+  }, z.coerce.number().int().optional()).default(10),
   interviewAntiCheat: z.string().optional(),
-  interviewFollowUp: z.coerce.number().int().optional(),
+  interviewFollowUp: z.preprocess((val) => {
+    if (val === null || val === undefined || val === "") return 3;
+    const n = Number(val);
+    return isNaN(n) ? 3 : n;
+  }, z.coerce.number().int().optional()).default(3),
   interviewQuestions: z.array(z.any()).optional(),
   registrationFields: z.array(z.any()).optional(),
   extractedDetails: z.record(z.string(), z.any()).optional(),
@@ -166,17 +178,17 @@ export function withZod<T extends z.ZodTypeAny>(
     try {
       const body = await request.clone().json();
       const result = schema.safeParse(body);
-      
+
       if (!result.success) {
         return Response.json(
-          { 
-            error: "Validation failed", 
-            details: result.error.flatten().fieldErrors 
+          {
+            error: "Validation failed",
+            details: result.error.flatten().fieldErrors
           },
           { status: 400 }
         );
       }
-      
+
       return handler(result.data);
     } catch (error) {
       if (error instanceof SyntaxError) {
@@ -194,23 +206,23 @@ export function withSearchParams<T extends z.ZodTypeAny>(
   return async (request: Request) => {
     const { searchParams } = new URL(request.url);
     const params: Record<string, string | null> = {};
-    
+
     for (const [key, value] of searchParams) {
       params[key] = value;
     }
-    
+
     const result = schema.safeParse(params);
-    
+
     if (!result.success) {
       return Response.json(
-        { 
-          error: "Invalid query parameters", 
-          details: result.error.flatten().fieldErrors 
+        {
+          error: "Invalid query parameters",
+          details: result.error.flatten().fieldErrors
         },
         { status: 400 }
       );
     }
-    
+
     return handler(result.data);
   };
 }
@@ -226,8 +238,8 @@ export const strongPasswordSchema = z
 export function validatePasswordStrength(password: string): { isValid: boolean; error?: string } {
   const result = strongPasswordSchema.safeParse(password);
   if (!result.success) {
-    return { 
-      isValid: false, 
+    return {
+      isValid: false,
       error: result.error.issues[0]?.message || "Validation failed"
     };
   }

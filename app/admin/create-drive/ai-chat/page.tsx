@@ -30,6 +30,7 @@ export default function AiChatJdPage() {
     const [isLoaded, setIsLoaded] = useState(false);
     const [input, setInput] = useState("");
     const [isGenerating, setIsGenerating] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
     const [generatedJd, setGeneratedJd] = useState<any>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -142,49 +143,7 @@ export default function AiChatJdPage() {
         }
     };
 
-    const handleUseJd = (dataToUse: any) => {
-        const jd = dataToUse || generatedJd;
-        if (!jd) {
-            console.error("No JD data found for sync");
-            return;
-        }
-
-        const formattedData = {
-           title: jd.job_title,
-           role: jd.role_name || jd.job_title,
-           department: jd.department,
-           workMode: jd.work_mode,
-           employmentType: jd.employment_type || "Full-time",
-           location: jd.location,
-           description: jd.description,
-           salary: jd.salary,
-           experience: jd.experience,
-           // Skills: keep as comma-separated string for the form field
-           skills: Array.isArray(jd.technical_skills)
-               ? jd.technical_skills.join(", ")
-               : (jd.technical_skills || ""),
-           // Responsibilities: newline-separated for the textarea
-           responsibilities: Array.isArray(jd.responsibilities)
-               ? jd.responsibilities.join("\n")
-               : (jd.responsibilities || ""),
-           // Requirements: newline-separated for the textarea
-           requirements: Array.isArray(jd.candidate_requirements)
-               ? jd.candidate_requirements.join("\n")
-               : (jd.candidate_requirements || ""),
-           // Perks stored in extractedDetails for reference
-           extractedDetails: {
-               ...jd,
-               perks: Array.isArray(jd.perks) ? jd.perks : [],
-           },
-        };
-
-        localStorage.setItem("jd_draft", JSON.stringify(formattedData));
-        router.push("/admin/create-drive?method=ai-chat");
-    };
-
-    const handleDownloadPdf = async (jd: any) => {
-        if (!jd) return;
-        
+    const generateJdPdfBlob = async (jd: any): Promise<Blob> => {
         // Create an invisible element for capture
         const element = document.createElement("div");
         element.style.padding = "40px";
@@ -193,8 +152,6 @@ export default function AiChatJdPage() {
         element.style.background = "white";
         element.style.color = "#111827";
         
-        // All JD fields are escaped with escapeHtml() to prevent XSS in the
-        // generated PDF preview element.
         element.innerHTML = `
             <div style="border-bottom: 2px solid #F97316; padding-bottom: 20px; margin-bottom: 30px;">
                 <h1 style="font-size: 28px; font-weight: 900; margin: 0; letter-spacing: -0.025em;">${escapeHtml(jd.job_title)}</h1>
@@ -254,10 +211,102 @@ export default function AiChatJdPage() {
             const imgHeight = (canvas.height * imgWidth) / canvas.width;
             
             pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
-            pdf.save(`${jd.job_title.replace(/\s+/g, '_')}_JD.pdf`);
+            return pdf.output("blob");
         } finally {
             document.body.removeChild(element);
         }
+    };
+
+    const handleUseJd = async (dataToUse: any) => {
+        const jd = dataToUse || generatedJd;
+        if (!jd || isUploading) {
+            console.error("No JD data found for sync or already uploading");
+            return;
+        }
+
+        setIsUploading(true);
+
+        try {
+            // 1. Generate PDF Blob
+            const pdfBlob = await generateJdPdfBlob(jd);
+            const fileName = `Assistant_JD_${jd.job_title.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+
+            // 2. Upload to R2 via our new API
+            const formData = new FormData();
+            formData.append("file", pdfBlob, fileName);
+            formData.append("fileName", fileName);
+
+            const uploadRes = await fetch("/api/admin/create-drive/upload-jd-pdf", {
+                method: "POST",
+                body: formData
+            });
+
+            if (!uploadRes.ok) throw new Error("Cloudflare R2 sync failed");
+            
+            const { url } = await uploadRes.json();
+
+            // 3. Format and save to localStorage
+            const formattedData = {
+               title: jd.job_title,
+               role: jd.role_name || jd.job_title,
+               department: jd.department,
+               workMode: jd.work_mode,
+               employmentType: jd.employment_type || "Full-time",
+               location: jd.location || "Remote",
+               description: jd.description,
+               salary: jd.salary,
+               experience: jd.experience,
+               jdFileName: fileName,
+               jdPreviewUrl: url,
+               skills: Array.isArray(jd.technical_skills) ? jd.technical_skills.join(", ") : (jd.technical_skills || ""),
+               responsibilities: Array.isArray(jd.responsibilities) ? jd.responsibilities.join("\n") : (jd.responsibilities || ""),
+               requirements: Array.isArray(jd.candidate_requirements) ? jd.candidate_requirements.join("\n") : (jd.candidate_requirements || ""),
+               extractedDetails: {
+                   ...jd,
+                   perks: Array.isArray(jd.perks) ? jd.perks : [],
+               },
+            };
+
+            localStorage.setItem("jd_draft", JSON.stringify(formattedData));
+            router.push("/admin/create-drive?method=ai-chat");
+        } catch (error) {
+            console.error("Sync failed:", error);
+            // Fallback: save without R2 URL if upload fails (can be manually uploaded in the form)
+            const formattedData = {
+                title: jd.job_title,
+                // ... same as above but without R2 url
+                role: jd.role_name || jd.job_title,
+                department: jd.department,
+                workMode: jd.work_mode,
+                employmentType: jd.employment_type || "Full-time",
+                location: jd.location || "Remote",
+                description: jd.description,
+                salary: jd.salary,
+                experience: jd.experience,
+                skills: Array.isArray(jd.technical_skills) ? jd.technical_skills.join(", ") : (jd.technical_skills || ""),
+                responsibilities: Array.isArray(jd.responsibilities) ? jd.responsibilities.join("\n") : (jd.responsibilities || ""),
+                requirements: Array.isArray(jd.candidate_requirements) ? jd.candidate_requirements.join("\n") : (jd.candidate_requirements || ""),
+                extractedDetails: {
+                    ...jd,
+                    perks: Array.isArray(jd.perks) ? jd.perks : [],
+                },
+            };
+            localStorage.setItem("jd_draft", JSON.stringify(formattedData));
+            router.push("/admin/create-drive?method=ai-chat");
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    const handleDownloadPdf = async (jd: any) => {
+        if (!jd) return;
+        const pdfBlob = await generateJdPdfBlob(jd);
+        const url = URL.createObjectURL(pdfBlob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${jd.job_title.replace(/\s+/g, '_')}_JD.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
     };
 
     return (
@@ -565,13 +614,29 @@ export default function AiChatJdPage() {
                                                 {/* Footer CTA */}
                                                 <div className="px-8 py-5 bg-gray-50/50 flex flex-wrap gap-3">
                                                     <button 
+                                                        disabled={isUploading}
                                                         onClick={() => handleUseJd(m.data)}
-                                                        className="h-11 px-8 rounded-xl text-white font-bold text-[10px] uppercase tracking-widest shadow-lg transition-all hover:scale-105 active:scale-95 flex items-center gap-3"
-                                                        style={{ background: "linear-gradient(135deg, #F97316, #ea6608)", boxShadow: "0 10px 20px rgba(249,115,22,0.2)" }}
+                                                        className={cn(
+                                                            "h-11 px-8 rounded-xl text-white font-bold text-[10px] uppercase tracking-widest shadow-lg transition-all flex items-center gap-3",
+                                                            isUploading ? "opacity-90 scale-[0.98] cursor-not-allowed" : "hover:scale-105 active:scale-95"
+                                                        )}
+                                                        style={{ 
+                                                            background: "linear-gradient(135deg, #F97316, #ea6608)", 
+                                                            boxShadow: isUploading ? "none" : "0 10px 20px rgba(249,115,22,0.2)" 
+                                                        }}
                                                     >
-                                                        <Rocket className="h-4 w-4" />
-                                                        <span>Add to Drive</span>
-                                                        <ChevronRight className="h-4 w-4" />
+                                                        {isUploading ? (
+                                                            <>
+                                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                                <span>Brain-syncing to R2...</span>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Rocket className="h-4 w-4" />
+                                                                <span>Add to Drive</span>
+                                                                <ChevronRight className="h-4 w-4" />
+                                                            </>
+                                                        )}
                                                     </button>
                                                     <button 
                                                         onClick={() => handleDownloadPdf(m.data)}

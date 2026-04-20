@@ -1,6 +1,6 @@
 import { Resend } from 'resend';
 import { prisma } from "@/lib/prisma";
-import { sendGmailEmail } from './google-auth';
+import { sendGmailEmail, sendSuperAdminGmailEmail } from './google-auth';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -271,8 +271,28 @@ export async function sendApplicationStatusEmail({
             console.log(`[MAIL] Status email sent to ${email} via GMAIL API`);
             return { success: true };
         } catch (error) {
-            console.error(`[MAIL GMAIL FAILED] Falling back to Resend...`, error);
-            // Fall through to Resend logic
+            console.error(`[MAIL GMAIL FAILED] Falling back to Super Admin Gmail or Resend...`, error);
+        }
+    }
+
+    // NEW: FALLBACK TO SUPER ADMIN GMAIL
+    const superAdmin = await prisma.superAdmin.findFirst({
+        where: { googleAccessToken: { not: null } },
+        select: { id: true }
+    });
+
+    if (superAdmin) {
+        try {
+            await sendSuperAdminGmailEmail({
+                adminId: superAdmin.id,
+                to: email,
+                subject,
+                html
+            });
+            console.log(`[MAIL] Status email sent to ${email} via Super Admin GMAIL API`);
+            return { success: true };
+        } catch (error) {
+            console.error(`[MAIL SUPER ADMIN GMAIL FAILED] Falling back to Resend...`, error);
         }
     }
 
@@ -342,6 +362,26 @@ export async function sendOrgWelcomeEmail({
             </p>
         </div>
     `;
+
+    const superAdmin = await prisma.superAdmin.findFirst({
+        where: { googleAccessToken: { not: null } },
+        select: { id: true }
+    });
+
+    if (superAdmin) {
+        try {
+            await sendSuperAdminGmailEmail({
+                adminId: superAdmin.id,
+                to: email,
+                subject,
+                html
+            });
+            console.log(`[WELCOME EMAIL] Sent to ${email} for org ${orgName} via Super Admin GMAIL`);
+            return { success: true };
+        } catch (error) {
+            console.error(`[WELCOME EMAIL GMAIL FAILED] Falling back to Resend...`, error);
+        }
+    }
 
     const { from } = await resolveVerifiedSender();
     const finalFrom = from || "Lumoscale Platform <security@lumoscale.com>";
@@ -422,8 +462,29 @@ export async function sendTeamInviteEmail({
                 console.log(`[INVITE EMAIL] Sent to ${email} via GMAIL API`);
                 return { success: true };
             } catch (error) {
-                console.error(`[INVITE EMAIL GMAIL FAILED] Falling back to Resend...`, error);
+                console.error(`[INVITE EMAIL GMAIL FAILED] Falling back to Super Admin Gmail or Resend...`, error);
             }
+        }
+    }
+
+    // NEW: FALLBACK TO SUPER ADMIN GMAIL
+    const superAdmin = await prisma.superAdmin.findFirst({
+        where: { googleAccessToken: { not: null } },
+        select: { id: true }
+    });
+
+    if (superAdmin) {
+        try {
+            await sendSuperAdminGmailEmail({
+                adminId: superAdmin.id,
+                to: email,
+                subject,
+                html
+            });
+            console.log(`[INVITE EMAIL] Sent to ${email} via Super Admin GMAIL API`);
+            return { success: true };
+        } catch (error) {
+            console.error(`[INVITE EMAIL SUPER ADMIN GMAIL FAILED] Falling back to Resend...`, error);
         }
     }
 

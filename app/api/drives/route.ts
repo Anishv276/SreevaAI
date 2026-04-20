@@ -1,4 +1,4 @@
-
+import { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
@@ -151,11 +151,22 @@ export async function POST(request: Request) {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
+        if (session.orgId) {
+            const org = await prisma.organization.findUnique({
+                where: { id: session.orgId },
+                select: { status: true }
+            });
+            if (org?.status === "SUSPENDED" || org?.status === "CLOSED") {
+                return NextResponse.json({ error: "Drive creation is blocked because your organization is restricted." }, { status: 403 });
+            }
+        }
+
         const rawBody = await request.json();
         const body = sanitizeObject(rawBody);
 
         const result = createDriveSchema.safeParse(body);
         if (!result.success) {
+            console.error("[POST /api/drives] Validation failed:", JSON.stringify(result.error.flatten().fieldErrors, null, 2));
             return NextResponse.json(
                 { error: "Validation failed", details: result.error.flatten().fieldErrors },
                 { status: 400 }
@@ -192,7 +203,7 @@ export async function POST(request: Request) {
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
                 registrationFields: JSON.stringify(data.registrationFields || []),
                 screeningThreshold: data.screeningThreshold || 0,
-                
+
                 // Interview configuration
                 interviewEnabled: data.interviewEnabled ?? true,
                 interviewLanguage: data.interviewLanguage || "English",
@@ -211,10 +222,10 @@ export async function POST(request: Request) {
         return NextResponse.json(drive);
     } catch (error: any) {
         console.error("Error creating drive:", error);
-        return NextResponse.json({ 
-            error: "Failed to create drive", 
+        return NextResponse.json({
+            error: "Failed to create drive",
             details: error.message,
-            code: error.code 
+            code: error.code
         }, { status: 500 });
     }
 }

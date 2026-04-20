@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { IntegrationsContent } from "@/components/admin/integrations/integrations-content";
 
 export default function AdminIntegrationsPage() {
-    redirect("/admin/settings?section=integrations");
+    return <IntegrationsContent />;
 }

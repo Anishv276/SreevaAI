@@ -47,21 +47,21 @@ const defaultJobOptions = {
 };
 
 // 1. Handles resume PDF text extraction and screening
-export const resumeQueue = new Queue('resume-processing', { 
+export const resumeQueue = new Queue('resume-processing', {
   connection: redisConnection,
-  defaultJobOptions 
+  defaultJobOptions
 });
 
 // 2. Handles transactional emails (invites, reports)
-export const emailQueue = new Queue('email-delivery', { 
+export const emailQueue = new Queue('email-delivery', {
   connection: redisConnection,
-  defaultJobOptions 
+  defaultJobOptions
 });
 
 // 3. Handles async interview recording/transcript persistence
-export const interviewFinalizationQueue = new Queue('interview-finalization', { 
+export const interviewFinalizationQueue = new Queue('interview-finalization', {
   connection: redisConnection,
-  defaultJobOptions 
+  defaultJobOptions
 });
 
 // 4. Handles proctoring snapshots (direct R2 upload + DB sync)
@@ -78,5 +78,10 @@ export const interviewSnapshotQueue = new Queue('interview-snapshots', {
   }
 });
 
+// 5. Handles AI-generated JD PDF uploads to Cloudflare R2
+export const jdUploadQueue = new Queue('jd-upload', {
+  connection: redisConnection,
+  defaultJobOptions
+});
 
 export default redisConnection;

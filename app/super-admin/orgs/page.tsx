@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
@@ -232,7 +232,16 @@ export default function OrgsPage() {
             if (!res.ok) {
                 throw new Error("Failed to update status");
             }
-            toast.success(`${orgName} status updated to ${newStatus.toLowerCase()}`);
+            const normalizedStatus = newStatus.toUpperCase();
+            if (normalizedStatus === "SUSPENDED") {
+                toast.info(`${orgName} has been suspended.`);
+            } else if (normalizedStatus === "ACTIVE") {
+                toast.success(`${orgName} is now active.`);
+            } else if (normalizedStatus === "CLOSED") {
+                toast.error(`${orgName} has been closed.`);
+            } else {
+                toast.success(`${orgName} status updated to ${newStatus.toLowerCase()}`);
+            }
         } catch (error) {
             // ROLLBACK: Revert to previous state on failure
             setOrgs(prev => prev.map(o => o.id === orgId ? { ...o, status: previousStatus } : o));

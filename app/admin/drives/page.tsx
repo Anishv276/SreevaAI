@@ -32,7 +32,8 @@ import {
     Laptop,
     Check,
     Link as LinkIcon,
-    Bot
+    Bot,
+    Lock
 } from "lucide-react";
 import {
     Select,
@@ -96,6 +97,24 @@ export default function DrivesPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    
+    // Organization Status
+    const [orgStatus, setOrgStatus] = useState<string>("ACTIVE");
+    useEffect(() => {
+        const fetchOrgStatus = async () => {
+            try {
+                const res = await fetch("/api/admin/organization");
+                if (res.ok) {
+                    const data = await res.json();
+                    setOrgStatus(data.status || "ACTIVE");
+                }
+            } catch (error) {
+                console.error("Failed to fetch organization status:", error);
+            }
+        };
+        fetchOrgStatus();
+    }, []);
+    const isSuspended = orgStatus === "SUSPENDED" || orgStatus === "CLOSED";
 
     // Filters State
     const [statusFilter, setStatusFilter] = useState("all");
@@ -309,12 +328,23 @@ export default function DrivesPage() {
                             <><Trash2 className="h-4 w-4" /> Delete</>
                         )}
                     </Button>
-                    <Link href="/admin/create-drive">
-                        <Button className="bg-gradient-to-r from-[#F97316] to-orange-500 hover:shadow-orange-500/25 hover:shadow-xl transition-all duration-300 h-12 px-6 font-bold rounded-2xl text-white shadow-lg">
-                            <Plus className="h-5 w-5 mr-2" />
+                    {isSuspended ? (
+                        <Button 
+                            disabled 
+                            className="bg-gray-100/50 hover:bg-gray-100/50 border border-gray-200 text-gray-400 h-12 px-6 font-bold rounded-2xl cursor-not-allowed opacity-70"
+                            title="Action disabled: Organization restricted"
+                        >
+                            <Lock className="h-4 w-4 mr-2" />
                             New Drive
                         </Button>
-                    </Link>
+                    ) : (
+                        <Link href="/admin/create-drive">
+                            <Button className="bg-gradient-to-r from-[#F97316] to-orange-500 hover:shadow-orange-500/25 hover:shadow-xl transition-all duration-300 h-12 px-6 font-bold rounded-2xl text-white shadow-lg">
+                                <Plus className="h-5 w-5 mr-2" />
+                                New Drive
+                            </Button>
+                        </Link>
+                    )}
                 </div>
             </div>
 
@@ -497,7 +527,7 @@ export default function DrivesPage() {
                                                             onClick={(e) => e.stopPropagation()}
                                                         >
                                                             <div className={cn("h-2 w-2 rounded-full", dotColor)} />
-                                                            <span className={cn("text-[11px] font-black uppercase tracking-wider", statusColor)}>
+                                                            <span className={cn("text-[11px] font-inter font-black uppercase tracking-wider", statusColor)}>
                                                                 {statusLabel}
                                                             </span>
                                                         </button>
@@ -681,7 +711,15 @@ export default function DrivesPage() {
                                 <div className="space-y-0.5">
                                     <div className="flex items-center gap-3">
                                         <h2 className="text-xl font-bold text-gray-900 tracking-tight">{selectedDrive.title}</h2>
-                                        <div className="h-5 px-2 rounded-md bg-gray-100 text-gray-500 border border-gray-200 font-bold text-[9px] uppercase tracking-wider flex items-center">Open</div>
+                                        <div className={cn(
+                                            "h-5 px-2 rounded-md font-inter font-black text-[9px] uppercase tracking-wider flex items-center border",
+                                            selectedDrive.status === "CLOSED" ? "bg-red-50 text-red-500 border-red-100" :
+                                            (selectedDrive.deadline && new Date(selectedDrive.deadline) < new Date()) ? "bg-orange-50 text-orange-500 border-orange-100" :
+                                            "bg-green-50 text-green-600 border-green-100"
+                                        )}>
+                                            {selectedDrive.status === "CLOSED" ? "Closed" : 
+                                             (selectedDrive.deadline && new Date(selectedDrive.deadline) < new Date()) ? "Expired" : "Active"}
+                                        </div>
                                     </div>
                                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{selectedDrive.role || "Job Description"} • {selectedDrive.department || "General"}</p>
                                 </div>

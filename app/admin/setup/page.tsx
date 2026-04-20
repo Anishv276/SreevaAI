@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -61,16 +61,12 @@ export default function OnboardingPage() {
                     });
                     setCompany(prev => ({ ...prev, ...sanitized }));
                     
-                    if (data.onboardingComplete === true || data.onboardingStep >= 5) {
+                    if (data.onboardingComplete === true) {
                         router.replace("/admin");
                         return;
                     }
 
-                    // RESUMPTION: Restore last step
-                    if (data.onboardingStep !== undefined) {
-                        const step = Math.min(Math.max(data.onboardingStep, 0), STEPS.length - 1);
-                        setCurrentStep(step);
-                    }
+
                 }
                 if (profileRes.ok) {
                     const pData = await profileRes.json();
@@ -158,55 +154,61 @@ export default function OnboardingPage() {
         setError(null);
         setIsSaving(true);
         try {
-            // STEP 0: Profile + Security
+            // STEP 0: Profile
             if (currentStep === 0) {
-                if (!profile.name) { setError("Full name is required."); setIsSaving(false); return; }
-                if (passwords.next && passwords.next.length < 8) { setError("New password must be at least 8 characters."); setIsSaving(false); return; }
-                const res = await fetch("/api/admin/setup", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        phase: "profile",
-                        data: {
-                            name: profile.name,
-                            phone: profile.phone,
-                            jobTitle: profile.jobTitle,
-                            password: passwords.next || undefined,
-                            currentPassword: passwords.current || undefined,
-                        }
-                    })
-                });
-                if (!res.ok) { const d = await res.json(); setError(d.error || "Profile save failed."); setIsSaving(false); return; }
+                if (!profile.name || !profile.jobTitle) { 
+                    setError("Full name and job title are required."); 
+                    setIsSaving(false); 
+                    return; 
+                }
+                if (passwords.next && passwords.next.length < 8) { 
+                    setError("New password must be at least 8 characters."); 
+                    setIsSaving(false); 
+                    return; 
+                }
+                // No API call here - save deferred
             }
 
             // STEP 1: Company Identity
             if (currentStep === 1) {
                 const urlRegex = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,63})([/\w .-]*)*\/?$/;
                 if (!company.name || !company.website || !company.industry || !company.size || !company.location) {
-                    setError("All company fields are required."); setIsSaving(false); return;
+                    setError("All company fields are required."); 
+                    setIsSaving(false); 
+                    return;
                 }
-                if (!urlRegex.test(company.website)) { setError("Website must be a valid URL (e.g., company.com)."); setIsSaving(false); return; }
-                const res = await fetch("/api/admin/setup", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ phase: "branding", data: company })
-                });
-                if (!res.ok) { const d = await res.json(); setError(d.error || "Company profile save failed."); setIsSaving(false); return; }
+                if (!urlRegex.test(company.website)) { 
+                    setError("Website must be a valid URL (e.g., company.com)."); 
+                    setIsSaving(false); 
+                    return; 
+                }
+                // No API call here - save deferred
             }
 
-            // REMOVED STEP 2 (Hiring Goals)
-
-
-            // STEP 3: Proceed (final)
+            // STEP 2: Proceed (final activation)
             if (currentStep === STEPS.length - 1) {
                 const res = await fetch("/api/admin/setup", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ phase: "complete" })
+                    body: JSON.stringify({ 
+                        phase: "complete",
+                        data: {
+                            profile,
+                            company,
+                            passwords: passwords.next ? passwords : undefined
+                        }
+                    })
                 });
-                if (!res.ok) { const d = await res.json(); setError(d.error || "Workspace activation failed."); setIsSaving(false); return; }
+                if (!res.ok) { 
+                    const d = await res.json(); 
+                    setError(d.error || "Workspace activation failed."); 
+                    setIsSaving(false); 
+                    return; 
+                }
                 localStorage.removeItem("onboarding_draft");
-                router.replace("/admin/welcome");
+                
+                // FORCE FULL RELOAD to ensure sidebar and session are updated
+                window.location.href = "/admin/welcome";
                 return;
             }
             setCurrentStep(prev => prev + 1);
@@ -304,7 +306,7 @@ export default function OnboardingPage() {
                                         </div>
                                     </div>
                                     <div className="space-y-2">
-                                        <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Job Title / Role</label>
+                                        <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Job Title / Role <span className="text-[#F97316]">*</span></label>
                                         <div className="relative">
                                             <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"><Briefcase className="h-4 w-4" /></div>
                                             <input
@@ -484,8 +486,8 @@ export default function OnboardingPage() {
 
 
 
-                        {/* --- STEP 3: PROCEED / READY --- */}
-                        {currentStep === 3 && (
+                        {/* --- STEP 2: PROCEED / READY --- */}
+                        {currentStep === 2 && (
                             <div className="py-8 space-y-12 animate-in-fade-slide">
                                 <div className="text-center space-y-4">
                                     <div className="relative inline-block">

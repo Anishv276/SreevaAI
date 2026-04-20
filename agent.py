@@ -2783,6 +2783,55 @@ async def entrypoint(ctx: JobContext):
     app_id = ctx.room.name.replace("interview_", "")
     ctx.log_context_fields = {"app_id": app_id}
 
+    # --- Real-time Proctoring Sync Helpers ---
+    async def _report_proctoring_realtime(evt_type: str, reason: str, score_delta: int, sev: str = "medium"):
+        """Persist a single violation to the DB in real-time."""
+        if not DATABASE_URL: return
+        try:
+            conn_str = normalize_postgres_dsn(DATABASE_URL)
+            conn = await asyncpg.connect(conn_str, statement_cache_size=0)
+            try:
+                # Append the new event to the existing proctoringReport.events JSONB array
+                await conn.execute(
+                    """
+                    UPDATE "Interview"
+                    SET "proctoringReport" = jsonb_set(
+                        COALESCE("proctoringReport", '{"events": []}'::jsonb),
+                        '{events}',
+                        COALESCE("proctoringReport"->'events', '[]'::jsonb) || $1::jsonb
+                    ),
+                    "updatedAt" = NOW()
+                    WHERE "applicationId" = $2
+                    """,
+                    json.dumps({
+                        "eventType": evt_type,
+                        "reason": reason,
+                        "timestamp": int(time.time() * 1000),
+                        "severity": sev,
+                        "score_delta": score_delta
+                    }),
+                    app_id
+                )
+            finally:
+                await conn.close()
+        except Exception as e:
+            logger.warning(f"[PROCTOR] Real-time persistence failed: {e}")
+
+    async def _signal_client_proctoring_violation(evt_type: str, reason: str, sev: str = "medium"):
+        """Send a data packet back to the candidate UI to trigger a toast."""
+        if not ctx.room.local_participant: return
+        try:
+            payload = json.dumps({
+                "type": "proctoring_violation",
+                "eventType": evt_type,
+                "reason": reason,
+                "severity": sev,
+                "timestamp": int(time.time() * 1000)
+            }).encode("utf-8")
+            await ctx.room.local_participant.publish_data(payload, reliable=True)
+        except Exception as e:
+            logger.warning(f"[PROCTOR] Client signaling failed: {e}")
+
 
     # Parallelize network-bound work: room connect + DB fetch run concurrently.
     async def connect_with_retry():
@@ -4088,54 +4137,7 @@ The best interviews do not feel like interviews. They feel like a conversation t
         try:
             raw_data = None
             
-            # --- Real-time Proctoring Sync Helpers ---
-            async def _report_proctoring_realtime(evt_type: str, reason: str, score_delta: int, sev: str = "medium"):
-                """Persist a single violation to the DB in real-time."""
-                if not DATABASE_URL: return
-                try:
-                    conn_str = normalize_postgres_dsn(DATABASE_URL)
-                    conn = await asyncpg.connect(conn_str, statement_cache_size=0)
-                    try:
-                        # Append the new event to the existing proctoringReport.events JSONB array
-                        await conn.execute(
-                            """
-                            UPDATE "Interview"
-                            SET "proctoringReport" = jsonb_set(
-                                COALESCE("proctoringReport", '{"events": []}'::jsonb),
-                                '{events}',
-                                COALESCE("proctoringReport"->'events', '[]'::jsonb) || $1::jsonb
-                            ),
-                            "updatedAt" = NOW()
-                            WHERE "applicationId" = $2
-                            """,
-                            json.dumps({
-                                "eventType": evt_type,
-                                "reason": reason,
-                                "timestamp": int(time.time() * 1000),
-                                "severity": sev,
-                                "score_delta": score_delta
-                            }),
-                            app_id
-                        )
-                    finally:
-                        await conn.close()
-                except Exception as e:
-                    logger.warning(f"[PROCTOR] Real-time persistence failed: {e}")
-
-            async def _signal_client_proctoring_violation(evt_type: str, reason: str, sev: str = "medium"):
-                """Send a data packet back to the candidate UI to trigger a toast."""
-                if not ctx.room.local_participant: return
-                try:
-                    payload = json.dumps({
-                        "type": "proctoring_violation",
-                        "eventType": evt_type,
-                        "reason": reason,
-                        "severity": sev,
-                        "timestamp": int(time.time() * 1000)
-                    }).encode("utf-8")
-                    await ctx.room.local_participant.publish_data(payload, reliable=True)
-                except Exception as e:
-                    logger.warning(f"[PROCTOR] Client signaling failed: {e}")
+            # Helper functions moved to entrypoint scope to prevent NameError
 
             if not event_args:
                 return

@@ -86,12 +86,12 @@ export function Toaster() {
                             flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl border backdrop-blur-md min-w-[320px]
                             ${t.type === "success" ? "bg-white/90 border-green-100 text-green-900" : 
                               t.type === "error" ? "bg-white/90 border-red-100 text-red-900" : 
-                              "bg-white/90 border-orange-100 text-orange-900"}
+                              "bg-white/90 border-amber-100 text-amber-900"}
                         `}>
                             <div className={`p-2 rounded-xl ${
                                 t.type === "success" ? "bg-green-50 text-green-600" : 
                                 t.type === "error" ? "bg-red-50 text-red-600" : 
-                                "bg-orange-50 text-[#F97316]"
+                                "bg-amber-50 text-[#D97706]"
                             }`}>
                                 {t.type === "success" && <CheckCircle2 className="w-5 h-5" />}
                                 {t.type === "error" && <AlertCircle className="w-5 h-5" />}

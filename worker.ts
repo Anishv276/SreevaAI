@@ -593,5 +593,45 @@ interviewSnapshotWorker.on("failed", (job, err) => {
   console.log(`[FATAL] Snapshot Job ${job?.id} failed: ${err.message}`);
 });
 
+/**
+ * 📄 JD UPLOAD WORKER
+ * Handles asynchronous uploading of AI-generated JD PDFs to Cloudflare R2.
+ */
+const jdUploadWorker = new Worker(
+    "jd-upload",
+    async (job) => {
+        const { bucket, key, buffer, contentType } = job.data;
+        if (!bucket || !key || !buffer) {
+            throw new Error("Missing required data for JD upload job");
+        }
+
+        console.log(`[JOB] Background upload starting for: ${key}`);
+
+        try {
+            // Redis/BullMQ might serialize Buffer as {type: 'Buffer', data: [...]}
+            // We ensure we have a real Buffer before uploading.
+            const fileBuffer = Buffer.from(buffer.data || buffer);
+
+            await putObject(bucket, key, fileBuffer, contentType || "application/pdf");
+
+            console.log(`[SUCCESS] JD PDF uploaded to R2: ${key}`);
+            return { success: true, key };
+        } catch (error) {
+            console.error(`[JD Upload Worker Error]:`, error);
+            throw error;
+        }
+    },
+    {
+        connection: redisConnection,
+        concurrency: 5, // Efficient parallel uploads
+        removeOnComplete: { count: 0 },
+        removeOnFail: { count: 10 }
+    }
+);
+
+jdUploadWorker.on("failed", (job, err) => {
+    console.log(`[FATAL] JD Upload Job ${job?.id} failed: ${err.message}`);
+});
+
 console.log("🚀 Workers are running and listening for jobs...");
 setupCronJobs();

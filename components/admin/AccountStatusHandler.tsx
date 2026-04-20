@@ -1,18 +1,24 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertCircle, Lock, ArrowRight, Phone } from "lucide-react";
+import { AlertCircle, Lock, ArrowRight, Phone, ShieldAlert } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 interface AccountStatusHandlerProps {
     status: string;
 }
 
+const RESTRICTED_ROUTES = ["/admin/create-drive"];
+
 export function AccountStatusHandler({ status }: AccountStatusHandlerProps) {
+    const pathname = usePathname();
+    const isRestrictedPath = RESTRICTED_ROUTES.some(route => pathname?.startsWith(route));
+
     if (status === "ACTIVE") return null;
 
-    if (status === "CLOSED") {
+    if (status === "CLOSED" || (status === "SUSPENDED" && isRestrictedPath)) {
         return (
             <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-gray-950/80 backdrop-blur-md p-4">
                 <motion.div 
@@ -21,29 +27,43 @@ export function AccountStatusHandler({ status }: AccountStatusHandlerProps) {
                     className="w-full max-w-md overflow-hidden rounded-[2.5rem] border border-white/10 bg-[#1A1A1A] text-white shadow-[0_40px_100px_rgba(0,0,0,0.5)]"
                 >
                     <div className="p-10 text-center">
-                        <div className="mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-3xl bg-rose-500/10 text-rose-500 ring-1 ring-rose-500/20">
-                            <Lock className="h-10 w-10" />
+                        <div className={`mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-3xl ${status === "CLOSED" ? "bg-rose-500/10 text-rose-500 ring-1 ring-rose-500/20" : "bg-amber-500/10 text-amber-500 ring-1 ring-amber-500/20"}`}>
+                            {status === "CLOSED" ? <Lock className="h-10 w-10" /> : <ShieldAlert className="h-10 w-10" />}
                         </div>
-                        <h2 className="mb-4 text-3xl font-black tracking-tight">Account Restricted</h2>
+                        <h2 className="mb-4 text-3xl font-black tracking-tight">
+                            {status === "CLOSED" ? "Account Restricted" : "Action Restricted"}
+                        </h2>
                         <p className="mb-10 text-gray-400 font-medium leading-relaxed">
-                            Your account has been closed. Please contact the system administrator to resolve this and restore access.
+                            {status === "CLOSED" 
+                                ? "Your account has been closed. Please contact the system administrator to resolve this and restore access."
+                                : "Your account is currently suspended. Please complete your subscription to unlock all features and continue creating recruitment drives."}
                         </p>
                         
                         <div className="space-y-4">
-                            <button className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-8 py-4 text-sm font-black text-black transition-all hover:bg-gray-100 active:scale-95 shadow-lg">
-                                <Phone className="h-4 w-4" />
-                                Contact Support
-                            </button>
+                            {status === "SUSPENDED" ? (
+                                <Link 
+                                    href="/admin/settings?section=billing"
+                                    className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-8 py-4 text-sm font-black text-black transition-all hover:bg-gray-100 active:scale-95 shadow-lg"
+                                >
+                                    <ArrowRight className="h-4 w-4" />
+                                    Complete Subscription
+                                </Link>
+                            ) : (
+                                <button className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-8 py-4 text-sm font-black text-black transition-all hover:bg-gray-100 active:scale-95 shadow-lg">
+                                    <Phone className="h-4 w-4" />
+                                    Contact Support
+                                </button>
+                            )}
                             <Link 
-                                href="/login"
+                                href="/admin"
                                 className="inline-block text-[11px] font-black uppercase tracking-[0.2em] text-gray-500 hover:text-white transition-colors"
                             >
-                                Back to Login
+                                Back to Dashboard
                             </Link>
                         </div>
                     </div>
                     <div className="bg-white/[0.02] border-t border-white/5 py-5 text-center">
-                        <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-600">Secure Protocol Alpha</div>
+                        <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-600">Enterprise Security</div>
                     </div>
                 </motion.div>
             </div>

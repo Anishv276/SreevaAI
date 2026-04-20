@@ -20,46 +20,8 @@ export async function POST(req: Request) {
 
         switch (phase) {
             case "profile": {
-                const { name, phone, jobTitle, password, currentPassword } = data;
-
-                // Handle password update (stays on User — it's an auth concern)
-                if (password) {
-                    const { isValid, error: strengthError } = validatePasswordStrength(password);
-                    if (!isValid) return NextResponse.json({ error: strengthError }, { status: 400 });
-                    const user = await prisma.user.findUnique({
-                        where: { id: session.userId },
-                        select: { password: true }
-                    });
-                    if (user?.password) {
-                        if (!currentPassword) {
-                            return NextResponse.json({ error: "Current password is required." }, { status: 400 });
-                        }
-                        const isMatch = await bcrypt.compare(currentPassword, user.password);
-                        if (!isMatch) {
-                            return NextResponse.json({ error: "Current password is incorrect." }, { status: 403 });
-                        }
-                    }
-                    const hashed = await bcrypt.hash(password, 10);
-                    await prisma.user.update({
-                        where: { id: session.userId },
-                        data: { password: hashed }
-                    });
-                }
-
-                // Save name/phone/jobTitle to User table
-                await prisma.user.update({
-                    where: { id: session.userId },
-                    data: {
-                        ...(name !== undefined && { name }),
-                        ...(phone !== undefined && { phone: phone || null }),
-                        ...(jobTitle !== undefined && { jobTitle: jobTitle || null }),
-                    }
-                });
-                // Still update onboarding step on Organization
-                await prisma.organization.update({
-                    where: { id: session.orgId },
-                    data: { onboardingStep: 1 }
-                });
+                // Now handled in bulk at the final step. 
+                // We just return success to allow frontend to advance to next step.
                 break;
             }
 
@@ -89,36 +51,14 @@ export async function POST(req: Request) {
                     where: { id: session.userId },
                     data: { password: hashedPassword }
                 });
-                await prisma.organization.update({
-                    where: { id: session.orgId },
-                    data: { onboardingStep: 1 }
-                });
                 break;
             }
 
             case "branding":
-                // PERSISTENCE FIX: Save Name, Industry, Size, Website, Location, and Logo
-                await prisma.organization.update({
-                    where: { id: session.orgId },
-                    data: {
-                        name: data.name || undefined,
-                        industry: data.industry,
-                        size: data.size,
-                        website: data.website,
-                        location: data.location,
-                        logoUrl: data.logoUrl,
-                        onboardingStep: 2
-                    }
-                });
+                // Handled in bulk at completion
                 break;
 
             case "team":
-                await prisma.organization.update({
-                    where: { id: session.orgId },
-                    data: {
-                        onboardingStep: 2
-                    }
-                });
                 break;
 
             case "email":
@@ -132,14 +72,61 @@ export async function POST(req: Request) {
                 });
                 break;
 
-            case "complete":
-                // ACTIVATION FIX: Hard-stamp the initialization flag
-                await prisma.organization.update({
-                    where: { id: session.orgId },
-                    data: { 
-                        onboardingComplete: true,
-                        onboardingStep: 5
+            case "complete": {
+                const { profile, company, passwords } = data;
+
+                // VALIDATION
+                if (!profile?.name || !profile?.jobTitle) {
+                    return NextResponse.json({ error: "Profile name and job title are required." }, { status: 400 });
+                }
+                if (!company?.name || !company?.industry || !company?.size || !company?.website || !company?.location) {
+                    return NextResponse.json({ error: "All company details are required." }, { status: 400 });
+                }
+
+                await prisma.$transaction(async (tx) => {
+                    // 1. Update User Profile
+                    const userUpdate: any = {
+                        name: profile.name,
+                        phone: profile.phone || null,
+                        jobTitle: profile.jobTitle || null,
+                    };
+
+                    if (passwords?.next) {
+                        const { isValid, error: strengthError } = validatePasswordStrength(passwords.next);
+                        if (!isValid) throw new Error(strengthError);
+
+                        const user = await tx.user.findUnique({
+                            where: { id: session.userId },
+                            select: { password: true }
+                        });
+
+                        if (user?.password) {
+                            if (!passwords.current) throw new Error("Current password is required to update security credentials.");
+                            const isMatch = await bcrypt.compare(passwords.current, user.password);
+                            if (!isMatch) throw new Error("Verification failed: Current password is incorrect.");
+                        }
+
+                        userUpdate.password = await bcrypt.hash(passwords.next, 10);
                     }
+
+                    await tx.user.update({
+                        where: { id: session.userId },
+                        data: userUpdate
+                    });
+
+                    // 2. Update Organization
+                    await tx.organization.update({
+                        where: { id: session.orgId as string },
+                        data: {
+                            name: company.name,
+                            industry: company.industry,
+                            size: company.size,
+                            website: company.website,
+                            location: company.location,
+                            logoUrl: company.logoUrl,
+                            onboardingComplete: true
+                        }
+                    });
                 });
 
                 // Update the JWT session so middleware reflects completion
@@ -156,12 +143,13 @@ export async function POST(req: Request) {
                     path: "/",
                 });
                 break;
+            }
         }
 
         return response;
     } catch (error: any) {
         console.error("[ONBOARDING_API_ERROR]", error);
-        return NextResponse.json({ 
+        return NextResponse.json({
             error: error.message || "Protocol Failure in onboarding handshake.",
             details: error.code
         }, { status: 500 });

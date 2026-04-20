@@ -47,22 +47,46 @@ export async function POST(request: Request) {
             }, { status: 502 });
         }
 
-        // ── LIVE EMAIL VIA RESEND TO MASTER IDENTITY ──────
+        // ── LIVE EMAIL VIA SUPER ADMIN GMAIL OR RESEND ──────
+        const superAdmin = await prisma.superAdmin.findFirst({
+            where: { googleAccessToken: { not: null } },
+            select: { id: true }
+        });
+
+        const subjectStr = "🛡️ Master Access: 6-Digit Security Code";
+        const htmlStr = `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
+                <h2 style="font-weight: 800; tracking-tight;">Security Verification</h2>
+                <p style="color: #666;">Requested root-access change for master identity: <strong>${masterEmail}</strong></p>
+                <div style="background: #fdf2f2; border: 1px solid #fee2e2; padding: 30px; border-radius: 12px; text-align: center; margin: 40px 0;">
+                    <span style="font-size: 32px; font-weight: 900; letter-spacing: 0.5em; color: #f97316;">${otp}</span>
+                </div>
+                <p style="font-size: 12px; color: #999;">This security code expires in 10 minutes. If you did not request this, please ignore this email.</p>
+            </div>
+        `;
+
+        if (superAdmin) {
+            try {
+                // Import dynamically to avoid top-level issues if needed, or static import
+                const { sendSuperAdminGmailEmail } = await import("@/lib/google-auth");
+                await sendSuperAdminGmailEmail({
+                    adminId: superAdmin.id,
+                    to: masterEmail,
+                    subject: subjectStr,
+                    html: htmlStr
+                });
+                return NextResponse.json({ success: true, message: `Security code sent to ${masterEmail} via Gmail` });
+            } catch (error) {
+                console.error("Super Admin Gmail Dispatch Failed:", error);
+                // Fallback to resend
+            }
+        }
 
         const { data, error: mailError } = await resend.emails.send({
             from: sender.from,
             to: masterEmail,
-            subject: "🛡️ Master Access: 6-Digit Security Code",
-            html: `
-                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
-                    <h2 style="font-weight: 800; tracking-tight;">Security Verification</h2>
-                    <p style="color: #666;">Requested root-access change for master identity: <strong>${masterEmail}</strong></p>
-                    <div style="background: #fdf2f2; border: 1px solid #fee2e2; padding: 30px; border-radius: 12px; text-align: center; margin: 40px 0;">
-                        <span style="font-size: 32px; font-weight: 900; letter-spacing: 0.5em; color: #f97316;">${otp}</span>
-                    </div>
-                    <p style="font-size: 12px; color: #999;">This security code expires in 10 minutes. If you did not request this, please ignore this email.</p>
-                </div>
-            `
+            subject: subjectStr,
+            html: htmlStr
         });
 
         if (mailError) {

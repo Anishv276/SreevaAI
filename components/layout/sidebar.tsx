@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -14,7 +14,13 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/context/auth-context";
 import { motion, AnimatePresence } from "framer-motion";
 
-const NAV_GROUPS = [
+interface NavItem {
+    icon: any;
+    label: string;
+    href: string;
+}
+
+const NAV_GROUPS: { items: NavItem[] }[] = [
     {
         items: [
             { icon: LayoutDashboard, label: "Dashboard", href: "/admin" },
@@ -25,16 +31,8 @@ const NAV_GROUPS = [
     },
     {
         items: [
-            { icon: CreditCard, label: "Billing", href: "/admin/settings?section=billing" },
-            { 
-                icon: Plug, 
-                label: "Integrations", 
-                href: "/admin/integrations",
-                subItems: [
-                    { label: "Domain", href: "/admin/settings?section=domains", icon: Globe },
-                    { label: "Gmail", href: "/admin/settings?section=integrations", icon: Mail },
-                ]
-            },
+            { icon: CreditCard, label: "Billing", href: "/admin/billing" },
+            { icon: Plug, label: "Integrations", href: "/admin/integrations" },
             { icon: Settings, label: "Settings", href: "/admin/settings" },
         ]
     }
@@ -49,10 +47,12 @@ export function Sidebar() {
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const { logout, user } = useAuth();
+    const [mounted, setMounted] = useState(false);
     const [orgInfo, setOrgInfo] = useState<{ name: string; logoUrl: string | null } | null>(null);
     const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
     useEffect(() => {
+        setMounted(true);
         const fetchOrg = async () => {
             try {
                 if (isSuperAdmin && orgId) {
@@ -238,27 +238,13 @@ export function Sidebar() {
                     {NAV_GROUPS.map((group, gIdx) => (
                         <div key={gIdx} className="space-y-1">
                             {group.items.map((item) => {
-                                const isActive = pathname === item.href || (item.subItems?.some(s => pathname === s.href));
-                                const [isExpanded, setIsExpanded] = useState(false);
-                                
-                                useEffect(() => {
-                                    if (item.subItems?.some(s => pathname === s.href)) {
-                                        setIsExpanded(true);
-                                    }
-                                }, [pathname]);
-
+                                const isActive = pathname === item.href;
                                 const hrefWithOrg = orgId ? `${item.href}?orgId=${orgId}` : item.href;
                                 
                                 return (
                                     <div key={item.label} className="space-y-1">
                                         <div
-                                            onClick={() => {
-                                                if (item.subItems) {
-                                                    setIsExpanded(!isExpanded);
-                                                } else {
-                                                    router.push(hrefWithOrg);
-                                                }
-                                            }}
+                                            onClick={() => router.push(hrefWithOrg)}
                                             className={cn(
                                                 "group relative flex items-center justify-between px-4 py-3 rounded-xl text-[16px] font-bold transition-all duration-200 cursor-pointer",
                                                 isActive
@@ -276,40 +262,8 @@ export function Sidebar() {
                                                 <span className="tracking-tight">{item.label}</span>
                                             </div>
                                             
-                                            {item.subItems ? (
-                                                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", isExpanded ? "rotate-180" : "rotate-0")} />
-                                            ) : (
-                                                isActive && <div className="w-1.5 h-1.5 rounded-full bg-[#F97316] shadow-[0_0_8px_rgba(249,115,22,0.4)]" />
-                                            )}
+                                            {isActive && <div className="w-1.5 h-1.5 rounded-full bg-[#F97316] shadow-[0_0_8px_rgba(249,115,22,0.4)]" />}
                                         </div>
-
-                                        <AnimatePresence>
-                                            {item.subItems && isExpanded && (
-                                                <motion.div
-                                                    initial={{ height: 0, opacity: 0 }}
-                                                    animate={{ height: "auto", opacity: 1 }}
-                                                    exit={{ height: 0, opacity: 0 }}
-                                                    className="overflow-hidden pl-11 space-y-1"
-                                                >
-                                                    {item.subItems.map((sub) => {
-                                                        const isSubActive = pathname === sub.href;
-                                                        return (
-                                                            <Link
-                                                                key={sub.href}
-                                                                href={orgId ? `${sub.href}?orgId=${orgId}` : sub.href}
-                                                                className={cn(
-                                                                    "flex items-center gap-3 py-2 text-[14px] font-bold transition-all rounded-lg px-3",
-                                                                    isSubActive ? "text-[#F97316] bg-orange-50/50" : "text-gray-400 hover:text-gray-700 hover:bg-gray-50"
-                                                                )}
-                                                            >
-                                                                <sub.icon className={cn("h-3.5 w-3.5", isSubActive ? "text-[#F97316]" : "text-gray-300")} />
-                                                                {sub.label}
-                                                            </Link>
-                                                        );
-                                                    })}
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
                                     </div>
                                 );
                             })}
@@ -332,24 +286,23 @@ export function Sidebar() {
                             )}
                         >
                             <div className="relative">
-                                <div className={cn(
-                                    "h-10 w-10 rounded-xl flex items-center justify-center font-bold text-xs uppercase transition-all duration-500",
-                                    menuOpen ? "bg-[#F97316] text-white" : "bg-gray-100 text-gray-500 group-hover:bg-[#F97316] group-hover:text-white"
-                                )}>
-                                    {user?.name?.[0] || user?.email?.[0] || "A"}
+                                <div 
+                                    suppressHydrationWarning
+                                    className={cn(
+                                        "h-10 w-10 rounded-xl flex items-center justify-center font-bold text-xs uppercase transition-all duration-500",
+                                        menuOpen ? "bg-[#F97316] text-white" : "bg-gray-100 text-gray-500 group-hover:bg-[#F97316] group-hover:text-white"
+                                    )}
+                                >
+                                    {mounted ? (user?.name?.[0] || user?.email?.[0] || "A") : "A"}
                                 </div>
                                 <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-green-500" />
                             </div>
                             <div className="flex-1 text-left min-w-0">
-                                <p className={cn(
-                                    "text-[17px] font-bold truncate tracking-tight text-gray-900"
-                                )}>
-                                    {user?.name || "Recruiter"}
+                                <p className={cn("text-[17px] font-bold truncate tracking-tight text-gray-900")}>
+                                    {mounted ? (user?.name || "Recruiter") : "Recruiter"}
                                 </p>
-                                <p className={cn(
-                                    "text-[10px] font-medium truncate text-gray-400"
-                                )}>
-                                    {user?.email}
+                                <p className={cn("text-[10px] font-medium truncate text-gray-400")}>
+                                    {mounted ? user?.email : ""}
                                 </p>
                             </div>
                             <ChevronDown className={cn(

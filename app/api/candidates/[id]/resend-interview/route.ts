@@ -37,6 +37,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         if (session.orgId && application.drive?.orgId !== session.orgId) {
             return NextResponse.json({ error: "Forbidden: Candidate belongs to another organization" }, { status: 403 });
         }
+
+        if (session.orgId) {
+            const org = await prisma.organization.findUnique({
+                where: { id: session.orgId },
+                select: { status: true }
+            });
+            if (org?.status === "SUSPENDED" || org?.status === "CLOSED") {
+                return NextResponse.json({ error: "Resending interviews is blocked because your organization is restricted." }, { status: 403 });
+            }
+        }
         // ──────────────────────────────────────────────────
 
         const resumeStatus = (application.resumeStatus || "").toUpperCase();

@@ -3,20 +3,16 @@
 import { useState, useEffect } from "react";
 import { 
     Lock,
-    ShieldCheck,
     CheckCircle2, 
     AlertCircle, 
     Loader2, 
     KeyRound, 
-    ChevronRight,
     X,
     ShieldAlert,
     Mail,
     Eye,
     EyeOff,
     Globe,
-    RefreshCw,
-    Trash,
     Copy,
     Check,
     Zap,
@@ -30,18 +26,19 @@ import { cn } from "@/lib/utils";
 
 /*  Section nav  */
 const sections = [
-    { id: "profile", icon: ShieldCheck, label: "Profile" },
+    { id: "integrations", icon: Globe, label: "Integrations" },
     { id: "password", icon: Lock, label: "Password" },
-    { id: "domains", icon: Globe, label: "Platform Domain" },
 ];
 
 /*  Reusable card wrapper  */
 function SettingsCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
     return (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-visible">
-            <div className="px-8 py-6 border-b border-gray-50">
-                <h2 className="text-xl font-bold text-gray-900">{title}</h2>
-                {description && <p className="text-[13px] text-gray-500 font-medium mt-1">{description}</p>}
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-visible animate-in fade-in slide-in-from-bottom-2 duration-500">
+            <div className="px-8 py-6 border-b border-gray-50 flex items-start gap-4">
+                <div className="flex-1">
+                    <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+                    {description && <p className="text-[13px] text-gray-500 font-medium mt-1 leading-relaxed">{description}</p>}
+                </div>
             </div>
             <div className="px-8 py-8">{children}</div>
         </div>
@@ -49,11 +46,7 @@ function SettingsCard({ title, description, children }: { title: string; descrip
 }
 
 export default function SuperAdminSettingsPage() {
-    const [activeSection, setActiveSection] = useState("profile");
-    
-    // Profile state
-    const [profile, setProfile] = useState({ name: "", email: "" });
-    const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+    const [activeSection, setActiveSection] = useState("integrations");
     
     // Password state
     const [currentPassword, setCurrentPassword] = useState("");
@@ -64,7 +57,7 @@ export default function SuperAdminSettingsPage() {
     const [showConfirm, setShowConfirm] = useState(false);
     const [otp, setOtp] = useState("");
     
-    // Domain state
+    // Domain & Google state
     const [domainInfo, setDomainInfo] = useState<any>(null);
     const [isLoadingDomain, setIsLoadingDomain] = useState(false);
     const [newDomain, setNewDomain] = useState("");
@@ -72,6 +65,7 @@ export default function SuperAdminSettingsPage() {
     const [emailSubStep, setEmailSubStep] = useState(0);
     const [copiedIndex, setCopiedIndex] = useState<{ i: number, type: 'host' | 'value' } | null>(null);
     const [domainCheckResult, setDomainCheckResult] = useState<"checking" | "verified" | "pending" | "error" | null>(null);
+    const [googleStatus, setGoogleStatus] = useState({ isConnected: false, email: "" });
     const [isEditingSender, setIsEditingSender] = useState(false);
     const [senderDraft, setSenderDraft] = useState({ localPart: "", name: "" });
     const [showDomainDeleteConfirm, setShowDomainDeleteConfirm] = useState(false);
@@ -80,17 +74,28 @@ export default function SuperAdminSettingsPage() {
     const [attempts, setAttempts] = useState(0);
     const [loading, setLoading] = useState(false);
     const [sendingOtp, setSendingOtp] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
     
     const [error, setError] = useState("");
     const [otpError, setOtpError] = useState("");
     const [success, setSuccess] = useState("");
-    const [isSaving, setIsSaving] = useState(false);
-    const [saved, setSaved] = useState(false);
 
     const handleCopy = (text: string, i: number, type: 'host' | 'value') => {
         navigator.clipboard.writeText(text);
         setCopiedIndex({ i, type });
         setTimeout(() => setCopiedIndex(null), 2000);
+    };
+
+    const fetchGoogleStatus = async () => {
+        try {
+            const res = await fetch("/api/super-admin/integrations/google");
+            if (res.ok) {
+                const data = await res.json();
+                setGoogleStatus({ isConnected: data.isConnected, email: data.email || "" });
+            }
+        } catch (err) {
+            console.error("Failed to fetch Google status", err);
+        }
     };
 
     const fetchDomainInfo = async (showResult = false) => {
@@ -153,24 +158,28 @@ export default function SuperAdminSettingsPage() {
         }
     };
 
-    const fetchProfile = async () => {
-        setIsLoadingProfile(true);
-        try {
-            const res = await fetch("/api/auth/profile");
-            if (res.ok) {
-                const data = await res.json();
-                setProfile({ name: data.name || "", email: data.email || "" });
-            }
-        } catch (err) {
-            console.error("Profile fetch failed:", err);
-        } finally {
-            setIsLoadingProfile(false);
-        }
-    };
-
     useEffect(() => {
-        fetchProfile();
+        // Clean URL params if returning from Google Auth
+        const url = new URL(window.location.href);
+        const googleSuccess = url.searchParams.get('google_success');
+        const googleError = url.searchParams.get('google_error');
+        
+        if (googleSuccess || googleError) {
+            if (googleSuccess) {
+                // Could optionally toast success here
+            }
+            if (googleError) {
+                setError(`Google Connection Failed: ${googleError}`);
+            }
+            
+            url.searchParams.delete('google_success');
+            url.searchParams.delete('google_error');
+            const newUrl = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '');
+            window.history.replaceState({}, '', newUrl);
+        }
+
         fetchDomainInfo();
+        fetchGoogleStatus();
     }, []);
 
     const handleInitialSubmit = async (e: React.FormEvent) => {
@@ -223,7 +232,7 @@ export default function SuperAdminSettingsPage() {
                     setOtpError("Access Denied: 3 attempts failed.");
                     setTimeout(() => { setShowOtpModal(false); setOtp(""); }, 2000);
                 } else {
-                    setOtpError(`Incorrect. ${3 - newAttempts} left.`);
+                    setOtpError("Incorrect. " + (3 - newAttempts) + " left.");
                 }
                 return;
             }
@@ -239,28 +248,7 @@ export default function SuperAdminSettingsPage() {
         }
     };
 
-    const handleSaveProfile = async () => {
-        setIsSaving(true);
-        setError("");
-        try {
-            const res = await fetch("/api/auth/profile", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(profile)
-            });
-            if (res.ok) {
-                setSaved(true);
-                setTimeout(() => setSaved(false), 3000);
-            } else {
-                const data = await res.json();
-                setError(data.error || "Failed to update profile");
-            }
-        } catch (err) {
-            setError("Network error");
-        } finally {
-            setIsSaving(false);
-        }
-    };
+
 
     return (
         <div className="min-h-screen bg-[#FDFDFD] p-8 lg:p-12 animate-fade-slide text-gray-900 font-medium pb-24">
@@ -297,66 +285,6 @@ export default function SuperAdminSettingsPage() {
                 </aside>
 
                 <div className="space-y-12 min-h-[600px]">
-                    {/* Profile Section */}
-                    {activeSection === "profile" && (
-                        <div className="bg-white border border-gray-100 rounded-xl p-8 shadow-sm relative pb-32 animate-in slide-in-from-bottom-2 duration-300">
-                            <div className="space-y-2 mb-14">
-                                <h2 className="text-2xl font-black text-gray-950 tracking-tight uppercase italic leading-none">Super Admin Profile</h2>
-                                <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px] italic opacity-60">Manage your root administrative identity</p>
-                            </div>
-
-                            <div className="space-y-10 max-w-4xl">
-                                <div className="grid md:grid-cols-2 gap-10">
-                                    <div className="space-y-4">
-                                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Full Name</label>
-                                        <div className="relative group">
-                                            <Input
-                                                value={profile.name}
-                                                onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
-                                                placeholder="Enter Name"
-                                                className="w-full h-10 pl-6 rounded-xl border border-gray-200 bg-white text-[14px] font-medium shadow-sm hover:border-orange-300 focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] transition-all"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="space-y-4">
-                                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">Email Address</label>
-                                        <div className="relative group">
-                                            <Input
-                                                type="email"
-                                                value={profile.email}
-                                                onChange={e => setProfile(p => ({ ...p, email: e.target.value }))}
-                                                placeholder="admin@lumoscale.com"
-                                                className="w-full h-10 pl-6 rounded-xl border border-gray-200 bg-white text-[14px] font-medium shadow-sm hover:border-orange-300 focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] transition-all"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {error && (
-                                    <div className="p-6 rounded-2xl bg-red-50 border border-red-100 text-red-600 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-4 animate-shake">
-                                        <AlertCircle className="h-5 w-5 opacity-70" /> {error}
-                                    </div>
-                                )}
-
-                                {saved && (
-                                    <div className="p-6 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-600 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-4 animate-in-up">
-                                        <CheckCircle2 className="h-5 w-5 opacity-70" /> Profile Synchronized Successfully
-                                    </div>
-                                )}
-
-                                {/* CTA Button */}
-                                <div className="absolute bottom-12 right-12">
-                                    <button
-                                        onClick={handleSaveProfile}
-                                        disabled={isSaving || !profile.name || !profile.email}
-                                        className="h-10 px-6 rounded-xl font-bold text-[13px] shadow-md hover:shadow-lg transition-all bg-[#F97316] text-white disabled:opacity-50 flex items-center justify-center italic"
-                                    >
-                                        {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : "Update Profile"}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
 
                     {/* Password Section */}
                     {activeSection === "password" && (
@@ -457,12 +385,76 @@ export default function SuperAdminSettingsPage() {
                         </div>
                     )}
 
-                    {/* Domains Section */}
-                    {activeSection === "domains" && (
+                    {/* Integrations Section */}
+                    {activeSection === "integrations" && (
                         <div className="animate-in slide-in-from-bottom-2 duration-300 space-y-8">
+                            {/* Google Integration Block */}
+                            <SettingsCard
+                                title="Google Workspace"
+                                description="Connect your master Gmail account to enable platform-wide email delivery (OTPs, Security Alerts, Platform Notifications)."
+                            >
+                                <div className="space-y-6">
+                                    <div className="flex items-center justify-between p-6 rounded-[2rem] bg-gradient-to-r from-gray-900 via-gray-800 to-gray-950 text-white shadow-2xl relative overflow-hidden">
+                                        <div className="flex items-center gap-6 relative z-10">
+                                            <div className="h-14 w-14 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/[0.08]">
+                                                <Mail className="h-7 w-7 text-white" />
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-3">
+                                                    <p className="text-xl font-black uppercase tracking-tight">
+                                                        {googleStatus.isConnected ? googleStatus.email : "Not Connected"}
+                                                    </p>
+                                                    <Badge className={cn("text-[8px] font-black uppercase px-2 py-0.5 border-0 rounded-md tracking-widest",
+                                                        googleStatus.isConnected ? "bg-emerald-500 text-white shadow-[0_0_12px_rgba(16,185,129,0.3)]" : "bg-red-500 text-white"
+                                                    )}>
+                                                        {googleStatus.isConnected ? "Active" : "Offline"}
+                                                    </Badge>
+                                                </div>
+                                                <p className="text-[10px] uppercase font-bold text-gray-400 mt-2 tracking-widest leading-none">Global System Mailer</p>
+                                            </div>
+                                        </div>
+                                        <div className="relative z-10 flex items-center gap-3">
+                                            {!googleStatus.isConnected ? (
+                                                <a
+                                                    href="/api/super-admin/integrations/google/authorize"
+                                                    className="h-10 px-6 flex items-center justify-center rounded-xl font-bold text-[11px] shadow-sm transition-all bg-white text-gray-900 border border-gray-200 hover:bg-gray-50 hover:shadow-md uppercase tracking-widest"
+                                                >
+                                                    Connect Gmail
+                                                </a>
+                                            ) : (
+                                                <button
+                                                    onClick={async () => {
+                                                        const confirm = window.confirm("Disconnect Google Integration?");
+                                                        if (confirm) {
+                                                            await fetch('/api/super-admin/integrations/google', { method: 'DELETE' });
+                                                            window.location.reload();
+                                                        }
+                                                    }}
+                                                    className="h-10 px-6 flex items-center justify-center rounded-xl bg-red-500 hover:bg-red-600 transition-all text-white font-bold text-[11px] uppercase tracking-widest shadow-md"
+                                                >
+                                                    Disconnect
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                    
+                                    {!googleStatus.isConnected && (
+                                        <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-50 border border-amber-100">
+                                            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                                            <div>
+                                                <p className="text-[13px] font-bold text-amber-900">Action Required: Connect Gmail</p>
+                                                <p className="text-[12px] font-medium text-amber-700/80 mt-1 leading-relaxed">
+                                                    Platform-level communications (including Super Admin password resets and new workspace provisioning) require a connected Google Workspace account to ensure highest deliverability.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </SettingsCard>
+
                             <SettingsCard
                                 title="Platform Email Domain"
-                                description="Connect a global domain for all platform emails (OTP, invitations, system alerts)."
+                                description="Connect a global domain for all platform emails (Fallback OTPs, Domain verification)."
                             >
                                 {!domainInfo ? (
                                     <div className="space-y-4">
@@ -621,7 +613,7 @@ export default function SuperAdminSettingsPage() {
                                                             </div>
                                                             <div className="flex items-center gap-3">
                                                                 <Button disabled={isSaving || !senderDraft.localPart} onClick={async () => {
-                                                                    const finalEmail = `${senderDraft.localPart}@${domainInfo.customDomain}`;
+                                                                    const finalEmail = senderDraft.localPart + "@" + domainInfo.customDomain;
                                                                     setIsSaving(true);
                                                                     try {
                                                                         await fetch("/api/super-admin/domain", {

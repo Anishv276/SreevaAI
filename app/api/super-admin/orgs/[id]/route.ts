@@ -63,7 +63,7 @@ export async function PATCH(
         if (plan && !["STARTER", "PROFESSIONAL", "ENTERPRISE", "TRIAL", "ENTERPRISE_CUSTOM"].includes(plan)) {
             return NextResponse.json({ error: "Invalid organization plan" }, { status: 400 });
         }
-        if (status && !["ACTIVE", "SUSPENDED", "PENDING", "DEACTIVATED"].includes(status)) {
+        if (status && !["ACTIVE", "SUSPENDED", "PENDING", "DEACTIVATED", "CLOSED"].includes(status)) {
             return NextResponse.json({ error: "Invalid organization status" }, { status: 400 });
         }
         if (usageMetrics) {

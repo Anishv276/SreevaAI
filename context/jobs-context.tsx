@@ -137,7 +137,10 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
                 error.details = errorData.details;
                 throw error;
             }
-        } catch (error) {
+        } catch (error: any) {
+            if (error.details) {
+                console.error("Validation details:", JSON.stringify(error.details, null, 2));
+            }
             console.error("Failed to add job:", error);
             throw error;
         }
