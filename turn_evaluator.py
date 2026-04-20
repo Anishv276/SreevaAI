@@ -1,0 +1,124 @@
+"""
+TurnEvaluator - orchestrates per-turn answer evaluation.
+
+Combines:
+  - score_answer_quality()        (quality scores)
+  - evaluate_answer_and_decide()  (LLM probe/move-on decision)
+  - signal detection              (first-class behavioral and integrity signals)
+  - trust delta computation
+  - probe routing
+
+Returns one TurnDecision per candidate answer.
+Called from agent.py's _evaluate_and_inject() instead of the inline pipeline.
+"""
+import asyncio
+import logging
+from typing import Optional
+
+from turn_decision import (
+    TurnDecision,
+    SignalFlags,
+    SignalEvent,
+    detect_signal_events,
+    build_signal_flags,
+    compute_trust_delta,
+    build_turn_decision,
+)
+from probe_strategy import route, build_directive
+
+logger = logging.getLogger("interview-agent")
+
+
+async def run_turn_evaluation(
+    *,
+    candidate_answer: str,
+    last_question: str,
+    topic_follow_up_count: int,
+    transcript_lines: list,
+    depth_history: list[float],           # depth scores for current topic, oldest first
+    contradiction_detected: bool,
+    client,
+    org_id: Optional[str],
+    llm_model: str,
+    score_answer_quality_fn,              # imported from agent.py at call site
+    evaluate_answer_and_decide_fn,        # imported from agent.py at call site
+    max_follow_ups: int = 3,
+) -> tuple[TurnDecision, str]:
+    """
+    Run full per-turn evaluation pipeline.
+
+    Returns:
+        (TurnDecision, directive_string)
+    """
+    # Run quality scoring and LLM decision concurrently
+    quality_task = asyncio.create_task(
+        score_answer_quality_fn(
+            candidate_answer=candidate_answer,
+            last_question=last_question,
+            transcript_lines=transcript_lines,
+            client=client,
+            org_id=org_id,
+            llm_model=llm_model,
+        )
+    )
+    decision_task = asyncio.create_task(
+        evaluate_answer_and_decide_fn(
+            candidate_answer=candidate_answer,
+            last_question=last_question,
+            topic_follow_up_count=topic_follow_up_count,
+            transcript_lines=transcript_lines,
+            client=client,
+            org_id=org_id,
+            llm_model=llm_model,
+        )
+    )
+
+    quality, llm_decision = await asyncio.gather(quality_task, decision_task)
+
+    current_depth: float = float(quality.get("depth", 5.0))
+
+    signal_events = detect_signal_events(
+        candidate_answer=candidate_answer,
+        last_question=last_question,
+        current_depth=current_depth,
+        prior_depth_scores=depth_history,
+        topic_follow_up_count=topic_follow_up_count,
+        contradiction_detected=contradiction_detected,
+    )
+    signals = build_signal_flags(signal_events)
+
+    # Route to action/mode/goal
+    action, mode, next_goal = route(
+        signals=signals,
+        depth_signal=llm_decision.get("depth_signal", "SURFACE"),
+        topic_follow_up_count=topic_follow_up_count,
+        max_follow_ups=max_follow_ups,
+        contradiction_detected=contradiction_detected,
+        llm_action=llm_decision.get("action", "MOVE_ON"),
+        llm_probe_mode=llm_decision.get("probe_mode"),
+    )
+
+    trust = compute_trust_delta(signal_events=signal_events, quality=quality)
+
+    td = build_turn_decision(
+        quality=quality,
+        signals=signals,
+        signal_events=signal_events,
+        trust=trust,
+        action=action,
+        mode=mode,
+        next_goal=next_goal,
+    )
+
+    directive = build_directive(
+        td=td,
+        depth_signal=llm_decision.get("depth_signal", "SURFACE"),
+        topic_follow_up_count=topic_follow_up_count,
+    )
+
+    logger.info(
+        f"[TURN_EVAL] action={action} mode={mode} signals={[k for k,v in signals.items() if v]} "
+        f"trust_delta={trust['delta']:+.2f} depth={current_depth:.1f}"
+    )
+
+    return td, directive

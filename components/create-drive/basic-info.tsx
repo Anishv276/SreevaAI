@@ -262,7 +262,7 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
             }}
             className="rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden"
         >
-            {/* Header — clean white */}
+            {/* Header - clean white */}
             <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100 bg-white">
                 <button type="button" onClick={prevMonth}
                     className="h-7 w-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">

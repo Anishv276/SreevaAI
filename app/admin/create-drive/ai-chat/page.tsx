@@ -49,7 +49,7 @@ export default function AiChatJdPage() {
                 {
                     id: "1",
                     role: "assistant" as const,
-                    content: "Hey! Tell me about the role you're hiring for — the title, what kind of experience you're looking for, compensation range, and whether it's remote or in-office. The more context you give me upfront, the sharper the JD will be. I'll ask if anything's missing.",
+                    content: "Hey! Tell me about the role you're hiring for - the title, what kind of experience you're looking for, compensation range, and whether it's remote or in-office. The more context you give me upfront, the sharper the JD will be. I'll ask if anything's missing.",
                 }
             ]);
         }

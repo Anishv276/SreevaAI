@@ -5,7 +5,7 @@ file_path = r'c:\Users\vamsi\OneDrive\Desktop\HR-updates\app\admin\candidates\[i
 new_interview_block = """                    {activeTab === "interview" && (
                         <div className="space-y-12 animate-in fade-in slide-in-from-bottom-3 duration-700 pb-20 bg-[#F7F6F3] -mx-8 px-12 pt-16">
                             
-                            {/* ── Section: Performance Analysis ── */}
+                            {/* -- Section: Performance Analysis -- */}
                             <div className="space-y-12">
                                 <div className="flex flex-col items-center gap-2 text-center mb-4">
                                     <h2 className="text-3xl font-bold text-slate-950 tracking-tight font-sans uppercase">Performance Analysis</h2>
@@ -28,7 +28,7 @@ new_interview_block = """                    {activeTab === "interview" && (
                                         </div>
                                         <div className="p-5 rounded-[24px] bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
                                             <p className="text-[9px] font-bold text-[#A89078] uppercase tracking-[0.3em]">CEFR RATING</p>
-                                            <h4 className="text-xl font-bold text-[#8B5E3C] tracking-tight">B1 — Intermediate</h4>
+                                            <h4 className="text-xl font-bold text-[#8B5E3C] tracking-tight">B1 - Intermediate</h4>
                                             <p className="text-[15px] font-medium text-gray-500 leading-relaxed">
                                                 Can handle simple direct exchanges. Frequent grammatical errors and choppy fluency prevent B2. Insufficient for a senior role requiring complex technical explanation.
                                             </p>
@@ -91,11 +91,11 @@ new_interview_block = """                    {activeTab === "interview" && (
                                         </div>
                                         <div className="flex-1 overflow-y-auto scrollbar-hide pr-1">
                                             {[
-                                                { title: "Cycle detection in graphs", subtitle: "So is it totally based on coding? — deflected", confidence: "HIGH — NO ATTEMPT", score: "0/10", status: "NOT PROVED" },
-                                                { title: "Graph traversal (BFS / DFS)", subtitle: "Not reached — session ended early", confidence: "N/A — NOT TESTED", score: "0/10", status: "NOT TESTED" },
-                                                { title: "Edge case handling", subtitle: "Not reached — session ended early", confidence: "N/A — NOT TESTED", score: "0/10", status: "NOT TESTED" },
-                                                { title: "Problem-solving approach", subtitle: "Actually, I'm not good at coding.", confidence: "HIGH — SELF-DECLARED", score: "0/10", status: "NOT PROVED" },
-                                                { title: "Communication clarity", subtitle: "Basic exchanges functional, grammar poor", confidence: "HIGH — FULL DATA", score: "5/10", status: "PARTIAL" }
+                                                { title: "Cycle detection in graphs", subtitle: "So is it totally based on coding? - deflected", confidence: "HIGH - NO ATTEMPT", score: "0/10", status: "NOT PROVED" },
+                                                { title: "Graph traversal (BFS / DFS)", subtitle: "Not reached - session ended early", confidence: "N/A - NOT TESTED", score: "0/10", status: "NOT TESTED" },
+                                                { title: "Edge case handling", subtitle: "Not reached - session ended early", confidence: "N/A - NOT TESTED", score: "0/10", status: "NOT TESTED" },
+                                                { title: "Problem-solving approach", subtitle: "Actually, I'm not good at coding.", confidence: "HIGH - SELF-DECLARED", score: "0/10", status: "NOT PROVED" },
+                                                { title: "Communication clarity", subtitle: "Basic exchanges functional, grammar poor", confidence: "HIGH - FULL DATA", score: "5/10", status: "PARTIAL" }
                                             ].map((s, i) => (
                                                 <AssessmentCard key={i} {...s as any} />
                                             ))}
@@ -147,10 +147,10 @@ new_interview_block = """                    {activeTab === "interview" && (
                                                 ))
                                             ) : (
                                                 [
-                                                    { qNumber: "QUESTION 01", question: "How would you implement a cycle detection algorithm in a graph for a custom workflow engine?", reasoning: "Candidate immediately deflected technical depth. Question was avoided entirely.", depth: "SHALLOW — NO SIGNAL", score: "0/10" },
-                                                    { qNumber: "QUESTION 02", question: "Can you explain the difference between BFS and DFS in the context of data synchronization?", reasoning: "Candidate stated they are 'not good at coding'. Core competency mismatch identified.", depth: "N/A — SELF-DECLARED", score: "0/10" },
-                                                    { qNumber: "QUESTION 03", question: "How do you handle edge cases in a recursive script for directory processing?", reasoning: "Attempt aborted by AI due to previous declaration of coding deficiency.", depth: "N/A — NOT TESTED", score: "0/10" },
-                                                    { qNumber: "QUESTION 04", question: "What is your experience with tool integration platforms like n8n or Apollo?", reasoning: "Vague response provided. Minimal evidence of strategic tool orchestration depth.", depth: "PARTIAL — WEAK SIGNAL", score: "4/10" }
+                                                    { qNumber: "QUESTION 01", question: "How would you implement a cycle detection algorithm in a graph for a custom workflow engine?", reasoning: "Candidate immediately deflected technical depth. Question was avoided entirely.", depth: "SHALLOW - NO SIGNAL", score: "0/10" },
+                                                    { qNumber: "QUESTION 02", question: "Can you explain the difference between BFS and DFS in the context of data synchronization?", reasoning: "Candidate stated they are 'not good at coding'. Core competency mismatch identified.", depth: "N/A - SELF-DECLARED", score: "0/10" },
+                                                    { qNumber: "QUESTION 03", question: "How do you handle edge cases in a recursive script for directory processing?", reasoning: "Attempt aborted by AI due to previous declaration of coding deficiency.", depth: "N/A - NOT TESTED", score: "0/10" },
+                                                    { qNumber: "QUESTION 04", question: "What is your experience with tool integration platforms like n8n or Apollo?", reasoning: "Vague response provided. Minimal evidence of strategic tool orchestration depth.", depth: "PARTIAL - WEAK SIGNAL", score: "4/10" }
                                                 ].map((q, i) => (
                                                     <AnalysisEntry key={i} {...q} />
                                                 ))
@@ -160,7 +160,7 @@ new_interview_block = """                    {activeTab === "interview" && (
 
                                     {/* Section 3: Consistency Check (Bottom Left) */}
                                     <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
-                                        <h3 className="text-[16px] font-bold text-gray-900 font-sans tracking-tight mb-8">Resume claims vs Interview proof — consistency check</h3>
+                                        <h3 className="text-[16px] font-bold text-gray-900 font-sans tracking-tight mb-8">Resume claims vs Interview proof - consistency check</h3>
                                         <div className="grid grid-cols-[1.5fr_1.8fr_120px] gap-6 px-6 mb-6 border-b border-gray-50 pb-6">
                                             <span className="text-[11px] font-bold text-gray-900 font-sans uppercase tracking-widest opacity-70">Resume Claimed</span>
                                             <span className="text-[11px] font-bold text-gray-900 font-sans uppercase tracking-widest opacity-70">Interview Showed</span>
@@ -169,8 +169,8 @@ new_interview_block = """                    {activeTab === "interview" && (
                                         <div className="flex-1 overflow-y-auto scrollbar-hide">
                                             {[
                                                 { claim: "Built GTM automation systems at Niti AI", sub: "GTM strategy", proof: "Zero GTM knowledge demonstrated. Could not answer basic GTM question.", status: "MISMATCH" },
-                                                { claim: "n8n, Zapier, Apollo automation experience", sub: "Automation tools", proof: "Not tested in interview — role needed coding.", status: "NOT TESTED" },
-                                                { claim: "Python, Pandas, Power BI — data analysis", sub: "Technical skills", proof: "Self-declared 'not good at coding.' No code written.", status: "CONTRADICTED" },
+                                                { claim: "n8n, Zapier, Apollo automation experience", sub: "Automation tools", proof: "Not tested in interview - role needed coding.", status: "NOT TESTED" },
+                                                { claim: "Python, Pandas, Power BI - data analysis", sub: "Technical skills", proof: "Self-declared 'not good at coding.' No code written.", status: "CONTRADICTED" },
                                                 { claim: "Problem-solving and analytical thinking", sub: "Soft skill", proof: "Minimal engagement with problem. Disengaged.", status: "WEAK SIGNAL" }
                                             ].map((c, i) => (
                                                 <div key={i} className="grid grid-cols-[1.5fr_1.8fr_120px] gap-8 px-6 py-6 rounded-3xl hover:bg-gray-50/50 transition-all group items-start border-b border-gray-50 last:border-0 relative">
@@ -209,10 +209,10 @@ new_interview_block = """                    {activeTab === "interview" && (
                                         <div className="flex-1 overflow-y-auto scrollbar-hide pr-2">
                                             {[
                                                 { time: "0:38", type: "CONTEXT", observation: "Minimal engagement at interview start", comment: "Yeah. Sure. - two-word response to interview structure explanation" },
-                                                { time: "1:12", type: "FLAG", observation: "Deflected technical question — asked about format instead", comment: "K. So is it totally based on coding? - avoidance rather than engagement" },
-                                                { time: "1:18", type: "FLAG", observation: "Tab switch detected — at exact moment of deflection", comment: "Proctoring: browser focus lost ~8 sec. Timing aligns with Q1 avoidance behaviour." },
-                                                { time: "2:28", type: "CRITICAL", observation: "Self-declared inability to code — defining moment of session", comment: "Actually, I'm not good at coding. - unprompted, direct self-admission" },
-                                                { time: "3:05", type: "FLAG", observation: "Audio anomaly detected — 3 seconds post-admission", comment: "Voice-like sound. Flagged for correlation." }
+                                                { time: "1:12", type: "FLAG", observation: "Deflected technical question - asked about format instead", comment: "K. So is it totally based on coding? - avoidance rather than engagement" },
+                                                { time: "1:18", type: "FLAG", observation: "Tab switch detected - at exact moment of deflection", comment: "Proctoring: browser focus lost ~8 sec. Timing aligns with Q1 avoidance behaviour." },
+                                                { time: "2:28", type: "CRITICAL", observation: "Self-declared inability to code - defining moment of session", comment: "Actually, I'm not good at coding. - unprompted, direct self-admission" },
+                                                { time: "3:05", type: "FLAG", observation: "Audio anomaly detected - 3 seconds post-admission", comment: "Voice-like sound. Flagged for correlation." }
                                             ].map((m, i) => (
                                                 <MomentEntry key={i} {...m as any} />
                                             ))}
@@ -220,7 +220,7 @@ new_interview_block = """                    {activeTab === "interview" && (
                                     </div>
                                 </div>
 
-                                {/* ── Section: Integrity & Proctoring ── */}
+                                {/* -- Section: Integrity & Proctoring -- */}
                                 <div className="pt-24 border-t border-gray-200 mt-24 space-y-12">
                                     <div className="flex flex-col items-center gap-2 text-center mb-8">
                                         <h2 className="text-3xl font-bold text-slate-950 tracking-tight font-sans uppercase">Integrity and Proctoring</h2>
@@ -232,7 +232,7 @@ new_interview_block = """                    {activeTab === "interview" && (
                                         </Button>
                                     </div>
 
-                                    {/* ── Integrity Verdict Card ── */}
+                                    {/* -- Integrity Verdict Card -- */}
                                     <div className="grid grid-cols-[340px_1fr] rounded-[48px] bg-white border-2 border-[#F5E6D3]/30 shadow-[0_20px_60px_rgba(139,94,60,0.06)] overflow-hidden border-l-[8px] border-l-[#8B5E3C]">
                                         <div className="bg-[#FAF9F6] p-12 flex flex-col items-center justify-center gap-4 border-r border-[#F5E6D3]/20">
                                             <h4 className="text-[12px] font-bold text-gray-900 font-sans uppercase tracking-widest opacity-60 mb-2">Integrity Score</h4>
@@ -247,12 +247,12 @@ new_interview_block = """                    {activeTab === "interview" && (
                                         <div className="p-12 space-y-6">
                                             <h4 className="text-[12px] font-bold text-gray-900 font-sans uppercase tracking-widest opacity-60 mb-2">Integrity Verdict</h4>
                                             <p className="text-[15px] font-medium text-gray-700 leading-[1.8] max-w-[95%]">
-                                                2 events in a 5-minute session. Tab switch timed during Q1 at the exact moment of deflection — <span className="underline decoration-orange-400 decoration-2 underline-offset-4 text-gray-900 font-semibold italic">the most suspicious signal</span>. Audio anomaly is inconclusive. Face present 100% of session; no multiple faces; gaze pattern normal. The proctoring data alone does not confirm cheating, but combined with self-declared inability and zero output, the overall picture warrants a human review of the recording before making a final integrity call.
+                                                2 events in a 5-minute session. Tab switch timed during Q1 at the exact moment of deflection - <span className="underline decoration-orange-400 decoration-2 underline-offset-4 text-gray-900 font-semibold italic">the most suspicious signal</span>. Audio anomaly is inconclusive. Face present 100% of session; no multiple faces; gaze pattern normal. The proctoring data alone does not confirm cheating, but combined with self-declared inability and zero output, the overall picture warrants a human review of the recording before making a final integrity call.
                                             </p>
                                         </div>
                                     </div>
 
-                                    {/* ── Proctoring Metrics Row ── */}
+                                    {/* -- Proctoring Metrics Row -- */}
                                     <div className="flex gap-6">
                                         <ProctoringMetric value="1" label="Tab Switches" risk="MEDIUM RISK" />
                                         <ProctoringMetric value="0" label="Multiple Faces" risk="NO RISK" />
@@ -261,11 +261,11 @@ new_interview_block = """                    {activeTab === "interview" && (
                                         <ProctoringMetric value="Normal" label="Eye Gaze" risk="NO RISK" />
                                     </div>
 
-                                    {/* ── Correlation Timeline vs Pattern Analysis Grid ── */}
+                                    {/* -- Correlation Timeline vs Pattern Analysis Grid -- */}
                                     <div className="grid grid-cols-[1.2fr_1fr] gap-8 items-stretch">
                                         {/* Left: Timeline */}
                                         <div className="p-10 rounded-[44px] bg-white border border-gray-100 shadow-sm space-y-10 optimize-scroll">
-                                            <h4 className="text-[15px] font-bold text-gray-900 font-sans tracking-tight mb-6">Event Timeline — Correlated with Interview</h4>
+                                            <h4 className="text-[15px] font-bold text-gray-900 font-sans tracking-tight mb-6">Event Timeline - Correlated with Interview</h4>
                                             <div className="space-y-2">
                                                 <TimelineEvent 
                                                     time="0:00" 
@@ -279,14 +279,14 @@ new_interview_block = """                    {activeTab === "interview" && (
                                                     event="Tab switch" 
                                                     risk="MEDIUM RISK" 
                                                     desc="Browser focus lost for ~8 seconds. Candidate returned to session tab." 
-                                                    subNote="Timed during Q1 deflection — candidate was avoiding the coding question at this exact moment. Most notable signal in session."
+                                                    subNote="Timed during Q1 deflection - candidate was avoiding the coding question at this exact moment. Most notable signal in session."
                                                 />
                                                 <TimelineEvent 
                                                     time="3:05" 
                                                     event="Audio anomaly" 
                                                     risk="MEDIUM RISK" 
                                                     desc="Voice-like background sound for ~3 seconds. Could be ambient noise or TV." 
-                                                    subNote="Occurred 37 seconds after self-admission 'not good at coding.' No clear link — flag for awareness only."
+                                                    subNote="Occurred 37 seconds after self-admission 'not good at coding.' No clear link - flag for awareness only."
                                                 />
                                                 <TimelineEvent 
                                                     time="5:00" 
@@ -300,12 +300,12 @@ new_interview_block = """                    {activeTab === "interview" && (
 
                                         {/* Right: Pattern Analysis */}
                                         <div className="p-10 rounded-[44px] bg-white border border-gray-100 shadow-sm space-y-10 optimize-scroll">
-                                            <h4 className="text-[15px] font-bold text-gray-900 font-sans tracking-tight mb-6">Pattern Analysis — What signals mean together</h4>
+                                            <h4 className="text-[15px] font-bold text-gray-900 font-sans tracking-tight mb-6">Pattern Analysis - What signals mean together</h4>
                                             <div className="space-y-6">
                                                 <AnalysisSignal 
                                                     type="warning" 
                                                     title="Tab switch timing is the key concern" 
-                                                    desc="Not the count (1 is low) but the exact timing — during the technical question at the moment of deflection. This correlation is what matters." 
+                                                    desc="Not the count (1 is low) but the exact timing - during the technical question at the moment of deflection. This correlation is what matters." 
                                                 />
                                                 <AnalysisSignal 
                                                     type="success" 
@@ -314,7 +314,7 @@ new_interview_block = """                    {activeTab === "interview" && (
                                                 />
                                                 <AnalysisSignal 
                                                     type="warning" 
-                                                    title="Audio anomaly — insufficient to conclude" 
+                                                    title="Audio anomaly - insufficient to conclude" 
                                                     desc="Single 3-second event. No repeated pattern. Cannot conclude external assistance from one event alone." 
                                                 />
                                                 <AnalysisSignal 
@@ -326,21 +326,21 @@ new_interview_block = """                    {activeTab === "interview" && (
                                         </div>
                                     </div>
 
-                                    {/* ── Section: Final Verdict ── */}
+                                    {/* -- Section: Final Verdict -- */}
                                     <div className="pt-20 border-t border-gray-200 mt-20 space-y-12">
                                         <div className="flex flex-col items-center gap-2 text-center mb-8">
                                             <h2 className="text-3xl font-bold text-slate-950 tracking-tight font-sans uppercase">Final Verdict</h2>
                                             <div className="h-1 w-20 bg-indigo-600 rounded-full" />
                                         </div>
 
-                                        {/* ── Score Summary ── */}
+                                        {/* -- Score Summary -- */}
                                         <div className="grid grid-cols-3 gap-8">
                                             <VerdictScoreCard label="Interview / 10" value="2.1" color="red" />
                                             <VerdictScoreCard label="Integrity / 10" value="5.8" color="orange" />
                                             <VerdictScoreCard label="Combined / 10" value="1.8" color="red" />
                                         </div>
 
-                                        {/* ── Verdict Narrative Card ── */}
+                                        {/* -- Verdict Narrative Card -- */}
                                         <div className="flex justify-center">
                                             <div className="w-full max-w-[1200px] p-12 rounded-[44px] bg-white border border-gray-100 shadow-sm relative overflow-hidden group">
                                                 <div className="absolute top-0 left-0 w-2 h-full bg-rose-500 opacity-60 group-hover:opacity-100 transition-opacity" />
@@ -374,15 +374,15 @@ new_interview_block = """                    {activeTab === "interview" && (
                                             </div>
                                         </div>
 
-                                        {/* ── Recommended Next Actions ── */}
+                                        {/* -- Recommended Next Actions -- */}
                                         <div className="flex justify-center">
                                             <div className="w-full max-w-[1200px] p-12 rounded-[44px] bg-[#EEF2FF] border border-[#E0E7FF] space-y-8">
                                                 <p className="text-center text-[11px] font-bold text-[#6366F1] uppercase tracking-[0.4em] mb-4">Recommended Next Action</p>
                                                 <div className="space-y-6 flex flex-col items-center">
                                                     <div className="space-y-5 w-fit">
-                                                        <RecommendedActionItem text="Reject for this AI Engineer role — performance failure is definitive, no further round needed" />
-                                                        <RecommendedActionItem text="Human review of recording recommended before logging integrity verdict — proctoring is inconclusive, not confirmed" />
-                                                        <RecommendedActionItem text="Flag for talent pool as junior automation role candidate — n8n and Apollo experience has value in a different context" />
+                                                        <RecommendedActionItem text="Reject for this AI Engineer role - performance failure is definitive, no further round needed" />
+                                                        <RecommendedActionItem text="Human review of recording recommended before logging integrity verdict - proctoring is inconclusive, not confirmed" />
+                                                        <RecommendedActionItem text="Flag for talent pool as junior automation role candidate - n8n and Apollo experience has value in a different context" />
                                                     </div>
                                                 </div>
                                             </div>

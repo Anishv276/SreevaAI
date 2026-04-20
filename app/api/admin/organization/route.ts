@@ -49,7 +49,7 @@ export async function PATCH(req: Request) {
         const body = await req.json();
         const { name, industry, size, website, location, phone, logoUrl, customSenderEmail, customSenderName } = body;
 
-        // Build update payload — only include fields that were actually sent
+        // Build update payload - only include fields that were actually sent
         const data: Record<string, any> = {};
         if (name !== undefined) data.name = name;
         if (industry !== undefined) data.industry = industry;
@@ -59,7 +59,7 @@ export async function PATCH(req: Request) {
         if (customSenderEmail !== undefined) data.customSenderEmail = customSenderEmail;
         if (customSenderName !== undefined) data.customSenderName = customSenderName;
 
-        // Handle logo separately — delete old one from R2 if being replaced
+        // Handle logo separately - delete old one from R2 if being replaced
         if (logoUrl !== undefined) {
             const currentOrg = await prisma.organization.findUnique({
                 where: { id: session.orgId },

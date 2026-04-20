@@ -27,7 +27,7 @@ async function main() {
         );
 
         if (score >= threshold) {
-            // This candidate SHOULD have been shortlisted — fix it now
+            // This candidate SHOULD have been shortlisted - fix it now
             await prisma.application.update({
                 where: { id: app.id },
                 data: {
@@ -36,7 +36,7 @@ async function main() {
                     hiringStatus: undefined,
                 },
             });
-            console.log(`    ✅ Fixed: REJECTED → SHORTLISTED`);
+            console.log(`    ✅ Fixed: REJECTED -> SHORTLISTED`);
         } else {
             console.log(`    ⏭ Skipped: score ${score} is genuinely below threshold ${threshold}`);
         }

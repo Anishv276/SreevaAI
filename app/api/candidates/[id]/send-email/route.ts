@@ -17,7 +17,7 @@ export async function POST(
         const { id } = await params;
         const orgId = session.orgId;
 
-        // ── AUTHORIZATION ─────────────────────────────────
+        // -- AUTHORIZATION ---------------------------------
         if (session.role !== "SUPER_ADMIN" && !orgId) {
             return NextResponse.json({ error: "Unauthorized: Missing organization context" }, { status: 401 });
         }
@@ -39,7 +39,7 @@ export async function POST(
             return NextResponse.json({ error: "Subject and body are required" }, { status: 400 });
         }
 
-        // ── XSS PROTECTION ─────────────────────────────────
+        // -- XSS PROTECTION ---------------------------------
         const escapeHtml = (unsafe: string) => {
             return unsafe
                  .replace(/&/g, "&amp;")

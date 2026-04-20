@@ -19,7 +19,7 @@ export async function POST(request: Request) {
 
         const { fileName, fileType, fileSize, driveId, type } = result.data;
 
-        // ── AUTHORIZATION & QUOTA ─────────────────────────
+        // -- AUTHORIZATION & QUOTA -------------------------
         const session = await getSession();
         const isJD = type === "JD";
         const isCert = type === "CERTIFICATION";
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "Applications for this position are closed" }, { status: 403 });
             }
         }
-        // ──────────────────────────────────────────────────
+        // --------------------------------------------------
 
         const uniqueId = uuidv4();
         const safeFileName = fileName.replace(/[^a-z0-9.]/gi, '_').toLowerCase();

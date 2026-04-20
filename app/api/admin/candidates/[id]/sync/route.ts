@@ -32,11 +32,11 @@ export async function POST(
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
 
-        // ── AUTHORIZATION ─────────────────────────────────
+        // -- AUTHORIZATION ---------------------------------
         if (session.orgId && app.drive.orgId !== session.orgId) {
             return NextResponse.json({ error: "Forbidden: Candidate belongs to another organization" }, { status: 403 });
         }
-        // ──────────────────────────────────────────────────
+        // --------------------------------------------------
 
         console.log(`[SYNC_ENGINE]: Syncing ${app.fullName} to Pinecone...`);
 

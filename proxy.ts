@@ -33,7 +33,7 @@ export async function proxy(req: NextRequest) {
         return await refreshSessionCookie(req, res);
     }
 
-    // ── /super-admin → SUPER_ADMIN only ──────────────────────
+    // -- /super-admin -> SUPER_ADMIN only ----------------------
     if (pathname.startsWith("/super-admin")) {
         if (!session) return NextResponse.redirect(new URL("/login?from=super-admin", req.url));
         if (!isSuperAdminRole(session.role)) {
@@ -44,13 +44,13 @@ export async function proxy(req: NextRequest) {
         return await refreshSessionCookie(req, res);
     }
 
-    // ── /admin → ADMIN only ───────────────────────────────
+    // -- /admin -> ADMIN only -------------------------------
     if (pathname.startsWith("/admin")) {
         if (!session) return NextResponse.redirect(new URL("/login?from=admin", req.url));
         if (isSuperAdminRole(session.role)) return NextResponse.redirect(new URL("/super-admin", req.url));
         if (!isAdminRole(session.role)) return NextResponse.redirect(new URL("/login", req.url));
 
-        // ── ONBOARDING PROTECTION ──────────────────────────
+        // -- ONBOARDING PROTECTION --------------------------
         const isSetupPage = pathname === "/admin/setup";
         const needsOnboarding = (session as any).onboardingComplete === false;
 
@@ -65,7 +65,7 @@ export async function proxy(req: NextRequest) {
         return await refreshSessionCookie(req, res);
     }
 
-    // ── /api/super-admin → SUPER_ADMIN only ──────────────────
+    // -- /api/super-admin -> SUPER_ADMIN only ------------------
     if (pathname.startsWith("/api/super-admin")) {
         if (!session || !isSuperAdminRole(session.role)) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });

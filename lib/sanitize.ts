@@ -18,7 +18,7 @@ const SAFE_ATTRS = new Set(["style", "class", "href", "target"]);
  * Strips all HTML tags that are not in SAFE_TAGS, and removes all event
  * handler attributes (onXxx) and javascript: href values.
  *
- * This is intentionally conservative — use a proper library like DOMPurify
+ * This is intentionally conservative - use a proper library like DOMPurify
  * for richer HTML if needed.
  */
 export function sanitizeHtml(dirty: string): string {

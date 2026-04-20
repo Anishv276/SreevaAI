@@ -8,9 +8,9 @@ import OpenAI from "openai";
 
 const openai = new OpenAI();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STATUS NORMALISATION — exact DB casing
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// STATUS NORMALISATION - exact DB casing
+// -----------------------------------------------------------------------------
 function normalizeResumeStatus(s: string): string {
   const map: Record<string, string> = {
     pending: "pending", shortlisted: "SHORTLISTED", rejected: "REJECTED",
@@ -25,9 +25,9 @@ function normalizeHiringStatus(s: string): string {
   return map[s.toLowerCase()] ?? s;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// parseStructuredResume — converts raw JSON blob to clean LLM-readable object
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// parseStructuredResume - converts raw JSON blob to clean LLM-readable object
+// -----------------------------------------------------------------------------
 function parseStructuredResume(raw: string | null | undefined) {
   if (!raw) return null;
   try {
@@ -65,7 +65,7 @@ function parseStructuredResume(raw: string | null | undefined) {
 
 export async function POST(req: NextRequest) {
   try {
-    // ── 1. Auth ──────────────────────────────────────────────────────────────
+    // -- 1. Auth --------------------------------------------------------------
     const session = await getSession();
     if (!session?.orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const orgId = session.orgId;
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     const userMessage = messages[messages.length - 1]?.content ?? "";
     console.log(`[RECRUITER_CHAT]: Org: ${org?.name ?? orgId} | Query: "${userMessage}"`);
 
-    // ── 2. Semantic Search (Pinecone) ────────────────────────────────────────
+    // -- 2. Semantic Search (Pinecone) ----------------------------------------
     let semanticContext = "";
     try {
       const recentContext = messages.slice(-3)
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
       }).join("\n");
     } catch { /* Pinecone optional */ }
 
-    // ── 3. Tool Definitions ──────────────────────────────────────────────────
+    // -- 3. Tool Definitions --------------------------------------------------
     const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       {
         type: "function",
@@ -248,16 +248,16 @@ export async function POST(req: NextRequest) {
       },
     ];
 
-    // ── 4. System Prompt ─────────────────────────────────────────────────────
-    const systemPrompt = `You are Ishita Intelligence — the AI recruitment assistant for **${org?.name ?? "this organization"}**.
-You have complete, real-time access to the organization's hiring database. Every answer you give is based on LIVE data from tools — never from memory or assumptions.
+    // -- 4. System Prompt -----------------------------------------------------
+    const systemPrompt = `You are Ishita Intelligence - the AI recruitment assistant for **${org?.name ?? "this organization"}**.
+You have complete, real-time access to the organization's hiring database. Every answer you give is based on LIVE data from tools - never from memory or assumptions.
 
 ### ORGANIZATION:
 - Name: ${org?.name ?? "Unknown"} | Industry: ${org?.industry ?? "N/A"} | Size: ${org?.size ?? "N/A"} | Plan: ${org?.plan ?? "STARTER"}
 
 ---
 
-### TOOL ROUTING — CALL THE RIGHT TOOL FOR EVERY QUESTION:
+### TOOL ROUTING - CALL THE RIGHT TOOL FOR EVERY QUESTION:
 
 **PIPELINE & COUNTS:**
 | Question | Tool |
@@ -317,10 +317,10 @@ You have complete, real-time access to the organization's hiring database. Every
 ---
 
 ### PIPELINE STAGES:
-1. **Applied** → Candidate submits resume
-2. **AI Screened** → Resume scored 0–100 vs JD → SHORTLISTED or REJECTED (resumeStatus)
-3. **Interview** → Shortlisted get AI voice interview link → PENDING → IN_PROGRESS → COMPLETED
-4. **Decision** → Recruiter sets hiringStatus: Hired / Not Hired
+1. **Applied** -> Candidate submits resume
+2. **AI Screened** -> Resume scored 0–100 vs JD -> SHORTLISTED or REJECTED (resumeStatus)
+3. **Interview** -> Shortlisted get AI voice interview link -> PENDING -> IN_PROGRESS -> COMPLETED
+4. **Decision** -> Recruiter sets hiringStatus: Hired / Not Hired
 
 ### EXACT DB STATUS VALUES:
 - resumeStatus: "pending" | "SHORTLISTED" | "REJECTED"
@@ -330,29 +330,29 @@ You have complete, real-time access to the organization's hiring database. Every
 - aiScore: 0–100
 
 ### CANDIDATE DATA FIELDS (from parsedResume):
-- technicalSkills → programming languages (Java, Python, SQL ...)
-- tools → platforms and tools (AWS, Oracle HCM, Excel ...)
-- education → [{degree, field, institution, year}]
-- projects → [{name, description, technologies}]
-- experience → {totalYears, currentRole, currentCompany}
-- careerSummary → one-paragraph AI-generated candidate summary
+- technicalSkills -> programming languages (Java, Python, SQL ...)
+- tools -> platforms and tools (AWS, Oracle HCM, Excel ...)
+- education -> [{degree, field, institution, year}]
+- projects -> [{name, description, technologies}]
+- experience -> {totalYears, currentRole, currentCompany}
+- careerSummary -> one-paragraph AI-generated candidate summary
 - location, workHistory, redFlags, keywords
 
 ### RESPONSE RULES:
 - ALWAYS cite **Candidate Name (App ID: xxx)** when referring to a person
-- ALWAYS show resumeUrl as a direct URL when present — NEVER say "not available"
-- ALWAYS show createdAt as a readable date (e.g. "April 10, 2026") — NEVER say "not specified"
-- ALWAYS read skills from parsedResume.technicalSkills + parsedResume.tools — NEVER say "not listed"
-- Show aiScore as "XX/100" — if null, say "Not yet screened"
-- Use ### Headings and bullet points — no long paragraphs
+- ALWAYS show resumeUrl as a direct URL when present - NEVER say "not available"
+- ALWAYS show createdAt as a readable date (e.g. "April 10, 2026") - NEVER say "not specified"
+- ALWAYS read skills from parsedResume.technicalSkills + parsedResume.tools - NEVER say "not listed"
+- Show aiScore as "XX/100" - if null, say "Not yet screened"
+- Use ### Headings and bullet points - no long paragraphs
 - Be warm, professional, and concise
-- If 0 results, say exactly that — never say "data unavailable"
+- If 0 results, say exactly that - never say "data unavailable"
 
 ### SEMANTIC CONTEXT (most relevant candidates for this query):
-${semanticContext || "No semantic matches found — rely on tools for accurate data."}
+${semanticContext || "No semantic matches found - rely on tools for accurate data."}
 `;
 
-    // ── 5. First LLM call ────────────────────────────────────────────────────
+    // -- 5. First LLM call ----------------------------------------------------
     const response = await openai.chat.completions.create({
       model: orgOpenAIModel,
       messages: [{ role: "system", content: systemPrompt }, ...messages],
@@ -368,7 +368,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
 
     const responseMessage = response.choices[0].message;
 
-    // ── 6. Execute Tools ─────────────────────────────────────────────────────
+    // -- 6. Execute Tools -----------------------------------------------------
     if (responseMessage.tool_calls?.length) {
       const toolMessages: any[] = [
         { role: "system", content: systemPrompt },
@@ -383,7 +383,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
 
         console.log(`[CHAT_TOOL]: ${fn}`, args);
 
-        // ── get_recruitment_stats ──────────────────────────────────────────
+        // -- get_recruitment_stats ------------------------------------------
         if (fn === "get_recruitment_stats") {
           const [total, drives, liveInterviews, completedInterviews, shortlisted, rejected, hired, pendingScreening] =
             await Promise.all([
@@ -398,7 +398,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
             ]);
           result = JSON.stringify({ totalCandidates: total, totalDrives: drives, liveInterviews, completedInterviews, shortlisted, rejected, hired, pendingScreening });
 
-        // ── get_candidate_counts_by_status ─────────────────────────────────
+        // -- get_candidate_counts_by_status ---------------------------------
         } else if (fn === "get_candidate_counts_by_status") {
           const [
             total,
@@ -427,7 +427,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
             hiringStatus:    { pending: hPending, shortlisted: hShortlisted, notShortlisted: hNotShortlisted, hired: hHired, notHired: hNotHired },
           });
 
-        // ── get_drives_overview ────────────────────────────────────────────
+        // -- get_drives_overview --------------------------------------------
         } else if (fn === "get_drives_overview") {
           const drives = await prisma.drive.findMany({
             where: { orgId },
@@ -451,7 +451,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
             _count: undefined,
           })));
 
-        // ── get_drive_by_name ──────────────────────────────────────────────
+        // -- get_drive_by_name ----------------------------------------------
         } else if (fn === "get_drive_by_name") {
           const drives = await prisma.drive.findMany({
             where: {
@@ -475,7 +475,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
             _count: undefined,
           })));
 
-        // ── get_candidates_for_drive ───────────────────────────────────────
+        // -- get_candidates_for_drive ---------------------------------------
         } else if (fn === "get_candidates_for_drive") {
           const limit = Math.min(args.limit ?? 20, 50);
           let driveId = args.driveId;
@@ -510,7 +510,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
             })));
           }
 
-        // ── get_top_candidates ─────────────────────────────────────────────
+        // -- get_top_candidates ---------------------------------------------
         } else if (fn === "get_top_candidates") {
           const whereClause: any = { drive: { orgId }, aiScore: { not: null } };
           if (args.driveId && args.driveId !== "all") whereClause.driveId = args.driveId;
@@ -532,7 +532,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
             structuredResume: undefined,
           })));
 
-        // ── get_candidates_by_status ───────────────────────────────────────
+        // -- get_candidates_by_status ---------------------------------------
         } else if (fn === "get_candidates_by_status") {
           const whereClause: any = { drive: { orgId } };
           if (args.resumeStatus) whereClause.resumeStatus = normalizeResumeStatus(args.resumeStatus);
@@ -556,7 +556,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
             structuredResume: undefined,
           })));
 
-        // ── search_candidates_by_name ──────────────────────────────────────
+        // -- search_candidates_by_name --------------------------------------
         } else if (fn === "search_candidates_by_name") {
           const candidates = await prisma.application.findMany({
             where: {
@@ -580,7 +580,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
             structuredResume: undefined,
           })));
 
-        // ── search_candidates_by_skill ─────────────────────────────────────
+        // -- search_candidates_by_skill -------------------------------------
         } else if (fn === "search_candidates_by_skill") {
           // Search in structuredResume JSON using Postgres ILIKE on text column
           const skill = args.skill?.trim() ?? "";
@@ -625,7 +625,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
             structuredResume: undefined,
           })));
 
-        // ── get_candidate_detail ───────────────────────────────────────────
+        // -- get_candidate_detail -------------------------------------------
         } else if (fn === "get_candidate_detail") {
           const candidate = await prisma.application.findUnique({
             where: { id: args.applicationId },
@@ -666,7 +666,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
             });
           }
 
-        // ── get_avg_scores ─────────────────────────────────────────────────
+        // -- get_avg_scores -------------------------------------------------
         } else if (fn === "get_avg_scores") {
           const where: any = { drive: { orgId }, aiScore: { not: null } };
           if (args.driveId) where.driveId = args.driveId;
@@ -709,7 +709,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
         });
       }
 
-      // ── 7. Second LLM call with tool results ──────────────────────────────
+      // -- 7. Second LLM call with tool results ------------------------------
       const secondResponse = await openai.chat.completions.create({
         model: orgOpenAIModel,
         messages: toolMessages,

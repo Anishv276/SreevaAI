@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
         const from = searchParams.get("from") ?? undefined;
         const start = getRangeStart(range, from);
 
-        // ── DB BUCKETING: Score Distribution ───────────────
+        // -- DB BUCKETING: Score Distribution ---------------
         const scoreGroups = await prisma.$queryRawUnsafe<any[]>(`
             SELECT 
                 CASE 

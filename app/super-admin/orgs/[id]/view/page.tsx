@@ -468,7 +468,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         billing?.ttsByModel,
                                         (org?.ttsProvider || "").toUpperCase() === "SARVAM"
                                             ? (org?.sarvamModel || "bulbul:v3")
-                                            : (org?.cartesiaModel || "sonic-english"),
+                                            : (org?.cartesiaModel || "cartesia/sonic-3"),
                                     )
                                     : null;
                                 const sttModels = section.key === "interview"

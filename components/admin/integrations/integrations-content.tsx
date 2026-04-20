@@ -143,7 +143,7 @@ export function IntegrationsContent() {
             {/* Integration Rows */}
             <div className="space-y-4">
 
-                {/* ── GMAIL ROW ── */}
+                {/* -- GMAIL ROW -- */}
                 <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
                     {/* Header row */}
                     <button
@@ -163,7 +163,7 @@ export function IntegrationsContent() {
                                 <h3 className="text-[16px] font-bold text-gray-900">Connect to Gmail</h3>
                                 <p className="text-[13px] text-gray-400 font-medium mt-0.5">
                                     {googleStatus.isConnected
-                                        ? <span className="text-green-600 font-bold">● Connected — {googleStatus.email}</span>
+                                        ? <span className="text-green-600 font-bold">● Connected - {googleStatus.email}</span>
                                         : "Send emails via your Google account"}
                                 </p>
                             </div>
@@ -265,7 +265,7 @@ export function IntegrationsContent() {
                     </AnimatePresence>
                 </div>
 
-                {/* ── DOMAIN ROW ── */}
+                {/* -- DOMAIN ROW -- */}
                 <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
                     {/* Header row */}
                     <button
@@ -286,8 +286,8 @@ export function IntegrationsContent() {
                                 <p className="text-[13px] text-gray-400 font-medium mt-0.5">
                                     {domainInfo
                                         ? emailSubStep === 2
-                                            ? <span className="text-emerald-600 font-bold">● Verified — {domainInfo.customDomain}</span>
-                                            : <span className="text-amber-600 font-bold">● Pending — {domainInfo.customDomain}</span>
+                                            ? <span className="text-emerald-600 font-bold">● Verified - {domainInfo.customDomain}</span>
+                                            : <span className="text-amber-600 font-bold">● Pending - {domainInfo.customDomain}</span>
                                         : "White-label emails with your business domain"}
                                 </p>
                             </div>
@@ -315,7 +315,7 @@ export function IntegrationsContent() {
                             >
                                 <div className="px-6 pb-6 border-t border-gray-100 pt-6">
                                     {!domainInfo ? (
-                                        /* ── Step 0: Enter domain ── */
+                                        /* -- Step 0: Enter domain -- */
                                         <div className="space-y-4">
                                             <div className="flex items-center gap-3">
                                                 <span className="w-1.5 h-7 bg-[#F97316] rounded-full" />
@@ -359,7 +359,7 @@ export function IntegrationsContent() {
                                             )}
                                         </div>
                                     ) : (
-                                        /* ── Domain registered ── */
+                                        /* -- Domain registered -- */
                                         <div className="space-y-6">
                                             {/* Domain status card */}
                                             <div className="flex items-center justify-between p-5 rounded-2xl bg-gradient-to-r from-gray-900 via-gray-800 to-gray-950 text-white shadow-xl relative overflow-hidden">
@@ -436,7 +436,7 @@ export function IntegrationsContent() {
                                                                             {copiedIndex?.i === i && copiedIndex?.type === "value" ? <Check className="h-3 w-3 mt-0.5 text-emerald-500 shrink-0" /> : <Copy className="h-3 w-3 mt-0.5 text-gray-300 opacity-0 group-hover/val:opacity-100 shrink-0" />}
                                                                         </div>
                                                                     </div>
-                                                                    <div className="w-[10%] pt-1.5 text-center text-[10px] font-black text-gray-400 italic">{rec.priority ?? "—"}</div>
+                                                                    <div className="w-[10%] pt-1.5 text-center text-[10px] font-black text-gray-400 italic">{rec.priority ?? "-"}</div>
                                                                     <div className="w-[14%] pt-1.5 flex justify-center">
                                                                         {rec.status === "verified" ? (
                                                                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 border border-emerald-200"><Check className="h-2.5 w-2.5" /> OK</span>
@@ -453,7 +453,7 @@ export function IntegrationsContent() {
                                                             {isLoadingDomain ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3 text-[#F97316]" />}
                                                             {isLoadingDomain ? "Verifying..." : "Verify DNS"}
                                                         </Button>
-                                                        {domainCheckResult === "checking" && <span className="text-[11px] font-bold text-blue-600">Triggering verification…</span>}
+                                                        {domainCheckResult === "checking" && <span className="text-[11px] font-bold text-blue-600">Triggering verification...</span>}
                                                         {domainCheckResult === "verified" && <span className="text-[11px] font-bold text-emerald-600">✓ Domain verified!</span>}
                                                         {domainCheckResult === "error" && <span className="text-[11px] font-bold text-red-600">Verification failed.</span>}
                                                     </div>

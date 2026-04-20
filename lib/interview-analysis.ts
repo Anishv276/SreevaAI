@@ -4,7 +4,7 @@ import { recordOrgBillingFromOpenAICompletion } from "@/lib/usage-metrics";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 /**
- * Full structured interview report -- covers all 9 UI sections.
+ * Full structured interview report -- covers all UI sections.
  * Stored as Interview.interviewReport (JSONB).
  */
 export interface InterviewReport {
@@ -45,6 +45,16 @@ export interface InterviewReport {
     grammar: number;
     depth: number;
     cefr_analysis: string;            // paragraph explaining the CEFR rating
+  };
+
+  //  Section 5: Integrity and Proctoring 
+  integrity?: {
+    score: number;                    // 0--100
+    label: string;                    // Clean | Monitor | Risk
+    summary: string;                  // concise integrity verdict
+    risk_factors: string[];           // telemetry risk drivers
+    recovery_factors: string[];       // clean / de-escalating signals
+    trend: string;                    // stable | improving | declining | collapsing
   };
 
   //  Section 6: JD Skills Proof Checklist 
@@ -217,6 +227,42 @@ function pickJdSkills(jdText: string): string[] {
   return deduped.slice(0, 6).map((skill) => capitalizeWords(skill));
 }
 
+function inferIntegrityLabel(score: number): "Clean" | "Monitor" | "Risk" {
+  if (score >= 85) return "Clean";
+  if (score >= 70) return "Monitor";
+  return "Risk";
+}
+
+function buildIntegritySummary(score: number, high: number, medium: number, low: number, events: any[]): string {
+  if (!events.length) {
+    return "No proctoring signals were recorded. Integrity looks clean for this session.";
+  }
+  if (high > 0) {
+    return `High-risk telemetry is present with ${high} high-severity signal(s). Review the recording and transcript before making a final integrity call.`;
+  }
+  if (medium > 0) {
+    return `The session contains ${medium} medium-severity signal(s) and ${low} low-severity event(s). The telemetry does not prove misconduct, but it should be reviewed in context.`;
+  }
+  return `The session looks mostly clean with ${low} low-severity signal(s). The integrity score remains strong at ${score}/100.`;
+}
+
+function buildIntegritySignals(events: any[]): { risk_factors: string[]; recovery_factors: string[] } {
+  const riskFactors = Array.from(new Set(
+    events
+      .map((ev: any) => {
+        const event = String(ev?.event || ev?.eventType || "").trim();
+        const severity = String(ev?.severity || "").trim();
+        if (!event) return "";
+        return severity ? `${event} (${severity})` : event;
+      })
+      .filter(Boolean)
+  )).slice(0, 6);
+  return {
+    risk_factors: riskFactors.length > 0 ? riskFactors : ["No recorded integrity risks"],
+    recovery_factors: events.length === 0 ? ["Clean session telemetry"] : [],
+  };
+}
+
 function buildFallbackInterviewReport(opts: {
   transcript: string;
   resumeText: string;
@@ -237,6 +283,7 @@ function buildFallbackInterviewReport(opts: {
   const knowsNothingCount = candidateAnswerSignals.filter((answer) => /don't know|do not know|not sure|no idea|i don't|i do not|not good at|nothing/.test(answer)).length;
   const proctoringHigh = proctoringEvents.filter((ev: any) => String(ev?.severity || "").toLowerCase() === "high").length;
   const proctoringMedium = proctoringEvents.filter((ev: any) => String(ev?.severity || "").toLowerCase() === "medium").length;
+  const proctoringLow = proctoringEvents.filter((ev: any) => String(ev?.severity || "").toLowerCase() === "low").length;
   const interviewScore = Math.max(
     0,
     Math.min(
@@ -330,6 +377,9 @@ function buildFallbackInterviewReport(opts: {
     `Observed ${turns.length} question/answer turn(s) from the interview transcript.`,
   ];
 
+  const integrityScore = Math.max(0, Math.min(100, Math.round(100 - (proctoringHigh * 22) - (proctoringMedium * 10) - (proctoringLow * 4))));
+  const integritySignals = buildIntegritySignals(proctoringEvents);
+
   const nextActions = strategicDecision === "Hire"
     ? ["Proceed to the next hiring stage.", "Use the detailed interview recording for final calibration."]
     : [
@@ -373,6 +423,14 @@ function buildFallbackInterviewReport(opts: {
         ? `The session reads at a low-confidence ${cefr.level} level because the candidate gave very brief answers and the transcript does not show sustained elaboration.`
         : `The session reads at a ${cefr.level} level because the candidate answered briefly and did not sustain deep technical explanation.`,
     },
+    integrity: {
+      score: integrityScore,
+      label: inferIntegrityLabel(integrityScore),
+      summary: buildIntegritySummary(integrityScore, proctoringHigh, proctoringMedium, proctoringLow, proctoringEvents),
+      risk_factors: integritySignals.risk_factors,
+      recovery_factors: integritySignals.recovery_factors,
+      trend: proctoringEvents.length > 0 ? "declining" : "stable",
+    },
     skills_proof: skillRows,
     qa_blocks: qaBlocks,
     consistency: consistencySeeds.map((item) => ({
@@ -406,7 +464,7 @@ export async function generateInterviewReport(opts: {
   const wordCount = transcript.split(/\s+/).filter(Boolean).length;
   const fallbackReport = () => buildFallbackInterviewReport(opts);
 
-  const systemPrompt = `You are a senior interviewer with many years of experience assessing candidates across technical, behavioral, and operational roles. Your job is to produce the sharpest possible post-interview evaluation report for hiring decisions. Read the transcript like an expert assessor: extract every meaningful signal, identify strengths, gaps, contradictions, confidence level, and hiring risk. Be direct, crisp, and evidence-led. Never invent facts, quotes, questions, or achievements. When evidence is weak, say so plainly. When evidence is strong, be decisive. Output valid JSON only.`;
+  const systemPrompt = `You are a senior interviewer with many years of experience assessing candidates across technical, behavioral, and operational roles. Your job is to produce the sharpest possible post-interview evaluation report for hiring decisions. Read the transcript like an expert assessor: extract every meaningful signal, identify strengths, gaps, contradictions, confidence level, integrity risk, and hiring risk. Be direct, crisp, and evidence-led. Never invent facts, quotes, questions, or achievements. When evidence is weak, say so plainly. When evidence is strong, be decisive. Output valid JSON only.`;
 
   const userPrompt = `
 ## CANDIDATE
@@ -437,6 +495,7 @@ The JSON must match the TypeScript interface exactly and must power these sectio
 - "verdict"
 - "strategic_verdict"
 - "communication"
+- "integrity"
 - "skills_proof"
 - "qa_blocks"
 - "consistency"
@@ -512,6 +571,15 @@ Accuracy rules:
     "cefr_analysis": string             // 2--3 sentences explaining the CEFR rating with transcript evidence
   },
 
+  "integrity": {
+    "score": number,                    // 0--100 based on proctoring telemetry
+    "label": "Clean"|"Monitor"|"Risk",
+    "summary": string,                  // concise integrity verdict
+    "risk_factors": string[],           // main telemetry risk drivers
+    "recovery_factors": string[],       // any clean / de-escalating signals
+    "trend": string                     // stable | improving | declining | collapsing
+  },
+
   "skills_proof": [                     // one entry per major JD skill/requirement (4--7 items)
     {
       "title": string,                  // skill name
@@ -560,7 +628,7 @@ Accuracy rules:
 }
 
 Rules:
-- skills_proof color, consistency statusColor, key_moments tagColor, qa_blocks scoreColor â†’ leave as "" (populated post-parse)
+- skills_proof color, consistency statusColor, key_moments tagColor, qa_blocks scoreColor -> leave as "" (populated post-parse)
 - recording.duration_label should be human-readable and compact, e.g. "5 min" or "12 min"
 - recording.word_count must reflect the transcript length as closely as possible
   - recording.summary should be the short AI summary box displayed below the video, written in 3-4 lines only
@@ -618,6 +686,7 @@ Rules:
     raw.verdict = raw.verdict || fallback.verdict;
     raw.strategic_verdict = raw.strategic_verdict || fallback.strategic_verdict;
     raw.communication = raw.communication || fallback.communication;
+    raw.integrity = raw.integrity || fallback.integrity;
 
     if (!Array.isArray(raw.skills_proof) || raw.skills_proof.length === 0) {
       raw.skills_proof = fallback.skills_proof;
@@ -661,7 +730,6 @@ Rules:
     return fallbackReport();
   }
 }
-
 
 
 

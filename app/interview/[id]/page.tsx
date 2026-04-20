@@ -143,7 +143,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [connectionAlert, setConnectionAlert] = useState<{ eventType: string; reason: string } | null>(null);
     const connectionAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    // ── Mouse Proctoring (+ Deepgram Nova-3 cross-signal) ────────────────
+    // -- Mouse Proctoring (+ Deepgram Nova-3 cross-signal) ----------------
     const [mouseViolationAlert, setMouseViolationAlert] = useState<{ eventType: string; reason: string; severity: string } | null>(null);
     const mouseViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
     const [soundViolationAlert, setSoundViolationAlert] = useState<{ eventType: string; reason: string; severity: string } | null>(null);
@@ -190,7 +190,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             }),
         }).catch(() => { });
 
-        // 3. Signal agent via data channel (optional — agent can adjust)
+        // 3. Signal agent via data channel (optional - agent can adjust)
         const room = lkRoomRef.current;
         if (room?.localParticipant) {
             try {
@@ -235,7 +235,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
     //  Hardware heartbeat violation handler 
     const handleHardwareViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
-        // 1. Show transient alert to candidate (8s — longer for high-severity)
+        // 1. Show transient alert to candidate (8s - longer for high-severity)
         setHardwareViolationAlert({ type: eventType, reason });
         if (hardwareViolationTimerRef.current) clearTimeout(hardwareViolationTimerRef.current);
         hardwareViolationTimerRef.current = setTimeout(() => setHardwareViolationAlert(null), 8000);
@@ -291,7 +291,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }).catch(() => { });
     }, [id, interviewToken]);
 
-    // ── Mouse violation handler (Deepgram Nova-3 cross-signal) ─────────────────
+    // -- Mouse violation handler (Deepgram Nova-3 cross-signal) -----------------
     const handleMouseViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
         // Determine display duration by severity
         const displayMs = severity === "high" ? 9000 : severity === "low" ? 5000 : 7000;
@@ -329,7 +329,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
     }, [id, interviewToken]);
 
-    // ── Clipboard Paste violation handler ─────────────────────────────────────
+    // -- Clipboard Paste violation handler -------------------------------------
     const handlePasteViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
         // 1. Show transient alert to candidate
         setMouseViolationAlert({ eventType: "behavior_flag", reason, severity: "medium" });
@@ -364,7 +364,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
     }, [id, interviewToken]);
 
-    // ── Generic Agent-Detected Violation handler (Syncs Agent events to Candidate UI) ──
+    // -- Generic Agent-Detected Violation handler (Syncs Agent events to Candidate UI) --
     const handleAgentDetectedViolation = useCallback((eventType: string, reason: string, severity?: string) => {
         // This is called when the Agent sends a 'proctoring_violation' packet over the data channel
         setSoundViolationAlert({ eventType, reason, severity: severity ?? "medium" });
@@ -372,7 +372,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         soundViolationTimerRef.current = setTimeout(() => setSoundViolationAlert(null), 8000);
     }, []);
 
-    // Countdown ticker — purely visual, counts up for display purposes
+    // Countdown ticker - purely visual, counts up for display purposes
     useEffect(() => {
         if (phase !== "launching") return;
         setLaunchTimeoutCheck(0);
@@ -469,7 +469,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             try {
                 // Collect device fingerprint for Smart Collusion Detection.
                 // This is capability data only (screen res, CPU cores, platform, DPR)
-                // — no PII is sent. The server hashes and never stores raw values.
+                // - no PII is sent. The server hashes and never stores raw values.
                 const deviceFingerprint = collectDeviceFingerprint();
 
                 const res = await fetch("/api/interview/token", {
@@ -801,7 +801,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.25em] max-w-[300px]">
                                     {isAgentReady
                                         ? `Agent ready in ${agentReadyLatencyMs ?? 0}ms. Starting interview...`
-                                        : "Please wait — connecting your AI interviewer."}
+                                        : "Please wait - connecting your AI interviewer."}
                                 </p>
                             </div>
                             <div className="flex items-center gap-2">
@@ -885,7 +885,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 onViolation={handleHardwareViolation}
             />
 
-            {/* Interview room — outside AnimatePresence intentionally.
+            {/* Interview room - outside AnimatePresence intentionally.
                 It pre-renders as soon as the launching phase has prepared a token
                 and controls its own visibility via opacity/z-index/pointer-events. */}
             {token && serverUrl && phase !== "completed" && (
@@ -919,7 +919,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             onRoomReady={(room) => { lkRoomRef.current = room; }}
                             candidateName={"Candidate"}
                             onCandidateTranscript={() => {
-                                // Deepgram Nova-3 fired a candidate segment — update silence clock
+                                // Deepgram Nova-3 fired a candidate segment - update silence clock
                                 lastCandidateTranscriptAtRef.current = Date.now();
                             }}
                             onAgentDetectedViolation={handleAgentDetectedViolation}
@@ -1144,7 +1144,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 )}
             </AnimatePresence>
 
-            {/* ── Behavior / Clipboard Violation Alert ── */}
+            {/* -- Behavior / Clipboard Violation Alert -- */}
             <AnimatePresence>
                 {mouseViolationAlert && mouseViolationAlert.eventType === "behavior_flag" && phase === "interview" && (
                     <motion.div
@@ -1168,7 +1168,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 )}
             </AnimatePresence>
 
-            {/* ── Mouse Proctoring Violation Alert (Deepgram Nova-3 correlated) ── */}
+            {/* -- Mouse Proctoring Violation Alert (Deepgram Nova-3 correlated) -- */}
             <AnimatePresence>
                 {mouseViolationAlert && mouseViolationAlert.eventType !== "behavior_flag" && phase === "interview" && (
                     <motion.div
@@ -1222,7 +1222,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 )}
             </AnimatePresence>
 
-            {/* ── Sound Anomaly Alert (Synced from AI Agent) ───────────────── */}
+            {/* -- Sound Anomaly Alert (Synced from AI Agent) ----------------- */}
             <AnimatePresence>
                 {soundViolationAlert && phase === "interview" && (
                     <motion.div
@@ -1316,7 +1316,7 @@ function InterviewRoomContent({
     }, [localParticipant, isMicEnabled]);
 
     // startAudio is now called from handleHardwareComplete (user gesture) in the parent.
-    // This useEffect is a fallback only — if the room reconnects mid-interview.
+    // This useEffect is a fallback only - if the room reconnects mid-interview.
     useEffect(() => {
         if (connectionState === "connected" && lkRoom) {
             lkRoom.startAudio().catch(() => { });
@@ -1358,7 +1358,7 @@ function InterviewRoomContent({
         // Start recording the moment audio flows
         if (!recordingStartedRef.current) {
             recordingStartedRef.current = true;
-            console.log("[Recording] Agent speaking — starting recording");
+            console.log("[Recording] Agent speaking - starting recording");
             fetch("/api/interview/start-recording", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1428,7 +1428,7 @@ function InterviewRoomContent({
         return groups;
     }, [transcriptions, localIdentity]);
 
-    // ── Deepgram Nova-3 → Mouse cross-signal: ping parent on candidate speech ──
+    // -- Deepgram Nova-3 -> Mouse cross-signal: ping parent on candidate speech --
     // Fires whenever a new transcript segment from the candidate arrives, resetting
     // the silence window that MouseProctoring uses for cross-signal correlation.
     const prevTranscriptCountRef = useRef(0);
@@ -1535,7 +1535,7 @@ function InterviewRoomContent({
         };
     }, [lkRoom, onAgentDetectedViolation]);
 
-    // ── Clipboard Paste Detection ─────────────────────────────────────────────
+    // -- Clipboard Paste Detection ---------------------------------------------
     useEffect(() => {
         if (!isInterviewActive) return;
 
@@ -1610,7 +1610,8 @@ function InterviewRoomContent({
                 </div>
             </div>
 
-            <div className="absolute top-10 right-10 z-50 w-96 aspect-[4/3] bg-zinc-900 rounded-[2.5rem] p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.6)] group border border-white/10 ring-1 ring-white/5" style={{ transform: 'translateZ(0)' }}>
+            {/* Candidate Video Feed - TOP RIGHT */}
+            <div className="absolute top-40 right-10 z-50 w-72 aspect-[4/3] bg-zinc-900 rounded-[2rem] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.6)] group border border-white/10 ring-1 ring-white/5" style={{ transform: 'translateZ(0)' }}>
                 <div className="w-full h-full rounded-[2rem] overflow-hidden bg-zinc-950 relative">
                     {localCameraTrack ? (
                         <div className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover [&>canvas]:w-full [&>canvas]:h-full [&>canvas]:object-cover scale-x-[-1]">
@@ -1692,47 +1693,47 @@ function InterviewRoomContent({
                         )}
                     </div>
                 </motion.div>
-                {/* Floating Box Transcript - Left of AI Avatar */}
-                <div className="absolute left-10 bottom-44 z-[65] w-[420px] pointer-events-none">
+                {/* Floating Box Transcript - Left of AI Avatar (Upward Flow) */}
+                <div className="absolute right-[calc(50%+160px)] bottom-[45%] z-[65] w-[360px] pointer-events-none">
                     <div
-                        className="flex flex-col-reverse gap-4 max-h-[550px] overflow-hidden p-6 pb-20"
+                        className="flex flex-col-reverse justify-end gap-2 max-h-[45vh] overflow-hidden p-6"
                         style={{
-                            maskImage: 'linear-gradient(to top, black 40%, transparent 95%)',
-                            WebkitMaskImage: 'linear-gradient(to top, black 40%, transparent 95%)'
+                            maskImage: 'linear-gradient(to top, black 60%, transparent 100%)',
+                            WebkitMaskImage: 'linear-gradient(to top, black 60%, transparent 100%)'
                         }}
                     >
                         <AnimatePresence mode="popLayout">
-                            {groupedTranscriptions.slice(-4).reverse().map((group, idx) => {
+                            {groupedTranscriptions.slice(-5).reverse().map((group, idx) => {
                                 const isGroupFinal = group.segments.every(s => s.isFinal);
                                 const combinedText = group.segments.map(s => s.text.trim()).join(" ");
 
                                 return (
                                     <motion.div
                                         key={group.id}
-                                        initial={{ opacity: 0, x: -30, scale: 0.9 }}
+                                        initial={{ opacity: 0, y: 40, scale: 0.95 }}
                                         animate={{
-                                            opacity: Math.max(0.1, 1 - (idx * 0.25)),
-                                            x: 0,
+                                            opacity: Math.max(0.2, 1 - (idx * 0.15)),
+                                            y: 0,
                                             scale: 1
                                         }}
                                         exit={{
                                             opacity: 0,
-                                            y: -50,
-                                            scale: 0.95,
-                                            transition: { duration: 0.4 }
+                                            y: -60,
+                                            scale: 0.9,
+                                            transition: { duration: 0.5 }
                                         }}
                                         transition={{
                                             type: "spring",
-                                            stiffness: 200,
-                                            damping: 24
+                                            stiffness: 150,
+                                            damping: 20
                                         }}
                                         className={cn(
-                                            "w-full filter drop-shadow-[0_10px_30px_rgba(0,0,0,0.15)]",
+                                            "w-full filter drop-shadow-[0_4px_10px_rgba(0,0,0,0.3)]",
                                             "pointer-events-auto"
                                         )}
                                     >
                                         <div className={cn(
-                                            "bg-white border border-black/[0.03] rounded-[1.8rem] p-5 relative overflow-hidden",
+                                            "bg-black/20 backdrop-blur-md rounded-2xl p-4 relative overflow-hidden group/item border border-white/5",
                                             group.isCandidate ? "rounded-br-none" : "rounded-bl-none"
                                         )}>
                                             {/* Header */}
@@ -1751,12 +1752,12 @@ function InterviewRoomContent({
                                                 </div>
                                                 <div className="flex flex-col">
                                                     <p className={cn(
-                                                        "text-[10px] font-black uppercase tracking-[0.15em] leading-none",
+                                                        "text-[9px] font-black uppercase tracking-[0.15em] leading-none",
                                                         group.isCandidate ? "text-orange-600" : "text-indigo-600"
                                                     )}>
-                                                        {group.isCandidate ? (candidateName || "Candidate") : "AI Interviewer"}
+                                                        {group.isCandidate ? (candidateName || "Candidate") : "Ishitha"}
                                                     </p>
-                                                    <p className="text-[8px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">
+                                                    <p className="text-[7px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">
                                                         {group.isCandidate ? "Speaker" : "Expert AI"}{!isGroupFinal && " •••"}
                                                     </p>
                                                 </div>
@@ -1767,8 +1768,8 @@ function InterviewRoomContent({
                                                 <StreamingText
                                                     text={combinedText}
                                                     className={cn(
-                                                        "text-[14px] font-medium tracking-normal leading-relaxed",
-                                                        "text-slate-700"
+                                                        "text-[13px] font-bold tracking-tight leading-relaxed",
+                                                        "text-white drop-shadow-sm"
                                                     )}
                                                 />
                                             </div>

@@ -95,7 +95,7 @@ export async function queryCandidates(
 export async function deleteCandidateEmbeddings(applicationId: string) {
     try {
         // Delete all chunks (resume, transcript, etc.) for this application
-        // Use deleteMany with a filter — cast to any to handle SDK version differences
+        // Use deleteMany with a filter - cast to any to handle SDK version differences
         await (pineconeIndex as any).deleteMany({ filter: { applicationId: { "$eq": applicationId } } })
             .catch(() => pineconeIndex.deleteMany({ applicationId: { "$eq": applicationId } } as any));
         console.log(`[PINECONE_DELETE_SUCCESS]: ${applicationId}`);

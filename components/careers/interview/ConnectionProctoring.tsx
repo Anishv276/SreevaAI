@@ -5,18 +5,18 @@
  * 
  * Silent connection-stability proctoring engine using LiveKit RoomEvent listeners.
  *
- * MUST be rendered INSIDE a <LiveKitRoom> context — it uses useRoomContext()
+ * MUST be rendered INSIDE a <LiveKitRoom> context - it uses useRoomContext()
  * to access the Room object directly, which is the only reliable way to
  * subscribe to connection lifecycle events.
  *
  * Events it listens to (from LiveKit's RoomEvent enum):
  * 
- *  RoomEvent.Reconnecting        — socket dropped, attempting to reconnect
- *  RoomEvent.Reconnected         — reconnection succeeded
- *  RoomEvent.Disconnected        — permanent disconnect (server closed room,
+ *  RoomEvent.Reconnecting        - socket dropped, attempting to reconnect
+ *  RoomEvent.Reconnected         - reconnection succeeded
+ *  RoomEvent.Disconnected        - permanent disconnect (server closed room,
  *                                  token expired, or network unrecoverable)
- *  RoomEvent.ConnectionQualityChanged — quality changed for local participant
- *                                       (Poor → flags a quality warning)
+ *  RoomEvent.ConnectionQualityChanged - quality changed for local participant
+ *                                       (Poor -> flags a quality warning)
  *
  * Proctoring signals produced:
  * 
@@ -26,11 +26,11 @@
  *
  * Why this matters for recruiters:
  * 
- *  • A genuine internet outage produces:  connection_lost → connection_restored
- *    → recruiter sees LOW/MEDIUM flag — not suspicious.
+ *  • A genuine internet outage produces:  connection_lost -> connection_restored
+ *    -> recruiter sees LOW/MEDIUM flag - not suspicious.
  *
  *  • A candidate who force-closes the browser to cheat produces:  connection_lost
- *    with NO restoration — recruiter sees an UNRESOLVED HIGH flag next to the
+ *    with NO restoration - recruiter sees an UNRESOLVED HIGH flag next to the
  *    other proctoring violations.
  *
  *  • The timestamp delta between lost/restored shows the exact outage duration,
@@ -116,7 +116,7 @@ export function ConnectionProctoring({
         lastLostFiredRef.current = Date.now();
         onViolation(
           "connection_lost",
-          "Internet connection dropped — LiveKit is attempting to reconnect",
+          "Internet connection dropped - LiveKit is attempting to reconnect",
           "medium"
         );
         if (process.env.NODE_ENV !== "production") {
@@ -130,14 +130,14 @@ export function ConnectionProctoring({
     const onReconnected = () => {
       if (!isActiveRef.current || !mountedRef.current) return;
 
-      // Cancel the grace timer — if it hadn't fired yet, the blip was too
+      // Cancel the grace timer - if it hadn't fired yet, the blip was too
       // short to matter and we log NOTHING (no lost, no restored).
       if (reconnectingTimerRef.current) {
         clearTimeout(reconnectingTimerRef.current);
         reconnectingTimerRef.current = null;
         disconnectStartRef.current = null;
         if (process.env.NODE_ENV !== "production") {
-          console.debug("[ConnectionProctoring] Reconnected within grace — no event logged");
+          console.debug("[ConnectionProctoring] Reconnected within grace - no event logged");
         }
         return;
       }
@@ -162,7 +162,7 @@ export function ConnectionProctoring({
     };
 
     //  Handler: Disconnected (permanent) 
-    // This fires when the Room is permanently disconnected — the server closed
+    // This fires when the Room is permanently disconnected - the server closed
     // the room, the token expired, or the network is completely unrecoverable.
     const onDisconnected = (reason?: DisconnectReason) => {
       if (!isActiveRef.current || !mountedRef.current) return;
@@ -216,7 +216,7 @@ export function ConnectionProctoring({
           }
         }
       } else {
-        // Quality improved — reset the counter
+        // Quality improved - reset the counter
         poorCountRef.current = 0;
       }
     };
@@ -254,7 +254,7 @@ export function ConnectionProctoring({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, room]);
 
-  // This component renders nothing — pure side-effect engine
+  // This component renders nothing - pure side-effect engine
   return null;
 }
 

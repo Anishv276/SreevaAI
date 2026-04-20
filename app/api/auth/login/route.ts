@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
         const normalizedEmail = email.toLowerCase().trim();
 
-        // ── RATE LIMITING ───────────────────────────────────
+        // -- RATE LIMITING -----------------------------------
         const isLimited = await isRateLimited(`login:${normalizedEmail}`, 5, 60);
         if (isLimited) {
             return NextResponse.json({ 
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
         }
 
-        // ── ORGANIZATION STATUS CHECKS ───────────────────────
+        // -- ORGANIZATION STATUS CHECKS -----------------------
         // We now allow login for all statuses to handle messaging in the dashboard
 
 

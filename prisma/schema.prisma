@@ -36,7 +36,7 @@ model Organization {
   llmModel           String?     @default("gpt-4o")
   llmProvider        String?     @default("OPENAI")
   llmTemperature     Float?      @default(0.7)
-  cartesiaModel      String?     @default("sonic-english")
+  cartesiaModel      String?     @default("cartesia/sonic-3")
   usageMetrics       Json?       @default("{}")
   googleAccessToken  String?
   googleRefreshToken String?
@@ -208,6 +208,7 @@ model Interview {
   candidateRating       Int?
   proctoringEvents      Json?       @default("[]")
   proctoringReport      Json?       @default("{}")
+  answerScores          Json?       @default("{}")
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 }
 

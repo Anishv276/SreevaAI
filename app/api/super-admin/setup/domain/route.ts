@@ -5,7 +5,7 @@ import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// POST /api/super-admin/setup/domain — register platform domain
+// POST /api/super-admin/setup/domain - register platform domain
 export async function POST(request: Request) {
     try {
         const session = await getSession();
@@ -89,7 +89,7 @@ export async function POST(request: Request) {
     }
 }
 
-// GET /api/super-admin/setup/domain — get platform domain registration status
+// GET /api/super-admin/setup/domain - get platform domain registration status
 export async function GET() {
     try {
         const session = await getSession();

@@ -12,7 +12,7 @@ export async function POST(
 
         const tokenHash = hashInviteToken(token);
 
-        // ── Wrap SELECT + UPDATE in a transaction ────────────────────────────────
+        // -- Wrap SELECT + UPDATE in a transaction --------------------------------
         // Without a transaction the two operations are non-atomic: a concurrent
         // accept or second reject request can slip between the SELECT and UPDATE,
         // leaving the invite in an inconsistent state (e.g. accepted but then

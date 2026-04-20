@@ -2,34 +2,34 @@
 
 /**
  * MouseProctoring.tsx
- * ─────────────────────────────────────────────────────────────────────────────
+ * -----------------------------------------------------------------------------
  * Silent, background mouse-movement proctoring engine with Deepgram Nova-3
  * cross-signal correlation.
  *
- * Runs entirely in the browser — no raw cursor data is ever sent to the server.
+ * Runs entirely in the browser - no raw cursor data is ever sent to the server.
  * Only violation *events* (type + reason + timestamp + severity) are forwarded
  * to the parent's onViolation callback, which handles the API call + data channel.
  *
- * ── How it works ────────────────────────────────────────────────────────────
+ * -- How it works ------------------------------------------------------------
  *
- *  SIGNAL 1 — FREEZE DETECTION
+ *  SIGNAL 1 - FREEZE DETECTION
  *  If the mouse has not moved for IDLE_THRESHOLD_MS (60 s), the "wasFrozen"
- *  flag is armed. Alone, this is not a violation — a focused candidate may
+ *  flag is armed. Alone, this is not a violation - a focused candidate may
  *  simply be concentrating on speaking.
  *
- *  SIGNAL 2 — ERRATIC BURST DETECTION
+ *  SIGNAL 2 - ERRATIC BURST DETECTION
  *  After a freeze, we measure the velocity (px/ms) of the first post-freeze
  *  movement. If velocity > ERRATIC_VEL_THRESHOLD AND the move covers
- *  > MIN_BURST_DISTANCE px, we classify it as an "erratic burst" — a strong
+ *  > MIN_BURST_DISTANCE px, we classify it as an "erratic burst" - a strong
  *  signal that the candidate suddenly snapped attention back to the screen after
  *  receiving off-screen assistance.
  *
- *  SIGNAL 3 — STRAIGHT-LINE SNAP DETECTION
+ *  SIGNAL 3 - STRAIGHT-LINE SNAP DETECTION
  *  We compute "directness" of the trajectory over TRAJECTORY_WINDOW_MS (500 ms).
  *  A perfectly straight, high-speed path to a specific coordinate is unnatural
  *  for humans and indicates the user was told exactly where to click.
  *
- *  SIGNAL 4 — DEEPGRAM NOVA-3 CROSS-SIGNAL CORRELATION  ← NEW
+ *  SIGNAL 4 - DEEPGRAM NOVA-3 CROSS-SIGNAL CORRELATION  ← NEW
  *  The parent passes a `candidateSpeakingRef` (a React ref) that reflects
  *  whether Deepgram Nova-3 is currently transcribing speech from the candidate.
  *
@@ -38,36 +38,36 @@
  *    b) Deepgram has reported candidate SILENCE for ≥ DEEPGRAM_SILENCE_THRESHOLD_MS
  *       immediately preceding the mouse event
  *
- *  …the engine escalates the violation from "medium" → "high" severity and
+ *  ...the engine escalates the violation from "medium" -> "high" severity and
  *  appends a Deepgram-correlation note to the reason string. The rationale:
  *  if the candidate was NOT speaking (Deepgram confirms silence), yet their
  *  mouse suddenly snaps to a precise screen location at high speed, it is
  *  extremely likely they are reading an answer from a helper and clicking on it.
  *
- *  SIGNAL 5 — SILENCE-ONLY ANOMALY DETECTION  ← NEW
+ *  SIGNAL 5 - SILENCE-ONLY ANOMALY DETECTION  ← NEW
  *  If the candidate has been silent (per Deepgram) for > DEEPGRAM_EXTENDED_SILENCE_MS
  *  AND the mouse is simultaneously frozen for > IDLE_THRESHOLD_MS, we emit a
  *  low-severity "mouse_silence_anomaly" event. This catches cases where the
  *  candidate has gone completely still while an off-screen helper dictates.
  *
- * ── False-positive prevention ───────────────────────────────────────────────
- *  - IDLE_THRESHOLD_MS: 60 s freeze required — short pauses won't trigger.
+ * -- False-positive prevention -----------------------------------------------
+ *  - IDLE_THRESHOLD_MS: 60 s freeze required - short pauses won't trigger.
  *  - ERRATIC_VEL_THRESHOLD: velocity must be very high (> 3 px/ms).
  *  - MIN_BURST_DISTANCE: movement must cover meaningful screen distance.
  *  - COOLDOWN_MS: 45 s cooldown prevents alert spam.
- *  - Deepgram correlation requires sustained silence — a single breath gap
+ *  - Deepgram correlation requires sustained silence - a single breath gap
  *    in speech is not considered silence.
  *  - Only fires during the active interview phase.
  */
 
 import { useEffect, useRef, useCallback } from "react";
 
-// ─── Thresholds ───────────────────────────────────────────────────────────────
+// --- Thresholds ---------------------------------------------------------------
 
 /** ms of no mouse movement before the cursor is considered "frozen" */
 const IDLE_THRESHOLD_MS = 60_000;   // 60 seconds
 
-/** px/ms — velocity above this after a freeze = erratic burst */
+/** px/ms - velocity above this after a freeze = erratic burst */
 const ERRATIC_VEL_THRESHOLD = 3;    // 3 pixels per millisecond (3000 px/s)
 
 /** Minimum pixel distance a burst must cover to be flagged */
@@ -89,7 +89,7 @@ const COOLDOWN_MS = 45_000;
 /** Polling interval to check for idle + Deepgram silence state (ms) */
 const IDLE_CHECK_INTERVAL_MS = 5_000;
 
-// ── Deepgram Nova-3 Cross-Signal Thresholds ───────────────────────────────────
+// -- Deepgram Nova-3 Cross-Signal Thresholds -----------------------------------
 
 /**
  * If the candidate has been silent (per Deepgram) for at least this long
@@ -104,10 +104,10 @@ const DEEPGRAM_SILENCE_THRESHOLD_MS = 8_000;   // 8 seconds of silence
  */
 const DEEPGRAM_EXTENDED_SILENCE_MS = 90_000;   // 90 seconds
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 
 interface MouseProctoringProps {
-  /** Passed from parent interview page — used for logging */
+  /** Passed from parent interview page - used for logging */
   applicationId: string;
   interviewToken: string;
   /** Set to true only while the interview phase is active */
@@ -135,7 +135,7 @@ export function MouseProctoring({
   lastCandidateTranscriptAtRef,
   onViolation,
 }: MouseProctoringProps) {
-  // ── Refs ─────────────────────────────────────────────────────────────────────
+  // -- Refs ---------------------------------------------------------------------
   const isActiveRef      = useRef(isActive);
   const mountedRef       = useRef(false);
 
@@ -163,7 +163,7 @@ export function MouseProctoring({
   // Keep isActive fresh inside event listeners
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
-  // ── Helpers ───────────────────────────────────────────────────────────────────
+  // -- Helpers -------------------------------------------------------------------
 
   const canFire = useCallback((): boolean => {
     return Date.now() - lastFiredRef.current > COOLDOWN_MS;
@@ -188,7 +188,7 @@ export function MouseProctoring({
     if (!canFire()) return;
     lastFiredRef.current = Date.now();
 
-    // ── Deepgram Nova-3 Cross-Signal Correlation ──────────────────────────────
+    // -- Deepgram Nova-3 Cross-Signal Correlation ------------------------------
     const silenceMs = getCandidateSilenceMs();
     let severity = baseSeverity;
     let correlatedReason = reason;
@@ -198,7 +198,7 @@ export function MouseProctoring({
       severity = "high";
       const silenceSec = Math.round(silenceMs / 1000);
       correlatedReason =
-        `${reason} [Deepgram Nova-3: candidate silent for ${silenceSec}s — high-confidence off-screen consultation]`;
+        `${reason} [Deepgram Nova-3: candidate silent for ${silenceSec}s - high-confidence off-screen consultation]`;
     }
 
     if (process.env.NODE_ENV !== "production") {
@@ -234,7 +234,7 @@ export function MouseProctoring({
     return pathLength > 0 ? straightLine / pathLength : 1;
   }, []);
 
-  // ── Event handler ─────────────────────────────────────────────────────────────
+  // -- Event handler -------------------------------------------------------------
 
   const onMouseMove = useCallback((e: MouseEvent) => {
     if (!mountedRef.current || !isActiveRef.current) return;
@@ -248,13 +248,13 @@ export function MouseProctoring({
     const distance = Math.hypot(dx, dy);
     const elapsed  = now - lastMoveTimeRef.current;     // ms since last move
 
-    // ── Append to trajectory buffer + prune stale points ─────────────────────
+    // -- Append to trajectory buffer + prune stale points ---------------------
     trajectoryRef.current.push({ x, y, t: now });
     trajectoryRef.current = trajectoryRef.current.filter(
       (p) => now - p.t <= TRAJECTORY_WINDOW_MS
     );
 
-    // ── Freeze + Erratic Burst Detection ─────────────────────────────────────
+    // -- Freeze + Erratic Burst Detection -------------------------------------
     if (wasFrozenRef.current && elapsed > 0) {
       // Mouse was frozen. Measure velocity of first post-freeze movement.
       const velocity = distance / elapsed;   // px/ms
@@ -264,14 +264,14 @@ export function MouseProctoring({
         fire(
           "mouse_erratic",
           `Rapid mouse burst (${Math.round(velocity * 1000)} px/s, ${Math.round(distance)} px) ` +
-          `after ${frozenSec}s of inactivity — possible off-screen consultation`
+          `after ${frozenSec}s of inactivity - possible off-screen consultation`
         );
       }
 
       wasFrozenRef.current = false;  // reset freeze state after first move
     }
 
-    // ── Straight-Line Snap Detection ─────────────────────────────────────────
+    // -- Straight-Line Snap Detection -----------------------------------------
     // Only check when moving fast and covering significant distance
     if (distance > MIN_BURST_DISTANCE && elapsed > 0) {
       const velocity    = distance / elapsed;
@@ -282,18 +282,18 @@ export function MouseProctoring({
           "mouse_snap",
           `Unnatural straight-line snap (directness=${directness.toFixed(3)}, ` +
           `speed=${Math.round(velocity * 1000)} px/s, ${Math.round(distance)} px) ` +
-          `— possible coordinate-guided click`
+          `- possible coordinate-guided click`
         );
       }
     }
 
-    // ── Update last position + time ───────────────────────────────────────────
+    // -- Update last position + time -------------------------------------------
     lastXRef.current       = x;
     lastYRef.current       = y;
     lastMoveTimeRef.current = now;
   }, [fire, computeDirectness]);
 
-  // ── Idle check loop (also runs Deepgram silence-anomaly check) ────────────────
+  // -- Idle check loop (also runs Deepgram silence-anomaly check) ----------------
 
   const startIdleCheck = useCallback(() => {
     idleCheckRef.current = setInterval(() => {
@@ -302,7 +302,7 @@ export function MouseProctoring({
       const now    = Date.now();
       const idleMs = now - lastMoveTimeRef.current;
 
-      // ── Arm freeze flag ───────────────────────────────────────────────────
+      // -- Arm freeze flag ---------------------------------------------------
       if (idleMs >= IDLE_THRESHOLD_MS) {
         wasFrozenRef.current = true;
         if (process.env.NODE_ENV !== "production") {
@@ -310,7 +310,7 @@ export function MouseProctoring({
         }
       }
 
-      // ── Deepgram silence-anomaly: mouse frozen + candidate silent ─────────
+      // -- Deepgram silence-anomaly: mouse frozen + candidate silent ---------
       const silenceMs = getCandidateSilenceMs();
       if (
         wasFrozenRef.current &&
@@ -323,7 +323,7 @@ export function MouseProctoring({
         onViolation(
           "mouse_silence_anomaly",
           `Candidate silent for ${silenceSec}s (Deepgram Nova-3) with cursor frozen for ${frozenSec}s ` +
-          `— possible dictation from off-screen helper`,
+          `- possible dictation from off-screen helper`,
           "low"
         );
         if (process.env.NODE_ENV !== "production") {
@@ -333,7 +333,7 @@ export function MouseProctoring({
     }, IDLE_CHECK_INTERVAL_MS);
   }, [getCandidateSilenceMs, onViolation]);
 
-  // ── Lifecycle ──────────────────────────────────────────────────────────────────
+  // -- Lifecycle ------------------------------------------------------------------
 
   useEffect(() => {
     if (!isActive) return;
@@ -357,10 +357,10 @@ export function MouseProctoring({
       }
     };
 
-    // Only re-run when isActive flips — same pattern as AudioProctoring
+    // Only re-run when isActive flips - same pattern as AudioProctoring
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive]);
 
-  // This component renders nothing — it's a pure side-effect engine
+  // This component renders nothing - it's a pure side-effect engine
   return null;
 }

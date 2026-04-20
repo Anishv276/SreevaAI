@@ -4,7 +4,7 @@ file_path = r'c:\Users\vamsi\OneDrive\Desktop\HR-updates\app\admin\candidates\[i
 correct_block = """                                                <AnalysisSignal 
                                                     type="warning" 
                                                     title="Tab switch timing is the key concern" 
-                                                    desc="Not the count (1 is low) but the exact timing — during the technical question at the moment of deflection. This correlation is what matters." 
+                                                    desc="Not the count (1 is low) but the exact timing - during the technical question at the moment of deflection. This correlation is what matters." 
                                                 />
                                                 <AnalysisSignal 
                                                     type="success" 
@@ -13,7 +13,7 @@ correct_block = """                                                <AnalysisSign
                                                 />
                                                 <AnalysisSignal 
                                                     type="warning" 
-                                                    title="Audio anomaly — insufficient to conclude" 
+                                                    title="Audio anomaly - insufficient to conclude" 
                                                     desc="Single 3-second event. No repeated pattern. Cannot conclude external assistance from one event alone." 
                                                 />
                                                 <AnalysisSignal 
@@ -25,21 +25,21 @@ correct_block = """                                                <AnalysisSign
                                         </div>
                                     </div>
 
-                                    {/* ── Section: Final Verdict ── */}
+                                    {/* -- Section: Final Verdict -- */}
                                     <div className="pt-20 border-t border-gray-200 mt-20 space-y-12">
                                         <div className="flex flex-col items-center gap-2 text-center mb-8">
                                             <h2 className="text-3xl font-bold text-slate-950 tracking-tight font-sans uppercase">Final Verdict</h2>
                                             <div className="h-1 w-20 bg-indigo-600 rounded-full" />
                                         </div>
 
-                                        {/* ── Score Summary ── */}
+                                        {/* -- Score Summary -- */}
                                         <div className="grid grid-cols-3 gap-8">
                                             <VerdictScoreCard label="Interview / 10" value="2.1" color="red" />
                                             <VerdictScoreCard label="Integrity / 10" value="5.8" color="orange" />
                                             <VerdictScoreCard label="Combined / 10" value="1.8" color="red" />
                                         </div>
 
-                                        {/* ── Verdict Narrative Card ── */}
+                                        {/* -- Verdict Narrative Card -- */}
                                         <div className="flex justify-center">
                                             <div className="w-full max-w-[1200px] p-12 rounded-[44px] bg-white border border-gray-100 shadow-sm relative overflow-hidden group">
                                                 <div className="absolute top-0 left-0 w-2 h-full bg-rose-500 opacity-60 group-hover:opacity-100 transition-opacity" />
@@ -73,15 +73,15 @@ correct_block = """                                                <AnalysisSign
                                             </div>
                                         </div>
 
-                                        {/* ── Recommended Next Actions ── */}
+                                        {/* -- Recommended Next Actions -- */}
                                         <div className="flex justify-center">
                                             <div className="w-full max-w-[1200px] p-12 rounded-[44px] bg-[#EEF2FF] border border-[#E0E7FF] space-y-8">
                                                 <p className="text-center text-[11px] font-bold text-[#6366F1] uppercase tracking-[0.4em] mb-4">Recommended Next Action</p>
                                                 <div className="space-y-6 flex flex-col items-center">
                                                     <div className="space-y-5 w-fit">
-                                                        <RecommendedActionItem text="Reject for this AI Engineer role — performance failure is definitive, no further round needed" />
-                                                        <RecommendedActionItem text="Human review of recording recommended before logging integrity verdict — proctoring is inconclusive, not confirmed" />
-                                                        <RecommendedActionItem text="Flag for talent pool as junior automation role candidate — n8n and Apollo experience has value in a different context" />
+                                                        <RecommendedActionItem text="Reject for this AI Engineer role - performance failure is definitive, no further round needed" />
+                                                        <RecommendedActionItem text="Human review of recording recommended before logging integrity verdict - proctoring is inconclusive, not confirmed" />
+                                                        <RecommendedActionItem text="Flag for talent pool as junior automation role candidate - n8n and Apollo experience has value in a different context" />
                                                     </div>
                                                 </div>
                                             </div>

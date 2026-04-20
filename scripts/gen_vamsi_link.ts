@@ -33,7 +33,7 @@ async function main() {
     return;
   }
 
-  // Nothing found — create fresh candidate
+  // Nothing found - create fresh candidate
   const drive = await prisma.drive.findFirst();
   if (!drive) {
     console.error('No drive found. Please create a drive first.');

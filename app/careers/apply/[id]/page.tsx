@@ -76,7 +76,7 @@ export default function ApplicationPage() {
     const [analysisError, setAnalysisError] = useState<string | null>(null);
 
     //  Race condition guards 
-    // State updates are batched/async; refs are synchronous — use refs as the
+    // State updates are batched/async; refs are synchronous - use refs as the
     // authoritative "in-flight" flag so two rapid file-drops cannot both pass
     // the guard before the first setIsAnalyzing(true) has rendered.
     const isAnalyzingRef = useRef(false);

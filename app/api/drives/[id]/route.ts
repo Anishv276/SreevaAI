@@ -155,7 +155,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         const { id } = await params;
         const driveId = id;
 
-        // ── STORAGE CLEANUP: Purge JD & Resumes from R2 ──────────
+        // -- STORAGE CLEANUP: Purge JD & Resumes from R2 ----------
         try {
             // Fetch drive details before deletion to get the R2 links
             const driveWithApps = await prisma.drive.findUnique({
@@ -192,7 +192,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
             console.error("[DELETE_SINGLE_DRIVE_STORAGE_ERROR]:", storageErr);
         }
 
-        // ── VECTOR DB CLEANUP: Purge all Drive candidates from Pinecone ──────────
+        // -- VECTOR DB CLEANUP: Purge all Drive candidates from Pinecone ----------
         try {
             await deleteDriveEmbeddings(driveId);
         } catch (pineconeErr) {

@@ -31,7 +31,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         adminEmail: "",
         ttsProvider: "CARTESIA",
         cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-        cartesiaModel: "sonic-english",
+        cartesiaModel: "cartesia/sonic-3",
         sarvamModel: "bulbul:v3",
         sarvamVoice: "shubh",
         sttProvider: "DEEPGRAM",
@@ -64,7 +64,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         adminEmail: data.users && data.users.length > 0 ? data.users[0].email : "",
                         ttsProvider: data.ttsProvider || "CARTESIA",
                         cartesiaVoiceId: data.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-                        cartesiaModel: data.cartesiaModel || "sonic-english",
+                        cartesiaModel: data.cartesiaModel || "cartesia/sonic-3",
                         sarvamModel: data.sarvamModel || "bulbul:v3",
                         sarvamVoice: data.sarvamVoice || "shubh",
                         sttProvider: data.sttProvider || "DEEPGRAM",
@@ -97,7 +97,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         const endpoint = isCartesia ? "/api/admin/voice/preview" : "/api/admin/voice/preview/sarvam";
         const transcript = isCartesia 
             ? "Hello! I am ready to conduct high-quality AI interviews for your team." 
-            : "à¤¨à¤®à¤¸à¥à¤¤à¥‡, à¤®à¥ˆà¤‚ à¤†à¤ªà¤•à¥€ à¤Ÿà¥€à¤® à¤•à¥‡ à¤²à¤¿à¤ à¤‰à¤šà¥à¤š à¤—à¥à¤£à¤µà¤¤à¥à¤¤à¤¾ à¤µà¤¾à¤²à¥‡ à¤¸à¤¾à¤•à¥à¤·à¤¾à¤¤à¥à¤•à¤¾à¤° à¤†à¤¯à¥‹à¤œà¤¿à¤¤ à¤•à¤°à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤¤à¥ˆà¤¯à¤¾à¤° à¤¹à¥‚à¤à¥¤";
+            : "à¤¨à¤®à¤¸à¥à¤¤à¥‡, à¤®à¥ˆà¤‚ à¤†à¤ªà¤•à¥€ à¤Ÿà¥€à¤® à¤•à¥‡ à¤²à¤¿à¤ à¤‰à¤šà¥à¤š à¤-à¥à¤£à¤µà¤¤à¥à¤¤à¤¾ à¤µà¤¾à¤²à¥‡ à¤¸à¤¾à¤•à¥à¤·à¤¾à¤¤à¥à¤•à¤¾à¤° à¤†à¤¯à¥‹à¤œà¤¿à¤¤ à¤•à¤°à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤¤à¥ˆà¤¯à¤¾à¤° à¤¹à¥‚à¤à¥¤";
 
         if (!voiceId) return;
         
@@ -421,9 +421,9 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                         onChange={e => setForm(prev => ({ ...prev, cartesiaModel: e.target.value }))}
                                         className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none"
                                     >
-                                        <option value="sonic-english">sonic-english (Flagship)</option>
-                                        <option value="sonic-multilingual">sonic-multilingual</option>
-                                        <option value="sonic-3">sonic-3 (Ultra-Low Latency)</option>
+                                        <option value="cartesia/sonic-3">cartesia/sonic-3 (Recommended)</option>
+                                        <option value="cartesia/sonic-2">cartesia/sonic-2</option>
+                                        <option value="cartesia/sonic-turbo">cartesia/sonic-turbo</option>
                                     </select>
                                     <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed mt-1">Sonic 3 is optimized for elite real-time responsiveness.</p>
                                 </div>
@@ -708,7 +708,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                     <Loader2 className="h-3 w-3 animate-spin" />
                                     Updating...
                                 </>
-                            ) : "APPLY CHANGES →"}
+                            ) : "APPLY CHANGES ->"}
                         </button>
                     </div>
                 </div>

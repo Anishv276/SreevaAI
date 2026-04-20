@@ -1,8 +1,8 @@
 /**
  * device-fingerprint.ts
- * ─────────────────────────────────────────────────────────────────────────────
- * Collects CAPABILITY entropy from the browser — screen specs, browser
- * engine, CPU count — and packages it for server-side hashing.
+ * -----------------------------------------------------------------------------
+ * Collects CAPABILITY entropy from the browser - screen specs, browser
+ * engine, CPU count - and packages it for server-side hashing.
  *
  * No PII is collected:
  *   • No cookies, no cross-site tracking
@@ -14,22 +14,22 @@
  * Why this is useful:
  *   Two candidates on the SAME university WiFi (same IP) will still have
  *   different screen resolutions, different browser versions, and different
- *   CPU counts → only their ipHash matches, so severity = low.
+ *   CPU counts -> only their ipHash matches, so severity = low.
  *
  *   Two sessions where the SAME laptop is reused will match BOTH ipHash AND
- *   deviceHash → simultaneous match = high, sequential match = medium.
+ *   deviceHash -> simultaneous match = high, sequential match = medium.
  */
 
 export interface DeviceFingerprint {
-  /** e.g. "1920x1080x24" — width × height × colorDepth */
+  /** e.g. "1920x1080x24" - width × height × colorDepth */
   screen: string;
   /** number of logical CPU cores exposed by navigator.hardwareConcurrency */
   cpuCores: number;
   /** browser platform family derived from User-Agent (coarse, not granular) */
   platform: string;
-  /** pixel device ratio (1, 1.5, 2, 3…) — differs across screen types */
+  /** pixel device ratio (1, 1.5, 2, 3...) - differs across screen types */
   dpr: number;
-  /** browser timezone offset in minutes — same campus → same timezone */
+  /** browser timezone offset in minutes - same campus -> same timezone */
   tzOffset: number;
 }
 
@@ -39,7 +39,7 @@ export interface DeviceFingerprint {
  */
 export function collectDeviceFingerprint(): DeviceFingerprint {
   if (typeof window === "undefined") {
-    // SSR-safe fallback — should never reach the token API in this state
+    // SSR-safe fallback - should never reach the token API in this state
     return { screen: "unknown", cpuCores: 0, platform: "unknown", dpr: 1, tzOffset: 0 };
   }
 
@@ -55,7 +55,7 @@ export function collectDeviceFingerprint(): DeviceFingerprint {
 
 /**
  * Returns a coarse platform family string.
- * We deliberately keep this coarse — we want to distinguish LAPTOPS,
+ * We deliberately keep this coarse - we want to distinguish LAPTOPS,
  * not individual browser builds. Matching to the patch-level would
  * be too volatile (browser updates daily).
  *

@@ -18,7 +18,7 @@ const extractQuerySchema = z.object({
 
 export async function POST(request: Request) {
     try {
-        // ── RATE LIMITING ───────────────────
+        // -- RATE LIMITING -------------------
         const ip = request.headers.get("x-forwarded-for") || "unknown";
         const { success, remaining, reset } = await extractionLimiter.check(ip);
         
@@ -117,7 +117,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "File required" }, { status: 400 });
         }
 
-        // ── SERVER-SIDE VALIDATION ───────────────────────────
+        // -- SERVER-SIDE VALIDATION ---------------------------
         const MAX_SIZE = 10 * 1024 * 1024; // 10MB
         if (file.size > MAX_SIZE) {
             return NextResponse.json({ 
@@ -176,13 +176,13 @@ export async function POST(request: Request) {
         pythonProcess.stdout.on("data", (data) => { outputData += data.toString(); });
         pythonProcess.stderr.on("data", (data) => { errorData += data.toString(); });
 
-        // R2 upload and Python extraction run in parallel — they don't depend on each other
+        // R2 upload and Python extraction run in parallel - they don't depend on each other
         const [exitCode] = await Promise.all([
             // Python PDF/LLM extraction
             new Promise<number>((resolve) => {
                 let settled = false;
 
-                // Safety timeout: 120s — OpenAI itself can take 30-40s on large prompts
+                // Safety timeout: 120s - OpenAI itself can take 30-40s on large prompts
                 const timeout = setTimeout(() => {
                     if (settled) return;
                     settled = true;
@@ -192,7 +192,7 @@ export async function POST(request: Request) {
                 }, 120000);
 
                 pythonProcess.on("close", (code) => {
-                    if (settled) return; // Timeout already resolved — ignore late close event
+                    if (settled) return; // Timeout already resolved - ignore late close event
                     settled = true;
                     clearTimeout(timeout);
                     console.log("[PYTHON_EXTRACT_END]: Exit code", code);

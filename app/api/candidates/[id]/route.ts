@@ -76,7 +76,7 @@ export async function DELETE(
         const { id } = await params;
         const orgId = (new URL(request.url).searchParams.get("orgId") || session?.orgId);
 
-        // ── SECURITY & FETCH: Ensure candidate belongs to the Org ──────
+        // -- SECURITY & FETCH: Ensure candidate belongs to the Org ------
         const candidate = await prisma.application.findFirst({
             where: { 
                 id, 
@@ -99,7 +99,7 @@ export async function DELETE(
             return NextResponse.json({ error: "Candidate not found or unauthorized" }, { status: 404 });
         }
 
-        // ── STORAGE CLEANUP: Purge Resume from R2 ──────────
+        // -- STORAGE CLEANUP: Purge Resume from R2 ----------
         try {
             const urls: string[] = [];
             if (candidate.resumeUrl) urls.push(candidate.resumeUrl);
@@ -111,14 +111,14 @@ export async function DELETE(
             console.error("[DELETE_SINGLE_CANDIDATE_STORAGE_ERROR]:", storageErr);
         }
 
-        // ── VECTOR DB CLEANUP: Purge from Pinecone ──────────
+        // -- VECTOR DB CLEANUP: Purge from Pinecone ----------
         try {
             await deleteCandidateEmbeddings(id);
         } catch (pineconeErr) {
              console.error("[DELETE_SINGLE_CANDIDATE_PINECONE_ERROR]:", pineconeErr);
         }
 
-        // ── DATABASE DELETION ─────────────────────────────
+        // -- DATABASE DELETION -----------------------------
         await prisma.$transaction(async (tx) => {
             await tx.interview.deleteMany({
                 where: { applicationId: id }
@@ -147,7 +147,7 @@ export async function PATCH(
         const orgId = searchParams.get("orgId") || session?.orgId;
         const body = await request.json();
 
-        // ── SECURITY: Verify ownership ─────────────────────
+        // -- SECURITY: Verify ownership ---------------------
         const candidate = await prisma.application.findFirst({
             where: { id, drive: { orgId } }
         });
@@ -156,7 +156,7 @@ export async function PATCH(
             return NextResponse.json({ error: "Candidate not found or unauthorized" }, { status: 404 });
         }
 
-        // ── UPDATE ─────────────────────────────────────────
+        // -- UPDATE -----------------------------------------
         const dataToUpdate: any = {
             ...(body.resumeStatus !== undefined && { resumeStatus: body.resumeStatus }),
             ...(body.interviewStatus !== undefined && { interviewStatus: body.interviewStatus }),

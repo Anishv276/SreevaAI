@@ -32,7 +32,7 @@ export default function NewOrgPage() {
         adminPassword: "",
         ttsProvider: "CARTESIA",
         cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-        cartesiaModel: "sonic-english",
+        cartesiaModel: "cartesia/sonic-3",
         sarvamModel: "bulbul:v3",
         sarvamVoice: "shubh",
         sttProvider: "DEEPGRAM",
@@ -60,7 +60,7 @@ export default function NewOrgPage() {
         const endpoint = isCartesia ? "/api/admin/voice/preview" : "/api/admin/voice/preview/sarvam";
         const transcript = isCartesia 
             ? "Hello! I am ready to conduct high-quality AI interviews for your team." 
-            : "à¤¨à¤®à¤¸à¥à¤¤à¥‡, à¤®à¥ˆà¤‚ à¤†à¤ªà¤•à¥€ à¤Ÿà¥€à¤® à¤•à¥‡ à¤²à¤¿à¤ à¤‰à¤šà¥à¤š à¤—à¥à¤£à¤µà¤¤à¥à¤¤à¤¾ à¤µà¤¾à¤²à¥‡ à¤¸à¤¾à¤•à¥à¤·à¤¾à¤¤à¥à¤•à¤¾à¤° à¤†à¤¯à¥‹à¤œà¤¿à¤¤ à¤•à¤°à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤¤à¥ˆà¤¯à¤¾à¤° à¤¹à¥‚à¤à¥¤";
+            : "à¤¨à¤®à¤¸à¥à¤¤à¥‡, à¤®à¥ˆà¤‚ à¤†à¤ªà¤•à¥€ à¤Ÿà¥€à¤® à¤•à¥‡ à¤²à¤¿à¤ à¤‰à¤šà¥à¤š à¤-à¥à¤£à¤µà¤¤à¥à¤¤à¤¾ à¤µà¤¾à¤²à¥‡ à¤¸à¤¾à¤•à¥à¤·à¤¾à¤¤à¥à¤•à¤¾à¤° à¤†à¤¯à¥‹à¤œà¤¿à¤¤ à¤•à¤°à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤¤à¥ˆà¤¯à¤¾à¤° à¤¹à¥‚à¤à¥¤";
 
         if (!voiceId) return;
         
@@ -160,7 +160,7 @@ export default function NewOrgPage() {
 
                     <div className="flex flex-col sm:flex-row gap-4 pt-4">
                         <button
-                            onClick={() => { setSuccess(null); setForm({ orgName: "", slug: "", location: "", plan: "STARTER", adminName: "", adminEmail: "", adminPassword: "", ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", cartesiaModel: "sonic-english", sarvamModel: "bulbul:v3", sarvamVoice: "shubh", sttProvider: "DEEPGRAM", deepgramModel: "nova-3-general", sarvamSttModel: "saaras:v3", llmProvider: "OPENAI", llmModel: "gpt-4o", llmTemperature: 0.7 }); }}
+                            onClick={() => { setSuccess(null); setForm({ orgName: "", slug: "", location: "", plan: "STARTER", adminName: "", adminEmail: "", adminPassword: "", ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", cartesiaModel: "cartesia/sonic-3", sarvamModel: "bulbul:v3", sarvamVoice: "shubh", sttProvider: "DEEPGRAM", deepgramModel: "nova-3-general", sarvamSttModel: "saaras:v3", llmProvider: "OPENAI", llmModel: "gpt-4o", llmTemperature: 0.7 }); }}
                             className="flex-1 h-10 rounded-xl border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50"
                         >
                             Add Another
@@ -444,9 +444,9 @@ export default function NewOrgPage() {
                                         onChange={e => setForm(prev => ({ ...prev, cartesiaModel: e.target.value }))}
                                         className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-purple-100 outline-none"
                                     >
-                                        <option value="sonic-english">sonic-english (Flagship)</option>
-                                        <option value="sonic-multilingual">sonic-multilingual</option>
-                                        <option value="sonic-3">sonic-3 (Ultra-Low Latency)</option>
+                                        <option value="cartesia/sonic-3">cartesia/sonic-3 (Recommended)</option>
+                                        <option value="cartesia/sonic-2">cartesia/sonic-2</option>
+                                        <option value="cartesia/sonic-turbo">cartesia/sonic-turbo</option>
                                     </select>
                                     <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.15em] leading-relaxed mt-1">Sonic 3 is optimized for elite real-time responsiveness.</p>
                                 </div>

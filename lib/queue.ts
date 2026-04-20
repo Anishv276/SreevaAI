@@ -9,10 +9,10 @@ if (!REDIS_URL && process.env.NODE_ENV === 'production') {
 
 /**
  * Shared IORedis connection for BullMQ.
- * - lazyConnect: true  → don't connect until first command, so Next.js won't
+ * - lazyConnect: true  -> don't connect until first command, so Next.js won't
  *                         hard-crash at startup if Redis isn't ready yet.
- * - retryStrategy     → keeps retrying with back-off instead of throwing.
- * - maxRetriesPerRequest: null → required by BullMQ.
+ * - retryStrategy     -> keeps retrying with back-off instead of throwing.
+ * - maxRetriesPerRequest: null -> required by BullMQ.
  */
 function createRedisConnection(): IORedis {
   return new IORedis(REDIS_URL || 'redis://localhost:6379', {

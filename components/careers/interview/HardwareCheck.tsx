@@ -43,7 +43,7 @@ export function HardwareCheck({
     const animRef = useRef<number | null>(null);
     const recogRef = useRef<any>(null);
     const verifiedRef = useRef(false);
-    const verifiedPhraseRef = useRef(""); // Always holds latest phrase — avoids stale closure in speech effect
+    const verifiedPhraseRef = useRef(""); // Always holds latest phrase - avoids stale closure in speech effect
     const snapshotDoneRef = useRef(false);
     const currentStepRef = useRef(0);
     const lastNoiseUpdateTimeRef = useRef(0);
@@ -69,7 +69,7 @@ export function HardwareCheck({
     const [interimTranscript, setInterimTranscript] = useState("");
     const [micRetryToken, setMicRetryToken] = useState(0);
 
-    // Pick a default phrase on mount — "I am ready for the interview" as requested
+    // Pick a default phrase on mount - "I am ready for the interview" as requested
     useEffect(() => {
         const defaultPhrase = "I am ready for the interview";
         verifiedPhraseRef.current = defaultPhrase;
@@ -158,7 +158,7 @@ export function HardwareCheck({
 
     const hardwareStatusMsg = useMemo(() => {
         switch (networkQuality) {
-            case "stable": return "Your connection looks good—we should have a smooth interview 👍";
+            case "stable": return "Your connection looks good-we should have a smooth interview 👍";
             case "acceptable": return "Your connection is okay, but you might notice slight delays.";
             case "poor": return "Your connection may affect the interview quality. If possible, try switching to a better network.";
             default: return "Analyzing your connection quality...";
@@ -406,10 +406,10 @@ export function HardwareCheck({
 
     //  Speech detection with live transcript display 
     // KEY BUGS FIXED:
-    // 1. Use event.resultIndex to process ONLY new results — not re-accumulate
+    // 1. Use event.resultIndex to process ONLY new results - not re-accumulate
     //    all results from index 0 (which caused "stuck" display as old results
     //    kept overwriting the live text with stale final segments).
-    // 2. Persist finalTranscript across session restarts in a ref — Chrome's
+    // 2. Persist finalTranscript across session restarts in a ref - Chrome's
     //    SpeechRecognition stops and restarts frequently; without a ref the
     //    accumulated final text is lost on each restart.
     // 3. Read verifiedPhrase from verifiedPhraseRef (not the state closure) so
@@ -445,11 +445,11 @@ export function HardwareCheck({
             setInterimTranscript(interimText.trim());
 
             const combined = (sessionFinalTextRef.current + " " + interimText).toLowerCase().trim();
-            // Always read from ref — avoids stale closure if phrase was set after effect ran
+            // Always read from ref - avoids stale closure if phrase was set after effect ran
             const targetPhrase = verifiedPhraseRef.current.toLowerCase();
             if (!targetPhrase) return;
 
-            // 80% word match — handles accents and partial recognition
+            // 80% word match - handles accents and partial recognition
             const targetWords = targetPhrase.split(/\s+/).filter(Boolean);
             const matchedWords = targetWords.filter(w => combined.includes(w));
             const matchRatio = matchedWords.length / targetWords.length;
@@ -464,14 +464,14 @@ export function HardwareCheck({
         };
 
         r.onerror = (event: any) => {
-            // no-speech and aborted are normal during continuous recognition — ignore them
+            // no-speech and aborted are normal during continuous recognition - ignore them
             if (event.error === "no-speech" || event.error === "aborted") return;
             console.warn("[SpeechRecog] error:", event.error);
         };
 
         r.onend = () => {
             if (!verifiedRef.current && recogRef.current === r) {
-                // Short delay then restart — keeps recognition running continuously
+                // Short delay then restart - keeps recognition running continuously
                 setTimeout(() => {
                     if (!verifiedRef.current && recogRef.current === r) {
                         try { r.start(); } catch { }
@@ -485,7 +485,7 @@ export function HardwareCheck({
         return () => {
             if (recogRef.current === r) { try { r.abort(); } catch { } recogRef.current = null; }
         };
-        // Re-run when micStatus OR micRetryToken changes — forces hard reset of engine
+        // Re-run when micStatus OR micRetryToken changes - forces hard reset of engine
          
     }, [micStatus, micRetryToken]);
 
@@ -560,7 +560,7 @@ export function HardwareCheck({
     //  Speaker / Audio Playback Test 
     // ROOT CAUSE OF SILENCE: Chrome creates AudioContext in "suspended" state
     // when a mic AudioContext already exists. The previous code called
-    // scheduleAudio() before resume() had actually resolved — so actx.currentTime
+    // scheduleAudio() before resume() had actually resolved - so actx.currentTime
     // was still 0 and the oscillator start/stop times were wrong.
     // FIX: make the entire function async, always await resume(), then schedule.
     // A fresh AudioContext is used every time to avoid any state from the mic ctx.
@@ -871,7 +871,7 @@ export function HardwareCheck({
                 <div className="max-w-6xl mx-auto flex items-center justify-between">
                     <div>
                         <h1 className="text-lg font-semibold text-gray-900">{title}</h1>
-                        <p className="text-sm text-gray-500">Hi {candidateName} — let&apos;s make sure everything is set up before we begin.</p>
+                        <p className="text-sm text-gray-500">Hi {candidateName} - let&apos;s make sure everything is set up before we begin.</p>
                     </div>
                     <div className="flex items-center gap-3">
                         <span className="text-sm text-gray-500">{readyCount}/{checks.length} ready</span>
@@ -1045,7 +1045,7 @@ export function HardwareCheck({
                             {micVerified ? (
                                 <div className="flex items-center justify-center gap-2 text-green-600">
                                     <CheckCircle2 className="w-4 h-4" />
-                                    <span className="text-sm font-bold tracking-tight">Perfect — clear audio 👍</span>
+                                    <span className="text-sm font-bold tracking-tight">Perfect - clear audio 👍</span>
                                 </div>
                             ) : !speechSupported ? (
                                 <p className="text-[10px] text-red-500 text-center uppercase font-bold">Transcription unsupported</p>
@@ -1161,7 +1161,7 @@ export function HardwareCheck({
                                         </button>
                                         {speakerRetryMsg && (
                                             <p className="mt-2 text-[10px] text-gray-500 italic text-center leading-relaxed">
-                                                No worries — let's try that once more. <br />Ensure your volume is up 👍
+                                                No worries - let's try that once more. <br />Ensure your volume is up 👍
                                             </p>
                                         )}
                                     </motion.div>
@@ -1358,7 +1358,7 @@ export function HardwareCheck({
                         </label>
                         <div className="text-[10px] items-center gap-1.5 text-gray-400 font-medium ml-8">
                             {allReady
-                                ? "All checks passed — you're ready to begin!"
+                                ? "All checks passed - you're ready to begin!"
                                 : `${checks.length - readyCount} check${checks.length - readyCount !== 1 ? "s" : ""} remaining`}
                         </div>
                     </div>

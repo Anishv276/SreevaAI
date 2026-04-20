@@ -24,7 +24,7 @@ export async function GET() {
         if (!org?.customDomain) return NextResponse.json({ domain: null });
 
         if (org.resendDomainId) {
-            // Do NOT call verify() here — it resets all record statuses to "pending"
+            // Do NOT call verify() here - it resets all record statuses to "pending"
             // while its async process runs, so get() immediately after always reads pending.
             // get() alone returns the real current status from Resend.
 
@@ -84,7 +84,7 @@ export async function GET() {
     }
 }
 
-// POST /api/admin/organization/domain — trigger Resend to re-verify DNS records
+// POST /api/admin/organization/domain - trigger Resend to re-verify DNS records
 export async function POST() {
     try {
         const session = await getSession();

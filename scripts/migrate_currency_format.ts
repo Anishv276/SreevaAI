@@ -17,8 +17,8 @@ async function migrate() {
         if (!drive.salary) continue;
 
         // Pattern: [Numbers][Dash][Numbers] INR LPA
-        // Supported dashes: - (hyphen), – (en-dash), — (em-dash)
-        const regex = /(\d+(?:\s*[–—-]\s*\d+)?)\s*INR\s*LPA/gi;
+        // Supported dashes: - (hyphen), – (en-dash), - (em-dash)
+        const regex = /(\d+(?:\s*[–--]\s*\d+)?)\s*INR\s*LPA/gi;
         
         if (regex.test(drive.salary)) {
             const newSalary = drive.salary.replace(regex, '$1 LPA INR');
@@ -43,7 +43,7 @@ async function migrate() {
         if (!details) continue;
 
         const detailsStr = typeof details === 'string' ? details : JSON.stringify(details);
-        const regex = /(\d+(?:\s*[–—-]\s*\d+)?)\s*INR\s*LPA/gi;
+        const regex = /(\d+(?:\s*[–--]\s*\d+)?)\s*INR\s*LPA/gi;
 
         if (regex.test(detailsStr)) {
             const newDetailsStr = detailsStr.replace(regex, '$1 LPA INR');
@@ -64,7 +64,7 @@ async function migrate() {
         if (!data) continue;
 
         const dataStr = JSON.stringify(data);
-        const regex = /(\d+(?:\s*[–—-]\s*\d+)?)\s*INR\s*LPA/gi;
+        const regex = /(\d+(?:\s*[–--]\s*\d+)?)\s*INR\s*LPA/gi;
 
         if (regex.test(dataStr)) {
             const newDataStr = dataStr.replace(regex, '$1 LPA INR');

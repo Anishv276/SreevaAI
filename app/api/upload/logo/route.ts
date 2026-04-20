@@ -14,14 +14,14 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
         }
 
-        // ── SIZE VALIDATION (5MB) ─────────────────────────
+        // -- SIZE VALIDATION (5MB) -------------------------
         if (file.size > 5 * 1024 * 1024) {
             return NextResponse.json({ error: "File too large. Maximum size is 5MB" }, { status: 413 });
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
 
-        // ── MAGIC NUMBER VALIDATION ────────────────────────
+        // -- MAGIC NUMBER VALIDATION ------------------------
         const magicNumbers = {
             png: [0x89, 0x50, 0x4e, 0x47],
             jpg: [0xff, 0xd8, 0xff],

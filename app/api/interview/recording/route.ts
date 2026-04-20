@@ -143,7 +143,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Missing required fields (including token)" }, { status: 400 });
         }
 
-        // ── AUTHENTICATION ────────────────────────────────
+        // -- AUTHENTICATION --------------------------------
         const interviewRecord = await prisma.interview.findUnique({
             where: { applicationId },
             select: { accessToken: true }

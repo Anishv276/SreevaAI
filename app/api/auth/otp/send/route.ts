@@ -17,7 +17,7 @@ export async function POST(request: Request) {
         const masterEmail = process.env.MASTER_ADMIN_EMAIL;
         if (!masterEmail) return NextResponse.json({ error: "Master identity not configured" }, { status: 500 });
 
-        // ── RATE LIMITING ───────────────────────────────────
+        // -- RATE LIMITING -----------------------------------
         const isLimited = await isRateLimited(`otp-send:${masterEmail}`, 5, 60);
         if (isLimited) {
             return NextResponse.json({ 
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
             }, { status: 502 });
         }
 
-        // ── LIVE EMAIL VIA SUPER ADMIN GMAIL OR RESEND ──────
+        // -- LIVE EMAIL VIA SUPER ADMIN GMAIL OR RESEND ------
         const superAdmin = await prisma.superAdmin.findFirst({
             where: { googleAccessToken: { not: null } },
             select: { id: true }

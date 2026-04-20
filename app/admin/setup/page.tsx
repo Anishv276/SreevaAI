@@ -345,7 +345,7 @@ export default function OnboardingPage() {
                                     <div className="flex items-center gap-3 mb-4">
                                         <Lock className="h-4 w-4 text-gray-400" />
                                         <span className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Set Account Password</span>
-                                        <span className="text-[10px] text-gray-400 font-medium">(optional — skip if already set)</span>
+                                        <span className="text-[10px] text-gray-400 font-medium">(optional - skip if already set)</span>
                                     </div>
                                     <div className="grid md:grid-cols-2 gap-6">
                                         <div className="space-y-2">

@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
         const roomName = "interview_" + applicationId;
 
-        // Idempotent — check DB so dedup survives server restarts
+        // Idempotent - check DB so dedup survives server restarts
         const existing = await prisma.interview.findUnique({
             where: { applicationId },
             select: { interviewRecordingUrl: true },

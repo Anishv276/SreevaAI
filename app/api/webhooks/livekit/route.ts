@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Missing required event data" }, { status: 400 });
         }
 
-        // ── 2. Validate Application Existence ────────────────────
+        // -- 2. Validate Application Existence --------------------
         const app = await prisma.application.findUnique({
             where: { id: applicationId },
             select: { id: true }
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
 
         console.log(`[Webhook] Egress ended for App ${applicationId}. URL: ${downloadUrl}`);
 
-        // ── 3. Atomically Update Interview & Track Webhook ────────
+        // -- 3. Atomically Update Interview & Track Webhook --------
         // Use an interactive transaction to ensure we don't process the same event twice
         const result = await prisma.$transaction(async (tx: any) => {
             // Check idempotency again inside the transaction for absolute safety

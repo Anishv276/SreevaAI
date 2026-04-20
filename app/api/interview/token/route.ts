@@ -8,7 +8,7 @@ import { z } from "zod";
 const DISPATCH_DEBOUNCE_MS = 12_000;
 const dispatchByRoom = new Map<string, number>();
 
-// ─── Device fingerprint shape sent by the client ─────────────────────────────
+// --- Device fingerprint shape sent by the client -----------------------------
 interface DeviceFingerprint {
     screen:    string;   // "1920x1080x24"
     cpuCores:  number;
@@ -30,22 +30,22 @@ const interviewWarmTokenSchema = z.object({
     }).optional(),
 });
 
-// ─── IP Extraction & Hashing ──────────────────────────────────────────────────
+// --- IP Extraction & Hashing --------------------------------------------------
 /**
  * Reads the real client IP from standard proxy/CDN HTTP headers.
  *
- * Header priority (most → least trustworthy in a typical reverse-proxy setup):
- *   1. cf-connecting-ip   — Cloudflare: always the browser IP, cannot be spoofed
- *   2. x-real-ip          — Nginx / load-balancer: single real IP
- *   3. x-forwarded-for    — Standard proxy chain: left-most entry is the client
- *   4. x-client-ip        — Less common, used by some CDNs
+ * Header priority (most -> least trustworthy in a typical reverse-proxy setup):
+ *   1. cf-connecting-ip   - Cloudflare: always the browser IP, cannot be spoofed
+ *   2. x-real-ip          - Nginx / load-balancer: single real IP
+ *   3. x-forwarded-for    - Standard proxy chain: left-most entry is the client
+ *   4. x-client-ip        - Less common, used by some CDNs
  *
  * Returns null if no recognisable IP header is present (e.g., local dev).
  */
 function extractClientIp(req: NextRequest): string | null {
     const headers = req.headers;
 
-    // Cloudflare (most reliable — always set by CF edge, not forwardable by client)
+    // Cloudflare (most reliable - always set by CF edge, not forwardable by client)
     const cf = headers.get("cf-connecting-ip");
     if (cf) return cf.trim();
 
@@ -53,7 +53,7 @@ function extractClientIp(req: NextRequest): string | null {
     const realIp = headers.get("x-real-ip");
     if (realIp) return realIp.trim();
 
-    // X-Forwarded-For: "client, proxy1, proxy2" — take the left-most (original client)
+    // X-Forwarded-For: "client, proxy1, proxy2" - take the left-most (original client)
     const xff = headers.get("x-forwarded-for");
     if (xff) {
         const first = xff.split(",")[0].trim();
@@ -94,7 +94,7 @@ function hashDevice(fp: DeviceFingerprint): string {
         .digest("hex");
 }
 
-// ─── Proctoring event helpers ─────────────────────────────────────────────────
+// --- Proctoring event helpers -------------------------------------------------
 type StoredEvent = {
     eventType: string;
     severity?: string;
@@ -132,7 +132,7 @@ function appendAndSave(
     ).then(() => undefined);
 }
 
-// ─── Util ─────────────────────────────────────────────────────────────────────
+// --- Util ---------------------------------------------------------------------
 function looksLikeAgentParticipant(participant: { identity?: string; name?: string }) {
     const identity = (participant.identity || "").toLowerCase();
     const name     = (participant.name     || "").toLowerCase();
@@ -166,7 +166,7 @@ function toHttpUrl(rawUrl: string) {
     return rawUrl;
 }
 
-// ─── Main handler ─────────────────────────────────────────────────────────────
+// --- Main handler -------------------------------------------------------------
 export async function POST(req: NextRequest) {
     cleanupDispatchMap();
     try {
@@ -183,7 +183,7 @@ export async function POST(req: NextRequest) {
         const requireInterviewToken = isInterviewTokenRequired();
         const allowReopen           = isInterviewReopenAllowed();
 
-        // ── AUTHENTICATION ──────────────────────────────────────────────────
+        // -- AUTHENTICATION --------------------------------------------------
         const interview = await prisma.interview.findUnique({
             where:  { applicationId },
             select: { accessToken: true, status: true, expiresAt: true },
@@ -193,15 +193,16 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Unauthorized: Invalid interview security token" }, { status: 401 });
         }
 
-        // ── LIFECYCLE CHECK ─────────────────────────────────────────────────
+        // -- LIFECYCLE CHECK -------------------------------------------------
         if (!allowReopen && (interview?.status === "COMPLETED" || interview?.status === "FAILED")) {
             return NextResponse.json({ error: "Access Denied: Interview already finalized" }, { status: 403 });
         }
-        if (interview?.expiresAt && interview.expiresAt < new Date()) {
+        if (!allowReopen && interview?.expiresAt && interview.expiresAt < new Date()) {
             return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
         }
 
-        // ── APPLICATION LOOKUP ──────────────────────────────────────────────
+        // -- APPLICATION LOOKUP ----------------------------------------------
+        console.log("[DEBUG] Fetching token for applicationId:", applicationId);
         const application = await prisma.application.findUnique({
             where:   { id: applicationId },
             include: { drive: true },
@@ -210,30 +211,30 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
 
-        // ── SMART COLLUSION DETECTION ───────────────────────────────────────
+        // -- SMART COLLUSION DETECTION ---------------------------------------
         //
         // Three-tier severity model:
         //
-        // TIER 1 — Simultaneous + Same Device  (HIGH)
+        // TIER 1 - Simultaneous + Same Device  (HIGH)
         //   ipHash matches AND deviceHash matches AND both sessions IN_PROGRESS
         //   at the SAME TIME. Near-impossible by accident.
         //
-        // TIER 2 — Sequential + Same Device  (MEDIUM)
+        // TIER 2 - Sequential + Same Device  (MEDIUM)
         //   ipHash matches AND deviceHash matches BUT colliding session is COMPLETED.
         //   Classic "borrowed laptop after first friend finished."
         //
-        // TIER 3 — IP-only match, Different Device  (LOW)
+        // TIER 3 - IP-only match, Different Device  (LOW)
         //   ipHash matches BUT deviceHash is different. Normal in universities,
         //   offices, or public WiFi spots.
         //
-        // Notes: IP + Device data are HMAC-SHA256 hashed — never stored raw.
-        //        Token is always issued — flag-not-block policy.
-        // ──────────────────────────────────────────────────────────────────────
+        // Notes: IP + Device data are HMAC-SHA256 hashed - never stored raw.
+        //        Token is always issued - flag-not-block policy.
+        // ----------------------------------------------------------------------
         void (async () => {
 
             try {
                 const rawIp = extractClientIp(req);
-                if (!rawIp) return; // local dev / internal — skip
+                if (!rawIp) return; // local dev / internal - skip
 
                 const ipHash     = hashIp(rawIp);
                 const deviceHash = deviceFingerprint ? hashDevice(deviceFingerprint) : null;
@@ -305,20 +306,20 @@ export async function POST(req: NextRequest) {
                     let reason: string;
 
                     if (deviceMatch && isSimultaneous) {
-                        // TIER 1 — Worst case: same device, same time
+                        // TIER 1 - Worst case: same device, same time
                         severity      = "high";
                         collisionType = "simultaneous_device_match";
                         reason        = `Identical device detected in a simultaneous interview session (${collider.applicationId}). Likely same laptop being used by two candidates at once.`;
                     } else if (deviceMatch && isSequential) {
-                        // TIER 2 — Same device but sequential (borrowed laptop)
+                        // TIER 2 - Same device but sequential (borrowed laptop)
                         severity      = "medium";
                         collisionType = "sequential_device_reuse";
                         reason        = `Same device used in a previously completed session (${collider.applicationId}). Possible borrowed laptop after prior candidate finished.`;
                     } else {
-                        // TIER 3 — Shared IP only (university, office, public WiFi)
+                        // TIER 3 - Shared IP only (university, office, public WiFi)
                         severity      = "low";
                         collisionType = "shared_network_only";
-                        reason        = `Shared network (same IP) detected with session ${collider.applicationId}. Device hardware differs — likely a campus or corporate network.`;
+                        reason        = `Shared network (same IP) detected with session ${collider.applicationId}. Device hardware differs - likely a campus or corporate network.`;
                     }
 
                     // ----------------------------------------------------------
@@ -350,7 +351,7 @@ export async function POST(req: NextRequest) {
 
                     // ----------------------------------------------------------
                     // STEP 4: Flag the COLLIDER session (only if still active)
-                    //         If COMPLETED, its audit trail is frozen — don't
+                    //         If COMPLETED, its audit trail is frozen - don't
                     //         alter it, but log a note in THIS session's metadata.
                     // ----------------------------------------------------------
                     if (isSimultaneous) {
@@ -362,7 +363,7 @@ export async function POST(req: NextRequest) {
                             if (colliderIv) {
                                 const reverseReason = deviceMatch
                                     ? `Identical device detected joining a new simultaneous session (${applicationId}).`
-                                    : `Shared network detected with a new session (${applicationId}). Different devices — likely shared campus/office WiFi.`;
+                                    : `Shared network detected with a new session (${applicationId}). Different devices - likely shared campus/office WiFi.`;
 
                                 const flagColliderEvent: StoredEvent = {
                                     eventType: "duplicate_ip",
@@ -393,11 +394,11 @@ export async function POST(req: NextRequest) {
                     );
                 }
             } catch (err) {
-                // Non-fatal — collusion detection must never block token issuance
+                // Non-fatal - collusion detection must never block token issuance
                 console.error("[SmartCollusion] Detection error (non-fatal):", err);
             }
         })();
-        // ── END SMART COLLUSION DETECTION ───────────────────────────────────────
+        // -- END SMART COLLUSION DETECTION ---------------------------------------
 
         const driveDurationMins = application.drive.interviewTime || 15;
         const durationSeconds   = driveDurationMins * 60;
@@ -462,7 +463,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "AI interviewer could not be started" }, { status: 500 });
         }
 
-        // ── ISSUE CANDIDATE JWT TOKEN ───────────────────────────────────────
+        // -- ISSUE CANDIDATE JWT TOKEN ---------------------------------------
         const ttlSeconds = Math.max(3600, durationSeconds + 1800);
 
         const at = new AccessToken(apiKey, apiSecret, {

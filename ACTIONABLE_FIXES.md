@@ -63,7 +63,7 @@ topic_coverage: dict = {}  # {"core_skills": "COVERED", "metrics": "THIN"}
 **Update during conversation item processing** (around line 3624):
 ```python
 # When Ishita asks a new question, detect which question_id it is
-# This is the tricky part — need to match the asked question to question_id
+# This is the tricky part - need to match the asked question to question_id
 
 async def identify_question_asked(ishita_response: str, coverage_checklist: list) -> Optional[str]:
     """
@@ -183,8 +183,8 @@ ANSWER_DEPTH: [SPECIFIC]
 ### Enhanced Output
 ```
 ASKED_QUESTIONS_ON_THIS_TOPIC:
-├─ q_distributed_001 (turn 4): "What's your experience with microservices?"
-└─ q_distributed_002 (turn 8): "Walk me through a microservices migration"
++- q_distributed_001 (turn 4): "What's your experience with microservices?"
++- q_distributed_002 (turn 8): "Walk me through a microservices migration"
 
 TOPIC_STATUS: [COVERED] distributed_systems
 COVERAGE_SCORE: 75% (2/3 questions asked, strong answers)
@@ -197,7 +197,7 @@ TIME_REMAINING: 26 minutes of 45 total (58% remaining)
 ```
 
 ### Implementation
-Modify the system prompt template (around line 1992-1996) to request this format, and let the LLM respond in this richer format. No code change needed — just system prompt update.
+Modify the system prompt template (around line 1992-1996) to request this format, and let the LLM respond in this richer format. No code change needed - just system prompt update.
 
 ---
 
@@ -344,7 +344,7 @@ def get_interview_phase(turn_count: int, total_turns_expected: int) -> str:
 ### Phase-Specific Rules
 
 **Opening Phase** (first 3-4 turns):
-- ✅ Personality bridges (hobbies → work traits)
+- ✅ Personality bridges (hobbies -> work traits)
 - ✅ Warm, confidence-building
 - ❌ No logic traps
 - ❌ No hard probing yet
@@ -374,19 +374,19 @@ state_message += f"PHASE: {current_phase} ({phase_turns}/{total_turns})\n"
 Then in system prompt, add phase-specific guidance:
 ```
 If PHASE: opening
-├─ Focus: rapport and comfort
-├─ Tools: personality bridges, warm acknowledgments
-└─ Avoid: logic traps, hard challenges
++- Focus: rapport and comfort
++- Tools: personality bridges, warm acknowledgments
++- Avoid: logic traps, hard challenges
 
 If PHASE: main
-├─ Focus: content depth and coverage
-├─ Tools: all five follow-up modes
-└─ Use: role-specific probes, mutation scenarios
++- Focus: content depth and coverage
++- Tools: all five follow-up modes
++- Use: role-specific probes, mutation scenarios
 
 If PHASE: closing
-├─ Focus: wrap-up and candidate questions
-├─ Check: did we cover high-priority areas?
-└─ Close: specific to this conversation
++- Focus: wrap-up and candidate questions
++- Check: did we cover high-priority areas?
++- Close: specific to this conversation
 ```
 
 ---
@@ -416,32 +416,32 @@ HOW YOU BEHAVE (tone standards, accuracy discipline)
 **Role Layer** (~500-1500 lines):
 ```
 Injected separately at startup:
-├─ Role-specific evaluation signals
-├─ Fake answer patterns for this role
-├─ Probe triggers
-├─ Mutation scenarios
-└─ Seniority adjustments
++- Role-specific evaluation signals
++- Fake answer patterns for this role
++- Probe triggers
++- Mutation scenarios
++- Seniority adjustments
 ```
 
 **State Injection Template** (~200 lines):
 ```
 Injected every 3 turns:
-├─ Topic coverage status
-├─ Question tracking
-├─ Stuck alerts
-├─ Pace warnings
-├─ Mode directive
-└─ Next action guidance
++- Topic coverage status
++- Question tracking
++- Stuck alerts
++- Pace warnings
++- Mode directive
++- Next action guidance
 ```
 
 **Candidate Brief** (~400 lines):
 ```
 Injected at startup or deferred:
-├─ Personalized interview plan
-├─ Resume-JD gaps
-├─ Personality bridges
-├─ Tool validation
-└─ Watch-outs
++- Personalized interview plan
++- Resume-JD gaps
++- Personality bridges
++- Tool validation
++- Watch-outs
 ```
 
 ### Implementation

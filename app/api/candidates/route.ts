@@ -32,7 +32,7 @@ export async function GET(request: Request) {
             JOIN "Drive" d ON d.id = a."driveId"
         `;
 
-        // ── Security & Filtering ───────────────────
+        // -- Security & Filtering -------------------
         const isSuperAdmin = session?.role === "SUPER_ADMIN";
         const orgId = isSuperAdmin 
             ? (searchParams.get("orgId") || session?.orgId) 
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
             return NextResponse.json({ candidates: [], pagination: { total: 0, pages: 0, page, limit } });
         }
 
-        // ── PRISMA QUERY BUILDER ───────────────────
+        // -- PRISMA QUERY BUILDER -------------------
         const where: any = {
             drive: { orgId }
         };
@@ -174,7 +174,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
     try {
-        // ── RATE LIMITING ───────────────────
+        // -- RATE LIMITING -------------------
         const ip = request.headers.get("x-forwarded-for") || "unknown";
         const { success, remaining, reset } = await submissionLimiter.check(ip);
         
@@ -381,7 +381,7 @@ export async function DELETE(request: Request) {
             console.error("[DELETE_CANDIDATE_STORAGE_ERROR]:", storageErr);
         }
 
-        // ── VECTOR DB CLEANUP: Purge from Pinecone ──────────
+        // -- VECTOR DB CLEANUP: Purge from Pinecone ----------
         try {
             for (const cId of validIds) {
                 await deleteCandidateEmbeddings(cId);

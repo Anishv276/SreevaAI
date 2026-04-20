@@ -14,14 +14,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
     }
 
+    const model = modelId || "bulbul:v3";
     const payload = {
         inputs: [transcript || "Namaste, I am ready for the interview."],
         target_language_code: "hi-IN",
         speaker: voiceId,
         pace: 1.0,
-        speech_sample_rate: 8000,
-        enable_preprocessing: true,
-        model: modelId || "bulbul:v3"
+        speech_sample_rate: 22050,
+        model,
+        ...(model.includes("v2")
+          ? { enable_preprocessing: true }
+          : { temperature: 0.6 }),
     };
 
     const response = await fetch("https://api.sarvam.ai/text-to-speech", {
@@ -38,7 +41,7 @@ export async function POST(req: NextRequest) {
       try {
           const errorData = await response.json();
           errorMsg = errorData.error?.message || errorData.message || errorMsg;
-      } catch (e) {
+      } catch (_e) {
           const text = await response.text();
           if (text) errorMsg = text;
       }

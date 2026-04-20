@@ -2,9 +2,9 @@
 
 ## Executive Summary
 
-Your AI interviewer (Ishita) is **architecturally sound and conceptually sophisticated** — it's one of the most comprehensive interview systems I've analyzed. However, it has a **critical execution gap** that causes the question repetition problem you've observed. The system is 75% excellent at design but 40% effective in execution due to missing dynamic state management.
+Your AI interviewer (Ishita) is **architecturally sound and conceptually sophisticated** - it's one of the most comprehensive interview systems I've analyzed. However, it has a **critical execution gap** that causes the question repetition problem you've observed. The system is 75% excellent at design but 40% effective in execution due to missing dynamic state management.
 
-**Grade: 7/10** (Up from 6/10 — the full picture reveals deeper sophistication)
+**Grade: 7/10** (Up from 6/10 - the full picture reveals deeper sophistication)
 
 ---
 
@@ -36,15 +36,15 @@ Your AI interviewer (Ishita) is **architecturally sound and conceptually sophist
   - Seniority-aware briefing (fresher vs mid vs experienced heuristics)
   
 - **Where it's weak**: 
-  - The brief is static at interview start — it doesn't update based on what's already covered
+  - The brief is static at interview start - it doesn't update based on what's already covered
   - No memory of "we already asked about this" from the brief
 
 #### Layer 3: Role Intelligence Layer
 - **Status**: EXCELLENTLY DESIGNED, PARTIALLY ACTIVATED ⚠️
 - **What's implemented**:
-  - `detect_role_category()` → 5 categories (engineering, sales, customer_success, marketing, operations)
-  - `detect_role_subtype()` → subtypes (backend/frontend/data/devops/etc for engineering, sdr/ae/account_management for sales, etc.)
-  - `build_role_layer()` → ~1,500 lines of role-specific evaluation signals, probe triggers, and mutation scenarios
+  - `detect_role_category()` -> 5 categories (engineering, sales, customer_success, marketing, operations)
+  - `detect_role_subtype()` -> subtypes (backend/frontend/data/devops/etc for engineering, sdr/ae/account_management for sales, etc.)
+  - `build_role_layer()` -> ~1,500 lines of role-specific evaluation signals, probe triggers, and mutation scenarios
   
 - **The problem**: Role layer is injected as pure TEXT into system prompt. It's excellent context but **not used to sequence or select questions**. Ishita reads it but doesn't have a mechanism to say "now I should ask about X because it's critical for a backend engineer."
 
@@ -60,7 +60,7 @@ Your AI interviewer (Ishita) is **architecturally sound and conceptually sophist
 - **What works**:
   - 5 cheat signal patterns recognized (perfect structure, no specifics, vague universal positive, different question answered, zero hesitation)
   - Logic traps (subtle false assumptions that real practitioners correct)
-  - 3 adaptive modes: Normal → Pressure → Verification
+  - 3 adaptive modes: Normal -> Pressure -> Verification
   - Suspicion score engine (0-100 scale)
   - Mode-based behavior changes (shorter questions in pressure, sequence recall in verification)
   
@@ -109,7 +109,7 @@ Your AI interviewer (Ishita) is **architecturally sound and conceptually sophist
   - Rates answer depth (SURFACE/SPECIFIC/DEEP)
   - Suggests NEXT ACTION
   
-  **Problem**: State injection infers coverage FROM THE TRANSCRIPT by reading text. It doesn't know which QUESTIONS were asked — only that topics were discussed. GPT can re-ask the same question because:
+  **Problem**: State injection infers coverage FROM THE TRANSCRIPT by reading text. It doesn't know which QUESTIONS were asked - only that topics were discussed. GPT can re-ask the same question because:
   - Transcript might say "We talked about microservices" in turn 4
   - Ishita thinks: "State injection says THIN on microservices, ask about it"
   - Asks: "What's your experience with microservices?" (even though she asked this in turn 4)
@@ -128,9 +128,9 @@ Your AI interviewer (Ishita) is **architecturally sound and conceptually sophist
 
 ### 1. Role Detection Flow
 ```
-job_title → detect_role_category() → engineering/sales/customer_success/marketing/operations
+job_title -> detect_role_category() -> engineering/sales/customer_success/marketing/operations
          ↓
-         detect_role_subtype() → backend/frontend/data/devops/etc
+         detect_role_subtype() -> backend/frontend/data/devops/etc
 ```
 
 ### 2. Role Layer Injection
@@ -181,7 +181,7 @@ Output: fresher / mid / experienced
 
 - **System prompt instructions** change
   - Fresher: "Frame technical questions around 'how would you approach this' rather than 'what have you done'"
-  - Experienced: "Skip basics entirely — go straight to scale, ownership, and impact"
+  - Experienced: "Skip basics entirely - go straight to scale, ownership, and impact"
   - Mid: Balanced approach
 
 ### 3. Interview Behavior Changes
@@ -295,7 +295,7 @@ Turn 10: Ishita reads state, thinks:
 ### 3. Candidate Briefing (8/10)
 - Personalized from actual resume + JD
 - Covers hidden agenda (resume-JD gaps)
-- Personality bridges (hobbies → work traits)
+- Personality bridges (hobbies -> work traits)
 - Tool validation questions (hands-on experience required to answer)
 - Watch-outs and ownership risks identified
 
@@ -316,7 +316,7 @@ Turn 10: Ishita reads state, thinks:
 ### 6. Anti-Cheat Sophistication (7/10)
 - Pattern recognition (5 signals)
 - Logic traps (subtle, not gotcha questions)
-- Adaptive modes (normal → pressure → verification)
+- Adaptive modes (normal -> pressure -> verification)
 - Contradiction detection (genuine confusion framing)
 - Mode communication via state injection
 
@@ -399,7 +399,7 @@ role_weights = {
 ### 4. State Injection Feedback Loop (IMPORTANT)
 **Impact**: Helps LLM remember better across turns
 
-**Current**: State injection is one-way (supervisor → Ishita)
+**Current**: State injection is one-way (supervisor -> Ishita)
 **Missing**: Ishita doesn't confirm what she'll do next
 
 **What could exist**:
@@ -484,7 +484,7 @@ Then state knows she's moving to that area.
 ### MEDIUM-TERM (Polish)
 6. **Implement Interview Pacing Tracker** (4-5 hours)
    - Monitor if interview is ahead/on/behind pace
-   - "You've covered 2/6 areas in 8/45 minutes — good pace"
+   - "You've covered 2/6 areas in 8/45 minutes - good pace"
    - Suggest acceleration or relaxation based on time remaining
 
 7. **Add Contradiction Memory** (3-4 hours)
@@ -502,7 +502,7 @@ Then state knows she's moving to that area.
 
 ## The Bigger Picture
 
-You've built something genuinely sophisticated here. The problem you're experiencing (question repetition) isn't a flaw in the architecture — it's a gap in the execution layer. Your system can:
+You've built something genuinely sophisticated here. The problem you're experiencing (question repetition) isn't a flaw in the architecture - it's a gap in the execution layer. Your system can:
 
 ✅ Sound human (exceptional system prompt)
 ✅ Adapt to role (detailed role intelligence)

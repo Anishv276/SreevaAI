@@ -36,7 +36,7 @@ async function getStats() {
 
 
 
-    // Single consolidated query — fetches all KPI counts in one DB round-trip
+    // Single consolidated query - fetches all KPI counts in one DB round-trip
 
     const [statsResult, activeOrgs] = await Promise.all([
 

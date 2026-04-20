@@ -59,7 +59,7 @@ const EVENT_MAP: Record<string, string> = {
     tabSwitch:              "tab_switch",
     fullscreen_exit:        "fullscreen_exit",
     fullscreenExit:         "fullscreen_exit",
-    // Metadata-only — never a violation
+    // Metadata-only - never a violation
     ip_registered:          "__skip__",
 };
 
@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
                 },
             });
         } catch {
-            // proctoringEvents column may not exist yet — return zeros
+            // proctoringEvents column may not exist yet - return zeros
             const total = await prisma.interview.count({
                 where: { status: "COMPLETED", completedAt: { gte: start }, application: { drive: { orgId } } },
             });
@@ -203,7 +203,7 @@ export async function GET(req: NextRequest) {
             "microphone_disabled",
             "tab_switch",
             "fullscreen_exit",
-            // Smart Collusion Detection — three tiers
+            // Smart Collusion Detection - three tiers
             "duplicate_ip_simultaneous",
             "duplicate_ip_sequential",
             "duplicate_ip_network",
@@ -224,7 +224,7 @@ export async function GET(req: NextRequest) {
             microphone_disabled:        { title: "Microphone disabled mid-session",      abbr: "MD", getDesc: v => `${v.incidents} mic disable events` },
             tab_switch:                 { title: "Tab switching / App switching",       abbr: "TS", getDesc: v => `${v.incidents} switch events recorded` },
             fullscreen_exit:            { title: "Fullscreen Exit",                     abbr: "FE", getDesc: v => `${v.incidents} exits detected` },
-            // Smart Collusion — 3 tiers
+            // Smart Collusion - 3 tiers
             duplicate_ip_simultaneous:  { title: "🔴 Simultaneous Device Match",        abbr: "SC", getDesc: v => `${v.incidents} HIGH-risk: same device, same time` },
             duplicate_ip_sequential:    { title: "🟡 Sequential Device Reuse",           abbr: "SR", getDesc: v => `${v.incidents} MEDIUM-risk: same device, different session` },
             duplicate_ip_network:       { title: "🟢 Shared Network Only",               abbr: "SN", getDesc: v => `${v.incidents} LOW-risk: campus/office shared IP` },

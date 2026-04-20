@@ -188,7 +188,7 @@ const worker = new Worker('resume-processing', async (job) => {
         ? JSON.parse(latestDrive.extractedDetails)
         : (latestDrive?.extractedDetails as unknown as Record<string, any>) || {};
       if (typeof jdDetails !== 'object' || Array.isArray(jdDetails) || jdDetails === null) {
-        console.warn(`[JOB] extractedDetails is not a plain object after parsing — resetting to {}`);
+        console.warn(`[JOB] extractedDetails is not a plain object after parsing - resetting to {}`);
         jdDetails = {};
       }
     } catch (e) {
@@ -241,7 +241,7 @@ const worker = new Worker('resume-processing', async (job) => {
     // The DB screeningThreshold is the ONLY source of truth for pass/fail.
     // hard_rejected from Python is purely informational (shown in report to HR)
     // but can NEVER override the admin-configured threshold.
-    // If admin sets threshold=1%, a score of 26 MUST shortlist — no exceptions.
+    // If admin sets threshold=1%, a score of 26 MUST shortlist - no exceptions.
     const resumeStatus: "SHORTLISTED" | "REJECTED" =
       currentScore >= THRESHOLD ? "SHORTLISTED" : "REJECTED";
 

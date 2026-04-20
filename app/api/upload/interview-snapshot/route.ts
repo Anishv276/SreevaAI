@@ -15,7 +15,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing required fields (imageDataUrl, applicationId, or interviewToken)" }, { status: 400 });
         }
 
-        // ── AUTHENTICATION ────────────────────────────────
+        // -- AUTHENTICATION --------------------------------
         const interview = await prisma.interview.findUnique({
             where: { applicationId },
             select: { accessToken: true, status: true }
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "Unauthorized: Interview is not in an active state" }, { status: 403 });
             }
         }
-        // ──────────────────────────────────────────────────
+        // --------------------------------------------------
 
         await interviewSnapshotQueue.add(`snapshot-${applicationId}-${Date.now()}`, {
             imageDataUrl,

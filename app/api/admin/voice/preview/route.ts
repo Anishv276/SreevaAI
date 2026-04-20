@@ -14,8 +14,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
     }
 
-    // Default to sonic-multilingual for Arushi, otherwise use the provided model or sonic-english
-    const defaultModel = voiceId === "95d51f79-c397-46f9-b49a-23763d3eaa2d" ? "sonic-multilingual" : (modelId || "sonic-english");
+    const normalizeModel = (value: string) => value.replace(/^cartesia\//, "");
+    const defaultModel = voiceId === "95d51f79-c397-46f9-b49a-23763d3eaa2d"
+      ? "sonic-3"
+      : normalizeModel(modelId || "cartesia/sonic-3");
 
     const payload = {
       model_id: defaultModel,
@@ -46,7 +48,7 @@ export async function POST(req: NextRequest) {
       try {
           const errorData = await response.json();
           errorMsg = errorData.error?.message || errorData.message || errorMsg;
-      } catch (e) {
+      } catch (_e) {
           const text = await response.text();
           if (text) errorMsg = text;
       }

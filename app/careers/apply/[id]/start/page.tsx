@@ -146,7 +146,7 @@ export default function ApplyStartPage({ params }: { params: Promise<{ id: strin
             }
 
             localStorage.setItem(`prefill_${drive.id}`, JSON.stringify(prefillData))
-            // Navigate immediately — keep isAnalyzing=true so the spinner stays
+            // Navigate immediately - keep isAnalyzing=true so the spinner stays
             // visible through the page transition (no flicker back to card state)
             router.push(`/careers/apply/${drive.id}?mode=resume`)
             

@@ -42,7 +42,7 @@ export async function GET(request: Request) {
         }
 
         if (session) {
-            // ── ADMIN ACCESS: Filter by Role & Org ───────────
+            // -- ADMIN ACCESS: Filter by Role & Org -----------
             if ((session as any).role === "SUPER_ADMIN") {
                 if (orgId) where.orgId = orgId;
             } else {
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
                 where.type = { equals: type, mode: "insensitive" };
             }
         } else {
-            // ── PUBLIC ACCESS: Only show Active & Non-Expired ──
+            // -- PUBLIC ACCESS: Only show Active & Non-Expired --
             where.status = "ACTIVE";
             where.AND = [
                 {
@@ -247,7 +247,7 @@ export async function DELETE(request: Request) {
 
         const { ids } = result.data;
 
-        // ── SECURITY: Ensure IDs belong to the Org ───────────
+        // -- SECURITY: Ensure IDs belong to the Org -----------
         const belongsToOrg = await prisma.drive.findMany({
             where: { id: { in: ids }, orgId: session.orgId },
             select: { id: true },
@@ -256,7 +256,7 @@ export async function DELETE(request: Request) {
         const validIds = belongsToOrg.map(d => d.id);
         if (validIds.length === 0) return NextResponse.json({ message: "No matching drives found" });
 
-        // ── STORAGE CLEANUP: Purge JDs & Resumes from R2 ──────────
+        // -- STORAGE CLEANUP: Purge JDs & Resumes from R2 ----------
         try {
             const drivesWithApps = await prisma.drive.findMany({
                 where: { id: { in: validIds } },
@@ -292,7 +292,7 @@ export async function DELETE(request: Request) {
             console.error("[DELETE_DRIVE_STORAGE_ERROR]:", storageErr);
         }
 
-        // ── CASCADE CLEANUP: Delete Interviews first ──
+        // -- CASCADE CLEANUP: Delete Interviews first --
         const applications = await prisma.application.findMany({
             where: { driveId: { in: validIds } },
             select: { id: true }

@@ -9,7 +9,7 @@ import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// GET /api/super-admin/orgs — list organizations with stats, pagination, and search
+// GET /api/super-admin/orgs - list organizations with stats, pagination, and search
 export async function GET(request: Request) {
     try {
         const session = await getSession();
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
         const search = searchParams.get("q")?.trim() || "";
         const offset = (page - 1) * limit;
 
-        // ── Phase 1: Total Count (Search Filtered) ───────────────────
+        // -- Phase 1: Total Count (Search Filtered) -------------------
         const whereClause = search ? {
             OR: [
                 { name: { contains: search, mode: "insensitive" as const } },
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
         const total = await prisma.organization.count({ where: whereClause });
         const totalPages = Math.ceil(total / limit);
 
-        // ── Phase 2: Paginated Org Data (Unified SQL) ──────────────
+        // -- Phase 2: Paginated Org Data (Unified SQL) --------------
         // This query merges the organization fetch with count calculations
         // for Admins, Drives, and Candidates into one database round-trip.
         const sqlSearch = search ? `%${search}%` : "%";
@@ -128,7 +128,7 @@ export async function sendOrgWelcomeEmail({
     }
 }
 
-// POST /api/super-admin/orgs — create new org + HR admin user
+// POST /api/super-admin/orgs - create new org + HR admin user
 export async function POST(request: Request) {
     try {
         const session = await getSession();
@@ -198,7 +198,7 @@ export async function POST(request: Request) {
                 orgData.cartesiaModel = null;
             } else {
                 orgData.cartesiaVoiceId = cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
-                orgData.cartesiaModel = cartesiaModel || "sonic-english";
+                orgData.cartesiaModel = cartesiaModel || "cartesia/sonic-3";
                 orgData.sarvamModel = null;
                 orgData.sarvamVoice = null;
             }
@@ -240,7 +240,7 @@ export async function POST(request: Request) {
             return { org, admin };
         });
 
-        // ── Phase 4: Send Welcome Email (Non-blocking) ──────────────
+        // -- Phase 4: Send Welcome Email (Non-blocking) --------------
         sendOrgWelcomeEmail({
             email: result.admin.email,
             orgName: result.org.name,

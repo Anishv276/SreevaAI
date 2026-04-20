@@ -41,11 +41,11 @@ export async function POST(
         const hashedPassword = await bcrypt.hash(normalizedPassword, 10);
 
         const accepted = await prisma.$transaction(async (tx) => {
-            // ── TOCTOU / Pessimistic lock ────────────────────────────────────────────
+            // -- TOCTOU / Pessimistic lock --------------------------------------------
             // All reads AND writes happen inside a single serializable transaction so
             // two concurrent requests cannot both pass the PENDING check and both
             // create/update a user.  The final UPDATE with WHERE status='PENDING'
-            // acts as an atomic guard — only one winner gets updated > 0 rows.
+            // acts as an atomic guard - only one winner gets updated > 0 rows.
             const inviteRows = await tx.$queryRawUnsafe<InviteRow[]>(
                 `
                 SELECT id, "orgId", email, "orgRole", status, "expiresAt"
@@ -74,9 +74,9 @@ export async function POST(
                 throw new Error("INVITE_EXPIRED");
             }
 
-            // ── Inconsistent authorization / org-hopping guard ───────────────────────
+            // -- Inconsistent authorization / org-hopping guard -----------------------
             // If a user with this email already exists in a DIFFERENT org, we must
-            // reject the accept — we cannot reassign them without their consent and
+            // reject the accept - we cannot reassign them without their consent and
             // without revoking their previous org membership.  If they already belong
             // to THIS org we allow the update (e.g. re-invitation with a role change).
             const existingUser = await tx.user.findUnique({ where: { email: invite.email } });
@@ -84,7 +84,7 @@ export async function POST(
                 throw new Error("USER_OTHER_ORG");
             }
 
-            // ── Session role: use invite's orgRole, NOT a hardcoded "ADMIN" ──────────
+            // -- Session role: use invite's orgRole, NOT a hardcoded "ADMIN" ----------
             // The invite carries the intended role (ADMIN, HR, TEAM).  Map it to the
             // internal normalizeOrgRole canonical form, then to the session role.
             const assignedOrgRole = normalizeOrgRole(invite.orgRole);
@@ -92,7 +92,7 @@ export async function POST(
             const baseData = {
                 name: normalizedName,
                 password: hashedPassword,
-                // `role` is the session-facing role — derive from the invite's orgRole.
+                // `role` is the session-facing role - derive from the invite's orgRole.
                 // Previously this was hardcoded to "ADMIN" which gave all invited users
                 // full admin access regardless of their intended permission level.
                 role: normalizeRole(assignedOrgRole) as string,
@@ -141,7 +141,7 @@ export async function POST(
             };
         });
 
-        // ── Session creation: use the invite's role, not a hardcoded "ADMIN" ────────
+        // -- Session creation: use the invite's role, not a hardcoded "ADMIN" --------
         const tokenValue = await createSession({
             userId: accepted.id,
             email: accepted.email,

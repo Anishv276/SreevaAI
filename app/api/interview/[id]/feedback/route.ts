@@ -15,7 +15,7 @@ export async function POST(
             return NextResponse.json({ error: "Invalid rating" }, { status: 400 });
         }
 
-        // ── AUTHENTICATION ────────────────────────────────
+        // -- AUTHENTICATION --------------------------------
         const interview = await prisma.interview.findFirst({
             where: {
                 OR: [{ id: id }, { applicationId: id }]

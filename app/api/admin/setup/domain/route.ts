@@ -12,7 +12,7 @@ export async function POST(request: Request) {
 
         const { domain: rawDomain } = await request.json();
         if (!rawDomain) return NextResponse.json({ error: "Domain is required" }, { status: 400 });
-        // Strip www. prefix — Resend registers the apex domain
+        // Strip www. prefix - Resend registers the apex domain
         const domain = rawDomain.trim().toLowerCase().replace(/^www\./, "");
 
         // 1. Check if this domain is already registered by ANY organization
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
         const existing = (listData as any)?.data?.find((d: any) => d.name === domain);
 
         if (existing) {
-            // Domain exists in Resend under our API key — claim it by saving the ID to DB
+            // Domain exists in Resend under our API key - claim it by saving the ID to DB
             await prisma.organization.update({
                 where: { id: session.orgId as string },
                 data: {
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
                 return NextResponse.json({ fresh: true });
         }
 
-        // 3. Brand new — create in Resend and save to DB
+        // 3. Brand new - create in Resend and save to DB
         const { data, error } = await resend.domains.create({ name: domain });
         if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
@@ -91,7 +91,7 @@ export async function GET() {
 
         if (!org?.resendDomainId) return NextResponse.json({ error: "No domain registration found." }, { status: 404 });
 
-        // Get latest status directly — do NOT call verify() before get(),
+        // Get latest status directly - do NOT call verify() before get(),
         // as verify() is async and resets all record statuses to "pending" while processing.
         const { data, error } = await resend.domains.get(org.resendDomainId);
         if (error) return NextResponse.json({ error: error.message }, { status: 400 });

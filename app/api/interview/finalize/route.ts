@@ -213,7 +213,7 @@ export async function POST(req: Request) {
     const { applicationId, interviewToken, recordingUrl, transcript, interviewStatus, appStatus, duration } = result.data;
     const requireInterviewToken = isInterviewTokenRequired();
 
-    // ── AUTHENTICATION ────────────────────────────────
+    // -- AUTHENTICATION --------------------------------
     const interview = await prisma.interview.findUnique({
       where: { applicationId },
       select: { accessToken: true }

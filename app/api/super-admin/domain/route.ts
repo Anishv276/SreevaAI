@@ -5,7 +5,7 @@ import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// GET /api/super-admin/domain — fetch platform domain info
+// GET /api/super-admin/domain - fetch platform domain info
 export async function GET() {
     try {
         const session = await getSession();
@@ -63,7 +63,7 @@ export async function GET() {
     }
 }
 
-// POST /api/super-admin/domain — trigger DNS re-verification
+// POST /api/super-admin/domain - trigger DNS re-verification
 export async function POST() {
     try {
         const session = await getSession();
@@ -120,7 +120,7 @@ export async function POST() {
     }
 }
 
-// PATCH /api/super-admin/domain — update sender details
+// PATCH /api/super-admin/domain - update sender details
 export async function PATCH(request: Request) {
     try {
         const session = await getSession();
@@ -146,7 +146,7 @@ export async function PATCH(request: Request) {
     }
 }
 
-// DELETE /api/super-admin/domain — remove platform domain
+// DELETE /api/super-admin/domain - remove platform domain
 export async function DELETE() {
     try {
         const session = await getSession();

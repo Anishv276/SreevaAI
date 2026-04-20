@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { deleteOrgEmbeddings } from "@/lib/pinecone";
 import { deleteResendDomain, deleteUrlTargets } from "@/lib/delete-utils";
 
-// GET /api/super-admin/orgs/[id] — fetch org for editing
+// GET /api/super-admin/orgs/[id] - fetch org for editing
 export async function GET(
     _request: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -37,7 +37,7 @@ export async function GET(
     }
 }
 
-// PATCH /api/super-admin/orgs/[id] — update org (suspend, change plan, etc.)
+// PATCH /api/super-admin/orgs/[id] - update org (suspend, change plan, etc.)
 export async function PATCH(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -59,7 +59,7 @@ export async function PATCH(
             usageMetrics,
         } = body;
 
-        // ── INPUT VALIDATION ────────────────────────────────
+        // -- INPUT VALIDATION --------------------------------
         if (plan && !["STARTER", "PROFESSIONAL", "ENTERPRISE", "TRIAL", "ENTERPRISE_CUSTOM"].includes(plan)) {
             return NextResponse.json({ error: "Invalid organization plan" }, { status: 400 });
         }
@@ -72,7 +72,7 @@ export async function PATCH(
             }
         }
 
-        // Build update — only write fields that were sent
+        // Build update - only write fields that were sent
         const updateData: any = {};
         if (name !== undefined) updateData.name = name;
         if (plan !== undefined) updateData.plan = plan;
@@ -81,12 +81,12 @@ export async function PATCH(
         if (slug !== undefined) updateData.slug = slug;
         if (location !== undefined) updateData.location = location;
 
-        // TTS — save exact values the user chose, null out the other provider's fields
+        // TTS - save exact values the user chose, null out the other provider's fields
         if (ttsProvider !== undefined) {
             updateData.ttsProvider = ttsProvider;
             if (ttsProvider === "CARTESIA") {
                 updateData.cartesiaVoiceId = cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
-                updateData.cartesiaModel = cartesiaModel || "sonic-english";
+                updateData.cartesiaModel = cartesiaModel || "cartesia/sonic-3";
                 updateData.sarvamModel = null;
                 updateData.sarvamVoice = null;
             } else if (ttsProvider === "SARVAM") {
@@ -97,7 +97,7 @@ export async function PATCH(
             }
         }
 
-        // STT — save exact values the user chose
+        // STT - save exact values the user chose
         if (sttProvider !== undefined) {
             updateData.sttProvider = sttProvider;
             if (sttProvider === "DEEPGRAM") {
@@ -132,7 +132,7 @@ export async function PATCH(
             }
         }
 
-        // ── TRANSACTION: Update Org & Admin ──────────────────
+        // -- TRANSACTION: Update Org & Admin ------------------
         const updated = await prisma.$transaction(async (tx) => {
             // 1. Update Org
             const org = await tx.organization.update({
@@ -170,7 +170,7 @@ export async function PATCH(
     }
 }
 
-// DELETE /api/super-admin/orgs/[id] — remove org and all its data
+// DELETE /api/super-admin/orgs/[id] - remove org and all its data
 export async function DELETE(
     _request: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -183,7 +183,7 @@ export async function DELETE(
 
         const { id } = await params;
 
-        // ── STEP 1: DISCOVERY (Find all associated assets) ──────────────────
+        // -- STEP 1: DISCOVERY (Find all associated assets) ------------------
 
         // 1. Get Organization for Logo
         const org = await prisma.organization.findUnique({
@@ -211,7 +211,7 @@ export async function DELETE(
             select: { interviewRecordingUrl: true, snapshots: true }
         });
 
-        // ── STEP 2: EXTERNAL ASSET CLEANUP (R2 & PINECONE) ───────────────────
+        // -- STEP 2: EXTERNAL ASSET CLEANUP (R2 & PINECONE) -------------------
 
         const fileUrlsToDelete: string[] = [];
         
@@ -244,7 +244,7 @@ export async function DELETE(
             console.error("Failed to remove org domain from Resend:", domainError);
         }
 
-        // ── STEP 3: DATABASE CLEANUP (Cascading) ───────────────────────────
+        // -- STEP 3: DATABASE CLEANUP (Cascading) ---------------------------
         
         await prisma.$transaction(async (tx) => {
             await tx.interview.deleteMany({

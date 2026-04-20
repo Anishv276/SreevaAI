@@ -40,7 +40,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: "No resume text found to scan. Please re-upload resume." }, { status: 400 });
         }
 
-        // 3. Build scoring input — pass threshold so Python's report reflects what we decided
+        // 3. Build scoring input - pass threshold so Python's report reflects what we decided
         const threshold = Number(application.drive.screeningThreshold ?? 0);
         const scoringInput = {
             resume: JSON.parse(application.structuredResume || "{}"),
@@ -100,7 +100,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             });
         }
 
-        // 4. DB threshold is the ONLY pass/fail criterion — Python's status is ignored
+        // 4. DB threshold is the ONLY pass/fail criterion - Python's status is ignored
         const score: number = typeof aiResult.score === "number" ? aiResult.score : parseInt(aiResult.score || "0") || 0;
         const resumeStatus: "SHORTLISTED" | "REJECTED" = score >= threshold ? "SHORTLISTED" : "REJECTED";
 

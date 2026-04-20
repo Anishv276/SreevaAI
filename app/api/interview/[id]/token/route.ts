@@ -28,7 +28,7 @@ export async function POST(
             return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
         }
 
-        // ── LIFECYCLE CHECK ──────────────────────────────
+        // -- LIFECYCLE CHECK ------------------------------
         if (!allowReopen && (interview?.status === "COMPLETED" || interview?.status === "FAILED")) {
             return NextResponse.json({ error: "Access Denied: Interview already finalized" }, { status: 403 });
         }
@@ -36,7 +36,7 @@ export async function POST(
         if (interview?.expiresAt && interview.expiresAt < new Date()) {
             return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
         }
-        // ─────────────────────────────────────────────────
+        // -------------------------------------------------
 
         const roomName = `interview_${applicationId}`;
         const participantIdentity = `candidate_${applicationId}`;

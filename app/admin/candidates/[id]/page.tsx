@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { use, useEffect, useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import "plyr-react/plyr.css";
 import { AuditLogModal } from "@/components/admin/audit-log-modal";
 
-// ── Extracted Components ──────────────────────────────────────────────────────
+// -- Extracted Components ------------------------------------------------------
 import { ScoreCard, VerdictScoreCard, VerdictScoreBox } from "@/components/admin/candidate-profile/score-cards";
 import { AssessmentCard, AnalysisEntry, AnalysisSignal } from "@/components/admin/candidate-profile/assessment-cards";
 import { RecommendedActionItem, ChatEntry, MomentEntry, TimelineEvent } from "@/components/admin/candidate-profile/chat-elements";
@@ -26,7 +26,7 @@ import { DeepDiveLog, IntegrityRow, ProctoringMetric } from "@/components/admin/
 import { CircularProgress, SegmentedProgress, CommunicationDonutChart } from "@/components/admin/candidate-profile/charts";
 
 const Plyr = dynamic(() => import("plyr-react").then((mod) => mod.Plyr), { ssr: false });
-/* ── Main Component ─────────────────────────────── */
+/* -- Main Component ------------------------------- */
 
 export default function CandidateProfilePage({ params }: { params: Promise<{ id: string }> }) {
 
@@ -482,6 +482,9 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
     const integrityScore = (() => {
 
+        const reportScore = Number(interviewReportData?.integrity?.score);
+        if (Number.isFinite(reportScore)) return Math.max(0, Math.min(100, reportScore));
+
         if (!Array.isArray(parsedProctoringEvents) || parsedProctoringEvents.length === 0) return 100;
 
         let high = 0;
@@ -670,6 +673,8 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
     const interviewReportCommunication = interviewReportData?.communication || {};
 
+    const interviewReportIntegrity = interviewReportData?.integrity || {};
+
     const interviewReportSkills = Array.isArray(interviewReportData?.skills_proof) ? interviewReportData.skills_proof : [];
 
     const interviewReportQaBlocks = Array.isArray(interviewReportData?.qa_blocks) ? interviewReportData.qa_blocks : [];
@@ -816,6 +821,9 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
         : null;
 
     const proctoringVerdictSummary = (() => {
+
+        const reportSummary = String(interviewReportData?.integrity?.summary || "").trim();
+        if (reportSummary) return reportSummary;
 
         const high = groupedProctoringSignals.filter((g: any) => g.severity === "high").reduce((n: number, g: any) => n + g.count, 0);
 
@@ -991,7 +999,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                         ` }} />
 
-            {/* ── Background Aurora Blobs ──────────────── */}
+            {/* -- Background Aurora Blobs ---------------- */}
 
             <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden" style={{ transform: 'translateZ(0)' }}>
 
@@ -1003,11 +1011,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
             </div>
 
-            {/* ── Main Content Area ─────────────────────────── */}
+            {/* -- Main Content Area --------------------------- */}
 
             <div className="flex-1 min-w-0">
 
-                {/* ── Fixed Navigation Header ─────────────────────────── */}
+                {/* -- Fixed Navigation Header --------------------------- */}
 
                 <header className={cn(
 
@@ -1897,7 +1905,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
-                                        {/* ── Career Timeline (Left) ──────────────── */}
+                                        {/* -- Career Timeline (Left) ---------------- */}
 
                                         <div className="p-8 spotlight-card bg-white rounded-[40px] shadow-sm flex flex-col h-full border border-slate-100 optimize-scroll">
 
@@ -1981,7 +1989,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         </div>
 
-                                        {/* ── Strategic Verdict (Right) ───────────── */}
+                                        {/* -- Strategic Verdict (Right) ------------- */}
 
                                         <div className="p-8 spotlight-card bg-indigo-50/30 rounded-[40px] border border-indigo-100/50 shadow-sm flex flex-col h-full relative overflow-hidden group optimize-scroll">
 
@@ -2822,7 +2830,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                             
 
-                            {/* ── Section: Performance Analysis ── */}
+                            {/* -- Section: Performance Analysis -- */}
 
                             <div className="space-y-12">
 
@@ -3270,7 +3278,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                 </div>
 
-                                {/* ── Section: Integrity & Proctoring ── */}
+                                {/* -- Section: Integrity & Proctoring -- */}
 
                                 <div className="pt-16 border-t border-gray-200 mt-16 space-y-8">
 
@@ -3300,7 +3308,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     </div>
 
-                                    {/* ── Integrity Verdict Card ── */}
+                                    {/* -- Integrity Verdict Card -- */}
 
                                     <div className="grid grid-cols-[260px_1fr] rounded-[40px] bg-white border-2 border-[#F5E6D3]/30 shadow-[0_20px_60px_rgba(139,94,60,0.06)] overflow-hidden border-l-[8px] border-l-[#8B5E3C]">
 
@@ -3338,7 +3346,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     </div>
 
-                                    {/* ── Proctoring Metrics Row ── */}
+                                    {/* -- Proctoring Metrics Row -- */}
 
                                     <div className="flex gap-6">
 
@@ -3352,7 +3360,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     </div>
 
-                                    {/* ── Correlation Timeline vs Pattern Analysis Grid ── */}
+                                    {/* -- Correlation Timeline vs Pattern Analysis Grid -- */}
 
                                     <div className="grid grid-cols-[1.2fr_1fr] gap-8 items-stretch">
 
@@ -3504,7 +3512,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                                     } else if (gazeCount > 0) {
 
-                                                        signals.push({ type: "warning", title: `Gaze drift detected (${gazeCount}x)`, desc: "Occasional off-screen gaze. Low count — insufficient alone to conclude reference use." });
+                                                        signals.push({ type: "warning", title: `Gaze drift detected (${gazeCount}x)`, desc: "Occasional off-screen gaze. Low count - insufficient alone to conclude reference use." });
 
                                                     } else {
 
@@ -3558,7 +3566,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         </div>
 
-                                        {/* ── Score Summary ── */}
+                                        {/* -- Score Summary -- */}
 
                                         <div className="grid grid-cols-3 gap-8">
 
@@ -3570,7 +3578,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         </div>
 
-                                        {/* ── Verdict Narrative Card ── */}
+                                        {/* -- Verdict Narrative Card -- */}
 
                                         <div className="flex justify-center">
 
@@ -3678,7 +3686,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         </div>
 
-                                        {/* ── Recommended Next Actions ── */}
+                                        {/* -- Recommended Next Actions -- */}
 
                                         <div className="flex justify-center">
 

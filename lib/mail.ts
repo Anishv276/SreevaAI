@@ -245,7 +245,7 @@ export async function sendApplicationStatusEmail({
     `;
 
     if (!orgId) {
-        console.warn(`[MAIL BLOCKED] No orgId provided — cannot determine sender`);
+        console.warn(`[MAIL BLOCKED] No orgId provided - cannot determine sender`);
         return { success: false, error: "No organization context for email sending." };
     }
 
