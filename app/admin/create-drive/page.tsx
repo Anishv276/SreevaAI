@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 
 
@@ -152,8 +152,6 @@ function CreateDriveForm() {
 
         interviewAntiCheat: "Medium",
 
-        interviewFollowUp: 3,
-
         interviewQuestions: [],
 
     });
@@ -306,9 +304,9 @@ function CreateDriveForm() {
 
                     department: drive.department,
 
-                    workMode: (drive as any).workMode || "Remote",
+                    workMode: (drive as any).workMode || "",
 
-                    location: (drive as any).location || "Remote",
+                    location: (drive as any).location || "",
 
                     employmentType: drive.type,
 
@@ -334,7 +332,6 @@ function CreateDriveForm() {
 
                     interviewAntiCheat: (drive as any).proctoringLevel || "Medium",
 
-                    interviewFollowUp: (drive as any).aiFollowUpDepth || 3,
 
                     interviewQuestions: typeof (drive as any).interviewQuestions === 'string'
 
@@ -500,7 +497,6 @@ function CreateDriveForm() {
 
                     interviewAntiCheat: "Medium",
 
-                    interviewFollowUp: 3,
 
                     interviewQuestions: [],
 
@@ -922,11 +918,11 @@ function CreateDriveForm() {
 
             department: currentFormData.department || "",
 
-            employmentType: currentFormData.employmentType || "Full-time",
+            employmentType: currentFormData.employmentType || "",
 
-            workMode: currentFormData.workMode || "Remote",
+            workMode: currentFormData.workMode || "",
 
-            location: currentFormData.location || "Remote",
+            location: currentFormData.location || "",
 
             positions: currentFormData.positions || 1,
 
@@ -953,8 +949,6 @@ function CreateDriveForm() {
             interviewTime: currentFormData.interviewTime,
 
             interviewAntiCheat: currentFormData.interviewAntiCheat,
-
-            interviewFollowUp: currentFormData.interviewFollowUp,
 
             interviewQuestions: parsedQuestions,
 
@@ -1076,7 +1070,7 @@ function CreateDriveForm() {
 
         if (isSavingDraft) return;
 
-        
+
 
         // In edit mode or if the step was previously reached/completed, just jump
 
@@ -1201,8 +1195,6 @@ function CreateDriveForm() {
             interviewTime: currentFormData.interviewTime,
 
             interviewAntiCheat: currentFormData.interviewAntiCheat,
-
-            interviewFollowUp: currentFormData.interviewFollowUp,
 
             interviewQuestions: parsedQuestions,
 
@@ -1968,7 +1960,7 @@ function CreateDriveForm() {
 
                                         skills: formData.skills || "",
 
-                                        location: formData.workMode || "Remote",
+                                        location: formData.workMode || "",
 
                                         type: formData.employmentType || "Full-time"
 

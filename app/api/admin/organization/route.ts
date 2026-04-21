@@ -17,11 +17,6 @@ export async function GET() {
                 size: true,
                 website: true,
                 logoUrl: true,
-                customDomain: true,
-                resendDomainId: true,
-                isDomainVerified: true,
-                customSenderEmail: true,
-                customSenderName: true,
                 onboardingComplete: true,
                 location: true,
                 status: true,
@@ -47,7 +42,7 @@ export async function PATCH(req: Request) {
         }
 
         const body = await req.json();
-        const { name, industry, size, website, location, phone, logoUrl, customSenderEmail, customSenderName } = body;
+        const { name, industry, size, website, location, phone, logoUrl } = body;
 
         // Build update payload - only include fields that were actually sent
         const data: Record<string, any> = {};
@@ -56,8 +51,6 @@ export async function PATCH(req: Request) {
         if (size !== undefined) data.size = size;
         if (website !== undefined) data.website = website;
         if (location !== undefined) data.location = location;
-        if (customSenderEmail !== undefined) data.customSenderEmail = customSenderEmail;
-        if (customSenderName !== undefined) data.customSenderName = customSenderName;
 
         // Handle logo separately - delete old one from R2 if being replaced
         if (logoUrl !== undefined) {

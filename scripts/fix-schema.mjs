@@ -11,7 +11,7 @@ async function main() {
     "extractedDetails", "registrationFields", "workMode",
     "description", "department",
   ];
-  const intCols = ["interviewTime", "aiFollowUpDepth", "positions", "screeningThreshold"];
+  const intCols = ["interviewTime", "positions", "screeningThreshold"];
   const boolCols = ["interviewEnabled"];
 
   for (const col of textCols) {
@@ -44,6 +44,7 @@ async function main() {
     "location", "assessmentCount", "assessmentDifficulty",
     "assessmentTypes", "assessmentTime", "assessmentMode",
     "proctoringEnabled", "webcamMonitoring", "aiScreeningWeights",
+    "aiFollowUpDepth",
   ];
   for (const col of dropCols) {
     try {

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { Switch } from "@/components/ui/switch";
@@ -146,27 +146,6 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                         </div>
                     </div>
 
-                    {/* AI questions depth */}
-                    <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm space-y-3">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <HelpCircle className="w-4 h-4 text-[#F97316]" />
-                                <h4 className="text-sm font-bold text-gray-900 uppercase tracking-widest">AI questions depth</h4>
-                            </div>
-                            <div className="flex items-center gap-4 w-48">
-                                <Slider
-                                    value={[formData.interviewFollowUp || 3]}
-                                    onValueChange={([v]) => setField("interviewFollowUp", v)}
-                                    min={1}
-                                    max={5}
-                                    step={1}
-                                    className="flex-1"
-                                />
-                                <span className="text-sm font-black text-[#F97316] w-8 text-center">{formData.interviewFollowUp || 3}</span>
-                            </div>
-                        </div>
-                        <p className="text-[10px] text-gray-400 font-medium">Controls the number of AI-generated follow-up questions per topic.</p>
-                    </div>
 
                     {/* Interview Questions */}
                     <div className="bg-white rounded-xl border border-gray-100 p-6 shadow-sm space-y-4">

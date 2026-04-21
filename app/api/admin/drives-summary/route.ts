@@ -71,7 +71,7 @@ export async function GET(req: Request) {
                 id: drive.id,
                 title: drive.title,
                 department: drive.department,
-                workMode: drive.workMode ?? "Remote",
+                workMode: drive.workMode ?? "",
                 deadline: drive.deadline?.toISOString() ?? null,
                 daysLeft,
                 isClosingSoon,

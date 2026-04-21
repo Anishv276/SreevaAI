@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { deleteOrgEmbeddings } from "@/lib/pinecone";
-import { deleteResendDomain, deleteUrlTargets } from "@/lib/delete-utils";
+import { deleteUrlTargets } from "@/lib/delete-utils";
 
 // GET /api/super-admin/orgs/[id] - fetch org for editing
 export async function GET(
@@ -132,6 +132,29 @@ export async function PATCH(
             }
         }
 
+        // -- EMAIL CONFLICT CHECK ----------------------------
+        if (adminEmail) {
+            const normalizedEmail = adminEmail.toLowerCase().trim();
+            const existingUser = await prisma.user.findUnique({
+                where: { email: normalizedEmail }
+            });
+
+            if (existingUser) {
+                // Find the actual primary admin for this org
+                const currentAdmin = await prisma.user.findFirst({
+                    where: { orgId: id, role: "ORG_ADMIN" },
+                    orderBy: { createdAt: "asc" }
+                });
+
+                // Conflict: Email belongs to SOMEONE ELSE
+                if (currentAdmin && existingUser.id !== currentAdmin.id) {
+                    return NextResponse.json({ 
+                        error: `The email "${normalizedEmail}" is already registered with another account. Please use a different one.` 
+                    }, { status: 400 });
+                }
+            }
+        }
+
         // -- TRANSACTION: Update Org & Admin ------------------
         const updated = await prisma.$transaction(async (tx) => {
             // 1. Update Org
@@ -151,7 +174,7 @@ export async function PATCH(
                 if (admin) {
                     const adminUpdate: any = {};
                     if (adminName) adminUpdate.name = adminName;
-                    if (adminEmail) adminUpdate.email = adminEmail;
+                    if (adminEmail) adminUpdate.email = adminEmail.toLowerCase().trim();
 
                     await tx.user.update({
                         where: { id: admin.id },
@@ -188,7 +211,7 @@ export async function DELETE(
         // 1. Get Organization for Logo
         const org = await prisma.organization.findUnique({
             where: { id },
-            select: { logoUrl: true, customDomain: true, resendDomainId: true }
+            select: { logoUrl: true }
         });
 
         // 2. Get all drives to find associated applications and interviews
@@ -236,12 +259,6 @@ export async function DELETE(
             await deleteOrgEmbeddings(id);
         } catch (pineconeError) {
             console.error("Failed to clear Pinecone embeddings for org:", id, pineconeError);
-        }
-
-        try {
-            await deleteResendDomain(org?.resendDomainId);
-        } catch (domainError) {
-            console.error("Failed to remove org domain from Resend:", domainError);
         }
 
         // -- STEP 3: DATABASE CLEANUP (Cascading) ---------------------------

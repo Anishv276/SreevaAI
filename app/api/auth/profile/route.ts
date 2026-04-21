@@ -65,19 +65,14 @@ export async function PATCH(request: Request) {
             const { isValid, error: strengthError } = validatePasswordStrength(newPassword);
             if (!isValid) return NextResponse.json({ error: strengthError }, { status: 400 });
 
-            // Fetch current user with password for verification
+            // -- SECURITY: OTP Verification Required for Password Changes --
+            if (!otp) return NextResponse.json({ error: "Security code (OTP) required" }, { status: 400 });
+
             let currentUser: any = null;
             if (session.role === "SUPER_ADMIN") {
                 currentUser = await prisma.superAdmin.findUnique({ where: { id: session.userId } });
-            } else {
-                currentUser = await prisma.user.findUnique({ where: { id: session.userId } });
-            }
 
-            if (!currentUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
-
-            // SuperAdmin security check (OTP)
-            if (session.role === "SUPER_ADMIN") {
-                if (!otp) return NextResponse.json({ error: "Security code (OTP) required" }, { status: 400 });
+                // Verify Super Admin OTP
                 const validToken = await prisma.verificationToken.findFirst({
                     where: { 
                         token: otp, 
@@ -87,9 +82,24 @@ export async function PATCH(request: Request) {
                 });
                 if (!validToken) return NextResponse.json({ error: "Invalid or expired security code" }, { status: 400 });
                 await prisma.verificationToken.delete({ where: { id: validToken.id } });
+            } else {
+                currentUser = await prisma.user.findUnique({ where: { id: session.userId } });
+
+                // Verify regular Admin/User OTP
+                if (!currentUser || currentUser.resetOtp !== otp || (currentUser.resetOtpExpires && currentUser.resetOtpExpires < new Date())) {
+                    return NextResponse.json({ error: "Invalid or expired security code" }, { status: 400 });
+                }
+                
+                // Clear OTP for User
+                await prisma.user.update({
+                    where: { id: session.userId },
+                    data: { resetOtp: null, resetOtpExpires: null }
+                });
             }
 
-            // Verify current access rights
+            if (!currentUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
+
+            // -- Verify current password if it exists --
             if (currentUser.password) {
                 if (!currentPassword) return NextResponse.json({ error: "Current password required to authorize changes" }, { status: 400 });
                 const valid = await bcrypt.compare(currentPassword, currentUser.password);
@@ -100,7 +110,6 @@ export async function PATCH(request: Request) {
                     error: "Security Check: Account has no password. To establish one, please use the password recovery protocol via email." 
                 }, { status: 403 });
             }
-            // Note: SuperAdmin is already verified by OTP above, so they can proceed.
 
             updateData.password = await bcrypt.hash(newPassword, 10);
         }

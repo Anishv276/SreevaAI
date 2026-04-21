@@ -380,13 +380,13 @@ export async function POST(req: Request) {
       const job = await interviewFinalizationQueue.add(
         "finalize-interview",
         { applicationId, recordingUrl, transcript: finalTranscript, interviewStatus, appStatus },
-        {
-          attempts: 3,
-          backoff: { type: "exponential", delay: 1000 },
-          removeOnComplete: 100,
-          removeOnFail: 200,
-        }
-      );
+                {
+                  attempts: 3,
+                  backoff: { type: "exponential", delay: 1000 },
+                  removeOnComplete: true,
+                  removeOnFail: 200,
+                }
+              );
       jobId = job.id;
     } catch (e) {
       console.warn("[INTERVIEW FINALIZE] Queue unavailable, persisted synchronously", e);

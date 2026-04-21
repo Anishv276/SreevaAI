@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { Camera, Mic, CheckCircle2, AlertCircle, Loader2, RefreshCw, Volume2, Activity, ChevronDown, Monitor, AudioLines, Wifi, Shield, Zap, Play } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Camera, Mic, CheckCircle2, AlertCircle, Loader2, RefreshCw, Volume2, Activity, ChevronDown, Monitor, AudioLines, Shield, Zap, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -136,35 +136,6 @@ export function HardwareCheck({
     const [speakerTargetWord, setSpeakerTargetWord] = useState("");
     const [speakerRetryMsg, setSpeakerRetryMsg] = useState(false);
     const SPEAKER_KEYWORDS = ["READY", "CLEAR", "START", "INTERVIEW"];
-
-    // Network Speed & Quality
-    const [uploadSpeedMbps, setUploadSpeedMbps] = useState<number | null>(null);
-    const [downloadSpeedMbps, setDownloadSpeedMbps] = useState<number | null>(null);
-    const [displayUpload, setDisplayUpload] = useState<number | null>(null);
-    const [displayDownload, setDisplayDownload] = useState<number | null>(null);
-    const [latencyMs, setLatencyMs] = useState<number | null>(null);
-    const [jitterMs, setJitterMs] = useState<number | null>(null);
-    const [speedTestRunning, setSpeedTestRunning] = useState(false);
-    const pulseRunningRef = useRef(false);
-
-    const [isNetworkLocked, setIsNetworkLocked] = useState(false);
-    const networkQuality = useMemo(() => {
-        if (isNetworkLocked) return "stable";
-        if (downloadSpeedMbps === null || uploadSpeedMbps === null || latencyMs === null) return "testing";
-        if (downloadSpeedMbps >= 10 && uploadSpeedMbps >= 5 && latencyMs < 80) return "stable";
-        if (downloadSpeedMbps >= 5 && uploadSpeedMbps >= 2 && latencyMs < 150) return "acceptable";
-        return "poor";
-    }, [downloadSpeedMbps, uploadSpeedMbps, latencyMs]);
-
-    const hardwareStatusMsg = useMemo(() => {
-        switch (networkQuality) {
-            case "stable": return "Your connection looks good-we should have a smooth interview 👍";
-            case "acceptable": return "Your connection is okay, but you might notice slight delays.";
-            case "poor": return "Your connection may affect the interview quality. If possible, try switching to a better network.";
-            default: return "Analyzing your connection quality...";
-        }
-    }, [networkQuality]);
-    const [bypassSpeedTest, setBypassSpeedTest] = useState(false);
 
     //  Visual Integrity (Signals 4, 5, 6) 
     const visualLandmarkerRef = useRef<any>(null);
@@ -337,11 +308,6 @@ export function HardwareCheck({
         micVerified &&
         (noiseBypass || noisePassed) &&
         (speakerStatus === "passed" || speakerStatus === "failed") &&
-        (bypassSpeedTest || (
-            (uploadSpeedMbps !== null && uploadSpeedMbps >= 3.0) &&
-            (downloadSpeedMbps !== null && downloadSpeedMbps >= 3.0) &&
-            (latencyMs !== null && latencyMs < 300)
-        )) &&
         visualReady &&
         consentChecked;
 
@@ -621,118 +587,6 @@ export function HardwareCheck({
         setSpeakerRetryMsg(true);
     };
 
-    const testNetworkSpeed = useCallback(async (isFullTest: boolean = true) => {
-        if (isNetworkLocked || pulseRunningRef.current) return;
-        pulseRunningRef.current = true;
-
-        if (isFullTest) setSpeedTestRunning(true);
-
-        try {
-            // LAYER 1: Latency & Jitter (Smart Sampling: 15 samples, ignore first 2)
-            const pings = [];
-            const TOTAL_SAMPLES = 15;
-            const WARMUP_SAMPLES = 2;
-
-            for (let i = 0; i < TOTAL_SAMPLES; i++) {
-                const start = performance.now();
-                await fetch(`/api/speedtest?p=${i}&t=${Date.now()}`, { method: "POST", headers: { "X-Pulse": "true" } });
-                pings.push(performance.now() - start);
-                await new Promise(r => setTimeout(r, 40));
-            }
-
-            // Slice out the warm-up pings
-            const stablePings = pings.slice(WARMUP_SAMPLES);
-            const avgLatency = stablePings.reduce((a, b) => a + b, 0) / stablePings.length;
-            let totalDiff = 0;
-            for (let i = 1; i < stablePings.length; i++) totalDiff += Math.abs(stablePings[i] - stablePings[i - 1]);
-
-            setLatencyMs(Math.round(avgLatency));
-            setJitterMs(Math.round(totalDiff / (stablePings.length - 1)));
-
-            if (isFullTest) {
-                // LAYER 2: Bandwidth (Improved Stability: 15MB Download / 10MB Upload)
-                const DOWNLOAD_SIZE = 15 * 1024 * 1024;
-                // --- UPLOAD ---
-                const UPLOAD_SIZE = 5 * 1024 * 1024; // 5MB for safety and reliability
-                const upPayload = new Uint8Array(UPLOAD_SIZE);
-                const upUrl = `/api/speedtest?u=1&t=${Date.now()}`;
-
-                const upMbps = await new Promise<number>((resolve, reject) => {
-                    const xhr = new XMLHttpRequest();
-                    const startTime = performance.now();
-                    xhr.onload = () => {
-                        if (xhr.status >= 200 && xhr.status < 300) {
-                            const duration = (performance.now() - startTime) / 1000;
-                            const speed = Number(((UPLOAD_SIZE * 8) / (duration * 1000000)).toFixed(1));
-                            resolve(speed);
-                        } else {
-                            reject(new Error("Upload failed"));
-                        }
-                    };
-                    xhr.onerror = () => reject(new Error("Upload network error"));
-                    xhr.open("POST", upUrl);
-                    xhr.setRequestHeader("X-Speed-Test", "upload");
-                    xhr.send(upPayload);
-                });
-
-                setUploadSpeedMbps(upMbps);
-                setDisplayUpload(upMbps);
-
-                // --- DOWNLOAD ---
-                const downUrl = `/api/speedtest?d=1&t=${Date.now()}`;
-                const downRes = await fetch(downUrl, { method: "GET" });
-                if (!downRes.ok) throw new Error("Download failed");
-                const blob = await downRes.blob();
-
-                const downEntry = performance.getEntriesByName(new URL(downUrl, window.location.origin).href).pop() as PerformanceResourceTiming;
-                if (downEntry) {
-                    const downTimeSec = Math.max(1, downEntry.responseEnd - downEntry.responseStart) / 1000;
-                    const dls = Number(((blob.size * 8) / (downTimeSec * 1000000)).toFixed(1));
-                    setDownloadSpeedMbps(dls);
-                    setDisplayDownload(dls);
-
-                    // If everything is excellent, lock it as stable to avoid future background check fluctuations
-                    const currentJitter = totalDiff / (stablePings.length - 1);
-                    if (upMbps >= 5 && dls >= 10 && avgLatency < 80 && currentJitter < 20) {
-                        setIsNetworkLocked(true);
-                    }
-                }
-            }
-        } catch (err) {
-            console.error("[Network] Pulse error:", err);
-            if (isFullTest) {
-                setUploadSpeedMbps(0);
-                setDownloadSpeedMbps(0);
-                setDisplayUpload(0);
-                setDisplayDownload(0);
-            }
-        } finally {
-            setSpeedTestRunning(false);
-            pulseRunningRef.current = false;
-        }
-    }, []);
-
-    // HYPER-LIVE: Fluctuate display speeds based on latency pulses
-    useEffect(() => {
-        if (!downloadSpeedMbps || !uploadSpeedMbps || !latencyMs) return;
-
-        // Apply a subtle, realistic fluctuation (+/- 0.5% - 2%)
-        // If latency is higher, speed tends to fluctuate more downward
-        const latencyPenalty = Math.max(0, (latencyMs - 50) / 1000);
-        const randomFactor = 1 + (Math.random() * 0.02 - (0.01 + latencyPenalty));
-
-        setDisplayDownload(prev => {
-            const next = downloadSpeedMbps * randomFactor;
-            // Smooth transition (lerp 0.3)
-            return prev ? prev * 0.7 + next * 0.3 : next;
-        });
-
-        setDisplayUpload(prev => {
-            const next = uploadSpeedMbps * randomFactor;
-            return prev ? prev * 0.7 + next * 0.3 : next;
-        });
-    }, [latencyMs, downloadSpeedMbps, uploadSpeedMbps]);
-
     const requestPermissions = useCallback(async (cameraId?: string, micId?: string) => {
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
         setError(null);
@@ -805,33 +659,23 @@ export function HardwareCheck({
             setError("Could not access camera or microphone. Please check browser permissions.");
         }
     }, [startVisualizer]);
-
     //  Global Mount Lifecycle 
     useEffect(() => {
         requestPermissions();
-        // Run full check on mount
-        testNetworkSpeed(true);
-
-        const networkInterval = setInterval(() => {
-            testNetworkSpeed(false); // Background pulse every 25s
-        }, 25000);
 
         return () => {
-            clearInterval(networkInterval);
             if (animRef.current) cancelAnimationFrame(animRef.current);
             streamRef.current?.getTracks().forEach(t => t.stop());
             audioCtxRef.current?.close();
             if (recogRef.current) try { recogRef.current.abort(); } catch { }
         };
-    }, [testNetworkSpeed]); // stable logic
-
+    }, [requestPermissions]); // stable logic
     //  Readiness score for progress bar 
     const checks = [
         cameraStatus === "granted",
         micStatus === "granted" && micVerified,
         noiseBypass || noisePassed,
         speakerStatus === "passed" || speakerStatus === "failed",
-        bypassSpeedTest || (uploadSpeedMbps !== null && uploadSpeedMbps >= 3.0 && downloadSpeedMbps !== null && downloadSpeedMbps >= 3.0 && latencyMs !== null && latencyMs < 300),
         visualReady,
     ];
     const readyCount = checks.filter(Boolean).length;
@@ -904,11 +748,11 @@ export function HardwareCheck({
             </AnimatePresence>
 
             {/* Main Grid */}
-            <div className="max-w-6xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div className="max-w-6xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
 
                 {/*  Column 1: Camera  */}
-                <div className="bg-white border border-gray-200 shadow-sm rounded-2xl flex flex-col relative">
-                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between rounded-t-2xl">
+                <div className="bg-white border border-gray-200 shadow-sm rounded-2xl flex flex-col min-h-[460px]">
+                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between rounded-t-2xl min-h-[64px]">
                         <div className="flex items-center gap-2">
                             <Camera className="w-4 h-4 text-gray-600" />
                             <span className="font-medium text-gray-900 text-sm">Camera</span>
@@ -917,7 +761,7 @@ export function HardwareCheck({
                     </div>
 
                     {/* Video preview */}
-                    <div className="relative bg-gray-950 flex-1 h-[320px] overflow-hidden group">
+                    <div className="relative bg-gray-950 flex-1 min-h-[300px] overflow-hidden group">
                         <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
                         
                         {/* Visual Integrity Alert Notification (Simple bottom bar replacement) */}
@@ -998,8 +842,8 @@ export function HardwareCheck({
                 </div>
 
                 {/*  Column 2: Microphone  */}
-                <div className="bg-white border border-gray-200 shadow-sm rounded-2xl flex flex-col relative">
-                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between rounded-t-2xl">
+                <div className="bg-white border border-gray-200 shadow-sm rounded-2xl flex flex-col min-h-[460px]">
+                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between rounded-t-2xl min-h-[64px]">
                         <div className="flex items-center gap-2">
                             <Mic className="w-4 h-4 text-gray-600" />
                             <span className="font-medium text-gray-900 text-sm">Microphone</span>
@@ -1007,7 +851,7 @@ export function HardwareCheck({
                         <StatusIcon ok={micStatus === "granted" && micVerified} loading={micStatus === "requesting"} />
                     </div>
 
-                    <div className="px-5 py-5 flex flex-col gap-5 flex-1 h-[320px] justify-between">
+                    <div className="px-5 py-5 flex flex-col gap-5 flex-1 justify-between">
                         {/* Waveform visualizer */}
                         <div className="flex flex-col items-center justify-center gap-3">
                             <div className="flex items-end justify-center gap-1 h-14 bg-gray-50/50 w-full rounded-2xl px-6 border border-gray-100/50">
@@ -1091,10 +935,10 @@ export function HardwareCheck({
                 </div>
 
                 {/*  Column 3: Noise + Speaker + Network  */}
-                <div className="flex flex-col gap-[18px]">
+                <div className="flex flex-col gap-6 h-full">
 
                     {/* Background Noise */}
-                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl px-5 py-4">
+                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl px-5 py-4 flex-1 flex flex-col justify-center">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
                                 <AudioLines className="w-4 h-4 text-gray-600" />
@@ -1141,7 +985,7 @@ export function HardwareCheck({
                     </div>
 
                     {/* Speaker Test */}
-                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl px-5 py-4">
+                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl px-5 py-4 flex-1 flex flex-col justify-center">
                         <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
                                 <Volume2 className="w-4 h-4 text-gray-600" />
@@ -1202,141 +1046,9 @@ export function HardwareCheck({
                         </div>
                     </div>
 
-                    {/* Network Health Monitoring */}
-                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl px-5 py-4">
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                                <Wifi className="w-4 h-4 text-gray-600" />
-                                <span className="font-medium text-gray-900 text-sm">Network Health</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {!speedTestRunning && uploadSpeedMbps !== null && (
-                                    <div className={cn(
-                                        "flex items-center gap-1.5 px-2 py-0.5 rounded-full border",
-                                        networkQuality === "stable" ? "bg-green-50 border-green-100 text-green-600" :
-                                            networkQuality === "acceptable" ? "bg-orange-50 border-orange-100 text-orange-600" :
-                                                "bg-red-50 border-red-100 text-red-600"
-                                    )}>
-                                        <div className={cn(
-                                            "w-1.5 h-1.5 rounded-full animate-pulse",
-                                            networkQuality === "stable" ? "bg-green-500" :
-                                                networkQuality === "acceptable" ? "bg-orange-500" : "bg-red-500"
-                                        )} />
-                                        <span className="text-[9px] font-bold uppercase tracking-tight">
-                                            {networkQuality === "stable" ? "Stable" :
-                                                networkQuality === "acceptable" ? "Modest" : "Poor"}
-                                        </span>
-                                    </div>
-                                )}
-                                <StatusIcon
-                                    ok={bypassSpeedTest || (uploadSpeedMbps !== null && networkQuality !== "poor")}
-                                    loading={speedTestRunning}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 mb-3">
-                            {/* Download Cell */}
-                            <div className="bg-gray-50/50 border border-gray-100 rounded-xl px-3 py-2 cursor-default relative">
-                                <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider block mb-0.5">Download</span>
-                                <div className="flex items-baseline gap-1">
-                                    <span className={cn(
-                                        "text-sm font-bold",
-                                        !downloadSpeedMbps ? "text-gray-300" :
-                                            downloadSpeedMbps >= 10 ? "text-green-600" :
-                                                downloadSpeedMbps >= 5 ? "text-orange-600" : "text-red-500"
-                                    )}>
-                                        {!downloadSpeedMbps ? "--" :
-                                            downloadSpeedMbps >= 10 ? "Fast" :
-                                                downloadSpeedMbps >= 5 ? "Standard" : "Slow"}
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* Upload Cell */}
-                            <div className="bg-gray-50/50 border border-gray-100 rounded-xl px-3 py-2 cursor-default relative">
-                                <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider block mb-0.5">Upload</span>
-                                <div className="flex items-baseline gap-1">
-                                    <span className={cn(
-                                        "text-sm font-bold",
-                                        !uploadSpeedMbps ? "text-gray-300" :
-                                            uploadSpeedMbps >= 5 ? "text-green-600" :
-                                                uploadSpeedMbps >= 2 ? "text-orange-600" : "text-red-500"
-                                    )}>
-                                        {!uploadSpeedMbps ? "--" :
-                                            uploadSpeedMbps >= 5 ? "High" :
-                                                uploadSpeedMbps >= 2 ? "Moderate" : "Low"}
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* Latency Cell */}
-                            <div className="bg-gray-50/50 border border-gray-100 rounded-xl px-3 py-2 overflow-hidden cursor-default relative">
-                                <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider block mb-0.5 text-center">Latency</span>
-                                <div className="flex items-baseline justify-center gap-1">
-                                    <AnimatePresence mode="wait">
-                                        <motion.span key={latencyMs} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                                            className={cn(
-                                                "text-sm font-bold",
-                                                !latencyMs ? "text-gray-300" :
-                                                    latencyMs < 80 ? "text-green-600" :
-                                                        latencyMs < 150 ? "text-orange-600" : "text-red-500"
-                                            )}>
-                                            {!latencyMs ? "--" :
-                                                latencyMs < 80 ? "Responsive" :
-                                                    latencyMs < 150 ? "Delayed" : "Lagging"}
-                                        </motion.span>
-                                    </AnimatePresence>
-                                </div>
-                            </div>
-
-                            {/* Jitter Cell */}
-                            <div className="bg-gray-50/50 border border-gray-100 rounded-xl px-3 py-2 overflow-hidden cursor-default relative">
-                                <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider block mb-0.5 text-center">Jitter</span>
-                                <div className="flex items-baseline justify-center gap-1">
-                                    <AnimatePresence mode="wait">
-                                        <motion.span key={jitterMs} initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
-                                            className={cn(
-                                                "text-sm font-bold",
-                                                !jitterMs ? "text-gray-300" :
-                                                    jitterMs < 20 ? "text-green-600" :
-                                                        jitterMs < 40 ? "text-orange-600" : "text-red-500"
-                                            )}>
-                                            {!jitterMs ? "--" :
-                                                jitterMs < 20 ? "Stable" :
-                                                    jitterMs < 40 ? "Wavy" : "Unstable"}
-                                        </motion.span>
-                                    </AnimatePresence>
-                                </div>
-                            </div>
-                        </div>
-
-                        {!speedTestRunning && networkQuality !== "testing" && (
-                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                                className={cn(
-                                    "p-2.5 rounded-xl border text-[10px] font-medium leading-relaxed flex items-start gap-2",
-                                    networkQuality === "stable" ? "bg-green-50/50 border-green-100 text-green-700" :
-                                        networkQuality === "acceptable" ? "bg-orange-50/50 border-orange-100 text-orange-700" :
-                                            "bg-red-50/50 border-red-100 text-red-700"
-                                )}>
-                                <div className={cn(
-                                    "mt-0.5 w-1 h-1 rounded-full shrink-0",
-                                    networkQuality === "stable" ? "bg-green-500" :
-                                        networkQuality === "acceptable" ? "bg-orange-500" : "bg-red-500"
-                                )} />
-                                {hardwareStatusMsg}
-                            </motion.div>
-                        )}
-
-                        {networkQuality === "poor" && !bypassSpeedTest && (
-                            <button onClick={() => setBypassSpeedTest(true)}
-                                className="mt-2 w-full text-[10px] text-gray-400 hover:text-gray-600 underline">
-                                Skip anyway
-                            </button>
-                        )}
-                    </div>
                 </div>
-            </div>
+
+                </div>
 
             {/* Bottom CTA */}
             <div className="border-t border-gray-100 px-6 py-5">
@@ -1384,3 +1096,4 @@ export function HardwareCheck({
         </div>
     );
 }
+

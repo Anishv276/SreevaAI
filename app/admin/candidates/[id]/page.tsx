@@ -40,7 +40,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
     const [activeTab, setActiveTab] = useState<"analysis" | "interview">("analysis");
 
-    const [resendingInterview, setResendingInterview] = useState(false);
+    const [sendingInterviewLink, setSendingInterviewLink] = useState(false);
 
     const [rescanning, setRescanning] = useState(false);
 
@@ -174,13 +174,13 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
     }, [id, fetchCandidate]);
 
-    const handleResendInterview = async () => {
+    const handleSendInterviewLink = async () => {
 
-        setResendingInterview(true);
+        setSendingInterviewLink(true);
 
         try {
 
-            const res = await fetch(`/api/candidates/${id}/resend-interview`, { method: "POST" });
+            const res = await fetch(`/api/candidates/${id}/send-interview-link`, { method: "POST" });
 
             if (res.ok) {
 
@@ -190,19 +190,19 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                 const err = await res.json();
 
-                alert(err.error || "Failed to resend interview link");
+                alert(err.error || "Failed to send interview link");
 
             }
 
         } catch (error) {
 
-            console.error("Resend interview error:", error);
+            console.error("Interview link send error:", error);
 
-            alert("Failed to resend interview link.");
+            alert("Failed to send interview link.");
 
         } finally {
 
-            setResendingInterview(false);
+            setSendingInterviewLink(false);
 
         }
 
@@ -917,7 +917,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                 }
 
-                .tracking-premium { letter-spacing: -0.02em !important; }
+                .tracking-wide { letter-spacing: -0.02em !important; }
 
                 .glass-card {
 
@@ -1155,7 +1155,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                 <div className="max-w-[1400px] mx-auto px-6 pt-24 pb-16 space-y-8 relative z-0">
 
-                    <div className="relative spotlight-card rounded-[48px] shadow-sm overflow-hidden">
+                    <div className="relative spotlight-card rounded-3xl shadow-sm overflow-hidden">
 
                         <div className="h-2 w-full bg-gradient-to-r from-orange-400 via-[#F97316] to-orange-500" />
 
@@ -1281,7 +1281,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         ].map((card, i) => (
 
-                                            <div key={i} className="bg-[#FDF9F3] rounded-[32px] p-6 border border-[#F5E6D3] flex flex-col items-center justify-center text-center space-y-2 relative overflow-hidden group">
+                                            <div key={i} className="bg-[#FDF9F3] rounded-3xl p-6 border border-[#F5E6D3] flex flex-col items-center justify-center text-center space-y-2 relative overflow-hidden group">
 
                                                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-orange-100 to-transparent group-hover:via-orange-200 transition-all opacity-0 group-hover:opacity-100" />
 
@@ -1435,7 +1435,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                             <div className="absolute bottom-0 left-0 w-24 h-1 bg-slate-950 rounded-full" />
 
-                                            <h2 className="text-3xl font-bold text-slate-950 tracking-premium uppercase leading-none font-inter">
+                                            <h2 className="text-3xl font-bold text-slate-950 tracking-wide uppercase leading-none font-inter">
 
                                                 Resume Analysis
 
@@ -1445,7 +1445,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         {!candidate.aiReport && !candidate.resumeText && (
 
-                                            <div className="mt-10 p-10 bg-amber-50 rounded-[40px] border border-amber-200 flex flex-col items-center text-center gap-4">
+                                            <div className="mt-10 p-10 bg-amber-50 rounded-3xl border border-amber-200 flex flex-col items-center text-center gap-4">
 
                                                 <div className="h-12 w-12 rounded-2xl bg-white flex items-center justify-center shadow-sm">
 
@@ -1471,13 +1471,13 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         )}
 
-                                        <div className="mt-10 p-10 bg-white rounded-[40px] border border-slate-100 shadow-md relative overflow-hidden group/summary">
+                                        <div className="mt-10 p-10 bg-white rounded-3xl border border-slate-100 shadow-md relative overflow-hidden group/summary">
 
                                             <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600/30 group-hover/summary:bg-blue-600 transition-colors" />
 
                                             <div className="flex items-start gap-8">
 
-                                                <div className="h-14 w-14 rounded-[20px] bg-white shadow-xl shadow-blue-900/5 border border-slate-100 flex items-center justify-center shrink-0">
+                                                <div className="h-14 w-14 rounded-xl bg-white shadow-xl shadow-blue-900/5 border border-slate-100 flex items-center justify-center shrink-0">
 
                                                     <Sparkles className="h-7 w-7 text-blue-600" />
 
@@ -1505,7 +1505,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     </div>
 
-                                    <div className="p-10 spotlight-card rounded-[48px] shadow-sm optimize-scroll">
+                                    <div className="p-8 bg-white border border-slate-200 shadow-sm rounded-3xl shadow-sm optimize-scroll">
 
                                         <div className="flex flex-row items-center justify-around gap-2 px-4">
 
@@ -1585,11 +1585,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                             </div>
 
-                                            <h3 className="text-[14px] font-bold text-slate-900 uppercase tracking-premium">Candidate Skill Alignment</h3>
+                                            <h3 className="text-[14px] font-bold text-slate-900 uppercase tracking-wide">Candidate Skill Alignment</h3>
 
                                         </div>
 
-                                        <div className="bg-white rounded-[40px] shadow-sm overflow-hidden">
+                                        <div className="bg-white rounded-3xl shadow-sm overflow-hidden">
 
                                             <div className="grid grid-cols-3 px-8 py-3 bg-slate-50 border-b border-slate-200">
 
@@ -1817,7 +1817,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
 
-                                        <div className="p-10 spotlight-card rounded-[40px] border-t-4 border-t-emerald-500 shadow-sm space-y-10 optimize-scroll">
+                                        <div className="p-8 bg-white border border-slate-200 shadow-sm rounded-3xl border-t-4 border-t-emerald-500 shadow-sm space-y-10 optimize-scroll">
 
                                             <div className="flex items-center gap-4">
 
@@ -1827,7 +1827,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                                 </div>
 
-                                                <h3 className="text-[14px] font-bold text-slate-900 uppercase tracking-premium">Key Strengths</h3>
+                                                <h3 className="text-[14px] font-bold text-slate-900 uppercase tracking-wide">Key Strengths</h3>
 
                                             </div>
 
@@ -1859,7 +1859,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         </div>
 
-                                        <div className="p-10 spotlight-card rounded-[40px] border-t-4 border-t-amber-500 shadow-sm space-y-10 optimize-scroll">
+                                        <div className="p-8 bg-white border border-slate-200 shadow-sm rounded-3xl border-t-4 border-t-amber-500 shadow-sm space-y-10 optimize-scroll">
 
                                             <div className="flex items-center gap-4">
 
@@ -1869,7 +1869,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                                 </div>
 
-                                                <h3 className="text-[14px] font-bold text-slate-900 uppercase tracking-premium">Growth Areas</h3>
+                                                <h3 className="text-[14px] font-bold text-slate-900 uppercase tracking-wide">Growth Areas</h3>
 
                                             </div>
 
@@ -1907,7 +1907,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         {/* -- Career Timeline (Left) ---------------- */}
 
-                                        <div className="p-8 spotlight-card bg-white rounded-[40px] shadow-sm flex flex-col h-full border border-slate-100 optimize-scroll">
+                                        <div className="p-6 bg-white border border-slate-200 shadow-sm bg-white rounded-3xl shadow-sm flex flex-col h-full border border-slate-100 optimize-scroll">
 
                                             <div className="flex items-center gap-3 mb-10 px-2">
 
@@ -1991,7 +1991,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         {/* -- Strategic Verdict (Right) ------------- */}
 
-                                        <div className="p-8 spotlight-card bg-indigo-50/30 rounded-[40px] border border-indigo-100/50 shadow-sm flex flex-col h-full relative overflow-hidden group optimize-scroll">
+                                        <div className="p-6 bg-white border border-slate-200 shadow-sm bg-indigo-50/30 rounded-3xl border border-indigo-100/50 shadow-sm flex flex-col h-full relative overflow-hidden group optimize-scroll">
 
                                             <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-200/20 blur-[60px] rounded-full -mr-24 -mt-24 pointer-events-none" />
 
@@ -2108,7 +2108,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                                                 <p className="text-[13px] font-bold text-slate-900">{item.criteria}</p>
                                                                                 <p className="text-[11px] font-medium text-slate-500 leading-relaxed">{item.note}</p>
                                                                             </div>
-                                                                            <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border bg-white text-slate-700">{item.result}</span>
+                                                                            <span className="text-[10px] font-bold uppercase tracking-wide px-3 py-1 rounded-full border bg-white text-slate-700">{item.result}</span>
                                                                         </div>
                                                                     </div>
                                                                 ))}
@@ -2128,7 +2128,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     <div className={cn(
 
-                                        "p-10 spotlight-card border rounded-[40px] space-y-8 mx-2 transition-colors  optimize-scroll",
+                                        "p-8 bg-white border border-slate-200 shadow-sm border rounded-3xl space-y-8 mx-2 transition-colors  optimize-scroll",
 
                                         normalizedStatus === "Shortlisted" ? "border-emerald-200 shadow-emerald-900/5 shadow-2xl" :
 
@@ -2354,7 +2354,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                 <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
 
-                                    <div className="p-6 rounded-[32px] bg-white border border-gray-100 shadow-sm space-y-4">
+                                    <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-4">
 
                                         <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Header Scores</h3>
 
@@ -2372,7 +2372,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     </div>
 
-                                    <div className="p-6 rounded-[32px] bg-white border border-gray-100 shadow-sm space-y-4">
+                                    <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-4">
 
                                         <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Communication Analysis</h3>
 
@@ -2392,7 +2392,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         />
 
-                                        <div className="p-5 rounded-[24px] bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
+                                        <div className="p-5 rounded-2xl bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
 
                                             <p className="text-[9px] font-bold text-[#A89078] uppercase tracking-[0.3em]">CEFR RATING</p>
 
@@ -2408,11 +2408,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     </div>
 
-                                    <div className="p-6 rounded-[32px] bg-white border border-gray-100 shadow-sm space-y-4">
+                                    <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-4">
 
                                         <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Interview Recording</h3>
 
-                                        <div className="aspect-video w-full rounded-[24px] border-[5px] border-gray-900 bg-black overflow-hidden shadow-2xl relative">
+                                        <div className="aspect-video w-full rounded-2xl border-[5px] border-gray-900 bg-black overflow-hidden shadow-2xl relative">
 
                                             {interviewRecordingUrl ? (
 
@@ -2436,7 +2436,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         <div className="grid grid-cols-2 gap-4">
 
-                                            <div className="p-4 rounded-[20px] bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
+                                            <div className="p-4 rounded-xl bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
 
                                                 <span className="text-[8px] font-bold uppercase tracking-widest text-gray-500">Total duration</span>
 
@@ -2444,7 +2444,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                             </div>
 
-                                            <div className="p-4 rounded-[20px] bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
+                                            <div className="p-4 rounded-xl bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
 
                                                 <span className="text-[8px] font-bold uppercase tracking-widest text-gray-500">Words Spoken</span>
 
@@ -2454,7 +2454,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         </div>
 
-                                        <div className="p-4 rounded-[20px] bg-slate-50 border border-slate-100 space-y-2">
+                                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
 
                                             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.3em]">AI Summary</p>
 
@@ -2468,7 +2468,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch max-w-[1400px] mx-auto">
 
-                                    <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
+                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
 
                                         <div className="flex items-center justify-between mb-8">
 
@@ -2480,7 +2480,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         <div className="grid grid-cols-2 gap-3 mb-5">
 
-                                            <div className="p-4 rounded-[24px] bg-slate-50 border border-slate-100 shadow-sm">
+                                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 shadow-sm">
 
                                                 <p className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-400">Overall JD Match</p>
 
@@ -2490,7 +2490,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                             </div>
 
-                                            <div className="p-4 rounded-[24px] bg-emerald-50 border border-emerald-100 shadow-sm">
+                                            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 shadow-sm">
 
                                                 <p className="text-[9px] font-black uppercase tracking-[0.3em] text-emerald-500">Strongest Proof</p>
 
@@ -2508,7 +2508,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                             </div>
 
-                                            <div className="p-4 rounded-[24px] bg-rose-50 border border-rose-100 shadow-sm">
+                                            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 shadow-sm">
 
                                                 <p className="text-[9px] font-black uppercase tracking-[0.3em] text-rose-500">Biggest Gap</p>
 
@@ -2526,7 +2526,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                             </div>
 
-                                            <div className="p-4 rounded-[24px] bg-amber-50 border border-amber-100 shadow-sm">
+                                            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100 shadow-sm">
 
                                                 <p className="text-[9px] font-black uppercase tracking-[0.3em] text-amber-500">Skill Split</p>
 
@@ -2572,7 +2572,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     </div>
 
-                                    <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
+                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
 
                                         <div className="flex items-center justify-between mb-8">
 
@@ -2644,7 +2644,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     </div>
 
-                                    <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
+                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
 
                                         <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof -- consistency check</h3>
 
@@ -2656,7 +2656,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                                     <p className="text-[14px] font-bold text-gray-900 leading-tight">{c.claim}</p>
 
-                                                    <p className="text-[9px] font-bold text-slate-500 font-black uppercase tracking-widest">FIELD: {c.sub}</p>
+                                                    <p className="text-[9px] font-bold text-slate-500 font-bold uppercase tracking-wide">FIELD: {c.sub}</p>
 
                                                     <p className="text-[13px] font-medium text-gray-600 leading-relaxed">{c.proof}</p>
 
@@ -2670,7 +2670,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     </div>
 
-                                    <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
+                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
 
                                         <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Key Moments From Session</h3>
 
@@ -2710,7 +2710,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     </div>
 
-                                    <div className="w-full max-w-[1200px] mx-auto p-8 rounded-[32px] bg-white border border-gray-100 shadow-sm space-y-5">
+                                    <div className="w-full max-w-[1200px] mx-auto p-8 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-5">
 
                                         <div className="flex items-start justify-between gap-4">
 
@@ -2744,7 +2744,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-                                            <div className="p-5 rounded-[24px] bg-slate-50 border border-slate-100 space-y-3">
+                                            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 space-y-3">
 
                                                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Strategic Rationale</p>
 
@@ -2778,7 +2778,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                             </div>
 
-                                            <div className="p-5 rounded-[24px] bg-indigo-50 border border-indigo-100 space-y-3">
+                                            <div className="p-5 rounded-2xl bg-indigo-50 border border-indigo-100 space-y-3">
 
                                                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-500">Recommended Next Action</p>
 
@@ -2846,7 +2846,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     {/* communication */}
 
-                                    <div className="p-6 rounded-[32px] bg-white border border-gray-100 shadow-sm space-y-6 flex flex-col scale-[0.98] origin-top-left">
+                                    <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-6 flex flex-col scale-[0.98] origin-top-left">
 
                                         <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Communication Analysis</h3>
 
@@ -2870,7 +2870,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         </div>
 
-                                        <div className="p-5 rounded-[24px] bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
+                                        <div className="p-5 rounded-2xl bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
 
                                             <p className="text-[9px] font-bold text-[#A89078] uppercase tracking-[0.3em]">CEFR RATING</p>
 
@@ -2892,7 +2892,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     {/* video */}
 
-                                    <div className="p-6 rounded-[32px] bg-white border border-gray-100 shadow-sm flex flex-col space-y-5 scale-[0.98] origin-top-right">
+                                    <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col space-y-5 scale-[0.98] origin-top-right">
 
                                         <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Interview Recording</h3>
 
@@ -2900,7 +2900,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         <div className="space-y-6 flex-1 flex flex-col">
 
-                                            <div className="aspect-video w-full rounded-[24px] border-[5px] border-gray-900 bg-black overflow-hidden shadow-2xl relative">
+                                            <div className="aspect-video w-full rounded-2xl border-[5px] border-gray-900 bg-black overflow-hidden shadow-2xl relative">
 
                                             {interviewRecordingUrl ? (
 
@@ -2936,7 +2936,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                             <div className="grid grid-cols-2 gap-4">
 
-                                                <div className="p-4 rounded-[20px] bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
+                                                <div className="p-4 rounded-xl bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
 
                                                     <div className="flex items-center gap-2 text-slate-500 font-black">
 
@@ -2950,7 +2950,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                                 </div>
 
-                                                <div className="p-4 rounded-[20px] bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
+                                                <div className="p-4 rounded-xl bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
 
                                                     <div className="flex items-center gap-2 text-[#F97316]">
 
@@ -2966,7 +2966,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                             </div>
 
-                                            <div className="p-4 rounded-[20px] bg-slate-50 border border-slate-100 space-y-2">
+                                            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
 
                                                 <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.3em]">AI Summary</p>
 
@@ -2990,7 +2990,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     {/* Section 1: JD Skills (Top Left) */}
 
-                                    <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
+                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
 
                                         <div className="flex items-center justify-between mb-8">
 
@@ -3032,7 +3032,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     {/* Section 2: Transcript (Top Right) */}
 
-                                    <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
+                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
 
                                         <div className="flex items-center justify-between mb-8">
 
@@ -3174,7 +3174,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     {/* Section 3: Consistency Check (Bottom Left) */}
 
-                                    <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
+                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
 
                                         <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof -- consistency check</h3>
 
@@ -3202,7 +3202,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                                         <p className="text-[14px] font-bold text-gray-900 leading-tight">{c.claim}</p>
 
-                                                        <p className="text-[9px] font-bold text-slate-500 font-black uppercase tracking-widest">FIELD: {c.sub}</p>
+                                                        <p className="text-[9px] font-bold text-slate-500 font-bold uppercase tracking-wide">FIELD: {c.sub}</p>
 
                                                     </div>
 
@@ -3248,7 +3248,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     {/* Section 4: Key Moments (Bottom Right) */}
 
-                                    <div className="p-8 rounded-[40px] bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
+                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
 
                                         <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Key Moments From Session</h3>
 
@@ -3310,7 +3310,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     {/* -- Integrity Verdict Card -- */}
 
-                                    <div className="grid grid-cols-[260px_1fr] rounded-[40px] bg-white border-2 border-[#F5E6D3]/30 shadow-[0_20px_60px_rgba(139,94,60,0.06)] overflow-hidden border-l-[8px] border-l-[#8B5E3C]">
+                                    <div className="grid grid-cols-[260px_1fr] rounded-3xl bg-white border-2 border-[#F5E6D3]/30 shadow-[0_20px_60px_rgba(139,94,60,0.06)] overflow-hidden border-l-[8px] border-l-[#8B5E3C]">
 
                                         <div className="bg-[#FAF9F6] p-8 flex flex-col items-center justify-center gap-4 border-r border-[#F5E6D3]/20">
 
@@ -3582,7 +3582,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         <div className="flex justify-center">
 
-                                            <div className="w-full max-w-[1200px] p-8 rounded-[32px] bg-white border border-gray-100 shadow-sm relative overflow-hidden group">
+                                            <div className="w-full max-w-[1200px] p-8 rounded-3xl bg-white border border-gray-100 shadow-sm relative overflow-hidden group">
 
                                                 <div className={cn(
 
@@ -3690,7 +3690,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         <div className="flex justify-center">
 
-                                            <div className="w-full max-w-[1200px] p-8 rounded-[32px] bg-[#EEF2FF] border border-[#E0E7FF] space-y-6">
+                                            <div className="w-full max-w-[1200px] p-8 rounded-3xl bg-[#EEF2FF] border border-[#E0E7FF] space-y-6">
 
                                                 <p className="text-center text-[10px] font-bold text-slate-500 font-black uppercase tracking-[0.4em] mb-3">Recommended Next Action</p>
 
@@ -3804,7 +3804,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                             <div className="flex-1 overflow-y-auto p-10 space-y-10 bg-slate-50/30">
 
-                                <div className="p-8 rounded-[32px] bg-white border border-slate-100 shadow-sm space-y-6 relative overflow-hidden group">
+                                <div className="p-8 rounded-3xl bg-white border border-slate-100 shadow-sm space-y-6 relative overflow-hidden group">
 
                                     <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500/40 group-hover:bg-blue-500 transition-colors" />
 

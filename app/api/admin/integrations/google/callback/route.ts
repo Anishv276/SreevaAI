@@ -5,16 +5,28 @@ import { prisma } from "@/lib/prisma";
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
-    const orgId = searchParams.get('state'); // We get the orgId back from the state parameter
+    const state = searchParams.get('state'); // JSON state from the authorize route
     const error = searchParams.get('error');
+
+    let orgId: string | null = null;
+    let nextPath = "/admin/settings?section=company";
+    if (state) {
+        try {
+            const parsed = JSON.parse(state);
+            orgId = parsed.orgId || null;
+            nextPath = typeof parsed.nextPath === "string" && parsed.nextPath.startsWith("/") ? parsed.nextPath : nextPath;
+        } catch {
+            orgId = state;
+        }
+    }
 
     if (error) {
         console.error('[GOOGLE_OAUTH_CALLBACK_ERROR]', error);
-        return NextResponse.redirect(new URL('/admin/settings?section=company&google_error=access_denied', request.url));
+        return NextResponse.redirect(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}google_error=access_denied`, request.url));
     }
 
     if (!code || !orgId) {
-        return NextResponse.redirect(new URL('/admin/settings?section=company&google_error=missing_params', request.url));
+        return NextResponse.redirect(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}google_error=missing_params`, request.url));
     }
 
     try {
@@ -38,9 +50,9 @@ export async function GET(request: Request) {
         });
 
         // Redirect back to settings with success
-        return NextResponse.redirect(new URL('/admin/settings?section=company&google_success=true', request.url));
+        return NextResponse.redirect(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}google_success=true`, request.url));
     } catch (error: any) {
         console.error('[GOOGLE_OAUTH_CALLBACK_EXCEPTION]', error);
-        return NextResponse.redirect(new URL(`/admin/settings?section=company&google_error=${encodeURIComponent(error.message)}`, request.url));
+        return NextResponse.redirect(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}google_error=${encodeURIComponent(error.message)}`, request.url));
     }
 }

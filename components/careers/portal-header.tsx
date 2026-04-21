@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { Briefcase } from "lucide-react";
@@ -20,16 +20,9 @@ export function PortalHeader() {
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <Link href="/careers">
-                        <Button variant="ghost" className="hidden md:flex h-8 px-4 rounded-full bg-orange-50 hover:bg-orange-100 text-[#F97316] text-[10px] font-black uppercase tracking-widest border border-orange-100 transition-all">
-                            Candidate Portal
-                        </Button>
-                    </Link>
-
-
+                    {/* Candidate Portal button removed as per user request */}
                 </div>
             </div>
         </header>
     );
 }
-

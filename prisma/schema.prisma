@@ -22,10 +22,6 @@ model Organization {
   location           String?
   onboardingComplete Boolean     @default(false)
   customDomain       String?
-  resendDomainId     String?
-  isDomainVerified   Boolean?    @default(false)
-  customSenderEmail  String?
-  customSenderName   String?
   ttsProvider        String?     @default("CARTESIA")
   cartesiaVoiceId    String?     @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
   sarvamModel        String?     @default("bulbul:v3")
@@ -58,10 +54,6 @@ model SuperAdmin {
   
   // Platform Domain Settings
   customDomain       String?
-  resendDomainId     String?
-  isDomainVerified   Boolean?            @default(false)
-  customSenderEmail  String?
-  customSenderName   String?
   
   // Platform Google Integration
   googleAccessToken  String?
@@ -126,7 +118,7 @@ model Drive {
   deadline             DateTime?
   positions            Int?          @default(1)
   registrationFields   String?       @default("[]")
-  workMode             String?       @default("Remote")
+  workMode             String?
   experience           String?
   responsibilities     String?
   requirements         String?
@@ -137,7 +129,6 @@ model Drive {
   interviewLanguage    String?       @default("English")
   interviewTime        Int?          @default(10)
   proctoringLevel      String?       @default("Medium")
-  aiFollowUpDepth      Int?          @default(3)
   interviewQuestions   String?       @default("[]")
   jdFileName           String?
   jdPreviewUrl         String?
@@ -148,7 +139,7 @@ model Drive {
   slug                 String?       @unique
   id                   String        @id
   shortlistMode        String        @default("automatic")
-  location             String        @default("Remote")
+  location             String?
 
   applications         Application[]
   creator              User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
@@ -227,4 +218,3 @@ model ProcessedWebhook {
   id          String   @id
   processedAt DateTime @default(now())
 }
-

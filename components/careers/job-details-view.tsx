@@ -88,7 +88,7 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Work Location</p>
                                     <div className="flex items-center gap-2">
                                         <MapPin className="h-3.5 w-3.5 text-[#F97316]" />
-                                        <p className="text-[13px] font-bold text-gray-900">{job.location || "Remote"}</p>
+                                        <p className="text-[13px] font-bold text-gray-900">{job.location || ""}</p>
                                     </div>
                                 </div>
                                 <div className="space-y-1">
@@ -104,7 +104,7 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Work Mode</p>
                                     <div className="flex items-center gap-2">
                                         <Globe className="h-3.5 w-3.5 text-blue-500" />
-                                        <p className="text-[13px] font-bold text-gray-900">{job.workMode || "Remote"}</p>
+                                        <p className="text-[13px] font-bold text-gray-900">{job.workMode || ""}</p>
                                     </div>
                                 </div>
                                 <div className="space-y-1">

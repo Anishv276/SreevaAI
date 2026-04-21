@@ -33,7 +33,8 @@ import {
     Check,
     Link as LinkIcon,
     Bot,
-    Lock
+    Lock,
+    Rocket
 } from "lucide-react";
 import {
     Select,
@@ -97,7 +98,7 @@ export default function DrivesPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-    
+
     // Organization Status
     const [orgStatus, setOrgStatus] = useState<string>("ACTIVE");
     useEffect(() => {
@@ -301,12 +302,12 @@ export default function DrivesPage() {
                 <div className="flex items-center gap-5 group">
                     <div className="h-14 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-16" />
                     <div className="space-y-1">
-                        <h1 className="text-4xl sm:text-5xl font-black text-gray-900 leading-none tracking-tighter">
+                        <h1 className="text-4xl font-bold text-gray-900 tracking-tight">
                             Drives
                         </h1>
                         <div className="flex items-center gap-3">
                             <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
-                            <p className="text-gray-400 font-bold text-[13px] uppercase tracking-[0.2em]">
+                            <p className="text-gray-400 font-bold text-[12px] uppercase tracking-widest">
                                 {pagination.total || 0} Total Campaigns
                             </p>
                         </div>
@@ -329,8 +330,8 @@ export default function DrivesPage() {
                         )}
                     </Button>
                     {isSuspended ? (
-                        <Button 
-                            disabled 
+                        <Button
+                            disabled
                             className="bg-gray-100/50 hover:bg-gray-100/50 border border-gray-200 text-gray-400 h-12 px-6 font-bold rounded-2xl cursor-not-allowed opacity-70"
                             title="Action disabled: Organization restricted"
                         >
@@ -402,8 +403,8 @@ export default function DrivesPage() {
 
                 <div className="relative w-full overflow-auto">
                     <Table>
-                        <TableHeader>
-                            <TableRow className="border-b border-gray-50 hover:bg-transparent">
+                        <TableHeader className="bg-gray-50/50">
+                            <TableRow className="border-b border-gray-100 hover:bg-transparent">
                                 {isSelectionMode && (
                                     <TableHead className="w-[50px] pl-8">
                                         <Checkbox
@@ -412,14 +413,14 @@ export default function DrivesPage() {
                                         />
                                     </TableHead>
                                 )}
-                                <TableHead className={cn("w-[320px] h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700", !isSelectionMode && "pl-8")}>Drive / Campaign</TableHead>
-                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700 text-center">Role</TableHead>
-                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700 text-center">Pool</TableHead>
-                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700 text-center">Deadline</TableHead>
-                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700 text-center">Status</TableHead>
-                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700 text-center">Candidates</TableHead>
-                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700 text-center">Details</TableHead>
-                                <TableHead className="text-right pr-8 h-14 font-extrabold uppercase tracking-[0.2em] text-[10px] text-gray-700">More</TableHead>
+                                <TableHead className={cn("w-[320px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500", !isSelectionMode && "pl-8")}>Drive / Campaign</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Role</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Pool</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Deadline</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Status</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Candidates</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Details</TableHead>
+                                <TableHead className="text-right pr-8 h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">More</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody className="[&_tr:last-child]:border-0">
@@ -432,15 +433,24 @@ export default function DrivesPage() {
                                         </div>
                                     </TableCell>
                                 </TableRow>
-                            ) : filteredDrives.length === 0 ? (
+                             ) : filteredDrives.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={isSelectionMode ? 9 : 8} className="py-20 text-center">
-                                        <div className="flex flex-col items-center gap-4">
-                                            <div className="h-16 w-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                                                <Bot className="h-8 w-8 text-gray-400" />
+                                    <TableCell colSpan={isSelectionMode ? 9 : 8} className="py-24 text-center">
+                                        <div className="flex flex-col items-center max-w-sm mx-auto">
+                                            <div className="h-20 w-20 bg-orange-50 text-orange-500 rounded-3xl flex items-center justify-center mb-8 shadow-sm">
+                                                <Rocket className="h-10 w-10" />
                                             </div>
-                                            <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight italic">No drives found</h3>
-                                            <p className="text-gray-500 font-bold text-sm tracking-widest">Get started by creating a new recruitment drive.</p>
+                                            <h3 className="text-2xl font-bold text-gray-900 tracking-tight mb-2">Create your first recruitment drive</h3>
+                                            <p className="text-gray-500 font-medium text-sm mb-10 leading-relaxed">
+                                                Post a job role to start screening candidates with AI. You can customize the interview flow and evaluation criteria.
+                                            </p>
+                                            <Link href="/admin/create-drive">
+                                                <Button className="bg-[#F97316] hover:bg-black transition-all duration-300 h-14 px-10 font-bold rounded-2xl text-white shadow-lg shadow-orange-500/20 gap-3 group">
+                                                    <Plus className="h-5 w-5" />
+                                                    <span>Create New Drive</span>
+                                                    <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                                                </Button>
+                                            </Link>
                                         </div>
                                     </TableCell>
                                 </TableRow>
@@ -499,19 +509,19 @@ export default function DrivesPage() {
                                             </TableCell>
                                             <TableCell className="py-5 text-center">
                                                 <div className="flex flex-col items-center">
-                                                    <span className="text-base font-black text-gray-900 leading-none">{drive.applicants || 0}</span>
-                                                    <span className="text-[10px] text-gray-400 uppercase font-black tracking-widest mt-1">Talents</span>
+                                                    <span className="text-base font-bold text-gray-900 leading-none">{drive.applicants || 0}</span>
+                                                    <span className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mt-1">Talents</span>
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center">
                                                 <div className="flex flex-col items-center">
                                                     <span className={cn(
-                                                        "text-[12px] font-black tracking-tight",
+                                                        "text-[12px] font-bold tracking-tight",
                                                         effectiveExpired ? "text-red-500" : "text-gray-700"
                                                     )}>
                                                         {drive.deadline ? new Date(drive.deadline).toLocaleDateString() : "No Deadline"}
                                                     </span>
-                                                    <span className="text-[10px] text-gray-400 uppercase font-black tracking-widest mt-1">Due Date</span>
+                                                    <span className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mt-1">Due Date</span>
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center">
@@ -527,14 +537,14 @@ export default function DrivesPage() {
                                                             onClick={(e) => e.stopPropagation()}
                                                         >
                                                             <div className={cn("h-2 w-2 rounded-full", dotColor)} />
-                                                            <span className={cn("text-[11px] font-inter font-black uppercase tracking-wider", statusColor)}>
+                                                            <span className={cn("text-[11px] font-inter font-bold uppercase tracking-wider", statusColor)}>
                                                                 {statusLabel}
                                                             </span>
                                                         </button>
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="center" className="w-52 p-2 rounded-2xl shadow-xl border-gray-100 bg-white/95 backdrop-blur-xl">
                                                         <div className="px-3 py-2 border-b border-gray-50 mb-1">
-                                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Change Status</p>
+                                                            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Change Status</p>
                                                         </div>
                                                         <DropdownMenuItem
                                                             className={cn(
@@ -587,7 +597,7 @@ export default function DrivesPage() {
                                                 <Button
                                                     variant="secondary"
                                                     size="sm"
-                                                    className="h-9 px-4 rounded-xl text-blue-600 hover:bg-blue-50 font-black text-[11px] uppercase tracking-widest gap-2 group/btn transition-all mx-auto"
+                                                    className="h-9 px-4 rounded-xl text-blue-600 hover:bg-blue-50 font-bold text-[11px] uppercase tracking-widest gap-2 group/btn transition-all mx-auto"
                                                     onClick={() => {
                                                         if (isSelectionMode) return;
                                                         router.push(`/admin/candidates?driveId=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`);
@@ -602,7 +612,7 @@ export default function DrivesPage() {
                                                 <Button
                                                     variant="secondary"
                                                     size="sm"
-                                                    className="h-9 px-4 rounded-xl text-[#F97316] hover:bg-orange-50 font-black text-[11px] uppercase tracking-widest gap-2 group/btn transition-all mx-auto"
+                                                    className="h-9 px-4 rounded-xl text-[#F97316] hover:bg-orange-50 font-bold text-[11px] uppercase tracking-widest gap-2 group/btn transition-all mx-auto"
                                                     onClick={() => {
                                                         if (isSelectionMode) return;
                                                         setPreviewDriveId(drive.id);
@@ -622,7 +632,7 @@ export default function DrivesPage() {
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="end" className="w-52 p-1.5 rounded-3xl bg-white/95 backdrop-blur-xl border border-white/20 shadow-[0_20px_60px_rgba(0,0,0,0.12)] z-[60] animate-in fade-in zoom-in-95 duration-200">
                                                         <div className="px-3 py-2 border-b border-gray-50/50 mb-1">
-                                                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em]">Actions</p>
+                                                            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]">Actions</p>
                                                         </div>
                                                         <DropdownMenuItem
                                                             className="cursor-pointer rounded-2xl py-3 px-3 focus:bg-[#F97316]/5 focus:text-[#F97316] font-bold uppercase text-[10px] tracking-widest transition-all group"
@@ -712,13 +722,13 @@ export default function DrivesPage() {
                                     <div className="flex items-center gap-3">
                                         <h2 className="text-xl font-bold text-gray-900 tracking-tight">{selectedDrive.title}</h2>
                                         <div className={cn(
-                                            "h-5 px-2 rounded-md font-inter font-black text-[9px] uppercase tracking-wider flex items-center border",
+                                            "h-5 px-2 rounded-md font-inter font-bold text-[9px] uppercase tracking-wider flex items-center border",
                                             selectedDrive.status === "CLOSED" ? "bg-red-50 text-red-500 border-red-100" :
-                                            (selectedDrive.deadline && new Date(selectedDrive.deadline) < new Date()) ? "bg-orange-50 text-orange-500 border-orange-100" :
-                                            "bg-green-50 text-green-600 border-green-100"
+                                                (selectedDrive.deadline && new Date(selectedDrive.deadline) < new Date()) ? "bg-orange-50 text-orange-500 border-orange-100" :
+                                                    "bg-green-50 text-green-600 border-green-100"
                                         )}>
-                                            {selectedDrive.status === "CLOSED" ? "Closed" : 
-                                             (selectedDrive.deadline && new Date(selectedDrive.deadline) < new Date()) ? "Expired" : "Active"}
+                                            {selectedDrive.status === "CLOSED" ? "Closed" :
+                                                (selectedDrive.deadline && new Date(selectedDrive.deadline) < new Date()) ? "Expired" : "Active"}
                                         </div>
                                     </div>
                                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{selectedDrive.role || "Job Description"} • {selectedDrive.department || "General"}</p>
@@ -746,26 +756,26 @@ export default function DrivesPage() {
                             {/* Section 1: Job Metadata (Simple) */}
                             <div className="flex flex-wrap gap-x-12 gap-y-6">
                                 <div className="space-y-1">
-                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Work Mode</p>
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Work Mode</p>
                                     <p className="text-[16px] font-bold text-gray-900">{selectedDrive.workMode || "Not specified"}</p>
                                 </div>
                                 <div className="space-y-1">
-                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Location</p>
-                                    <p className="text-[16px] font-bold text-gray-900">{selectedDrive.location || "Remote"}</p>
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Location</p>
+                                    <p className="text-[16px] font-bold text-gray-900">{selectedDrive.location || ""}</p>
                                 </div>
                                 <div className="space-y-1">
-                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Expected Salary</p>
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Expected Salary</p>
                                     <p className="text-[16px] font-bold text-gray-900">{selectedDrive.salary || "As per policy"}</p>
                                 </div>
                                 <div className="space-y-1">
-                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Experience</p>
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Experience</p>
                                     <p className="text-[16px] font-bold text-gray-900">{selectedDrive.experience || "Not specified"}</p>
                                 </div>
                             </div>
 
                             {/* Section 2: Public Job Link (Simple) */}
                             <div className="space-y-4 pt-6 border-t border-gray-50">
-                                <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Application Link</p>
+                                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em]">Application Link</p>
                                 <div className="flex flex-col sm:flex-row gap-3">
                                     <div className="flex-1 bg-gray-50 border border-gray-100 rounded-2xl px-5 py-4 flex items-center overflow-hidden">
                                         <span className="text-sm font-medium text-gray-500 truncate select-all">
@@ -790,7 +800,7 @@ export default function DrivesPage() {
 
                             {/* Section 3: Job Description */}
                             <div className="space-y-6 pt-8 border-t border-gray-100 w-full">
-                                <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">About the Role</p>
+                                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em]">About the Role</p>
                                 <div className="text-[16px] font-medium text-gray-600 leading-relaxed whitespace-pre-wrap w-full">
                                     {selectedDrive.description}
                                 </div>
@@ -799,7 +809,7 @@ export default function DrivesPage() {
                             {/* Section 4: Responsibilities */}
                             {selectedDrive.responsibilities && (
                                 <div className="space-y-6 pt-6 border-t border-gray-50">
-                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Key Responsibilities</p>
+                                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em]">Key Responsibilities</p>
                                     <ul className="space-y-4">
                                         {selectedDrive.responsibilities.split('\n').map((line: string, i: number) => line.trim() && (
                                             <li key={i} className="flex gap-4">
@@ -814,7 +824,7 @@ export default function DrivesPage() {
                             {/* Section 5: Skills */}
                             {selectedDrive.skills && (
                                 <div className="space-y-6 pt-6 border-t border-gray-50">
-                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">Required Expertise</p>
+                                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em]">Required Expertise</p>
                                     <div className="flex flex-wrap gap-2">
                                         {selectedDrive.skills.split(',').map((s: string, i: number) => (
                                             <span key={i} className="px-4 py-2 rounded-xl bg-gray-50 text-gray-600 border border-gray-200 font-bold text-[11px] uppercase tracking-wider">
@@ -1018,4 +1028,3 @@ export default function DrivesPage() {
         </div>
     );
 }
-

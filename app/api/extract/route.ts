@@ -37,7 +37,20 @@ export async function POST(request: Request) {
             });
         }
 
-        const formData = await request.formData();
+        const contentLength = request.headers.get("content-length");
+        console.log(`[API_EXTRACT] Processing request. Header Content-Length: ${contentLength} bytes`);
+
+        let formData: FormData;
+        try {
+            formData = await request.formData();
+        } catch (parseError: any) {
+            console.error("[EXTRACTION_PARSE_ERROR]", parseError);
+            return NextResponse.json({ 
+                error: "Failed to parse upload data. The file might be too large or the request was interrupted.",
+                code: "FILE_PARSE_ERROR",
+                details: parseError.message 
+            }, { status: 400 });
+        }
         const file = formData.get("file") as File | null;
         const url = formData.get("url") as string | null;
         const typeRaw = formData.get("type") as string | null;
@@ -118,7 +131,7 @@ export async function POST(request: Request) {
         }
 
         // -- SERVER-SIDE VALIDATION ---------------------------
-        const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+        const MAX_SIZE = 20 * 1024 * 1024; // Increased to 20MB
         if (file.size > MAX_SIZE) {
             return NextResponse.json({ 
                 error: "File size exceeds 10MB limit.", 

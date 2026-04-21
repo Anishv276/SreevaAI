@@ -69,7 +69,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         const { id } = await params;
         driveId = id;
 
-        const body = await request.json();
+        const rawBody = await request.text();
+        if (!rawBody.trim()) {
+            return NextResponse.json(
+                { error: "Empty request body" },
+                { status: 400 }
+            );
+        }
+
+        let body: unknown;
+        try {
+            body = JSON.parse(rawBody);
+        } catch {
+            return NextResponse.json(
+                { error: "Invalid JSON" },
+                { status: 400 }
+            );
+        }
 
         const result = updateDriveSchema.safeParse(body);
         if (!result.success) {
@@ -118,7 +134,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.interviewLanguage !== undefined) updateData.interviewLanguage = data.interviewLanguage;
         if (data.interviewTime !== undefined) updateData.interviewTime = data.interviewTime;
         if (data.interviewAntiCheat !== undefined) updateData.proctoringLevel = data.interviewAntiCheat;
-        if (data.interviewFollowUp !== undefined) updateData.aiFollowUpDepth = data.interviewFollowUp;
         if (data.interviewQuestions !== undefined) updateData.interviewQuestions = JSON.stringify(data.interviewQuestions);
         if (data.requirements !== undefined) updateData.requirements = data.requirements;
         if ((data as any).isPassportRequired !== undefined) updateData.isPassportRequired = (data as any).isPassportRequired;
@@ -126,7 +141,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.status !== undefined) updateData.status = data.status;
         
         if (data.aiScreening?.enabled !== undefined) updateData.aiScreeningEnabled = data.aiScreening.enabled;
-        
+
+        if (Object.keys(updateData).length === 0) {
+            return NextResponse.json(
+                { error: "No valid fields provided for update" },
+                { status: 400 }
+            );
+        }
 
 
         const updated = await prisma.drive.update({

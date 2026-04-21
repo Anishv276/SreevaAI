@@ -1,4 +1,4 @@
-﻿import { Clock, ShieldCheck, Zap, Brain, Rocket, Mic, Languages, ShieldAlert } from "lucide-react";
+import { Clock, ShieldCheck, Zap, Brain, Rocket, Mic, Languages, ShieldAlert } from "lucide-react";
 import { ScreeningConfig } from "./screening-settings";
 
 interface FinalPreviewProps {
@@ -123,27 +123,21 @@ export function FinalPreview({ formData, aiEnabled, weights, regFieldCount }: Fi
                                             {formData.interviewAntiCheat || "Medium"}
                                         </p>
                                     </div>
-                                    <div className="col-span-2 p-2.5 rounded-lg bg-gray-50/50 border border-gray-100 flex justify-between items-center">
-                                        <div>
-                                            <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Limit & Questions</p>
-                                            <p className="font-bold text-gray-700 mt-0.5">
-                                                {formData.interviewTime || 10} Mins • {(() => {
-                                                    const qs = formData.interviewQuestions;
-                                                    if (Array.isArray(qs)) return qs.length;
-                                                    if (typeof qs === 'string' && qs.trim()) {
-                                                        try { 
-                                                            const parsed = JSON.parse(qs);
-                                                            return Array.isArray(parsed) ? parsed.length : 1;
-                                                        } catch { return 1; }
-                                                    }
-                                                    return 0;
-                                                })()} Custom
-                                            </p>
-                                        </div>
-                                        <div className="flex flex-col items-end">
-                                            <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest text-right">AI Depth</p>
-                                            <p className="font-bold text-[#F97316] text-[13px]">{formData.interviewFollowUp || 3}</p>
-                                        </div>
+                                    <div className="col-span-2 p-2.5 rounded-lg bg-gray-50/50 border border-gray-100">
+                                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Limit & Questions</p>
+                                        <p className="font-bold text-gray-700 mt-0.5">
+                                            {formData.interviewTime || 10} Mins • {(() => {
+                                                const qs = formData.interviewQuestions;
+                                                if (Array.isArray(qs)) return qs.length;
+                                                if (typeof qs === 'string' && qs.trim()) {
+                                                    try { 
+                                                        const parsed = JSON.parse(qs);
+                                                        return Array.isArray(parsed) ? parsed.length : 1;
+                                                    } catch { return 1; }
+                                                }
+                                                return 0;
+                                            })()} Custom
+                                        </p>
                                     </div>
                                 </div>
                             )}

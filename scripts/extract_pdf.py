@@ -21,6 +21,7 @@ pdfplumber = load_optional_module("pdfplumber")
 pymupdf4llm = load_optional_module("pymupdf4llm")
 pytesseract = load_optional_module("pytesseract")
 pdf2image = load_optional_module("pdf2image")
+fitz = load_optional_module("fitz")
 from PIL import Image
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -175,20 +176,47 @@ def extract_tables_with_pdfplumber(file_path):
 def extract_text_with_ocr(file_path):
     """
     Fallback for scanned PDFs using Tesseract OCR.
+    Uses fitz (PyMuPDF) if available to avoid Poppler dependency.
     """
-    if not pdf2image or not pytesseract:
+    if not (fitz or pdf2image) or not pytesseract:
         return ""
 
     try:
-        # Convert PDF to list of images
-        images = pdf2image.convert_from_path(file_path)
+        # Check if tesseract is installed by trying to get version
+        try:
+            pytesseract.get_tesseract_version()
+        except:
+            # Common windows path check
+            win_tess_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+            if os.path.exists(win_tess_path):
+                pytesseract.pytesseract.tesseract_cmd = win_tess_path
+            else:
+                import sys
+                print("OCR Error: Tesseract binary not found in PATH or standard Windows location.", file=sys.stderr)
+                return ""
+
         full_text = []
 
-        for i, image in enumerate(images):
-            # Perform OCR on each page
-            page_text = pytesseract.image_to_string(image)
-            if page_text.strip():
-                full_text.append(f"## OCR Page {i+1}\n\n{page_text}")
+        if fitz:
+            # Use PyMuPDF (no poppler needed)
+            doc = fitz.open(file_path)
+            for i, page in enumerate(doc):
+                # Render page to image (pixmap)
+                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) # 2x zoom for better OCR
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                
+                # Perform OCR
+                page_text = pytesseract.image_to_string(img)
+                if page_text.strip():
+                    full_text.append(f"## OCR Page {i+1}\n\n{page_text}")
+            doc.close()
+        elif pdf2image:
+            # Fallback to pdf2image (needs poppler)
+            images = pdf2image.convert_from_path(file_path)
+            for i, image in enumerate(images):
+                page_text = pytesseract.image_to_string(image)
+                if page_text.strip():
+                    full_text.append(f"## OCR Page {i+1}\n\n{page_text}")
 
         return "\n\n".join(full_text)
     except Exception as e:

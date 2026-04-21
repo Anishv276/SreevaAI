@@ -18,11 +18,9 @@ import {
 
     Camera, Check, ChevronRight, Plus, Trash2, Crown,
 
-    MessageSquare, Calendar, Globe, Mail, Phone, Shield, Briefcase, History,
-
+    MessageSquare, Calendar, Globe, Mail, Phone, Shield, ShieldAlert, Briefcase, History,
     BarChart3, AlertCircle, Zap, ExternalLink, Upload, Lock, Eye, EyeOff,
-
-    Loader2, Copy, X, MapPin as MapPinIcon
+    Loader2, Copy, X, MapPin as MapPinIcon, CheckCircle2
 
 } from "lucide-react";
 
@@ -214,6 +212,13 @@ export default function SettingsPage() {
     const [pwError, setPwError] = useState("");
 
     const [pwSaved, setPwSaved] = useState(false);
+
+    /* OTP States */
+    const [otp, setOtp] = useState("");
+    const [showOtpModal, setShowOtpModal] = useState(false);
+    const [sendingOtp, setSendingOtp] = useState(false);
+    const [otpError, setOtpError] = useState("");
+    const [otpAttempts, setOtpAttempts] = useState(0);
 
 
 
@@ -570,63 +575,76 @@ export default function SettingsPage() {
 
 
     const handlePasswordSave = async () => {
-
         if (!passwords.current) { setPwError("Current password is required."); return; }
-
         if (passwords.next.length < 8) { setPwError("New password must be at least 8 characters."); return; }
-
         if (passwords.next !== passwords.confirm) { setPwError("Passwords do not match."); return; }
 
-
-
-        setIsSaving(true);
-
+        setSendingOtp(true);
         setPwError("");
-
         try {
-
-            const res = await fetch("/api/auth/profile", {
-
-                method: "PATCH",
-
-                headers: { "Content-Type": "application/json" },
-
-                body: JSON.stringify({ currentPassword: passwords.current, newPassword: passwords.next }),
-
-            });
-
-            if (res.ok) {
-
-                setPwSaved(true);
-
-                setPasswords({ current: "", next: "", confirm: "" });
-
-                toast.success("Password updated successfully!");
-
-                setTimeout(() => setPwSaved(false), 2500);
-
-            } else {
-
-                const data = await res.json();
-
-                setPwError(data.error || "Update failed");
-
-                toast.error(data.error || "Failed to update password");
-
+            const res = await fetch("/api/auth/otp/send", { method: "POST" });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                setPwError(data.error || "Failed to send verification code");
+                toast.error(data.error || "Failed to send verification code");
+                return;
             }
-
+            setShowOtpModal(true);
+            setOtpAttempts(0);
+            setOtpError("");
+            setOtp("");
         } catch {
-
-            setPwError("Network error");
-
-            toast.error("Network error. Please try again.");
-
+            setPwError("Network error while sending verification code.");
+            toast.error("Network error while sending verification code.");
         } finally {
+            setSendingOtp(false);
+        }
+    };
 
-            setIsSaving(false);
-
+    const handleVerifyAndSavePassword = async () => {
+        if (!otp || otp.length < 6) {
+            setOtpError("6-digit code required.");
+            return;
         }
 
+        setIsSaving(true);
+        setOtpError("");
+        try {
+            const res = await fetch("/api/auth/profile", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    currentPassword: passwords.current, 
+                    newPassword: passwords.next,
+                    otp 
+                }),
+            });
+
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                const nextAttempts = otpAttempts + 1;
+                setOtpAttempts(nextAttempts);
+                setOtpError(nextAttempts >= 3 ? "Access denied: 3 attempts failed." : (data.error || `Incorrect. ${3 - nextAttempts} left.`));
+                if (nextAttempts >= 3) {
+                    setTimeout(() => {
+                        setShowOtpModal(false);
+                        setOtp("");
+                    }, 2000);
+                }
+                return;
+            }
+
+            setPwSaved(true);
+            setPasswords({ current: "", next: "", confirm: "" });
+            setOtp("");
+            setShowOtpModal(false);
+            toast.success("Password updated successfully!");
+            setTimeout(() => setPwSaved(false), 2500);
+        } catch {
+            setOtpError("Verification failed.");
+        } finally {
+            setIsSaving(false);
+        }
     };
 
 
@@ -1528,21 +1546,26 @@ export default function SettingsPage() {
                                         </Field>
 
                                         {pwError && <p className="text-xs font-bold text-red-500 mt-1">{pwError}</p>}
-
+                                        
+                                        <div className="pt-2">
+                                            <button 
+                                                onClick={() => {
+                                                    window.location.href = "/login/forgot-password?from=settings";
+                                                }}
+                                                className="text-xs font-bold text-[#F97316] hover:underline flex items-center gap-1.5"
+                                            >
+                                                <Zap className="h-3 w-3" />
+                                                Forgot current password? Recover account
+                                            </button>
+                                        </div>
                                     </div>
-
                                 </SettingsCard>
 
                                 <div className="flex justify-end pt-4">
-
-                                    <Button onClick={handlePasswordSave} disabled={isSaving} className={cn("h-10 px-8 rounded-lg font-bold shadow-sm", pwSaved ? "bg-emerald-500 text-white" : "bg-[#F97316] text-white")}>
-
-                                        {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-
+                                    <Button onClick={handlePasswordSave} disabled={sendingOtp} className={cn("h-10 px-8 rounded-lg font-bold shadow-sm", pwSaved ? "bg-emerald-500 text-white" : "bg-[#F97316] text-white")}>
+                                        {sendingOtp && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                                         {pwSaved ? "Password Updated" : "Update Password"}
-
                                     </Button>
-
                                 </div>
 
                             </div>
@@ -1692,8 +1715,48 @@ export default function SettingsPage() {
 
 
 
+                {/* OTP Verification Modal */}
+                {showOtpModal && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-xl bg-white/30">
+                        <div className="w-full max-w-lg bg-white border border-gray-100 rounded-[2rem] shadow-[0_50px_150px_rgba(0,0,0,0.15)] overflow-hidden">
+                            <div className="p-10 space-y-8 text-center">
+                                <div className="flex justify-center relative">
+                                    <button onClick={() => setShowOtpModal(false)} className="absolute -top-4 -right-4 p-2 rounded-full hover:bg-gray-50 text-gray-300 hover:text-gray-950">
+                                        <X className="h-6 w-6" />
+                                    </button>
+                                    <div className="h-20 w-20 rounded-[2rem] bg-orange-50 flex items-center justify-center text-[#F97316]">
+                                        <ShieldAlert className="h-8 w-8" />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <h2 className="text-3xl font-black text-gray-950 tracking-tight">Authorization</h2>
+                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">Enter the 6-digit code sent to your email</p>
+                                </div>
+                                <div className="space-y-6">
+                                    <Input
+                                        type="text"
+                                        maxLength={6}
+                                        value={otp}
+                                        onChange={e => setOtp(e.target.value.replace(/\D/g, ""))}
+                                        placeholder="000000"
+                                        className="w-full h-20 text-center text-4xl font-black tracking-[0.5em] bg-gray-50 rounded-2xl border-0"
+                                    />
+                                    {otpError && (
+                                        <div className="flex items-center justify-center gap-2 text-red-600 text-[10px] font-black uppercase tracking-widest">
+                                            <AlertCircle className="h-4 w-4" />
+                                            {otpError}
+                                        </div>
+                                    )}
+                                    <Button onClick={handleVerifyAndSavePassword} disabled={isSaving || otp.length < 6} className="w-full h-14 bg-gray-950 text-white hover:bg-[#F97316] rounded-2xl font-bold text-lg">
+                                        {isSaving ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
+                                        Verify and Save
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
-
         </>
 
     );

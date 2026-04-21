@@ -30,13 +30,13 @@ export const createDriveSchema = z.object({
     return val;
   }, z.string().optional()),
   workMode: z.preprocess((val) => {
-    if (!val || val === "" || typeof val !== "string") return "Remote";
+    if (!val || val === "" || typeof val !== "string") return undefined;
     const lower = val.toLowerCase();
     if (lower.includes("remote")) return "Remote";
     if (lower.includes("hybrid")) return "Hybrid";
     if (lower.includes("site") || lower.includes("office") || lower.includes("present")) return "On-site";
-    return "Remote"; // Fallback to safe default
-  }, z.string().optional()).default("Remote"),
+    return val;
+  }, z.string().optional()),
   location: z.string().optional(),
   positions: z.preprocess((val) => {
     if (val === null || val === undefined || val === "") return 1;
@@ -59,11 +59,6 @@ export const createDriveSchema = z.object({
     return isNaN(n) ? 10 : n;
   }, z.coerce.number().int().optional()).default(10),
   interviewAntiCheat: z.string().optional(),
-  interviewFollowUp: z.preprocess((val) => {
-    if (val === null || val === undefined || val === "") return 3;
-    const n = Number(val);
-    return isNaN(n) ? 3 : n;
-  }, z.coerce.number().int().optional()).default(3),
   interviewQuestions: z.array(z.any()).optional(),
   registrationFields: z.array(z.any()).optional(),
   extractedDetails: z.record(z.string(), z.any()).optional(),

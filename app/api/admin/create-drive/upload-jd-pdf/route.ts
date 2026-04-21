@@ -9,7 +9,20 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const formData = await req.formData();
+        const contentLength = req.headers.get("content-length");
+        console.log(`[API] Processing upload request. Header Content-Length: ${contentLength} bytes`);
+
+        let formData: FormData;
+        try {
+            formData = await req.formData();
+        } catch (parseError: any) {
+            console.error("[UPLOAD_JD_PDF_PARSE_ERROR]", parseError);
+            return NextResponse.json({ 
+                error: "Failed to parse upload data. The file might be too large or the request was interrupted.",
+                details: parseError.message 
+            }, { status: 400 });
+        }
+
         const file = formData.get("file") as File;
         const fileName = formData.get("fileName") as string || `JD_${Date.now()}.pdf`;
 

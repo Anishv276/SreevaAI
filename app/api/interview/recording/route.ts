@@ -220,7 +220,7 @@ export async function POST(req: Request) {
                 {
                     attempts: 5,
                     backoff: { type: "exponential", delay: 1000 },
-                    removeOnComplete: 100,
+                    removeOnComplete: true,
                     removeOnFail: 200,
                 }
             );

@@ -43,6 +43,7 @@ async def run_turn_evaluation(
     score_answer_quality_fn,              # imported from agent.py at call site
     evaluate_answer_and_decide_fn,        # imported from agent.py at call site
     max_follow_ups: int = 3,
+    collapse_stage: int = 0,
 ) -> tuple[TurnDecision, str]:
     """
     Run full per-turn evaluation pipeline.
@@ -84,6 +85,7 @@ async def run_turn_evaluation(
         prior_depth_scores=depth_history,
         topic_follow_up_count=topic_follow_up_count,
         contradiction_detected=contradiction_detected,
+        collapse_stage=collapse_stage,
     )
     signals = build_signal_flags(signal_events)
 
@@ -114,6 +116,7 @@ async def run_turn_evaluation(
         td=td,
         depth_signal=llm_decision.get("depth_signal", "SURFACE"),
         topic_follow_up_count=topic_follow_up_count,
+        collapse_stage=collapse_stage,
     )
 
     logger.info(

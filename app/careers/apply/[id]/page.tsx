@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 import { useState, useRef, Suspense, useEffect } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { PersonalInfo } from "@/components/application/personal-info";
 import { ProfessionalDetails } from "@/components/application/professional-details";
@@ -28,6 +28,7 @@ function formatExtractedLocation(location: any): string {
 export default function ApplicationPage() {
     const params = useParams();
     const searchParams = useSearchParams();
+    const router = useRouter();
     const mode = searchParams.get("mode");
     const id = params?.id as string;
     const { jobs } = useJobs();
@@ -89,6 +90,10 @@ export default function ApplicationPage() {
     };
 
     useEffect(() => {
+        if (searchParams.get("success") === "true") {
+            setIsSuccess(true);
+        }
+
         if (id && typeof window !== "undefined") {
             const prefill = localStorage.getItem(`prefill_${id}`);
             if (prefill) {
@@ -105,7 +110,7 @@ export default function ApplicationPage() {
                 }
             }
         }
-    }, [id]);
+    }, [id, searchParams]);
 
     //  Resume analysis (race-condition-safe) 
     const startAnalysis = async (file: File) => {
@@ -281,6 +286,8 @@ export default function ApplicationPage() {
 
             await res.json();
             setIsSuccess(true);
+            // Replace current URL with success=true so back button doesn't show the form again
+            router.replace(`?success=true`, { scroll: false });
         } catch (err: any) {
             console.error("Submit error:", err);
             showAlert(err?.message || "Submission failed. Please try again.");
@@ -293,26 +300,26 @@ export default function ApplicationPage() {
     //  Render: success state 
     if (isSuccess) {
         return (
-            <div className="min-h-screen bg-[#FDFCFB] flex items-center justify-center p-6">
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
                 <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="max-w-md w-full text-center space-y-6"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="max-w-md w-full"
                 >
-                    <div className="h-20 w-20 rounded-3xl bg-green-100 flex items-center justify-center mx-auto">
-                        <CheckCircle2 className="h-10 w-10 text-green-600" />
-                    </div>
-                    <div>
-                        <h1 className="text-2xl font-black text-gray-900">Application Submitted!</h1>
-                        <p className="text-gray-500 mt-2 font-medium">
-                            Thank you for applying to <span className="font-bold text-gray-800">{jobTitle}</span>. We'll be in touch soon.
+                    <div className="bg-white border border-gray-200 rounded-3xl p-8 shadow-sm text-center">
+                        <div className="w-16 h-16 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                            <CheckCircle2 className="w-8 h-8 text-green-600" />
+                        </div>
+                        <h1 className="text-2xl font-bold text-gray-900 mb-2">Application Submitted</h1>
+                        <p className="text-gray-500 text-sm mb-8 leading-relaxed">
+                            Thank you for applying to <span className="font-semibold text-gray-800">{jobTitle}</span>. Your application has been received and the team will review it shortly.
                         </p>
+                        <Link href={`/careers`} className="block">
+                            <Button className="w-full h-12 rounded-xl bg-gray-900 text-white font-semibold hover:bg-black transition-all shadow-sm">
+                                Browse More Jobs
+                            </Button>
+                        </Link>
                     </div>
-                    <Link href={`/careers`}>
-                        <Button variant="outline" className="rounded-2xl h-12 px-8 font-bold">
-                            Browse More Jobs
-                        </Button>
-                    </Link>
                 </motion.div>
             </div>
         );

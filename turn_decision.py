@@ -24,6 +24,7 @@ class SignalFlags(TypedDict):
     latency_mismatch: bool      # answer is unnaturally compressed on a follow-up
     contradiction: bool         # conflicts with prior answer or resume claim
     follow_up_collapse: bool    # depth dropped sharply from first to follow-up answer
+    meta_question: bool         # candidate is checking if Ishita is a bot or if she's present
 
 
 class TrustDelta(TypedDict):
@@ -67,6 +68,12 @@ class SignalRule(TypedDict):
         [str, str, float, list[float], int, bool],
         Optional[SignalEvent],
     ]
+
+
+class ShortUtteranceClassification(TypedDict):
+    response_class: str
+    evidence: str
+    token_count: int
 
 
 _SIGNAL_RULES: dict[str, SignalRule] = {}
@@ -163,6 +170,31 @@ _COMPRESSION_REQUEST_PHRASES = {
     "what exactly changed",
     "what did you do",
 }
+
+_SHORT_UTTERANCE_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "connection_check": (
+        re.compile(r"^\s*(?:can you hear me|hear me|hello|you there|are you there)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*hear me\??\s*$", re.IGNORECASE),
+    ),
+    "acknowledgment": (
+        re.compile(r"^\s*(?:okay|ok|yes|yep|yeah|i see|got it|sure|right|mmhmm|mhm)\s*$", re.IGNORECASE),
+    ),
+    "answer_start": (
+        re.compile(r"^\s*(?:so basically|yeah so|so|well|um so)\b", re.IGNORECASE),
+    ),
+    "refusal": (
+        re.compile(r"^\s*(?:i don't know|not sure|no idea|not really|can't say|cannot say)\s*$", re.IGNORECASE),
+    ),
+}
+
+_META_QUESTION_PATTERNS = (
+    re.compile(r"\bcan you hear me\b", re.IGNORECASE),
+    re.compile(r"\bhear me\b", re.IGNORECASE),
+    re.compile(r"\bare you there\b", re.IGNORECASE),
+    re.compile(r"\bare you a bot\b", re.IGNORECASE),
+    re.compile(r"\bdo you know me\b", re.IGNORECASE),
+    re.compile(r"\bhave any idea\b", re.IGNORECASE),
+)
 
 
 def _detect_ownership_ambiguity_event(
@@ -269,25 +301,63 @@ def _detect_follow_up_collapse_event(
     prior_depth_scores: list[float],
     topic_follow_up_count: int,
     contradiction_detected: bool,
+    collapse_stage: int = 0,
 ) -> Optional[SignalEvent]:
+    """
+    Adaptive follow-up collapse detection.
+
+    Tiers:
+      complete  — first >= 6.0, follow-up <= 3.0 (specifics vanish entirely)
+      partial   — first >= 6.0, follow-up 3.1-5.0, drop >= 2.0 (reasoning thins)
+
+    Staged behaviour:
+      collapse_stage=0  — first detection, recoverable, L1 probe
+      collapse_stage=1  — repeated after a prior collapse, stronger flag
+    """
     del answer, last_question, contradiction_detected
     if topic_follow_up_count < 1 or not prior_depth_scores:
         return None
-    first_answer_depth = prior_depth_scores[-topic_follow_up_count] if len(prior_depth_scores) > topic_follow_up_count else prior_depth_scores[0]
+
+    first_answer_depth = (
+        prior_depth_scores[-topic_follow_up_count]
+        if len(prior_depth_scores) > topic_follow_up_count
+        else prior_depth_scores[0]
+    )
     drop = first_answer_depth - current_depth
-    if drop < 3.0:
+
+    if first_answer_depth < 6.0:
         return None
+
+    if current_depth <= 3.0:
+        collapse_type = "complete"
+    elif current_depth <= 5.0 and drop >= 2.0:
+        collapse_type = "partial"
+    else:
+        return None
+
+    # Repeated collapse is a stronger flag — raise confidence and score penalty
+    if collapse_stage >= 1:
+        confidence = min(0.97, 0.80 + (drop * 0.04))
+        score_delta = -0.38
+        is_recoverable = False
+    else:
+        confidence = min(0.95, 0.65 + (drop * 0.05))
+        score_delta = -0.20 if collapse_type == "complete" else -0.12
+        is_recoverable = True
 
     return _build_signal_event(
         signal_name="follow_up_collapse",
-        signal_layer="behavioral_confidence",
-        confidence=min(1.0, 0.55 + (drop / 6.0)),
-        evidence=f"depth dropped {drop:.1f} points on follow-up",
-        trust_bucket_affected="behavioral_confidence",
-        score_delta=-0.20,
-        probe_mode="compression",
-        recoverable=True,
-        recruiter_visible=False,
+        signal_layer="hard_integrity",
+        confidence=confidence,
+        evidence=(
+            f"{collapse_type} collapse: first={first_answer_depth:.1f} "
+            f"follow-up={current_depth:.1f} drop={drop:.1f} stage={collapse_stage}"
+        ),
+        trust_bucket_affected="competency_authenticity",
+        score_delta=score_delta,
+        probe_mode="follow_up_collapse_staged",
+        recoverable=is_recoverable,
+        recruiter_visible=True,
     )
 
 
@@ -360,6 +430,58 @@ def _detect_contradiction_event(
     )
 
 
+def classify_short_utterance(utterance: str) -> Optional[ShortUtteranceClassification]:
+    text = re.sub(r"\s+", " ", (utterance or "").strip())
+    if not text:
+        return None
+
+    tokens = [t for t in re.split(r"\s+", text) if t]
+    if len(tokens) >= 5:
+        return None
+
+    normalized = re.sub(r"[^\w\s']", " ", text.lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    for response_class, patterns in _SHORT_UTTERANCE_PATTERNS.items():
+        if any(pattern.search(normalized) for pattern in patterns):
+            return ShortUtteranceClassification(
+                response_class=response_class,
+                evidence=text,
+                token_count=len(tokens),
+            )
+
+    return ShortUtteranceClassification(
+        response_class="genuine_short_answer",
+        evidence=text,
+        token_count=len(tokens),
+    )
+
+
+def _detect_meta_question_event(
+    answer: str,
+    last_question: str,
+    current_depth: float,
+    prior_depth_scores: list[float],
+    topic_follow_up_count: int,
+    contradiction_detected: bool,
+) -> Optional[SignalEvent]:
+    del last_question, current_depth, prior_depth_scores, topic_follow_up_count, contradiction_detected
+    a_lower = answer.lower()
+    if not any(pattern.search(a_lower) for pattern in _META_QUESTION_PATTERNS):
+        return None
+
+    return _build_signal_event(
+        signal_name="meta_question",
+        signal_layer="rapport_repair",
+        confidence=0.91,
+        evidence="candidate asked a meta-checking question about presence, identity, or bot-ness",
+        trust_bucket_affected="rapport_repair",
+        score_delta=0.0,
+        probe_mode="rapport",
+        recoverable=True,
+        recruiter_visible=False,
+    )
+
+
 def detect_signal_events(
     *,
     candidate_answer: str,
@@ -368,14 +490,21 @@ def detect_signal_events(
     prior_depth_scores: list[float],
     topic_follow_up_count: int,
     contradiction_detected: bool,
+    collapse_stage: int = 0,
 ) -> list[SignalEvent]:
+    # All detectors share the same positional signature; collapse_stage is injected
+    # only for the follow_up_collapse detector via a wrapper closure.
+    def _collapse_detector(a, q, d, h, f, c):
+        return _detect_follow_up_collapse_event(a, q, d, h, f, c, collapse_stage=collapse_stage)
+
     detectors: dict[str, Callable[[str, str, float, list[float], int, bool], Optional[SignalEvent]]] = {
         "ownership_ambiguity": _detect_ownership_ambiguity_event,
         "example_evasion": _detect_example_evasion_event,
         "resume_claim_mismatch": _detect_resume_claim_mismatch_event,
         "latency_mismatch": _detect_latency_mismatch_event,
-        "follow_up_collapse": _detect_follow_up_collapse_event,
+        "follow_up_collapse": _collapse_detector,
         "contradiction": _detect_contradiction_event,
+        "meta_question": _detect_meta_question_event,
     }
     events: list[SignalEvent] = []
     for signal_name, detector in detectors.items():
@@ -404,6 +533,7 @@ def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
         latency_mismatch="latency_mismatch" in names,
         contradiction="contradiction" in names,
         follow_up_collapse="follow_up_collapse" in names,
+        meta_question="meta_question" in names,
     )
 
 
@@ -445,11 +575,11 @@ register_signal_rule(
 )
 register_signal_rule(
     "follow_up_collapse",
-    signal_layer="behavioral_confidence",
-    trust_bucket_affected="behavioral_confidence",
-    probe_mode="compression",
+    signal_layer="hard_integrity",
+    trust_bucket_affected="competency_authenticity",
+    probe_mode="follow_up_collapse_staged",
     recoverable=True,
-    recruiter_visible=False,
+    recruiter_visible=True,
     detector=_detect_follow_up_collapse_event,
 )
 register_signal_rule(
@@ -460,6 +590,15 @@ register_signal_rule(
     recoverable=True,
     recruiter_visible=True,
     detector=_detect_contradiction_event,
+)
+register_signal_rule(
+    "meta_question",
+    signal_layer="rapport_repair",
+    trust_bucket_affected="rapport_repair",
+    probe_mode="rapport",
+    recoverable=True,
+    recruiter_visible=False,
+    detector=_detect_meta_question_event,
 )
 
 
@@ -486,14 +625,11 @@ def detect_follow_up_collapse(
     topic_follow_up_count: int,
 ) -> bool:
     """
-    True when this is a follow-up (count >= 1) and depth dropped by 3+ points vs the
-    first answer on this topic (last score before follow-ups started).
+    True when adaptive collapse tiers fire (complete or partial).
     """
-    if topic_follow_up_count < 1 or not prior_depth_scores:
-        return False
-    # Compare to the score from before follow-ups started on this topic
-    first_answer_depth = prior_depth_scores[-topic_follow_up_count] if len(prior_depth_scores) > topic_follow_up_count else prior_depth_scores[0]
-    return (first_answer_depth - current_depth) >= 3.0
+    return _detect_follow_up_collapse_event(
+        "", "", current_depth, prior_depth_scores, topic_follow_up_count, False
+    ) is not None
 
 
 def compute_trust_delta(

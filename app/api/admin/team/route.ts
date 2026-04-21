@@ -219,7 +219,7 @@ export async function POST(request: Request) {
             invite: inserted[0] || null,
             emailSent: Boolean(mailResult?.success),
             inviteUrl: process.env.NODE_ENV === "development" ? inviteUrl : undefined,
-            warning: mailResult?.success ? null : "Invite stored but email delivery failed. Check RESEND_API_KEY/FROM_EMAIL.",
+            warning: mailResult?.success ? null : "Invite stored but email delivery failed. Check Google OAuth email configuration.",
         });
     } catch (error) {
         console.error("Invite team error:", error);

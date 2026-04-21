@@ -61,17 +61,6 @@ export async function POST(req: Request) {
             case "team":
                 break;
 
-            case "email":
-                // Legacy compatibility or fallback
-                await prisma.organization.update({
-                    where: { id: session.orgId },
-                    data: {
-                        customSenderEmail: data.senderEmail,
-                        customSenderName: data.senderName
-                    }
-                });
-                break;
-
             case "complete": {
                 const { profile, company, passwords } = data;
 
@@ -81,6 +70,15 @@ export async function POST(req: Request) {
                 }
                 if (!company?.name || !company?.industry || !company?.size || !company?.website || !company?.location) {
                     return NextResponse.json({ error: "All company details are required." }, { status: 400 });
+                }
+
+                const org = await prisma.organization.findUnique({
+                    where: { id: session.orgId as string },
+                    select: { googleAccessToken: true, googleEmail: true }
+                });
+
+                if (!org?.googleAccessToken || !org.googleEmail) {
+                    return NextResponse.json({ error: "Connect Gmail in step 3 before finishing onboarding." }, { status: 400 });
                 }
 
                 await prisma.$transaction(async (tx) => {

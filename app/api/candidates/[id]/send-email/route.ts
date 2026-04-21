@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { Resend } from "resend";
-import { resolveVerifiedSender } from "@/lib/mail";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { sendGmailEmail } from "@/lib/google-auth";
 
 export async function POST(
     request: Request,
@@ -56,10 +53,10 @@ export async function POST(
             .replace(/\{\{role\}\}/gi, (application as any).drive?.title || "the role")
             .replace(/\{\{email\}\}/gi, application.email);
 
-        const sender = await resolveVerifiedSender(orgId || (application as any).drive?.orgId || undefined);
-        if (!sender.from) {
+        const targetOrgId = orgId || (application as any).drive?.orgId || undefined;
+        if (!targetOrgId) {
             return NextResponse.json({
-                error: sender.reason || "No verified sender available for this organization"
+                error: "No organization context available for this email."
             }, { status: 502 });
         }
 
@@ -71,11 +68,18 @@ export async function POST(
             </div>
         `;
 
-        const payload = await resend.emails.send({ from: sender.from, to: application.email, subject, html });
+        const org = await prisma.organization.findUnique({
+            where: { id: targetOrgId },
+            select: { googleAccessToken: true, googleEmail: true }
+        });
 
-        if (payload.error) {
-            return NextResponse.json({ error: payload.error.message || "Email delivery failed" }, { status: 500 });
+        if (!org?.googleAccessToken || !org.googleEmail) {
+            return NextResponse.json({
+                error: "Connect Gmail in onboarding before sending candidate emails."
+            }, { status: 400 });
         }
+
+        await sendGmailEmail({ orgId: targetOrgId, to: application.email, subject, html });
 
         return NextResponse.json({ success: true });
     } catch (error) {

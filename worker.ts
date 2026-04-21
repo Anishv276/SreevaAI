@@ -1,4 +1,4 @@
-import { Worker, Queue } from 'bullmq';
+﻿import { Worker, Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { join } from 'path';
 import { spawn } from 'child_process';
@@ -13,8 +13,23 @@ import { generateId } from "./lib/ids";
 dotenv.config();
 
 console.log('DEBUG: REDIS_URL length:', process.env.REDIS_URL?.length || 0);
+
+// â”€â”€â”€ Silence BullMQ's built-in eviction-policy warning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// BullMQ internally logs "IMPORTANT! Eviction policy is volatile-lru" on every
+// queue/worker connection check. We handle this ourselves, so we suppress it.
+const _origLog = console.log.bind(console);
+console.log = (...args: any[]) => {
+  if (typeof args[0] === 'string' && args[0].includes('IMPORTANT! Eviction policy')) return;
+  _origLog(...args);
+};
+const _origWarn = console.warn.bind(console);
+console.warn = (...args: any[]) => {
+  if (typeof args[0] === 'string' && args[0].includes('IMPORTANT! Eviction policy')) return;
+  _origWarn(...args);
+};
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if (!process.env.REDIS_URL) {
-  console.error('❌ FATAL: REDIS_URL is missing from environment variables!');
+  console.error('âŒ FATAL: REDIS_URL is missing from environment variables!');
   process.exit(1);
 }
 
@@ -57,6 +72,61 @@ const redisConnection = new IORedis(process.env.REDIS_URL!, {
 });
 
 console.log('🚀 Worker started: Awaiting jobs...');
+
+async function getRedisMemoryStatus() {
+  try {
+    const info = await redisConnection.info("memory");
+    const usedMemoryMatch = info.match(/used_memory:(\d+)/);
+    const maxMemoryMatch = info.match(/maxmemory:(\d+)/);
+
+    const usedMemory = usedMemoryMatch ? Number(usedMemoryMatch[1]) : null;
+    const maxMemory = maxMemoryMatch ? Number(maxMemoryMatch[1]) : null;
+
+    return { usedMemory, maxMemory };
+  } catch (error) {
+    console.warn("[Worker] Could not read Redis memory info:", (error as Error).message);
+    return { usedMemory: null, maxMemory: null };
+  }
+}
+
+function formatBytes(bytes: number | null) {
+  if (bytes == null || Number.isNaN(bytes)) return "unknown";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+async function shouldSkipCronRegistration() {
+  const { usedMemory, maxMemory } = await getRedisMemoryStatus();
+
+  if (!usedMemory || !maxMemory) {
+    return false;
+  }
+
+  if (maxMemory <= 0) {
+    return false;
+  }
+
+  const usageRatio = usedMemory / maxMemory;
+  if (usageRatio >= 0.9) {
+    console.warn(
+      `[Worker] Redis is at ${Math.round(usageRatio * 100)}% capacity ` +
+        `(${formatBytes(usedMemory)} / ${formatBytes(maxMemory)}). ` +
+        "Skipping repeatable job registration to avoid BullMQ OOM errors."
+    );
+    return true;
+  }
+
+  return false;
+}
+
 
 const worker = new Worker('resume-processing', async (job) => {
   const { applicationId, resumeText: initialResumeText, resumeUrl, jdText, drive, applicantEmail, applicantName, structuredResume: initialStructuredResume } = job.data;
@@ -352,9 +422,9 @@ const worker = new Worker('resume-processing', async (job) => {
   connection: redisConnection,
   concurrency: 1, // Keep one heavy scoring process per worker to avoid lock starvation
   lockDuration: 15 * 60 * 1000, // Scoring + extraction can exceed 60s on slower machines
-  stalledInterval: 60 * 1000,
+  stalledInterval: 5 * 60 * 1000, // Check for stalled jobs every 5 min to reduce Redis writes
   maxStalledCount: 1,
-  removeOnComplete: { count: 0 }, // DELETE IMMEDIATELY ON SUCCESS
+  removeOnComplete: { count: 0 }, // Delete immediately — keeps 0 completed jobs
   removeOnFail: { count: 10 } // KEEP ONLY 10 FAILURES FOR DEBUGGING
 });
 
@@ -363,7 +433,7 @@ worker.on('failed', (job, err) => {
 });
 
 /**
- * 💾 DATABASE BACKUP WORKER (Phase 5 - Persistent Backups to R2)
+ * ðŸ’¾ DATABASE BACKUP WORKER (Phase 5 - Persistent Backups to R2)
  * Runs daily at midnight to export core hiring data.
  */
 const backupWorker = new Worker(
@@ -410,8 +480,10 @@ const backupWorker = new Worker(
   {
     connection: redisConnection,
     lockDuration: 10 * 60 * 1000,
-    stalledInterval: 60 * 1000,
+    stalledInterval: 5 * 60 * 1000, // Check for stalled jobs every 5 min to reduce Redis writes
     maxStalledCount: 1,
+    removeOnComplete: { count: 0 }, // Delete immediately — keeps 0 completed jobs
+    removeOnFail: { count: 3 },
   }
 );
 
@@ -500,9 +572,9 @@ const interviewFinalizationWorker = new Worker(
     connection: redisConnection, 
     concurrency: 2,
     lockDuration: 5 * 60 * 1000,
-    stalledInterval: 60 * 1000,
+    stalledInterval: 5 * 60 * 1000, // Check for stalled jobs every 5 min to reduce Redis writes
     maxStalledCount: 1,
-    removeOnComplete: { count: 0 },
+    removeOnComplete: { count: 0 }, // Delete immediately — keeps 0 completed jobs
     removeOnFail: { count: 10 }
   }
 );
@@ -512,7 +584,7 @@ interviewFinalizationWorker.on("failed", (job, err) => {
 });
 
 /**
- * 📸 INTERVIEW SNAPSHOT WORKER
+ * ðŸ“¸ INTERVIEW SNAPSHOT WORKER
  * Handles proctoring snapshot uploads to R2 and DB persistence.
  * Optimized for low-memory Redis (32MB).
  */
@@ -557,7 +629,16 @@ const interviewSnapshotWorker = new Worker(
       const url = await putObject(bucket, key, buffer, "image/jpeg");
 
       // 5. Update Database (Atomic Push)
-      const appForSnapshot = await prisma.application.findUnique({ where: { id: String(applicationId) }, select: { fullName: true } });
+      const appForSnapshot = await prisma.application.findUnique({ 
+        where: { id: String(applicationId) }, 
+        select: { id: true, fullName: true } 
+      });
+
+      if (!appForSnapshot) {
+        console.warn(`[SKIP] Application ${applicationId} not found. Candidate may have been deleted.`);
+        return { skipped: true };
+      }
+
       await prisma.interview.upsert({
         where: { applicationId: String(applicationId) },
         update: {
@@ -584,7 +665,7 @@ const interviewSnapshotWorker = new Worker(
     connection: redisConnection,
     concurrency: 5, // Process snapshots in parallel to clear Redis memory fast
     lockDuration: 30000,
-    removeOnComplete: { count: 0 }, // Handled by queue but double enforced
+    removeOnComplete: { count: 0 }, // Delete immediately - keeps 0 completed jobs
     removeOnFail: { count: 1 }
   }
 );
@@ -594,7 +675,7 @@ interviewSnapshotWorker.on("failed", (job, err) => {
 });
 
 /**
- * 📄 JD UPLOAD WORKER
+ * ðŸ“„ JD UPLOAD WORKER
  * Handles asynchronous uploading of AI-generated JD PDFs to Cloudflare R2.
  */
 const jdUploadWorker = new Worker(
@@ -624,7 +705,7 @@ const jdUploadWorker = new Worker(
     {
         connection: redisConnection,
         concurrency: 5, // Efficient parallel uploads
-        removeOnComplete: { count: 0 },
+        removeOnComplete: { count: 0 }, // Delete immediately — keeps 0 completed jobs
         removeOnFail: { count: 10 }
     }
 );
@@ -634,4 +715,99 @@ jdUploadWorker.on("failed", (job, err) => {
 });
 
 console.log("🚀 Workers are running and listening for jobs...");
-setupCronJobs();
+
+/**
+ * ðŸ§¹ REDIS QUEUE PURGE
+ * Aggressively cleans all BullMQ queue data on startup.
+ * This is necessary when using a memory-limited managed Redis instance
+ * (e.g. Redis Cloud free tier) that cannot change the eviction policy.
+ */
+const ALL_QUEUE_NAMES = [
+  "resume-processing",
+  "interview-finalization",
+  "interview-snapshots",
+  "jd-upload",
+  "backup-queue",
+];
+
+async function purgeAllQueues() {
+  console.log("[Worker] 🧹 Cleaning Redis queues to free memory...");
+
+  try {
+    let cursor = "0";
+    let deletedCount = 0;
+    do {
+      const [nextCursor, keys] = await redisConnection.scan(
+        cursor, "MATCH", "bull:*", "COUNT", 500
+      );
+      cursor = nextCursor;
+      if (keys.length > 0) {
+        await redisConnection.del(...keys);
+        deletedCount += keys.length;
+      }
+    } while (cursor !== "0");
+    if (deletedCount > 0) {
+      console.log(`  ✅ Deleted ${deletedCount} orphaned BullMQ key(s).`);
+    } else {
+      console.log(`  ✅ Redis queues are clean.`);
+    }
+  } catch (err: any) {
+    console.warn(`  ⚠️ Could not purge keys: ${err.message}`);
+  }
+
+  // Report memory after cleanup
+  const { usedMemory, maxMemory } = await getRedisMemoryStatus();
+  if (usedMemory && maxMemory && maxMemory > 0) {
+    const pct = Math.round((usedMemory / maxMemory) * 100);
+    console.log(
+      `[Worker] 📊 Redis after cleanup: ${formatBytes(usedMemory)} / ${formatBytes(maxMemory)} (${pct}%)`
+    );
+    if (pct >= 90) {
+      console.warn(
+        `[Worker] ⚠️ Redis still at ${pct}% after cleanup — consider upgrading your Redis plan.`
+      );
+    }
+  }
+}
+
+/**
+ * ðŸ› ï¸ REDIS CONFIGURATION & CRON SETUP
+ * Attempts to set safe Redis settings and register repeatable jobs.
+ */
+async function initializeWorkerMetadata() {
+    try {
+        console.log("[Worker] Checking Redis configuration...");
+        // Attempt to set eviction policy to noeviction for BullMQ stability
+        // Note: Many managed providers (like Redis Cloud free) block this command
+        try {
+            await redisConnection.config('SET', 'maxmemory-policy', 'noeviction');
+            console.log("  ✅ Redis eviction policy set to 'noeviction'");
+        } catch (configErr: any) {
+            console.warn(`  âš ï¸ Could not set Redis eviction policy (provider restricted): ${configErr.message}`);
+            console.warn("  â„¹ï¸ Running queue cleanup to free memory instead...");
+        }
+
+        // Always purge queues on startup to reclaim Redis memory
+        await purgeAllQueues();
+
+        if (await shouldSkipCronRegistration()) {
+            console.warn("  âš ï¸ Cron registration skipped because Redis is still near its memory limit.");
+            return;
+        }
+
+        console.log("[Worker] Registering recurring daily backup job...");
+        try {
+            await setupCronJobs();
+            console.log("  ✅ Daily backup job registered successfully.");
+        } catch (cronErr: any) {
+            console.error("  âŒ Failed to register backup job (Redis memory may be full):", cronErr.message);
+            console.warn("  âš ï¸ Continuing worker initialization. Background scoring will still function.");
+        }
+    } catch (err: any) {
+        console.error("[Worker] Critical error during metadata initialization:", err.message);
+    }
+}
+
+initializeWorkerMetadata();
+
+

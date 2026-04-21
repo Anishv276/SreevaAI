@@ -12,6 +12,7 @@ import {
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { PhoneInput } from "@/components/application/phone-input";
 import { cn } from "@/lib/utils";
+import { validatePasswordStrength } from "@/lib/validation";
 
 const STEPS = ["Profile", "Company", "Proceed"];
 
@@ -26,6 +27,7 @@ export default function OnboardingPage() {
     const [profile, setProfile] = useState({ name: "", phone: "", jobTitle: "", email: "" });
     const [passwords, setPasswords] = useState({ current: "", next: "" });
     const [showPw, setShowPw] = useState({ current: false, next: false });
+    const [pwError, setPwError] = useState<string | null>(null);
 
     // Step 1: Company Identity
     const [company, setCompany] = useState({ 
@@ -42,6 +44,9 @@ export default function OnboardingPage() {
     const [isUploading, setIsUploading] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showLogoPreview, setShowLogoPreview] = useState(false);
+    const [googleStatus, setGoogleStatus] = useState<{ isConnected: boolean; email: string | null }>({ isConnected: false, email: null });
+    const [googleMessage, setGoogleMessage] = useState<string | null>(null);
+    const [googleLoading, setGoogleLoading] = useState(false);
 
     useEffect(() => {
         if (hasLoaded.current) return;
@@ -77,6 +82,15 @@ export default function OnboardingPage() {
                         email: pData.email || "",
                     });
                 }
+
+                const googleRes = await fetch("/api/admin/integrations/google");
+                if (googleRes.ok) {
+                    const googleData = await googleRes.json();
+                    setGoogleStatus({
+                        isConnected: !!googleData.isConnected,
+                        email: googleData.email || null,
+                    });
+                }
                 
                 // LOCAL RECOVERY
                 const draft = localStorage.getItem("onboarding_draft");
@@ -100,6 +114,24 @@ export default function OnboardingPage() {
             }
         };
         load();
+    }, []);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const googleSuccess = params.get("google_success");
+        const googleError = params.get("google_error");
+
+        if (googleSuccess) {
+            setGoogleMessage("Google connected successfully. Emails will now send from that inbox.");
+            params.delete("google_success");
+            window.history.replaceState({}, "", `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`);
+        }
+
+        if (googleError) {
+            setError(googleError === "missing_params" ? "Google connection was not completed." : `Google connection failed: ${googleError}`);
+            params.delete("google_error");
+            window.history.replaceState({}, "", `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`);
+        }
     }, []);
 
     // AUTO-SAVE
@@ -161,11 +193,17 @@ export default function OnboardingPage() {
                     setIsSaving(false); 
                     return; 
                 }
-                if (passwords.next && passwords.next.length < 8) { 
-                    setError("New password must be at least 8 characters."); 
-                    setIsSaving(false); 
-                    return; 
+                
+                // VALIDATE PASSWORD STRENGTH
+                if (passwords.next) {
+                    const { isValid, error: strengthError } = validatePasswordStrength(passwords.next);
+                    if (!isValid) {
+                        setPwError(strengthError || "Password format is invalid.");
+                        setIsSaving(false);
+                        return;
+                    }
                 }
+                setPwError(null);
                 // No API call here - save deferred
             }
 
@@ -187,6 +225,11 @@ export default function OnboardingPage() {
 
             // STEP 2: Proceed (final activation)
             if (currentStep === STEPS.length - 1) {
+                if (!googleStatus.isConnected) {
+                    setError("Connect Gmail in step 3 before proceeding.");
+                    setIsSaving(false);
+                    return;
+                }
                 const res = await fetch("/api/admin/setup", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -377,6 +420,7 @@ export default function OnboardingPage() {
                                                     {showPw.next ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                                 </button>
                                             </div>
+                                            {pwError && <p className="text-[10px] text-red-500 font-bold uppercase mt-1.5 flex items-center gap-1.5 animate-in-fade"><AlertCircle className="h-3 w-3" /> {pwError}</p>}
                                         </div>
                                     </div>
                                 </div>
@@ -502,20 +546,83 @@ export default function OnboardingPage() {
                                     </div>
                                 </div>
 
-                                {/* Sync status grid */}
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    {[
-                                        { label: "Profile", icon: User, color: "text-blue-500" },
-                                        { label: "Company", icon: Building2, color: "text-emerald-500" },
-                                        { label: "Hiring Goals", icon: Target, color: "text-orange-500" },
-                                        { label: "Security", icon: ShieldCheck, color: "text-purple-500" }
-                                    ].map((mod) => (
-                                        <div key={mod.label} className="bg-gray-50/50 border border-gray-100 p-4 rounded-2xl flex flex-col items-center gap-2 group hover:bg-white hover:shadow-md transition-all">
-                                            <mod.icon className={cn("h-5 w-5", mod.color)} />
-                                            <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-                                            <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-900">{mod.label}</span>
+                                <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+                                    <div className="flex items-center justify-between gap-4 px-6 py-5 border-b border-gray-100">
+                                        <div className="flex items-center gap-4">
+                                            <div className={cn(
+                                                "h-11 w-11 rounded-xl flex items-center justify-center border",
+                                                googleStatus.isConnected ? "bg-emerald-50 border-emerald-100" : "bg-gray-50 border-gray-100"
+                                            )}>
+                                                <Mail className={cn("h-5 w-5", googleStatus.isConnected ? "text-emerald-600" : "text-gray-400")} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-[16px] font-bold text-gray-900">Connect Gmail</h3>
+                                                <p className="text-[13px] text-gray-400 font-medium mt-0.5">
+                                                    {googleStatus.isConnected
+                                                        ? `Connected - ${googleStatus.email}`
+                                                        : "Connect the inbox this workspace should use for outgoing emails"}
+                                                </p>
+                                            </div>
                                         </div>
-                                    ))}
+                                        <div className={cn(
+                                            "h-9 w-9 rounded-xl flex items-center justify-center border transition-all",
+                                            googleStatus.isConnected ? "bg-emerald-50 border-emerald-100 text-emerald-600" : "bg-white border-gray-200 text-gray-400"
+                                        )}>
+                                            <CheckCircle2 className="h-4 w-4" />
+                                        </div>
+                                    </div>
+
+                                    <div className="px-6 py-6">
+                                        {googleMessage && (
+                                            <div className="mb-4 p-4 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 text-[12px] font-medium">
+                                                {googleMessage}
+                                            </div>
+                                        )}
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                            <div className="p-4 rounded-xl bg-blue-50/40 border border-blue-100/60">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
+                                                        <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                                                    </div>
+                                                    <h5 className="text-[13px] font-bold text-blue-900">Workspace sender</h5>
+                                                </div>
+                                                <p className="text-[12px] text-blue-800/70 leading-relaxed">This Google inbox will be used for onboarding, invites, and application emails.</p>
+                                            </div>
+                                            <div className="p-4 rounded-xl bg-orange-50/40 border border-orange-100/60">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <div className="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center">
+                                                        <Sparkles className="w-3.5 h-3.5 text-orange-600" />
+                                                    </div>
+                                                    <h5 className="text-[13px] font-bold text-orange-900">Automatic setup</h5>
+                                                </div>
+                                                <p className="text-[12px] text-orange-800/70 leading-relaxed">Once connected, the workspace starts using that email automatically for sending.</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-3 flex-wrap">
+                                            {!googleStatus.isConnected ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setGoogleLoading(true); window.location.href = "/api/admin/integrations/google/authorize?next=/admin/setup"; }}
+                                                    disabled={googleLoading}
+                                                    className="h-11 px-6 rounded-xl bg-gray-900 text-white font-bold text-[13px] shadow-md hover:bg-black disabled:opacity-50 flex items-center gap-2"
+                                                >
+                                                    {googleLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                                                    Connect Gmail
+                                                </button>
+                                            ) : (
+                                                <div className="h-11 px-4 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center gap-2 text-emerald-700 font-bold text-[12px]">
+                                                    <CheckCircle2 className="h-4 w-4" />
+                                                    Gmail connected
+                                                </div>
+                                            )}
+
+                                            <p className="text-[11px] text-gray-400 font-medium">
+                                                Google connection is required before you can proceed to the dashboard.
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div className="max-w-md mx-auto space-y-4">
@@ -525,7 +632,7 @@ export default function OnboardingPage() {
                                     <div className="flex items-center gap-3 p-3 bg-orange-50/50 border border-orange-100 rounded-xl">
                                         <Globe className="h-4 w-4 text-[#F97316] shrink-0" />
                                         <p className="text-[9px] text-orange-800 font-semibold uppercase tracking-wider leading-relaxed">
-                                            Note: Recruitment emails will be enabled once you verify your custom domain in Workspace Settings.
+                                            Note: Recruitment emails will be sent from the Google account you connect in this step.
                                         </p>
                                     </div>
                                 </div>

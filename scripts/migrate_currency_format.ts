@@ -1,37 +1,31 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-async function migrate() {
-    console.log('Starting migration: INR LPA -> LPA INR');
+const salaryPattern = /(\d+(?:\s*[-–—]\s*\d+)?)\s*INR\s*LPA/gi;
 
-    // 1. Update Drive.salary
+async function migrate() {
+    console.log("Starting migration: INR LPA -> LPA INR");
+
     const drives = await prisma.drive.findMany({
         where: {
-            salary: { contains: 'LPA', mode: 'insensitive' }
+            salary: { contains: "LPA", mode: "insensitive" }
         }
     });
 
     console.log(`Checking ${drives.length} drives for salary format...`);
     for (const drive of drives) {
-        if (!drive.salary) continue;
+        salaryPattern.lastIndex = 0;
+        if (!drive.salary || !salaryPattern.test(drive.salary)) continue;
 
-        // Pattern: [Numbers][Dash][Numbers] INR LPA
-        // Supported dashes: - (hyphen), – (en-dash), - (em-dash)
-        const regex = /(\d+(?:\s*[–--]\s*\d+)?)\s*INR\s*LPA/gi;
-        
-        if (regex.test(drive.salary)) {
-            const newSalary = drive.salary.replace(regex, '$1 LPA INR');
-            console.log(`Updating Drive ${drive.id}: "${drive.salary}" -> "${newSalary}"`);
-            await prisma.drive.update({
-                where: { id: drive.id },
-                data: { salary: newSalary }
-            });
-        }
+        const newSalary = drive.salary.replace(salaryPattern, "$1 LPA INR");
+        console.log(`Updating Drive ${drive.id}: "${drive.salary}" -> "${newSalary}"`);
+        await prisma.drive.update({
+            where: { id: drive.id },
+            data: { salary: newSalary }
+        });
     }
 
-    // 2. Update Drive.extractedDetails (JSON string or object)
-    // Some records might have it inside JSON
     const drivesWithDetails = await prisma.drive.findMany({
         where: {
             extractedDetails: { not: null }
@@ -42,45 +36,42 @@ async function migrate() {
         const details = drive.extractedDetails;
         if (!details) continue;
 
-        const detailsStr = typeof details === 'string' ? details : JSON.stringify(details);
-        const regex = /(\d+(?:\s*[–--]\s*\d+)?)\s*INR\s*LPA/gi;
+        const detailsStr = typeof details === "string" ? details : JSON.stringify(details);
+        salaryPattern.lastIndex = 0;
+        if (!salaryPattern.test(detailsStr)) continue;
 
-        if (regex.test(detailsStr)) {
-            const newDetailsStr = detailsStr.replace(regex, '$1 LPA INR');
-            console.log(`Updating Drive ${drive.id} extractedDetails...`);
-            await prisma.drive.update({
-                where: { id: drive.id },
-                data: { extractedDetails: JSON.parse(newDetailsStr) }
-            });
-        }
+        const newDetailsStr = detailsStr.replace(salaryPattern, "$1 LPA INR");
+        console.log(`Updating Drive ${drive.id} extractedDetails...`);
+        await prisma.drive.update({
+            where: { id: drive.id },
+            data: { extractedDetails: JSON.parse(newDetailsStr) }
+        });
     }
 
-    // 3. Update Application.submissionData (Json)
     const applications = await prisma.application.findMany();
-
     console.log(`Checking ${applications.length} applications for submissionData...`);
+
     for (const app of applications) {
         const data = app.submissionData;
         if (!data) continue;
 
         const dataStr = JSON.stringify(data);
-        const regex = /(\d+(?:\s*[–--]\s*\d+)?)\s*INR\s*LPA/gi;
+        salaryPattern.lastIndex = 0;
+        if (!salaryPattern.test(dataStr)) continue;
 
-        if (regex.test(dataStr)) {
-            const newDataStr = dataStr.replace(regex, '$1 LPA INR');
-            console.log(`Updating Application ${app.id} submissionData...`);
-            await prisma.application.update({
-                where: { id: app.id },
-                data: { submissionData: JSON.parse(newDataStr) }
-            });
-        }
+        const newDataStr = dataStr.replace(salaryPattern, "$1 LPA INR");
+        console.log(`Updating Application ${app.id} submissionData...`);
+        await prisma.application.update({
+            where: { id: app.id },
+            data: { submissionData: JSON.parse(newDataStr) }
+        });
     }
 
-    console.log('Migration complete!');
+    console.log("Migration complete!");
 }
 
 migrate()
-    .catch(e => console.error(e))
+    .catch((error) => console.error(error))
     .finally(async () => {
         await prisma.$disconnect();
     });

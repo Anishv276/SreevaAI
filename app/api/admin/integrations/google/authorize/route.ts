@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getGoogleAuthUrl } from "@/lib/google-auth";
 import { getSession } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(request: Request) {
     try {
         const session = await getSession();
 
@@ -10,8 +10,11 @@ export async function GET() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        // Generate the URL and include the orgId as the state
-        const url = getGoogleAuthUrl(session.orgId);
+        const requestUrl = new URL(request.url);
+        const next = requestUrl.searchParams.get("next") || "/admin/settings?section=company";
+
+        // Generate the URL and include the orgId + return path in the state
+        const url = getGoogleAuthUrl(session.orgId, next);
 
         return NextResponse.redirect(url);
     } catch (error) {

@@ -446,7 +446,7 @@ export default function CandidatesPage() {
 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-    const [resendingId, setResendingId] = useState<string | null>(null);
+    const [sendingInterviewLinkId, setSendingInterviewLinkId] = useState<string | null>(null);
 
     const [isActionModalOpen, setIsActionModalOpen] = useState(false);
 
@@ -606,23 +606,23 @@ export default function CandidatesPage() {
 
 
 
-    const handleResendInterview = async (candidate: { id: string; interviewStatus?: string }) => {
+    const handleSendInterviewLink = async (candidate: { id: string; interviewStatus?: string }) => {
 
-        setResendingId(candidate.id);
+        setSendingInterviewLinkId(candidate.id);
 
         try {
 
-            const res = await fetch(`/api/candidates/${candidate.id}/resend-interview`, { method: "POST" });
+            const res = await fetch(`/api/candidates/${candidate.id}/send-interview-link`, { method: "POST" });
 
             const data = await res.json();
 
             if (res.ok) toast.success("Interview link resent - email delivered successfully");
 
-            else toast.error(data.error || "Failed to resend interview link");
+            else toast.error(data.error || "Failed to send interview link");
 
-        } catch { toast.error("Failed to resend interview link"); }
+        } catch { toast.error("Failed to send interview link"); }
 
-        finally { setResendingId(null); }
+        finally { setSendingInterviewLinkId(null); }
 
     };
 
@@ -1351,9 +1351,9 @@ export default function CandidatesPage() {
 
                     <Table>
 
-                        <TableHeader>
+                        <TableHeader className="bg-gray-50/50">
 
-                            <TableRow className="border-b border-gray-50 hover:bg-transparent">
+                            <TableRow className="border-b border-gray-100 hover:bg-transparent">
 
                                 {isSelectionMode && (
 
@@ -1371,21 +1371,21 @@ export default function CandidatesPage() {
 
                                 )}
 
-                                <TableHead className={cn("w-[280px] h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700", !isSelectionMode && "pl-8")}>Candidate</TableHead>
+                                <TableHead className={cn("w-[280px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500", !isSelectionMode && "pl-8")}>Candidate</TableHead>
 
-                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700">Job Role</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Job Role</TableHead>
 
-                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700 text-center">Status</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Status</TableHead>
 
-                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700 text-center">Interview</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview</TableHead>
 
-                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700 text-center">Decision</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Decision</TableHead>
 
-                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700 text-center">Applied Date</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Applied Date</TableHead>
 
-                                <TableHead className="h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700 text-center">Reports</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Reports</TableHead>
 
-                                <TableHead className="text-right pr-8 h-14 font-extrabold uppercase tracking-[0.15em] text-[10px] text-gray-700">Actions</TableHead>
+                                <TableHead className="text-right pr-8 h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Actions</TableHead>
 
                             </TableRow>
 
@@ -1733,23 +1733,23 @@ export default function CandidatesPage() {
 
                                                                 onClick={() => {
 
-                                                                    if (window.confirm("Resend interview link? This will deliver a fresh access token to the candidate.")) {
+                                                                    if (window.confirm("Send a fresh interview link? This will deliver a new access token to the candidate.")) {
 
-                                                                        handleResendInterview({ id: candidate.id, interviewStatus: candidate.interviewStatus });
+                                                                        handleSendInterviewLink({ id: candidate.id, interviewStatus: candidate.interviewStatus });
 
                                                                     }
 
                                                                 }}
 
-                                                                disabled={resendingId === candidate.id || isSuspended}
+                                                                disabled={sendingInterviewLinkId === candidate.id || isSuspended}
 
                                                                 className={cn("rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors", isSuspended ? "text-gray-400 opacity-70" : "text-blue-600 focus:bg-blue-50")}
 
                                                             >
 
-                                                                {isSuspended ? <Lock className="h-4 w-4 mr-2" /> : <RefreshCw className={cn("h-4 w-4 mr-2", resendingId === candidate.id && "animate-spin")} />}
+                                                                {isSuspended ? <Lock className="h-4 w-4 mr-2" /> : <RefreshCw className={cn("h-4 w-4 mr-2", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
 
-                                                                {resendingId === candidate.id ? "Sending..." : "Resend Interview Link"}
+                                                                {sendingInterviewLinkId === candidate.id ? "Sending..." : "Send Interview Link"}
 
                                                             </DropdownMenuItem>
 

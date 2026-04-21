@@ -1,161 +1,5 @@
-import { Resend } from 'resend';
 import { prisma } from "@/lib/prisma";
 import { sendGmailEmail, sendSuperAdminGmailEmail } from './google-auth';
-
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-async function readResendDomainVerified(resendDomainId?: string | null): Promise<boolean | null> {
-    if (!resendDomainId) return null;
-    try {
-        const { data, error } = await resend.domains.get(resendDomainId);
-        if (error) {
-            console.error("[MAIL] Resend domain lookup failed:", error);
-            return null;
-        }
-        return data?.status === "verified";
-    } catch (e) {
-        console.error("[MAIL] Resend domain lookup exception:", e);
-        return null;
-    }
-}
-
-type SenderResolution = {
-    from: string | null;
-    reason?: string;
-};
-
-
-export async function getPlatformSender() {
-    try {
-        const settings = await prisma.superAdmin.findFirst({
-            where: {
-                OR: [
-                    { isDomainVerified: true },
-                    { customDomain: { not: null } }
-                ]
-            },
-            orderBy: { updatedAt: "desc" }
-        });
-        if (settings) {
-            const senderEmail = settings.customSenderEmail || (settings.customDomain ? `security@${settings.customDomain}` : null);
-            const senderName = settings.customSenderName || "Lumoscale Platform";
-
-            if (settings.isDomainVerified && senderEmail) {
-                if (!settings.customSenderEmail && settings.customDomain) {
-                    await prisma.superAdmin.update({
-                        where: { id: settings.id },
-                        data: {
-                            customSenderEmail: senderEmail,
-                            customSenderName: senderName,
-                        },
-                    }).catch(err => { console.error("[MAIL_AUTO_SAVE_ERROR]:", err); })
-                }
-
-                return `${senderName} <${senderEmail}>`;
-            }
-        }
-    } catch (e) {
-        console.error("Failed to fetch platform sender:", e);
-    }
-    return "Lumoscale Security <security@lumoscale.com>"; // Absolute Fallback
-}
-
-async function getVerifiedPlatformSenderWithReason(): Promise<SenderResolution> {
-    try {
-        const settings = await prisma.superAdmin.findFirst({
-            where: {
-                OR: [
-                    { isDomainVerified: true },
-                    { customDomain: { not: null } }
-                ]
-            },
-            orderBy: { updatedAt: "desc" }
-        });
-        if (!settings) {
-            return { from: null, reason: "No platform sender settings found." };
-        }
-
-        let isVerified = Boolean(settings.isDomainVerified);
-        if (settings.resendDomainId) {
-            const resendVerified = await readResendDomainVerified(settings.resendDomainId);
-            // Fail closed: if domain exists in Resend but we cannot confirm verified,
-            // don't trust stale DB flags for outbound sender identity.
-            if (resendVerified !== true) {
-                if (resendVerified === false && settings.isDomainVerified) {
-                    await prisma.superAdmin.update({
-                        where: { id: settings.id },
-                        data: { isDomainVerified: false }
-                    }).catch(err => { console.error("[MAIL_AUTO_SAVE_ERROR]:", err); })
-                }
-                return {
-                    from: null,
-                    reason: "Platform domain is not verified in Resend for the active API key."
-                };
-            }
-            isVerified = true;
-            if (resendVerified !== Boolean(settings.isDomainVerified)) {
-                await prisma.superAdmin.update({
-                    where: { id: settings.id },
-                    data: { isDomainVerified: resendVerified }
-                }).catch(err => { console.error("[MAIL_AUTO_SAVE_ERROR]:", err); })
-            }
-        }
-
-        if (!isVerified) return { from: null, reason: "Platform domain is not marked verified." };
-
-        const senderEmail = settings.customSenderEmail || (settings.customDomain ? `security@${settings.customDomain}` : null);
-        if (!senderEmail) return { from: null, reason: "Platform sender email is missing." };
-
-        const senderName = settings.customSenderName || "Lumoscale Platform";
-        return { from: `${senderName} <${senderEmail}>` };
-    } catch (e) {
-        console.error("Failed to fetch verified platform sender:", e);
-        return { from: null, reason: "Failed to resolve platform sender." };
-    }
-}
-
-export async function resolveVerifiedSender(orgId?: string): Promise<SenderResolution> {
-    if (orgId) {
-        try {
-            const org = await prisma.organization.findUnique({
-                where: { id: orgId },
-                select: {
-                    id: true,
-                    name: true,
-                    customSenderEmail: true,
-                    customSenderName: true,
-                    customDomain: true,
-                    isDomainVerified: true,
-                    resendDomainId: true
-                }
-            });
-
-            if (org) {
-                const orgSenderEmail = org.customSenderEmail || (org.customDomain ? `security@${org.customDomain}` : null);
-                if (orgSenderEmail) {
-                    const displayName = org.customSenderName || org.name || "Organization";
-                    if (!org.customSenderEmail && org.customDomain) {
-                        await prisma.organization.update({
-                            where: { id: org.id },
-                            data: {
-                                customSenderEmail: orgSenderEmail,
-                                customSenderName: displayName,
-                            },
-                        }).catch(err => { console.error("[MAIL_AUTO_SAVE_ERROR]:", err); })
-                    }
-                    return { from: `${displayName} <${orgSenderEmail}>` };
-                }
-                return { from: null, reason: `Organization sender email missing in DB for orgId=${org.id}` };
-            }
-            return { from: null, reason: `Organization not found for orgId=${orgId}` };
-        } catch (e) {
-            console.error("Failed to resolve org sender:", e);
-            return { from: null, reason: "Failed to resolve organization sender from DB." };
-        }
-    }
-
-    return await getVerifiedPlatformSenderWithReason();
-}
 
 export async function sendApplicationStatusEmail({
     email,
@@ -251,7 +95,7 @@ export async function sendApplicationStatusEmail({
 
     const org = await prisma.organization.findUnique({
         where: { id: orgId },
-        select: { id: true, googleAccessToken: true, customSenderEmail: true, customDomain: true, isDomainVerified: true, resendDomainId: true, name: true }
+        select: { id: true, googleAccessToken: true, name: true }
     });
 
     if (!org?.id) {
@@ -259,70 +103,28 @@ export async function sendApplicationStatusEmail({
         return { success: false, error: "Organization not found." };
     }
 
-    // PRIORITIZE GMAIL INTEGRATION
-    if (org.googleAccessToken) {
-        try {
-            await sendGmailEmail({
-                orgId: org.id,
-                to: email,
-                subject,
-                html
-            });
-            console.log(`[MAIL] Status email sent to ${email} via GMAIL API`);
-            return { success: true };
-        } catch (error) {
-            console.error(`[MAIL GMAIL FAILED] Falling back to Super Admin Gmail or Resend...`, error);
-        }
-    }
-
-    // NEW: FALLBACK TO SUPER ADMIN GMAIL
-    const superAdmin = await prisma.superAdmin.findFirst({
-        where: { googleAccessToken: { not: null } },
-        select: { id: true }
-    });
-
-    if (superAdmin) {
-        try {
-            await sendSuperAdminGmailEmail({
-                adminId: superAdmin.id,
-                to: email,
-                subject,
-                html
-            });
-            console.log(`[MAIL] Status email sent to ${email} via Super Admin GMAIL API`);
-            return { success: true };
-        } catch (error) {
-            console.error(`[MAIL SUPER ADMIN GMAIL FAILED] Falling back to Resend...`, error);
-        }
-    }
-
-    const { from, reason } = await resolveVerifiedSender(org.id);
-
-    if (!from) {
+    if (!org.googleAccessToken) {
         return {
             success: false,
-            error: reason || `No verified sender available. orgId=${orgId}, orgVerified=${Boolean(org.isDomainVerified)}, orgSender=${org.customSenderEmail || "missing"}, orgDomain=${org.customDomain || "missing"}`
+            error: `Connect Gmail in onboarding to send emails for this workspace. orgId=${orgId}`
         };
     }
 
     try {
-        const payload = await resend.emails.send({
-            from,
+        await sendGmailEmail({
+            orgId: org.id,
             to: email,
-            subject: subject,
-            html: html,
+            subject,
+            html
         });
-
-        if (payload.error) {
-            console.error(`[MAIL ERROR] Resend rejected email to ${email}:`, payload.error);
-            return { success: false, error: payload.error };
-        }
-
-        console.log(`[MAIL] Status email sent to ${email} (${status}) using sender ${from}`);
+        console.log(`[MAIL] Status email sent to ${email} via GMAIL API`);
         return { success: true };
     } catch (error) {
-        console.error(`[MAIL EXCEPTION] Failed to send email to ${email}:`, error);
-        return { success: false, error };
+        console.error(`[MAIL GMAIL FAILED]`, error);
+        return {
+            success: false,
+            error: `Failed to send email from the connected Gmail account for orgId=${orgId}`
+        };
     }
 }
 
@@ -368,36 +170,22 @@ export async function sendOrgWelcomeEmail({
         select: { id: true }
     });
 
-    if (superAdmin) {
-        try {
-            await sendSuperAdminGmailEmail({
-                adminId: superAdmin.id,
-                to: email,
-                subject,
-                html
-            });
-            console.log(`[WELCOME EMAIL] Sent to ${email} for org ${orgName} via Super Admin GMAIL`);
-            return { success: true };
-        } catch (error) {
-            console.error(`[WELCOME EMAIL GMAIL FAILED] Falling back to Resend...`, error);
-        }
+    if (!superAdmin) {
+        return { success: false, error: "Connect Gmail for the super-admin account before sending onboarding emails." };
     }
 
-    const { from } = await resolveVerifiedSender();
-    const finalFrom = from || "Lumoscale Platform <security@lumoscale.com>";
-
     try {
-        await resend.emails.send({
-            from: finalFrom,
+        await sendSuperAdminGmailEmail({
+            adminId: superAdmin.id,
             to: email,
             subject,
-            html,
+            html
         });
-        console.log(`[WELCOME EMAIL] Sent to ${email} for org ${orgName}`);
+        console.log(`[WELCOME EMAIL] Sent to ${email} for org ${orgName} via Super Admin GMAIL`);
         return { success: true };
     } catch (error) {
-        console.error(`[WELCOME EMAIL FAILED] ${email}:`, error);
-        return { success: false, error };
+        console.error(`[WELCOME EMAIL GMAIL FAILED]`, error);
+        return { success: false, error: "Failed to send onboarding email from the connected super-admin Gmail account." };
     }
 }
 
@@ -441,79 +229,31 @@ export async function sendTeamInviteEmail({
         </div>
     `;
 
-    const sender = await resolveVerifiedSender(orgId);
-    const inviteFrom = sender.from;
-
-    // PRIORITIZE GMAIL INTEGRATION
     if (orgId) {
         const org = await prisma.organization.findUnique({
             where: { id: orgId },
             select: { googleAccessToken: true }
         });
 
-        if (org?.googleAccessToken) {
-            try {
-                await sendGmailEmail({
-                    orgId,
-                    to: email,
-                    subject,
-                    html
-                });
-                console.log(`[INVITE EMAIL] Sent to ${email} via GMAIL API`);
-                return { success: true };
-            } catch (error) {
-                console.error(`[INVITE EMAIL GMAIL FAILED] Falling back to Super Admin Gmail or Resend...`, error);
-            }
+        if (!org?.googleAccessToken) {
+            return { success: false, error: "Connect Gmail in onboarding before inviting team members." };
         }
-    }
-
-    // NEW: FALLBACK TO SUPER ADMIN GMAIL
-    const superAdmin = await prisma.superAdmin.findFirst({
-        where: { googleAccessToken: { not: null } },
-        select: { id: true }
-    });
-
-    if (superAdmin) {
         try {
-            await sendSuperAdminGmailEmail({
-                adminId: superAdmin.id,
+            await sendGmailEmail({
+                orgId,
                 to: email,
                 subject,
                 html
             });
-            console.log(`[INVITE EMAIL] Sent to ${email} via Super Admin GMAIL API`);
+            console.log(`[INVITE EMAIL] Sent to ${email} via GMAIL API`);
             return { success: true };
         } catch (error) {
-            console.error(`[INVITE EMAIL SUPER ADMIN GMAIL FAILED] Falling back to Resend...`, error);
+            console.error(`[INVITE EMAIL GMAIL FAILED]`, error);
+            return { success: false, error: "Failed to send invite from the connected Gmail account." };
         }
     }
 
-    if (!inviteFrom) {
-        return {
-            success: false,
-            error: sender.reason || "No verified sender available in DB for invite emails."
-        };
-    }
-
-    try {
-        const payload = await resend.emails.send({
-            from: inviteFrom,
-            to: email,
-            subject,
-            html,
-        });
-
-        if (payload.error) {
-            console.error(`[INVITE EMAIL ERROR] Resend rejected invite to ${email}:`, payload.error);
-            return { success: false, error: payload.error };
-        }
-
-        console.log(`[INVITE EMAIL] Invite sent to ${email} using sender ${inviteFrom}`);
-        return { success: true };
-    } catch (error) {
-        console.error(`[INVITE EMAIL EXCEPTION] Failed to send invite to ${email}:`, error);
-        return { success: false, error };
-    }
+    return { success: false, error: "No organization context available for invite emails." };
 }
 
 

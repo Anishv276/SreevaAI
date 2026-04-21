@@ -8,7 +8,7 @@ const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
  * Generates the Google OAuth authorization URL.
  * We request 'offline' access to get a refresh token.
  */
-export function getGoogleAuthUrl(orgId: string) {
+export function getGoogleAuthUrl(orgId: string, nextPath = "/admin/settings?section=company") {
     const params = new URLSearchParams({
         client_id: GOOGLE_CLIENT_ID!,
         redirect_uri: GOOGLE_REDIRECT_URI!,
@@ -16,7 +16,7 @@ export function getGoogleAuthUrl(orgId: string) {
         scope: 'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email',
         access_type: 'offline',
         prompt: 'consent',
-        state: orgId, // We pass the orgId in the state to know who is connecting
+        state: JSON.stringify({ orgId, nextPath }),
     });
 
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;

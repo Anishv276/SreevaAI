@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+DEFAULT_FOLLOW_UP_DEPTH = 3
+
 
 def build_voice_layer_prompt(
     *,
     candidate_name: str,
     job_title: str,
     time_limit_mins: int,
-    follow_up_depth: int,
     depth_instruction: str,
     candidate_band: str,
 ) -> str:
@@ -43,7 +44,7 @@ TURN HANDLING
 
 SESSION CONTEXT
 - Time available: {time_limit_mins} minutes
-- Follow-up depth: {follow_up_depth}/5
+- Follow-up depth: {DEFAULT_FOLLOW_UP_DEPTH}/5
 - Depth instruction: {depth_instruction}
 
 NATURAL QUESTIONING
@@ -60,7 +61,6 @@ def build_evaluation_layer_prompt(
     candidate_name: str,
     job_title: str,
     time_limit_mins: int,
-    follow_up_depth: int,
     depth_instruction: str,
     candidate_band: str,
 ) -> str:
@@ -71,6 +71,12 @@ PRIMARY GUIDANCE ORDER
 - Use the candidate brief first
 - Use the summaries below to confirm and prioritize
 - Use the coverage list to avoid blind spots
+
+SOURCE EXTRACTION RULES
+- Treat the candidate summary, JD summary, and screening summary as the source of truth
+- Extract concrete facts from them before deciding what to probe next
+- Prefer the most specific source when the same fact appears in more than one summary
+- Never invent skills, projects, titles, or risks that are not supported by the summaries
 
 {live_prompt_context}
 
@@ -85,7 +91,7 @@ HOW TO THINK
 - If the answer is strong, go one level deeper
 
 FOLLOW-UP RULES
-- Use at most {follow_up_depth} follow-ups on one topic
+- Use at most {DEFAULT_FOLLOW_UP_DEPTH} follow-ups on one topic
 - If the answer is deep, move down the depth spiral
 - If the answer is polished but thin, use a verification probe
 - If it conflicts with earlier statements, use a contradiction probe

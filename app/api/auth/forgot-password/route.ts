@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { resolveVerifiedSender } from "@/lib/mail";
-import { Resend } from 'resend';
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { sendSuperAdminGmailEmail, sendGmailEmail } from "@/lib/google-auth";
 
 export async function POST(request: Request) {
     try {
@@ -13,42 +10,93 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Email is required" }, { status: 400 });
         }
 
-        // 1. Find user & Verify Role (Restriction: Only for Admins as requested)
-        const user = await prisma.user.findUnique({
-            where: { email: email.toLowerCase().trim() },
-            select: { id: true, role: true, name: true, orgId: true }
+        const normalizedEmail = email.toLowerCase().trim();
+
+        // 1. Identify Identity (SuperAdmin or OrgAdmin)
+        const superAdminRecord = await prisma.superAdmin.findUnique({
+            where: { email: normalizedEmail },
+            select: { id: true, name: true, googleAccessToken: true }
         });
 
-        // Security note: We always return 'success' to prevent email enumeration,
-        // but for this specific Super Admin request, we can be more explicit if it's easier to debug.
-        // The user restricted it to 'Admin', so we check role.
-        if (!user || user.role !== "ORG_ADMIN") {
-            // Even if role doesn't match, we might want to fail silently or return a generic success.
-            // But per user's "only for admin" request, we block here.
-            return NextResponse.json({ error: "Access denied. Only Org Admins can reset passwords via this portal." }, { status: 403 });
+        const userRecord = await prisma.user.findUnique({
+            where: { email: normalizedEmail },
+            select: { id: true, name: true, role: true, orgId: true }
+        });
+
+        if (!superAdminRecord && (!userRecord || userRecord.role !== "ORG_ADMIN")) {
+            return NextResponse.json({ error: "Access denied. Only authorized accounts can reset passwords." }, { status: 403 });
         }
 
-        // 2. Generate 6-digit OTP
+        // 2. Generate OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-        // 3. Save OTP to DB
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                resetOtp: otp,
-                resetOtpExpires: expires
-            }
-        });
+        // 3. Save OTP based on type
+        if (superAdminRecord) {
+            await prisma.verificationToken.create({
+                data: {
+                    superAdminId: superAdminRecord.id,
+                    token: otp,
+                    expires
+                }
+            });
+        } else if (userRecord) {
+            await prisma.user.update({
+                where: { id: userRecord.id },
+                data: {
+                    resetOtp: otp,
+                    resetOtpExpires: expires
+                }
+            });
+        }
 
-        // 4. Send Email
-        const { from } = await resolveVerifiedSender(); // Uses platform sender
+        // 4. Sender Selection Priority
+        let senderFn = null;
+        let senderArgs: any = null;
+
+        if (superAdminRecord) {
+            // Super Admin Priority: Must use their own connection
+            if (superAdminRecord.googleAccessToken) {
+                senderFn = sendSuperAdminGmailEmail;
+                senderArgs = { adminId: superAdminRecord.id };
+            } else {
+                return NextResponse.json({ error: "Your Super Admin Google connection is not active. Please connect it first." }, { status: 502 });
+            }
+        } else if (userRecord && userRecord.orgId) {
+            // Org Admin Priority: 1. Org 2. Fallback to Super Admin logic
+            const organization = await prisma.organization.findUnique({
+                where: { id: userRecord.orgId },
+                select: { googleAccessToken: true }
+            });
+
+            if (organization?.googleAccessToken) {
+                senderFn = sendGmailEmail;
+                senderArgs = { orgId: userRecord.orgId };
+            } else {
+                // Fallback to ANY connected Super Admin
+                const connectedSuperAdmin = await prisma.superAdmin.findFirst({
+                    where: { googleAccessToken: { not: null } },
+                    select: { id: true }
+                });
+
+                if (connectedSuperAdmin) {
+                    senderFn = sendSuperAdminGmailEmail;
+                    senderArgs = { adminId: connectedSuperAdmin.id };
+                } else {
+                    return NextResponse.json({ 
+                        error: "No email sender is configured for your organization or the platform. Please contact support." 
+                    }, { status: 502 });
+                }
+            }
+        }
+
+        // 5. Send Email
         const subject = "Security Code: Lumoscale Account Recovery";
         const html = `
             <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; padding: 40px; border: 1px solid #f0f0f0; border-radius: 24px; background: #ffffff;">
                 <h1 style="color: #111827; font-size: 24px; font-weight: 800; margin-bottom: 8px;">Recovery Code</h1>
                 <p style="color: #6b7280; font-size: 14px; line-height: 1.5; margin-bottom: 30px;">
-                    Hi ${user.name || "Admin"}, you requested to reset your password. Use the verification code below to proceed:
+                    Hi ${(superAdminRecord?.name || userRecord?.name || "Admin")}, you requested to reset your password. Use the verification code below to proceed:
                 </p>
                 <div style="background: #fdf2f0; padding: 24px; border-radius: 16px; text-align: center; border: 2px dashed #f97316;">
                     <span style="font-size: 32px; font-weight: 900; color: #f97316; letter-spacing: 0.2em;">${otp}</span>
@@ -59,19 +107,10 @@ export async function POST(request: Request) {
             </div>
         `;
 
-        if (from) {
-            await resend.emails.send({
-                from,
-                to: email,
-                subject,
-                html
-            });
-        } else {
-            // Fallback for local testing or unconfigured domains
-            const fallbackFrom = "Lumoscale Security <security@lumoscale.com>";
-            await resend.emails.send({
-                from: fallbackFrom,
-                to: email,
+        if (senderFn && senderArgs) {
+            await senderFn({
+                ...senderArgs,
+                to: normalizedEmail,
                 subject,
                 html
             });

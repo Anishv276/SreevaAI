@@ -19,6 +19,7 @@ def build_recruiter_summary(
     candidate_name: str = "",
     job_title: str = "",
     contradiction_state: dict | None = None,
+    proctoring_profile: dict | None = None,
 ) -> dict:
     """
     Build recruiter-facing summary from finalized trust state.
@@ -35,6 +36,11 @@ def build_recruiter_summary(
     buckets = ts["buckets"]
     suspicion_score = _derive_legacy_suspicion_score(ts, contradictions_found)
     contradiction_summary = summarize_contradiction_state(contradiction_state or {})
+    proctoring_profile = proctoring_profile or {}
+    environment_risk = int(proctoring_profile.get("environment_risk", 0) or 0)
+    integrity_risk = int(proctoring_profile.get("integrity_risk", 0) or 0)
+    depth_risk = int(proctoring_profile.get("depth_risk", 0) or 0)
+    composite_risk = int(proctoring_profile.get("composite_risk", suspicion_score) or suspicion_score)
 
     # -- Strengths ----------------------------------------------------------
     strengths = []
@@ -120,6 +126,12 @@ def build_recruiter_summary(
         "recommendation": recommendation,
         "recommendationReason": recommendation_reason,
         "suspicionScore": suspicion_score,
+        "proctoringRisk": {
+            "environment": environment_risk,
+            "integrity": integrity_risk,
+            "depth": depth_risk,
+            "composite": composite_risk,
+        },
         "contradictionCount": len(contradictions_found),
         "contradictionState": contradiction_summary,
     }

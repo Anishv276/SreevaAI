@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { OnboardingRedirect } from "@/components/admin/onboarding-redirect";
 import { RecruiterAssistant } from "@/components/admin/RecruiterAssistant";
-import { DomainVerificationBanner } from "@/components/admin/DomainVerificationBanner";
 import { Toaster } from "@/components/ui/toast-custom";
 import { AccountStatusHandler } from "@/components/admin/AccountStatusHandler";
 import { prisma } from "@/lib/prisma";

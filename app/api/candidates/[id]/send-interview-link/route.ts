@@ -16,24 +16,23 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         const { id: applicationId } = await context.params;
 
         if (!applicationId) {
-            console.error("[RESEND] Missing applicationId in params");
+            console.error("[INTERVIEW] Missing applicationId in params");
             return NextResponse.json({ error: "Application ID required" }, { status: 400 });
         }
 
         const application = await prisma.application.findUnique({
             where: { id: applicationId },
-            include: { 
+            include: {
                 drive: true,
                 interview: true
             }
         });
 
         if (!application) {
-            console.error(`[RESEND] Application not found for ID: ${applicationId}`);
+            console.error(`[INTERVIEW] Application not found for ID: ${applicationId}`);
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
 
-        // -- AUTHORIZATION ---------------------------------
         if (session.orgId && application.drive?.orgId !== session.orgId) {
             return NextResponse.json({ error: "Forbidden: Candidate belongs to another organization" }, { status: 403 });
         }
@@ -44,19 +43,18 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 select: { status: true }
             });
             if (org?.status === "SUSPENDED" || org?.status === "CLOSED") {
-                return NextResponse.json({ error: "Resending interviews is blocked because your organization is restricted." }, { status: 403 });
+                return NextResponse.json({ error: "Interview links are blocked because your organization is restricted." }, { status: 403 });
             }
         }
-        // --------------------------------------------------
 
         const resumeStatus = (application.resumeStatus || "").toUpperCase();
         const hiringStatus = (application.hiringStatus || "").toUpperCase();
-        const canResend = ["SHORTLISTED", "ACCEPTED"].includes(resumeStatus) || ["SHORTLISTED", "ACCEPTED"].includes(hiringStatus);
+        const canSendAgain = ["SHORTLISTED", "ACCEPTED"].includes(resumeStatus) || ["SHORTLISTED", "ACCEPTED"].includes(hiringStatus);
 
-        if (!canResend) {
-            console.error(`[RESEND] Status mismatch. Resume: ${resumeStatus}, Hiring: ${hiringStatus}`);
-            return NextResponse.json({ 
-                error: `Only shortlisted candidates can have their interview link resent. Current statuses are resume="${application.resumeStatus}" and hiring="${application.hiringStatus}".` 
+        if (!canSendAgain) {
+            console.error(`[INTERVIEW] Status mismatch. Resume: ${resumeStatus}, Hiring: ${hiringStatus}`);
+            return NextResponse.json({
+                error: `Only shortlisted candidates can receive a fresh interview link. Current statuses are resume="${application.resumeStatus}" and hiring="${application.hiringStatus}".`
             }, { status: 400 });
         }
 
@@ -68,7 +66,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 where: { id: application.interview.id },
                 data: {
                     accessToken: newToken,
-                    expiresAt: expiresAt,
+                    expiresAt,
                     status: "PENDING",
                     startedAt: null,
                     completedAt: null,
@@ -78,15 +76,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             await prisma.interview.create({
                 data: {
                     id: generateId("int", application.fullName || applicationId),
-                    applicationId: applicationId,
+                    applicationId,
                     accessToken: newToken,
-                    expiresAt: expiresAt,
+                    expiresAt,
                     status: "PENDING",
                 }
             });
         }
 
-        const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/interview/${applicationId}`;
+        const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${applicationId}`;
         const interviewLink = isInterviewTokenRequired()
             ? `${interviewBase}?token=${newToken}`
             : interviewBase;
@@ -111,14 +109,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             }, { status: 502 });
         }
 
-        return NextResponse.json({ 
-            success: true, 
-            message: "Interview link resent successfully",
+        return NextResponse.json({
+            success: true,
+            message: "Interview link sent successfully",
             expiresAt: expiresAt.toISOString()
         });
-
     } catch (error) {
-        console.error("[RESEND INTERVIEW ERROR]:", error);
-        return NextResponse.json({ error: "Failed to resend interview link" }, { status: 500 });
+        console.error("[INTERVIEW LINK ERROR]:", error);
+        return NextResponse.json({ error: "Failed to send interview link" }, { status: 500 });
     }
 }

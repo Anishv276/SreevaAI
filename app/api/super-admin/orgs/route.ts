@@ -4,10 +4,7 @@ import { getSession } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { generateId } from "@/lib/ids";
 import { validatePasswordStrength } from "@/lib/validation";
-import { resolveVerifiedSender } from "@/lib/mail";
-import { Resend } from "resend";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import { sendSuperAdminGmailEmail } from "@/lib/google-auth";
 
 // GET /api/super-admin/orgs - list organizations with stats, pagination, and search
 export async function GET(request: Request) {
@@ -110,12 +107,18 @@ export async function sendOrgWelcomeEmail({
         </div>
     `;
 
-    const { from } = await resolveVerifiedSender();
-    const finalFrom = from || "Lumoscale Platform <security@lumoscale.com>";
+    const superAdmin = await prisma.superAdmin.findFirst({
+        where: { googleAccessToken: { not: null } },
+        select: { id: true }
+    });
+
+    if (!superAdmin) {
+        return { success: false, error: "No Google-connected super admin sender available." };
+    }
 
     try {
-        await resend.emails.send({
-            from: finalFrom,
+        await sendSuperAdminGmailEmail({
+            adminId: superAdmin.id,
             to: email,
             subject,
             html,

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { MapPin as MapPinIcon, Loader2, Search, X } from "lucide-react";
@@ -135,8 +135,8 @@ export function LocationAutocomplete({
                         className="absolute z-[100] w-full bg-white/80 backdrop-blur-xl border border-gray-100 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.12)] p-2 overflow-hidden"
                     >
                         {isLoading && suggestions.length === 0 ? (
-                            <div className="p-4 text-center text-[11px] font-bold text-gray-400 uppercase tracking-widest italic animate-pulse">
-                                Scanning Global Coordinates...
+                            <div className="p-4 text-center text-[10px] font-bold text-gray-400 uppercase tracking-widest animate-pulse">
+                                Searching locations...
                             </div>
                         ) : (
                             <div className="space-y-1">
@@ -159,9 +159,6 @@ export function LocationAutocomplete({
                                 ))}
                             </div>
                         )}
-                        <div className="mt-2 pt-2 border-t border-gray-50 px-2 flex items-center justify-between opacity-40">
-                            <span className="text-[8px] font-black uppercase text-gray-400 tracking-[0.2em]">POWERED BY OPENSTREETMAP</span>
-                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>

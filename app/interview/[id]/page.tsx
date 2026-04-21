@@ -1694,12 +1694,12 @@ function InterviewRoomContent({
                     </div>
                 </motion.div>
                 {/* Floating Box Transcript - Left of AI Avatar (Upward Flow) */}
-                <div className="absolute right-[calc(50%+160px)] bottom-[45%] z-[65] w-[360px] pointer-events-none">
+                <div className="absolute right-[calc(50%+180px)] bottom-[20%] z-[65] w-[380px] pointer-events-none">
                     <div
-                        className="flex flex-col-reverse justify-end gap-2 max-h-[45vh] overflow-hidden p-6"
+                        className="flex flex-col-reverse justify-start gap-6 max-h-[60vh] overflow-hidden px-6 py-12"
                         style={{
-                            maskImage: 'linear-gradient(to top, black 60%, transparent 100%)',
-                            WebkitMaskImage: 'linear-gradient(to top, black 60%, transparent 100%)'
+                            maskImage: 'linear-gradient(to top, transparent 0%, transparent 5%, black 20%, black 70%, transparent 95%, transparent 100%)',
+                            WebkitMaskImage: 'linear-gradient(to top, transparent 0%, transparent 5%, black 20%, black 70%, transparent 95%, transparent 100%)'
                         }}
                     >
                         <AnimatePresence mode="popLayout">
@@ -1732,53 +1732,27 @@ function InterviewRoomContent({
                                             "pointer-events-auto"
                                         )}
                                     >
-                                        <div className={cn(
-                                            "bg-black/20 backdrop-blur-md rounded-2xl p-4 relative overflow-hidden group/item border border-white/5",
-                                            group.isCandidate ? "rounded-br-none" : "rounded-bl-none"
-                                        )}>
-                                            {/* Header */}
-                                            <div className="flex items-center gap-3 mb-3">
-                                                <div className={cn(
-                                                    "w-7 h-7 rounded-full flex items-center justify-center shrink-0 border border-black/[0.05]",
-                                                    group.isCandidate
-                                                        ? "bg-gradient-to-br from-orange-400 to-orange-600"
-                                                        : "bg-gradient-to-br from-indigo-500 to-blue-700"
-                                                )}>
-                                                    {group.isCandidate ? (
-                                                        <User className="w-4 h-4 text-white" />
-                                                    ) : (
-                                                        <Sparkles className="w-4 h-4 text-white" />
-                                                    )}
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <p className={cn(
-                                                        "text-[9px] font-black uppercase tracking-[0.15em] leading-none",
-                                                        group.isCandidate ? "text-orange-600" : "text-indigo-600"
+                                        <div className="relative group/item">
+                                            {/* Minimalist Message Layout (No Cards) */}
+                                            <div className="flex flex-col gap-1">
+                                                <div className="flex items-baseline gap-2">
+                                                    <span className={cn(
+                                                        "text-[10px] font-black uppercase tracking-[0.2em]",
+                                                        group.isCandidate ? "text-orange-500" : "text-indigo-400"
                                                     )}>
                                                         {group.isCandidate ? (candidateName || "Candidate") : "Ishitha"}
-                                                    </p>
-                                                    <p className="text-[7px] font-bold text-zinc-400 uppercase tracking-widest mt-0.5">
-                                                        {group.isCandidate ? "Speaker" : "Expert AI"}{!isGroupFinal && " •••"}
-                                                    </p>
+                                                    </span>
+                                                    {!isGroupFinal && (
+                                                        <span className="text-[10px] text-zinc-600 animate-pulse">•••</span>
+                                                    )}
                                                 </div>
-                                            </div>
-
-                                            {/* Body */}
-                                            <div className="pl-0">
                                                 <StreamingText
                                                     text={combinedText}
                                                     className={cn(
-                                                        "text-[13px] font-bold tracking-tight leading-relaxed",
-                                                        "text-white drop-shadow-sm"
+                                                        "text-[15px] font-medium tracking-tight leading-relaxed text-zinc-200"
                                                     )}
                                                 />
                                             </div>
-
-                                            {/* Subtle Decorative Gradient */}
-                                            <div className={cn(
-                                                "absolute bottom-0 right-0 w-24 h-24 opacity-[0.03] pointer-events-none",
-                                                group.isCandidate ? "bg-orange-500 rounded-full blur-3xl" : "bg-indigo-500 rounded-full blur-3xl"
-                                            )} />
                                         </div>
                                     </motion.div>
                                 );
@@ -2067,31 +2041,25 @@ function CompletionView({ id, interviewToken }: { id: string; interviewToken: st
                 {step === "thanks" && (
                     <motion.div
                         key="thanks"
-                        initial={{ opacity: 0, scale: 0.9 }}
+                        initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="text-center"
+                        className="max-w-md w-full mx-auto"
                     >
-                        <motion.div
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1, rotate: [0, 10, -10, 0] }}
-                            transition={{
-                                scale: { type: "spring", stiffness: 200, damping: 10 },
-                                rotate: { duration: 1, times: [0, 0.3, 0.7, 1], ease: "easeInOut" }
-                            }}
-                            className="w-24 h-24 bg-gradient-to-tr from-green-400 to-green-500 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 shadow-[0_20px_40px_rgba(34,197,94,0.3)]"
-                        >
-                            <ShieldCheck className="w-12 h-12 text-white" />
-                        </motion.div>
-                        <h2 className="text-5xl font-black text-gray-900 uppercase italic tracking-tighter mb-6">Thank You</h2>
-                        <p className="text-sm font-bold text-gray-400 uppercase tracking-[0.2em] leading-relaxed mb-12 max-w-sm mx-auto">
-                            Your feedback helps us build the best recruitment experience in the world.
-                        </p>
-                        <Button
-                            onClick={() => window.location.href = "/careers"}
-                            className="w-full h-20 rounded-[2rem] bg-gray-900 text-white font-black uppercase tracking-[0.3em] text-[13px] hover:bg-black transition-all shadow-2xl"
-                        >
-                            Back to Careers
-                        </Button>
+                        <div className="bg-white border border-gray-200 rounded-3xl p-8 shadow-sm text-center">
+                            <div className="w-16 h-16 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                                <CheckCircle2 className="w-8 h-8 text-green-600" />
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-900 mb-2">Interview Complete</h2>
+                            <p className="text-gray-500 text-sm mb-8 leading-relaxed">
+                                Thank you for your time. Your interview has been successfully recorded and shared with the hiring team.
+                            </p>
+                            <Button
+                                onClick={() => window.location.href = "/careers"}
+                                className="w-full h-12 rounded-xl bg-gray-900 text-white font-semibold hover:bg-black transition-all shadow-sm"
+                            >
+                                Return to Careers
+                            </Button>
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>

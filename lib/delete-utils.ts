@@ -35,18 +35,3 @@ export async function deleteUrlTargets(
         })
     );
 }
-
-export async function deleteResendDomain(domainId?: string | null) {
-    if (!domainId) return false;
-
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) {
-        console.warn("[DELETE] RESEND_API_KEY missing, skipping domain removal");
-        return false;
-    }
-
-    const { Resend } = await import("resend");
-    const resend = new Resend(apiKey);
-    await resend.domains.remove(domainId);
-    return true;
-}

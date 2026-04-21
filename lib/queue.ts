@@ -42,7 +42,7 @@ if (process.env.NODE_ENV === 'production') {
  */
 
 const defaultJobOptions = {
-  removeOnComplete: { count: 20 }, // Keep only the last 20 successful jobs
+  removeOnComplete: true, // Remove completed jobs immediately to keep Redis lean
   removeOnFail: { count: 100 },    // Keep the last 100 failed jobs for debugging
 };
 

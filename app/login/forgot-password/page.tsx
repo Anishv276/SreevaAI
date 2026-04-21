@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
     Mail, 
@@ -20,8 +20,14 @@ import { toast } from "@/components/ui/toast-custom";
 
 type Step = "EMAIL" | "OTP" | "RESET" | "SUCCESS";
 
-export default function ForgotPasswordPage() {
+function ForgotPasswordContent() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const from = searchParams.get("from");
+    
+    // Dynamic back routing
+    const backLink = from === "settings" ? "/admin/settings?section=password" : "/login";
+    const backText = from === "settings" ? "Back to Settings" : "Back to Login";
     const [step, setStep] = useState<Step>("EMAIL");
     const [loading, setLoading] = useState(false);
     
@@ -120,9 +126,9 @@ export default function ForgotPasswordPage() {
                 
                 {/* Header Section */}
                 <div className="flex flex-col items-center gap-6 text-center">
-                    <Link href="/login" className="group flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] hover:text-gray-900 transition-colors">
+                    <Link href={backLink} className="group flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] hover:text-gray-900 transition-colors">
                         <ArrowLeft className="w-3 h-3 group-hover:-translate-x-1 transition-transform" /> 
-                        Back to Login
+                        {backText}
                     </Link>
                     
                     <div className="h-16 w-16 rounded-2xl bg-white border border-gray-100 flex items-center justify-center shadow-sm relative group">
@@ -318,10 +324,10 @@ export default function ForgotPasswordPage() {
                                     </p>
                                 </div>
                                 <Link
-                                    href="/login"
+                                    href={backLink}
                                     className="inline-flex h-12 px-8 rounded-xl bg-[#F97316] text-white font-black text-[11px] tracking-widest uppercase shadow-lg shadow-orange-100 items-center justify-center hover:scale-105 transition-all"
                                 >
-                                    Login to Workspace
+                                    {from === "settings" ? "Return to Settings" : "Login to Workspace"}
                                 </Link>
                             </motion.div>
                         )}
@@ -341,5 +347,17 @@ export default function ForgotPasswordPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function ForgotPasswordPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-[#F7F6F3] flex items-center justify-center p-6">
+                <Loader2 className="w-8 h-8 animate-spin text-[#F97316]" />
+            </div>
+        }>
+            <ForgotPasswordContent />
+        </Suspense>
     );
 }

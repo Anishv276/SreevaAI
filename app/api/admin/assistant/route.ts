@@ -631,7 +631,7 @@ async function summarizeCandidate(message: string, orgId: string, history: any[]
         type: 'summary',
         title: `Candidate Profile: ${candidate.fullName}`,
         message: summary,
-        action: "I can help move this candidate to 'Shortlisted' or resend the interview link."
+        action: "I can help move this candidate to 'Shortlisted' or send the interview link again."
     };
 }
 
