@@ -8,7 +8,7 @@ let _openai: OpenAI | null = null;
  * Throws a critical error ONLY when called and the key is missing,
  * preventing Next.js from failing at startup/build time.
  */
-function getOpenAIClient(): OpenAI {
+export function getOpenAIClient(): OpenAI {
     if (_openai) return _openai;
 
     const apiKey = process.env.OPENAI_API_KEY;

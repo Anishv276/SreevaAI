@@ -4,9 +4,7 @@ import { queryCandidates } from "@/lib/pinecone";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { recordOrgBillingFromOpenAICompletion } from "@/lib/usage-metrics";
-import OpenAI from "openai";
-
-const openai = new OpenAI();
+import { getOpenAIClient } from "@/lib/openai";
 
 // -----------------------------------------------------------------------------
 // STATUS NORMALISATION - exact DB casing
@@ -65,6 +63,8 @@ function parseStructuredResume(raw: string | null | undefined) {
 
 export async function POST(req: NextRequest) {
   try {
+    const openai = getOpenAIClient();
+
     // -- 1. Auth --------------------------------------------------------------
     const session = await getSession();
     if (!session?.orgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

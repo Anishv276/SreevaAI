@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { recordOrgBillingFromOpenAICompletion } from "@/lib/usage-metrics";
-
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+import { getOpenAIClient } from "@/lib/openai";
 
 // --- Stage 1: Discovery - gpt-4o-mini (fast, conversational) -----------------
 const DISCOVERY_PROMPT = `
@@ -138,6 +134,8 @@ OUTPUT SCHEMA - all fields required
 
 export async function POST(req: Request) {
     try {
+        const openai = getOpenAIClient();
+
         const { prompt, history = [] } = await req.json();
         let orgId: string | null = null;
 

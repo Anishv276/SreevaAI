@@ -2,11 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+import { getOpenAIClient } from "@/lib/openai";
 
 async function getOrgOpenAIModel(orgId: string): Promise<string> {
     const org = await prisma.organization.findUnique({
@@ -741,6 +737,8 @@ async function useGPTFallback(message: string, context: string) {
 
 export async function POST(request: Request) {
     try {
+        const openai = getOpenAIClient();
+
         const session = await getSession();
         if (!session?.orgId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
