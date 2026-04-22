@@ -63,6 +63,19 @@ type AttachableTrack = {
     detach: (element: HTMLMediaElement) => void;
 };
 
+function getRecordingMimeType(): string {
+    if (typeof MediaRecorder === "undefined") return "video/webm";
+    const candidates = [
+        "video/webm;codecs=vp9,opus",
+        "video/webm;codecs=vp8,opus",
+        "video/webm",
+    ];
+    for (const mime of candidates) {
+        if (MediaRecorder.isTypeSupported(mime)) return mime;
+    }
+    return "video/webm";
+}
+
 // LiveKit TextStreamData type from @livekit/components-core
 // { text: string, participantInfo: { identity: string }, streamInfo: TextStreamInfo }
 
@@ -120,11 +133,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const lkRoomRef = useRef<Room | null>(null);
     const readySignalSentFromParentRef = useRef(false);
     const connectionAttemptRef = useRef(0);
+    const launchRecoveryTimerRef = useRef<number | null>(null);
 
 
     const [isAgentReady, setIsAgentReady] = useState(false);
     const [agentReadyLatencyMs, setAgentReadyLatencyMs] = useState<number | null>(null);
     const [launchTimeoutCheck, setLaunchTimeoutCheck] = useState(0);
+    const [launchRecoveryMessage, setLaunchRecoveryMessage] = useState<string | null>(null);
     const [isTabViolation, setIsTabViolation] = useState(false);
     const [isFullscreenViolation, setIsFullscreenViolation] = useState(false);
 
@@ -384,23 +399,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         return () => window.clearInterval(timer);
     }, [phase]);
 
-    // Hard timeout: if agent never becomes ready within 45s, go back to check with error
-    useEffect(() => {
-        if (phase !== "launching") return;
-        if (launchTimeoutCheck >= 20 && !agentReadyCommittedRef.current) {
-            setJoinError("AI interviewer didn't respond in time. Please reload the website and try again.");
-            agentReadyCommittedRef.current = false;
-            setIsAgentReady(false);
-            setAgentReadyLatencyMs(null);
-            connectionAttemptRef.current += 1;
-            // Reset connection state so the next attempt creates a fresh dispatch
-            setToken(null);
-            setServerUrl(null);
-            setShouldConnect(false);
-            setPhase("check");
-        }
-    }, [launchTimeoutCheck, phase, id]);
-
     // Lifecycle: Immediate worker shutdown if user exits during hardware check
     useEffect(() => {
         const handleExit = () => {
@@ -548,6 +546,63 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
     }, []);
 
+    const exitFullscreenMode = useCallback(async () => {
+        try {
+            const doc = document as Document & {
+                webkitExitFullscreen?: () => Promise<void> | void;
+                mozCancelFullScreen?: () => Promise<void> | void;
+                msExitFullscreen?: () => Promise<void> | void;
+            };
+            const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
+            const isFullscreen = !!(
+                doc.fullscreenElement ||
+                (document as any).webkitFullscreenElement ||
+                (document as any).mozFullScreenElement ||
+                (document as any).msFullscreenElement
+            );
+            if (isFullscreen && exit) {
+                await exit.call(doc);
+            }
+        } catch (err) {
+            console.warn("Fullscreen exit failed:", err);
+        }
+    }, []);
+
+    const resetToHardwareCheck = useCallback(async (message?: string) => {
+        if (launchRecoveryTimerRef.current !== null) {
+            window.clearTimeout(launchRecoveryTimerRef.current);
+            launchRecoveryTimerRef.current = null;
+        }
+        await exitFullscreenMode();
+        setShouldConnect(false);
+        setToken(null);
+        setServerUrl(null);
+        setIsAgentReady(false);
+        setAgentReadyLatencyMs(null);
+        agentReadyCommittedRef.current = false;
+        readySignalSentFromParentRef.current = false;
+        launchStartedAtRef.current = null;
+        setLaunchTimeoutCheck(0);
+        setLaunchRecoveryMessage(message || null);
+        setPhase("check");
+    }, [exitFullscreenMode]);
+
+    // Hard timeout: if agent never becomes ready within 45s, show a popup and return to check.
+    useEffect(() => {
+        if (phase !== "launching") return;
+        if (launchTimeoutCheck >= 20 && !agentReadyCommittedRef.current) {
+            setLaunchRecoveryMessage("AI interviewer didn't respond in time.");
+            if (launchRecoveryTimerRef.current !== null) {
+                window.clearTimeout(launchRecoveryTimerRef.current);
+            }
+            launchRecoveryTimerRef.current = window.setTimeout(() => {
+                setJoinError("AI interviewer didn't respond in time. Please reload the website and try again.");
+                connectionAttemptRef.current += 1;
+                void resetToHardwareCheck("AI interviewer didn't respond in time. Please reload the website and try again.");
+            }, 1400);
+        }
+    }, [launchTimeoutCheck, phase, resetToHardwareCheck]);
+
     const handleHardwareComplete = async () => {
         setIsJoining(true);
         setJoinError(null);
@@ -563,6 +618,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         agentReadyCommittedRef.current = false;
         readySignalSentFromParentRef.current = false;
         launchStartedAtRef.current = performance.now();
+        setLaunchRecoveryMessage(null);
         setIsAgentReady(false);
         setAgentReadyLatencyMs(null);
         setPhase("launching");
@@ -593,14 +649,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 setJoinError(err instanceof Error ? err.message : "Unable to start interview.");
                 // Reset connection so a fresh dispatch is created on retry
                 connectionAttemptRef.current += 1;
-                setToken(null);
-                setServerUrl(null);
-                setShouldConnect(false);
-                setIsAgentReady(false);
-                setAgentReadyLatencyMs(null);
-                launchStartedAtRef.current = null;
-                agentReadyCommittedRef.current = false;
-                setPhase("check");
+                void resetToHardwareCheck(err instanceof Error ? err.message : "Unable to start interview.");
             } finally {
                 setIsJoining(false);
             }
@@ -657,6 +706,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             window.removeEventListener("blur", handleViolation);
         };
     }, [phase, id]);
+
+    useEffect(() => {
+        if (phase !== "completed" && phase !== "finalizing") return;
+        void exitFullscreenMode();
+    }, [phase, exitFullscreenMode]);
 
     useEffect(() => {
         if (phase !== "interview") {
@@ -830,6 +884,23 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                     );
                                 })}
                             </div>
+                            {launchRecoveryMessage && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    className="fixed inset-0 z-[200] flex items-center justify-center bg-black/55 backdrop-blur-sm"
+                                >
+                                    <div className="w-[min(92vw,520px)] rounded-[2rem] bg-white p-8 shadow-2xl border border-black/5 text-center">
+                                        <p className="text-[10px] font-black uppercase tracking-[0.4em] text-orange-500 mb-3">Hold on</p>
+                                        <h3 className="text-2xl font-black text-gray-900 tracking-tight">
+                                            {launchRecoveryMessage}
+                                        </h3>
+                                        <p className="mt-4 text-sm font-medium text-gray-500">
+                                            We’ll return you to the hardware check screen in a moment.
+                                        </p>
+                                    </div>
+                                </motion.div>
+                            )}
                         </div>
                     </motion.div>
                 )}
@@ -916,6 +987,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     >
                         <InterviewRoomContent
                             id={id}
+                            interviewToken={interviewToken}
                             onAgentReady={handleAgentReady}
                             onFinish={() => setPhase("completed")}
                             onFinalizing={() => setPhase("finalizing")}
@@ -1262,6 +1334,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
 function InterviewRoomContent({
     id,
+    interviewToken,
     onFinish,
     onFinalizing,
     isInterviewActive,
@@ -1279,6 +1352,7 @@ function InterviewRoomContent({
     onPasteViolation,
 }: {
     id: string,
+    interviewToken: string,
     onFinish: () => void,
     onFinalizing: () => void,
     isInterviewActive: boolean,
@@ -1305,6 +1379,8 @@ function InterviewRoomContent({
     const connectionState = useConnectionState();
     const lkRoom = useRoomContext();
     const voiceAssistant = useVoiceAssistant();
+    const autoFinishTriggeredRef = useRef(false);
+    const interviewCompletionHandledRef = useRef(false);
 
     // Give parent a ref to the room so it can call startAudio() on user gesture
     useEffect(() => {
@@ -1318,6 +1394,44 @@ function InterviewRoomContent({
     const assistantState = String(voiceAssistant.state);
     const isAiSpeaking = assistantState === "speaking";
     const isAiThinking = assistantState === "thinking" || assistantState === "initializing";
+
+    useEffect(() => {
+        if (!isInterviewActive) {
+            autoFinishTriggeredRef.current = false;
+            interviewCompletionHandledRef.current = false;
+            return;
+        }
+
+        if (interviewCompletionHandledRef.current) {
+            return;
+        }
+
+        if (hasAgentPresence) {
+            autoFinishTriggeredRef.current = true;
+            return;
+        }
+
+        if (autoFinishTriggeredRef.current && connectionState === "connected") {
+            interviewCompletionHandledRef.current = true;
+            onFinalizing();
+            onFinish();
+        }
+    }, [connectionState, hasAgentPresence, isInterviewActive, onFinish, onFinalizing]);
+
+    useEffect(() => {
+        if (!lkRoom || !isInterviewActive) return;
+        const handleRoomDisconnected = () => {
+            if (interviewCompletionHandledRef.current) return;
+            interviewCompletionHandledRef.current = true;
+            onFinalizing();
+            onFinish();
+        };
+
+        lkRoom.on(RoomEvent.Disconnected, handleRoomDisconnected);
+        return () => {
+            lkRoom.off(RoomEvent.Disconnected, handleRoomDisconnected);
+        };
+    }, [lkRoom, isInterviewActive, onFinish, onFinalizing]);
     const isAiListening = assistantState === "listening";
 
 
@@ -1339,9 +1453,150 @@ function InterviewRoomContent({
     const launchReadySignalSentRef = useRef(false);
     const finishStartedRef = useRef(false);
     const recordingStartedRef = useRef(false);
+    const recordingUploadedRef = useRef(false);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const recordingStreamRef = useRef<MediaStream | null>(null);
+    const recordingAudioContextRef = useRef<AudioContext | null>(null);
+    const recordingChunksRef = useRef<Blob[]>([]);
+    const recordingStartedAtRef = useRef<number | null>(null);
+    const recordingUploadPromiseRef = useRef<Promise<void> | null>(null);
     const transcriptPanelRef = useRef<HTMLDivElement>(null);
     const transcriptions = useTranscriptions({ room: lkRoom });
     const localIdentity = lkRoom?.localParticipant?.identity ?? "";
+    const localCameraTrack =
+        cameraTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera) || null;
+
+    const uploadRecordingBlob = useCallback(async (blob: Blob) => {
+        if (recordingUploadedRef.current) return;
+        if (!blob.size) {
+            console.warn("[Recording] Empty blob generated. Skipping upload.");
+            return;
+        }
+
+        const startedAt = recordingStartedAtRef.current ?? Date.now();
+        const durationSec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+        const formData = new FormData();
+        formData.append("applicationId", id);
+        formData.append("interviewToken", interviewToken || "");
+        formData.append("duration", String(durationSec));
+        formData.append("recording", new File([blob], `interview-${id}-${Date.now()}.webm`, { type: blob.type || "video/webm" }));
+
+        const res = await fetch("/api/interview/recording", {
+            method: "POST",
+            body: formData,
+        });
+        if (!res.ok) {
+            const payload = await res.json().catch(() => ({}));
+            throw new Error(payload?.error || "Recording upload failed");
+        }
+        recordingUploadedRef.current = true;
+        console.log("[Recording] Upload complete.");
+    }, [id, interviewToken]);
+
+    const cleanupRecordingResources = useCallback(() => {
+        if (recordingAudioContextRef.current) {
+            recordingAudioContextRef.current.close().catch(() => { });
+            recordingAudioContextRef.current = null;
+        }
+        if (recordingStreamRef.current) {
+            recordingStreamRef.current.getTracks().forEach((track) => track.stop());
+            recordingStreamRef.current = null;
+        }
+        mediaRecorderRef.current = null;
+        recordingChunksRef.current = [];
+    }, []);
+
+    const startBrowserRecording = useCallback(async () => {
+        if (recordingStartedRef.current) return;
+        if (typeof window === "undefined" || typeof MediaRecorder === "undefined") {
+            console.warn("[Recording] MediaRecorder not supported.");
+            return;
+        }
+
+        const cameraTrack = getMediaStreamTrack(localCameraTrack ?? null);
+        const micTrack = localParticipant?.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack ?? null;
+        const remoteTrack = agentAudioTrack && agentAudioTrack.kind === "audio" ? agentAudioTrack : null;
+
+        if (!cameraTrack) {
+            console.warn("[Recording] Camera track not available; skipping start.");
+            return;
+        }
+        if (!micTrack || !remoteTrack) {
+            console.warn("[Recording] Waiting for both local and remote audio tracks.");
+            return;
+        }
+
+        const audioContext = new AudioContext();
+        await audioContext.resume().catch(() => { });
+        const destination = audioContext.createMediaStreamDestination();
+        const micSource = audioContext.createMediaStreamSource(new MediaStream([micTrack]));
+        const remoteSource = audioContext.createMediaStreamSource(new MediaStream([remoteTrack]));
+        micSource.connect(destination);
+        remoteSource.connect(destination);
+
+        const mixedStream = new MediaStream();
+        mixedStream.addTrack(cameraTrack.clone());
+        destination.stream.getAudioTracks().forEach((track) => mixedStream.addTrack(track));
+
+        const mimeType = getRecordingMimeType();
+        const recorder = new MediaRecorder(mixedStream, {
+            mimeType,
+            videoBitsPerSecond: 2_500_000,
+            audioBitsPerSecond: 128_000,
+        });
+
+        recorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+                recordingChunksRef.current.push(event.data);
+            }
+        };
+
+        recorder.onstop = () => {
+            const blob = new Blob(recordingChunksRef.current, { type: mimeType });
+            const promise = uploadRecordingBlob(blob)
+                .catch((err) => console.error("[Recording] Upload failed:", err))
+                .finally(() => {
+                    cleanupRecordingResources();
+                });
+            recordingUploadPromiseRef.current = promise;
+        };
+
+        recordingAudioContextRef.current = audioContext;
+        recordingStreamRef.current = mixedStream;
+        mediaRecorderRef.current = recorder;
+        recordingStartedRef.current = true;
+        recordingStartedAtRef.current = Date.now();
+        recorder.start(1000);
+        console.log("[Recording] Browser recorder started.");
+    }, [agentAudioTrack, cleanupRecordingResources, localCameraTrack, localParticipant, uploadRecordingBlob]);
+
+    const stopBrowserRecording = useCallback(async () => {
+        const recorder = mediaRecorderRef.current;
+        if (!recorder) return;
+        if (recorder.state !== "inactive") {
+            recorder.stop();
+        }
+
+        const initialPendingUpload = recordingUploadPromiseRef.current;
+        if (initialPendingUpload) {
+            try {
+                await initialPendingUpload;
+            } catch { }
+            return;
+        }
+
+        // onstop can schedule the upload promise slightly later.
+        for (let i = 0; i < 20; i++) {
+            const pendingUpload = recordingUploadPromiseRef.current;
+            if (pendingUpload) {
+                try {
+                    await pendingUpload;
+                } catch { }
+                return;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+    }, []);
 
     // Agent readiness is based on room connection + remote agent speaking.
     useEffect(() => {
@@ -1361,27 +1616,13 @@ function InterviewRoomContent({
         }
     }, [isLaunchingActive, connectionState, hasAgentPresence, assistantState, onAgentReady]);
 
-    // Start recording only after interview phase starts and agent actually begins speaking.
+    // Start browser recording when the greeting speech fires.
     useEffect(() => {
         if (!isInterviewActive || !isAiSpeaking) return;
-
-        console.log("[Agent] State=speaking during interview");
-
-        // Start recording the moment audio flows
-        if (!recordingStartedRef.current) {
-            recordingStartedRef.current = true;
-            console.log("[Recording] Agent speaking - starting recording");
-            fetch("/api/interview/start-recording", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ applicationId: id }),
-            }).catch((err) => console.warn("[Recording] start-recording request failed:", err));
-        }
-    }, [isAiSpeaking, id, isInterviewActive]);
+        void startBrowserRecording();
+    }, [isAiSpeaking, isInterviewActive, startBrowserRecording]);
 
     const [remoteForceFinish, setRemoteForceFinish] = useState(false);
-    const localCameraTrack =
-        cameraTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera) || null;
 
     const groupedTranscriptions = useMemo(() => {
         const groups: {
@@ -1573,14 +1814,20 @@ function InterviewRoomContent({
         if (finishStartedRef.current) return;
         finishStartedRef.current = true;
 
+        await stopBrowserRecording().catch((err) => {
+            console.warn("[Recording] stop failed:", err);
+        });
         onFinalizing();
-        // Recording is handled server-side by LiveKit Egress.
-        // The server will receive an egress_ended webhook and save the URL automatically.
         setTimeout(() => {
             try { lkRoom?.disconnect(); } catch (_) { }
             onFinish();
         }, 1500);
-    }, [onFinalizing, lkRoom, onFinish]);
+    }, [lkRoom, onFinalizing, onFinish, stopBrowserRecording]);
+
+    useEffect(() => {
+        if (isInterviewActive) return;
+        void stopBrowserRecording();
+    }, [isInterviewActive, stopBrowserRecording]);
 
     useEffect(() => {
         if (!timerExpired || !isInterviewActive) return;

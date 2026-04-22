@@ -77,8 +77,8 @@ _SHORT_UTTERANCE_FAMILIES = {
         "style": "Sound human and calm. Confirm you can hear them, then continue naturally.",
     },
     "acknowledgment": {
-        "goal": "Treat this as acknowledgment, not a substantive answer. Keep the interview moving with the planned question.",
-        "style": "Do not overreact. Keep the pacing steady and continue the thread.",
+        "goal": "Treat this as acknowledgment, not a substantive answer. Keep the interview moving with the planned question and never end the interview here.",
+        "style": "Do not overreact. Keep the pacing steady, continue the thread, and do not mention ending the interview.",
     },
     "answer_start": {
         "goal": "Hold space for the candidate to continue their thought before probing.",

@@ -3393,6 +3393,21 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.warning(f"[PROCTOR] Client signaling failed: {e}")
 
+    async def _signal_client_interview_terminated(reason: str) -> None:
+        """Tell the candidate UI to exit the live room and open the feedback screen."""
+        if not ctx.room.local_participant:
+            return
+        try:
+            payload = json.dumps({
+                "type": "interview_terminated",
+                "reason": reason,
+                "timestamp": int(time.time() * 1000),
+            }).encode("utf-8")
+            await ctx.room.local_participant.publish_data(payload, reliable=True)
+            logger.info(f"[INTERVIEW_END] termination signal sent: {reason}")
+        except Exception as e:
+            logger.warning(f"[INTERVIEW_END] Client termination signal failed: {e}")
+
 
     # Parallelize network-bound work: room connect + DB fetch run concurrently.
     async def connect_with_retry():
@@ -4034,6 +4049,24 @@ async def entrypoint(ctx: JobContext):
             if not content:
                 return
 
+            # During the first few seconds after Ishita's opening greeting, short
+            # echo-like fragments ("hi", "hello", "okay") are often the AI's own
+            # voice leaking back into STT rather than a real candidate turn.
+            # Suppress only tiny, greeting-like fragments here so we keep the
+            # first transcript anchored to the interviewer greeting.
+            if first_agent_turn_committed_at is not None:
+                since_first_ai_turn = time.monotonic() - first_agent_turn_committed_at
+                if since_first_ai_turn <= greeting_echo_suppression_secs:
+                    echo_like = re.compile(
+                        r"^\s*(?:hi|hello|hey|okay|ok|yeah|yes|yep|mmhmm|mhm|good morning|good afternoon)\s*$",
+                        re.IGNORECASE,
+                    )
+                    if echo_like.match(content) or len(content.split()) <= 2:
+                        logger.debug(
+                            f"[TRANSCRIPT] Suppressing early greeting echo fragment: '{content[:60]}'"
+                        )
+                        return
+
             # --- STT Spam / Hallucination Filter ---
             # Sarvam (and some Deepgram models) hallucinate the same word repeatedly
             # when they detect silence or background noise. Discard these before they
@@ -4599,6 +4632,8 @@ async def entrypoint(ctx: JobContext):
     awaiting_candidate_response = False
     awaiting_candidate_since: float | None = None
     inactivity_nudge_sent_for_current_prompt = False
+    first_agent_turn_committed_at: float | None = None
+    greeting_echo_suppression_secs = 6.0
 
     def reset_inactivity_clock(start_waiting: bool) -> None:
         nonlocal awaiting_candidate_response, awaiting_candidate_since, inactivity_nudge_sent_for_current_prompt
@@ -4633,8 +4668,10 @@ async def entrypoint(ctx: JobContext):
 
     @session.on("agent_speech_committed")
     def on_agent_speech_committed(_msg):
-        nonlocal is_agent_speaking
+        nonlocal is_agent_speaking, first_agent_turn_committed_at
         is_agent_speaking = False
+        if first_agent_turn_committed_at is None:
+            first_agent_turn_committed_at = time.monotonic()
         # Timer starts only when AI has finished speaking and candidate is expected to respond.
         reset_inactivity_clock(start_waiting=True)
         logger.debug("[NUDGE] AI finished speaking; starting inactivity countdown")
