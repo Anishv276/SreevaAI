@@ -1,5 +1,4 @@
 
-
 services:
   # Next.js Frontend + API
   hr-frontend:
@@ -34,20 +33,21 @@ services:
     restart: always
     depends_on:
       - livekit
+      - redis
 
   # LiveKit Server (Self-Hosted)
   livekit:
     image: livekit/livekit-server:latest
     container_name: livekit
     restart: always
-    # command: --config /etc/livekit.yaml
+    command: --config /etc/livekit.yaml
     networks:
       - traefik-proxy
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml
     ports:
       - "7880:7880"
-      - "50000-60000:50000-60000/udp"
+      - "5000-5100:5000-5100/udp"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.livekit.rule=Host('lk.sreevaai.com')"
