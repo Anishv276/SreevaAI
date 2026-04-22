@@ -6,29 +6,10 @@ import importlib
 import warnings
 from datetime import datetime
 
-# Suppress all warnings to stderr to keep stdout pure for JSON
-warnings.filterwarnings("ignore")
-
-
-def load_optional_module(module_name):
-    try:
-        return importlib.import_module(module_name)
-    except ImportError:
-        return None
-
-
-pdfplumber = load_optional_module("pdfplumber")
-pymupdf4llm = load_optional_module("pymupdf4llm")
-pytesseract = load_optional_module("pytesseract")
-pdf2image = load_optional_module("pdf2image")
-fitz = load_optional_module("fitz")
-from PIL import Image
-from openai import OpenAI
-from dotenv import load_dotenv
-
 from contextlib import contextmanager
 
-load_dotenv()
+# Suppress all warnings to stderr to keep stdout pure for JSON
+warnings.filterwarnings("ignore")
 
 
 @contextmanager
@@ -44,6 +25,29 @@ def silence_stdout():
         yield new_target
     finally:
         sys.stdout = old_target
+
+
+def load_optional_module(module_name):
+    try:
+        with silence_stdout():
+            return importlib.import_module(module_name)
+    except ImportError:
+        return None
+
+
+with silence_stdout():
+    pdfplumber = load_optional_module("pdfplumber")
+    pymupdf4llm = load_optional_module("pymupdf4llm")
+    pytesseract = load_optional_module("pytesseract")
+    pdf2image = load_optional_module("pdf2image")
+    fitz = load_optional_module("fitz")
+    from PIL import Image
+    from openai import OpenAI
+    from dotenv import load_dotenv
+
+load_dotenv()
+
+
 
 
 def extract_text(file_path, type_="RESUME"):
