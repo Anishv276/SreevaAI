@@ -57,6 +57,8 @@ services:
       - ./livekit.yaml:/etc/livekit.yaml:ro
     ports:
       - "5000-5100:5000-5100/udp"
+      - "7880:7880"
+      - "7881:7881"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.livekit.rule=Host(`lk.sreevaai.com`)"
