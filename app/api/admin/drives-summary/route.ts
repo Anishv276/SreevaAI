@@ -42,15 +42,15 @@ export async function GET(req: Request) {
             take: 20,
         });
 
-        const result = drives.map((drive) => {
+        const result = drives.map((drive: (typeof drives)[number]) => {
             const apps = drive.applications;
 
             const applied = apps.length;
-            const screened = apps.filter((a) => a.aiScore != null).length;
+            const screened = apps.filter((a: (typeof apps)[number]) => a.aiScore != null).length;
             const interviewed = apps.filter(
-                (a) => a.interview?.status === "COMPLETED"
+                (a: (typeof apps)[number]) => a.interview?.status === "COMPLETED"
             ).length;
-            const shortlisted = apps.filter((a) =>
+            const shortlisted = apps.filter((a: (typeof apps)[number]) =>
                 ["shortlisted", "SHORTLISTED"].includes(a.resumeStatus ?? "")
             ).length;
 
