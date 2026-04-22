@@ -503,7 +503,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
               orderBy: { aiScore: "desc" },
               take: limit,
             });
-            result = JSON.stringify(candidates.map(c => ({
+            result = JSON.stringify(candidates.map((c: (typeof candidates)[number]) => ({
               ...c,
               parsedResume: parseStructuredResume(c.structuredResume),
               structuredResume: undefined,
@@ -526,7 +526,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             orderBy: { aiScore: "desc" },
             take: Math.min(args.limit ?? 10, 25),
           });
-          result = JSON.stringify(candidates.map(c => ({
+          result = JSON.stringify(candidates.map((c: (typeof candidates)[number]) => ({
             ...c,
             parsedResume: parseStructuredResume(c.structuredResume),
             structuredResume: undefined,
@@ -550,7 +550,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             orderBy: { createdAt: "desc" },
             take: Math.min(args.limit ?? 20, 50),
           });
-          result = JSON.stringify(candidates.map(c => ({
+          result = JSON.stringify(candidates.map((c: (typeof candidates)[number]) => ({
             ...c,
             parsedResume: parseStructuredResume(c.structuredResume),
             structuredResume: undefined,
@@ -574,7 +574,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             orderBy: { createdAt: "desc" },
             take: 10,
           });
-          result = JSON.stringify(candidates.map(c => ({
+          result = JSON.stringify(candidates.map((c: (typeof candidates)[number]) => ({
             ...c,
             parsedResume: parseStructuredResume(c.structuredResume),
             structuredResume: undefined,
@@ -619,7 +619,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
               take: Math.min(args.limit ?? 10, 25),
             });
 
-          result = JSON.stringify(allCandidates.map(c => ({
+          result = JSON.stringify(allCandidates.map((c: (typeof allCandidates)[number]) => ({
             ...c,
             parsedResume: parseStructuredResume(c.structuredResume),
             structuredResume: undefined,
