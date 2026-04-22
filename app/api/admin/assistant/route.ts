@@ -487,14 +487,14 @@ async function getDrives(orgId: string) {
         return { type: 'list', message: "No recruitment drives found. Create one to get started!" };
     }
     
-    const active = drives.filter(d => d.status === 'ACTIVE');
+    const active = drives.filter((d: any) => d.status === 'ACTIVE');
     
     let response = `**Active Drives (${active.length}):**\n`;
     response += active.slice(0, 5).map((d: any) => 
         `• **${d.title}** (${d._count.applications} candidates) - ${d.department}`
     ).join('\n');
     
-    const closed = drives.filter(d => d.status === 'CLOSED');
+    const closed = drives.filter((d: any) => d.status === 'CLOSED');
     if (closed.length > 0) {
         response += `\n\n**Closed Drives (${closed.length}):**\n`;
         response += closed.slice(0, 3).map((d: any) => 
@@ -892,7 +892,7 @@ CURRENT PLATFORM STATUS:
 - Hired This Month: ${hiredThisMonth}
 
 RECENT APPLICATIONS:
-${recentApps.map(a => `- ${a.fullName}: Score ${a.aiScore || 'N/A'}, Status: ${a.hiringStatus !== 'pending' ? a.hiringStatus : a.resumeStatus}, Applied: ${new Date(a.createdAt).toLocaleString()}, Drive: ${a.drive.title}`).join('\n')}
+${recentApps.map((a: any) => `- ${a.fullName}: Score ${a.aiScore || 'N/A'}, Status: ${a.hiringStatus !== 'pending' ? a.hiringStatus : a.resumeStatus}, Applied: ${new Date(a.createdAt).toLocaleString()}, Drive: ${a.drive.title}`).join('\n')}
 
 Be concise and helpful. Use bold for names and scores. Always provide exact times if available in context.
         `;
