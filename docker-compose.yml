@@ -1,4 +1,4 @@
-version: '3.8'
+
 
 services:
   # Next.js Frontend + API
@@ -7,9 +7,8 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        # Build-time variables for Next.js
-        NEXT_PUBLIC_LIVEKIT_URL: "wss://new.livekit.cloud" 
-        NEXT_PUBLIC_APP_URL: "https://hr.yourdomain.com"
+        NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com"
+        NEXT_PUBLIC_APP_URL: "https://www.sreevaai.com"
     container_name: hr-frontend
     networks:
       - traefik-proxy
@@ -17,11 +16,9 @@ services:
     restart: always
     labels:
       - "traefik.enable=true"
-      # IMPORTANT: Replace 'hr.yourdomain.com' with your actual domain/subdomain
-      - "traefik.http.routers.hr-app.rule=Host(`hr.yourdomain.com`)"
+      - "traefik.http.routers.hr-app.rule=Host('www.sreevaai.com')"
       - "traefik.http.routers.hr-app.entrypoints=websecure"
       - "traefik.http.routers.hr-app.tls=true"
-      # Match this to your existing Traefik certresolver (e.g., 'myresolver' or 'letsencrypt')
       - "traefik.http.routers.hr-app.tls.certresolver=myresolver"
       - "traefik.http.services.hr-app.loadbalancer.server.port=3000"
 
@@ -35,7 +32,38 @@ services:
       - traefik-proxy
     env_file: .env
     restart: always
-    # The agent doesn't need Traefik labels because it connects outwards to LiveKit Cloud
+    depends_on:
+      - livekit
+
+  # LiveKit Server (Self-Hosted)
+  livekit:
+    image: livekit/livekit:latest
+    container_name: livekit
+    restart: always
+    command: --config /etc/livekit.yaml
+    networks:
+      - traefik-proxy
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+    ports:
+      - "7880:7880"
+      - "50000-60000:50000-60000/udp"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.livekit.rule=Host('lk.sreevaai.com')"
+      - "traefik.http.routers.livekit.entrypoints=websecure"
+      - "traefik.http.routers.livekit.tls=true"
+      - "traefik.http.routers.livekit.tls.certresolver=myresolver"
+      - "traefik.http.services.livekit.loadbalancer.server.port=7880"
+
+  # Redis (Required by LiveKit)
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: redis-server --save 20 1 --loglevel warning
+    networks:
+      - traefik-proxy
+    restart: always
 
 networks:
   traefik-proxy:
