@@ -26,7 +26,24 @@ from PIL import Image
 from openai import OpenAI
 from dotenv import load_dotenv
 
+from contextlib import contextmanager
+
 load_dotenv()
+
+
+@contextmanager
+def silence_stdout():
+    """
+    Redirects stdout to stderr temporarily to prevent library-level 
+    print statements from breaking our JSON-only stdout interface.
+    """
+    new_target = sys.stderr
+    old_target = sys.stdout
+    sys.stdout = new_target
+    try:
+        yield new_target
+    finally:
+        sys.stdout = old_target
 
 
 def extract_text(file_path, type_="RESUME"):
@@ -1742,7 +1759,10 @@ if __name__ == "__main__":
         # For SCORE, file_path contains JSON { "resume": "...", "jd": "..." }
         with open(file_path, "r", encoding="utf-8") as f:
             text = f.read()
-        data = extract_data(text, type_, llm_model_override)
+        
+        with silence_stdout():
+            data = extract_data(text, type_, llm_model_override)
+            
         print(
             json.dumps(
                 {
@@ -1761,7 +1781,8 @@ if __name__ == "__main__":
         )
     else:
         # For JD or RESUME, file_path is a PDF/text file
-        text = extract_text(file_path, type_)
+        with silence_stdout():
+            text = extract_text(file_path, type_)
         
         # Guard against zero text extraction (prevents wasting AI credits/scoring errors)
         if not text or len(text.strip()) < 50:
@@ -1771,7 +1792,8 @@ if __name__ == "__main__":
              }))
              sys.exit(1)
 
-        data = extract_data(text, type_, llm_model_override)
+        with silence_stdout():
+            data = extract_data(text, type_, llm_model_override)
 
         # Output to stdout for the backend
         print(json.dumps({"text": text, "data": data["data"], "usage": data["usage"]}))
