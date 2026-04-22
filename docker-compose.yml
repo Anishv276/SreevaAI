@@ -15,7 +15,7 @@ services:
     restart: always
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.hr-app.rule=Host('www.sreevaai.com') || Host('sreevaai.com')"
+      - "traefik.http.routers.hr-app.rule=Host(`www.sreevaai.com`) || Host(`sreevaai.com`)"
       - "traefik.http.routers.hr-app.entrypoints=websecure"
       - "traefik.http.routers.hr-app.tls=true"
       - "traefik.http.routers.hr-app.tls.certresolver=myresolver"
@@ -45,13 +45,12 @@ services:
     networks:
       - traefik-proxy
     volumes:
-      - ./livekit.yaml:/etc/livekit.yaml
+      - ./livekit.yaml:/etc/livekit.yaml:ro
     ports:
-      - "7880:7880"
       - "5000-5100:5000-5100/udp"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.livekit.rule=Host('lk.sreevaai.com')"
+      - "traefik.http.routers.livekit.rule=Host(`lk.sreevaai.com`)"
       - "traefik.http.routers.livekit.entrypoints=websecure"
       - "traefik.http.routers.livekit.tls=true"
       - "traefik.http.routers.livekit.tls.certresolver=myresolver"
