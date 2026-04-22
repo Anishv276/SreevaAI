@@ -441,7 +441,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             orderBy: { createdAt: "desc" },
           });
           const now = new Date();
-          result = JSON.stringify(drives.map(d => ({
+          result = JSON.stringify(drives.map((d: (typeof drives)[number]) => ({
             ...d,
             applicationCount: d._count.applications,
             daysLeft: d.deadline
@@ -469,7 +469,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             },
             take: 3,
           });
-          result = JSON.stringify(drives.map(d => ({
+          result = JSON.stringify(drives.map((d: (typeof drives)[number]) => ({
             ...d,
             applicationCount: d._count.applications,
             _count: undefined,
