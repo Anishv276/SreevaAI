@@ -36,7 +36,7 @@ export async function GET(request: Request) {
         // for Admins, Drives, and Candidates into one database round-trip.
         const sqlSearch = search ? `%${search}%` : "%";
         
-        const orgs = await prisma.$queryRaw<any[]>`
+        const orgs = (await prisma.$queryRaw`
             SELECT 
                 o.*,
                 (SELECT COUNT(*)::INT FROM "User" u WHERE u."orgId" = o.id) as "adminCount",
@@ -46,7 +46,11 @@ export async function GET(request: Request) {
             WHERE (o."name" ILIKE ${sqlSearch} OR o."slug" ILIKE ${sqlSearch})
             ORDER BY o."createdAt" DESC
             LIMIT ${limit} OFFSET ${offset}
-        `;
+        `) as Array<Record<string, unknown> & {
+            adminCount: number;
+            driveCount: number;
+            candidateCount: number;
+        }>;
 
         return NextResponse.json({
             orgs,

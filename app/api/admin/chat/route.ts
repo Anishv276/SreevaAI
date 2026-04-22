@@ -679,18 +679,23 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
               _min: { aiScore: true },
               _count: { aiScore: true },
             }),
-            prisma.$queryRaw<any[]>`
-              SELECT
-                COUNT(*) FILTER (WHERE "aiScore" >= 90)::INT AS "excellent",
-                COUNT(*) FILTER (WHERE "aiScore" >= 70 AND "aiScore" < 90)::INT AS "good",
-                COUNT(*) FILTER (WHERE "aiScore" >= 50 AND "aiScore" < 70)::INT AS "average",
-                COUNT(*) FILTER (WHERE "aiScore" < 50)::INT AS "below_average"
-              FROM "Application" a
-              JOIN "Drive" d ON d.id = a."driveId"
-              WHERE d."orgId" = ${orgId}
-              AND a."aiScore" IS NOT NULL
-              ${args.driveId ? prisma.$queryRaw`AND a."driveId" = ${args.driveId}::uuid` : prisma.$queryRaw``}
-            `,
+            prisma.$queryRaw`
+                SELECT
+                    COUNT(*) FILTER (WHERE "aiScore" >= 90)::INT AS "excellent",
+                    COUNT(*) FILTER (WHERE "aiScore" >= 70 AND "aiScore" < 90)::INT AS "good",
+                    COUNT(*) FILTER (WHERE "aiScore" >= 50 AND "aiScore" < 70)::INT AS "average",
+                    COUNT(*) FILTER (WHERE "aiScore" < 50)::INT AS "below_average"
+                FROM "Application" a
+                JOIN "Drive" d ON d.id = a."driveId"
+                WHERE d."orgId" = ${orgId}
+                AND a."aiScore" IS NOT NULL
+                ${args.driveId ? prisma.$queryRaw`AND a."driveId" = ${args.driveId}::uuid` : prisma.$queryRaw``}
+            ` as Promise<Array<{
+              excellent: number;
+              good: number;
+              average: number;
+              below_average: number;
+            }>>,
           ]);
 
           result = JSON.stringify({
