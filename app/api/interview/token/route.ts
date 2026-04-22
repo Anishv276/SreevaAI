@@ -483,7 +483,7 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({
             token,
-            serverUrl: wsUrl,
+            serverUrl: process.env.NEXT_PUBLIC_LIVEKIT_URL || wsUrl,
             roomName,
             duration:  durationSeconds,
             roleLabel: application.drive.role || application.drive.title || "Interview",
