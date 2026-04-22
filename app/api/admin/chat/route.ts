@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { recordOrgBillingFromOpenAICompletion } from "@/lib/usage-metrics";
 import { getOpenAIClient } from "@/lib/openai";
+import type OpenAI from "openai";
 
 // -----------------------------------------------------------------------------
 // STATUS NORMALISATION - exact DB casing

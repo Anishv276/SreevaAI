@@ -710,6 +710,8 @@ async function compareCandidates(message: string, orgId: string) {
 }
 
 async function useGPTFallback(message: string, context: string) {
+    const openai = getOpenAIClient();
+
     const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
