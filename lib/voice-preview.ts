@@ -109,7 +109,8 @@ export async function createVoicePreviewResponse(input: VoicePreviewInput) {
       return NextResponse.json({ error: "Invalid audio response from Sarvam AI" }, { status: 500 });
     }
 
-    return toAudioResponse(audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength), "audio/wav");
+    const audioBuffer = Uint8Array.from(audio).buffer;
+    return toAudioResponse(audioBuffer, "audio/wav");
   }
 
   const apiKey = process.env.CARTESIA_API_KEY;
