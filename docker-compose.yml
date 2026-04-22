@@ -10,7 +10,8 @@ services:
     container_name: hr-frontend
     networks:
       - traefik-proxy
-    env_file: .env
+    env_file:
+      - .env
     restart: always
     labels:
       - "traefik.enable=true"
@@ -28,7 +29,8 @@ services:
     container_name: hr-agent
     networks:
       - traefik-proxy
-    env_file: .env
+    env_file:
+      - .env
     restart: always
     depends_on:
       - livekit
