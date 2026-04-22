@@ -187,6 +187,11 @@ model Interview {
   startedAt             DateTime?
   completedAt           DateTime?
   interviewRecordingUrl String?
+  recordingStatus       String?     @default("NOT_STARTED")
+  recordingMimeType     String?
+  recordingStartedAt    DateTime?
+  recordingCompletedAt  DateTime?
+  recordingDurationSec  Int?
   interviewTranscript   String?
   interviewRecordedAt   DateTime?
   createdAt             DateTime    @default(now())

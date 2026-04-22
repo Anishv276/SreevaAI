@@ -3709,7 +3709,7 @@ async def entrypoint(ctx: JobContext):
             language=lang_codes["tts"],
             model=org_cartesia_model,
             voice_id=org_cartesia_voice,
-        )
+    )
 
     if org_llm_provider == "SARVAM":
         llm_plugin = build_sarvam_llm(model=org_llm_model)
