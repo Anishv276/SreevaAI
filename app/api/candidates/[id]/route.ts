@@ -78,11 +78,11 @@ export async function DELETE(
 
         // -- SECURITY & FETCH: Ensure candidate belongs to the Org ------
         const candidate = await prisma.application.findFirst({
-            where: { 
-                id, 
-                drive: { orgId } 
+            where: {
+                id,
+                drive: { orgId }
             },
-            select: { 
+            select: {
                 id: true,
                 resumeUrl: true,
                 passportUrl: true,
@@ -115,7 +115,7 @@ export async function DELETE(
         try {
             await deleteCandidateEmbeddings(id);
         } catch (pineconeErr) {
-             console.error("[DELETE_SINGLE_CANDIDATE_PINECONE_ERROR]:", pineconeErr);
+            console.error("[DELETE_SINGLE_CANDIDATE_PINECONE_ERROR]:", pineconeErr);
         }
 
         // -- DATABASE DELETION -----------------------------
@@ -183,7 +183,7 @@ export async function PATCH(
                 orgId: (updated as any).drive?.orgId ?? undefined,
                 status: "Hired",
                 score: updated.aiScore || 0,
-            }).catch(() => {});
+            }).catch(() => { });
 
             try {
                 const driveStats = await prisma.drive.findUnique({
@@ -212,7 +212,7 @@ export async function PATCH(
                 orgId: (updated as any).drive?.orgId ?? undefined,
                 status: "REJECTED",
                 score: updated.aiScore || 0,
-            }).catch(() => {});
+            }).catch(() => { });
         }
 
         return NextResponse.json(updated);

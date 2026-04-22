@@ -292,7 +292,7 @@ export default function Home() {
 
     return (
 
-        <div className="min-h-screen bg-[#FDFCFB] selection:bg-orange-100 selection:text-orange-900 font-medium overflow-x-hidden">
+        <div className="min-h-screen bg-[#FDFCFB] selection:bg-orange-100 selection:text-orange-900 font-medium overflow-x-hidden" suppressHydrationWarning>
 
             {/* Global Header */}
 
@@ -640,7 +640,7 @@ export default function Home() {
 
                             {stats.map((stat, i) => (
 
-                                <div key={i} className="text-center group">
+                                <div key={i} className="text-center group" suppressHydrationWarning>
 
                                     <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-white/5 border border-white/10 mb-4 group-hover:bg-orange-500/20 group-hover:border-orange-500/30 transition-all">
 
@@ -792,7 +792,7 @@ export default function Home() {
 
 
 
-                                    <div className="p-10 rounded-[2.5rem] bg-white border border-gray-100 hover:border-orange-200 hover:shadow-[0_20px_40px_-10px_rgba(249,115,22,0.1)] transition-all duration-500 h-full">
+                                    <div className="p-10 rounded-[2.5rem] bg-white border border-gray-100 hover:border-orange-200 hover:shadow-[0_20px_40px_-10px_rgba(249,115,22,0.1)] transition-all duration-500 h-full" suppressHydrationWarning>
 
                                         <div className="text-7xl font-black text-orange-100 mb-6 group-hover:text-orange-200 transition-colors">{step.step}</div>
 

@@ -401,7 +401,7 @@ function PositionCounter({ label, icon: Icon, value, onChange, error }: { label:
 
 /*  Departments & options  */
 const DEPARTMENTS = [
-    "Product", "Design", "Marketing",
+    "Engineering", "Technology", "Product", "Design", "Marketing",
     "Sales", "HR", "Finance", "Operations", "Legal",
 ];
 const EMPLOYMENT_TYPES = ["Full-time", "Part-time", "Contract", "Internship", "Freelance"];

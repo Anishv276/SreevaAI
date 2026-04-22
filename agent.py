@@ -1426,18 +1426,26 @@ def remove_system_messages(chat_ctx, marker: str) -> None:
 
 
 def build_cartesia_tts(
-    language: str = "en", model: str = CARTESIA_MODEL, voice_id: str = CARTESIA_VOICE_ID
+    language: str = "en",
+    model: str = CARTESIA_MODEL,
+    voice_id: str = CARTESIA_VOICE_ID,
+    extra_kwargs: Optional[dict[str, Any]] = None,
 ):
     api_key = os.getenv("CARTESIA_API_KEY")
     if not api_key:
         raise RuntimeError("CARTESIA_API_KEY is not set")
 
-    # Use LiveKit Inference Cartesia TTS, matching the current docs.
+    # Use LiveKit Inference Cartesia TTS and pass model-specific controls via
+    # extra_kwargs, matching the documented Python API shape.
     tts_kwargs: dict[str, Any] = {
         "model": _normalize_cartesia_model(model),
         "voice": voice_id,
         "language": language,
         "api_key": api_key,
+        "extra_kwargs": {
+            "speed": 1.0,
+            **(extra_kwargs or {}),
+        },
     }
     return inference.TTS(**tts_kwargs)
 
@@ -1466,7 +1474,7 @@ def build_sarvam_tts(
         "speaker": voice_id,
         "api_key": api_key,
         # pace: valid for both v2 (0.3-3.0) and v3 (0.5-2.0). 1.0 = natural speed.
-        "pace": 1.0,
+        "pace": 1.1,
         "speech_sample_rate": 22050,
         "output_audio_bitrate": "128k",
         "min_buffer_size": 50,
@@ -1484,22 +1492,7 @@ def build_sarvam_tts(
     else:
         tts_kwargs["temperature"] = 0.6
 
-    # Defensive instantiation: strip unrecognised kwargs one by one if the
-    # sarvam plugin version doesn't accept them (avoids crashes on minor API changes).
-    while True:
-        try:
-            return sarvam.TTS(**tts_kwargs)
-        except TypeError as e:
-            err_msg = str(e)
-            stripped = False
-            for key in list(tts_kwargs.keys()):
-                if key in err_msg:
-                    logger.warning(f"[sarvam.TTS] Dropping unsupported kwarg '{key}': {e}")
-                    tts_kwargs.pop(key)
-                    stripped = True
-                    break
-            if not stripped:
-                raise
+    return sarvam.TTS(**tts_kwargs)
 
 
 def build_stt(language_code: str = "en", model: str = STT_MODEL):
@@ -4833,6 +4826,7 @@ async def entrypoint(ctx: JobContext):
 
     # Timed intervention flags
     candidate_questions_asked = False
+    wrap_up_signal_sent = False
 
     # How many seconds before the end to trigger each nudge
     # Only trigger the wrap-up nudge if the candidate has given at least 3 substantive
@@ -4887,6 +4881,12 @@ async def entrypoint(ctx: JobContext):
             and remaining <= CANDIDATE_Q_TRIGGER_SECS
         ):
             candidate_questions_asked = True
+            if not wrap_up_signal_sent:
+                wrap_up_signal_sent = True
+                chat_ctx.add_message(
+                    role="system",
+                    content="[SYSTEM ALERT: TIME LOW] The interview is approaching the time limit. Please conclude the current topic and transition to closing. Do not start new technical questions."
+                )
             if candidate_line_count >= MIN_CANDIDATE_LINES_FOR_WRAPUP:
                 # Normal wrapup - we had a real conversation
                 candidate_q_text = (

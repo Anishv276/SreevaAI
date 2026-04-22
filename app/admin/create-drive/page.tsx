@@ -245,8 +245,8 @@ function CreateDriveForm() {
                 .then(data => {
                     if (data.error) return;
                     const orgProvider = data.ttsProvider || "CARTESIA";
-                    setFormData((prev: any) => ({ 
-                        ...prev, 
+                    setFormData((prev: any) => ({
+                        ...prev,
                         location: prev.location || data.location || "",
                         // Lock the provider from org setting
                         ttsProvider: orgProvider,
@@ -641,7 +641,10 @@ function CreateDriveForm() {
 
                         : [];
 
-                    const allSkills = [...mustHaveArr, ...goodToHaveArr].filter(Boolean).join(", ");
+                    const allSkills = [...mustHaveArr, ...goodToHaveArr]
+                        .filter(Boolean)
+                        .map(s => s.startsWith("•") ? s : `• ${s}`)
+                        .join("\n");
 
 
 
@@ -700,33 +703,21 @@ function CreateDriveForm() {
 
 
                     //  RESPONSIBILITIES & REQUIREMENTS 
-
                     // Use new 'responsibilities_flat' if available
-
-                    const respArr = extracted.responsibilities_flat || extracted.responsibilities;
-
+                    const respArr = extracted.responsibilities || [];
                     const resp = Array.isArray(respArr)
-
-                        ? respArr.map((r: any) => typeof r === 'object' ? r.task : r).join("\n")
-
+                        ? respArr.map((r: any) => {
+                            const s = typeof r === 'object' ? r.task : r;
+                            return s.startsWith("•") ? s : `• ${s}`;
+                        }).join("\n")
                         : (typeof respArr === 'string' ? respArr : (prev.responsibilities || ""));
 
-
-
                     //  REQUIREMENTS 
-
                     // Use extracted requirements; synthesize from education + skills as robust fallback
-
                     let reqArr: string[] = [];
-
                     if (Array.isArray(extracted.requirements)) {
-
                         reqArr = [...extracted.requirements];
-
                     }
-
-
-
                     // 1. Ensure Education is mentioned
 
                     const eduReq = extracted.education?.required;
@@ -781,7 +772,9 @@ function CreateDriveForm() {
 
 
 
-                    const req = reqArr.length > 0 ? reqArr.join("\n") : (prev.requirements || "");
+                    const req = reqArr.length > 0
+                        ? reqArr.map(r => r.startsWith("•") ? r : `• ${r}`).join("\n")
+                        : (prev.requirements || "");
 
 
 
@@ -1757,8 +1750,6 @@ function CreateDriveForm() {
 
             </div>
 
-
-
             <Steps steps={STEPS} currentStep={currentStep} onStepClick={handleStepClick} isEditMode={isEditMode} maxStepReached={maxStepReached} />
 
 
@@ -2071,7 +2062,6 @@ function CreateDriveForm() {
                     )}
 
                 </div>
-
             </div>
 
 

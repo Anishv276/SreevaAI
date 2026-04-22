@@ -71,7 +71,7 @@ export function Toaster() {
     }, []);
 
     return (
-        <div className="fixed top-8 right-8 z-[9999] flex flex-col gap-3 pointer-events-none">
+        <div className="fixed top-8 right-8 z-[9999] flex flex-col gap-3 pointer-events-none" suppressHydrationWarning>
             <AnimatePresence mode="popLayout">
                 {toasts.map((t) => (
                     <motion.div

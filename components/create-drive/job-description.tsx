@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 
 
@@ -684,7 +684,21 @@ export function JobDescription({
 
                                     value={formData.responsibilities || ""}
 
-                                    onChange={(e) => updateFormData((prev: any) => ({ ...prev, responsibilities: e.target.value }))}
+                                    onChange={(e) => {
+
+                                        const formatBullets = (val: string) => val.split('\n').map(line => {
+
+                                            if (line.trim() === "") return line;
+
+                                            if (line.trim().startsWith("•")) return line;
+
+                                            return `• ${line.trimStart()}`;
+
+                                        }).join('\n');
+
+                                        updateFormData((prev: any) => ({ ...prev, responsibilities: formatBullets(e.target.value) }));
+
+                                    }}
 
                                     className={`${textareaClass} ${isAnalyzing && !formData.responsibilities ? "bg-orange-50/20" : ""}`}
 
@@ -712,7 +726,21 @@ export function JobDescription({
 
                                     value={formData.skills || ""}
 
-                                    onChange={(e) => updateFormData((prev: any) => ({ ...prev, skills: e.target.value }))}
+                                    onChange={(e) => {
+
+                                        const formatBullets = (val: string) => val.split('\n').map(line => {
+
+                                            if (line.trim() === "") return line;
+
+                                            if (line.trim().startsWith("•")) return line;
+
+                                            return `• ${line.trimStart()}`;
+
+                                        }).join('\n');
+
+                                        updateFormData((prev: any) => ({ ...prev, skills: formatBullets(e.target.value) }));
+
+                                    }}
 
                                     className={`${textareaClass} ${isAnalyzing && !formData.skills ? "bg-orange-50/20" : ""}`}
 
@@ -734,7 +762,21 @@ export function JobDescription({
 
                                     value={formData.requirements || ""}
 
-                                    onChange={(e) => updateFormData((prev: any) => ({ ...prev, requirements: e.target.value }))}
+                                    onChange={(e) => {
+
+                                        const formatBullets = (val: string) => val.split('\n').map(line => {
+
+                                            if (line.trim() === "") return line;
+
+                                            if (line.trim().startsWith("•")) return line;
+
+                                            return `• ${line.trimStart()}`;
+
+                                        }).join('\n');
+
+                                        updateFormData((prev: any) => ({ ...prev, requirements: formatBullets(e.target.value) }));
+
+                                    }}
 
                                     className={`${textareaClass} ${isAnalyzing && !formData.requirements ? "bg-orange-50/20" : ""}`}
 
