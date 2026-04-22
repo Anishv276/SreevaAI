@@ -30,7 +30,8 @@ export async function GET(req: NextRequest) {
         const start = getRangeStart(range, from);
 
         // -- DB BUCKETING: Score Distribution ---------------
-        const scoreGroups = await prisma.$queryRawUnsafe<any[]>(`
+        type ScoreGroupRow = { label: string; count: number };
+        const scoreGroups = await prisma.$queryRawUnsafe(`
             SELECT 
                 CASE 
                     WHEN a."aiScore" < 20 THEN '0–20'
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest) {
               AND iv."completedAt" >= $2
               AND a."aiScore" IS NOT NULL
             GROUP BY label
-        `, orgId, start);
+        `, orgId, start) as ScoreGroupRow[];
 
         const bands = [
             { label: "0–20",  min: 0,  max: 20,  color: "#EF4444", tier: "Below threshold" },
@@ -59,8 +60,8 @@ export async function GET(req: NextRequest) {
         ];
 
         let total = 0;
-        const distribution = bands.map((band) => {
-            const match = scoreGroups.find(g => g.label === band.label);
+        const distribution = bands.map((band: (typeof bands)[number]) => {
+            const match = scoreGroups.find((g: ScoreGroupRow) => g.label === band.label);
             const count = match ? match.count : 0;
             total += count;
             return { ...band, count };

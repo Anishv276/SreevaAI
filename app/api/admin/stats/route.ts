@@ -22,9 +22,29 @@ export async function GET(req: NextRequest) {
         const closingSoonCutoff = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
+        type AppStatsRow = {
+            applications: number;
+            applicationsToday: number;
+            applicationsPrev: number;
+            screenedInPeriod: number;
+            shortlisted: number;
+            hiredThisMonth: number;
+            hiredPrevMonth: number;
+            interviewed: number;
+            liveInterviews: number;
+            needsReview: number;
+            invited: number;
+            avgTimeToHire: number | null;
+            avgTimeToHirePrev: number | null;
+        };
+        type DriveStatsRow = {
+            activeDrives: number;
+            closingSoon: number;
+        };
+
         // Single query for all application/interview stats using FILTER
         const [appStats, driveStats, feedbackStats] = await Promise.all([
-            prisma.$queryRaw<any[]>`
+            prisma.$queryRaw`
                 SELECT
                     COUNT(*) FILTER (WHERE a."createdAt" >= ${start})::INT AS applications,
                     COUNT(*) FILTER (WHERE a."createdAt" >= ${todayStart})::INT AS "applicationsToday",
@@ -50,8 +70,8 @@ export async function GET(req: NextRequest) {
                 JOIN "Drive" d ON d.id = a."driveId"
                 LEFT JOIN "Interview" i ON i."applicationId" = a.id
                 WHERE d."orgId" = ${orgId}
-            `,
-            prisma.$queryRaw<any[]>`
+            ` as Promise<AppStatsRow[]>,
+            prisma.$queryRaw`
                 SELECT
                     COUNT(*) FILTER (WHERE status IN ('ACTIVE','Active'))::INT AS "activeDrives",
                     COUNT(*) FILTER (
@@ -61,7 +81,7 @@ export async function GET(req: NextRequest) {
                     )::INT AS "closingSoon"
                 FROM "Drive"
                 WHERE "orgId" = ${orgId}
-            `,
+            ` as Promise<DriveStatsRow[]>,
             prisma.interview.aggregate({
                 where: { application: { drive: { orgId } } },
                 _avg: { candidateRating: true }
@@ -71,7 +91,7 @@ export async function GET(req: NextRequest) {
         const s = appStats[0];
         const d = driveStats[0];
 
-        function safeRound(val: any) {
+        function safeRound(val: number | string | null | undefined) {
             return val != null ? Math.round(Number(val)) : null;
         }
 
