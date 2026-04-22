@@ -234,7 +234,7 @@ async function searchCandidates(message: string, orgId: string) {
             return { type: 'list', message: "No candidates found in your organization." };
         }
         
-        const list = candidates.map(c => 
+        const list = candidates.map((c: any) => 
             `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - ${c.hiringStatus !== 'pending' ? c.hiringStatus : c.resumeStatus} - ${c.drive.title}`
         ).join('\n');
         
@@ -271,7 +271,7 @@ async function searchCandidates(message: string, orgId: string) {
         });
         
         // Filter candidates who have the skill in their resume
-        const filtered = allCandidates.filter(c => {
+        const filtered = allCandidates.filter((c: any) => {
             const resume = c.structuredResume ? (typeof c.structuredResume === 'string' ? JSON.parse(c.structuredResume) : c.structuredResume) : null;
             if (!resume) return false;
             
@@ -297,7 +297,7 @@ async function searchCandidates(message: string, orgId: string) {
             return { type: 'list', message: `No candidates found with "${skill || name}" in their skills or experience.` };
         }
         
-        const list = filtered.slice(0, 10).map(c => 
+        const list = filtered.slice(0, 10).map((c: any) => 
             `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - ${c.hiringStatus !== 'pending' ? c.hiringStatus : c.resumeStatus} - ${c.drive.title}`
         ).join('\n');
         
@@ -329,7 +329,7 @@ async function searchCandidates(message: string, orgId: string) {
         return { type: 'list', message: "No candidates found matching your query." };
     }
     
-    const list = candidates.map(c => {
+    const list = candidates.map((c: any) => {
         const time = new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         return `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - ${c.hiringStatus !== 'pending' ? c.hiringStatus : c.resumeStatus} - ${c.drive.title} (${time})`;
     }).join('\n');
@@ -373,7 +373,7 @@ async function filterByScore(message: string, orgId: string) {
     }
     
     const prefix = isTop ? '🏆 ' : '• ';
-    const list = candidates.map((c, i) => 
+    const list = candidates.map((c: any, i: number) => 
         `${prefix}${i + 1}. **${c.fullName}** - ${c.aiScore}/100 - ${c.drive.title}`
     ).join('\n');
     
@@ -412,7 +412,7 @@ async function filterByStatus(message: string, orgId: string) {
         return { type: 'list', message: `No candidates found with status: ${status}` };
     }
     
-    const list = candidates.map(c => 
+    const list = candidates.map((c: any) => 
         `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - Applied: ${new Date(c.createdAt).toLocaleDateString()}`
     ).join('\n');
     
@@ -456,7 +456,7 @@ async function filterByDate(message: string, orgId: string) {
                        message.toLowerCase().includes('yesterday') ? 'yesterday' : 
                        message.toLowerCase().includes('week') ? 'this week' : 'this period';
     
-    const list = candidates.slice(0, 10).map(c => {
+    const list = candidates.slice(0, 10).map((c: any) => {
         const time = new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         return `• **${c.fullName}** - ${c.drive.title} (at ${time})`;
     }).join('\n');
@@ -490,14 +490,14 @@ async function getDrives(orgId: string) {
     const active = drives.filter(d => d.status === 'ACTIVE');
     
     let response = `**Active Drives (${active.length}):**\n`;
-    response += active.slice(0, 5).map(d => 
+    response += active.slice(0, 5).map((d: any) => 
         `• **${d.title}** (${d._count.applications} candidates) - ${d.department}`
     ).join('\n');
     
     const closed = drives.filter(d => d.status === 'CLOSED');
     if (closed.length > 0) {
         response += `\n\n**Closed Drives (${closed.length}):**\n`;
-        response += closed.slice(0, 3).map(d => 
+        response += closed.slice(0, 3).map((d: any) => 
             `• ${d.title} (${d._count.applications} candidates)`
         ).join('\n');
     }
@@ -550,7 +550,7 @@ async function filterByDrive(message: string, orgId: string) {
         return { type: 'list', message: `No candidates applied to ${drive.title} yet.` };
     }
     
-    const list = candidates.map(c => 
+    const list = candidates.map((c: any) => 
         `• **${c.fullName}** - Score: ${c.aiScore || 'N/A'} - ${c.hiringStatus !== 'pending' ? c.hiringStatus : c.resumeStatus}`
     ).join('\n');
     

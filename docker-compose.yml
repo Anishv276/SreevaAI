@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # Next.js Frontend + API
+  hr-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        # Build-time variables for Next.js
+        NEXT_PUBLIC_LIVEKIT_URL: "wss://new.livekit.cloud" 
+        NEXT_PUBLIC_APP_URL: "https://hr.yourdomain.com"
+    container_name: hr-frontend
+    networks:
+      - traefik-proxy
+    env_file: .env
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      # IMPORTANT: Replace 'hr.yourdomain.com' with your actual domain/subdomain
+      - "traefik.http.routers.hr-app.rule=Host(`hr.yourdomain.com`)"
+      - "traefik.http.routers.hr-app.entrypoints=websecure"
+      - "traefik.http.routers.hr-app.tls=true"
+      # Match this to your existing Traefik certresolver (e.g., 'myresolver' or 'letsencrypt')
+      - "traefik.http.routers.hr-app.tls.certresolver=myresolver"
+      - "traefik.http.services.hr-app.loadbalancer.server.port=3000"
+
+  # Python AI Agent (Backend)
+  hr-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hr-agent
+    networks:
+      - traefik-proxy
+    env_file: .env
+    restart: always
+    # The agent doesn't need Traefik labels because it connects outwards to LiveKit Cloud
+
+networks:
+  traefik-proxy:
+    external: true
