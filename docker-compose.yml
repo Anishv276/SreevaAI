@@ -37,7 +37,7 @@ services:
 
   # LiveKit Server (Self-Hosted)
   livekit:
-    image: livekit/livekit:latest
+    image: livekit/livekit-server:latest
     container_name: livekit
     restart: always
     command: --config /etc/livekit.yaml
