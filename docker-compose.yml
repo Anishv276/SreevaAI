@@ -15,10 +15,10 @@ services:
     restart: always
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.hr-app.rule=Host(`www.sreevaai.com`) || Host(`sreevaai.com`)"
+      - "traefik.http.routers.hr-app.rule=Host('www.sreevaai.com') || Host('sreevaai.com')"
       - "traefik.http.routers.hr-app.entrypoints=websecure"
       - "traefik.http.routers.hr-app.tls=true"
-      - "traefik.http.routers.hr-app.tls.certresolver=myresolver"
+      - "traefik.http.routers.hr-app.tls.certresolver=mytlschallenge"
       - "traefik.http.services.hr-app.loadbalancer.server.port=3000"
 
   # Python AI Agent (Backend)
@@ -50,10 +50,10 @@ services:
       - "5000-5100:5000-5100/udp"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.livekit.rule=Host(`lk.sreevaai.com`)"
+      - "traefik.http.routers.livekit.rule=Host('lk.sreevaai.com')"
       - "traefik.http.routers.livekit.entrypoints=websecure"
       - "traefik.http.routers.livekit.tls=true"
-      - "traefik.http.routers.livekit.tls.certresolver=myresolver"
+      - "traefik.http.routers.livekit.tls.certresolver=mytlschallenge"
       - "traefik.http.services.livekit.loadbalancer.server.port=7880"
 
   # Redis (Required by LiveKit)
