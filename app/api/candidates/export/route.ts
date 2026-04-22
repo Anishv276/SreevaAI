@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
         // Convert to CSV
         const headers = ["Candidate ID", "Name", "Email", "Phone", "Role", "AI Score", "Resume Status", "Interview Status", "Hiring Status", "Applied Date"];
-        const rows = candidates.map(c => [
+        const rows = candidates.map((c: (typeof candidates)[number]) => [
             c.id,
             `"${c.fullName}"`,
             `"${c.email}"`,
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
             `"${new Date(c.createdAt).toLocaleDateString()}"`
         ]);
 
-        const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+        const csvContent = [headers.join(","), ...rows.map((r: (typeof rows)[number]) => r.join(","))].join("\n");
 
         // Return as a downloadable CSV file
         return new Response(csvContent, {

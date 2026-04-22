@@ -351,7 +351,7 @@ export async function DELETE(request: Request) {
             select: { id: true }
         });
 
-        const validIds = belongsToOrg.map(a => a.id);
+        const validIds = belongsToOrg.map((a: (typeof belongsToOrg)[number]) => a.id);
         if (validIds.length === 0) return NextResponse.json({ message: "No matching candidates found" });
 
         try {

@@ -237,13 +237,13 @@ export async function GET(req: NextRequest) {
         const MEDIUM_SEVERITY_KEYS = new Set(["audio_flag", "gaze_violation", "head_pose_violation", "tab_switch", "microphone_disabled", "connection_lost", "duplicate_ip_sequential"]);
 
         const violations = ORDER
-            .filter(k => violationCounts[k] && LABELS[k])
-            .map(k => ({
+            .filter((k: string) => violationCounts[k as keyof typeof violationCounts] && LABELS[k as keyof typeof LABELS])
+            .map((k: string) => ({
                 key: k,
-                abbr: LABELS[k].abbr,
-                title: LABELS[k].title,
-                description: LABELS[k].getDesc(violationCounts[k]),
-                count: violationCounts[k].incidents,
+                abbr: LABELS[k as keyof typeof LABELS].abbr,
+                title: LABELS[k as keyof typeof LABELS].title,
+                description: LABELS[k as keyof typeof LABELS].getDesc(violationCounts[k as keyof typeof violationCounts]),
+                count: violationCounts[k as keyof typeof violationCounts].incidents,
                 severity: HIGH_SEVERITY_KEYS.has(k) ? "high"
                         : MEDIUM_SEVERITY_KEYS.has(k) ? "medium"
                         : "low",

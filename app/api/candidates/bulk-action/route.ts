@@ -35,7 +35,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "No matching candidates found" }, { status: 404 });
         }
 
-        const validIds = applications.map(a => a.id);
+        const validIds = applications.map((a: (typeof applications)[number]) => a.id);
 
         if (action === "delete") {
             // Clean up storage
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
             });
 
             // Create interview records and send emails
-            await Promise.allSettled(applications.map(async (app) => {
+            await Promise.allSettled(applications.map(async (app: (typeof applications)[number]) => {
                 const interview = await (prisma as any).interview.upsert({
                     where: { applicationId: app.id },
                     update: { expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000), status: "PENDING" },
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
             });
 
             Promise.allSettled(
-                applications.map(app =>
+                applications.map((app: (typeof applications)[number]) =>
                     sendApplicationStatusEmail({
                         email: app.email,
                         fullName: app.fullName,
@@ -133,7 +133,7 @@ export async function POST(request: Request) {
             });
 
             Promise.allSettled(
-                applications.map(app =>
+                applications.map((app: (typeof applications)[number]) =>
                     sendApplicationStatusEmail({
                         email: app.email,
                         fullName: app.fullName,
@@ -148,7 +148,7 @@ export async function POST(request: Request) {
             });
 
             try {
-                const driveIds = [...new Set(applications.map(a => a.drive.id))];
+                const driveIds = [...new Set(applications.map((a: (typeof applications)[number]) => a.drive.id))];
                 for (const dId of driveIds) {
                     const driveStats = await prisma.drive.findUnique({
                         where: { id: dId },

@@ -256,7 +256,7 @@ export async function DELETE(request: Request) {
             select: { id: true },
         });
 
-        const validIds = belongsToOrg.map(d => d.id);
+        const validIds = belongsToOrg.map((d: (typeof belongsToOrg)[number]) => d.id);
         if (validIds.length === 0) return NextResponse.json({ message: "No matching drives found" });
 
         // -- STORAGE CLEANUP: Purge JDs & Resumes from R2 ----------
@@ -300,7 +300,7 @@ export async function DELETE(request: Request) {
             where: { driveId: { in: validIds } },
             select: { id: true }
         });
-        const appIds = applications.map(a => a.id);
+        const appIds = applications.map((a: (typeof applications)[number]) => a.id);
 
         try {
             for (const driveId of validIds) {

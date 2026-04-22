@@ -219,14 +219,14 @@ export async function DELETE(
             where: { orgId: id }, 
             select: { id: true, jdPreviewUrl: true } 
         });
-        const driveIds = drives.map(d => d.id);
+        const driveIds = drives.map((d: (typeof drives)[number]) => d.id);
 
         // 3. Get all applications and their files
         const applications = await prisma.application.findMany({
             where: { driveId: { in: driveIds } },
             select: { id: true, resumeUrl: true, passportUrl: true }
         });
-        const appIds = applications.map(app => app.id);
+        const appIds = applications.map((app: (typeof applications)[number]) => app.id);
 
         // 4. Get all interviews and recordings
         const interviews = await prisma.interview.findMany({

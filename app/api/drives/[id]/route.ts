@@ -230,7 +230,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
                 where: { driveId },
                 select: { id: true }
             });
-            const appIds = apps.map(a => a.id);
+            const appIds = apps.map((a: (typeof apps)[number]) => a.id);
 
             if (appIds.length > 0) {
                 // 2. Delete all Interviews for these applications

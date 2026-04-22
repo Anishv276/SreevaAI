@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
         // 2. Remove any agent participants still in the room
         try {
             const participants = await roomClient.listParticipants(roomName);
-            const agents = participants.filter(p => {
+            const agents = participants.filter((p: (typeof participants)[number]) => {
                 const identity = p.identity.toLowerCase();
                 const name = (p.name || "").toLowerCase();
                 return identity.startsWith("aw_") || identity.includes("agent") || name.includes("agent");

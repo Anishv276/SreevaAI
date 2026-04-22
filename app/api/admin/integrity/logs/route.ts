@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
         });
 
         // Filter and format for the audit log
-        const formattedLogs = interviews.map((iv) => {
+        const formattedLogs = interviews.map((iv: (typeof interviews)[number]) => {
             const rawEvents = iv.proctoringEvents as any[] || [];
 
             // Re-map event types using similar logic as main integrity API
@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
                 snapshots: iv.snapshots,
                 events: rawEvents
             };
-        }).filter(log => log.events.length > 0 || log.snapshots.length > 0);
+        }).filter((log: (typeof interviews)[number] & { events: any[] }) => log.events.length > 0 || log.snapshots.length > 0);
         return NextResponse.json(formattedLogs);
     } catch (error: any) {
         console.error("[INTEGRITY_LOGS_API_ERROR]", error);
