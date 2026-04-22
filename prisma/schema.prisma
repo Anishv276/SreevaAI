@@ -126,7 +126,7 @@ model Drive {
   skills               String?
   extractedDetails     String?       @default("{}")
   interviewLanguage    String?       @default("English")
-  interviewTime        Int?          @default(10)
+  interviewTime        Int?
   proctoringLevel      String?       @default("Medium")
   interviewQuestions   String?       @default("[]")
   jdFileName           String?
@@ -192,6 +192,7 @@ model Interview {
   recordingStartedAt    DateTime?
   recordingCompletedAt  DateTime?
   recordingDurationSec  Int?
+  recordingManifest     Json?       @default("{}")
   interviewTranscript   String?
   interviewRecordedAt   DateTime?
   createdAt             DateTime    @default(now())

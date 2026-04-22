@@ -400,8 +400,15 @@ export async function POST(req: NextRequest) {
         })();
         // -- END SMART COLLUSION DETECTION ---------------------------------------
 
-        const driveDurationMins = application.drive.interviewTime || 15;
-        const durationSeconds   = driveDurationMins * 60;
+        const driveDurationMins = application.drive.interviewTime;
+        if (typeof driveDurationMins !== "number" || !Number.isFinite(driveDurationMins) || driveDurationMins <= 0) {
+            return NextResponse.json(
+                { error: "Drive interview duration is not configured" },
+                { status: 400 }
+            );
+        }
+
+        const durationSeconds = Math.floor(driveDurationMins * 60);
 
         const apiKey    = process.env.LIVEKIT_API_KEY;
         const apiSecret = process.env.LIVEKIT_API_SECRET;

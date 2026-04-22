@@ -205,7 +205,7 @@ export async function POST(request: Request) {
 
                 // Interview configuration
                 interviewLanguage: data.interviewLanguage || "English",
-                interviewTime: data.interviewTime || 10,
+                interviewTime: data.interviewTime ?? null,
                 proctoringLevel: data.interviewAntiCheat || "Medium",
                 interviewQuestions: data.interviewQuestions ? JSON.stringify(data.interviewQuestions) : "[]",
                 

@@ -53,10 +53,10 @@ export const createDriveSchema = z.object({
   jdPreviewUrl: z.string().nullable().optional(),
   interviewLanguage: z.string().optional(),
   interviewTime: z.preprocess((val) => {
-    if (val === null || val === undefined || val === "") return 10;
+    if (val === null || val === undefined || val === "") return undefined;
     const n = Number(val);
-    return isNaN(n) ? 10 : n;
-  }, z.coerce.number().int().optional()).default(10),
+    return isNaN(n) ? undefined : n;
+  }, z.coerce.number().int().positive().optional()),
   interviewAntiCheat: z.string().optional(),
   interviewQuestions: z.array(z.any()).optional(),
   ttsProvider: z.string().optional(),

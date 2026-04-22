@@ -20,6 +20,30 @@ type RecordingCompletePayload = {
     completedAt: Date;
 };
 
+type ChunkEvent = {
+    chunkIndex: number;
+    startedAt: string | null;
+    endedAt: string | null;
+    byteSize: number;
+    chunkUrl?: string;
+};
+
+type RecordingManifest = {
+    sessionId?: string;
+    mimeType?: string;
+    startedAt?: string | null;
+    completedAt?: string | null;
+    lastStatus?: string;
+    chunksReceived?: number;
+    totalByteSize?: number;
+    uploadCompleted?: boolean;
+    mergeStarted?: boolean;
+    mergeFinished?: boolean;
+    lastChunkIndex?: number;
+    chunkEvents?: ChunkEvent[];
+    lastError?: string | null;
+};
+
 function buildCandidateRoleFolder(fullName?: string | null, roleTitle?: string | null, fallbackId?: string) {
     const raw = [fullName, roleTitle].filter(Boolean).join(" - ") || fallbackId || "candidate";
     return raw
@@ -103,6 +127,76 @@ async function getCandidateFolder(applicationId: string) {
     return buildCandidateRoleFolder(candidate?.fullName, candidate?.drive?.title, applicationId);
 }
 
+function normalizeManifest(raw: unknown): RecordingManifest {
+    if (!raw) return {};
+    if (typeof raw === "string") {
+        try {
+            const parsed = JSON.parse(raw);
+            return (parsed && typeof parsed === "object") ? parsed as RecordingManifest : {};
+        } catch {
+            return {};
+        }
+    }
+    if (typeof raw === "object") return raw as RecordingManifest;
+    return {};
+}
+
+async function getManifest(applicationId: string): Promise<RecordingManifest> {
+    const rows = await prisma.$queryRaw<Array<{ recordingManifest: unknown }>>`
+        SELECT "recordingManifest" FROM "Interview" WHERE "applicationId" = ${applicationId} LIMIT 1
+    `;
+    return normalizeManifest(rows?.[0]?.recordingManifest);
+}
+
+async function updateRecordingState(params: {
+    applicationId: string;
+    status: "STARTED" | "CHUNKING" | "FINALIZING" | "COMPLETED" | "FAILED" | "ABANDONED";
+    mimeType?: string | null;
+    startedAt?: Date | null;
+    completedAt?: Date | null;
+    durationSec?: number | null;
+    manifest?: RecordingManifest;
+    error?: string | null;
+}) {
+    const {
+        applicationId,
+        status,
+        mimeType = null,
+        startedAt = null,
+        completedAt = null,
+        durationSec = null,
+        manifest,
+        error = null,
+    } = params;
+
+    const currentManifest = await getManifest(applicationId);
+    const nextManifest: RecordingManifest = {
+        ...currentManifest,
+        ...(manifest || {}),
+        lastStatus: status,
+        lastError: error,
+    };
+
+    await prisma.$executeRawUnsafe(
+        `UPDATE "Interview"
+         SET "recordingStatus" = $1,
+             "recordingMimeType" = COALESCE($2, "recordingMimeType"),
+             "recordingStartedAt" = COALESCE("recordingStartedAt", $3),
+             "recordingCompletedAt" = CASE WHEN $4 IS NOT NULL THEN $4 ELSE "recordingCompletedAt" END,
+             "recordingDurationSec" = CASE WHEN $5 IS NOT NULL THEN $5 ELSE "recordingDurationSec" END,
+             "recordingManifest" = $6::jsonb,
+             "updatedAt" = NOW()
+         WHERE "applicationId" = $7`,
+        status,
+        mimeType,
+        startedAt,
+        completedAt,
+        durationSec,
+        JSON.stringify(nextManifest),
+        applicationId
+    );
+}
+
 async function persistRecordingComplete(payload: RecordingCompletePayload) {
     const { applicationId, recordingUrl, durationSec, mimeType, startedAt, completedAt } = payload;
 
@@ -130,22 +224,19 @@ async function persistRecordingComplete(payload: RecordingCompletePayload) {
         },
     });
 
-    await prisma.$executeRawUnsafe(
-        `UPDATE "Interview"
-         SET "recordingStatus" = $1,
-             "recordingMimeType" = $2,
-             "recordingStartedAt" = $3,
-             "recordingCompletedAt" = $4,
-             "recordingDurationSec" = $5,
-             "updatedAt" = NOW()
-         WHERE "applicationId" = $6`,
-        "COMPLETED",
+    await updateRecordingState({
+        applicationId,
+        status: "COMPLETED",
         mimeType,
         startedAt,
         completedAt,
         durationSec,
-        applicationId
-    );
+        manifest: {
+            uploadCompleted: true,
+            mergeFinished: true,
+            completedAt: completedAt.toISOString(),
+        },
+    });
 
     await prisma.application.update({
         where: { id: applicationId },
@@ -197,6 +288,9 @@ export async function POST(req: Request) {
             if (uploadType === "chunk") {
                 const sessionId = String(formData.get("sessionId") || "").trim();
                 const chunkIndex = parsePositiveInt(formData.get("chunkIndex"));
+                const chunkStartedAt = parseDateValue(formData.get("chunkStartedAt"));
+                const chunkEndedAt = parseDateValue(formData.get("chunkEndedAt"));
+                const byteSize = parsePositiveInt(formData.get("byteSize")) ?? recording.size;
                 if (!sessionId || chunkIndex === null) {
                     return NextResponse.json({ error: "Missing chunk session or chunk index" }, { status: 400 });
                 }
@@ -220,18 +314,36 @@ export async function POST(req: Request) {
                     },
                 });
 
-                await prisma.$executeRawUnsafe(
-                    `UPDATE "Interview"
-                     SET "recordingStatus" = $1,
-                         "recordingMimeType" = $2,
-                         "recordingStartedAt" = COALESCE("recordingStartedAt", $3),
-                         "updatedAt" = NOW()
-                     WHERE "applicationId" = $4`,
-                    "UPLOADING",
+                const currentManifest = await getManifest(applicationId);
+                const currentEvents = Array.isArray(currentManifest.chunkEvents) ? currentManifest.chunkEvents : [];
+                const nextEvent: ChunkEvent = {
+                    chunkIndex,
+                    startedAt: chunkStartedAt ? chunkStartedAt.toISOString() : null,
+                    endedAt: chunkEndedAt ? chunkEndedAt.toISOString() : null,
+                    byteSize,
+                    chunkUrl,
+                };
+                const mergedEvents = [...currentEvents, nextEvent].slice(-300);
+                const totalByteSize = (currentManifest.totalByteSize || 0) + byteSize;
+                const chunksReceived = (currentManifest.chunksReceived || 0) + 1;
+                await updateRecordingState({
+                    applicationId,
+                    status: "CHUNKING",
                     mimeType,
                     startedAt,
-                    applicationId
-                );
+                    manifest: {
+                        sessionId,
+                        mimeType,
+                        startedAt: (startedAt || new Date()).toISOString(),
+                        chunksReceived,
+                        totalByteSize,
+                        lastChunkIndex: chunkIndex,
+                        chunkEvents: mergedEvents,
+                        uploadCompleted: false,
+                        mergeStarted: false,
+                        mergeFinished: false,
+                    },
+                });
 
                 return NextResponse.json({
                     success: true,
@@ -292,6 +404,58 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: "Unauthorized: Invalid session token" }, { status: 401 });
             }
 
+            if (uploadType === "abandon") {
+                const reason = String(body?.reason || "recording_session_abandoned").slice(0, 200);
+                await updateRecordingState({
+                    applicationId,
+                    status: "ABANDONED",
+                    manifest: {
+                        uploadCompleted: false,
+                        mergeFinished: false,
+                    },
+                    error: reason,
+                });
+                return NextResponse.json({ success: true, uploadType: "abandon" });
+            }
+
+            if (uploadType === "started") {
+                const sessionId = String(body?.sessionId || "").trim();
+                const startedAt = parseDateValue(body?.startedAt) || new Date();
+                const mimeType = String(body?.mimeType || "video/webm").trim() || "video/webm";
+                await updateRecordingState({
+                    applicationId,
+                    status: "STARTED",
+                    mimeType,
+                    startedAt,
+                    manifest: {
+                        sessionId,
+                        mimeType,
+                        startedAt: startedAt.toISOString(),
+                        chunksReceived: 0,
+                        totalByteSize: 0,
+                        uploadCompleted: false,
+                        mergeStarted: false,
+                        mergeFinished: false,
+                    },
+                });
+                return NextResponse.json({ success: true, uploadType: "started", sessionId });
+            }
+
+            if (uploadType === "mark_failed") {
+                const reason = String(body?.reason || "recording_failed").slice(0, 200);
+                const durationSec = parsePositiveInt(body?.duration);
+                const startedAt = parseDateValue(body?.startedAt);
+                await updateRecordingState({
+                    applicationId,
+                    status: "FAILED",
+                    startedAt,
+                    completedAt: new Date(),
+                    durationSec,
+                    error: reason,
+                });
+                return NextResponse.json({ success: true, uploadType: "mark_failed" });
+            }
+
             if (uploadType !== "finalize_chunks") {
                 return NextResponse.json({ error: "Unsupported JSON upload type" }, { status: 400 });
             }
@@ -308,64 +472,97 @@ export async function POST(req: Request) {
                 return NextResponse.json({ error: "Missing finalize session or chunk URLs" }, { status: 400 });
             }
 
-            const buffers: Buffer[] = [];
-            for (const chunkUrl of chunkUrls) {
-                const response = await fetch(chunkUrl);
-                if (!response.ok) {
-                    return NextResponse.json({ error: `Failed to fetch recording chunk: ${chunkUrl}` }, { status: 500 });
-                }
-                const bytes = await response.arrayBuffer();
-                buffers.push(Buffer.from(bytes));
-            }
-
-            const finalBuffer = Buffer.concat(buffers);
-            const safeCandidate = await getCandidateFolder(applicationId);
-            const finalKey = `${INTERVIEW_CANDIDATES_PREFIX}/${safeCandidate}/recordings/${Date.now()}-interview-${sessionId}.webm`;
-            const recordingUrl = await uploadWithRetry(bucket, finalKey, finalBuffer, mimeType);
-
-            await persistRecordingComplete({
+            await updateRecordingState({
                 applicationId,
-                recordingUrl,
-                durationSec,
+                status: "FINALIZING",
                 mimeType,
                 startedAt,
-                completedAt,
+                manifest: {
+                    sessionId,
+                    mergeStarted: true,
+                    uploadCompleted: true,
+                },
             });
 
-            // Best-effort chunk cleanup to keep R2 clean.
-            await Promise.all(
-                chunkUrls.map(async (url: string) => {
-                    const key = getKeyFromUrl(url);
-                    if (!key) return;
-                    await deleteObject(bucket, key).catch(() => { });
-                })
-            );
-
+            const buffers: Buffer[] = [];
             try {
-                const job = await interviewFinalizationQueue.add(
-                    "finalize-interview",
-                    { applicationId, recordingUrl },
-                    {
-                        attempts: 5,
-                        backoff: { type: "exponential", delay: 1000 },
-                        removeOnComplete: true,
-                        removeOnFail: 200,
+                for (const chunkUrl of chunkUrls) {
+                    const response = await fetch(chunkUrl);
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch recording chunk: ${chunkUrl}`);
                     }
-                );
-                jobId = job.id;
-            } catch (jobError) {
-                console.warn("[API] Background job queuing failed:", jobError);
-            }
+                    const bytes = await response.arrayBuffer();
+                    buffers.push(Buffer.from(bytes));
+                }
 
-            return NextResponse.json({
-                success: true,
-                uploadType: "finalize_chunks",
-                queued: !!jobId,
-                jobId,
-                recordingUrl,
-                recordingKey: finalKey,
-                chunkCount: chunkUrls.length,
-            });
+                const finalBuffer = Buffer.concat(buffers);
+                const safeCandidate = await getCandidateFolder(applicationId);
+                const finalKey = `${INTERVIEW_CANDIDATES_PREFIX}/${safeCandidate}/recordings/${Date.now()}-interview-${sessionId}.webm`;
+                const recordingUrl = await uploadWithRetry(bucket, finalKey, finalBuffer, mimeType);
+
+                await persistRecordingComplete({
+                    applicationId,
+                    recordingUrl,
+                    durationSec,
+                    mimeType,
+                    startedAt,
+                    completedAt,
+                });
+
+                // Best-effort chunk cleanup to keep R2 clean.
+                await Promise.all(
+                    chunkUrls.map(async (url: string) => {
+                        const key = getKeyFromUrl(url);
+                        if (!key) return;
+                        await deleteObject(bucket, key).catch(() => { });
+                    })
+                );
+
+                try {
+                    const job = await interviewFinalizationQueue.add(
+                        "finalize-interview",
+                        { applicationId, recordingUrl },
+                        {
+                            attempts: 5,
+                            backoff: { type: "exponential", delay: 1000 },
+                            removeOnComplete: true,
+                            removeOnFail: 200,
+                        }
+                    );
+                    jobId = job.id;
+                } catch (jobError) {
+                    console.warn("[API] Background job queuing failed:", jobError);
+                }
+
+                return NextResponse.json({
+                    success: true,
+                    uploadType: "finalize_chunks",
+                    queued: !!jobId,
+                    jobId,
+                    recordingUrl,
+                    recordingKey: finalKey,
+                    chunkCount: chunkUrls.length,
+                });
+            } catch (finalizeErr: any) {
+                await updateRecordingState({
+                    applicationId,
+                    status: "FAILED",
+                    mimeType,
+                    startedAt,
+                    completedAt: new Date(),
+                    durationSec,
+                    manifest: {
+                        sessionId,
+                        mergeStarted: true,
+                        mergeFinished: false,
+                    },
+                    error: finalizeErr?.message || "chunk_finalize_failed",
+                });
+                return NextResponse.json(
+                    { error: "Failed to finalize chunks", details: finalizeErr?.message || String(finalizeErr) },
+                    { status: 500 }
+                );
+            }
         }
     } catch (error: any) {
         console.error("[API_RECORD_SAVE_ERROR]:", error);

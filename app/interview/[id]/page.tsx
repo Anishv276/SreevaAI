@@ -43,8 +43,6 @@ interface InterviewPageProps {
     params: Promise<{ id: string }>;
 }
 
-const INTERVIEW_DURATION_SECONDS = 15 * 60;
-
 function formatDuration(totalSeconds: number) {
     const safe = Math.max(0, totalSeconds);
     const mins = Math.floor(safe / 60);
@@ -122,8 +120,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [joinError, setJoinError] = useState<string | null>(null);
     const [shouldConnect, setShouldConnect] = useState(false);
     const [interviewEndsAt, setInterviewEndsAt] = useState<number | null>(null);
-    const [sessionDuration, setSessionDuration] = useState(INTERVIEW_DURATION_SECONDS);
-    const [remainingSeconds, setRemainingSeconds] = useState(INTERVIEW_DURATION_SECONDS);
+    const [remainingSeconds, setRemainingSeconds] = useState(0);
+    const sessionDurationRef = useRef<number | null>(null);
     const [timerExpired, setTimerExpired] = useState(false);
     const [interviewRoleLabel, setInterviewRoleLabel] = useState<string>("Interview");
     const [candidateDisplayName, setCandidateDisplayName] = useState<string>("Candidate");
@@ -493,7 +491,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     setInterviewRoleLabel(data.roleLabel || data.jobTitle || "Interview");
                     setCandidateDisplayName(data.candidateName || "Candidate");
                     if (typeof data.duration === "number" && data.duration > 0) {
-                        setSessionDuration(data.duration);
+                        sessionDurationRef.current = data.duration;
                         setRemainingSeconds(data.duration);
                     }
                     console.log("Warm connection prepared.");
@@ -632,9 +630,14 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     throw new Error("Interview connection could not be prepared. Please retry.");
                 }
 
+                const durationSeconds = sessionDurationRef.current;
+                if (typeof durationSeconds !== "number" || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+                    throw new Error("Interview duration is not configured for this drive.");
+                }
+
                 if (!interviewEndsAt) {
-                    setInterviewEndsAt(Date.now() + sessionDuration * 1000);
-                    setRemainingSeconds(sessionDuration);
+                    setInterviewEndsAt(Date.now() + durationSeconds * 1000);
+                    setRemainingSeconds(durationSeconds);
                     setTimerExpired(false);
                 }
 
@@ -1413,25 +1416,23 @@ function InterviewRoomContent({
 
         if (autoFinishTriggeredRef.current && connectionState === "connected") {
             interviewCompletionHandledRef.current = true;
-            onFinalizing();
-            onFinish();
+            setRemoteForceFinish(true);
         }
-    }, [connectionState, hasAgentPresence, isInterviewActive, onFinish, onFinalizing]);
+    }, [connectionState, hasAgentPresence, isInterviewActive]);
 
     useEffect(() => {
         if (!lkRoom || !isInterviewActive) return;
         const handleRoomDisconnected = () => {
             if (interviewCompletionHandledRef.current) return;
             interviewCompletionHandledRef.current = true;
-            onFinalizing();
-            onFinish();
+            setRemoteForceFinish(true);
         };
 
         lkRoom.on(RoomEvent.Disconnected, handleRoomDisconnected);
         return () => {
             lkRoom.off(RoomEvent.Disconnected, handleRoomDisconnected);
         };
-    }, [lkRoom, isInterviewActive, onFinish, onFinalizing]);
+    }, [lkRoom, isInterviewActive]);
     const isAiListening = assistantState === "listening";
 
 
@@ -1466,13 +1467,59 @@ function InterviewRoomContent({
     const recordingStopPromiseRef = useRef<Promise<void> | null>(null);
     const recordingStopResolveRef = useRef<(() => void) | null>(null);
     const recordingStopRejectRef = useRef<((reason?: unknown) => void) | null>(null);
+    const recordingLastChunkEndedAtRef = useRef<number | null>(null);
+    const recordingAbandonedSentRef = useRef(false);
+    const [remoteForceFinish, setRemoteForceFinish] = useState(false);
     const transcriptPanelRef = useRef<HTMLDivElement>(null);
     const transcriptions = useTranscriptions({ room: lkRoom });
     const localIdentity = lkRoom?.localParticipant?.identity ?? "";
     const localCameraTrack =
         cameraTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera) || null;
 
-    const uploadRecordingChunk = useCallback(async (blob: Blob, chunkIndex: number) => {
+    const markRecordingAbandoned = useCallback((reason: string) => {
+        if (recordingAbandonedSentRef.current || !recordingSessionIdRef.current || !recordingStartedRef.current) return;
+        recordingAbandonedSentRef.current = true;
+        const payload = JSON.stringify({
+            uploadType: "abandon",
+            applicationId: id,
+            interviewToken: interviewToken || "",
+            sessionId: recordingSessionIdRef.current,
+            reason,
+        });
+        if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+            try {
+                const blob = new Blob([payload], { type: "application/json" });
+                navigator.sendBeacon("/api/interview/recording", blob);
+                return;
+            } catch { }
+        }
+        fetch("/api/interview/recording", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+            keepalive: true,
+        }).catch(() => { });
+    }, [id, interviewToken]);
+
+    const markRecordingFailed = useCallback(async (reason: string) => {
+        if (!recordingSessionIdRef.current || !recordingStartedAtRef.current) return;
+        const durationSec = Math.max(1, Math.round((Date.now() - recordingStartedAtRef.current) / 1000));
+        await fetch("/api/interview/recording", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                uploadType: "mark_failed",
+                applicationId: id,
+                interviewToken: interviewToken || "",
+                sessionId: recordingSessionIdRef.current,
+                duration: durationSec,
+                startedAt: new Date(recordingStartedAtRef.current).toISOString(),
+                reason,
+            }),
+        }).catch(() => { });
+    }, [id, interviewToken]);
+
+    const uploadRecordingChunk = useCallback(async (blob: Blob, chunkIndex: number, chunkStartedAtMs: number, chunkEndedAtMs: number) => {
         if (!blob.size || !recordingSessionIdRef.current) return;
         const formData = new FormData();
         formData.append("uploadType", "chunk");
@@ -1482,6 +1529,9 @@ function InterviewRoomContent({
         formData.append("chunkIndex", String(chunkIndex));
         formData.append("mimeType", recordingMimeTypeRef.current);
         formData.append("startedAt", new Date(recordingStartedAtRef.current || Date.now()).toISOString());
+        formData.append("chunkStartedAt", new Date(chunkStartedAtMs).toISOString());
+        formData.append("chunkEndedAt", new Date(chunkEndedAtMs).toISOString());
+        formData.append("byteSize", String(blob.size));
         formData.append("recording", new File([blob], `chunk-${chunkIndex}.webm`, { type: blob.type || "video/webm" }));
 
         const res = await fetch("/api/interview/recording", {
@@ -1522,16 +1572,20 @@ function InterviewRoomContent({
             startedAt: new Date(startedAt).toISOString(),
         };
 
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 60_000);
         const promise = fetch("/api/interview/recording", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
+            signal: controller.signal,
         }).then(async (res) => {
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
                 throw new Error(body?.error || "Chunk finalize failed");
             }
         }).finally(() => {
+            window.clearTimeout(timeout);
             recordingFinalizePromiseRef.current = null;
         });
 
@@ -1557,6 +1611,7 @@ function InterviewRoomContent({
         recordingStopPromiseRef.current = null;
         recordingStopResolveRef.current = null;
         recordingStopRejectRef.current = null;
+        recordingLastChunkEndedAtRef.current = null;
         recordingStartedRef.current = false;
         recordingStartedAtRef.current = null;
     }, []);
@@ -1598,6 +1653,20 @@ function InterviewRoomContent({
         recordingSessionIdRef.current = sessionId;
         recordingMimeTypeRef.current = mimeType;
         recordingStartedAtRef.current = Date.now();
+        recordingLastChunkEndedAtRef.current = recordingStartedAtRef.current;
+        recordingAbandonedSentRef.current = false;
+        fetch("/api/interview/recording", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                uploadType: "started",
+                applicationId: id,
+                interviewToken: interviewToken || "",
+                sessionId,
+                startedAt: new Date(recordingStartedAtRef.current).toISOString(),
+                mimeType,
+            }),
+        }).catch(() => { });
 
         const recorder = new MediaRecorder(mixedStream, {
             mimeType,
@@ -1609,8 +1678,11 @@ function InterviewRoomContent({
             if (event.data && event.data.size > 0) {
                 recordingChunkIndexRef.current += 1;
                 const chunkIndex = recordingChunkIndexRef.current;
+                const chunkStartedAt = recordingLastChunkEndedAtRef.current || recordingStartedAtRef.current || Date.now();
+                const chunkEndedAt = Date.now();
+                recordingLastChunkEndedAtRef.current = chunkEndedAt;
                 recordingChunkUploadChainRef.current = recordingChunkUploadChainRef.current
-                    .then(() => uploadRecordingChunk(event.data, chunkIndex))
+                    .then(() => uploadRecordingChunk(event.data, chunkIndex, chunkStartedAt, chunkEndedAt))
                     .catch((err) => {
                         console.error(`[Recording] chunk ${chunkIndex} upload failed:`, err);
                     });
@@ -1662,11 +1734,18 @@ function InterviewRoomContent({
 
         try {
             await recordingChunkUploadChainRef.current;
-            await finalizeRecordingChunks();
+            if (!recordingChunkUrlsRef.current.length) {
+                markRecordingAbandoned("no_chunks_uploaded");
+            } else {
+                await finalizeRecordingChunks();
+            }
+        } catch (err) {
+            await markRecordingFailed((err as Error)?.message || "finalize_failed");
+            throw err;
         } finally {
             cleanupRecordingResources();
         }
-    }, [cleanupRecordingResources, finalizeRecordingChunks]);
+    }, [cleanupRecordingResources, finalizeRecordingChunks, markRecordingAbandoned, markRecordingFailed]);
 
     // Agent readiness is based on room connection + remote agent speaking.
     useEffect(() => {
@@ -1686,15 +1765,16 @@ function InterviewRoomContent({
         }
     }, [isLaunchingActive, connectionState, hasAgentPresence, assistantState, onAgentReady]);
 
-    // Start recording as soon as room + local/remote media are ready, before greeting playback.
+    // Start recording after the first interviewer transcript line appears.
     useEffect(() => {
-        if (!isInterviewActive) return;
-        if (connectionState !== "connected") return;
-        if (!hasAgentPresence) return;
+        if (!isInterviewActive || recordingStartedRef.current) return;
+        const firstAgentTranscript = transcriptions.some((segment) => {
+            const identity = segment.participantInfo?.identity || "";
+            return identity !== localIdentity && segment.text.trim().length > 0;
+        });
+        if (!firstAgentTranscript) return;
         void startBrowserRecording();
-    }, [connectionState, hasAgentPresence, isInterviewActive, startBrowserRecording]);
-
-    const [remoteForceFinish, setRemoteForceFinish] = useState(false);
+    }, [isInterviewActive, localIdentity, startBrowserRecording, transcriptions]);
 
     const groupedTranscriptions = useMemo(() => {
         const groups: {
@@ -1900,6 +1980,16 @@ function InterviewRoomContent({
         if (isInterviewActive) return;
         void stopBrowserRecording();
     }, [isInterviewActive, stopBrowserRecording]);
+
+    useEffect(() => {
+        const handlePageHide = () => {
+            if (!isInterviewActive) return;
+            if (!recordingStartedRef.current) return;
+            markRecordingAbandoned("pagehide_before_finalize");
+        };
+        window.addEventListener("pagehide", handlePageHide);
+        return () => window.removeEventListener("pagehide", handlePageHide);
+    }, [isInterviewActive, markRecordingAbandoned]);
 
     useEffect(() => {
         if (!timerExpired || !isInterviewActive) return;
@@ -2227,7 +2317,7 @@ function VideoTrack({ trackRef }: { trackRef: TrackReference }) {
             ref={videoRef}
             autoPlay
             playsInline
-            className="w-full h-full object-cover bg-white brightness-[1.08] contrast-[1.05]"
+                            className="w-full h-full object-cover bg-zinc-950"
         />
     );
 }
