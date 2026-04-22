@@ -40,7 +40,7 @@ services:
     image: livekit/livekit-server:latest
     container_name: livekit
     restart: always
-    command: --config /etc/livekit.yaml
+    # command: --config /etc/livekit.yaml
     networks:
       - traefik-proxy
     volumes:
