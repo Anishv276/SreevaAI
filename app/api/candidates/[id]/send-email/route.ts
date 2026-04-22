@@ -64,7 +64,7 @@ export async function POST(
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eee; border-radius: 12px; background: #ffffff; color: #374151;">
                 <div style="white-space: pre-wrap; font-size: 15px; line-height: 1.7;">${resolvedBody.replace(/\n/g, "<br/>")}</div>
                 <hr style="border: none; border-top: 1px solid #F3F4F6; margin: 24px 0;" />
-                <p style="color: #9CA3AF; font-size: 12px; margin: 0;">Sent via Hirer.AI Recruitment Platform</p>
+                <p style="color: #9CA3AF; font-size: 12px; margin: 0;">Sent via Sreeva AI Recruitment Platform</p>
             </div>
         `;
 

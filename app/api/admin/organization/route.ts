@@ -20,6 +20,17 @@ export async function GET() {
                 onboardingComplete: true,
                 location: true,
                 status: true,
+                ttsProvider: true,
+                cartesiaVoiceId: true,
+                cartesiaModel: true,
+                sarvamVoice: true,
+                sarvamModel: true,
+                sttProvider: true,
+                deepgramModel: true,
+                sarvamSttModel: true,
+                llmProvider: true,
+                llmModel: true,
+                llmTemperature: true,
             }
         });
 

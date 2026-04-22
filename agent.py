@@ -2342,8 +2342,10 @@ async def get_interview_context(app_id: str):
     query = """
     SELECT a."fullName", d.title, d.role AS "role", d.description, d.skills, d."orgId" AS "orgId",
            d."interviewLanguage", d."interviewTime", d."interviewQuestions",
-           o."ttsProvider", o."cartesiaVoiceId", o."cartesiaModel",
-           o."sarvamModel", o."sarvamVoice",
+           COALESCE(d."ttsProvider", o."ttsProvider") AS "ttsProvider",
+           COALESCE(d."cartesiaVoiceId", o."cartesiaVoiceId") AS "cartesiaVoiceId", o."cartesiaModel",
+           o."sarvamModel", COALESCE(d."sarvamVoice", o."sarvamVoice") AS "sarvamVoice",
+           COALESCE(d."aiName", 'Ishitha') AS "aiName",
            o."sttProvider", o."deepgramModel", o."sarvamSttModel",
            o."llmProvider", o."llmModel", o."llmTemperature"
     FROM "Application" a
@@ -2392,6 +2394,7 @@ async def get_interview_context(app_id: str):
                 "cartesiaModel": row["cartesiaModel"],
                 "sarvamModel": row["sarvamModel"],
                 "sarvamVoice": row["sarvamVoice"],
+                "aiName": row["aiName"],
                 "sttProvider": row["sttProvider"],
                 "deepgramModel": row["deepgramModel"],
                 "sarvamSttModel": row["sarvamSttModel"],
@@ -4670,12 +4673,13 @@ async def entrypoint(ctx: JobContext):
     if ready_event.is_set() and not disconnect_event.is_set():
         session_start_time = time.time()
 
+        ai_name = ctxt.get('aiName') or 'Ishita'
         # Dynamic, personalized, warm greeting - adapted per language
         # The greeting avoids robotic openers and uses natural warmth.
         WELCOME_MESSAGES = {
             "English": (
                 f"Hey {candidate_first_name or candidate_name}, welcome! Really glad you could make it today. "
-                f"I'm Ishita, and I'll be having a conversation with you about the {job_title} role. "
+                f"I'm {ai_name}, and I'll be having a conversation with you about the {job_title} role. "
                 f"How are you doing? How's the day been so far?"
             ),
         }
@@ -4683,7 +4687,7 @@ async def entrypoint(ctx: JobContext):
             interview_lang,
             (
                 f"Hey {candidate_first_name or candidate_name}, welcome and thanks for joining today. "
-                f"I'm Ishita, and I'll be speaking with you about the {job_title} role. "
+                f"I'm {ai_name}, and I'll be speaking with you about the {job_title} role. "
                 f"Before we dive in - how are you doing? Ready to get started?"
             ),
         )

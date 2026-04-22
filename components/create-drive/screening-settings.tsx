@@ -1,6 +1,5 @@
-﻿"use client";
+"use client";
 
-import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Brain, Sparkles, Zap, Hand } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -12,13 +11,11 @@ export interface ScreeningConfig {
 interface ScreeningSettingsProps {
     config: ScreeningConfig;
     setConfig: (w: ScreeningConfig | ((prev: ScreeningConfig) => ScreeningConfig)) => void;
-    aiEnabled: boolean;
-    setAiEnabled: (v: boolean) => void;
     shortlistMode: "automatic" | "manual";
     setShortlistMode: (v: "automatic" | "manual") => void;
 }
 
-export function ScreeningSettings({ config, setConfig, aiEnabled, setAiEnabled, shortlistMode, setShortlistMode }: ScreeningSettingsProps) {
+export function ScreeningSettings({ config, setConfig, shortlistMode, setShortlistMode }: ScreeningSettingsProps) {
     const threshold = config?.threshold ?? 60;
 
     return (
@@ -35,55 +32,43 @@ export function ScreeningSettings({ config, setConfig, aiEnabled, setAiEnabled, 
                             </p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-                        <span className={`text-[12px] font-bold ${aiEnabled ? "text-gray-900" : "text-gray-400"}`}>
-                            {aiEnabled ? "Enabled" : "Disabled"}
-                        </span>
-                        <Switch
-                            checked={aiEnabled}
-                            onCheckedChange={setAiEnabled}
-                            className="data-[state=checked]:bg-[#F97316]"
-                        />
-                    </div>
                 </div>
 
-                {aiEnabled && (
-                    <div className="pl-4 space-y-6 animate-in-fade">
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-0.5">
-                                    <p className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                                        <Sparkles className="h-3.5 w-3.5 text-[#F97316]" />
-                                        Match Threshold
-                                    </p>
-                                    <p className="text-[12px] text-gray-500 font-medium italic">
-                                        Minimum AI score required to pass initial screening.
-                                    </p>
-                                </div>
-                                <div className="flex items-baseline gap-1 text-[#F97316]">
-                                    <span className="text-3xl font-black tracking-tighter">{threshold}</span>
-                                    <span className="text-sm font-bold">%</span>
-                                </div>
+                <div className="pl-4 space-y-6 animate-in-fade">
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div className="space-y-0.5">
+                                <p className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                                    <Sparkles className="h-3.5 w-3.5 text-[#F97316]" />
+                                    Match Threshold
+                                </p>
+                                <p className="text-[12px] text-gray-500 font-medium italic">
+                                    Minimum AI score required to pass initial screening.
+                                </p>
                             </div>
-                            
-                            <div className="px-1">
-                                <Slider
-                                    value={[threshold]}
-                                    onValueChange={([v]) => setConfig({ threshold: v })}
-                                    max={100}
-                                    min={1}
-                                    step={1}
-                                    className="cursor-pointer"
-                                />
-                                <div className="flex justify-between w-full mt-2 text-[10px] font-bold text-gray-300 uppercase tracking-widest">
-                                    <span>Selective</span>
-                                    <span>Balanced</span>
-                                    <span>Strict</span>
-                                </div>
+                            <div className="flex items-baseline gap-1 text-[#F97316]">
+                                <span className="text-3xl font-black tracking-tighter">{threshold}</span>
+                                <span className="text-sm font-bold">%</span>
+                            </div>
+                        </div>
+                        
+                        <div className="px-1">
+                            <Slider
+                                value={[threshold]}
+                                onValueChange={([v]) => setConfig({ threshold: v })}
+                                max={100}
+                                min={1}
+                                step={1}
+                                className="cursor-pointer"
+                            />
+                            <div className="flex justify-between w-full mt-2 text-[10px] font-bold text-gray-300 uppercase tracking-widest">
+                                <span>Selective</span>
+                                <span>Balanced</span>
+                                <span>Strict</span>
                             </div>
                         </div>
                     </div>
-                )}
+                </div>
             </section>
 
             {/* Shortlist Mode Section */}

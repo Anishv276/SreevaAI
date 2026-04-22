@@ -3,12 +3,11 @@ import { ScreeningConfig } from "./screening-settings";
 
 interface FinalPreviewProps {
     formData: any;
-    aiEnabled: boolean;
     weights: ScreeningConfig;
     regFieldCount: number;
 }
 
-export function FinalPreview({ formData, aiEnabled, weights, regFieldCount }: FinalPreviewProps) {
+export function FinalPreview({ formData, weights, regFieldCount }: FinalPreviewProps) {
     return (
         <div className="space-y-6">
             {/* Orange-tinted ready banner */}
@@ -72,20 +71,18 @@ export function FinalPreview({ formData, aiEnabled, weights, regFieldCount }: Fi
                                     <Brain className="h-3.5 w-3.5" />
                                     <span>AI Resume Screening</span>
                                 </div>
-                                <span className={`flex items-center gap-1.5 font-semibold ${aiEnabled ? "text-green-600" : "text-gray-400"}`}>
-                                    <span className={`h-1.5 w-1.5 rounded-full ${aiEnabled ? "bg-green-500" : "bg-gray-400"} inline-block`} />
-                                    {aiEnabled ? "Enabled" : "Disabled"}
+                                <span className="flex items-center gap-1.5 font-semibold text-green-600">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />
+                                    Active
                                 </span>
                             </div>
 
-                            {aiEnabled && (
-                                <div className="ml-5 py-2 border-l-2 border-green-50 pl-4">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-gray-400 text-[12px]">Match Threshold</span>
-                                        <span className="font-black text-green-600 text-sm">{weights.threshold}%</span>
-                                    </div>
+                            <div className="ml-5 py-2 border-l-2 border-green-50 pl-4">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-400 text-[12px]">Match Threshold</span>
+                                    <span className="font-black text-green-600 text-sm">{weights.threshold}%</span>
                                 </div>
-                            )}
+                            </div>
 
                             <div className="flex justify-between pt-1 border-t border-gray-50">
                                 <span className="text-gray-500">Registration Fields</span>
@@ -98,49 +95,38 @@ export function FinalPreview({ formData, aiEnabled, weights, regFieldCount }: Fi
                     <div>
                         <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">AI Voice Interview</h3>
                         <div className="rounded-lg border bg-white p-4 space-y-3 text-[13px]">
-                            <div className="flex justify-between items-center">
-                                <div className="flex items-center gap-2 text-gray-500">
-                                    <Mic className="h-3.5 w-3.5" />
-                                    <span>Phase Status</span>
+                            <div className="grid grid-cols-2 gap-3 pt-1">
+                                <div className="p-2.5 rounded-lg bg-gray-50/50 border border-gray-100">
+                                    <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Language</p>
+                                    <p className="font-bold text-gray-700 mt-0.5 flex items-center gap-1.5">
+                                        <Languages className="w-3 h-3 text-orange-400" />
+                                        {formData.interviewLanguage || "English"}
+                                    </p>
                                 </div>
-                                <span className={`flex items-center gap-1.5 font-bold ${formData.interviewEnabled ? "text-orange-600" : "text-gray-400"}`}>
-                                    {formData.interviewEnabled ? "Enabled" : "Disabled"}
-                                </span>
+                                <div className="p-2.5 rounded-lg bg-gray-50/50 border border-gray-100">
+                                    <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Anti-Cheat</p>
+                                    <p className="font-bold text-gray-700 mt-0.5 flex items-center gap-1.5">
+                                        <ShieldAlert className="w-3 h-3 text-orange-400" />
+                                        {formData.interviewAntiCheat || "Medium"}
+                                    </p>
+                                </div>
+                                <div className="col-span-2 p-2.5 rounded-lg bg-gray-50/50 border border-gray-100">
+                                    <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Limit & Questions</p>
+                                    <p className="font-bold text-gray-700 mt-0.5">
+                                        {formData.interviewTime || 10} Mins • {(() => {
+                                            const qs = formData.interviewQuestions;
+                                            if (Array.isArray(qs)) return qs.length;
+                                            if (typeof qs === 'string' && qs.trim()) {
+                                                try { 
+                                                    const parsed = JSON.parse(qs);
+                                                    return Array.isArray(parsed) ? parsed.length : 1;
+                                                } catch { return 1; }
+                                            }
+                                            return 0;
+                                        })()} Custom
+                                    </p>
+                                </div>
                             </div>
-                            {formData.interviewEnabled && (
-                                <div className="grid grid-cols-2 gap-3 pt-1">
-                                    <div className="p-2.5 rounded-lg bg-gray-50/50 border border-gray-100">
-                                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Language</p>
-                                        <p className="font-bold text-gray-700 mt-0.5 flex items-center gap-1.5">
-                                            <Languages className="w-3 h-3 text-orange-400" />
-                                            {formData.interviewLanguage || "English"}
-                                        </p>
-                                    </div>
-                                    <div className="p-2.5 rounded-lg bg-gray-50/50 border border-gray-100">
-                                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Anti-Cheat</p>
-                                        <p className="font-bold text-gray-700 mt-0.5 flex items-center gap-1.5">
-                                            <ShieldAlert className="w-3 h-3 text-orange-400" />
-                                            {formData.interviewAntiCheat || "Medium"}
-                                        </p>
-                                    </div>
-                                    <div className="col-span-2 p-2.5 rounded-lg bg-gray-50/50 border border-gray-100">
-                                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Limit & Questions</p>
-                                        <p className="font-bold text-gray-700 mt-0.5">
-                                            {formData.interviewTime || 10} Mins • {(() => {
-                                                const qs = formData.interviewQuestions;
-                                                if (Array.isArray(qs)) return qs.length;
-                                                if (typeof qs === 'string' && qs.trim()) {
-                                                    try { 
-                                                        const parsed = JSON.parse(qs);
-                                                        return Array.isArray(parsed) ? parsed.length : 1;
-                                                    } catch { return 1; }
-                                                }
-                                                return 0;
-                                            })()} Custom
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     </div>
                 </div>

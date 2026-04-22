@@ -13,16 +13,21 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
 import {
-
     User, Building2, Bell, Users, CreditCard, Plug,
-
     Camera, Check, ChevronRight, Plus, Trash2, Crown,
-
     MessageSquare, Calendar, Globe, Mail, Phone, Shield, ShieldAlert, Briefcase, History,
     BarChart3, AlertCircle, Zap, ExternalLink, Upload, Lock, Eye, EyeOff,
-    Loader2, Copy, X, MapPin as MapPinIcon, CheckCircle2
-
+    Loader2, Copy, X, MapPin as MapPinIcon, CheckCircle2, Clock
 } from "lucide-react";
+
+import {
+    Table,
+    TableHeader,
+    TableBody,
+    TableHead,
+    TableRow,
+    TableCell,
+} from "@/components/ui/table";
 
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 
@@ -37,6 +42,7 @@ import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { useSearchParams } from "next/navigation";
 
 import { toast } from "@/components/ui/toast-custom";
+import { PasswordInput } from "@/components/ui/password-input";
 import { 
     SettingsCard, 
     Field, 
@@ -206,11 +212,8 @@ export default function SettingsPage() {
     /* Password */
 
     const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
-
-    const [showPw, setShowPw] = useState({ current: false, next: false, confirm: false });
-
+    const [isNewPasswordValid, setIsNewPasswordValid] = useState(false);
     const [pwError, setPwError] = useState("");
-
     const [pwSaved, setPwSaved] = useState(false);
 
     /* OTP States */
@@ -784,16 +787,11 @@ export default function SettingsPage() {
 
 
     const roleBadge = (role: string) => ({
-
-        ADMIN: "bg-orange-50 text-[#F97316]",
-
-        HR: "bg-purple-50 text-purple-600",
-
-        TEAM: "bg-gray-50 text-gray-600",
-
-        RECRUITER: "bg-gray-50 text-gray-600",
-
-    }[role] ?? "bg-gray-50 text-gray-500");
+        ADMIN: "bg-orange-50 text-[#F97316] ring-1 ring-orange-200/50",
+        HR: "bg-slate-50 text-slate-700 ring-1 ring-slate-200/50",
+        TEAM: "bg-gray-50 text-gray-500 ring-1 ring-gray-200/50",
+        RECRUITER: "bg-gray-50 text-gray-500 ring-1 ring-gray-200/50",
+    }[role] ?? "bg-gray-50 text-gray-400 ring-1 ring-gray-100/50");
 
 
 
@@ -1280,192 +1278,157 @@ export default function SettingsPage() {
                             <div className="space-y-6">
 
                                 <SettingsCard title="Invite Team Member" description="Send an invitation to join your workspace.">
-
-                                    <div className="flex items-end gap-3">
-
-                                        <div className="flex-1">
-
-                                            <Field label="Email Address">
-
-                                                <div className="relative">
-
-                                                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-
-                                                    <Input className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
-
-                                                        placeholder="colleague@company.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} />
-
-                                                </div>
-
-                                            </Field>
-
+                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-1.5 rounded-2xl bg-gray-50/50 border border-gray-100/80">
+                                        <div className="flex-1 relative group">
+                                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-gray-400 group-focus-within:text-[#F97316] transition-colors" />
+                                            <Input 
+                                                className="pl-11 h-12 rounded-xl border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all text-sm"
+                                                placeholder="colleague@company.com" 
+                                                value={inviteEmail} 
+                                                onChange={e => setInviteEmail(e.target.value)} 
+                                            />
                                         </div>
-
-                                        <div className="w-36">
-
-                                            <Field label="Role">
-
-                                                <select value={inviteRole} onChange={e => setInviteRole(e.target.value)}
-
-                                                    className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white font-medium text-sm text-gray-900 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all">
-
-                                                    {["ADMIN", "HR", "TEAM"].map(r => <option key={r}>{r}</option>)}
-
-                                                </select>
-
-                                            </Field>
-
+                                        <div className="w-full sm:w-36 relative">
+                                            <select 
+                                                value={inviteRole} 
+                                                onChange={e => setInviteRole(e.target.value)}
+                                                className="w-full h-12 pl-4 pr-10 rounded-xl border border-gray-200 bg-white font-bold text-[13px] text-gray-700 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all appearance-none cursor-pointer"
+                                            >
+                                                {["ADMIN", "HR", "TEAM"].map(r => <option key={r} value={r}>{r}</option>)}
+                                            </select>
+                                            <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 transform rotate-90 pointer-events-none" />
                                         </div>
-
                                         <Button
-
                                             disabled={isInviting || !inviteEmail}
-
                                             onClick={handleInviteSubmit}
-
-                                            className="h-10 px-6 rounded-lg bg-[#F97316] hover:bg-orange-600 text-white font-bold transition-all shadow-sm"
-
+                                            className="h-12 px-8 rounded-xl bg-gray-950 hover:bg-[#F97316] text-white font-bold text-sm transition-all shadow-xl shadow-gray-200/50 active:scale-95 disabled:grayscale"
                                         >
-
-                                            {isInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Plus className="h-4 w-4 mr-1.5" /> Invite</>}
-
+                                            {isInviting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Invite"}
                                         </Button>
-
                                     </div>
 
-                                    {inviteMessage && <p className="mt-4 text-xs font-bold text-emerald-600">{inviteMessage}</p>}
-
-                                    {inviteError && <p className="mt-4 text-xs font-bold text-red-500">{inviteError}</p>}
-
-                                </SettingsCard>
-
-
-
-                                <SettingsCard title="Pending Invitations" description={`${pendingInvites.length} pending invitation(s)`}>
-
-                                    {pendingInvites.length === 0 ? (
-
-                                        <p className="text-sm text-gray-400 font-medium tracking-tight">No pending invitations.</p>
-
-                                    ) : (
-
-                                        <div className="space-y-3">
-
-                                            {pendingInvites.map((invite) => (
-
-                                                <div key={invite.id} className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 border border-gray-100">
-
-                                                    <div className="h-10 w-10 rounded-lg bg-orange-100 text-[#F97316] font-bold text-xs flex items-center justify-center flex-shrink-0">
-
-                                                        {invite.email[0].toUpperCase()}
-
-                                                    </div>
-
-                                                    <div className="flex-1 min-w-0">
-
-                                                        <p className="font-bold text-gray-900 text-sm truncate tracking-tight">{invite.email}</p>
-
-                                                        <p className="text-xs text-gray-500 font-medium mt-0.5 truncate">
-
-                                                            Expires {new Date(invite.expiresAt).toLocaleDateString()}
-
-                                                        </p>
-
-                                                    </div>
-
-                                                    <div className="flex items-center gap-3">
-
-                                                        <Badge className={cn("text-[10px] font-bold border-0 rounded-lg px-3 py-1.5", roleBadge(invite.orgRole))}>
-
-                                                            {invite.orgRole}
-
-                                                        </Badge>
-
-                                                        <button onClick={() => cancelInvite(invite.id)}
-
-                                                            className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all">
-
-                                                            <Trash2 className="h-3.5 w-3.5" />
-
-                                                        </button>
-
-                                                    </div>
-
-                                                </div>
-
-                                            ))}
-
+                                    {inviteMessage && (
+                                        <div className="mt-4 flex items-center gap-2 p-3.5 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 animate-in fade-in slide-in-from-top-1">
+                                            <CheckCircle2 className="h-4 w-4 shrink-0" />
+                                            <span className="text-[12px] font-bold">{inviteMessage}</span>
                                         </div>
-
                                     )}
 
+                                    {inviteError && (
+                                        <div className="mt-4 flex items-center gap-2 p-3.5 rounded-xl bg-red-50 border border-red-100 text-red-600 animate-in fade-in slide-in-from-top-1">
+                                            <AlertCircle className="h-4 w-4 shrink-0" />
+                                            <span className="text-[12px] font-bold">{inviteError}</span>
+                                        </div>
+                                    )}
                                 </SettingsCard>
 
 
 
-                                <SettingsCard title="Current Members" description={`${team.length} members in your workspace`}>
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <SettingsCard title="Pending Invitations" description={`${pendingInvites.length} pending invitation(s)`}>
+                                        {pendingInvites.length === 0 ? (
+                                            <p className="text-sm text-gray-400 font-medium">No pending invitations.</p>
+                                        ) : (
+                                            <Table>
+                                                <TableHeader className="bg-transparent border-0">
+                                                    <TableRow className="border-gray-100 hover:bg-transparent">
+                                                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-gray-400 h-8 px-0">User</TableHead>
+                                                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-gray-400 h-8 px-2">Role</TableHead>
+                                                        <TableHead className="text-right text-[11px] font-bold uppercase tracking-wider text-gray-400 h-8 px-0">Actions</TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {pendingInvites.map((invite) => (
+                                                        <TableRow key={invite.id} className="border-gray-50 hover:bg-gray-50/50 group transition-colors">
+                                                            <TableCell className="py-3 px-0">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="h-8 w-8 rounded-lg bg-orange-50 text-[#F97316] font-bold text-xs flex items-center justify-center flex-shrink-0">
+                                                                        {invite.email[0].toUpperCase()}
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <p className="font-bold text-gray-900 text-sm truncate mb-0.5">{invite.email}</p>
+                                                                        <p className="text-xs text-gray-400 font-medium">
+                                                                            Exp: {new Date(invite.expiresAt).toLocaleDateString()}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell className="py-3 px-2">
+                                                                <Badge className={cn("text-[10px] font-bold uppercase tracking-wide border-0 rounded-md px-2 py-1 leading-none shadow-none", roleBadge(invite.orgRole))}>
+                                                                    {invite.orgRole}
+                                                                </Badge>
+                                                            </TableCell>
+                                                            <TableCell className="py-3 px-0 text-right">
+                                                                <button 
+                                                                    onClick={() => cancelInvite(invite.id)}
+                                                                    className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100 ml-auto"
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </button>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                        )}
+                                    </SettingsCard>
 
-                                    <div className="space-y-3">
+                                    <SettingsCard title="Current Members" description={`${team.length} members in workspace`}>
+                                        <Table>
+                                            <TableHeader className="bg-transparent border-0">
+                                                <TableRow className="border-gray-100 hover:bg-transparent">
+                                                    <TableHead className="text-[11px] font-bold uppercase tracking-wider text-gray-400 h-8 px-0">Member</TableHead>
+                                                    <TableHead className="text-[11px] font-bold uppercase tracking-wider text-gray-400 h-8 px-2">Role</TableHead>
+                                                    <TableHead className="text-right text-[11px] font-bold uppercase tracking-wider text-gray-400 h-8 px-0">Actions</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {team.map(member => (
+                                                    <TableRow key={member.id} className="border-gray-50 hover:bg-gray-50/50 group transition-colors">
+                                                        <TableCell className="py-3 px-0">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="h-8 w-8 rounded-lg bg-gray-900 text-white font-bold text-xs flex items-center justify-center flex-shrink-0 shadow-sm">
+                                                                    {member.email[0].toUpperCase()}
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <p className="font-bold text-gray-900 text-sm truncate mb-0.5">{member.name || member.email.split("@")[0]}</p>
+                                                                    <p className="text-xs text-gray-400 font-medium truncate">{member.email}</p>
+                                                                </div>
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell className="py-3 px-2">
+                                                            <Badge className={cn("text-[10px] font-bold uppercase tracking-wide border-0 rounded-md px-2 py-1 leading-none shadow-none", roleBadge(member.role))}>
+                                                                {member.role === "TEAM" ? "Team" : member.role === "ADMIN" ? "Admin" : member.role}
+                                                            </Badge>
+                                                        </TableCell>
+                                                        <TableCell className="py-3 px-0 text-right">
+                                                            {member.role !== "ADMIN" && (
+                                                                <button 
+                                                                    onClick={() => removeMember(member.id)}
+                                                                    className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all ml-auto"
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </button>
+                                                            )}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
 
-                                        {team.map(member => (
-
-                                            <div key={member.id} className="flex items-center gap-4 p-4 rounded-xl bg-gray-50 border border-gray-100 hover:bg-white hover:shadow-sm transition-all group">
-
-                                                <div className="h-10 w-10 rounded-lg bg-gray-900 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-
-                                                    {member.email[0].toUpperCase()}
-
-                                                </div>
-
-                                                <div className="flex-1 min-w-0">
-
-                                                    <p className="font-bold text-gray-900 text-sm truncate tracking-tight">{member.name || member.email.split("@")[0]}</p>
-
-                                                    <p className="text-xs text-gray-500 font-medium mt-0.5 truncate">{member.email}</p>
-
-                                                </div>
-
-                                                <div className="flex items-center gap-3">
-
-                                                    <Badge className={cn("text-[10px] font-bold border-0 rounded-lg px-3 py-1.5", roleBadge(member.role))}>
-
-                                                        {member.role === "TEAM" ? "Team" : member.role === "ADMIN" ? "Admin" : member.role}
-
-                                                    </Badge>
-
-                                                    {member.role !== "ADMIN" && (
-
-                                                        <button onClick={() => removeMember(member.id)}
-
-                                                            className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all">
-
-                                                            <Trash2 className="h-3.5 w-3.5" />
-
-                                                        </button>
-
-                                                    )}
-
-                                                </div>
-
+                                        <div className="mt-4 pt-4 border-t border-gray-100 flex items-start gap-3">
+                                            <div className="h-7 w-7 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
+                                                <Shield className="h-3.5 w-3.5 text-slate-500" />
                                             </div>
-
-                                        ))}
-
-                                    </div>
-
-                                    <div className="mt-4 p-4 rounded-xl bg-blue-50/50 border border-blue-100 flex items-start gap-3">
-
-                                        <Shield className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
-
-                                        <p className="text-xs font-medium text-blue-700 leading-relaxed">
-
-                                            <span className="font-bold">Access Protocol:</span> Admins manage platform settings, HR handles recruitment workflows, and Team members execute candidate reviews.
-
-                                        </p>
-
-                                    </div>
-
-                                </SettingsCard>
+                                            <div>
+                                                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Access Protocol</p>
+                                                <p className="text-xs font-medium text-slate-500 leading-relaxed">
+                                                    Admins manage workspace, HR handles recruitment, and Team members execute candidate reviews.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </SettingsCard>
+                                </div>
 
                             </div>
 
@@ -1476,79 +1439,59 @@ export default function SettingsPage() {
                         {/*  BILLING  */}
 
 
+                        {/*     BILLING     */}
 
 
 
 
 
-                        {/*  PASSWORD  */}
+
+
+                        {/*     PASSWORD     */}
 
                         {activeSection === "password" && (
-
                             <div className="space-y-6">
-
                                 <SettingsCard title="Change Password" description="Update your password to keep your account secure.">
+                                    <div className="space-y-6">
+                                        <PasswordInput 
+                                            label="Current Password"
+                                            placeholder="Enter current password"
+                                            value={passwords.current}
+                                            onChange={e => setPasswords(p => ({ ...p, current: e.target.value }))}
+                                        />
 
-                                    <div className="space-y-5">
+                                        <PasswordInput 
+                                            label="New Password"
+                                            placeholder="Enter new password"
+                                            value={passwords.next}
+                                            onChange={e => setPasswords(p => ({ ...p, next: e.target.value }))}
+                                            showChecklist
+                                            onValidationChange={setIsNewPasswordValid}
+                                        />
 
-                                        <Field label="Current Password">
+                                        <PasswordInput 
+                                            label="Confirm New Password"
+                                            placeholder="Re-enter new password"
+                                            value={passwords.confirm}
+                                            onChange={e => setPasswords(p => ({ ...p, confirm: e.target.value }))}
+                                        />
 
-                                            <div className="relative">
-
-                                                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-
-                                                <Input type={showPw.current ? "text" : "password"} placeholder="Enter current password"
-
-                                                    className="pl-10 pr-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
-
-                                                    value={passwords.current} onChange={e => setPasswords(p => ({ ...p, current: e.target.value }))} />
-
-                                                <button type="button" onClick={() => setShowPw(s => ({ ...s, current: !s.current }))} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316]"><Eye className="h-4 w-4" /></button>
-
+                                        {pwSaved && (
+                                            <div className="flex items-center gap-2 p-3.5 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 animate-in fade-in slide-in-from-top-1">
+                                                <CheckCircle2 className="h-4 w-4" />
+                                                <span className="text-[12px] font-bold">Password updated successfully!</span>
                                             </div>
+                                        )}
 
-                                        </Field>
-
-                                        <Field label="New Password">
-
-                                            <div className="relative">
-
-                                                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-
-                                                <Input type={showPw.next ? "text" : "password"} placeholder="Enter new password"
-
-                                                    className="pl-10 pr-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
-
-                                                    value={passwords.next} onChange={e => setPasswords(p => ({ ...p, next: e.target.value }))} />
-
-                                                <button type="button" onClick={() => setShowPw(s => ({ ...s, next: !s.next }))} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316]"><Eye className="h-4 w-4" /></button>
-
+                                        {pwError && (
+                                            <div className="flex items-center gap-2 p-3.5 rounded-xl bg-red-50 border border-red-100 text-red-600 animate-in fade-in slide-in-from-top-1">
+                                                <AlertCircle className="h-4 w-4" />
+                                                <span className="text-[12px] font-bold">{pwError}</span>
                                             </div>
+                                        )}
 
-                                        </Field>
-
-                                        <Field label="Confirm New Password">
-
-                                            <div className="relative">
-
-                                                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-
-                                                <Input type={showPw.confirm ? "text" : "password"} placeholder="Re-enter new password"
-
-                                                    className="pl-10 pr-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
-
-                                                    value={passwords.confirm} onChange={e => setPasswords(p => ({ ...p, confirm: e.target.value }))} />
-
-                                                <button type="button" onClick={() => setShowPw(s => ({ ...s, confirm: !s.confirm }))} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316]"><Eye className="h-4 w-4" /></button>
-
-                                            </div>
-
-                                        </Field>
-
-                                        {pwError && <p className="text-xs font-bold text-red-500 mt-1">{pwError}</p>}
-                                        
                                         <div className="pt-2">
-                                            <button 
+                                            <button
                                                 onClick={() => {
                                                     window.location.href = "/login/forgot-password?from=settings";
                                                 }}

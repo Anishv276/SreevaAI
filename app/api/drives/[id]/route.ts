@@ -48,7 +48,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             applicants: (drive as any)._count?.applications || 0,
             daysLeft: Math.max(0, Math.ceil((new Date((drive as any).createdAt).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24))),
             aiScreening: {
-                enabled: (drive as any).aiScreeningEnabled ?? true,
+                enabled: true,
                 weights: {} // Schema doesn't have a weights field yet
             },
             registrationFields: (drive as any).registrationFields ? JSON.parse((drive as any).registrationFields) : [],
@@ -130,7 +130,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.screeningThreshold !== undefined) updateData.screeningThreshold = data.screeningThreshold;
         
         // Add new interview fields to PATCH
-        if (data.interviewEnabled !== undefined) updateData.interviewEnabled = data.interviewEnabled;
+        
         if (data.interviewLanguage !== undefined) updateData.interviewLanguage = data.interviewLanguage;
         if (data.interviewTime !== undefined) updateData.interviewTime = data.interviewTime;
         if (data.interviewAntiCheat !== undefined) updateData.proctoringLevel = data.interviewAntiCheat;
@@ -139,8 +139,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if ((data as any).isPassportRequired !== undefined) updateData.isPassportRequired = (data as any).isPassportRequired;
         if ((data as any).shortlistMode !== undefined) updateData.shortlistMode = (data as any).shortlistMode;
         if (data.status !== undefined) updateData.status = data.status;
+
+        if (data.ttsProvider !== undefined) updateData.ttsProvider = data.ttsProvider;
+        if (data.cartesiaVoiceId !== undefined) updateData.cartesiaVoiceId = data.cartesiaVoiceId;
+        if (data.sarvamVoice !== undefined) updateData.sarvamVoice = data.sarvamVoice;
+        if (data.aiName !== undefined) updateData.aiName = data.aiName;
         
-        if (data.aiScreening?.enabled !== undefined) updateData.aiScreeningEnabled = data.aiScreening.enabled;
 
         if (Object.keys(updateData).length === 0) {
             return NextResponse.json(

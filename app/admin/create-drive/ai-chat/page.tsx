@@ -196,7 +196,7 @@ export default function AiChatJdPage() {
             </div>
 
             <div style="margin-top: 50px; border-top: 1px solid #F3F4F6; padding-top: 20px; text-align: center;">
-                <p style="font-size: 10px; font-weight: 700; color: #D1D5DB; text-transform: uppercase; letter-spacing: 0.2em;">Created by Hirer.ai Neural Engine</p>
+                <p style="font-size: 10px; font-weight: 700; color: #D1D5DB; text-transform: uppercase; letter-spacing: 0.2em;">Created by Sreeva AI Neural Engine</p>
             </div>
         `;
         

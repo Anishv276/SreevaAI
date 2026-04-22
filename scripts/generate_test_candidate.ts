@@ -22,7 +22,7 @@ async function main() {
     creator = await prisma.user.create({
       data: {
         id: "admin-" + Math.floor(Math.random() * 1000),
-        email: "admin@lumoscale.com",
+        email: "admin@sreeva.com",
         name: "Default Admin",
         role: "ADMIN",
         orgId: org.id,

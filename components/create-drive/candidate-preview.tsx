@@ -1,4 +1,4 @@
-﻿
+
 "use client";
 
 import { useState } from "react";
@@ -119,7 +119,7 @@ export function CandidatePreview({ formData, customFields = [], regFieldCount, o
                             <div className="h-8 w-8 bg-gradient-to-br from-[#F97316] to-orange-400 rounded-xl flex items-center justify-center text-white shadow-lg shadow-orange-500/20">
                                 <Briefcase className="h-4 w-4" />
                             </div>
-                            <span className="font-black text-lg tracking-tight text-gray-900 italic">Lumoscale<span className="text-orange-500">.ai</span></span>
+                            <span className="font-black text-lg tracking-tight text-gray-900 italic">Sreeva<span className="text-orange-500"> AI</span></span>
                         </div>
                         <div className="flex items-center gap-3">
                              <div className="hidden md:flex items-center px-4 h-8 rounded-full bg-orange-50 border border-orange-100 text-[#F97316] text-[9px] font-black uppercase tracking-widest">Candidate Experience</div>
@@ -301,7 +301,7 @@ export function CandidatePreview({ formData, customFields = [], regFieldCount, o
                                                     </div>
                                                     <div>
                                                         <h4 className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em] mb-1.5">Architect</h4>
-                                                        <p className="text-xl font-black text-white tracking-tight italic">Lumoscale Inc.</p>
+                                                        <p className="text-xl font-black text-white tracking-tight italic">Sreeva AI Inc.</p>
                                                     </div>
                                                 </div>
                                                 <div className="grid grid-cols-1 gap-6 pt-2 border-t border-white/5 mt-8 relative z-10">

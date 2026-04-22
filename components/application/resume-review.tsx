@@ -1,4 +1,4 @@
-﻿import { Label } from "@/components/ui/label";
+import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ResumeUpload } from "./resume-upload";
 
@@ -37,7 +37,7 @@ export function ResumeReview({
                         I agree to the terms and data processing policy <span className="text-[#F97316]">*</span>
                     </Label>
                     <p className="text-xs text-gray-500 font-medium">
-                        By submitting, you allow us to process your profile using Lumoscale AI for this recruitment drive.
+                        By submitting, you allow us to process your profile using Sreeva AI for this recruitment drive.
                     </p>
                 </div>
             </div>

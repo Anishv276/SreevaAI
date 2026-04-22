@@ -1,4 +1,4 @@
-﻿import { Input } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ResumeUpload } from "./resume-upload";
 import { PhoneInput } from "./phone-input";
@@ -53,7 +53,7 @@ export function PersonalInfo({
                     <p className="text-sm font-bold text-gray-900 mb-4">
                         {mode === "manual"
                             ? "Please attach your resume to complete your application."
-                            : "Upload your resume to let Hirer.AI auto-fill your details."
+                            : "Upload your resume to let Sreeva AI auto-fill your details."
                         }
                     </p>
                     <ResumeUpload

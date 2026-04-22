@@ -196,7 +196,7 @@ export function Sidebar() {
                         </div>
                         <div className="flex flex-col min-w-0">
                             <span className="text-[24px] font-bold text-gray-900 leading-none tracking-tight truncate">
-                                {orgInfo?.name || "Hirer.AI"}
+                                {orgInfo?.name || "Sreeva AI"}
                             </span>
                             <div className="flex items-center gap-1.5 mt-2">
                                 <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />

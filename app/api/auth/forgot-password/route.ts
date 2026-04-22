@@ -91,7 +91,7 @@ export async function POST(request: Request) {
         }
 
         // 5. Send Email
-        const subject = "Security Code: Lumoscale Account Recovery";
+        const subject = "Security Code: Sreeva AI Account Recovery";
         const html = `
             <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; padding: 40px; border: 1px solid #f0f0f0; border-radius: 24px; background: #ffffff;">
                 <h1 style="color: #111827; font-size: 24px; font-weight: 800; margin-bottom: 8px;">Recovery Code</h1>

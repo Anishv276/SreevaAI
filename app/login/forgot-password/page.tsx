@@ -3,17 +3,17 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-    Mail, 
-    KeyRound, 
-    Lock, 
-    ArrowLeft, 
-    CheckCircle2, 
-    ShieldCheck, 
-    Loader2, 
-    ShieldAlert, 
-    Eye, 
-    EyeOff 
+import {
+    Mail,
+    KeyRound,
+    Lock,
+    ArrowLeft,
+    CheckCircle2,
+    ShieldCheck,
+    Loader2,
+    ShieldAlert,
+    Eye,
+    EyeOff
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "@/components/ui/toast-custom";
@@ -24,13 +24,18 @@ function ForgotPasswordContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const from = searchParams.get("from");
-    
+
     // Dynamic back routing
-    const backLink = from === "settings" ? "/admin/settings?section=password" : "/login";
-    const backText = from === "settings" ? "Back to Settings" : "Back to Login";
+    const backLink = from === "settings" 
+        ? "/admin/settings?section=password" 
+        : from === "super-settings" 
+        ? "/super-admin/settings" 
+        : "/login";
+    
+    const backText = (from === "settings" || from === "super-settings") ? "Back to Settings" : "Back to Login";
     const [step, setStep] = useState<Step>("EMAIL");
     const [loading, setLoading] = useState(false);
-    
+
     const [email, setEmail] = useState("");
     const [otp, setOtp] = useState("");
     const [newPassword, setNewPassword] = useState("");
@@ -123,14 +128,14 @@ function ForgotPasswordContent() {
     return (
         <div className="min-h-screen bg-[#F7F6F3] flex items-center justify-center p-6 font-medium selection:bg-orange-100">
             <div className="w-full max-w-md space-y-8 animate-fade-slide">
-                
+
                 {/* Header Section */}
                 <div className="flex flex-col items-center gap-6 text-center">
                     <Link href={backLink} className="group flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] hover:text-gray-900 transition-colors">
-                        <ArrowLeft className="w-3 h-3 group-hover:-translate-x-1 transition-transform" /> 
+                        <ArrowLeft className="w-3 h-3 group-hover:-translate-x-1 transition-transform" />
                         {backText}
                     </Link>
-                    
+
                     <div className="h-16 w-16 rounded-2xl bg-white border border-gray-100 flex items-center justify-center shadow-sm relative group">
                         <div className="absolute inset-0 bg-orange-50 rounded-2xl scale-0 group-hover:scale-100 transition-transform duration-500" />
                         {step === "EMAIL" && <Mail className="w-6 h-6 text-gray-400 group-hover:text-[#F97316] transition-colors relative z-10" />}
@@ -138,7 +143,7 @@ function ForgotPasswordContent() {
                         {step === "RESET" && <Lock className="w-6 h-6 text-gray-400 group-hover:text-[#F97316] transition-colors relative z-10" />}
                         {step === "SUCCESS" && <ShieldCheck className="w-6 h-6 text-emerald-500 relative z-10" />}
                     </div>
-                    
+
                     <div className="space-y-1">
                         <h1 className="text-xl font-black text-gray-900 tracking-tight uppercase">
                             {step === "EMAIL" && "Account Recovery"}
@@ -158,12 +163,11 @@ function ForgotPasswordContent() {
                 {/* Progress Indicator */}
                 <div className="flex justify-center gap-1.5 h-1">
                     {["EMAIL", "OTP", "RESET", "SUCCESS"].map((s, idx) => (
-                        <div 
-                            key={s} 
-                            className={`h-1 rounded-full transition-all duration-500 ${
-                                step === s ? "w-8 bg-[#F97316]" : 
+                        <div
+                            key={s}
+                            className={`h-1 rounded-full transition-all duration-500 ${step === s ? "w-8 bg-[#F97316]" :
                                 idx < ["EMAIL", "OTP", "RESET", "SUCCESS"].indexOf(step) ? "w-4 bg-gray-900" : "w-4 bg-gray-200"
-                            }`} 
+                                }`}
                         />
                     ))}
                 </div>
@@ -171,10 +175,10 @@ function ForgotPasswordContent() {
                 {/* Content Area */}
                 <div className="bg-white border border-gray-100 rounded-3xl p-8 shadow-[0_40px_100px_rgba(0,0,0,0.03)] overflow-hidden relative group">
                     <div className="absolute top-0 left-0 w-1 h-full bg-[#F97316]/50 opacity-0 group-hover:opacity-100 transition-all" />
-                    
+
                     <AnimatePresence mode="wait">
                         {step === "EMAIL" && (
-                            <motion.form 
+                            <motion.form
                                 key="step-email"
                                 initial={{ opacity: 0, x: 20 }}
                                 animate={{ opacity: 1, x: 0 }}
@@ -189,7 +193,7 @@ function ForgotPasswordContent() {
                                             type="email"
                                             value={email}
                                             onChange={e => setEmail(e.target.value)}
-                                            placeholder="admin@lumoscale.com"
+                                            placeholder="admin@sreevaai.com"
                                             required
                                             className="w-full h-12 px-4 bg-gray-50 border border-transparent rounded-xl text-gray-900 placeholder-gray-400 text-sm font-bold outline-none focus:bg-white focus:border-gray-900 transition-all"
                                         />
@@ -209,7 +213,7 @@ function ForgotPasswordContent() {
                         )}
 
                         {step === "OTP" && (
-                            <motion.form 
+                            <motion.form
                                 key="step-otp"
                                 initial={{ opacity: 0, x: 20 }}
                                 animate={{ opacity: 1, x: 0 }}
@@ -220,8 +224,8 @@ function ForgotPasswordContent() {
                                 <div className="space-y-4">
                                     <div className="flex flex-col items-center gap-2 text-center">
                                         <p className="text-[11px] font-bold text-gray-900 leading-tight">
-                                           A 6-digit security code was sent to <br/>
-                                           <span className="text-[#F97316] underline underline-offset-4">{email}</span>
+                                            A 6-digit security code was sent to <br />
+                                            <span className="text-[#F97316] underline underline-offset-4">{email}</span>
                                         </p>
                                     </div>
                                     <div className="relative">
@@ -243,7 +247,7 @@ function ForgotPasswordContent() {
                                 >
                                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "VERIFY CODE"}
                                 </button>
-                                <button 
+                                <button
                                     type="button"
                                     onClick={() => setStep("EMAIL")}
                                     className="w-full text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-gray-900 transition-colors"
@@ -254,7 +258,7 @@ function ForgotPasswordContent() {
                         )}
 
                         {step === "RESET" && (
-                            <motion.form 
+                            <motion.form
                                 key="step-reset"
                                 initial={{ opacity: 0, x: 20 }}
                                 animate={{ opacity: 1, x: 0 }}
@@ -306,7 +310,7 @@ function ForgotPasswordContent() {
                         )}
 
                         {step === "SUCCESS" && (
-                            <motion.div 
+                            <motion.div
                                 key="step-success"
                                 initial={{ opacity: 0, scale: 0.95 }}
                                 animate={{ opacity: 1, scale: 1 }}
@@ -320,14 +324,14 @@ function ForgotPasswordContent() {
                                 <div className="space-y-2">
                                     <p className="text-sm font-bold text-gray-900">Credentials Updated Successfully</p>
                                     <p className="text-[10px] font-medium text-gray-500 uppercase tracking-widest leading-relaxed">
-                                        Your identity has been re-verified. <br/> You may now continue to your workspace.
+                                        Your identity has been re-verified. <br /> You may now continue to your workspace.
                                     </p>
                                 </div>
                                 <Link
                                     href={backLink}
                                     className="inline-flex h-12 px-8 rounded-xl bg-[#F97316] text-white font-black text-[11px] tracking-widest uppercase shadow-lg shadow-orange-100 items-center justify-center hover:scale-105 transition-all"
                                 >
-                                    {from === "settings" ? "Return to Settings" : "Login to Workspace"}
+                                    {(from === "settings" || from === "super-settings") ? "Return to Settings" : "Login to Workspace"}
                                 </Link>
                             </motion.div>
                         )}
@@ -336,7 +340,7 @@ function ForgotPasswordContent() {
 
                 <div className="text-center space-y-3">
                     <p className="text-gray-400 text-[8px] font-black uppercase tracking-[0.4em] leading-relaxed">
-                        Lumoscale Cloud Identity & Access Mgmt <br/>
+                        Sreeva AI Cloud Identity & Access Mgmt <br />
                         Secure Shell Environment v2.4
                     </p>
                     <div className="flex items-center justify-center gap-4 text-gray-300">

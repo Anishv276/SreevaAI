@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, use, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
@@ -248,7 +248,7 @@ export default function ApplyStartPage({ params }: { params: Promise<{ id: strin
 
             <footer className="p-8 text-center border-t border-gray-100 bg-white">
                 <p className="text-gray-900 font-inter font-bold text-[11px] tracking-wide opacity-80">
-                    Powered by Hirer.AI Intelligence Engine © 2026
+                    Powered by Sreeva AI Intelligence Engine © 2026
                 </p>
             </footer>
         </div>

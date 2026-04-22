@@ -68,7 +68,7 @@ export async function sendOrgWelcomeEmail({
     adminName: string;
 }) {
     const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || ''}/login`;
-    const subject = `Welcome to Lumoscale: Your Workspace is Ready`;
+    const subject = `Welcome to Sreeva AI: Your Workspace is Ready`;
 
     const html = `
         <div style="font-family: Inter, Arial, sans-serif; max-width: 620px; margin: 0 auto; padding: 40px; border: 1px solid #f1f5f9; border-radius: 24px; background: #ffffff; text-align: center;">
@@ -79,7 +79,7 @@ export async function sendOrgWelcomeEmail({
             </div>
             <h1 style="margin: 0 0 12px; color: #111827; font-size: 26px; font-weight: 800; letter-spacing: -0.02em;">Welcome to the Future of Hiring</h1>
             <p style="margin: 0 0 30px; color: #4b5563; font-size: 16px; line-height: 1.6;">
-                Hi ${adminName}, your workspace for <strong>${orgName}</strong> has been successfully provisioned on Lumoscale Cloud.
+                Hi ${adminName}, your workspace for <strong>${orgName}</strong> has been successfully provisioned on Sreeva AI Cloud.
             </p>
             
             <div style="padding: 32px; border: 1px solid #f97316; border-radius: 20px; background: #fffaf5; margin-bottom: 30px; border-style: dashed;">

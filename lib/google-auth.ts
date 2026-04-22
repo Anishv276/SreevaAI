@@ -25,7 +25,7 @@ export function getGoogleAuthUrl(orgId: string, nextPath = "/admin/settings?sect
 /**
  * Exchanges the authorization code for access and refresh tokens.
  */
-export async function getGoogleTokens(code: string) {
+export async function getGoogleTokens(code: string, redirectUri?: string) {
     const response = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -33,7 +33,7 @@ export async function getGoogleTokens(code: string) {
             code,
             client_id: GOOGLE_CLIENT_ID!,
             client_secret: GOOGLE_CLIENT_SECRET!,
-            redirect_uri: GOOGLE_REDIRECT_URI!,
+            redirect_uri: redirectUri || GOOGLE_REDIRECT_URI!,
             grant_type: 'authorization_code',
         }),
     });

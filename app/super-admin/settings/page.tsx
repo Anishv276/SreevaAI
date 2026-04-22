@@ -2,11 +2,13 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { AlertCircle, CheckCircle2, Eye, EyeOff, Lock, Loader2, Mail, ShieldAlert } from "lucide-react";
+import { AlertCircle, CheckCircle2, Eye, EyeOff, Lock, Loader2, Mail, ShieldAlert, Check, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast-custom";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
+import { PasswordInput } from "@/components/ui/password-input";
+import { cn } from "@/lib/utils";
 
 function SettingsCard({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
     return (
@@ -40,6 +42,7 @@ export default function SuperAdminSettingsPage() {
 
     const [isDisconnecting, setIsDisconnecting] = useState(false);
     const [isDisconnectModalOpen, setIsDisconnectModalOpen] = useState(false);
+    const [isNewPasswordValid, setIsNewPasswordValid] = useState(false);
 
     useEffect(() => {
         const url = new URL(window.location.href);
@@ -47,12 +50,15 @@ export default function SuperAdminSettingsPage() {
         const googleError = url.searchParams.get("google_error");
 
         if (googleSuccess || googleError) {
-            if (googleSuccess) {
-                toast.success("Super Admin Google integration connected!");
-            }
-            if (googleError) {
-                toast.error(`Google Connection Failed: ${googleError}`);
-            }
+            // Delay slightly to ensure Toaster is mounted
+            setTimeout(() => {
+                if (googleSuccess) {
+                    toast.success("Super Admin Google integration connected!");
+                }
+                if (googleError) {
+                    toast.error(`Google Connection Failed: ${googleError}`);
+                }
+            }, 100);
             
             url.searchParams.delete("google_success");
             url.searchParams.delete("google_error");
@@ -168,16 +174,32 @@ export default function SuperAdminSettingsPage() {
                     ) : (
                         <div className="flex items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
-                                <div className="h-12 w-12 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center">
-                                    <Mail className="h-5 w-5 text-[#F97316]" />
+                                <div className="relative">
+                                    <div className={cn(
+                                        "h-12 w-12 rounded-xl border flex items-center justify-center transition-all duration-500",
+                                        googleStatus.isConnected ? "bg-emerald-50 border-emerald-100" : "bg-gray-50 border-gray-100"
+                                    )}>
+                                        <Mail className={cn("h-5 w-5", googleStatus.isConnected ? "text-emerald-500" : "text-[#F97316]")} />
+                                    </div>
+                                    {googleStatus.isConnected && (
+                                        <div className="absolute -top-1.5 -right-1.5 h-5 w-5 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center shadow-sm animate-in zoom-in duration-500">
+                                            <Check className="h-3 w-3 text-white stroke-[3px]" />
+                                        </div>
+                                    )}
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-bold text-gray-900">Super Admin Gmail</h3>
-                                    <p className="text-sm text-gray-500">
-                                        {googleStatus.isConnected ? `Connected - ${googleStatus.email}` : "Connect Gmail to enable outbound mail"}
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-lg font-bold text-gray-900">Super Admin Gmail</h3>
+                                        {googleStatus.isConnected && (
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black bg-emerald-50 text-emerald-600 border border-emerald-100 uppercase tracking-wider">Active</span>
+                                        )}
+                                    </div>
+                                    <p className="text-sm text-gray-500 font-medium">
+                                        {googleStatus.isConnected ? `Connected as ${googleStatus.email}` : "Connect Gmail to enable outbound mail"}
                                     </p>
                                 </div>
                             </div>
+                            {googleStatus.isConnected ? (
                                 <div className="flex items-center gap-2">
                                     <Button
                                         onClick={() => setIsDisconnectModalOpen(true)}
@@ -229,39 +251,44 @@ export default function SuperAdminSettingsPage() {
 
                 <SettingsCard title="Update Password" description="Change your super-admin password with OTP verification.">
                     <form onSubmit={handleInitialSubmit} className="space-y-8">
-                        <div className="grid gap-5 md:grid-cols-2">
-                            <label className="space-y-2">
-                                <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Current Password</span>
-                                <div className="relative">
-                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-300" />
-                                    <Input type={showCurrent ? "text" : "password"} value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} className="pl-10 pr-10 h-11" />
-                                    <button type="button" onClick={() => setShowCurrent(!showCurrent)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300">
-                                        {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                    </button>
-                                </div>
-                            </label>
-                            <label className="space-y-2">
-                                <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">New Password</span>
-                                <div className="relative">
-                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-300" />
-                                    <Input type={showNew ? "text" : "password"} value={newPassword} onChange={e => setNewPassword(e.target.value)} className="pl-10 pr-10 h-11" />
-                                    <button type="button" onClick={() => setShowNew(!showNew)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300">
-                                        {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                    </button>
-                                </div>
-                            </label>
+                        <div className="grid gap-6 md:grid-cols-2">
+                            <PasswordInput 
+                                label="Current Password"
+                                placeholder="Enter current password"
+                                value={currentPassword}
+                                onChange={e => setCurrentPassword(e.target.value)}
+                            />
+                            <PasswordInput 
+                                label="New Password"
+                                placeholder="Enter new password"
+                                value={newPassword}
+                                onChange={e => setNewPassword(e.target.value)}
+                                showChecklist
+                                onValidationChange={setIsNewPasswordValid}
+                            />
                         </div>
 
-                        <label className="space-y-2 block">
-                            <span className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">Confirm New Password</span>
-                            <div className="relative max-w-2xl">
-                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-300" />
-                                <Input type={showConfirm ? "text" : "password"} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="pl-10 pr-10 h-11" />
-                                <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300">
-                                    {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        <div className="max-w-2xl space-y-4">
+                            <PasswordInput 
+                                label="Confirm New Password"
+                                placeholder="Re-enter new password"
+                                value={confirmPassword}
+                                onChange={e => setConfirmPassword(e.target.value)}
+                            />
+
+                            <div className="pt-1">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        window.location.href = "/login/forgot-password?from=super-settings";
+                                    }}
+                                    className="text-xs font-bold text-[#F97316] hover:underline flex items-center gap-1.5"
+                                >
+                                    <Zap className="h-3 w-3" />
+                                    Forgot current password? Recover account
                                 </button>
                             </div>
-                        </label>
+                        </div>
 
                         {error && (
                             <div className="p-4 rounded-xl bg-red-50 border border-red-100 text-red-600 flex items-center gap-3">
@@ -278,7 +305,7 @@ export default function SuperAdminSettingsPage() {
                         )}
 
                         <div className="flex justify-end">
-                            <Button type="submit" disabled={sendingOtp || !currentPassword || !newPassword} className="bg-[#F97316] text-white hover:bg-orange-600">
+                            <Button type="submit" disabled={sendingOtp || !currentPassword || !isNewPasswordValid || newPassword !== confirmPassword} className="bg-[#F97316] text-white hover:bg-orange-600 font-bold px-8 h-11">
                                 {sendingOtp ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                                 Change Password
                             </Button>

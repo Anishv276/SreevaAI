@@ -5,7 +5,7 @@ import { generateId } from "../lib/ids";
 const prisma = new PrismaClient();
 
 async function main() {
-    const email = "admin@lumoscale";
+    const email = "admin@sreeva";
     const password = "123456";
     const name = "Organization Admin";
     const orgId = "hire-org-id";

@@ -1,7 +1,9 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { Check, X, ShieldCheck, Info } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type InvitePayload = {
     id: string;
@@ -26,6 +28,19 @@ export default function InviteAcceptPage() {
     const [confirmPassword, setConfirmPassword] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [rejected, setRejected] = useState(false);
+
+    const passwordRequirements = useMemo(() => {
+        return [
+            { label: "8+ characters", met: password.length >= 8 },
+            { label: "Lowercase letter", met: /[a-z]/.test(password) },
+            { label: "Uppercase letter", met: /[A-Z]/.test(password) },
+            { label: "Number", met: /[0-9]/.test(password) },
+            { label: "Special character", met: /[^a-zA-Z0-9]/.test(password) },
+        ];
+    }, [password]);
+
+    const isPasswordValid = useMemo(() => passwordRequirements.every(r => r.met), [passwordRequirements]);
+    const isFormValid = useMemo(() => name.trim().length > 0 && isPasswordValid && password === confirmPassword, [name, isPasswordValid, password, confirmPassword]);
 
     useEffect(() => {
         if (!token) return;
@@ -132,44 +147,73 @@ export default function InviteAcceptPage() {
                 ) : invite ? (
                     <div className="mt-6 space-y-5">
                         <div className="p-4 rounded-2xl border border-gray-100 bg-gray-50/60">
-                            <p className="text-xs text-gray-500 font-black uppercase tracking-widest">Organization</p>
-                            <p className="text-sm text-gray-900 font-bold mt-1">{invite.orgName}</p>
-                            <p className="text-xs text-gray-500 font-black uppercase tracking-widest mt-3">Role</p>
-                            <p className="text-sm text-gray-900 font-bold mt-1">{invite.role}</p>
-                            <p className="text-xs text-gray-500 font-black uppercase tracking-widest mt-3">Email</p>
-                            <p className="text-sm text-gray-900 font-bold mt-1">{invite.email}</p>
+                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Organization</p>
+                            <p className="text-sm text-gray-900 font-semibold mt-1">{invite.orgName}</p>
+                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-3">Role</p>
+                            <p className="text-sm text-gray-900 font-semibold mt-1">{invite.role}</p>
+                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-3">Email</p>
+                            <p className="text-sm text-gray-900 font-semibold mt-1">{invite.email}</p>
                         </div>
 
-                        <div className="space-y-3">
-                            <input
-                                type="text"
-                                placeholder="Your full name"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                className="w-full h-11 px-4 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-300"
-                            />
-                            <input
-                                type="password"
-                                placeholder="8+ chars (A, a, 1, @)"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full h-11 px-4 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-300"
-                            />
-                            <input
-                                type="password"
-                                placeholder="Confirm password"
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                className="w-full h-11 px-4 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-300"
-                            />
-                        </div>
+                            <div className="space-y-3">
+                                <input
+                                    type="text"
+                                    placeholder="Your full name"
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    className="w-full h-11 px-4 rounded-xl border border-gray-200 focus:outline-none focus:border-orange-300 font-medium transition-all"
+                                />
+                                <div className="space-y-2">
+                                    <input
+                                        type="password"
+                                        placeholder="Create a strong password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className={cn(
+                                            "w-full h-11 px-4 rounded-xl border transition-all focus:outline-none",
+                                            password.length > 0 ? (isPasswordValid ? "border-emerald-200 bg-emerald-50/20 focus:border-emerald-400" : "border-orange-200 focus:border-orange-300") : "border-gray-200 focus:border-orange-300"
+                                        )}
+                                    />
+                                    
+                                    {password.length > 0 && (
+                                        <div className="p-4 rounded-2xl bg-gray-50/50 border border-gray-100 grid grid-cols-1 sm:grid-cols-2 gap-2 animate-in fade-in slide-in-from-top-1 duration-300">
+                                            {passwordRequirements.map((req, i) => (
+                                                <div key={i} className="flex items-center gap-2">
+                                                    {req.met ? (
+                                                        <Check className="h-3.5 w-3.5 text-emerald-500" />
+                                                    ) : (
+                                                        <div className="h-3.5 w-3.5 rounded-full border border-gray-300" />
+                                                    )}
+                                                    <span className={cn(
+                                                        "text-[11px] font-bold tracking-tight transition-colors",
+                                                        req.met ? "text-emerald-700" : "text-gray-400"
+                                                    )}>
+                                                        {req.label}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <input
+                                    type="password"
+                                    placeholder="Confirm password"
+                                    value={confirmPassword}
+                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                    className={cn(
+                                        "w-full h-11 px-4 rounded-xl border transition-all focus:outline-none",
+                                        confirmPassword.length > 0 ? (password === confirmPassword ? "border-emerald-200 bg-emerald-50/20 focus:border-emerald-400" : "border-red-200 focus:border-red-300") : "border-gray-200 focus:border-orange-300"
+                                    )}
+                                />
+                            </div>
 
                         <div className="flex gap-3">
                             <button
                                 type="button"
                                 onClick={handleAccept}
-                                disabled={submitting}
-                                className="flex-1 h-11 rounded-xl bg-[#F97316] text-white font-black disabled:opacity-60"
+                                disabled={submitting || !isFormValid}
+                                className="flex-1 h-11 rounded-xl bg-gray-950 hover:bg-[#F97316] text-white font-medium transition-all disabled:opacity-40 disabled:hover:bg-gray-950 shadow-xl shadow-gray-200/50 active:scale-[0.98]"
                             >
                                 {submitting ? "Processing..." : "Accept Invitation"}
                             </button>
@@ -177,7 +221,7 @@ export default function InviteAcceptPage() {
                                 type="button"
                                 onClick={handleReject}
                                 disabled={submitting}
-                                className="flex-1 h-11 rounded-xl bg-gray-100 text-gray-700 font-black disabled:opacity-60"
+                                className="flex-1 h-11 rounded-xl bg-gray-100 text-gray-700 font-medium disabled:opacity-40"
                             >
                                 Reject
                             </button>

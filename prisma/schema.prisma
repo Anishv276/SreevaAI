@@ -125,7 +125,6 @@ model Drive {
   salary               String?
   skills               String?
   extractedDetails     String?       @default("{}")
-  interviewEnabled     Boolean       @default(true)
   interviewLanguage    String?       @default("English")
   interviewTime        Int?          @default(10)
   proctoringLevel      String?       @default("Medium")
@@ -134,12 +133,15 @@ model Drive {
   jdPreviewUrl         String?
   orgId                String?
   status               String        @default("ACTIVE")
-  aiScreeningEnabled   Boolean       @default(true)
   isPassportRequired   Boolean       @default(false)
   slug                 String?       @unique
   id                   String        @id
   shortlistMode        String        @default("automatic")
   location             String?
+  ttsProvider          String?       @default("CARTESIA")
+  cartesiaVoiceId      String?       @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
+  sarvamVoice          String?       @default("shubh")
+  aiName               String?       @default("Ishitha")
 
   applications         Application[]
   creator              User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)

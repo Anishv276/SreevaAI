@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { PortalHeader } from "@/components/careers/portal-header";
 import { JobCard } from "@/components/careers/job-card";
@@ -49,7 +49,7 @@ export default function PortalPage() {
                             generation of <span className="text-[#F97316]">talent.</span>
                         </h1>
                         <p className="text-xl text-gray-500 font-medium max-w-2xl mx-auto leading-relaxed">
-                            Find your next career move with Lumoscale. We build the future of AI-driven recruitment and we want you to be part of it.
+                            Find your next career move with Sreeva AI. We build the future of AI-driven recruitment and we want you to be part of it.
                         </p>
                     </div>
 

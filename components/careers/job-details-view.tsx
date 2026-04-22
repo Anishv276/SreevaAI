@@ -38,7 +38,7 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
         : [];
 
     const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/careers/jobs/${job.id}` : "";
-    const shareTitle = `Check out this opening for ${job.title} at ${org.name || 'Lumoscale'}`;
+    const shareTitle = `Check out this opening for ${job.title} at ${org.name || 'Sreeva AI'}`;
 
     const shareActions = {
         whatsapp: () => window.open(`https://wa.me/?text=${encodeURIComponent(shareTitle + "\n" + shareUrl)}`, '_blank'),
@@ -247,7 +247,7 @@ export function JobDetailsView({ job, isDraft = false }: JobDetailsViewProps) {
                                 </div>
                                 <div>
                                     <h4 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-1">Company</h4>
-                                    <p className="text-xl font-black text-gray-900 tracking-tight">{org.name || "Lumoscale"}</p>
+                                    <p className="text-xl font-black text-gray-900 tracking-tight">{org.name || "Sreeva AI"}</p>
                                 </div>
                             </div>
 

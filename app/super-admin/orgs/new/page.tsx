@@ -194,7 +194,7 @@ export default function NewOrgPage() {
                     </div>
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900 tracking-tight leading-none">Add New Client</h1>
-                        <p className="text-gray-500 font-medium text-sm mt-2">Create a professional organization on the Lumoscale platform.</p>
+                        <p className="text-gray-500 font-medium text-sm mt-2">Create a professional organization on the Sreeva AI platform.</p>
                     </div>
                 </div>
 
@@ -735,7 +735,7 @@ export default function NewOrgPage() {
 
                 <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-6">
                     <p className="text-gray-500 text-[11px] font-medium uppercase tracking-widest max-w-xs">
-                        By click provisioning, you allocate a new tenant on the Lumoscale Network.
+                        By click provisioning, you allocate a new tenant on the Sreeva AI Network.
                     </p>
                     <button
                         type="submit"

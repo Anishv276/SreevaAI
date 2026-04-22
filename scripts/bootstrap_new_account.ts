@@ -4,9 +4,9 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function main() {
-    const orgId = "lumoscale-org-id";
-    const email = "lumoscale@gmail.com";
-    const password = "Lumoscale@123";
+    const orgId = "sreeva-org-id";
+    const email = "support@sreevaai.com";
+    const password = "sreevaai@123";
 
     console.log("🚀 Performing full database wipe...");
 
@@ -23,12 +23,12 @@ async function main() {
         where: { email },
         update: {
             password: hashedPassword,
-            name: "Lumoscale Super Admin",
+            name: "Sreeva Super Admin",
         },
         create: {
             email,
             password: hashedPassword,
-            name: "Lumoscale Super Admin",
+            name: "Sreeva Super Admin",
         }
     });
     console.log("✅ SuperAdmin profile created:", email);
@@ -37,13 +37,13 @@ async function main() {
     const org = await prisma.organization.upsert({
         where: { id: orgId },
         update: {
-            name: "Lumoscale",
-            slug: "lumoscale",
+            name: "Sreeva AI",
+            slug: "sreeva",
         },
         create: {
             id: orgId,
-            name: "Lumoscale",
-            slug: "lumoscale",
+            name: "Sreeva AI",
+            slug: "sreeva",
             onboardingComplete: true,
         }
     });
@@ -56,7 +56,7 @@ async function main() {
             password: hashedPassword,
             role: "ADMIN",
             orgId: org.id,
-            name: "Lumoscale Admin",
+            name: "Sreeva Admin",
         },
         create: {
             id: "admin-user-id",
@@ -64,7 +64,7 @@ async function main() {
             password: hashedPassword,
             role: "ADMIN",
             orgId: org.id,
-            name: "Lumoscale Admin",
+            name: "Sreeva Admin",
         }
     });
     console.log("✅ Organization Admin user created:", user.email);

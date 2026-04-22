@@ -13,7 +13,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Hirer.ai - AI-Powered Recruitment Platform",
+  title: "Sreeva AI - AI-Powered Recruitment Platform",
   description: "Automate your hiring process with AI-driven screening and interviews.",
 };
 
@@ -30,7 +30,7 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased" suppressHydrationWarning>
         <AuthProvider>
-          <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#F8F9FB] animate-pulse">Loading Hirer.ai...</div>}>
+          <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#F8F9FB] animate-pulse">Loading Sreeva AI...</div>}>
             <JobsProvider>
               <CandidatesProvider>
                 {children}

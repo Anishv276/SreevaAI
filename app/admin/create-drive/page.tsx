@@ -50,7 +50,7 @@ const STEPS = [
 
 
 
-// const CANDIDATE_LINK = "hirer.ai/careers/jobs/backend-engineer-2024";
+// const CANDIDATE_LINK = "sreeva.ai/careers/jobs/backend-engineer-2024";
 
 
 
@@ -144,8 +144,6 @@ function CreateDriveForm() {
 
         extractedDetails: {},
 
-        interviewEnabled: true,
-
         interviewLanguage: "English",
 
         interviewTime: 10,
@@ -153,6 +151,14 @@ function CreateDriveForm() {
         interviewAntiCheat: "Medium",
 
         interviewQuestions: [],
+
+        ttsProvider: "",
+
+        cartesiaVoiceId: null,
+
+        sarvamVoice: null,
+
+        aiName: "Ishitha",
 
     });
 
@@ -170,7 +176,7 @@ function CreateDriveForm() {
 
     // Lifted state
 
-    const [aiEnabled, setAiEnabled] = useState(true);
+    const aiEnabled = true;
 
     const [shortlistMode, setShortlistMode] = useState<"automatic" | "manual">("automatic");
 
@@ -232,35 +238,26 @@ function CreateDriveForm() {
 
 
 
-    // Organization location fetch disabled to prevent unwanted defaults
-
-    /*
-
     useEffect(() => {
-
-        if (!isEditMode && !formData.location) {
-
-            fetch("/api/admin/organization")
-
+        if (!isEditMode) {
+            fetch("/api/admin/organization", { cache: "no-store" })
                 .then(res => res.json())
-
                 .then(data => {
-
-                    if (data.location) {
-
-                        setFormData((prev: any) => ({ ...prev, location: data.location }));
-
-                    }
-
+                    if (data.error) return;
+                    const orgProvider = data.ttsProvider || "CARTESIA";
+                    setFormData((prev: any) => ({ 
+                        ...prev, 
+                        location: prev.location || data.location || "",
+                        // Lock the provider from org setting
+                        ttsProvider: orgProvider,
+                        // Only set the active provider's voice; null out the other
+                        cartesiaVoiceId: orgProvider === "CARTESIA" ? (data.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc") : null,
+                        sarvamVoice: orgProvider === "SARVAM" ? (data.sarvamVoice || "shubh") : null,
+                    }));
                 })
-
                 .catch(() => { });
-
         }
-
-    }, [isEditMode, formData.location]);
-
-    */
+    }, [isEditMode]);
 
 
 
@@ -294,58 +291,80 @@ function CreateDriveForm() {
 
                 setPublishedDriveId(drive.id);
 
-                setFormData((prev: any) => ({
-
-                    ...prev,
-
-                    title: drive.title,
-
-                    role: (drive as any).role || drive.title,
-
-                    department: drive.department,
-
-                    workMode: (drive as any).workMode || "",
-
-                    location: (drive as any).location || "",
-
-                    employmentType: drive.type,
-
-                    deadline: (drive as any).deadline ? new Date((drive as any).deadline).toISOString().split('T')[0] : "",
-
-                    description: drive.description,
-
-                    skills: (drive as any).skills || "",
-
-                    responsibilities: (drive as any).responsibilities || "",
-
-                    requirements: (drive as any).requirements || "",
-
-                    experience: (drive as any).experience || "",
-
-                    salary: (drive as any).salary || "",
-
-                    interviewEnabled: (drive as any).interviewEnabled ?? true,
-
-                    interviewLanguage: (drive as any).interviewLanguage || "English",
-
-                    interviewTime: (drive as any).interviewTime || 10,
-
-                    interviewAntiCheat: (drive as any).proctoringLevel || "Medium",
-
-
-                    interviewQuestions: typeof (drive as any).interviewQuestions === 'string'
-
-                        ? JSON.parse((drive as any).interviewQuestions)
-
-                        : ((drive as any).interviewQuestions || []),
-
-                    extractedDetails: (drive as any).extractedDetails || {},
-
-                    jdFileName: (drive as any).jdFileName || "",
-
-                    jdPreviewUrl: (drive as any).jdPreviewUrl || "",
-
-                }));
+                // Fetch org config to get the authoritative ttsProvider
+                fetch("/api/admin/organization", { cache: "no-store" })
+                    .then(res => res.json())
+                    .then(orgData => {
+                        const orgProvider = (orgData.error ? null : orgData.ttsProvider) || (drive as any).ttsProvider || "CARTESIA";
+                        setFormData((prev: any) => ({
+                            ...prev,
+                            title: drive.title,
+                            role: (drive as any).role || drive.title,
+                            department: drive.department,
+                            workMode: (drive as any).workMode || "",
+                            location: (drive as any).location || "",
+                            employmentType: drive.type,
+                            deadline: (drive as any).deadline ? new Date((drive as any).deadline).toISOString().split('T')[0] : "",
+                            description: drive.description,
+                            skills: (drive as any).skills || "",
+                            responsibilities: (drive as any).responsibilities || "",
+                            requirements: (drive as any).requirements || "",
+                            experience: (drive as any).experience || "",
+                            salary: (drive as any).salary || "",
+                            interviewEnabled: (drive as any).interviewEnabled ?? true,
+                            interviewLanguage: (drive as any).interviewLanguage || "English",
+                            interviewTime: (drive as any).interviewTime || 10,
+                            interviewAntiCheat: (drive as any).proctoringLevel || "Medium",
+                            interviewQuestions: typeof (drive as any).interviewQuestions === 'string'
+                                ? JSON.parse((drive as any).interviewQuestions)
+                                : ((drive as any).interviewQuestions || []),
+                            extractedDetails: (drive as any).extractedDetails || {},
+                            jdFileName: (drive as any).jdFileName || "",
+                            jdPreviewUrl: (drive as any).jdPreviewUrl || "",
+                            // Org is the authority for provider; drive provides the voice ID
+                            ttsProvider: orgProvider,
+                            cartesiaVoiceId: orgProvider === "CARTESIA"
+                                ? ((drive as any).cartesiaVoiceId || orgData.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
+                                : null,
+                            sarvamVoice: orgProvider === "SARVAM"
+                                ? ((drive as any).sarvamVoice || orgData.sarvamVoice || "shubh")
+                                : null,
+                            aiName: (drive as any).aiName || "Ishitha",
+                        }));
+                    })
+                    .catch(() => {
+                        // Fallback: just use drive data as-is
+                        setFormData((prev: any) => ({
+                            ...prev,
+                            title: drive.title,
+                            role: (drive as any).role || drive.title,
+                            department: drive.department,
+                            workMode: (drive as any).workMode || "",
+                            location: (drive as any).location || "",
+                            employmentType: drive.type,
+                            deadline: (drive as any).deadline ? new Date((drive as any).deadline).toISOString().split('T')[0] : "",
+                            description: drive.description,
+                            skills: (drive as any).skills || "",
+                            responsibilities: (drive as any).responsibilities || "",
+                            requirements: (drive as any).requirements || "",
+                            experience: (drive as any).experience || "",
+                            salary: (drive as any).salary || "",
+                            interviewEnabled: (drive as any).interviewEnabled ?? true,
+                            interviewLanguage: (drive as any).interviewLanguage || "English",
+                            interviewTime: (drive as any).interviewTime || 10,
+                            interviewAntiCheat: (drive as any).proctoringLevel || "Medium",
+                            interviewQuestions: typeof (drive as any).interviewQuestions === 'string'
+                                ? JSON.parse((drive as any).interviewQuestions)
+                                : ((drive as any).interviewQuestions || []),
+                            extractedDetails: (drive as any).extractedDetails || {},
+                            jdFileName: (drive as any).jdFileName || "",
+                            jdPreviewUrl: (drive as any).jdPreviewUrl || "",
+                            ttsProvider: (drive as any).ttsProvider || "CARTESIA",
+                            cartesiaVoiceId: (drive as any).cartesiaVoiceId || null,
+                            sarvamVoice: (drive as any).sarvamVoice || null,
+                            aiName: (drive as any).aiName || "Ishitha",
+                        }));
+                    });
 
 
 
@@ -353,7 +372,6 @@ function CreateDriveForm() {
 
                 const dbThreshold = (drive as any).screeningThreshold;
 
-                const dbAiEnabled = (drive as any).aiScreeningEnabled;
 
                 // Set weights, giving priority to the specific threshold column
 
@@ -365,9 +383,6 @@ function CreateDriveForm() {
 
 
 
-                // Set AI enabled status
-
-                setAiEnabled(dbAiEnabled ?? true);
 
                 if ((drive as any).registrationFields) {
 
@@ -951,6 +966,11 @@ function CreateDriveForm() {
             interviewAntiCheat: currentFormData.interviewAntiCheat,
 
             interviewQuestions: parsedQuestions,
+
+            ttsProvider: currentFormData.ttsProvider || "CARTESIA",
+            cartesiaVoiceId: currentFormData.ttsProvider === "SARVAM" ? null : (currentFormData.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"),
+            sarvamVoice: (currentFormData.ttsProvider || "CARTESIA") === "SARVAM" ? (currentFormData.sarvamVoice || "shubh") : null,
+            aiName: currentFormData.aiName || "Ishitha",
 
             registrationFields: customFields,
 
@@ -1806,9 +1826,6 @@ function CreateDriveForm() {
 
                             setConfig={setWeights}
 
-                            aiEnabled={aiEnabled}
-
-                            setAiEnabled={setAiEnabled}
 
                             shortlistMode={shortlistMode}
 
@@ -1851,8 +1868,6 @@ function CreateDriveForm() {
                         <FinalPreview
 
                             formData={formData}
-
-                            aiEnabled={aiEnabled}
 
                             weights={weights}
 

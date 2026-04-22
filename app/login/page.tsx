@@ -52,7 +52,7 @@ export default function LoginPage() {
                         <span className="text-white font-black text-2xl">L</span>
                     </div>
                     <div>
-                        <h1 className="text-2xl font-black text-gray-900 tracking-tighter uppercase">LUMOSCALE CLOUD</h1>
+                        <h1 className="text-2xl font-black text-gray-900 tracking-tighter uppercase">SREEVA AI</h1>
                         <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.4em] mt-2 text-center">Identity Management Gateway</p>
                     </div>
                 </div>
@@ -61,7 +61,7 @@ export default function LoginPage() {
                 <div className="group relative bg-white border border-gray-100 rounded-2xl p-8 shadow-[0_4px_20px_rgba(0,0,0,0.02)] hover:shadow-[0_20px_40px_rgba(249,115,22,0.1)] transition-all duration-500 overflow-hidden">
                     {/* Interactive Border Glow */}
                     <div className="absolute top-0 left-0 w-1 h-full bg-[#F97316] opacity-0 group-hover:opacity-100 transition-all duration-500" />
-                    
+
                     <form onSubmit={handleLogin} className="space-y-6">
                         <div className="space-y-2">
                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Corporate Email</label>
@@ -70,7 +70,7 @@ export default function LoginPage() {
                                 type="email"
                                 value={email}
                                 onChange={e => setEmail(e.target.value)}
-                                placeholder="name@lumoscale.com"
+                                placeholder="name@sreeva.ai"
                                 required
                                 className="w-full h-12 px-4 bg-gray-50 border border-transparent rounded-xl text-gray-900 placeholder-gray-400 text-sm font-bold outline-none group-hover:bg-white focus:bg-white focus:border-gray-900 transition-all"
                             />
@@ -79,7 +79,7 @@ export default function LoginPage() {
                         <div className="space-y-2">
                             <div className="flex items-center justify-between">
                                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Security Password</label>
-                                <Link 
+                                <Link
                                     href="/login/forgot-password"
                                     className="text-[10px] font-black text-[#F97316] hover:text-orange-600 uppercase tracking-widest transition-colors"
                                 >
@@ -127,7 +127,7 @@ export default function LoginPage() {
 
                 <div className="text-center space-y-2">
                     <p className="text-gray-400 text-[9px] font-black uppercase tracking-[0.4em]">
-                        Secured by Lumoscale Network
+                        Secured by Sreeva AI Network
                     </p>
                     <div className="h-0.5 w-6 bg-orange-100 mx-auto rounded-full" />
                 </div>

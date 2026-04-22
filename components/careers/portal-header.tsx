@@ -14,7 +14,7 @@ export function PortalHeader() {
                             <Briefcase className="h-5 w-5" />
                         </div>
                         <span className="text-xl font-black tracking-tight text-gray-900">
-                            Lumoscale<span className="text-[#F97316]">.ai</span>
+                            Sreeva<span className="text-[#F97316]"> AI</span>
                         </span>
                     </Link>
                 </div>

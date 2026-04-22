@@ -243,8 +243,7 @@ const worker = new Worker('resume-processing', async (job) => {
         description: true,
         extractedDetails: true,
         screeningThreshold: true,
-        interviewEnabled: true,
-        orgId: true,
+                orgId: true,
       },
     });
 
@@ -362,10 +361,7 @@ const worker = new Worker('resume-processing', async (job) => {
 
     // 4. Interview invite / status email flow
     const { sendApplicationStatusEmail } = await import('./lib/mail');
-    // Read interviewEnabled from DB (already fetched above); default true for backward compat.
-    const isInterviewEnabled = latestDrive?.interviewEnabled ?? true;
-
-    if (resumeStatus === 'SHORTLISTED' && isInterviewEnabled) {
+        if (resumeStatus === 'SHORTLISTED') {
       // Voice interview is ENABLED -> create interview record and send link
       const interview = await (prisma as any).interview.upsert({
         where: { applicationId },
@@ -408,7 +404,7 @@ const worker = new Worker('resume-processing', async (job) => {
         score: currentScore
         // No interviewLink -- email reflects resume status only
       });
-      console.log(`[EMAIL] Status-only email sent to ${applicantEmail} -- interview disabled: ${!isInterviewEnabled}, status: ${resumeStatus}`);
+      console.log(`[EMAIL] Status-only email sent to ${applicantEmail}  status: ${resumeStatus}`);
     }
 
   } catch (error) {

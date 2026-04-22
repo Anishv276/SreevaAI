@@ -51,7 +51,6 @@ export const createDriveSchema = z.object({
   requirements: z.string().optional(),
   jdFileName: z.string().nullable().optional(),
   jdPreviewUrl: z.string().nullable().optional(),
-  interviewEnabled: z.boolean().optional(),
   interviewLanguage: z.string().optional(),
   interviewTime: z.preprocess((val) => {
     if (val === null || val === undefined || val === "") return 10;
@@ -60,12 +59,13 @@ export const createDriveSchema = z.object({
   }, z.coerce.number().int().optional()).default(10),
   interviewAntiCheat: z.string().optional(),
   interviewQuestions: z.array(z.any()).optional(),
+  ttsProvider: z.string().optional(),
+  cartesiaVoiceId: z.string().optional(),
+  sarvamVoice: z.string().optional(),
+  aiName: z.string().optional(),
   registrationFields: z.array(z.any()).optional(),
   extractedDetails: z.record(z.string(), z.any()).optional(),
   screeningThreshold: z.coerce.number().int().optional(),
-  aiScreening: z.object({
-    enabled: z.boolean().optional()
-  }).optional(),
   status: z.enum(["ACTIVE", "CLOSED", "DISABLED"]).optional(),
   isPassportRequired: z.boolean().optional(),
   shortlistMode: z.enum(["automatic", "manual"]).optional(),

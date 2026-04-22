@@ -760,7 +760,7 @@ export async function POST(request: Request) {
         if (lowerMessage === 'hi' || lowerMessage === 'hello' || lowerMessage === 'hey' || lowerMessage === 'hii') {
             const greetingStream = new ReadableStream({
                 start(controller) {
-                    controller.enqueue(new TextEncoder().encode("👋 Hi there! I'm **Lumo**, your recruitment assistant. Try asking me:\n\n• 'Show all candidates'\n• 'Top performers'\n• 'How many hired this month?'\n• 'Summarize [candidate name]'"));
+                    controller.enqueue(new TextEncoder().encode("👋 Hi there! I'm **Ishita**, your recruitment assistant. Try asking me:\n\n• 'Show all candidates'\n• 'Top performers'\n• 'How many hired this month?'\n• 'Summarize [candidate name]'"));
                     controller.close();
                 },
             });
@@ -804,7 +804,7 @@ export async function POST(request: Request) {
         if (result && (result as any).type !== 'stream') {
             const data = result as any;
             const gptContext = `
-You are 'Lumo', a Premium AI Recruitment Assistant. 
+You are 'Ishita', a Premium AI Recruitment Assistant. 
 Format the following data into a friendly, helpful response:
 
 ${data.title ? `**${data.title}**\n\n` : ''}
@@ -812,7 +812,7 @@ ${data.message}
 
 ${data.action ? `\n\n💡 ${data.action}` : ''}
 
-Keep responses concise and use bold for important info. Always sign off as Lumo.
+Keep responses concise and use bold for important info. Always sign off as Ishita.
             `;
             
             const gptResponse = await openai.chat.completions.create({
@@ -883,7 +883,7 @@ Keep responses concise and use bold for important info. Always sign off as Lumo.
         ]);
 
         const systemContext = `
-You are 'Lumo', the Premium AI Recruitment Assistant for Lumoscale.
+You are 'Ishita', the Premium AI Recruitment Assistant for Sreeva AI.
 Your tone is professional, efficient, and proactive.
 
 CURRENT PLATFORM STATUS:
@@ -947,7 +947,7 @@ Be concise and helpful. Use bold for names and scores. Always provide exact time
         });
 
     } catch (error: any) {
-        console.error("Lumo AI Error:", error);
+        console.error("Ishita AI Error:", error);
         console.error("Error stack:", error.stack);
         
         // Return a friendly error message instead of crashing

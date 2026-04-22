@@ -96,7 +96,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
                             <Sparkles className="text-white h-5 w-5" />
                         </div>
                         <div>
-                            <p className="text-gray-900 font-black text-lg tracking-tight leading-none">Lumoscale</p>
+                            <p className="text-gray-900 font-black text-lg tracking-tight leading-none">Sreeva AI</p>
                             <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mt-1.5 leading-none">Super Admin</p>
                         </div>
                     </div>

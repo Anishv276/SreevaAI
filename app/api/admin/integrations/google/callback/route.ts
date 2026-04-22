@@ -20,13 +20,15 @@ export async function GET(request: Request) {
         }
     }
 
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || new URL(request.url).origin;
+
     if (error) {
         console.error('[GOOGLE_OAUTH_CALLBACK_ERROR]', error);
-        return NextResponse.redirect(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}google_error=access_denied`, request.url));
+        return NextResponse.redirect(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}google_error=access_denied`, baseUrl));
     }
 
     if (!code || !orgId) {
-        return NextResponse.redirect(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}google_error=missing_params`, request.url));
+        return NextResponse.redirect(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}google_error=missing_params`, baseUrl));
     }
 
     try {
@@ -50,9 +52,9 @@ export async function GET(request: Request) {
         });
 
         // Redirect back to settings with success
-        return NextResponse.redirect(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}google_success=true`, request.url));
+        return NextResponse.redirect(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}google_success=true`, baseUrl));
     } catch (error: any) {
         console.error('[GOOGLE_OAUTH_CALLBACK_EXCEPTION]', error);
-        return NextResponse.redirect(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}google_error=${encodeURIComponent(error.message)}`, request.url));
+        return NextResponse.redirect(new URL(`${nextPath}${nextPath.includes("?") ? "&" : "?"}google_error=${encodeURIComponent(error.message)}`, baseUrl));
     }
 }

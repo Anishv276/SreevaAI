@@ -35,7 +35,7 @@ export function RecruiterAssistant() {
     const [messages, setMessages] = useState<Message[]>([
         {
             role: "assistant",
-            content: "### Welcome to Ishita Intelligence\n\nI've indexed your entire talent pool. Ask me specifically about skills, experience, or interview performance.\n\n**Try asking:**\n- Who has the strongest React background?\n- Summarize Vamsi's interview red flags.\n- Did anyone mention experience with n8n?"
+            content: "### Welcome to Ishita @ Sreeva AI\n\nI am your AI recruitment assistant, ready to help you analyze your talent pool and find the best candidates. Ask me anything about your applicants' skills or interview performance!"
         }
     ]);
     const [isLoading, setIsLoading] = useState(false);
@@ -170,7 +170,7 @@ export function RecruiterAssistant() {
                                 {!isMinimized && (
                                     <div>
                                         <h3 className="text-xl font-black tracking-tight text-gray-900 leading-none">
-                                            Hire Assistant
+                                            AI Assistant
                                         </h3>
                                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mt-2 flex items-center gap-2">
                                             <span className="h-2 w-2 rounded-full bg-green-500 shadow-[0_0_5px_#22C55E]" />
@@ -186,7 +186,7 @@ export function RecruiterAssistant() {
                                     onClick={() => setMessages([
                                         {
                                             role: "assistant",
-                                            content: "### Welcome to Ishita Intelligence\n\nI've indexed your entire talent pool. Ask me specifically about skills, experience, or interview performance.\n\n**Try asking:**\n- Who has the strongest React background?\n- Summarize Vamsi's interview red flags.\n- Did anyone mention experience with n8n?"
+                                            content: "### Welcome to Ishita @ Sreeva AI\n\nI am your AI recruitment assistant, ready to help you analyze your talent pool and find the best candidates. Ask me anything about your applicants' skills or interview performance!"
                                         }
                                     ])} 
                                     className="h-10 w-10 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-all"
@@ -203,7 +203,7 @@ export function RecruiterAssistant() {
                         {!isMinimized && (
                             <>
                                 {/* Messages Area - Standard Admin White */}
-                                <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden p-6 space-y-8 scroll-smooth antialiased bg-white custom-scrollbar">
+                                <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden p-6 space-y-4 scroll-smooth antialiased bg-white custom-scrollbar">
                                     {messages.map((msg, i) => (
                                         <motion.div
                                             initial={{ y: 20, opacity: 0 }}
@@ -243,7 +243,7 @@ export function RecruiterAssistant() {
                                                     </span>
                                                 </div>
                                                 <div className={cn(
-                                                    "p-4 rounded-2xl text-[13px] leading-relaxed shadow-[0_4px_15px_rgba(0,0,0,0.03)] border break-words overflow-hidden w-full",
+                                                    "p-3 rounded-2xl text-[11px] leading-relaxed shadow-[0_4px_15px_rgba(0,0,0,0.03)] border break-words overflow-hidden w-full",
                                                     msg.role === "assistant" 
                                                         ? "bg-white border-gray-100 text-gray-800" 
                                                         : "bg-[#F97316] border-orange-400 text-white font-medium"
@@ -251,10 +251,10 @@ export function RecruiterAssistant() {
                                                     {msg.content.split("\n").map((line, linIdx) => {
                                         // Handle Headings (### and ##)
                                         if (line.startsWith("### ")) {
-                                            return <h4 key={linIdx} className="text-base font-extrabold mt-2 mb-2 text-gray-900 tracking-tight break-words">{line.replace("### ", "")}</h4>;
+                                            return <h4 key={linIdx} className="text-sm font-extrabold mt-2 mb-2 text-gray-900 tracking-tight break-words">{line.replace("### ", "")}</h4>;
                                         }
                                         if (line.startsWith("## ")) {
-                                            return <h3 key={linIdx} className="text-lg font-extrabold mt-3 mb-2 text-gray-900 tracking-tight break-words">{line.replace("## ", "")}</h3>;
+                                            return <h3 key={linIdx} className="text-base font-extrabold mt-3 mb-2 text-gray-900 tracking-tight break-words">{line.replace("## ", "")}</h3>;
                                         }
 
                                         // Skip markdown table separator rows (|---|---)
@@ -324,7 +324,7 @@ export function RecruiterAssistant() {
                                             value={input}
                                             onChange={(e) => setInput(e.target.value)}
                                             onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-                                            placeholder="Query candidate pool..."
+                                            placeholder="Ask your question..."
                                             className="h-16 pr-16 pl-8 rounded-[1.2rem] border-gray-200 bg-white hover:border-orange-300 focus-visible:border-orange-500 focus-visible:ring-1 focus-visible:ring-orange-500 focus-visible:ring-offset-0 transition-all font-bold text-[15px] shadow-sm"
                                         />
                                         <Button
@@ -338,8 +338,8 @@ export function RecruiterAssistant() {
                                     
                                     <div className="flex items-center justify-center gap-4 mt-6">
                                         <div className="h-px flex-1 bg-gray-50" />
-                                        <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.3em]">
-                                            @powered by hire AI intelligence
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">
+                                            @<strong>powered by Sreeva AI intelligence</strong>
                                         </p>
                                         <div className="h-px flex-1 bg-gray-50" />
                                     </div>

@@ -73,7 +73,7 @@ function extractClientIp(req: NextRequest): string | null {
  * against a generic IPv4/v6 space.
  */
 function hashIp(rawIp: string): string {
-    const salt = process.env.IP_HASH_SALT || "lumoscale_proctor_salt_v1";
+    const salt = process.env.IP_HASH_SALT || "sreeva_proctor_salt_v1";
     return crypto
         .createHmac("sha256", salt)
         .update(rawIp.toLowerCase())
@@ -86,7 +86,7 @@ function hashIp(rawIp: string): string {
  * before hashing so a "same device" match is reliable across sessions.
  */
 function hashDevice(fp: DeviceFingerprint): string {
-    const salt   = process.env.IP_HASH_SALT || "lumoscale_proctor_salt_v1";
+    const salt   = process.env.IP_HASH_SALT || "sreeva_proctor_salt_v1";
     const raw    = `${fp.screen}|${fp.cpuCores}|${fp.platform}|${fp.dpr}|${fp.tzOffset}`;
     return crypto
         .createHmac("sha256", salt)

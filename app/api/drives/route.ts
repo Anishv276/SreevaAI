@@ -192,7 +192,6 @@ export async function POST(request: Request) {
                 location: data.location || null,
                 positions: data.positions || 1,
                 deadline: deadline,
-                aiScreeningEnabled: data.aiScreening?.enabled ?? true,
                 salary: data.salary || null,
                 experience: data.experience || null,
                 skills: data.skills || null,
@@ -205,11 +204,16 @@ export async function POST(request: Request) {
                 screeningThreshold: data.screeningThreshold || 0,
 
                 // Interview configuration
-                interviewEnabled: data.interviewEnabled ?? true,
                 interviewLanguage: data.interviewLanguage || "English",
                 interviewTime: data.interviewTime || 10,
                 proctoringLevel: data.interviewAntiCheat || "Medium",
                 interviewQuestions: data.interviewQuestions ? JSON.stringify(data.interviewQuestions) : "[]",
+                
+                ttsProvider: data.ttsProvider || "CARTESIA",
+                cartesiaVoiceId: (data.ttsProvider || "CARTESIA") === "SARVAM" ? null : (data.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"),
+                sarvamVoice: (data.ttsProvider || "CARTESIA") === "SARVAM" ? (data.sarvamVoice || "shubh") : null,
+                aiName: data.aiName || "Ishitha",
+                
                 isPassportRequired: data.isPassportRequired || false,
                 shortlistMode: data.shortlistMode || "automatic",
 

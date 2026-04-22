@@ -9,23 +9,26 @@ export async function GET(request: Request) {
     const state = searchParams.get('state'); 
     const error = searchParams.get('error');
 
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || new URL(request.url).origin;
+
     if (error) {
         console.error('[SUPER_ADMIN_GOOGLE_OAUTH_ERROR]', error);
-        return NextResponse.redirect(new URL('/super-admin/settings?section=integrations&google_error=access_denied', request.url));
+        return NextResponse.redirect(new URL('/super-admin/settings?section=integrations&google_error=access_denied', baseUrl));
     }
 
     if (!code || state !== 'superadmin_auth') {
-        return NextResponse.redirect(new URL('/super-admin/settings?section=integrations&google_error=missing_params', request.url));
+        return NextResponse.redirect(new URL('/super-admin/settings?section=integrations&google_error=missing_params', baseUrl));
     }
 
     try {
         const session = await getSession();
         if (!session || session.role !== "SUPER_ADMIN") {
-            return NextResponse.redirect(new URL('/super-admin/settings?section=integrations&google_error=unauthorized', request.url));
+            return NextResponse.redirect(new URL('/super-admin/settings?section=integrations&google_error=unauthorized', baseUrl));
         }
 
         // Exchange code for tokens
-        const tokens = await getGoogleTokens(code);
+        const superAdminCallbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || ''}/api/super-admin/integrations/google/callback`;
+        const tokens = await getGoogleTokens(code, superAdminCallbackUrl);
         
         // Get the authorized email
         const googleEmail = await getGoogleUserEmail(tokens.accessToken);
@@ -44,9 +47,9 @@ export async function GET(request: Request) {
         });
 
         // Redirect back to settings with success
-        return NextResponse.redirect(new URL('/super-admin/settings?section=integrations&google_success=true', request.url));
+        return NextResponse.redirect(new URL('/super-admin/settings?section=integrations&google_success=true', baseUrl));
     } catch (error: any) {
         console.error('[SUPER_ADMIN_GOOGLE_OAUTH_EXCEPTION]', error);
-        return NextResponse.redirect(new URL(`/super-admin/settings?section=integrations&google_error=${encodeURIComponent(error.message)}`, request.url));
+        return NextResponse.redirect(new URL(`/super-admin/settings?section=integrations&google_error=${encodeURIComponent(error.message)}`, baseUrl));
     }
 }

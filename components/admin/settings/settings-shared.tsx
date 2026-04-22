@@ -21,17 +21,17 @@ export function SettingsCard({
     id?: string;
 }) {
     return (
-        <div id={id} className={cn("bg-white rounded-xl border border-gray-200 shadow-sm overflow-visible", className)}>
-            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
-                <div>
-                    <div className="flex items-center gap-2">
+        <div id={id} className={cn("bg-white rounded-2xl border border-gray-200/60 shadow-[0_1px_3px_rgba(0,0,0,0.02),0_10px_40px_rgba(0,0,0,0.03)] overflow-visible transition-all duration-300", className)}>
+            <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between">
+                <div className="space-y-1">
+                    <div className="flex items-center gap-2.5">
                         {Icon && <Icon className="h-5 w-5 text-gray-400" />}
-                        <h2 className="text-lg font-bold text-gray-900">{title}</h2>
+                        <h2 className="text-[17px] font-extrabold text-gray-900 tracking-tight leading-none">{title}</h2>
                     </div>
-                    {description && <p className="text-sm text-gray-500 font-medium mt-1">{description}</p>}
+                    {description && <p className="text-[13px] text-gray-400 font-medium leading-relaxed max-w-lg">{description}</p>}
                 </div>
             </div>
-            <div className="px-6 py-5">{children}</div>
+            <div className="px-8 py-8">{children}</div>
         </div>
     );
 }

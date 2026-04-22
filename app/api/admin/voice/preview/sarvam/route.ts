@@ -15,9 +15,12 @@ export async function POST(req: NextRequest) {
     }
 
     const model = modelId || "bulbul:v3";
+    // Detect language: if transcript contains Devanagari, use hi-IN; else use en-IN
+    const isHindi = /[\u0900-\u097F]/.test(transcript || "");
+    const langCode = isHindi ? "hi-IN" : "en-IN";
     const payload = {
         inputs: [transcript || "Namaste, I am ready for the interview."],
-        target_language_code: "hi-IN",
+        target_language_code: langCode,
         speaker: voiceId,
         pace: 1.0,
         speech_sample_rate: 22050,

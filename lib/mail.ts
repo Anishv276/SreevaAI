@@ -66,25 +66,25 @@ export async function sendApplicationStatusEmail({
             <p style="color: #4B5563; font-size: 14px;">Our recruitment team will review the interview recording and reach out to you within 24-48 hours.</p>
             <hr style="border: none; border-top: 1px solid #F3F4F6; margin: 25px 0;" />
             <p style="color: #9CA3AF; font-size: 12px; margin-bottom: 5px;">Best Regards,</p>
-            <p style="color: #374151; font-weight: 700; margin-top: 0;">Lumoscale Recruitment Team</p>
+            <p style="color: #374151; font-weight: 700; margin-top: 0;">Sreeva AI Recruitment Team</p>
         </div>
     ` : `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
             <h1 style="color: #111827; font-size: 20px; font-weight: 700;">Application Update</h1>
             <p style="color: #4B5563;">Hi ${fullName},</p>
-            <p style="color: #4B5563;">Thank you for your interest in the <strong>${jobTitle}</strong> position at Lumoscale.</p>
+            <p style="color: #4B5563;">Thank you for your interest in the <strong>${jobTitle}</strong> position at Sreeva AI.</p>
             <p style="color: #4B5563;">After carefully reviewing your profile, we regret to inform you that we will not be moving forward with your application for this specific role at this time.</p>
             <p style="color: #4B5563; font-size: 15px; margin-bottom: 25px;">We appreciate the time you took to apply and wish you the best of luck in your job search.</p>
             
             <div style="background-color: #F9FAFB; border-radius: 16px; padding: 25px; border: 1px solid #F3F4F6; text-align: center; margin: 30px 0;">
-                <p style="color: #6B7280; font-size: 14px; font-weight: 600; margin-bottom: 20px; line-height: 1.5;">If you are interested in exploring other opportunities at Lumoscale, we invite you to view our live job board.</p>
+                <p style="color: #6B7280; font-size: 14px; font-weight: 600; margin-bottom: 20px; line-height: 1.5;">If you are interested in exploring other opportunities at Sreeva AI, we invite you to view our live job board.</p>
                 <div style="text-align: center;">
-                    <a href="https://lumoscale.co/careers" style="background-color: #F97316; color: white; padding: 14px 30px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 14px; display: inline-block; box-shadow: 0 4px 12px rgba(249,115,22,0.20);">Explore All Openings</a>
+                    <a href="https://sreeva.ai/careers" style="background-color: #F97316; color: white; padding: 14px 30px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 14px; display: inline-block; box-shadow: 0 4px 12px rgba(249,115,22,0.20);">Explore All Openings</a>
                 </div>
             </div>
 
             <p style="color: #9CA3AF; font-size: 12px; margin-bottom: 5px;">Best Regards,</p>
-            <p style="color: #374151; font-weight: 700; margin-top: 0;">Lumoscale Recruitment Team</p>
+            <p style="color: #374151; font-weight: 700; margin-top: 0;">Sreeva AI Recruitment Team</p>
         </div>
     `;
 
@@ -138,29 +138,19 @@ export async function sendOrgWelcomeEmail({
     adminName: string;
 }) {
     const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || ''}/login`;
-    const subject = "Welcome to Lumoscale: Your Workspace is Ready";
+    const subject = "Welcome to Sreeva AI: Your Workspace is Ready";
     const html = `
-        <div style="font-family: Inter, Arial, sans-serif; max-width: 620px; margin: 0 auto; padding: 40px; border: 1px solid #f1f5f9; border-radius: 24px; background: #ffffff; text-align: center;">
-            <div style="margin-bottom: 30px;">
-                <div style="display: inline-block; background: #FFF7ED; padding: 16px; border-radius: 20px;">
-                    <span style="font-size: 32px;">🚀</span>
-                </div>
-            </div>
-            <h1 style="margin: 0 0 12px; color: #111827; font-size: 26px; font-weight: 800; letter-spacing: -0.02em;">Welcome to the Future of Hiring</h1>
-            <p style="margin: 0 0 30px; color: #4b5563; font-size: 16px; line-height: 1.6;">
-                Hi ${adminName}, your workspace for <strong>${orgName}</strong> has been successfully provisioned on Lumoscale Cloud.
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #111827;">
+            <h2 style="margin-bottom: 20px; font-size: 20px;">Welcome to Sreeva AI</h2>
+            <p style="color: #4b5563; font-size: 15px; margin-bottom: 20px;">
+                Hello <strong>${adminName}</strong>, your workspace for <strong>${orgName}</strong> is ready.
             </p>
-            
-            <div style="padding: 32px; border: 1px solid #f97316; border-radius: 20px; background: #fffaf5; margin-bottom: 30px; border-style: dashed;">
-                <p style="margin: 0 0 8px; color: #7c2d12; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em;">Next Step</p>
-                <p style="margin: 0 0 24px; color: #9a3412; font-size: 15px; font-weight: 500;">Please log in to your dashboard to complete your onboarding and start your first recruitment drive.</p>
-                <a href="${loginUrl}" style="display: inline-block; background: #f97316; color: #fff; text-decoration: none; font-weight: 800; font-size: 15px; padding: 16px 36px; border-radius: 14px; box-shadow: 0 10px 25px rgba(249,115,22,0.25);">
-                    Access Workspace
-                </a>
-            </div>
-
-            <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">
-                If you have any questions, reply to this email or contact your platform administrator.
+            <p style="color: #4b5563; font-size: 15px; margin-bottom: 30px;">
+                You can log in to your dashboard here:<br/><br/>
+                <a href="${loginUrl}" style="color: #f97316; font-weight: bold; text-decoration: none;">${loginUrl}</a>
+            </p>
+            <p style="margin-top: 30px; font-size: 12px; color: #9ca3af; border-top: 1px solid #f3f4f6; padding-top: 20px;">
+                If you have any questions, our support team is here to help.
             </p>
         </div>
     `;
@@ -206,25 +196,23 @@ export async function sendTeamInviteEmail({
     inviteUrl: string;
     expiresAt: Date;
 }) {
-    const roleLabel = role === "TEAM" ? "Team" : role;
-    const subject = `You're invited to join ${organizationName} on Lumoscale`;
+    const roleLabel = role === "TEAM" ? "Team Member" : role;
+    const isSreevaOrg = organizationName.toLowerCase().includes("sreeva");
+    const subject = isSreevaOrg 
+        ? `Join the ${organizationName} Workspace` 
+        : `Invitation to join ${organizationName} on Sreeva AI`;
 
     const html = `
-        <div style="font-family: Inter, Arial, sans-serif; max-width: 620px; margin: 0 auto; padding: 24px; border: 1px solid #f1f5f9; border-radius: 14px; background: #ffffff;">
-            <h2 style="margin: 0 0 8px; color: #111827; font-size: 24px; font-weight: 800;">Workspace Invitation</h2>
-            <p style="margin: 0 0 18px; color: #4b5563; font-size: 14px; line-height: 1.6;">
-                <strong>${inviterName}</strong> invited you to join <strong>${organizationName}</strong> on Lumoscale as <strong>${roleLabel}</strong>.
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #111827;">
+            <h2 style="margin-bottom: 20px; font-size: 20px;">Workspace Invitation</h2>
+            <p style="color: #4b5563; font-size: 15px; margin-bottom: 20px;">
+                Hi there, <strong>${inviterName}</strong> has invited you to join the <strong>${organizationName}</strong> workspace as a <strong>${roleLabel}</strong>.
             </p>
-            <div style="padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; margin-bottom: 18px;">
-                <p style="margin: 0 0 6px; color: #334155; font-size: 13px;"><strong>Email:</strong> ${email}</p>
-                <p style="margin: 0 0 6px; color: #334155; font-size: 13px;"><strong>Role:</strong> ${roleLabel}</p>
-                <p style="margin: 0; color: #334155; font-size: 13px;"><strong>Expires:</strong> ${expiresAt.toUTCString()}</p>
-            </div>
-            <a href="${inviteUrl}" style="display: inline-block; background: #f97316; color: #fff; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 20px; border-radius: 10px;">
-                Review Invitation
-            </a>
-            <p style="margin-top: 18px; color: #94a3b8; font-size: 12px; line-height: 1.5;">
-                If you were not expecting this invite, you can safely ignore this email.
+            <p style="color: #4b5563; font-size: 15px; margin-bottom: 30px;">
+                <a href="${inviteUrl}" style="background-color: #f97316; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block;">Accept Invitation</a>
+            </p>
+            <p style="margin-top: 40px; font-size: 12px; color: #9ca3af; border-top: 1px solid #f3f4f6; padding-top: 20px;">
+                This invitation was sent to ${email}. If you weren't expecting this, you can safely ignore this email.
             </p>
         </div>
     `;

@@ -1,6 +1,6 @@
 # HR Automation Platform: Technical Documentation Index
 
-Welcome to the comprehensive developer guide for the Lumoscale HR Automation Platform. This suite of documentation is designed to help new engineers understand the end-to-end flow, tech stack, and AI-driven logic of the system.
+Welcome to the comprehensive developer guide for the Sreeva AI HR Automation Platform. This suite of documentation is designed to help new engineers understand the end-to-end flow, tech stack, and AI-driven logic of the system.
 
 ## 🚀 Platform Architecture Overview
 Our platform is built on a modern, asynchronous architecture using **Next.js**, **BullMQ**, **Redis**, and **OpenAI**. It is designed to handle thousands of applications while maintaining real-time integrity through a sophisticated proctoring suite.

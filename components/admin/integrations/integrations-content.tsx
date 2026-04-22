@@ -107,26 +107,7 @@ export function IntegrationsContent() {
                 </div>
 
                 <div className="px-6 pb-6 pt-6 space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="p-4 rounded-xl bg-blue-50/40 border border-blue-100/60">
-                            <div className="flex items-center gap-2 mb-2">
-                                <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
-                                    <Zap className="w-3.5 h-3.5 text-blue-600" />
-                                </div>
-                                <h5 className="text-[13px] font-bold text-blue-900">Better Deliverability</h5>
-                            </div>
-                            <p className="text-[12px] text-blue-800/70 leading-relaxed">Emails are sent through Gmail for better inbox placement.</p>
-                        </div>
-                        <div className="p-4 rounded-xl bg-orange-50/40 border border-orange-100/60">
-                            <div className="flex items-center gap-2 mb-2">
-                                <div className="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center">
-                                    <History className="w-3.5 h-3.5 text-orange-600" />
-                                </div>
-                                <h5 className="text-[13px] font-bold text-orange-900">Sent Folder Sync</h5>
-                            </div>
-                            <p className="text-[12px] text-orange-800/70 leading-relaxed">All outgoing messages appear in your Gmail Sent folder.</p>
-                        </div>
-                    </div>
+
 
                     <div className="flex justify-end">
                         {googleStatus.isConnected ? (
