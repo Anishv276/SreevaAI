@@ -177,10 +177,10 @@ _SHORT_UTTERANCE_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
         re.compile(r"^\s*hear me\??\s*$", re.IGNORECASE),
     ),
     "acknowledgment": (
-        re.compile(r"^\s*(?:okay|ok|yes|yep|yeah|i see|got it|sure|right|mmhmm|mhm)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:okay|ok|yes|yep|yeah|i see|got it|sure|right|mmhmm|mhm|of course|sure thing|absolutely)\s*$", re.IGNORECASE),
     ),
     "answer_start": (
-        re.compile(r"^\s*(?:so basically|yeah so|so|well|um so)\b", re.IGNORECASE),
+        re.compile(r"^\s*(?:so basically|yeah so|so|well|um so|i think|i guess|i believe|maybe|probably|sort of|kind of|let me think|i'm thinking|thinking)\b", re.IGNORECASE),
     ),
     "refusal": (
         re.compile(r"^\s*(?:i don't know|not sure|no idea|not really|can't say|cannot say)\s*$", re.IGNORECASE),
@@ -436,9 +436,6 @@ def classify_short_utterance(utterance: str) -> Optional[ShortUtteranceClassific
         return None
 
     tokens = [t for t in re.split(r"\s+", text) if t]
-    if len(tokens) >= 5:
-        return None
-
     normalized = re.sub(r"[^\w\s']", " ", text.lower())
     normalized = re.sub(r"\s+", " ", normalized).strip()
     for response_class, patterns in _SHORT_UTTERANCE_PATTERNS.items():
@@ -448,6 +445,14 @@ def classify_short_utterance(utterance: str) -> Optional[ShortUtteranceClassific
                 evidence=text,
                 token_count=len(tokens),
             )
+
+    # Ignore tiny fragments that often come from STT hallucination / echo bleed.
+    # Keep genuine short answers only when they match one of the explicit patterns above.
+    if len(tokens) <= 3:
+        return None
+
+    if len(tokens) >= 5:
+        return None
 
     return ShortUtteranceClassification(
         response_class="genuine_short_answer",

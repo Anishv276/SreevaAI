@@ -85,7 +85,7 @@ export async function GET(request: Request) {
             prisma.application.findMany({
                 where,
                 include: {
-                    drive: { select: { title: true } }
+                    drive: { select: { title: true, role: true } }
                 },
                 orderBy: { createdAt: "desc" },
                 skip: offset,
@@ -137,7 +137,7 @@ export async function GET(request: Request) {
                 driveId: app.driveId,
                 name: app.fullName,
                 email: app.email,
-                role: app.drive?.title || "Unknown Role",
+                role: app.drive?.role || app.drive?.title || "Unknown Role",
                 score: app.aiScore || 0,
                 status: app.resumeStatus,
                 interviewStatus: app.interviewStatus,

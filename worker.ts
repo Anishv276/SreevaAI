@@ -1,10 +1,10 @@
-﻿import { Worker, Queue } from 'bullmq';
+import { Worker, Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { join } from 'path';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
 import { writeFile, unlink } from 'fs/promises';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './lib/prisma';
 import * as dotenv from 'dotenv';
 import { putObject } from "./lib/s3";
 import { generateId } from "./lib/ids";
@@ -29,11 +29,10 @@ console.warn = (...args: any[]) => {
 };
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if (!process.env.REDIS_URL) {
-  console.error('âŒ FATAL: REDIS_URL is missing from environment variables!');
+  console.error('â Œ FATAL: REDIS_URL is missing from environment variables!');
   process.exit(1);
 }
 
-const prisma = new PrismaClient();
 const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
 
 async function persistInterviewUpdateRaw(params: {
@@ -44,23 +43,26 @@ async function persistInterviewUpdateRaw(params: {
 }) {
   const { applicationId, recordingUrl, transcript, interviewStatus } = params;
 
+  const now = new Date();
+
   await prisma.$executeRawUnsafe(
     `
     INSERT INTO "Interview" ("applicationId", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "completedAt", "createdAt", "updatedAt")
-    VALUES ($1, COALESCE($2, 'IN_PROGRESS'), $3, CASE WHEN $3 IS NOT NULL THEN NOW() ELSE NULL END, $4, CASE WHEN $2 = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
+    VALUES ($1, COALESCE($2, 'IN_PROGRESS'), $3, CASE WHEN $3 IS NOT NULL THEN $5 ELSE NULL END, $4, CASE WHEN $2 = 'COMPLETED' THEN $5 ELSE NULL END, $5, $5)
     ON CONFLICT ("applicationId")
     DO UPDATE SET
       status = COALESCE($2, "Interview".status),
       "interviewRecordingUrl" = COALESCE($3, "Interview"."interviewRecordingUrl"),
-      "interviewRecordedAt" = CASE WHEN $3 IS NOT NULL THEN NOW() ELSE "Interview"."interviewRecordedAt" END,
+      "interviewRecordedAt" = CASE WHEN $3 IS NOT NULL THEN $5 ELSE "Interview"."interviewRecordedAt" END,
       "interviewTranscript" = COALESCE($4, "Interview"."interviewTranscript"),
-      "completedAt" = CASE WHEN $2 = 'COMPLETED' THEN NOW() ELSE "Interview"."completedAt" END,
-      "updatedAt" = NOW()
+      "completedAt" = CASE WHEN $2 = 'COMPLETED' THEN $5 ELSE "Interview"."completedAt" END,
+      "updatedAt" = $5
     `,
     applicationId,
     interviewStatus || null,
     recordingUrl || null,
-    transcript || null
+    transcript || null,
+    now
   );
 
 }
@@ -353,11 +355,23 @@ const worker = new Worker('resume-processing', async (job) => {
 
     console.log(`[SUCCESS] Candidate ${applicantEmail} scored ${currentScore}. Status: ${resumeStatus}`);
 
-    // 3. Sync to Pinecone (fire-and-forget, non-blocking)
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    fetch(`${appUrl}/api/admin/candidates/${applicationId}/sync`, { method: 'POST' })
-        .then(() => console.log(`[SYNC] Pinecone sync triggered for ${applicationId}`))
-        .catch((err: Error) => console.warn(`[SYNC] Pinecone sync failed (non-fatal): ${err.message}`));
+    try {
+        const syncToken = process.env.WORKER_SYNC_TOKEN?.trim() || process.env.JWT_SECRET?.trim();
+        const syncRes = await fetch(`${appUrl}/api/admin/candidates/${applicationId}/sync`, {
+          method: 'POST',
+          headers: syncToken ? { "x-internal-sync-token": syncToken } : undefined,
+        });
+        if (!syncRes.ok) {
+            const errorText = await syncRes.text().catch(() => 'No error body');
+            throw new Error(`Pinecone sync failing status ${syncRes.status}: ${errorText}`);
+        }
+        console.log(`[SYNC] Pinecone sync triggered for ${applicationId}`);
+    } catch (err: any) {
+        console.error(`[SYNC ERROR] Critical failure in Pinecone sync: ${err.message}`);
+        // Keep the candidate flow moving even if Pinecone is temporarily unavailable.
+        // Email delivery and status updates are more important than search indexing.
+    }
 
     // 4. Interview invite / status email flow
     const { sendApplicationStatusEmail } = await import('./lib/mail');
@@ -400,7 +414,7 @@ const worker = new Worker('resume-processing', async (job) => {
         fullName: applicantName,
         jobTitle: latestDrive?.title || drive.title,
         orgId: latestDrive?.orgId || undefined,
-        status: resumeStatus === 'SHORTLISTED' ? 'SHORTLISTED' : 'REJECTED',
+        status: 'REJECTED',
         score: currentScore
         // No interviewLink -- email reflects resume status only
       });
@@ -687,7 +701,8 @@ const jdUploadWorker = new Worker(
         try {
             // Redis/BullMQ might serialize Buffer as {type: 'Buffer', data: [...]}
             // We ensure we have a real Buffer before uploading.
-            const fileBuffer = Buffer.from(buffer.data || buffer);
+            // Check Buffer.isBuffer first to prevent corruption if it's already a Buffer.
+            const fileBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer.data || buffer);
 
             await putObject(bucket, key, fileBuffer, contentType || "application/pdf");
 
@@ -767,7 +782,7 @@ async function purgeAllQueues() {
 }
 
 /**
- * ðŸ› ï¸ REDIS CONFIGURATION & CRON SETUP
+ * ðŸ› ï¸  REDIS CONFIGURATION & CRON SETUP
  * Attempts to set safe Redis settings and register repeatable jobs.
  */
 async function initializeWorkerMetadata() {
@@ -779,15 +794,15 @@ async function initializeWorkerMetadata() {
             await redisConnection.config('SET', 'maxmemory-policy', 'noeviction');
             console.log("  ✅ Redis eviction policy set to 'noeviction'");
         } catch (configErr: any) {
-            console.warn(`  âš ï¸ Could not set Redis eviction policy (provider restricted): ${configErr.message}`);
-            console.warn("  â„¹ï¸ Running queue cleanup to free memory instead...");
+            console.warn(`  âš ï¸  Could not set Redis eviction policy (provider restricted): ${configErr.message}`);
+            console.warn("  â„¹ï¸  Running queue cleanup to free memory instead...");
         }
 
         // Always purge queues on startup to reclaim Redis memory
         await purgeAllQueues();
 
         if (await shouldSkipCronRegistration()) {
-            console.warn("  âš ï¸ Cron registration skipped because Redis is still near its memory limit.");
+            console.warn("  âš ï¸  Cron registration skipped because Redis is still near its memory limit.");
             return;
         }
 
@@ -796,8 +811,8 @@ async function initializeWorkerMetadata() {
             await setupCronJobs();
             console.log("  ✅ Daily backup job registered successfully.");
         } catch (cronErr: any) {
-            console.error("  âŒ Failed to register backup job (Redis memory may be full):", cronErr.message);
-            console.warn("  âš ï¸ Continuing worker initialization. Background scoring will still function.");
+            console.error("  â Œ Failed to register backup job (Redis memory may be full):", cronErr.message);
+            console.warn("  âš ï¸  Continuing worker initialization. Background scoring will still function.");
         }
     } catch (err: any) {
         console.error("[Worker] Critical error during metadata initialization:", err.message);
@@ -805,5 +820,3 @@ async function initializeWorkerMetadata() {
 }
 
 initializeWorkerMetadata();
-
-

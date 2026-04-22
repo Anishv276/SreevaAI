@@ -405,17 +405,17 @@ export default function DrivesPage() {
                     <Table>
                         <TableHeader className="bg-gray-50/50">
                             <TableRow className="border-b border-gray-100 hover:bg-transparent">
+                                <TableHead className="w-[60px] pl-8 font-bold uppercase tracking-wider text-[11px] text-gray-500">#</TableHead>
                                 {isSelectionMode && (
-                                    <TableHead className="w-[50px] pl-8">
+                                    <TableHead className="w-[50px]">
                                         <Checkbox
                                             checked={selectedIds.size === filteredDrives.length && filteredDrives.length > 0}
                                             onCheckedChange={toggleSelectAll}
                                         />
                                     </TableHead>
                                 )}
-                                <TableHead className={cn("w-[320px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500", !isSelectionMode && "pl-8")}>Drive / Campaign</TableHead>
+                                <TableHead className={cn("w-[220px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500", !isSelectionMode && "pl-4")}>Drive / Campaign</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Role</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Pool</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Deadline</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Status</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Candidates</TableHead>
@@ -455,7 +455,7 @@ export default function DrivesPage() {
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                filteredDrives.map((drive) => {
+                                filteredDrives.map((drive, index) => {
                                     // Status Logic: ACTIVE, CLOSED, EXPIRED
                                     // CLOSED = manually closed; EXPIRED = deadline passed; ACTIVE = otherwise
                                     const effectiveExpired = drive.deadline && new Date(drive.deadline) < new Date();
@@ -489,15 +489,18 @@ export default function DrivesPage() {
                                                 selectedIds.has(drive.id) && "bg-orange-50/30"
                                             )}
                                         >
+                                            <TableCell className="pl-8 py-5 text-[12px] font-bold text-gray-400 tabular-nums">
+                                                {index + 1 + (pagination.page - 1) * pagination.limit}
+                                            </TableCell>
                                             {isSelectionMode && (
-                                                <TableCell className="pl-8 py-5">
+                                                <TableCell className="py-5">
                                                     <Checkbox
                                                         checked={selectedIds.has(drive.id)}
                                                         onCheckedChange={() => toggleSelection(drive.id)}
                                                     />
                                                 </TableCell>
                                             )}
-                                            <TableCell className={cn("py-5", !isSelectionMode && "pl-8")}>
+                                            <TableCell className={cn("py-5", !isSelectionMode && "pl-4")}>
                                                 <div className="flex flex-col">
                                                     <span className="text-gray-900 font-bold text-[15px] leading-tight transition-colors">{drive.title}</span>
                                                 </div>
@@ -506,12 +509,6 @@ export default function DrivesPage() {
                                                 <Badge variant="secondary" className="px-3 py-1 rounded-lg bg-gray-50/50 text-gray-700 text-[11px] font-bold uppercase tracking-wider border border-gray-100/30">
                                                     {drive.role || "Not Specified"}
                                                 </Badge>
-                                            </TableCell>
-                                            <TableCell className="py-5 text-center">
-                                                <div className="flex flex-col items-center">
-                                                    <span className="text-base font-bold text-gray-900 leading-none">{drive.applicants || 0}</span>
-                                                    <span className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mt-1">Talents</span>
-                                                </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center">
                                                 <div className="flex flex-col items-center">
@@ -604,7 +601,7 @@ export default function DrivesPage() {
                                                     }}
                                                 >
                                                     <Users className="h-4 w-4" />
-                                                    Candidates
+                                                    Candidates ({drive.applicants || 0})
                                                 </Button>
                                             </TableCell>
 
@@ -630,38 +627,50 @@ export default function DrivesPage() {
                                                             <MoreHorizontal className="h-4 w-4" />
                                                         </Button>
                                                     </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end" className="w-52 p-1.5 rounded-3xl bg-white/95 backdrop-blur-xl border border-white/20 shadow-[0_20px_60px_rgba(0,0,0,0.12)] z-[60] animate-in fade-in zoom-in-95 duration-200">
-                                                        <div className="px-3 py-2 border-b border-gray-50/50 mb-1">
-                                                            <p className="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]">Actions</p>
+                                                    <DropdownMenuContent align="end" className="w-[240px] p-2 rounded-[24px] bg-white/90 backdrop-blur-2xl border border-white/60 shadow-[0_20px_60px_rgba(0,0,0,0.1)] z-[60] animate-in fade-in zoom-in-95 duration-200 font-inter">
+                                                        <div className="px-3 pt-2 pb-3 mb-1">
+                                                            <p className="text-[11px] font-bold text-gray-400/80 uppercase tracking-widest pl-1">Quick Actions</p>
                                                         </div>
                                                         <DropdownMenuItem
-                                                            className="cursor-pointer rounded-2xl py-3 px-3 focus:bg-[#F97316]/5 focus:text-[#F97316] font-bold uppercase text-[10px] tracking-widest transition-all group"
+                                                            className="cursor-pointer rounded-2xl py-2.5 px-3 focus:bg-gray-50/80 text-gray-700 focus:text-gray-900 font-medium text-[14px] leading-none transition-all duration-200 group flex items-center"
                                                             onClick={() => setCandidatePreviewSlug(drive.slug || drive.id)}
                                                         >
-                                                            <Eye className="mr-3 h-4 w-4 opacity-50 group-focus:opacity-100 transition-opacity" /> Preview Portal
+                                                            <div className="mr-3.5 h-8 w-8 rounded-xl bg-gray-50 border border-gray-100 text-gray-400 group-hover:bg-white group-hover:text-[#F97316] group-focus:border-orange-100/50 group-hover:shadow-sm flex items-center justify-center transition-all duration-200">
+                                                                <Eye className="h-4 w-4" />
+                                                            </div>
+                                                            Preview Portal
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
-                                                            className="cursor-pointer rounded-2xl py-3 px-3 focus:bg-[#F97316]/5 focus:text-[#F97316] font-bold uppercase text-[10px] tracking-widest transition-all group"
+                                                            className="cursor-pointer rounded-2xl py-2.5 px-3 focus:bg-gray-50/80 text-gray-700 focus:text-gray-900 font-medium text-[14px] leading-none transition-all duration-200 group flex items-center mt-1"
                                                             onClick={() => router.push(`/admin/create-drive?id=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`)}
                                                         >
-                                                            <Edit className="mr-3 h-4 w-4 opacity-50 group-focus:opacity-100 transition-opacity" /> Edit Details
+                                                            <div className="mr-3.5 h-8 w-8 rounded-xl bg-gray-50 border border-gray-100 text-gray-400 group-hover:bg-white group-hover:text-[#F97316] group-focus:border-orange-100/50 group-hover:shadow-sm flex items-center justify-center transition-all duration-200">
+                                                                <Edit className="h-4 w-4" />
+                                                            </div>
+                                                            Edit Details
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
-                                                            className="cursor-pointer rounded-2xl py-3 px-3 focus:bg-[#F97316]/5 focus:text-[#F97316] font-bold uppercase text-[10px] tracking-widest transition-all group"
+                                                            className="cursor-pointer rounded-2xl py-2.5 px-3 focus:bg-gray-50/80 text-gray-700 focus:text-gray-900 font-medium text-[14px] leading-none transition-all duration-200 group flex items-center mt-1"
                                                             onClick={async () => {
                                                                 const link = `${window.location.origin}/careers/jobs/${drive.slug || drive.id}`;
                                                                 await navigator.clipboard.writeText(link);
                                                                 toast.success("Link copied!");
                                                             }}
                                                         >
-                                                            <LinkIcon className="mr-3 h-4 w-4 opacity-50 group-focus:opacity-100 transition-opacity" /> Copy Link
+                                                            <div className="mr-3.5 h-8 w-8 rounded-xl bg-gray-50 border border-gray-100 text-gray-400 group-hover:bg-white group-hover:text-[#F97316] group-focus:border-orange-100/50 group-hover:shadow-sm flex items-center justify-center transition-all duration-200">
+                                                                <LinkIcon className="h-4 w-4" />
+                                                            </div>
+                                                            Copy Link
                                                         </DropdownMenuItem>
-                                                        <div className="h-px bg-gray-50 my-1 mx-2" />
+                                                        <div className="h-px bg-gray-100/80 my-2 mx-3" />
                                                         <DropdownMenuItem
-                                                            className="text-red-500 focus:text-red-600 focus:bg-red-50/50 cursor-pointer rounded-2xl py-3 px-3 font-bold uppercase text-[10px] tracking-widest transition-all group"
+                                                            className="cursor-pointer rounded-2xl py-2.5 px-3 focus:bg-red-50/50 text-red-600 focus:text-red-700 font-medium text-[14px] leading-none transition-all duration-200 group flex items-center"
                                                             onClick={() => handleDelete(drive.id)}
                                                         >
-                                                            <Trash2 className="mr-3 h-4 w-4 opacity-50 group-focus:opacity-100 transition-opacity" /> Delete Drive
+                                                            <div className="mr-3.5 h-8 w-8 rounded-xl bg-red-50 border border-red-100/50 text-red-400 group-hover:bg-white group-hover:text-red-600 group-hover:border-red-200 group-hover:shadow-sm flex items-center justify-center transition-all duration-200">
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </div>
+                                                            Delete Drive
                                                         </DropdownMenuItem>
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>

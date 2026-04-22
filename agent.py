@@ -1428,11 +1428,16 @@ def remove_system_messages(chat_ctx, marker: str) -> None:
 def build_cartesia_tts(
     language: str = "en", model: str = CARTESIA_MODEL, voice_id: str = CARTESIA_VOICE_ID
 ):
+    api_key = os.getenv("CARTESIA_API_KEY")
+    if not api_key:
+        raise RuntimeError("CARTESIA_API_KEY is not set")
+
     # Use LiveKit Inference Cartesia TTS, matching the current docs.
     tts_kwargs: dict[str, Any] = {
         "model": _normalize_cartesia_model(model),
         "voice": voice_id,
         "language": language,
+        "api_key": api_key,
     }
     return inference.TTS(**tts_kwargs)
 
@@ -1448,6 +1453,10 @@ def build_tts(
 def build_sarvam_tts(
     language: str = "en-IN", model: str = "bulbul:v3", voice_id: str = "shubh"
 ):
+    api_key = os.getenv("SARVAM_API_KEY")
+    if not api_key:
+        raise RuntimeError("SARVAM_API_KEY is not set")
+
     lang_map = {"hi": "hi-IN", "en": "en-IN"}
     mapped_lang = lang_map.get(language, language)
 
@@ -1455,6 +1464,7 @@ def build_sarvam_tts(
         "target_language_code": mapped_lang,
         "model": model,
         "speaker": voice_id,
+        "api_key": api_key,
         # pace: valid for both v2 (0.3-3.0) and v3 (0.5-2.0). 1.0 = natural speed.
         "pace": 1.0,
         "speech_sample_rate": 22050,
@@ -2135,7 +2145,7 @@ def _extract_openai_completion_usage(completion: Any) -> dict[str, Any]:
     completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
     prompt_details = getattr(usage, "prompt_tokens_details", None)
     cached_tokens = int(getattr(prompt_details, "cached_tokens", 0) or 0)
-    model_name = str(getattr(completion, "model", "") or "gpt-4o-mini")
+    model_name = str(getattr(completion, "model", "") or LLM_MODEL)
     return {
         "model": model_name,
         "inputTokens": prompt_tokens,
@@ -2599,7 +2609,7 @@ async def generate_interview_summary(
     transcript_lines: list,
     job_title: str,
     org_id: Optional[str] = None,
-    llm_model: str = "gpt-4o-mini",
+    llm_model: str = LLM_MODEL,
 ):
     """Generate a high-quality AI narrative summary after the interview completes."""
     if not transcript_lines or not os.environ.get("OPENAI_API_KEY") or not DATABASE_URL:
@@ -2676,7 +2686,7 @@ async def generate_interview_state_summary(
     org_id: Optional[str] = None,
     turn_count: int = 0,
     total_turns_expected: int = 20,
-    llm_model: str = "gpt-4o-mini",
+    llm_model: str = LLM_MODEL,
 ) -> str:
     """
     Generates a concise mid-interview state summary for dynamic context injection.
@@ -2760,7 +2770,7 @@ async def generate_candidate_brief(
     time_limit_mins: int,
     client,
     org_id: Optional[str] = None,
-    llm_model: str = "gpt-4o-mini",
+    llm_model: str = LLM_MODEL,
 ) -> str:
     """
     Pre-interview: generate a personalized interview plan from the candidate's actual
@@ -2868,7 +2878,7 @@ async def score_answer_quality(
     transcript_lines: list,
     client,
     org_id: Optional[str] = None,
-    llm_model: str = "gpt-4o-mini",
+    llm_model: str = LLM_MODEL,
 ) -> dict:
     """
     Structured answer quality scorer. Runs after every candidate response.
@@ -2988,7 +2998,7 @@ async def evaluate_answer_and_decide(
     transcript_lines: list,
     client,
     org_id: Optional[str] = None,
-    llm_model: str = "gpt-4o-mini",
+    llm_model: str = LLM_MODEL,
 ) -> dict:
     """
     Per-turn answer evaluator. Runs after every candidate response, before Ishita speaks.
@@ -3077,7 +3087,7 @@ async def extract_claims(
     turn: int,
     client,
     org_id: Optional[str] = None,
-    llm_model: str = "gpt-4o-mini",
+    llm_model: str = LLM_MODEL,
 ) -> list[dict]:
     """
     Extract verifiable factual claims from a single candidate answer.
@@ -3503,7 +3513,7 @@ async def entrypoint(ctx: JobContext):
 
     if org_llm_provider not in {"OPENAI", "SARVAM"}:
         raise RuntimeError(f"Unsupported DB llmProvider: {org_llm_provider}")
-    analysis_openai_model = org_llm_model if org_llm_provider == "OPENAI" else "gpt-4o-mini"
+    analysis_openai_model = org_llm_model if org_llm_provider == "OPENAI" else LLM_MODEL
 
     logger.info(
         f"Org models -> STT: {org_deepgram_model if org_stt_provider != 'SARVAM' else org_sarvam_stt_model}, TTS: {org_cartesia_model if org_tts_provider != 'SARVAM' else org_sarvam_model} "
@@ -3709,8 +3719,9 @@ async def entrypoint(ctx: JobContext):
         turn_handling=TurnHandlingOptions(
             turn_detection=turn_detector,
             endpointing=EndpointingOptions(
-                min_delay=0.5,  # was 0.3 - wait longer before deciding the user stopped talking
-                max_delay=3.0,  # was 1.2 - allow more natural thinking pauses per LiveKit best practices
+                # Slightly longer endpointing to avoid cutting candidates mid-thought.
+                min_delay=0.55,
+                max_delay=2.4,
                 mode="dynamic",
             ),
             interruption=InterruptionOptions(
@@ -3719,10 +3730,10 @@ async def entrypoint(ctx: JobContext):
                 # Keep buffered speech when interruptions are temporarily disabled
                 # (AEC warmup / uninterruptible phase) to avoid dropping user turns.
                 discard_audio_if_uninterruptible=False,
-                min_duration=0.7,
-                min_words=1,
+                min_duration=1.1,
+                min_words=3,
                 resume_false_interruption=True,
-                false_interruption_timeout=2.5,  # was 2.0 - more forgiving on brief cross-talk
+                false_interruption_timeout=3.0,
             ),
         ),
         use_tts_aligned_transcript=True,
@@ -4003,6 +4014,33 @@ async def entrypoint(ctx: JobContext):
                     "[BRIEF] Lightweight candidate context injected before first substantive question"
                 )
 
+            # --- STT text cleanup / noise suppression ---
+            def _clean_stt_text(raw_text: str) -> str:
+                text = re.sub(r"\s+", " ", (raw_text or "").strip())
+                if not text:
+                    return ""
+
+                if text.lower().strip(" .!?") == "candidate response unavailable":
+                    return ""
+
+                tokens = [t for t in text.split(" ") if t]
+                cleaned_tokens: list[str] = []
+                for token in tokens:
+                    alpha = re.sub(r"[^a-zA-Z]", "", token).lower()
+                    # Drop tiny consonant-only fragments like "bu", "thr", "qu".
+                    if alpha and len(alpha) <= 3 and not re.search(r"[aeiou]", alpha):
+                        continue
+                    if cleaned_tokens and cleaned_tokens[-1].lower() == token.lower():
+                        # Collapse immediate duplicates like "name name", "a a a".
+                        continue
+                    cleaned_tokens.append(token)
+
+                return re.sub(r"\s+", " ", " ".join(cleaned_tokens)).strip()
+
+            content = _clean_stt_text(content)
+            if not content:
+                return
+
             # --- STT Spam / Hallucination Filter ---
             # Sarvam (and some Deepgram models) hallucinate the same word repeatedly
             # when they detect silence or background noise. Discard these before they
@@ -4013,6 +4051,14 @@ async def entrypoint(ctx: JobContext):
                 if len(unique_words) <= 3:
                     logger.warning(
                         f"[TRANSCRIPT] Discarding hallucinated STT spam ({len(words)} words, "
+                        f"{len(unique_words)} unique): '{content[:60]}...'"
+                    )
+                    return
+            if len(words) >= 4:
+                unique_words = set(w.lower().strip(".,!?") for w in words)
+                if len(unique_words) <= max(1, int(len(words) * 0.35)):
+                    logger.warning(
+                        f"[TRANSCRIPT] Discarding low-diversity STT noise ({len(words)} words, "
                         f"{len(unique_words)} unique): '{content[:60]}...'"
                     )
                     return
@@ -4084,14 +4130,23 @@ async def entrypoint(ctx: JobContext):
                     spawn_background_task(_signal_client_proctoring_violation("audio_leak", "Sound anomaly detected. Please ensure you are performing the interview without external assistance.", sev="high"), "signal_audio_leak")
                     break  # one flag per segment is enough
 
+            # Ignore tiny fragments unless they match an explicit short-answer pattern.
+            # This cuts down on STT hallucinations, echo bleed, and half-words like
+            # "bu", "thr", or "qu" being treated as real candidate turns.
+            short_classification = classify_short_utterance(content)
+            word_count = len([w for w in content.strip().split() if w])
+            if short_classification is None and word_count <= 2:
+                logger.debug(
+                    f"[TRANSCRIPT] Ignoring probable STT fragment ({word_count} words): '{content[:60]}'"
+                )
+                return
+
             speaker = "Candidate"
             append_transcript_line(speaker, content)
             logger.info(f"[TRANSCRIPT] {speaker}: {content[:60]}...")
 
             if not session_context.initial_context_injected:
                 await _inject_candidate_context_before_first_question()
-
-            short_classification = classify_short_utterance(content)
             if short_classification:
                 short_class = short_classification["response_class"]
                 short_directive = build_short_utterance_directive(
@@ -4546,41 +4601,50 @@ async def entrypoint(ctx: JobContext):
     # voice breakup / choppy audio on the candidate's side.
     # The LLM pipeline already has low enough latency that fillers add more
     # harm (audio conflict) than benefit (perceived naturalness).
-    last_activity_at = time.monotonic()
     is_agent_speaking = False
     is_candidate_speaking = False
+    awaiting_candidate_response = False
+    awaiting_candidate_since: float | None = None
+    inactivity_nudge_sent_for_current_prompt = False
 
-    def reset_nudge_timer():
-        nonlocal last_activity_at
-        last_activity_at = time.monotonic()
-        logger.debug("[NUDGE] Timer reset to zero")
+    def reset_inactivity_clock(start_waiting: bool) -> None:
+        nonlocal awaiting_candidate_response, awaiting_candidate_since, inactivity_nudge_sent_for_current_prompt
+        awaiting_candidate_response = start_waiting
+        awaiting_candidate_since = time.monotonic() if start_waiting else None
+        inactivity_nudge_sent_for_current_prompt = False
+        if start_waiting:
+            logger.debug("[NUDGE] Inactivity clock started (awaiting candidate response)")
+        else:
+            logger.debug("[NUDGE] Inactivity clock cleared")
 
     @session.on("user_speech_started")
     def on_user_speech_started():
         nonlocal is_candidate_speaking
         is_candidate_speaking = True
-        reset_nudge_timer()
+        # User started speaking: clear inactivity window immediately.
+        reset_inactivity_clock(start_waiting=False)
 
     @session.on("user_speech_committed")
     def on_user_speech_committed(_msg):
         nonlocal is_candidate_speaking
         is_candidate_speaking = False
-        # Reset nudge timer on candidate speech
-        reset_nudge_timer()
+        # Keep inactivity clock cleared until AI asks/speaks again.
+        reset_inactivity_clock(start_waiting=False)
 
     @session.on("agent_speech_started")
     def on_agent_speech_started():
         nonlocal is_agent_speaking
         is_agent_speaking = True
-        # Do NOT reset nudge timer here - timer should only start AFTER AI finishes speaking
+        # AI is speaking: do not count inactivity against candidate.
+        reset_inactivity_clock(start_waiting=False)
 
     @session.on("agent_speech_committed")
     def on_agent_speech_committed(_msg):
         nonlocal is_agent_speaking
         is_agent_speaking = False
-        # Reset nudge timer ONLY when AI finishes speaking - this is the correct start point
-        reset_nudge_timer()
-        logger.debug("[NUDGE] AI finished speaking; starting 30s countdown")
+        # Timer starts only when AI has finished speaking and candidate is expected to respond.
+        reset_inactivity_clock(start_waiting=True)
+        logger.debug("[NUDGE] AI finished speaking; starting inactivity countdown")
 
     # Wait for participant to join so we have their identity for tracking.
     # Keep waiting during hardware check and handle room-disconnect gracefully.
@@ -4673,7 +4737,7 @@ async def entrypoint(ctx: JobContext):
     if ready_event.is_set() and not disconnect_event.is_set():
         session_start_time = time.time()
 
-        ai_name = ctxt.get('aiName') or 'Ishita'
+        ai_name = context.get("aiName") or "Ishita"
         # Dynamic, personalized, warm greeting - adapted per language
         # The greeting avoids robotic openers and uses natural warmth.
         WELCOME_MESSAGES = {
@@ -4755,12 +4819,11 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.error(f"[GREETING] Failed to deliver greeting: {e}")
 
-    # CRITICAL: Reset the nudge timer right after the greeting finishes (or is skipped).
+    # CRITICAL: Start inactivity clock after greeting finishes (or is skipped).
     # session.say() is a scripted call - it does NOT fire agent_speech_committed, so the
-    # timer would otherwise start from session init time and fire a nudge ~30s after boot,
-    # which is almost immediately after the greeting audio ends.
-    reset_nudge_timer()
-    logger.debug("[NUDGE] Timer reset after greeting delivery")
+    # normal "AI finished speaking" hook may not run for this scripted audio.
+    reset_inactivity_clock(start_waiting=True)
+    logger.debug("[NUDGE] Inactivity clock started after greeting delivery")
 
     # Wait for either explicit finish signal OR disconnect OR hard timeout,
     # while also firing timed mid-session nudges (candidate-questions prompt, final goodbye).
@@ -4788,6 +4851,11 @@ async def entrypoint(ctx: JobContext):
     ]
     inactivity_nudge_count = 0
     max_inactivity_nudges = int(os.environ.get("MAX_INACTIVITY_NUDGES", "1"))
+    inactivity_nudge_after_secs = int(os.environ.get("INACTIVITY_NUDGE_SECONDS", "30"))
+    inactivity_end_after_secs = int(os.environ.get("INACTIVITY_END_SECONDS", "60"))
+
+    async def _deliver_nudge(text: str) -> None:
+        await session.say(text, allow_interruptions=True)
 
     def _pick_nudge() -> str:
         """Return the next configured inactivity nudge in round-robin order."""
@@ -4846,25 +4914,54 @@ async def entrypoint(ctx: JobContext):
         if remaining <= FINAL_THANKS_TRIGGER_SECS:
             break
 
-        # --- Smart Inactivity Nudge ---
-        # If the candidate hasn't responded for 120s after Ishita finishes speaking,
-        # fire a warm, unhurried check-in using a non-repeating nudge from the pool.
-        # 120s avoids accidental nudges in normal thinking pauses.
+        # --- Strict Inactivity Handling ---
+        # Start counting only after AI stops speaking.
+        # Reset when either side starts speaking.
+        # Fire nudge at 30s, end at 60s of continuous inactivity.
+        inactivity_elapsed = (
+            (time.monotonic() - awaiting_candidate_since)
+            if awaiting_candidate_response and awaiting_candidate_since is not None
+            else 0.0
+        )
+
         if (
             not is_agent_speaking
             and not is_candidate_speaking
+            and awaiting_candidate_response
             and inactivity_nudge_count < max_inactivity_nudges
-            and (time.monotonic() - last_activity_at) > 120
+            and not inactivity_nudge_sent_for_current_prompt
+            and inactivity_elapsed >= inactivity_nudge_after_secs
         ):
             nudge_text = _pick_nudge()
             try:
-                # Reset before say() to prevent immediate re-trigger if tts is slow
-                reset_nudge_timer()
-                spawn_background_task(session.say(nudge_text), "inactivity_nudge")
+                spawn_background_task(_deliver_nudge(nudge_text), "inactivity_nudge")
                 inactivity_nudge_count += 1
+                inactivity_nudge_sent_for_current_prompt = True
                 logger.info(f"[NUDGE] Inactivity nudge delivered: '{nudge_text[:40]}...'")
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver nudge: {e}")
+
+        if (
+            not is_agent_speaking
+            and not is_candidate_speaking
+            and awaiting_candidate_response
+            and inactivity_elapsed >= inactivity_end_after_secs
+        ):
+            logger.info(
+                f"[NUDGE] Ending interview due to inactivity timeout ({int(inactivity_elapsed)}s)"
+            )
+            try:
+                await session.say(
+                    "I am not hearing a response, so I will end this interview now. "
+                    "Please rejoin using your interview link if you want to continue.",
+                    allow_interruptions=True,
+                )
+            except Exception:
+                pass
+            interview_marked_finished = True
+            interview_finished_event.set()
+            disconnect_event.set()
+            break
 
         await asyncio.sleep(1)
 
@@ -4907,9 +5004,9 @@ async def entrypoint(ctx: JobContext):
 
     # --- Grace Period: Wait for final STT results to arrive (Deepgram/LiveKit tail) ---
     logger.info(
-        f"Interview ended (finished={finished_task.done()}, time_expired={time_expired}). Waiting 1s for final transcripts..."
+        f"Interview ended (finished={finished_task.done()}, time_expired={time_expired}). Waiting 2s for final transcripts..."
     )
-    await asyncio.sleep(1)
+    await asyncio.sleep(2)
 
     # ✅ Final definitive save - Phase 5 includes proctoring report + answer scores
     proctoring_data = {

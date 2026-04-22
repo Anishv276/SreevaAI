@@ -754,7 +754,7 @@ def compute_score(jd_data, resume_data, threshold=70):
 
 
 def generate_report(
-    jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client, report_model="gpt-4o"
+    jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client, report_model="gpt-4.1-mini"
 ):
     """
     LLM writes ONLY the human-readable report.
@@ -1624,7 +1624,7 @@ Resume:
                 resume_raw_text,
                 score_result,
                 client,
-                report_model=llm_model_override or "gpt-4o",
+                report_model=llm_model_override or "gpt-4.1-mini",
             )
             # -- 3. ASSEMBLE FINAL OUTPUT -----------------------
             final_data = {
@@ -1656,7 +1656,7 @@ Resume:
                     "ai_verdict": f"Status: {score_result['status']}. Score: {score_result['score']}.",
                 },
                 "usage": {
-                    "model": llm_model_override or "gpt-4o",
+                    "model": llm_model_override or "gpt-4.1-mini",
                     "inputTokens": 0,
                     "outputTokens": 0,
                     "cachedInputTokens": 0,
@@ -1750,7 +1750,7 @@ if __name__ == "__main__":
                     "usage": data.get(
                         "usage",
                         {
-                            "model": "gpt-4o",
+                            "model": "gpt-4.1-mini",
                             "inputTokens": 0,
                             "outputTokens": 0,
                             "cachedInputTokens": 0,

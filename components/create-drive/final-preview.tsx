@@ -1,5 +1,6 @@
 import { Clock, ShieldCheck, Zap, Brain, Rocket, Mic, Languages, ShieldAlert } from "lucide-react";
 import { ScreeningConfig } from "./screening-settings";
+import { CARTESIA_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
 
 interface FinalPreviewProps {
     formData: any;
@@ -8,6 +9,9 @@ interface FinalPreviewProps {
 }
 
 export function FinalPreview({ formData, weights, regFieldCount }: FinalPreviewProps) {
+    const selectedVoiceId = formData.ttsProvider === "SARVAM" ? formData.sarvamVoice : formData.cartesiaVoiceId;
+    const selectedVoice = [...CARTESIA_VOICES, ...SARVAM_VOICES].find(v => v.id === selectedVoiceId);
+
     return (
         <div className="space-y-6">
             {/* Orange-tinted ready banner */}
@@ -96,6 +100,13 @@ export function FinalPreview({ formData, weights, regFieldCount }: FinalPreviewP
                         <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">AI Voice Interview</h3>
                         <div className="rounded-lg border bg-white p-4 space-y-3 text-[13px]">
                             <div className="grid grid-cols-2 gap-3 pt-1">
+                                <div className="p-2.5 rounded-lg bg-gray-50/50 border border-gray-100 col-span-2">
+                                    <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Voice</p>
+                                    <p className="font-bold text-gray-700 mt-0.5 flex items-center gap-1.5">
+                                        <Mic className="w-3 h-3 text-orange-400" />
+                                        <span>{selectedVoice ? selectedVoice.name : "Select a voice"}</span>
+                                    </p>
+                                </div>
                                 <div className="p-2.5 rounded-lg bg-gray-50/50 border border-gray-100">
                                     <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Language</p>
                                     <p className="font-bold text-gray-700 mt-0.5 flex items-center gap-1.5">

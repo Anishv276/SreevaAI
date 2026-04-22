@@ -13,9 +13,15 @@ export async function POST(
     context: { params: Promise<{ id: string }> }
 ) {
     try {
-        const session = await getSession();
-        if (!session || !isAdminRole(session.role)) {
-            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        const internalSecret = process.env.WORKER_SYNC_TOKEN?.trim() || process.env.JWT_SECRET?.trim();
+        const internalToken = _req.headers.get("x-internal-sync-token")?.trim();
+        const isInternalRequest = Boolean(internalSecret && internalToken && internalToken === internalSecret);
+
+        if (!isInternalRequest) {
+            const session = await getSession();
+            if (!session || !isAdminRole(session.role)) {
+                return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            }
         }
 
         const { id } = await context.params;

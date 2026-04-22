@@ -18,6 +18,22 @@ export async function sendApplicationStatusEmail({
     score: number;
     interviewLink?: string;
 }) {
+    if (!orgId) {
+        console.warn(`[MAIL BLOCKED] No orgId provided - cannot determine sender`);
+        return { success: false, error: "No organization context for email sending." };
+    }
+
+    const org = await prisma.organization.findUnique({
+        where: { id: orgId },
+        select: { id: true, googleAccessToken: true, name: true }
+    });
+
+    if (!org?.id) {
+        console.warn(`[MAIL BLOCKED] Org not found: ${orgId}`);
+        return { success: false, error: "Organization not found." };
+    }
+
+    const orgName = org.name || "Our Team";
     const isHired = status === 'Hired';
     const isAccepted = status === 'SHORTLISTED' || status === 'ACCEPTED' || status === 'INTERVIEW' || isHired;
 
@@ -40,7 +56,7 @@ export async function sendApplicationStatusEmail({
                 <p style="color: #065F46; font-size: 14px; font-weight: 600; margin: 0;">Our team will reach out to you shortly with the next steps including your offer letter and onboarding details.</p>
             </div>
             <p style="color: #9CA3AF; font-size: 12px; margin-bottom: 5px;">Best Regards,</p>
-            <p style="color: #374151; font-weight: 700; margin-top: 0;">Recruitment Team</p>
+            <p style="color: #374151; font-weight: 700; margin-top: 0;">${orgName} Recruitment Team</p>
         </div>
     ` : isAccepted ? `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px; background-color: #ffffff;">
@@ -66,42 +82,27 @@ export async function sendApplicationStatusEmail({
             <p style="color: #4B5563; font-size: 14px;">Our recruitment team will review the interview recording and reach out to you within 24-48 hours.</p>
             <hr style="border: none; border-top: 1px solid #F3F4F6; margin: 25px 0;" />
             <p style="color: #9CA3AF; font-size: 12px; margin-bottom: 5px;">Best Regards,</p>
-            <p style="color: #374151; font-weight: 700; margin-top: 0;">Sreeva AI Recruitment Team</p>
+            <p style="color: #374151; font-weight: 700; margin-top: 0;">${orgName} Recruitment Team</p>
         </div>
     ` : `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
             <h1 style="color: #111827; font-size: 20px; font-weight: 700;">Application Update</h1>
             <p style="color: #4B5563;">Hi ${fullName},</p>
-            <p style="color: #4B5563;">Thank you for your interest in the <strong>${jobTitle}</strong> position at Sreeva AI.</p>
+            <p style="color: #4B5563;">Thank you for your interest in the <strong>${jobTitle}</strong> position at ${orgName}.</p>
             <p style="color: #4B5563;">After carefully reviewing your profile, we regret to inform you that we will not be moving forward with your application for this specific role at this time.</p>
             <p style="color: #4B5563; font-size: 15px; margin-bottom: 25px;">We appreciate the time you took to apply and wish you the best of luck in your job search.</p>
             
             <div style="background-color: #F9FAFB; border-radius: 16px; padding: 25px; border: 1px solid #F3F4F6; text-align: center; margin: 30px 0;">
-                <p style="color: #6B7280; font-size: 14px; font-weight: 600; margin-bottom: 20px; line-height: 1.5;">If you are interested in exploring other opportunities at Sreeva AI, we invite you to view our live job board.</p>
+                <p style="color: #6B7280; font-size: 14px; font-weight: 600; margin-bottom: 20px; line-height: 1.5;">If you are interested in exploring other opportunities at ${orgName}, we invite you to view our live job board.</p>
                 <div style="text-align: center;">
                     <a href="https://sreeva.ai/careers" style="background-color: #F97316; color: white; padding: 14px 30px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 14px; display: inline-block; box-shadow: 0 4px 12px rgba(249,115,22,0.20);">Explore All Openings</a>
                 </div>
             </div>
 
             <p style="color: #9CA3AF; font-size: 12px; margin-bottom: 5px;">Best Regards,</p>
-            <p style="color: #374151; font-weight: 700; margin-top: 0;">Sreeva AI Recruitment Team</p>
+            <p style="color: #374151; font-weight: 700; margin-top: 0;">${orgName} Recruitment Team</p>
         </div>
     `;
-
-    if (!orgId) {
-        console.warn(`[MAIL BLOCKED] No orgId provided - cannot determine sender`);
-        return { success: false, error: "No organization context for email sending." };
-    }
-
-    const org = await prisma.organization.findUnique({
-        where: { id: orgId },
-        select: { id: true, googleAccessToken: true, name: true }
-    });
-
-    if (!org?.id) {
-        console.warn(`[MAIL BLOCKED] Org not found: ${orgId}`);
-        return { success: false, error: "Organization not found." };
-    }
 
     if (!org.googleAccessToken) {
         return {
@@ -243,7 +244,3 @@ export async function sendTeamInviteEmail({
 
     return { success: false, error: "No organization context available for invite emails." };
 }
-
-
-
-

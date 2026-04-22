@@ -64,47 +64,105 @@ export async function getGoogleUserEmail(accessToken: string) {
 }
 
 /**
+ * Helper to execute a function with a distributed lock in Redis.
+ */
+async function withDistributedLock<T>(
+    lockKey: string,
+    ttlMs: number,
+    fn: () => Promise<T>
+): Promise<T> {
+    const { default: redis } = await import("./queue");
+    const lockValue = Date.now().toString();
+    
+    // Acquire lock
+    // PX: expire in milliseconds, NX: only set if it doesn't exist
+    const acquired = await redis.set(lockKey, lockValue, "PX", ttlMs, "NX");
+    
+    if (!acquired) {
+        // Wait and retry once after a delay if lock is held
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const retryAcquired = await redis.set(lockKey, lockValue, "PX", ttlMs, "NX");
+        if (!retryAcquired) {
+            throw new Error(`Could not acquire lock: ${lockKey}`);
+        }
+    }
+
+    try {
+        return await fn();
+    } finally {
+        // Safe release: only delete if value matches (prevents deleting someone else's lock)
+        const script = `
+            if redis.call("get", KEYS[1]) == ARGV[1] then
+                return redis.call("del", KEYS[1])
+            else
+                return 0
+            end
+        `;
+        await redis.eval(script, 1, lockKey, lockValue);
+    }
+}
+
+/**
  * Refreshes the Google access token using the refresh token.
+ * Uses a distributed lock to prevent concurrent refresh race conditions.
  */
 export async function refreshGoogleToken(orgId: string) {
-    const org = await prisma.organization.findUnique({
-        where: { id: orgId },
-        select: { googleRefreshToken: true },
+    const lockKey = `lock:google:refresh:org:${orgId}`;
+    
+    return withDistributedLock(lockKey, 30000, async () => {
+        // 1. Re-check if the token was already refreshed by another process while we waited for the lock
+        const org = await prisma.organization.findUnique({
+            where: { id: orgId },
+            select: { 
+                googleRefreshToken: true, 
+                googleTokenExpiresAt: true,
+                googleAccessToken: true 
+            },
+        });
+
+        if (!org?.googleRefreshToken) {
+            throw new Error('No refresh token available for this organization');
+        }
+
+        // If expiresAt is more than 5 minutes in the future, someone else refreshed it
+        const isStillExpired = !org.googleTokenExpiresAt || org.googleTokenExpiresAt.getTime() < Date.now() + 300000;
+        if (!isStillExpired && org.googleAccessToken) {
+            console.log(`[AUTH] Token for org ${orgId} already refreshed by another process.`);
+            return org.googleAccessToken;
+        }
+
+        console.log(`[AUTH] Refreshing Google token for org ${orgId}...`);
+
+        const response = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                client_id: GOOGLE_CLIENT_ID!,
+                client_secret: GOOGLE_CLIENT_SECRET!,
+                refresh_token: org.googleRefreshToken,
+                grant_type: 'refresh_token',
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error_description || 'Failed to refresh token');
+        }
+
+        const expiresAt = new Date(Date.now() + data.expires_in * 1000);
+
+        // Update the database with the new token
+        await prisma.organization.update({
+            where: { id: orgId },
+            data: {
+                googleAccessToken: data.access_token,
+                googleTokenExpiresAt: expiresAt,
+            },
+        });
+
+        return data.access_token as string;
     });
-
-    if (!org?.googleRefreshToken) {
-        throw new Error('No refresh token available for this organization');
-    }
-
-    const response = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-            client_id: GOOGLE_CLIENT_ID!,
-            client_secret: GOOGLE_CLIENT_SECRET!,
-            refresh_token: org.googleRefreshToken,
-            grant_type: 'refresh_token',
-        }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-        throw new Error(data.error_description || 'Failed to refresh token');
-    }
-
-    const expiresAt = new Date(Date.now() + data.expires_in * 1000);
-
-    // Update the database with the new token
-    await prisma.organization.update({
-        where: { id: orgId },
-        data: {
-            googleAccessToken: data.access_token,
-            googleTokenExpiresAt: expiresAt,
-        },
-    });
-
-    return data.access_token as string;
 }
 
 /**
@@ -205,44 +263,62 @@ export function getSuperAdminGoogleAuthUrl() {
 }
 
 export async function refreshSuperAdminGoogleToken(adminId: string) {
-    const admin = await prisma.superAdmin.findUnique({
-        where: { id: adminId },
-        select: { googleRefreshToken: true },
+    const lockKey = `lock:google:refresh:superadmin:${adminId}`;
+    
+    return withDistributedLock(lockKey, 30000, async () => {
+        // 1. Re-check if the token was already refreshed by another process while we waited for the lock
+        const admin = await prisma.superAdmin.findUnique({
+            where: { id: adminId },
+            select: { 
+                googleRefreshToken: true,
+                googleTokenExpiresAt: true,
+                googleAccessToken: true
+            },
+        });
+
+        if (!admin?.googleRefreshToken) {
+            throw new Error('No refresh token available for Super Admin');
+        }
+
+        // If expiresAt is more than 5 minutes in the future, someone else refreshed it
+        const isStillExpired = !admin.googleTokenExpiresAt || admin.googleTokenExpiresAt.getTime() < Date.now() + 300000;
+        if (!isStillExpired && admin.googleAccessToken) {
+            console.log(`[AUTH] Super Admin token already refreshed by another process.`);
+            return admin.googleAccessToken;
+        }
+
+        console.log(`[AUTH] Refreshing Super Admin Google token...`);
+
+        const response = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                client_id: GOOGLE_CLIENT_ID!,
+                client_secret: GOOGLE_CLIENT_SECRET!,
+                refresh_token: admin.googleRefreshToken,
+                grant_type: 'refresh_token',
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error_description || 'Failed to refresh super admin token');
+        }
+
+        const expiresAt = new Date(Date.now() + data.expires_in * 1000);
+
+        // Update the database with the new token
+        await prisma.superAdmin.update({
+            where: { id: adminId },
+            data: {
+                googleAccessToken: data.access_token,
+                googleTokenExpiresAt: expiresAt,
+            },
+        });
+
+        return data.access_token as string;
     });
-
-    if (!admin?.googleRefreshToken) {
-        throw new Error('No refresh token available for Super Admin');
-    }
-
-    const response = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-            client_id: GOOGLE_CLIENT_ID!,
-            client_secret: GOOGLE_CLIENT_SECRET!,
-            refresh_token: admin.googleRefreshToken,
-            grant_type: 'refresh_token',
-        }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-        throw new Error(data.error_description || 'Failed to refresh super admin token');
-    }
-
-    const expiresAt = new Date(Date.now() + data.expires_in * 1000);
-
-    // Update the database with the new token
-    await prisma.superAdmin.update({
-        where: { id: adminId },
-        data: {
-            googleAccessToken: data.access_token,
-            googleTokenExpiresAt: expiresAt,
-        },
-    });
-
-    return data.access_token as string;
 }
 
 export async function sendSuperAdminGmailEmail({

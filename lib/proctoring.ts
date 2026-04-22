@@ -90,7 +90,7 @@ export function normalizeProctoringEvent(event: ProctoringEvent): ProctoringEven
   const rawType = String(event.eventType || "").trim();
   const key = rawType.replace(/\s+/g, "_");
   const normalizedType = EVENT_ALIASES[key] || EVENT_ALIASES[key.toLowerCase()] || (key.toLowerCase() as ProctoringEventType);
-  const safeType = normalizedType || (PROCTORING_EVENT_ORDER[0] as ProctoringEventType);
+  const safeType = normalizedType || (PROCTORING_EVENT_ORDER.length > 0 ? PROCTORING_EVENT_ORDER[0] : "connection_lost" as ProctoringEventType);
 
   return {
     eventType: safeType,

@@ -94,7 +94,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         const isCartesia = form.ttsProvider === "CARTESIA";
         const voiceId = isCartesia ? form.cartesiaVoiceId : form.sarvamVoice;
         const modelId = isCartesia ? form.cartesiaModel : form.sarvamModel;
-        const endpoint = isCartesia ? "/api/admin/voice/preview" : "/api/admin/voice/preview/sarvam";
+        const endpoint = "/api/admin/voice/preview";
         const transcript = isCartesia 
             ? "Hello! I am ready to conduct high-quality AI interviews for your team." 
             : "à¤¨à¤®à¤¸à¥à¤¤à¥‡, à¤®à¥ˆà¤‚ à¤†à¤ªà¤•à¥€ à¤Ÿà¥€à¤® à¤•à¥‡ à¤²à¤¿à¤ à¤‰à¤šà¥à¤š à¤-à¥à¤£à¤µà¤¤à¥à¤¤à¤¾ à¤µà¤¾à¤²à¥‡ à¤¸à¤¾à¤•à¥à¤·à¤¾à¤¤à¥à¤•à¤¾à¤° à¤†à¤¯à¥‹à¤œà¤¿à¤¤ à¤•à¤°à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤¤à¥ˆà¤¯à¤¾à¤° à¤¹à¥‚à¤à¥¤";
@@ -111,7 +111,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
             const res = await fetch(endpoint, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ voiceId, modelId, transcript })
+                body: JSON.stringify({ provider: form.ttsProvider, voiceId, modelId, transcript })
             });
 
             if (!res.ok) {

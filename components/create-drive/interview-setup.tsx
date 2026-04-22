@@ -37,6 +37,30 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
     const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
     const voiceDropdownRef = useRef<HTMLDivElement>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const bufferSourceRef = useRef<AudioBufferSourceNode | null>(null);
+
+    const stopCurrentPreview = () => {
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current = null;
+        }
+        if (bufferSourceRef.current) {
+            try {
+                bufferSourceRef.current.stop();
+            } catch {
+                // ignore
+            }
+            try {
+                bufferSourceRef.current.disconnect();
+            } catch {
+                // ignore
+            }
+            bufferSourceRef.current = null;
+        }
+        setActiveAudio(null);
+        setPlayingVoiceId(null);
+    };
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -50,34 +74,20 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
         document.addEventListener("mousedown", handleClickOutside);
         return () => {
             document.removeEventListener("mousedown", handleClickOutside);
-            if (audioRef.current) {
-                audioRef.current.pause();
-                audioRef.current = null;
+            stopCurrentPreview();
+            if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+                audioContextRef.current.close().catch(() => { });
+                audioContextRef.current = null;
             }
         };
-    }, [activeAudio]);
+    }, []);
 
     const getAiNameForVoice = (voiceId: string) => {
-        const provider = formData.ttsProvider || "CARTESIA";
-        const voices = provider === "CARTESIA" ? CARTESIA_VOICES : SARVAM_VOICES;
+        const voices = [...CARTESIA_VOICES, ...SARVAM_VOICES];
         const selected = voices.find(v => v.id === voiceId);
         if (!selected) return "Ishitha";
         
-        const desc = selected.description.toLowerCase();
-        const tags = selected.tags?.map(t => t.toLowerCase()) || [];
-        const isMale = tags.includes("male") || (desc.includes("male") && !desc.includes("female"));
-        return isMale ? "Ishaan" : "Ishitha";
-    };
-
-    const handleProviderChange = (provider: "CARTESIA" | "SARVAM") => {
-        updateFormData((prev: any) => ({
-            ...prev,
-            ttsProvider: provider,
-            // When switching provider, nullify the other's voice ID
-            cartesiaVoiceId: provider === "CARTESIA" ? (prev.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc") : null,
-            sarvamVoice: provider === "SARVAM" ? (prev.sarvamVoice || "shubh") : null,
-            aiName: provider === "SARVAM" ? "Ishitha" : (prev.aiName || "Ishitha")
-        }));
+        return selected.gender === "male" ? "Ishaan" : "Ishitha";
     };
 
     const handleVoiceChange = (voiceId: string) => {
@@ -104,39 +114,29 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
         
         // Handle stop if already playing the same voice
         if (activeAudio && overrideVoiceId && overrideVoiceId === playingVoiceId) {
-            activeAudio.pause();
-            setActiveAudio(null);
-            setPlayingVoiceId(null);
+            stopCurrentPreview();
             return;
         }
         if (activeAudio && !overrideVoiceId) {
-            activeAudio.pause();
-            setActiveAudio(null);
-            setPlayingVoiceId(null);
+            stopCurrentPreview();
             return;
         }
 
-        const transcript = `Hey! I'm ${aiName}. Welcome to Sreeva, how may I help you today?`;
+        const transcript = `Hi, I'm ${aiName}, are you ready for the interview?`;
 
         setPreviewLoading(true);
         if (overrideVoiceId) setLoadingVoiceId(overrideVoiceId);
         
         try {
-            if (audioRef.current) {
-                audioRef.current.pause();
-                audioRef.current = null;
-                setActiveAudio(null);
-            }
+            stopCurrentPreview();
 
-            // Route to the correct provider endpoint
-            const endpoint = provider === "SARVAM"
-                ? "/api/admin/voice/preview/sarvam"
-                : "/api/admin/voice/preview";
+            // Send the selected provider explicitly so the server uses the matching API key.
+            const endpoint = "/api/admin/voice/preview";
 
             const res = await fetch(endpoint, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ voiceId, modelId, transcript })
+                body: JSON.stringify({ provider, voiceId, modelId, transcript })
             });
 
             if (!res.ok) {
@@ -144,26 +144,54 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                 throw new Error(errData?.error || "Preview failed");
             }
 
-            const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
-            
-            audio.onended = () => {
-                setActiveAudio(null);
-                setPlayingVoiceId(null);
-                setLoadingVoiceId(null);
-                audioRef.current = null;
-                URL.revokeObjectURL(url);
-            };
+            const arrayBuffer = await res.arrayBuffer();
+            const mimeType = provider === "SARVAM" ? "audio/wav" : "audio/mpeg";
 
-            audioRef.current = audio;
-            await audio.play();
-            setActiveAudio(audio);
-            setPlayingVoiceId(voiceId);
-            setLoadingVoiceId(null);
+            try {
+                const blob = new Blob([arrayBuffer], { type: mimeType });
+                const url = URL.createObjectURL(blob);
+                const audio = new Audio(url);
+
+                audio.onended = () => {
+                    stopCurrentPreview();
+                    if (url.startsWith("blob:")) {
+                        URL.revokeObjectURL(url);
+                    }
+                };
+
+                audioRef.current = audio;
+                await audio.play();
+                setActiveAudio(audio);
+                setPlayingVoiceId(voiceId);
+                setLoadingVoiceId(null);
+            } catch (audioErr) {
+                const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+                if (!AudioContextClass) {
+                    throw audioErr;
+                }
+
+                const ctx = audioContextRef.current || new AudioContextClass();
+                audioContextRef.current = ctx;
+                if (ctx.state === "suspended") {
+                    await ctx.resume();
+                }
+
+                const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+                const source = ctx.createBufferSource();
+                source.buffer = decoded;
+                source.connect(ctx.destination);
+                source.onended = () => {
+                    stopCurrentPreview();
+                };
+                bufferSourceRef.current = source;
+                setActiveAudio(null);
+                setPlayingVoiceId(voiceId);
+                source.start(0);
+                setLoadingVoiceId(null);
+            }
         } catch (err: any) {
             console.error("Playback error:", err);
-            alert(err.message || "Could not play voice sample.");
+            alert(err?.message || "Could not play voice sample.");
             setLoadingVoiceId(null);
             setPlayingVoiceId(null);
         } finally {
@@ -285,7 +313,6 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                                     <div className="space-y-2">
                                         <div className="flex items-center justify-between">
                                             <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">Voice</label>
-                                            <span className="text-[11px] text-gray-400 font-medium">✦ Recommended: Priya</span>
                                         </div>
                                         
                                         <div className="relative" ref={voiceDropdownRef}>
@@ -408,9 +435,6 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                                                                                 }`}>
                                                                                     {v.name}
                                                                                 </span>
-                                                                                {v.name === "Priya" && (
-                                                                                    <span className="px-1.5 py-0.5 rounded bg-orange-100 text-[9px] font-black text-orange-600 uppercase tracking-tighter flex-shrink-0">Recommended</span>
-                                                                                )}
                                                                             </div>
                                                                             <p className="text-[11px] text-gray-500 font-medium leading-tight truncate font-sans">{v.description}</p>
                                                                         </div>

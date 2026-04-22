@@ -1,53 +1,47 @@
-import fs from 'fs';
-import https from 'https';
+require('dotenv').config();
 
-const env = fs.readFileSync('.env', 'utf8');
-const match = env.match(/SARVAM_API_KEY=["']?([^"'\n]+)["']?/);
-if (!match) {
-  console.error("SARVAM_API_KEY NOT FOUND");
-  process.exit(1);
+async function testSarvam() {
+    const apiKey = process.env.SARVAM_API_KEY;
+    const voiceId = "shubh"; 
+    const modelId = "bulbul:v3";
+
+    const payload = {
+        inputs: ["Namaste, this is a test of the Sarvam TTS system."],
+        target_language_code: "en-IN",
+        speaker: voiceId,
+        pace: 1.0,
+        speech_sample_rate: 22050,
+        model: modelId,
+        temperature: 0.6,
+    };
+
+    try {
+        console.log("Testing Sarvam with API Key:", apiKey ? apiKey.substring(0, 10) + "..." : "MISSING");
+        if (!apiKey) return;
+
+        const response = await fetch("https://api.sarvam.ai/text-to-speech", {
+            method: "POST",
+            headers: {
+                "api-subscription-key": apiKey,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+        });
+
+        console.log("Response status:", response.status);
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("Sarvam API Error:", errorText);
+        } else {
+            const data = await response.json();
+            console.log("Audios received:", data.audios ? data.audios.length : 0);
+            if (data.audios && data.audios[0]) {
+                console.log("First audio length (base64):", data.audios[0].length);
+            }
+        }
+    } catch (error) {
+        console.error("Error:", error.message);
+    }
 }
 
-const key = match[1].trim();
-
-const payload = JSON.stringify({
-    inputs: ["Namaste, I am ready for the interview."],
-    target_language_code: "hi-IN",
-    speaker: "shubh",
-    pace: 1.0,
-    speech_sample_rate: 8000,
-    enable_preprocessing: true,
-    model: "bulbul:v3"
-});
-
-const options = {
-  hostname: 'api.sarvam.ai',
-  path: '/text-to-speech',
-  method: 'POST',
-  headers: {
-    'api-subscription-key': key,
-    'Content-Type': 'application/json',
-    'Content-Length': Buffer.byteLength(payload)
-  }
-};
-
-const req = https.request(options, res => {
-  let data = '';
-  res.on('data', chunk => { data += chunk; });
-  res.on('end', () => {
-    try {
-        if (!res.statusCode || res.statusCode >= 400) {
-            console.error("Error from Sarvam:", data);
-        } else {
-            const result = JSON.parse(data);
-            console.log("Success! Audio string length:", result.audios[0].length);
-        }
-    } catch (e) {
-      console.error("Failed to parse response");
-    }
-  });
-});
-
-req.on('error', error => { console.error("Request error:", error); });
-req.write(payload);
-req.end();
+testSarvam();

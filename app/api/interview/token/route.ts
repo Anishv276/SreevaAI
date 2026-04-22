@@ -486,6 +486,8 @@ export async function POST(req: NextRequest) {
             serverUrl: wsUrl,
             roomName,
             duration:  durationSeconds,
+            roleLabel: application.drive.role || application.drive.title || "Interview",
+            candidateName: application.fullName,
         });
 
     } catch (err) {

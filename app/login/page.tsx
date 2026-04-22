@@ -44,7 +44,7 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#F7F6F3] flex items-center justify-center p-6 font-medium">
+        <div suppressHydrationWarning={true} className="min-h-screen bg-[#F7F6F3] flex items-center justify-center p-6 font-medium">
             <div className="w-full max-w-md space-y-10 animate-fade-slide">
                 {/* Logo Section - Matching Admin Sidebar */}
                 <div className="flex flex-col items-center gap-6 text-center">

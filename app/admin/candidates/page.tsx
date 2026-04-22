@@ -458,6 +458,8 @@ export default function CandidatesPage() {
 
     const [emailCandidate, setEmailCandidate] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
 
+    const [interviewLinkCandidate, setInterviewLinkCandidate] = useState<{ id: string; name: string; interviewStatus?: string } | null>(null);
+
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
 
     const searchParams = useSearchParams();
@@ -624,6 +626,12 @@ export default function CandidatesPage() {
 
         finally { setSendingInterviewLinkId(null); }
 
+    };
+
+    const confirmSendInterviewLink = async () => {
+        if (!interviewLinkCandidate) return;
+        await handleSendInterviewLink(interviewLinkCandidate);
+        setInterviewLinkCandidate(null);
     };
 
 
@@ -1355,9 +1363,11 @@ export default function CandidatesPage() {
 
                             <TableRow className="border-b border-gray-100 hover:bg-transparent">
 
+                                <TableHead className="w-[60px] pl-8 font-bold uppercase tracking-wider text-[11px] text-gray-500">#</TableHead>
+
                                 {isSelectionMode && (
 
-                                    <TableHead className="w-[50px] pl-8">
+                                    <TableHead className="w-[50px]">
 
                                         <Checkbox
 
@@ -1371,7 +1381,7 @@ export default function CandidatesPage() {
 
                                 )}
 
-                                <TableHead className={cn("w-[280px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500", !isSelectionMode && "pl-8")}>Candidate</TableHead>
+                                <TableHead className={cn("w-[280px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500", !isSelectionMode && "pl-4")}>Candidate</TableHead>
 
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Job Role</TableHead>
 
@@ -1397,7 +1407,7 @@ export default function CandidatesPage() {
 
                                 <TableRow>
 
-                                    <TableCell colSpan={isSelectionMode ? 9 : 8} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-12 text-center text-sm font-bold text-gray-400">
 
                                         Loading candidates...
 
@@ -1409,7 +1419,7 @@ export default function CandidatesPage() {
 
                                 <TableRow>
 
-                                    <TableCell colSpan={isSelectionMode ? 9 : 8} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-12 text-center text-sm font-bold text-gray-400">
 
                                         No candidates found for selected filters
 
@@ -1419,7 +1429,7 @@ export default function CandidatesPage() {
 
                             ) : (
 
-                                filteredCandidates.map((candidate: any) => {
+                                filteredCandidates.map((candidate: any, index: number) => {
 
                                     const mainStatus = candidate.status?.toLowerCase() || "pending";
 
@@ -1455,9 +1465,15 @@ export default function CandidatesPage() {
 
                                         >
 
+                                            <TableCell className="pl-8 py-5 text-[12px] font-bold text-gray-400 tabular-nums">
+
+                                                {index + 1 + (pagination.page - 1) * pagination.limit}
+
+                                            </TableCell>
+
                                             {isSelectionMode && (
 
-                                                <TableCell className="pl-8 py-5">
+                                                <TableCell className="py-5">
 
                                                     <Checkbox
 
@@ -1471,7 +1487,7 @@ export default function CandidatesPage() {
 
                                             )}
 
-                                            <TableCell className={cn("py-5", !isSelectionMode && "pl-8")}>
+                                            <TableCell className={cn("py-5", !isSelectionMode && "pl-4")}>
 
                                                 <div className="flex items-center gap-4">
 
@@ -1731,15 +1747,7 @@ export default function CandidatesPage() {
 
                                                             <DropdownMenuItem
 
-                                                                onClick={() => {
-
-                                                                    if (window.confirm("Send a fresh interview link? This will deliver a new access token to the candidate.")) {
-
-                                                                        handleSendInterviewLink({ id: candidate.id, interviewStatus: candidate.interviewStatus });
-
-                                                                    }
-
-                                                                }}
+                                                                onClick={() => setInterviewLinkCandidate({ id: candidate.id, name: candidate.name, interviewStatus: candidate.interviewStatus })}
 
                                                                 disabled={sendingInterviewLinkId === candidate.id || isSuspended}
 
@@ -1932,6 +1940,32 @@ export default function CandidatesPage() {
                 }
 
                 isLoading={isBulkLoading}
+
+            />
+
+            <ActionConfirmModal
+
+                isOpen={!!interviewLinkCandidate}
+
+                onClose={() => setInterviewLinkCandidate(null)}
+
+                onConfirm={confirmSendInterviewLink}
+
+                title="Send Interview Link?"
+
+                description={
+                    interviewLinkCandidate
+                        ? `Send a fresh interview link to ${interviewLinkCandidate.name}? This will deliver a new access token to the candidate.`
+                        : "Send a fresh interview link? This will deliver a new access token to the candidate."
+                }
+
+                confirmText="Send Link"
+
+                cancelText="Cancel"
+
+                variant="info"
+
+                isLoading={sendingInterviewLinkId === interviewLinkCandidate?.id}
 
             />
 

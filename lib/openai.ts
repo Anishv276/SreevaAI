@@ -1,15 +1,27 @@
-
 import OpenAI from "openai";
 
-// Initialize OpenAI client
-// Ensure OPENAI_API_KEY is set in .env
-const apiKey = process.env.OPENAI_API_KEY;
-if (!apiKey || apiKey === "dummy-key-for-mock-mode") {
-    throw new Error("CRITICAL_CONFIGURATION_ERROR: OPENAI_API_KEY is missing from environment variables. Please set a valid key in .env to use AI features.");
+// Lazy-initialized OpenAI client to prevent module import errors when API key is missing.
+let _openai: OpenAI | null = null;
+
+/**
+ * Returns the initialized OpenAI client.
+ * Throws a critical error ONLY when called and the key is missing,
+ * preventing Next.js from failing at startup/build time.
+ */
+function getOpenAIClient(): OpenAI {
+    if (_openai) return _openai;
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey || apiKey === "dummy-key-for-mock-mode") {
+        throw new Error("CRITICAL_CONFIGURATION_ERROR: OPENAI_API_KEY is missing from environment variables. Please set a valid key in .env to use AI features.");
+    }
+
+    _openai = new OpenAI({
+        apiKey: apiKey,
+    });
+
+    return _openai;
 }
-const openai = new OpenAI({
-    apiKey: apiKey,
-});
 
 // Transcription logic removed as it is now handled by LiveKit / Deepgram in the candidate agent.
 
@@ -26,6 +38,7 @@ export async function getEmbedding(text: string): Promise<number[]> {
     const cleanText = text.replace(/\n/g, " ").trim();
     
     try {
+        const openai = getOpenAIClient();
         const response = await openai.embeddings.create({
             model: "text-embedding-3-small",
             input: cleanText,
@@ -328,6 +341,7 @@ ${text}
 
     try {
         console.log("[AI_JD_EXTRACT_START]: Text length:", text.length);
+        const openai = getOpenAIClient();
         const completion = await openai.chat.completions.create({
             model,
             messages: [

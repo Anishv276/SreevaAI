@@ -3,6 +3,7 @@
 import { use, useEffect, useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
     ArrowLeft, ArrowRight, Download, Mail, Phone, MapPin, Calendar,
@@ -11,6 +12,7 @@ import {
     MessageSquare, Target, BriefcaseBusiness, Globe, IndianRupee, RefreshCw, Camera, Loader2, User, X, ChevronDown, ChevronUp, EyeOff, LayoutDashboard, FileText,
     MonitorSmartphone, UserCheck, Volume2, AlertCircle
 } from "lucide-react";
+import { toast } from "@/components/ui/toast-custom";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
@@ -140,11 +142,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
         if (!id) return;
 
-        
+
 
         const eventSource = new EventSource("/api/stream");
 
-        
+
 
         eventSource.onmessage = (event) => {
 
@@ -184,13 +186,13 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
             if (res.ok) {
 
-                alert("Interview link resent successfully!");
+                toast.success("Interview link sent successfully!");
 
             } else {
 
                 const err = await res.json();
 
-                alert(err.error || "Failed to send interview link");
+                toast.error(err.error || "Failed to send interview link");
 
             }
 
@@ -198,11 +200,9 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
             console.error("Interview link send error:", error);
 
-            alert("Failed to send interview link.");
+            toast.error("Failed to send interview link.");
 
         } finally {
-
-            setSendingInterviewLink(false);
 
         }
 
@@ -220,13 +220,13 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                 await fetchCandidate();
 
-                alert("AI Re-scan triggered. Please wait about 30 seconds and refresh the page.");
+                toast.success("AI Re-scan triggered. Please wait about 30 seconds and refresh the page.");
 
             } else {
 
                 const err = await res.json();
 
-                alert(err.error || "Failed to trigger re-scan");
+                toast.error(err.error || "Failed to trigger re-scan");
 
             }
 
@@ -234,7 +234,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
             console.error("Rescan error:", error);
 
-            alert("Failed to trigger AI re-scan.");
+            toast.error("Failed to trigger AI re-scan.");
 
         } finally {
 
@@ -474,7 +474,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
     };
 
-    
+
 
     // Calculate Word Count
 
@@ -853,15 +853,15 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
     return (
 
-        <div 
+        <div
 
             id="candidate-report"
 
             key={id + '_' + loading}
 
-            ref={containerRef} 
+            ref={containerRef}
 
-            className="min-h-screen flex bg-slate-50/50 relative isolate" 
+            className="min-h-screen flex bg-slate-50/50 relative isolate"
 
             style={{ fontFamily: 'Inter, sans-serif' }}
 
@@ -1153,7 +1153,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                 </header>
 
-                <div className="max-w-[1400px] mx-auto px-6 pt-24 pb-16 space-y-8 relative z-0">
+                <div className="max-w-6xl mx-auto px-6 pt-24 pb-16 space-y-8 relative z-0">
 
                     <div className="relative spotlight-card rounded-3xl shadow-sm overflow-hidden">
 
@@ -1421,21 +1421,21 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                     </div>
 
-                    <div className="w-full">
+                    <div className="w-full max-w-6xl mx-auto">
 
                         <div className="space-y-6">
 
                             {activeTab === "analysis" && (
 
-                                <div className="space-y-10 pb-20">
+                                <div className="space-y-6 pb-12">
 
-                                    <div className="px-10 pt-10 pb-6 group">
+                                    <div className="px-6 pt-8 pb-4">
 
                                         <div className="relative pb-4">
 
                                             <div className="absolute bottom-0 left-0 w-24 h-1 bg-slate-950 rounded-full" />
 
-                                            <h2 className="text-3xl font-bold text-slate-950 tracking-wide uppercase leading-none font-inter">
+                                            <h2 className="text-2xl font-bold text-slate-950 tracking-wide uppercase leading-none font-inter">
 
                                                 Resume Analysis
 
@@ -1471,15 +1471,15 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         )}
 
-                                        <div className="mt-10 p-10 bg-white rounded-3xl border border-slate-100 shadow-md relative overflow-hidden group/summary">
+                                        <div className="mt-8 p-6 bg-white rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group/summary">
 
                                             <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600/30 group-hover/summary:bg-blue-600 transition-colors" />
 
-                                            <div className="flex items-start gap-8">
+                                            <div className="flex items-start gap-6">
 
-                                                <div className="h-14 w-14 rounded-xl bg-white shadow-xl shadow-blue-900/5 border border-slate-100 flex items-center justify-center shrink-0">
+                                                <div className="h-12 w-12 rounded-xl bg-white shadow-lg shadow-blue-900/5 border border-slate-100 flex items-center justify-center shrink-0">
 
-                                                    <Sparkles className="h-7 w-7 text-blue-600" />
+                                                    <Sparkles className="h-6 w-6 text-blue-600" />
 
                                                 </div>
 
@@ -1491,7 +1491,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                                     </p>
 
-                                                    <p className="text-[19px] font-medium text-slate-700 leading-[1.8] font-inter italic mb-2 tracking-tight">
+                                                    <p className="text-base font-medium text-slate-700 leading-[1.7] font-inter italic mb-1 tracking-tight">
 
                                                         "{summary}"
 
@@ -1505,7 +1505,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     </div>
 
-                                    <div className="p-8 bg-white border border-slate-200 shadow-sm rounded-3xl shadow-sm optimize-scroll">
+                                    <div className="p-6 bg-white border border-slate-200 shadow-sm rounded-3xl optimize-scroll">
 
                                         <div className="flex flex-row items-center justify-around gap-2 px-4">
 
@@ -1678,7 +1678,6 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
                                                                 }));
 
                                                             }
-
                                                         } catch (e) {
 
                                                             console.warn("Failed to parse drive details for fallback", e);
@@ -1817,7 +1816,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
 
-                                        <div className="p-8 bg-white border border-slate-200 shadow-sm rounded-3xl border-t-4 border-t-emerald-500 shadow-sm space-y-10 optimize-scroll">
+                                        <div className="p-6 bg-white border border-slate-200 shadow-sm rounded-3xl border-t-4 border-t-emerald-500 space-y-6 optimize-scroll">
 
                                             <div className="flex items-center gap-4">
 
@@ -1859,7 +1858,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         </div>
 
-                                        <div className="p-8 bg-white border border-slate-200 shadow-sm rounded-3xl border-t-4 border-t-amber-500 shadow-sm space-y-10 optimize-scroll">
+                                        <div className="p-6 bg-white border border-slate-200 shadow-sm rounded-3xl border-t-4 border-t-amber-500 space-y-6 optimize-scroll">
 
                                             <div className="flex items-center gap-4">
 
@@ -2340,67 +2339,205 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                 {activeTab === "interview" && candidate && hasStructuredInterviewReport && (
 
-                        <div className="space-y-12 pb-20 bg-[#F4F7FF] -mx-8 px-12 pt-16 font-inter">
+                    <div className="space-y-12 pb-20 bg-[#F4F7FF] -mx-8 px-12 pt-16 font-inter">
 
-                            <div className="space-y-12">
+                        <div className="space-y-12">
 
-                                <div className="flex flex-col items-center gap-2 text-center mb-4">
+                            <div className="flex flex-col items-center gap-2 text-center mb-4">
 
-                                    <h2 className="text-3xl font-bold text-slate-950 tracking-tight font-inter uppercase">Performance Analysis</h2>
+                                <h2 className="text-3xl font-bold text-slate-950 tracking-tight font-inter uppercase">Performance Analysis</h2>
 
-                                    <div className="h-1 w-20 bg-indigo-600 rounded-full" />
+                                <div className="h-1 w-20 bg-indigo-600 rounded-full" />
+
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+
+                                <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-4">
+
+                                    <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Header Scores</h3>
+
+                                    <div className="grid grid-cols-2 gap-4">
+
+                                        <VerdictScoreCard label="Interview / 10" value={String(interviewReportScores.interview_score ?? interviewScore.toFixed(1))} color="blue" />
+
+                                        <VerdictScoreCard label="Combined / 100" value={String(interviewReportScores.combined_score ?? Math.round(combinedScore * 10))} color="indigo" />
+
+                                        <VerdictScoreCard label="CEFR" value={String(interviewReportScores.cefr_level ?? communicationLevel)} color="slate" />
+
+                                        <VerdictScoreCard label="Integrity / 10" value={String((integrityScore / 10).toFixed(1))} color="orange" />
+
+                                    </div>
 
                                 </div>
 
-                                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+                                <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-4">
 
-                                    <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-4">
+                                    <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Communication Analysis</h3>
 
-                                        <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Header Scores</h3>
+                                    <CommunicationDonutChart
 
-                                        <div className="grid grid-cols-2 gap-4">
+                                        metrics={[
 
-                                            <VerdictScoreCard label="Interview / 10" value={String(interviewReportScores.interview_score ?? interviewScore.toFixed(1))} color="blue" />
+                                            { label: "CLARITY", value: interviewReportCommunication.clarity ?? 60, color: "#6366F1" },
 
-                                            <VerdictScoreCard label="Combined / 100" value={String(interviewReportScores.combined_score ?? Math.round(combinedScore * 10))} color="indigo" />
+                                            { label: "FLUENCY", value: interviewReportCommunication.fluency ?? 35, color: "#F59E0B" },
 
-                                            <VerdictScoreCard label="CEFR" value={String(interviewReportScores.cefr_level ?? communicationLevel)} color="slate" />
+                                            { label: "GRAMMAR", value: interviewReportCommunication.grammar ?? 30, color: "#10B981" },
 
-                                            <VerdictScoreCard label="Integrity / 10" value={String((integrityScore / 10).toFixed(1))} color="orange" />
+                                            { label: "DEPTH", value: interviewReportCommunication.depth ?? 45, color: "#F43F5E" }
+
+                                        ]}
+
+                                    />
+
+                                    <div className="p-5 rounded-2xl bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
+
+                                        <p className="text-[9px] font-bold text-[#A89078] uppercase tracking-[0.3em]">CEFR RATING</p>
+
+                                        <h4 className="text-xl font-bold text-[#8B5E3C] tracking-tight">{String(interviewReportScores.cefr_level || communicationLevel)} -- {String(interviewReportScores.cefr_label || communicationStatus)}</h4>
+
+                                        <p className="text-[15px] font-medium text-gray-500 leading-relaxed">
+
+                                            {interviewReportCommunication.cefr_analysis || "Communication analysis will appear here once the interview report is generated."}
+
+                                        </p>
+
+                                    </div>
+
+                                </div>
+
+                                <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-4">
+
+                                    <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Interview Recording</h3>
+
+                                    <div className="aspect-video w-full rounded-2xl border-[5px] border-gray-900 bg-black overflow-hidden shadow-2xl relative">
+
+                                        {interviewRecordingUrl ? (
+
+                                            <Plyr
+
+                                                key={interviewRecordingUrl}
+
+                                                source={{ type: "video", sources: [{ src: interviewRecordingUrl, type: "video/mp4" }] }}
+
+                                                options={{ duration: recordingDurationSec || undefined }}
+
+                                            />
+
+                                        ) : (
+
+                                            <div className="h-full w-full flex items-center justify-center text-gray-500 text-[10px] font-bold uppercase tracking-widest bg-gray-900/50">Video Loading...</div>
+
+                                        )}
+
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+
+                                        <div className="p-4 rounded-xl bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
+
+                                            <span className="text-[8px] font-bold uppercase tracking-widest text-gray-500">Total duration</span>
+
+                                            <p className="text-lg font-bold text-gray-900 leading-none">{interviewReportRecording.duration_label || (recordingDurationSec ? formatDuration(recordingDurationSec) : "--:--min")}</p>
+
+                                        </div>
+
+                                        <div className="p-4 rounded-xl bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
+
+                                            <span className="text-[8px] font-bold uppercase tracking-widest text-gray-500">Words Spoken</span>
+
+                                            <p className="text-lg font-bold text-gray-900 leading-none">{typeof interviewReportRecording.word_count === "number" ? interviewReportRecording.word_count.toLocaleString() : wordCount.toLocaleString()}</p>
 
                                         </div>
 
                                     </div>
 
-                                    <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-4">
+                                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
 
-                                        <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Communication Analysis</h3>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.3em]">AI Summary</p>
 
-                                        <CommunicationDonutChart
+                                        <p className="text-[13px] font-medium text-slate-700 leading-relaxed">{interviewReportSummary || "AI summary will appear here once the interview report is generated."}</p>
 
-                                            metrics={[
+                                    </div>
 
-                                                { label: "CLARITY", value: interviewReportCommunication.clarity ?? 60, color: "#6366F1" },
+                                </div>
 
-                                                { label: "FLUENCY", value: interviewReportCommunication.fluency ?? 35, color: "#F59E0B" },
+                            </div>
 
-                                                { label: "GRAMMAR", value: interviewReportCommunication.grammar ?? 30, color: "#10B981" },
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch max-w-[1400px] mx-auto">
 
-                                                { label: "DEPTH", value: interviewReportCommunication.depth ?? 45, color: "#F43F5E" }
+                                <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
 
-                                            ]}
+                                    <div className="flex items-center justify-between mb-8">
 
-                                        />
+                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight">Did the Interview Prove JD Skills?</h3>
 
-                                        <div className="p-5 rounded-2xl bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
+                                        <Sparkles className="h-4 w-4 text-indigo-500 animate-pulse" />
 
-                                            <p className="text-[9px] font-bold text-[#A89078] uppercase tracking-[0.3em]">CEFR RATING</p>
+                                    </div>
 
-                                            <h4 className="text-xl font-bold text-[#8B5E3C] tracking-tight">{String(interviewReportScores.cefr_level || communicationLevel)} -- {String(interviewReportScores.cefr_label || communicationStatus)}</h4>
+                                    <div className="grid grid-cols-2 gap-3 mb-5">
 
-                                            <p className="text-[15px] font-medium text-gray-500 leading-relaxed">
+                                        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 shadow-sm">
 
-                                                {interviewReportCommunication.cefr_analysis || "Communication analysis will appear here once the interview report is generated."}
+                                            <p className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-400">Overall JD Match</p>
+
+                                            <p className="text-[26px] font-black text-slate-900 leading-none mt-2">{interviewSkillStats.overallMatch}%</p>
+
+                                            <p className="text-[11px] font-medium text-slate-500 mt-2">Based on proved and partially proved skills</p>
+
+                                        </div>
+
+                                        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 shadow-sm">
+
+                                            <p className="text-[9px] font-black uppercase tracking-[0.3em] text-emerald-500">Strongest Proof</p>
+
+                                            <p className="text-[15px] font-bold text-emerald-950 leading-snug mt-2 line-clamp-2">
+
+                                                {String(interviewSkillStats.strongest?.title || "No proven skill yet")}
+
+                                            </p>
+
+                                            <p className="text-[11px] font-medium text-emerald-700 mt-2">
+
+                                                {String(interviewSkillStats.strongest?.score || "--")} · {String(interviewSkillStats.strongest?.status || "N/A")}
+
+                                            </p>
+
+                                        </div>
+
+                                        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 shadow-sm">
+
+                                            <p className="text-[9px] font-black uppercase tracking-[0.3em] text-rose-500">Biggest Gap</p>
+
+                                            <p className="text-[15px] font-bold text-rose-950 leading-snug mt-2 line-clamp-2">
+
+                                                {String(interviewSkillStats.biggestGap?.title || "No major gap detected")}
+
+                                            </p>
+
+                                            <p className="text-[11px] font-medium text-rose-700 mt-2">
+
+                                                {String(interviewSkillStats.biggestGap?.score || "--")} · {String(interviewSkillStats.biggestGap?.status || "N/A")}
+
+                                            </p>
+
+                                        </div>
+
+                                        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100 shadow-sm">
+
+                                            <p className="text-[9px] font-black uppercase tracking-[0.3em] text-amber-500">Skill Split</p>
+
+                                            <p className="text-[15px] font-bold text-amber-950 leading-snug mt-2">
+
+                                                {interviewSkillStats.proved} proved, {interviewSkillStats.partial} partial
+
+                                            </p>
+
+                                            <p className="text-[11px] font-medium text-amber-700 mt-2">
+
+                                                {interviewSkillStats.notProved} not proved, {interviewSkillStats.notTested} not tested
 
                                             </p>
 
@@ -2408,407 +2545,267 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     </div>
 
-                                    <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-4">
+                                    <div className="flex-1 overflow-y-auto scrollbar-hide pr-1 space-y-4">
 
-                                        <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Interview Recording</h3>
+                                        {(interviewReportSkills.length > 0 ? interviewReportSkills : []).map((s: any, i: number) => (
 
-                                        <div className="aspect-video w-full rounded-2xl border-[5px] border-gray-900 bg-black overflow-hidden shadow-2xl relative">
+                                            <AssessmentCard
 
-                                            {interviewRecordingUrl ? (
+                                                key={i}
 
-                                                <Plyr
+                                                title={s.title}
 
-                                                    key={interviewRecordingUrl}
+                                                subtitle={s.note || ""}
 
-                                                    source={{ type: "video", sources: [{ src: interviewRecordingUrl, type: "video/mp4" }] }}
+                                                confidence={s.confidence || ""}
 
-                                                    options={{ duration: recordingDurationSec || undefined }}
+                                                score={s.score || "--"}
 
-                                                />
+                                                status={String(s.status || "").toUpperCase() as any}
 
-                                            ) : (
+                                            />
 
-                                                <div className="h-full w-full flex items-center justify-center text-gray-500 text-[10px] font-bold uppercase tracking-widest bg-gray-900/50">Video Loading...</div>
-
-                                            )}
-
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-4">
-
-                                            <div className="p-4 rounded-xl bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
-
-                                                <span className="text-[8px] font-bold uppercase tracking-widest text-gray-500">Total duration</span>
-
-                                                <p className="text-lg font-bold text-gray-900 leading-none">{interviewReportRecording.duration_label || (recordingDurationSec ? formatDuration(recordingDurationSec) : "--:--min")}</p>
-
-                                            </div>
-
-                                            <div className="p-4 rounded-xl bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
-
-                                                <span className="text-[8px] font-bold uppercase tracking-widest text-gray-500">Words Spoken</span>
-
-                                                <p className="text-lg font-bold text-gray-900 leading-none">{typeof interviewReportRecording.word_count === "number" ? interviewReportRecording.word_count.toLocaleString() : wordCount.toLocaleString()}</p>
-
-                                            </div>
-
-                                        </div>
-
-                                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
-
-                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.3em]">AI Summary</p>
-
-                                            <p className="text-[13px] font-medium text-slate-700 leading-relaxed">{interviewReportSummary || "AI summary will appear here once the interview report is generated."}</p>
-
-                                        </div>
+                                        ))}
 
                                     </div>
 
                                 </div>
 
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch max-w-[1400px] mx-auto">
+                                <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
 
-                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
+                                    <div className="flex items-center justify-between mb-8">
 
-                                        <div className="flex items-center justify-between mb-8">
+                                        <div className="flex flex-col gap-1">
 
-                                            <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight">Did the Interview Prove JD Skills?</h3>
+                                            <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight">Full Session Log</h3>
 
-                                            <Sparkles className="h-4 w-4 text-indigo-500 animate-pulse" />
+                                            <div className="flex items-center gap-2">
 
-                                        </div>
+                                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
 
-                                        <div className="grid grid-cols-2 gap-3 mb-5">
-
-                                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 shadow-sm">
-
-                                                <p className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-400">Overall JD Match</p>
-
-                                                <p className="text-[26px] font-black text-slate-900 leading-none mt-2">{interviewSkillStats.overallMatch}%</p>
-
-                                                <p className="text-[11px] font-medium text-slate-500 mt-2">Based on proved and partially proved skills</p>
+                                                <span className="text-[10px] font-inter font-bold text-emerald-600 uppercase tracking-widest">Secure Audit Mode</span>
 
                                             </div>
-
-                                            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 shadow-sm">
-
-                                                <p className="text-[9px] font-black uppercase tracking-[0.3em] text-emerald-500">Strongest Proof</p>
-
-                                                <p className="text-[15px] font-bold text-emerald-950 leading-snug mt-2 line-clamp-2">
-
-                                                    {String(interviewSkillStats.strongest?.title || "No proven skill yet")}
-
-                                                </p>
-
-                                                <p className="text-[11px] font-medium text-emerald-700 mt-2">
-
-                                                    {String(interviewSkillStats.strongest?.score || "--")} · {String(interviewSkillStats.strongest?.status || "N/A")}
-
-                                                </p>
-
-                                            </div>
-
-                                            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-100 shadow-sm">
-
-                                                <p className="text-[9px] font-black uppercase tracking-[0.3em] text-rose-500">Biggest Gap</p>
-
-                                                <p className="text-[15px] font-bold text-rose-950 leading-snug mt-2 line-clamp-2">
-
-                                                    {String(interviewSkillStats.biggestGap?.title || "No major gap detected")}
-
-                                                </p>
-
-                                                <p className="text-[11px] font-medium text-rose-700 mt-2">
-
-                                                    {String(interviewSkillStats.biggestGap?.score || "--")} · {String(interviewSkillStats.biggestGap?.status || "N/A")}
-
-                                                </p>
-
-                                            </div>
-
-                                            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100 shadow-sm">
-
-                                                <p className="text-[9px] font-black uppercase tracking-[0.3em] text-amber-500">Skill Split</p>
-
-                                                <p className="text-[15px] font-bold text-amber-950 leading-snug mt-2">
-
-                                                    {interviewSkillStats.proved} proved, {interviewSkillStats.partial} partial
-
-                                                </p>
-
-                                                <p className="text-[11px] font-medium text-amber-700 mt-2">
-
-                                                    {interviewSkillStats.notProved} not proved, {interviewSkillStats.notTested} not tested
-
-                                                </p>
-
-                                            </div>
-
-                                        </div>
-
-                                        <div className="flex-1 overflow-y-auto scrollbar-hide pr-1 space-y-4">
-
-                                            {(interviewReportSkills.length > 0 ? interviewReportSkills : []).map((s: any, i: number) => (
-
-                                                <AssessmentCard
-
-                                                    key={i}
-
-                                                    title={s.title}
-
-                                                    subtitle={s.note || ""}
-
-                                                    confidence={s.confidence || ""}
-
-                                                    score={s.score || "--"}
-
-                                                    status={String(s.status || "").toUpperCase() as any}
-
-                                                />
-
-                                            ))}
 
                                         </div>
 
                                     </div>
 
-                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
+                                    <div className="flex-1 overflow-y-auto scrollbar-hide space-y-4 pr-2">
 
-                                        <div className="flex items-center justify-between mb-8">
+                                        {interviewSessionRows.map((item: any, i: number) => (
 
-                                            <div className="flex flex-col gap-1">
+                                            <div key={i} className="p-5 rounded-3xl border border-gray-100 bg-white shadow-sm space-y-3">
 
-                                                <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight">Full Session Log</h3>
-
-                                                <div className="flex items-center gap-2">
-
-                                                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-
-                                                    <span className="text-[10px] font-inter font-bold text-emerald-600 uppercase tracking-widest">Secure Audit Mode</span>
-
-                                                </div>
-
-                                            </div>
-
-                                        </div>
-
-                                        <div className="flex-1 overflow-y-auto scrollbar-hide space-y-4 pr-2">
-
-                                            {interviewSessionRows.map((item: any, i: number) => (
-
-                                                <div key={i} className="p-5 rounded-3xl border border-gray-100 bg-white shadow-sm space-y-3">
-
-                                                    <div className="flex items-start justify-between gap-4">
-
-                                                        <div className="space-y-1">
-
-                                                            <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-500">Question {item.q || i + 1}</p>
-
-                                                            <p className="text-[14px] font-semibold text-gray-900 leading-relaxed">{item.question || item.title}</p>
-
-                                                        </div>
-
-                                                        <span className="px-3 py-1 rounded-full bg-slate-50 border border-slate-100 text-[10px] font-bold text-slate-600 uppercase tracking-widest whitespace-nowrap">
-
-                                                            {item.score || "--"}
-
-                                                        </span>
-
-                                                    </div>
-
-                                                    <p className="text-[13px] font-medium text-gray-600 leading-relaxed">{item.reasoning || item.verdict || "No reasoning available."}</p>
-
-                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{item.confidence || ""}</p>
-
-                                                </div>
-
-                                            ))}
-
-                                            {interviewQaRows.map((q: any, i: number) => (
-
-                                                <div key={`q-${i}`} className="p-5 rounded-3xl border border-gray-100 bg-[#FAF9F6] shadow-sm space-y-3">
-
-                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Question {String(q.q || i + 1).padStart(2, "0")}</p>
-
-                                                    <p className="text-[14px] font-semibold text-gray-900 leading-relaxed">{q.question || q.title}</p>
-
-                                                    <p className="text-[13px] font-medium text-gray-600 leading-relaxed">{q.reasoning || q.verdict || "No reasoning available."}</p>
-
-                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{q.score || "--"} {q.confidence ? `• ${q.confidence}` : ""}</p>
-
-                                                </div>
-
-                                            ))}
-
-                                        </div>
-
-                                    </div>
-
-                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
-
-                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof -- consistency check</h3>
-
-                                        <div className="flex-1 overflow-y-auto scrollbar-hide space-y-4">
-
-                                            {(interviewReportConsistency.length > 0 ? interviewReportConsistency : []).map((c: any, i: number) => (
-
-                                                <div key={i} className="p-5 rounded-3xl border border-gray-100 bg-white shadow-sm space-y-3">
-
-                                                    <p className="text-[14px] font-bold text-gray-900 leading-tight">{c.claim}</p>
-
-                                                    <p className="text-[9px] font-bold text-slate-500 font-bold uppercase tracking-wide">FIELD: {c.sub}</p>
-
-                                                    <p className="text-[13px] font-medium text-gray-600 leading-relaxed">{c.proof}</p>
-
-                                                    <span className="inline-flex px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border shadow-sm bg-slate-50 text-slate-600 border-slate-100">{String(c.status || "").replace("_", " ")}</span>
-
-                                                </div>
-
-                                            ))}
-
-                                        </div>
-
-                                    </div>
-
-                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
-
-                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Key Moments From Session</h3>
-
-                                        <div className="flex-1 overflow-y-auto scrollbar-hide space-y-4 pr-2">
-
-                                            {(interviewReportKeyMoments.length > 0 ? interviewReportKeyMoments : []).map((m: any, i: number) => (
-
-                                                <div key={i} className="grid grid-cols-[80px_1fr] gap-4 p-4 rounded-3xl border border-gray-100 bg-white shadow-sm">
-
-                                                    <span className="text-[12px] font-bold text-slate-500">{m.time}</span>
+                                                <div className="flex items-start justify-between gap-4">
 
                                                     <div className="space-y-1">
 
-                                                        <p className="text-[14px] font-semibold text-gray-900">{m.title}</p>
+                                                        <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-500">Question {item.q || i + 1}</p>
 
-                                                        <p className="text-[13px] font-medium text-gray-600 leading-relaxed">{m.note}</p>
+                                                        <p className="text-[14px] font-semibold text-gray-900 leading-relaxed">{item.question || item.title}</p>
 
                                                     </div>
 
+                                                    <span className="px-3 py-1 rounded-full bg-slate-50 border border-slate-100 text-[10px] font-bold text-slate-600 uppercase tracking-widest whitespace-nowrap">
+
+                                                        {item.score || "--"}
+
+                                                    </span>
+
                                                 </div>
 
-                                            ))}
+                                                <p className="text-[13px] font-medium text-gray-600 leading-relaxed">{item.reasoning || item.verdict || "No reasoning available."}</p>
 
-                                        </div>
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{item.confidence || ""}</p>
+
+                                            </div>
+
+                                        ))}
+
+                                        {interviewQaRows.map((q: any, i: number) => (
+
+                                            <div key={`q-${i}`} className="p-5 rounded-3xl border border-gray-100 bg-[#FAF9F6] shadow-sm space-y-3">
+
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Question {String(q.q || i + 1).padStart(2, "0")}</p>
+
+                                                <p className="text-[14px] font-semibold text-gray-900 leading-relaxed">{q.question || q.title}</p>
+
+                                                <p className="text-[13px] font-medium text-gray-600 leading-relaxed">{q.reasoning || q.verdict || "No reasoning available."}</p>
+
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{q.score || "--"} {q.confidence ? `• ${q.confidence}` : ""}</p>
+
+                                            </div>
+
+                                        ))}
 
                                     </div>
 
                                 </div>
 
-                                <div className="pt-16 border-t border-gray-200 mt-16 space-y-8">
+                                <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
 
-                                    <div className="flex flex-col items-center gap-2 text-center mb-6">
+                                    <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof -- consistency check</h3>
 
-                                        <h2 className="text-2xl font-bold text-slate-950 tracking-tight font-inter uppercase">Strategic Verdict</h2>
+                                    <div className="flex-1 overflow-y-auto scrollbar-hide space-y-4">
 
-                                        <div className="h-1 w-16 bg-indigo-600 rounded-full" />
+                                        {(interviewReportConsistency.length > 0 ? interviewReportConsistency : []).map((c: any, i: number) => (
+
+                                            <div key={i} className="p-5 rounded-3xl border border-gray-100 bg-white shadow-sm space-y-3">
+
+                                                <p className="text-[14px] font-bold text-gray-900 leading-tight">{c.claim}</p>
+
+                                                <p className="text-[9px] font-bold text-slate-500 font-bold uppercase tracking-wide">FIELD: {c.sub}</p>
+
+                                                <p className="text-[13px] font-medium text-gray-600 leading-relaxed">{c.proof}</p>
+
+                                                <span className="inline-flex px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border shadow-sm bg-slate-50 text-slate-600 border-slate-100">{String(c.status || "").replace("_", " ")}</span>
+
+                                            </div>
+
+                                        ))}
 
                                     </div>
 
-                                    <div className="w-full max-w-[1200px] mx-auto p-8 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-5">
+                                </div>
 
-                                        <div className="flex items-start justify-between gap-4">
+                                <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
 
-                                            <p className="text-[15px] font-medium text-slate-700 leading-[1.7] max-w-[900px]">
+                                    <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Key Moments From Session</h3>
 
-                                                {String(interviewStrategicVerdict.summary || interviewReportVerdict.summary || "Strategic summary will appear here once the report is generated.")}
+                                    <div className="flex-1 overflow-y-auto scrollbar-hide space-y-4 pr-2">
 
-                                            </p>
+                                        {(interviewReportKeyMoments.length > 0 ? interviewReportKeyMoments : []).map((m: any, i: number) => (
 
-                                            <span className={cn(
+                                            <div key={i} className="grid grid-cols-[80px_1fr] gap-4 p-4 rounded-3xl border border-gray-100 bg-white shadow-sm">
 
-                                                "px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest border shrink-0",
+                                                <span className="text-[12px] font-bold text-slate-500">{m.time}</span>
 
-                                                String(interviewStrategicVerdict.decision || "").toLowerCase().includes("hire")
+                                                <div className="space-y-1">
 
-                                                    ? "bg-emerald-50 border-emerald-100 text-emerald-700"
+                                                    <p className="text-[14px] font-semibold text-gray-900">{m.title}</p>
 
-                                                    : String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not")
-
-                                                        ? "bg-rose-50 border-rose-100 text-rose-700"
-
-                                                        : "bg-amber-50 border-amber-100 text-amber-700"
-
-                                            )}>
-
-                                                {String(interviewStrategicVerdict.decision || interviewReportVerdict.recommendation || "Pending")}
-
-                                            </span>
-
-                                        </div>
-
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-                                            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 space-y-3">
-
-                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Strategic Rationale</p>
-
-                                                <div className="space-y-2">
-
-                                                    {(Array.isArray(interviewStrategicVerdict.rationale) && interviewStrategicVerdict.rationale.length > 0)
-
-                                                        ? interviewStrategicVerdict.rationale.map((item: string, index: number) => (
-
-                                                            <p key={index} className="text-[14px] font-medium text-slate-700 leading-[1.7]">
-
-                                                                {item}
-
-                                                            </p>
-
-                                                        ))
-
-                                                        : (
-
-                                                            <p className="text-[14px] font-medium text-slate-500 leading-[1.7]">
-
-                                                                {interviewReportVerdict.recommendation_reason || "Waiting for interview report"}
-
-                                                            </p>
-
-                                                        )
-
-                                                    }
+                                                    <p className="text-[13px] font-medium text-gray-600 leading-relaxed">{m.note}</p>
 
                                                 </div>
 
                                             </div>
 
-                                            <div className="p-5 rounded-2xl bg-indigo-50 border border-indigo-100 space-y-3">
+                                        ))}
 
-                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-500">Recommended Next Action</p>
+                                    </div>
 
-                                                <div className="space-y-2">
+                                </div>
 
-                                                    {(Array.isArray(interviewStrategicVerdict.next_actions) && interviewStrategicVerdict.next_actions.length > 0)
+                            </div>
 
-                                                        ? interviewStrategicVerdict.next_actions.map((item: string, index: number) => (
+                            <div className="pt-16 border-t border-gray-200 mt-16 space-y-8">
 
-                                                            <p key={index} className="text-[14px] font-medium text-indigo-900 leading-[1.7]">
+                                <div className="flex flex-col items-center gap-2 text-center mb-6">
 
-                                                                {item}
+                                    <h2 className="text-2xl font-bold text-slate-950 tracking-tight font-inter uppercase">Strategic Verdict</h2>
 
-                                                            </p>
+                                    <div className="h-1 w-16 bg-indigo-600 rounded-full" />
 
-                                                        ))
+                                </div>
 
-                                                        : (
+                                <div className="w-full max-w-[1200px] mx-auto p-8 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-5">
 
-                                                            <p className="text-[14px] font-medium text-indigo-900 leading-[1.7]">
+                                    <div className="flex items-start justify-between gap-4">
 
-                                                                {interviewReportVerdict.recommendation_reason || "Waiting for interview report"}
+                                        <p className="text-[15px] font-medium text-slate-700 leading-[1.7] max-w-[900px]">
 
-                                                            </p>
+                                            {String(interviewStrategicVerdict.summary || interviewReportVerdict.summary || "Strategic summary will appear here once the report is generated.")}
 
-                                                        )
+                                        </p>
 
-                                                    }
+                                        <span className={cn(
 
-                                                </div>
+                                            "px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest border shrink-0",
+
+                                            String(interviewStrategicVerdict.decision || "").toLowerCase().includes("hire")
+
+                                                ? "bg-emerald-50 border-emerald-100 text-emerald-700"
+
+                                                : String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not")
+
+                                                    ? "bg-rose-50 border-rose-100 text-rose-700"
+
+                                                    : "bg-amber-50 border-amber-100 text-amber-700"
+
+                                        )}>
+
+                                            {String(interviewStrategicVerdict.decision || interviewReportVerdict.recommendation || "Pending")}
+
+                                        </span>
+
+                                    </div>
+
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+                                        <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 space-y-3">
+
+                                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Strategic Rationale</p>
+
+                                            <div className="space-y-2">
+
+                                                {(Array.isArray(interviewStrategicVerdict.rationale) && interviewStrategicVerdict.rationale.length > 0)
+
+                                                    ? interviewStrategicVerdict.rationale.map((item: string, index: number) => (
+
+                                                        <p key={index} className="text-[14px] font-medium text-slate-700 leading-[1.7]">
+
+                                                            {item}
+
+                                                        </p>
+
+                                                    ))
+
+                                                    : (
+
+                                                        <p className="text-[14px] font-medium text-slate-500 leading-[1.7]">
+
+                                                            {interviewReportVerdict.recommendation_reason || "Waiting for interview report"}
+
+                                                        </p>
+
+                                                    )
+
+                                                }
+
+                                            </div>
+
+                                        </div>
+
+                                        <div className="p-5 rounded-2xl bg-indigo-50 border border-indigo-100 space-y-3">
+
+                                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-500">Recommended Next Action</p>
+
+                                            <div className="space-y-2">
+
+                                                {(Array.isArray(interviewStrategicVerdict.next_actions) && interviewStrategicVerdict.next_actions.length > 0)
+
+                                                    ? interviewStrategicVerdict.next_actions.map((item: string, index: number) => (
+
+                                                        <p key={index} className="text-[14px] font-medium text-indigo-900 leading-[1.7]">
+
+                                                            {item}
+
+                                                        </p>
+
+                                                    ))
+
+                                                    : (
+
+                                                        <p className="text-[14px] font-medium text-indigo-900 leading-[1.7]">
+
+                                                            {interviewReportVerdict.recommendation_reason || "Waiting for interview report"}
+
+                                                        </p>
+
+                                                    )
+
+                                                }
 
                                             </div>
 
@@ -2822,85 +2819,87 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                         </div>
 
-                    )}
+                    </div>
+
+                )}
 
                 {activeTab === "interview" && candidate && !hasStructuredInterviewReport && (
 
-    <div className="space-y-12 pb-20 bg-[#F4F7FF] -mx-8 px-12 pt-16 font-inter">
+                    <div className="space-y-12 pb-20 bg-[#F4F7FF] -mx-8 px-12 pt-16 font-inter">
 
-                            
 
-                            {/* -- Section: Performance Analysis -- */}
 
-                            <div className="space-y-12">
+                        {/* -- Section: Performance Analysis -- */}
 
-                                <div className="flex flex-col items-center gap-2 text-center mb-4">
+                        <div className="space-y-12">
 
-                                    <h2 className="text-3xl font-bold text-slate-950 tracking-tight font-inter uppercase">Performance Analysis</h2>
+                            <div className="flex flex-col items-center gap-2 text-center mb-4">
 
-                                    <div className="h-1 w-20 bg-indigo-600 rounded-full" />
+                                <h2 className="text-3xl font-bold text-slate-950 tracking-tight font-inter uppercase">Performance Analysis</h2>
 
-                                </div>
+                                <div className="h-1 w-20 bg-indigo-600 rounded-full" />
 
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
+                            </div>
 
-                                    {/* communication */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
 
-                                    <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-6 flex flex-col scale-[0.98] origin-top-left">
+                                {/* communication */}
 
-                                        <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Communication Analysis</h3>
+                                <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm space-y-6 flex flex-col scale-[0.98] origin-top-left">
 
-                                        <div className="flex justify-center py-2 flex-1 items-center">
+                                    <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Communication Analysis</h3>
 
-                                            <CommunicationDonutChart
+                                    <div className="flex justify-center py-2 flex-1 items-center">
 
-                                                metrics={[
+                                        <CommunicationDonutChart
 
-                                                    { label: "CLARITY", value: Math.max(0, Math.min(100, interviewReportCommunication.clarity ?? 60)), color: "#6366F1" },
+                                            metrics={[
 
-                                                    { label: "FLUENCY", value: Math.max(0, Math.min(100, interviewReportCommunication.fluency ?? 35)), color: "#F59E0B" },
+                                                { label: "CLARITY", value: Math.max(0, Math.min(100, interviewReportCommunication.clarity ?? 60)), color: "#6366F1" },
 
-                                                    { label: "GRAMMAR", value: Math.max(0, Math.min(100, interviewReportCommunication.grammar ?? 30)), color: "#10B981" },
+                                                { label: "FLUENCY", value: Math.max(0, Math.min(100, interviewReportCommunication.fluency ?? 35)), color: "#F59E0B" },
 
-                                                    { label: "DEPTH", value: Math.max(0, Math.min(100, interviewReportCommunication.depth ?? 45)), color: "#F43F5E" }
+                                                { label: "GRAMMAR", value: Math.max(0, Math.min(100, interviewReportCommunication.grammar ?? 30)), color: "#10B981" },
 
-                                                ]}
+                                                { label: "DEPTH", value: Math.max(0, Math.min(100, interviewReportCommunication.depth ?? 45)), color: "#F43F5E" }
 
-                                            />
+                                            ]}
 
-                                        </div>
-
-                                        <div className="p-5 rounded-2xl bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
-
-                                            <p className="text-[9px] font-bold text-[#A89078] uppercase tracking-[0.3em]">CEFR RATING</p>
-
-                                            <h4 className="text-xl font-bold text-[#8B5E3C] tracking-tight">
-
-                                                {(interviewReportScores.cefr_level || communicationLevel)} -- {(interviewReportScores.cefr_label || communicationStatus)}
-
-                                            </h4>
-
-                                            <p className="text-[15px] font-medium text-gray-500 leading-relaxed">
-
-                                                {interviewReportCommunication.cefr_analysis || "Communication analysis will appear here once the interview report is generated."}
-
-                                            </p>
-
-                                        </div>
+                                        />
 
                                     </div>
 
-                                    {/* video */}
+                                    <div className="p-5 rounded-2xl bg-[#FAF9F6] border border-[#F5E6D3]/30 space-y-2">
 
-                                    <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col space-y-5 scale-[0.98] origin-top-right">
+                                        <p className="text-[9px] font-bold text-[#A89078] uppercase tracking-[0.3em]">CEFR RATING</p>
 
-                                        <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Interview Recording</h3>
+                                        <h4 className="text-xl font-bold text-[#8B5E3C] tracking-tight">
 
-                                        
+                                            {(interviewReportScores.cefr_level || communicationLevel)} -- {(interviewReportScores.cefr_label || communicationStatus)}
 
-                                        <div className="space-y-6 flex-1 flex flex-col">
+                                        </h4>
 
-                                            <div className="aspect-video w-full rounded-2xl border-[5px] border-gray-900 bg-black overflow-hidden shadow-2xl relative">
+                                        <p className="text-[15px] font-medium text-gray-500 leading-relaxed">
+
+                                            {interviewReportCommunication.cefr_analysis || "Communication analysis will appear here once the interview report is generated."}
+
+                                        </p>
+
+                                    </div>
+
+                                </div>
+
+                                {/* video */}
+
+                                <div className="p-6 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col space-y-5 scale-[0.98] origin-top-right">
+
+                                    <h3 className="text-[18px] font-bold text-gray-900 font-inter tracking-tight">Interview Recording</h3>
+
+
+
+                                    <div className="space-y-6 flex-1 flex flex-col">
+
+                                        <div className="aspect-video w-full rounded-2xl border-[5px] border-gray-900 bg-black overflow-hidden shadow-2xl relative">
 
                                             {interviewRecordingUrl ? (
 
@@ -2934,411 +2933,45 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         </div>
 
-                                            <div className="grid grid-cols-2 gap-4">
+                                        <div className="grid grid-cols-2 gap-4">
 
-                                                <div className="p-4 rounded-xl bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
+                                            <div className="p-4 rounded-xl bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
 
-                                                    <div className="flex items-center gap-2 text-slate-500 font-black">
+                                                <div className="flex items-center gap-2 text-slate-500 font-black">
 
-                                                        <Calendar className="h-4 w-4" />
+                                                    <Calendar className="h-4 w-4" />
 
-                                                        <span className="text-[8px] font-bold uppercase tracking-widest">Total duration</span>
+                                                    <span className="text-[8px] font-bold uppercase tracking-widest">Total duration</span>
 
-                                                    </div>
+                                                </div>
 
                                                 <p className="text-lg font-bold text-gray-900 leading-none">{interviewReportRecording.duration_label || (recordingDurationSec ? formatDuration(recordingDurationSec) : "--:--min")}</p>
 
+                                            </div>
+
+                                            <div className="p-4 rounded-xl bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
+
+                                                <div className="flex items-center gap-2 text-[#F97316]">
+
+                                                    <MessageSquare className="h-4 w-4" />
+
+                                                    <span className="text-[8px] font-bold uppercase tracking-widest">Words Spoken</span>
+
                                                 </div>
-
-                                                <div className="p-4 rounded-xl bg-[#FAF9F6] border border-gray-100 flex flex-col items-center justify-center gap-1.5">
-
-                                                    <div className="flex items-center gap-2 text-[#F97316]">
-
-                                                        <MessageSquare className="h-4 w-4" />
-
-                                                        <span className="text-[8px] font-bold uppercase tracking-widest">Words Spoken</span>
-
-                                                    </div>
 
                                                 <p className="text-lg font-bold text-gray-900 leading-none">{typeof interviewReportRecording.word_count === "number" ? interviewReportRecording.word_count.toLocaleString() : (wordCount > 0 ? wordCount.toLocaleString() : "N/A")}</p>
 
-                                                </div>
-
-                                            </div>
-
-                                            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
-
-                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.3em]">AI Summary</p>
-
-                                                <p className="text-[13px] font-medium text-slate-700 leading-relaxed">
-
-                                                    {interviewReportSummary || "AI summary will appear here once the interview report is generated."}
-
-                                                </p>
-
-                                            </div>
-
-                                    </div>
-
-                                    <div className="h-2" /> {/* Spacer */}
-
-                                </div>
-
-                                </div>
-
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch max-w-[1400px] mx-auto">
-
-                                    {/* Section 1: JD Skills (Top Left) */}
-
-                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
-
-                                        <div className="flex items-center justify-between mb-8">
-
-                                            <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight">Did the Interview Prove JD Skills?</h3>
-
-                                            <Sparkles className="h-4 w-4 text-indigo-500 animate-pulse" />
-
-                                        </div>
-
-                                        <div className="flex-1 overflow-y-auto scrollbar-hide pr-1">
-
-                                            {(interviewReportSkills.length > 0 ? interviewReportSkills : [
-
-                                                { title: "Role-specific skill proof", subtitle: "Not enough structured evidence was captured to score this section.", confidence: "LOW -- FALLBACK", score: "--", status: "NOT TESTED" }
-
-                                            ]).map((s: any, i: number) => (
-
-                                                <AssessmentCard
-
-                                                    key={i}
-
-                                                    title={s.title}
-
-                                                    subtitle={s.note || s.subtitle || ""}
-
-                                                    confidence={s.confidence || ""}
-
-                                                    score={s.score || "--"}
-
-                                                    status={String(s.status || "").toUpperCase() as any}
-
-                                                />
-
-                                            ))}
-
-                                        </div>
-
-                                    </div>
-
-                                    {/* Section 2: Transcript (Top Right) */}
-
-                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
-
-                                        <div className="flex items-center justify-between mb-8">
-
-                                            <div className="flex flex-col gap-1">
-
-                                                <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight">Full Session Log</h3>
-
-                                                <div className="flex items-center gap-2">
-
-                                                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-
-                                                    <span className="text-[10px] font-inter font-bold text-emerald-600 uppercase tracking-widest">Secure Audit Mode</span>
-
-                                                </div>
-
-                                            </div>
-
-                                            <div className="flex items-center p-1 bg-gray-50 rounded-2xl border border-gray-100">
-
-                                                <button 
-
-                                                    onClick={() => setLogTab("chat")}
-
-                                                    className={cn(
-
-                                                        "px-5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all",
-
-                                                        logTab === "chat" ? "bg-white text-indigo-600 shadow-sm border border-gray-100" : "text-gray-400 hover:text-gray-600"
-
-                                                    )}
-
-                                                >
-
-                                                    Chat
-
-                                                </button>
-
-                                                <button 
-
-                                                    onClick={() => setLogTab("analysis")}
-
-                                                    className={cn(
-
-                                                        "px-5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all",
-
-                                                        logTab === "analysis" ? "bg-white text-indigo-600 shadow-sm border border-gray-100" : "text-gray-400 hover:text-gray-600"
-
-                                                    )}
-
-                                                >
-
-                                                    Analysis
-
-                                                </button>
-
                                             </div>
 
                                         </div>
 
-                                        <div className="flex-1 overflow-y-auto scrollbar-hide pr-4 pt-4 ">
+                                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-2">
 
-                                            {logTab === "chat" ? (
+                                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.3em]">AI Summary</p>
 
-                                                <div className="flex flex-col flex-1 min-h-0">
+                                            <p className="text-[13px] font-medium text-slate-700 leading-relaxed">
 
-                                                    <div className="flex items-center gap-3 mb-6 px-2">
-
-                                                        <div className="h-8 w-8 rounded-xl bg-slate-950 flex items-center justify-center shadow-lg shadow-slate-900/20">
-
-                                                            <MessageSquare className="h-4 w-4 text-white" />
-
-                                                        </div>
-
-                                                        <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Session Transcript -- Analysis Phase</h4>
-
-                                                    </div>
-
-                                                    
-
-                                                    <div className="flex-1 overflow-y-auto pr-2 space-y-8 custom-scrollbar  py-2">
-
-                                                        {interviewSessionRows.length > 0 ? (
-
-                                                            interviewSessionRows.map((item: any, i: number) => (
-
-                                                                <div key={i} className="space-y-4">
-
-                                                                    <ChatEntry role="ai" name="Ishita" text={item.question || item.title || `Question ${i + 1}`} />
-
-                                                                    <ChatEntry role="candidate" name={candidate.fullName} text={item.answer || item.reasoning || "Candidate response unavailable."} />
-
-                                                                </div>
-
-                                                            ))
-
-                                                        ) : (
-
-                                                            <>
-
-                                                                <ChatEntry role="ai" name="Ishita" text="No transcript turns are available for this interview yet." />
-
-                                                            </>
-
-                                                        )}
-
-                                                    </div>
-
-                                                </div>
-
-                                            ) : (
-
-                                                <div className="space-y-6">
-
-                                                    <div className="flex items-center gap-3 mb-4">
-
-                                                        <div className="h-8 w-8 rounded-xl bg-slate-950 flex items-center justify-center shadow-lg shadow-slate-900/20">
-
-                                                            <Sparkles className="h-4 w-4 text-white" />
-
-                                                        </div>
-
-                                                        <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">AI Integrity Breakdown</h4>
-
-                                                    </div>
-
-                                                    {(interviewReportQaBlocks.length > 0 ? interviewReportQaBlocks : normalizedInterviewTurns).map((q: any, i: number) => (
-
-                                                        <AnalysisEntry key={i} {...q as any} />
-
-                                                    ))}
-
-                                                </div>
-
-                                            )}
-
-                                        </div>
-
-                                    </div>
-
-                                    {/* Section 3: Consistency Check (Bottom Left) */}
-
-                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
-
-                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof -- consistency check</h3>
-
-                                        <div className="grid grid-cols-[1.5fr_1.8fr_120px] gap-6 px-6 mb-6 border-b border-gray-50 pb-6">
-
-                                            <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70">Resume Claimed</span>
-
-                                            <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70">Interview Showed</span>
-
-                                            <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70 text-center">Result</span>
-
-                                        </div>
-
-                                        <div className="flex-1 overflow-y-auto scrollbar-hide">
-
-                                            {(interviewReportConsistency.length > 0 ? interviewReportConsistency : [
-
-                                                { claim: "Consistency evidence not available", sub: "Interview data", proof: "No structured claim-vs-proof rows were generated for this interview yet.", status: "NOT TESTED" }
-
-                                            ]).map((c: any, i: number) => (
-
-                                                <div key={i} className="grid grid-cols-[1.5fr_1.8fr_120px] gap-8 px-6 py-6 rounded-3xl hover:bg-gray-50/50 transition-all group items-start border-b border-gray-50 last:border-0 relative">
-
-                                                    <div className="space-y-2">
-
-                                                        <p className="text-[14px] font-bold text-gray-900 leading-tight">{c.claim}</p>
-
-                                                        <p className="text-[9px] font-bold text-slate-500 font-bold uppercase tracking-wide">FIELD: {c.sub}</p>
-
-                                                    </div>
-
-                                                    <div className="flex gap-4">
-
-                                                        <ArrowRight className="h-4 w-4 text-gray-200 mt-1 shrink-0 group-hover:text-slate-900 transition-colors" />
-
-                                                        <p className={cn("text-[13px] font-semibold leading-relaxed", 
-
-                                                            c.status === "CONTRADICTED" || c.status === "MISMATCH" ? "text-rose-600" : 
-
-                                                            c.status === "WEAK SIGNAL" ? "text-orange-700" : "text-gray-400 italic"
-
-                                                        )}>
-
-                                                            {c.proof}
-
-                                                        </p>
-
-                                                    </div>
-
-                                                    <div className="flex justify-center">
-
-                                                        <span className={cn("px-3 py-1 rounded-full text-[8px] font-bold uppercase tracking-widest border shadow-sm",
-
-                                                            c.status === "MATCHED" ? "bg-slate-50 text-slate-900 border-slate-200 shadow-sm" :
-
-                                                            c.status === "CONTRADICTED" || c.status === "MISMATCH" ? "bg-slate-950 text-white border-slate-900 shadow-sm" : 
-
-                                                            "bg-slate-50 text-slate-500 border-slate-100 italic"
-
-                                                        )}>{c.status.replace('_', ' ')}</span>
-
-                                                    </div>
-
-                                                </div>
-
-                                            ))}
-
-                                        </div>
-
-                                    </div>
-
-                                    {/* Section 4: Key Moments (Bottom Right) */}
-
-                                    <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
-
-                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Key Moments From Session</h3>
-
-                                        <div className="flex grid grid-cols-[80px_1fr] px-6 mb-6 border-b border-gray-50 pb-6 mt-[-10px]">
-
-                                            <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70">Timeline</span>
-
-                                            <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70">Key Observation</span>
-
-                                        </div>
-
-                                        <div className="flex-1 overflow-y-auto scrollbar-hide pr-2">
-
-                                            {(interviewReportKeyMoments.length > 0 ? interviewReportKeyMoments : [
-
-                                                { time: "0:00", type: "INFO", observation: "No key moments extracted yet", comment: "This interview did not produce enough structured evidence to generate key moments." }
-
-                                            ]).map((m: any, i: number) => (
-
-                                                <MomentEntry key={i} {...m as any} />
-
-                                            ))}
-
-                                        </div>
-
-                                    </div>
-
-                                </div>
-
-                                {/* -- Section: Integrity & Proctoring -- */}
-
-                                <div className="pt-16 border-t border-gray-200 mt-16 space-y-8">
-
-                                    <div className="flex flex-col items-center gap-2 text-center mb-6">
-
-                                        <h2 className="text-2xl font-bold text-slate-950 tracking-tight font-inter uppercase">Integrity and Proctoring</h2>
-
-                                        <div className="h-1 w-16 bg-rose-500 rounded-full" />
-
-                                    </div>
-
-                                    <div className="flex justify-end -mt-16 mb-8">
-
-                                        <Button 
-
-                                            onClick={() => setIsAuditModalOpen(true)}
-
-                                            variant="outline" 
-
-                                            className="rounded-full border-gray-200 text-[10px] font-bold h-8 px-6 hover:bg-white hover:border-gray-900 transition-all uppercase tracking-widest shadow-sm"
-
-                                        >
-
-                                            View all logs
-
-                                        </Button>
-
-                                    </div>
-
-                                    {/* -- Integrity Verdict Card -- */}
-
-                                    <div className="grid grid-cols-[260px_1fr] rounded-3xl bg-white border-2 border-[#F5E6D3]/30 shadow-[0_20px_60px_rgba(139,94,60,0.06)] overflow-hidden border-l-[8px] border-l-[#8B5E3C]">
-
-                                        <div className="bg-[#FAF9F6] p-8 flex flex-col items-center justify-center gap-4 border-r border-[#F5E6D3]/20">
-
-                                            <h4 className="text-[12px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-60 mb-2">Integrity Score</h4>
-
-                                            <div className="flex items-baseline gap-1">
-
-                                                <span className="text-5xl font-bold text-gray-900 tracking-tighter">{(integrityScore / 10).toFixed(1)}</span>
-
-                                                <span className="text-xl font-semibold text-gray-300">/10</span>
-
-                                            </div>
-
-                                            <span className="px-6 py-2 rounded-full bg-[#FEF3C7]/60 text-[#B45309] text-[10px] font-bold uppercase tracking-[0.2em] border border-[#FDE68A]">
-
-                                                {integrityStatusLabel}
-
-                                            </span>
-
-                                        </div>
-
-                                        <div className="p-8 space-y-5">
-
-                                            <h4 className="text-[12px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-60 mb-1">Integrity Verdict</h4>
-
-                                            <p className="text-[14px] font-medium text-gray-700 leading-[1.7] max-w-[95%]">
-
-                                                {proctoringVerdictSummary}
+                                                {interviewReportSummary || "AI summary will appear here once the interview report is generated."}
 
                                             </p>
 
@@ -3346,337 +2979,701 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     </div>
 
-                                    {/* -- Proctoring Metrics Row -- */}
+                                    <div className="h-2" /> {/* Spacer */}
 
-                                    <div className="flex gap-6">
+                                </div>
 
-                                        <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("tab")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Tab Switches" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("tab") && g.severity === "high") ? "HIGH RISK" : groupedProctoringSignals.some((g: any) => String(g.key).includes("tab")) ? "MEDIUM RISK" : "NO RISK"} />
+                            </div>
 
-                                        <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("face")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Face Events" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("face") && g.severity === "high") ? "HIGH RISK" : "NO RISK"} />
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch max-w-[1400px] mx-auto">
 
-                                        <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("audio")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Audio Signals" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("audio") && g.severity === "high") ? "HIGH RISK" : groupedProctoringSignals.some((g: any) => String(g.key).includes("audio")) ? "MEDIUM RISK" : "NO RISK"} />
+                                {/* Section 1: JD Skills (Top Left) */}
 
-                                        <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("gaze")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Gaze Events" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("gaze") && g.severity === "high") ? "HIGH RISK" : groupedProctoringSignals.some((g: any) => String(g.key).includes("gaze")) ? "MEDIUM RISK" : "NO RISK"} />
+                                <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
+
+                                    <div className="flex items-center justify-between mb-8">
+
+                                        <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight">Did the Interview Prove JD Skills?</h3>
+
+                                        <Sparkles className="h-4 w-4 text-indigo-500 animate-pulse" />
 
                                     </div>
 
-                                    {/* -- Correlation Timeline vs Pattern Analysis Grid -- */}
+                                    <div className="flex-1 overflow-y-auto scrollbar-hide pr-1">
 
-                                    <div className="grid grid-cols-[1.2fr_1fr] gap-8 items-stretch">
+                                        {(interviewReportSkills.length > 0 ? interviewReportSkills : [
 
-                                        {/* Left: Dynamic Event Timeline */}
+                                            { title: "Role-specific skill proof", subtitle: "Not enough structured evidence was captured to score this section.", confidence: "LOW -- FALLBACK", score: "--", status: "NOT TESTED" }
 
-                                        <div className="p-6 rounded-[36px] bg-white border border-gray-100 shadow-sm space-y-4 optimize-scroll">
+                                        ]).map((s: any, i: number) => (
 
-                                            <h4 className="text-[14px] font-bold text-gray-900 font-inter tracking-tight mb-5">Event Timeline -- Correlated with Interview</h4>
+                                            <AssessmentCard
 
-                                            <div className="space-y-2">
+                                                key={i}
 
-                                                <TimelineEvent
+                                                title={s.title}
 
-                                                    time="0:00"
+                                                subtitle={s.note || s.subtitle || ""}
 
-                                                    event="Session started"
+                                                confidence={s.confidence || ""}
 
-                                                    risk="CLEAN"
+                                                score={s.score || "--"}
 
-                                                    desc="Camera initialized. Browser focus confirmed. Interview session began."
+                                                status={String(s.status || "").toUpperCase() as any}
 
-                                                    isSuccess
+                                            />
 
-                                                />
+                                        ))}
 
-                                                {proctoringSignals.map((ev: any, idx: number) => {
+                                    </div>
 
-                                                    const ts = typeof ev?.timestamp === "number" ? ev.timestamp : 0;
+                                </div>
 
-                                                    const sessionStart = proctoringSignals[0]?.timestamp ?? ts;
+                                {/* Section 2: Transcript (Top Right) */}
 
-                                                    const offsetSec = Math.max(0, Math.round((ts - sessionStart) / 1000));
+                                <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-md flex flex-col h-[700px]">
 
-                                                    const mins = Math.floor(offsetSec / 60);
+                                    <div className="flex items-center justify-between mb-8">
 
-                                                    const secs = offsetSec % 60;
+                                        <div className="flex flex-col gap-1">
 
-                                                    const timeLabel = `${mins}:${String(secs).padStart(2, "0")}`;
+                                            <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight">Full Session Log</h3>
 
-                                                    const sev = String(ev?.severity || "low").toLowerCase();
+                                            <div className="flex items-center gap-2">
 
-                                                    const reason = String(ev?.reason || ev?.eventType || "Signal detected");
+                                                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
 
-                                                    const eventType = String(ev?.eventType || "signal").replace(/_/g, " ");
+                                                <span className="text-[10px] font-inter font-bold text-emerald-600 uppercase tracking-widest">Secure Audit Mode</span>
 
-                                                    const riskLabel: "HIGH RISK" | "MEDIUM RISK" | "CLEAN" = sev === "high" ? "HIGH RISK" : sev === "medium" ? "MEDIUM RISK" : "CLEAN";
+                                            </div>
 
-                                                    return (
+                                        </div>
 
-                                                        <TimelineEvent
+                                        <div className="flex items-center p-1 bg-gray-50 rounded-2xl border border-gray-100">
 
-                                                            key={idx}
+                                            <button
 
-                                                            time={timeLabel}
+                                                onClick={() => setLogTab("chat")}
 
-                                                            event={eventType}
+                                                className={cn(
 
-                                                            risk={riskLabel}
+                                                    "px-5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all",
 
-                                                            desc={reason}
-
-                                                        />
-
-                                                    );
-
-                                                })}
-
-                                                {proctoringSignals.length === 0 && (
-
-                                                    <TimelineEvent
-
-                                                        time="--"
-
-                                                        event="No signals recorded"
-
-                                                        risk="CLEAN"
-
-                                                        desc="No proctoring events were captured during this session."
-
-                                                        isSuccess
-
-                                                    />
+                                                    logTab === "chat" ? "bg-white text-indigo-600 shadow-sm border border-gray-100" : "text-gray-400 hover:text-gray-600"
 
                                                 )}
 
-                                                <TimelineEvent
+                                            >
 
-                                                    time={recordingDurationSec ? `${Math.floor(recordingDurationSec / 60)}:${String(recordingDurationSec % 60).padStart(2, "0")}` : "--"}
+                                                Chat
 
-                                                    event="Session ended"
+                                            </button>
 
-                                                    risk="CLEAN"
+                                            <button
 
-                                                    desc="Interview session completed."
+                                                onClick={() => setLogTab("analysis")}
 
-                                                    isSuccess
+                                                className={cn(
 
-                                                />
+                                                    "px-5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all",
 
-                                            </div>
+                                                    logTab === "analysis" ? "bg-white text-indigo-600 shadow-sm border border-gray-100" : "text-gray-400 hover:text-gray-600"
 
-                                        </div>
+                                                )}
 
-                                        {/* Right: Dynamic Pattern Analysis */}
+                                            >
 
-                                        <div className="p-6 rounded-[36px] bg-white border border-gray-100 shadow-sm space-y-4 optimize-scroll">
+                                                Analysis
 
-                                            <h4 className="text-[15px] font-bold text-gray-900 font-inter tracking-tight mb-6">Pattern Analysis -- What signals mean together</h4>
-
-                                            <div className="space-y-5">
-
-                                                {(() => {
-
-                                                    const tabCount = groupedProctoringSignals.filter((g: any) => String(g.key).includes("tab")).reduce((n: number, g: any) => n + g.count, 0);
-
-                                                    const gazeCount = groupedProctoringSignals.filter((g: any) => String(g.key).includes("gaze")).reduce((n: number, g: any) => n + g.count, 0);
-
-                                                    const headCount = groupedProctoringSignals.filter((g: any) => String(g.key).includes("head")).reduce((n: number, g: any) => n + g.count, 0);
-
-                                                    const fullscreenCount = groupedProctoringSignals.filter((g: any) => String(g.key).includes("fullscreen")).reduce((n: number, g: any) => n + g.count, 0);
-
-                                                    const highCount = groupedProctoringSignals.filter((g: any) => g.severity === "high").reduce((n: number, g: any) => n + g.count, 0);
-
-                                                    const signals: { type: "warning" | "success"; title: string; desc: string }[] = [];
-
-                                                    if (tabCount > 2) {
-
-                                                        signals.push({ type: "warning", title: `${tabCount} tab switches detected`, desc: `Repeated loss of browser focus (${tabCount} times) is a moderate concern. Review recording timestamps to check correlation with question timing.` });
-
-                                                    } else if (tabCount > 0) {
-
-                                                        signals.push({ type: "warning", title: `Tab switch detected (${tabCount}x)`, desc: "Single or low tab-switch count alone is not conclusive. Timing correlation with questions is the deciding factor." });
-
-                                                    } else {
-
-                                                        signals.push({ type: "success", title: "No tab switches", desc: "Browser focus held throughout the session. No window-switching behaviour detected." });
-
-                                                    }
-
-                                                    if (fullscreenCount > 0) {
-
-                                                        signals.push({ type: "warning", title: "Fullscreen exit detected", desc: `Candidate exited fullscreen ${fullscreenCount} time${fullscreenCount > 1 ? "s" : ""}. This is a high-risk signal -- review recording for concurrent behaviour.` });
-
-                                                    }
-
-                                                    if (gazeCount > 5) {
-
-                                                        signals.push({ type: "warning", title: `Repeated gaze violations (${gazeCount}x)`, desc: "Sustained off-screen gaze detected multiple times. Could indicate reference material. Consider in context of answer quality." });
-
-                                                    } else if (gazeCount > 0) {
-
-                                                        signals.push({ type: "warning", title: `Gaze drift detected (${gazeCount}x)`, desc: "Occasional off-screen gaze. Low count - insufficient alone to conclude reference use." });
-
-                                                    } else {
-
-                                                        signals.push({ type: "success", title: "Gaze consistent with genuine attempt", desc: "Eye movement pattern normal throughout session. No sustained off-screen reference behaviour detected." });
-
-                                                    }
-
-                                                    if (headCount > 3) {
-
-                                                        signals.push({ type: "warning", title: `Head pose violations (${headCount}x)`, desc: "Repeated head turn events. May indicate reading from a second screen. Review with recording." });
-
-                                                    } else if (headCount > 0) {
-
-                                                        signals.push({ type: "success", title: `Minor head movement (${headCount}x)`, desc: "Low head-pose event count. Within normal range for a voice interview environment." });
-
-                                                    }
-
-                                                    if (highCount === 0 && tabCount === 0 && gazeCount === 0) {
-
-                                                        signals.push({ type: "success", title: "No proxy candidate risk", desc: "No high-severity signals detected. Session telemetry is clean. Physical presence confirmed throughout." });
-
-                                                    }
-
-                                                    if (signals.length === 0) {
-
-                                                        signals.push({ type: "success", title: "Session looks clean", desc: "No significant proctoring signals recorded. No action required from telemetry alone." });
-
-                                                    }
-
-                                                    return signals.map((s, i) => (
-
-                                                        <AnalysisSignal key={i} type={s.type} title={s.title} desc={s.desc} />
-
-                                                    ));
-
-                                                })()}
-
-                                            </div>
+                                            </button>
 
                                         </div>
 
                                     </div>
 
-                                    <div className="pt-16 border-t border-gray-200 mt-16 space-y-10">
+                                    <div className="flex-1 overflow-y-auto scrollbar-hide pr-4 pt-4 ">
 
-                                        <div className="flex flex-col items-center gap-2 text-center mb-6">
+                                        {logTab === "chat" ? (
 
-                                            <h2 className="text-2xl font-bold text-slate-950 tracking-tight font-inter uppercase">Final Verdict</h2>
+                                            <div className="flex flex-col flex-1 min-h-0">
 
-                                            <div className="h-1 w-16 bg-indigo-600 rounded-full" />
+                                                <div className="flex items-center gap-3 mb-6 px-2">
 
-                                        </div>
+                                                    <div className="h-8 w-8 rounded-xl bg-slate-950 flex items-center justify-center shadow-lg shadow-slate-900/20">
 
-                                        {/* -- Score Summary -- */}
-
-                                        <div className="grid grid-cols-3 gap-8">
-
-                                            <VerdictScoreCard label="Interview / 10" value={String(interviewReportScores.interview_score ?? interviewScore.toFixed(1))} color={interviewScore >= 7 ? "green" : interviewScore >= 4 ? "orange" : "red"} />
-
-                                            <VerdictScoreCard label="Integrity / 10" value={(integrityScore / 10).toFixed(1)} color={integrityScore >= 85 ? "green" : integrityScore >= 70 ? "orange" : "red"} />
-
-                                            <VerdictScoreCard label="Combined / 10" value={String(interviewReportScores.combined_score ? (interviewReportScores.combined_score / 10).toFixed(1) : combinedScore.toFixed(1))} color={combinedScore >= 7 ? "green" : combinedScore >= 4 ? "orange" : "red"} />
-
-                                        </div>
-
-                                        {/* -- Verdict Narrative Card -- */}
-
-                                        <div className="flex justify-center">
-
-                                            <div className="w-full max-w-[1200px] p-8 rounded-3xl bg-white border border-gray-100 shadow-sm relative overflow-hidden group">
-
-                                                <div className={cn(
-
-                                                    "absolute top-0 left-0 w-1.5 h-full opacity-60 group-hover:opacity-100 transition-opacity",
-
-                                                    String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not") ? "bg-rose-500" :
-
-                                                    String(interviewStrategicVerdict.decision || "").toLowerCase() === "hire" ? "bg-emerald-500" : "bg-amber-500"
-
-                                                )} />
-
-                                                <div className="flex flex-col gap-6">
-
-                                                    <div className="flex items-center justify-between">
-
-                                                        <h4 className="text-[12px] font-bold text-slate-400 uppercase tracking-[0.4em]">Strategic Rationale</h4>
-
-                                                        <div className="flex items-center gap-3">
-
-                                                            <span className={cn(
-
-                                                                "h-2 w-2 rounded-full animate-pulse",
-
-                                                                String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not") ? "bg-rose-500" :
-
-                                                                String(interviewStrategicVerdict.decision || "").toLowerCase() === "hire" ? "bg-emerald-500" : "bg-amber-500"
-
-                                                            )} />
-
-                                                            <span className={cn(
-
-                                                                "px-5 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-sm border",
-
-                                                                String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not") ? "bg-rose-50 border-rose-100 text-rose-600" :
-
-                                                                String(interviewStrategicVerdict.decision || "").toLowerCase() === "hire" ? "bg-emerald-50 border-emerald-100 text-emerald-700" :
-
-                                                                "bg-amber-50 border-amber-100 text-amber-700"
-
-                                                            )}>
-
-                                                                Final Recommendation: {interviewStrategicVerdict.decision || interviewReportVerdict.recommendation || "Pending"}
-
-                                                            </span>
-
-                                                        </div>
+                                                        <MessageSquare className="h-4 w-4 text-white" />
 
                                                     </div>
 
-                                                    <div className="space-y-4">
+                                                    <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Session Transcript -- Analysis Phase</h4>
 
-                                                        <p className="text-[15px] font-medium text-slate-700 leading-[1.7] tracking-tight text-left font-inter">
+                                                </div>
 
-                                                            {interviewStrategicVerdict.summary || interviewReportVerdict.summary || interviewAiSummary || "Strategic analysis will appear here once the interview report is generated."}
 
-                                                        </p>
 
-                                                        {Array.isArray(interviewStrategicVerdict.rationale) && interviewStrategicVerdict.rationale.length > 0 && (
+                                                <div className="flex-1 overflow-y-auto pr-2 space-y-8 custom-scrollbar  py-2">
 
-                                                            <ul className="space-y-2 pt-2">
+                                                    {interviewSessionRows.length > 0 ? (
 
-                                                                {interviewStrategicVerdict.rationale.map((item: string, idx: number) => (
+                                                        interviewSessionRows.map((item: any, i: number) => (
 
-                                                                    <li key={idx} className="flex items-start gap-3">
+                                                            <div key={i} className="space-y-4">
 
-                                                                        <span className="mt-2 h-1.5 w-1.5 rounded-full bg-slate-400 shrink-0" />
+                                                                <ChatEntry role="ai" name="Ishita" text={item.question || item.title || `Question ${i + 1}`} />
 
-                                                                        <p className="text-[14px] font-medium text-slate-600 leading-[1.7]">{item}</p>
+                                                                <ChatEntry role="candidate" name={candidate.fullName} text={item.answer || item.reasoning || "Candidate response unavailable."} />
 
-                                                                    </li>
+                                                            </div>
 
-                                                                ))}
+                                                        ))
 
-                                                            </ul>
+                                                    ) : (
 
-                                                        )}
+                                                        <>
 
-                                                        <div className="pt-4 border-t border-slate-50">
+                                                            <ChatEntry role="ai" name="Ishita" text="No transcript turns are available for this interview yet." />
 
-                                                            <p className={cn(
+                                                        </>
 
-                                                                "text-[14px] font-bold uppercase tracking-widest",
+                                                    )}
 
-                                                                String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not") ? "text-rose-600" :
+                                                </div>
+
+                                            </div>
+
+                                        ) : (
+
+                                            <div className="space-y-6">
+
+                                                <div className="flex items-center gap-3 mb-4">
+
+                                                    <div className="h-8 w-8 rounded-xl bg-slate-950 flex items-center justify-center shadow-lg shadow-slate-900/20">
+
+                                                        <Sparkles className="h-4 w-4 text-white" />
+
+                                                    </div>
+
+                                                    <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">AI Integrity Breakdown</h4>
+
+                                                </div>
+
+                                                {(interviewReportQaBlocks.length > 0 ? interviewReportQaBlocks : normalizedInterviewTurns).map((q: any, i: number) => (
+
+                                                    <AnalysisEntry key={i} {...q as any} />
+
+                                                ))}
+
+                                            </div>
+
+                                        )}
+
+                                    </div>
+
+                                </div>
+
+                                {/* Section 3: Consistency Check (Bottom Left) */}
+
+                                <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
+
+                                    <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Resume claims vs Interview proof -- consistency check</h3>
+
+                                    <div className="grid grid-cols-[1.5fr_1.8fr_120px] gap-6 px-6 mb-6 border-b border-gray-50 pb-6">
+
+                                        <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70">Resume Claimed</span>
+
+                                        <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70">Interview Showed</span>
+
+                                        <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70 text-center">Result</span>
+
+                                    </div>
+
+                                    <div className="flex-1 overflow-y-auto scrollbar-hide">
+
+                                        {(interviewReportConsistency.length > 0 ? interviewReportConsistency : [
+
+                                            { claim: "Consistency evidence not available", sub: "Interview data", proof: "No structured claim-vs-proof rows were generated for this interview yet.", status: "NOT TESTED" }
+
+                                        ]).map((c: any, i: number) => (
+
+                                            <div key={i} className="grid grid-cols-[1.5fr_1.8fr_120px] gap-8 px-6 py-6 rounded-3xl hover:bg-gray-50/50 transition-all group items-start border-b border-gray-50 last:border-0 relative">
+
+                                                <div className="space-y-2">
+
+                                                    <p className="text-[14px] font-bold text-gray-900 leading-tight">{c.claim}</p>
+
+                                                    <p className="text-[9px] font-bold text-slate-500 font-bold uppercase tracking-wide">FIELD: {c.sub}</p>
+
+                                                </div>
+
+                                                <div className="flex gap-4">
+
+                                                    <ArrowRight className="h-4 w-4 text-gray-200 mt-1 shrink-0 group-hover:text-slate-900 transition-colors" />
+
+                                                    <p className={cn("text-[13px] font-semibold leading-relaxed",
+
+                                                        c.status === "CONTRADICTED" || c.status === "MISMATCH" ? "text-rose-600" :
+
+                                                            c.status === "WEAK SIGNAL" ? "text-orange-700" : "text-gray-400 italic"
+
+                                                    )}>
+
+                                                        {c.proof}
+
+                                                    </p>
+
+                                                </div>
+
+                                                <div className="flex justify-center">
+
+                                                    <span className={cn("px-3 py-1 rounded-full text-[8px] font-bold uppercase tracking-widest border shadow-sm",
+
+                                                        c.status === "MATCHED" ? "bg-slate-50 text-slate-900 border-slate-200 shadow-sm" :
+
+                                                            c.status === "CONTRADICTED" || c.status === "MISMATCH" ? "bg-slate-950 text-white border-slate-900 shadow-sm" :
+
+                                                                "bg-slate-50 text-slate-500 border-slate-100 italic"
+
+                                                    )}>{c.status.replace('_', ' ')}</span>
+
+                                                </div>
+
+                                            </div>
+
+                                        ))}
+
+                                    </div>
+
+                                </div>
+
+                                {/* Section 4: Key Moments (Bottom Right) */}
+
+                                <div className="p-8 rounded-3xl bg-white border border-gray-100 shadow-sm flex flex-col h-[650px]">
+
+                                    <h3 className="text-[16px] font-bold text-gray-900 font-inter tracking-tight mb-8">Key Moments From Session</h3>
+
+                                    <div className="flex grid grid-cols-[80px_1fr] px-6 mb-6 border-b border-gray-50 pb-6 mt-[-10px]">
+
+                                        <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70">Timeline</span>
+
+                                        <span className="text-[11px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-70">Key Observation</span>
+
+                                    </div>
+
+                                    <div className="flex-1 overflow-y-auto scrollbar-hide pr-2">
+
+                                        {(interviewReportKeyMoments.length > 0 ? interviewReportKeyMoments : [
+
+                                            { time: "0:00", type: "INFO", observation: "No key moments extracted yet", comment: "This interview did not produce enough structured evidence to generate key moments." }
+
+                                        ]).map((m: any, i: number) => (
+
+                                            <MomentEntry key={i} {...m as any} />
+
+                                        ))}
+
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+                            {/* -- Section: Integrity & Proctoring -- */}
+
+                            <div className="pt-16 border-t border-gray-200 mt-16 space-y-8">
+
+                                <div className="flex flex-col items-center gap-2 text-center mb-6">
+
+                                    <h2 className="text-2xl font-bold text-slate-950 tracking-tight font-inter uppercase">Integrity and Proctoring</h2>
+
+                                    <div className="h-1 w-16 bg-rose-500 rounded-full" />
+
+                                </div>
+
+                                <div className="flex justify-end -mt-16 mb-8">
+
+                                    <Button
+
+                                        onClick={() => setIsAuditModalOpen(true)}
+
+                                        variant="outline"
+
+                                        className="rounded-full border-gray-200 text-[10px] font-bold h-8 px-6 hover:bg-white hover:border-gray-900 transition-all uppercase tracking-widest shadow-sm"
+
+                                    >
+
+                                        View all logs
+
+                                    </Button>
+
+                                </div>
+
+                                {/* -- Integrity Verdict Card -- */}
+
+                                <div className="grid grid-cols-[260px_1fr] rounded-3xl bg-white border-2 border-[#F5E6D3]/30 shadow-[0_20px_60px_rgba(139,94,60,0.06)] overflow-hidden border-l-[8px] border-l-[#8B5E3C]">
+
+                                    <div className="bg-[#FAF9F6] p-8 flex flex-col items-center justify-center gap-4 border-r border-[#F5E6D3]/20">
+
+                                        <h4 className="text-[12px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-60 mb-2">Integrity Score</h4>
+
+                                        <div className="flex items-baseline gap-1">
+
+                                            <span className="text-5xl font-bold text-gray-900 tracking-tighter">{(integrityScore / 10).toFixed(1)}</span>
+
+                                            <span className="text-xl font-semibold text-gray-300">/10</span>
+
+                                        </div>
+
+                                        <span className="px-6 py-2 rounded-full bg-[#FEF3C7]/60 text-[#B45309] text-[10px] font-bold uppercase tracking-[0.2em] border border-[#FDE68A]">
+
+                                            {integrityStatusLabel}
+
+                                        </span>
+
+                                    </div>
+
+                                    <div className="p-8 space-y-5">
+
+                                        <h4 className="text-[12px] font-bold text-gray-900 font-inter uppercase tracking-widest opacity-60 mb-1">Integrity Verdict</h4>
+
+                                        <p className="text-[14px] font-medium text-gray-700 leading-[1.7] max-w-[95%]">
+
+                                            {proctoringVerdictSummary}
+
+                                        </p>
+
+                                    </div>
+
+                                </div>
+
+                                {/* -- Proctoring Metrics Row -- */}
+
+                                <div className="flex gap-6">
+
+                                    <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("tab")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Tab Switches" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("tab") && g.severity === "high") ? "HIGH RISK" : groupedProctoringSignals.some((g: any) => String(g.key).includes("tab")) ? "MEDIUM RISK" : "NO RISK"} />
+
+                                    <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("face")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Face Events" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("face") && g.severity === "high") ? "HIGH RISK" : "NO RISK"} />
+
+                                    <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("audio")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Audio Signals" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("audio") && g.severity === "high") ? "HIGH RISK" : groupedProctoringSignals.some((g: any) => String(g.key).includes("audio")) ? "MEDIUM RISK" : "NO RISK"} />
+
+                                    <ProctoringMetric value={String(groupedProctoringSignals.filter((g: any) => String(g.key).includes("gaze")).reduce((n: number, g: any) => n + g.count, 0) || 0)} label="Gaze Events" risk={groupedProctoringSignals.some((g: any) => String(g.key).includes("gaze") && g.severity === "high") ? "HIGH RISK" : groupedProctoringSignals.some((g: any) => String(g.key).includes("gaze")) ? "MEDIUM RISK" : "NO RISK"} />
+
+                                </div>
+
+                                {/* -- Correlation Timeline vs Pattern Analysis Grid -- */}
+
+                                <div className="grid grid-cols-[1.2fr_1fr] gap-8 items-stretch">
+
+                                    {/* Left: Dynamic Event Timeline */}
+
+                                    <div className="p-6 rounded-[36px] bg-white border border-gray-100 shadow-sm space-y-4 optimize-scroll">
+
+                                        <h4 className="text-[14px] font-bold text-gray-900 font-inter tracking-tight mb-5">Event Timeline -- Correlated with Interview</h4>
+
+                                        <div className="space-y-2">
+
+                                            <TimelineEvent
+
+                                                time="0:00"
+
+                                                event="Session started"
+
+                                                risk="CLEAN"
+
+                                                desc="Camera initialized. Browser focus confirmed. Interview session began."
+
+                                                isSuccess
+
+                                            />
+
+                                            {proctoringSignals.map((ev: any, idx: number) => {
+
+                                                const ts = typeof ev?.timestamp === "number" ? ev.timestamp : 0;
+
+                                                const sessionStart = proctoringSignals[0]?.timestamp ?? ts;
+
+                                                const offsetSec = Math.max(0, Math.round((ts - sessionStart) / 1000));
+
+                                                const mins = Math.floor(offsetSec / 60);
+
+                                                const secs = offsetSec % 60;
+
+                                                const timeLabel = `${mins}:${String(secs).padStart(2, "0")}`;
+
+                                                const sev = String(ev?.severity || "low").toLowerCase();
+
+                                                const reason = String(ev?.reason || ev?.eventType || "Signal detected");
+
+                                                const eventType = String(ev?.eventType || "signal").replace(/_/g, " ");
+
+                                                const riskLabel: "HIGH RISK" | "MEDIUM RISK" | "CLEAN" = sev === "high" ? "HIGH RISK" : sev === "medium" ? "MEDIUM RISK" : "CLEAN";
+
+                                                return (
+
+                                                    <TimelineEvent
+
+                                                        key={idx}
+
+                                                        time={timeLabel}
+
+                                                        event={eventType}
+
+                                                        risk={riskLabel}
+
+                                                        desc={reason}
+
+                                                    />
+
+                                                );
+
+                                            })}
+
+                                            {proctoringSignals.length === 0 && (
+
+                                                <TimelineEvent
+
+                                                    time="--"
+
+                                                    event="No signals recorded"
+
+                                                    risk="CLEAN"
+
+                                                    desc="No proctoring events were captured during this session."
+
+                                                    isSuccess
+
+                                                />
+
+                                            )}
+
+                                            <TimelineEvent
+
+                                                time={recordingDurationSec ? `${Math.floor(recordingDurationSec / 60)}:${String(recordingDurationSec % 60).padStart(2, "0")}` : "--"}
+
+                                                event="Session ended"
+
+                                                risk="CLEAN"
+
+                                                desc="Interview session completed."
+
+                                                isSuccess
+
+                                            />
+
+                                        </div>
+
+                                    </div>
+
+                                    {/* Right: Dynamic Pattern Analysis */}
+
+                                    <div className="p-6 rounded-[36px] bg-white border border-gray-100 shadow-sm space-y-4 optimize-scroll">
+
+                                        <h4 className="text-[15px] font-bold text-gray-900 font-inter tracking-tight mb-6">Pattern Analysis -- What signals mean together</h4>
+
+                                        <div className="space-y-5">
+
+                                            {(() => {
+
+                                                const tabCount = groupedProctoringSignals.filter((g: any) => String(g.key).includes("tab")).reduce((n: number, g: any) => n + g.count, 0);
+
+                                                const gazeCount = groupedProctoringSignals.filter((g: any) => String(g.key).includes("gaze")).reduce((n: number, g: any) => n + g.count, 0);
+
+                                                const headCount = groupedProctoringSignals.filter((g: any) => String(g.key).includes("head")).reduce((n: number, g: any) => n + g.count, 0);
+
+                                                const fullscreenCount = groupedProctoringSignals.filter((g: any) => String(g.key).includes("fullscreen")).reduce((n: number, g: any) => n + g.count, 0);
+
+                                                const highCount = groupedProctoringSignals.filter((g: any) => g.severity === "high").reduce((n: number, g: any) => n + g.count, 0);
+
+                                                const signals: { type: "warning" | "success"; title: string; desc: string }[] = [];
+
+                                                if (tabCount > 2) {
+
+                                                    signals.push({ type: "warning", title: `${tabCount} tab switches detected`, desc: `Repeated loss of browser focus (${tabCount} times) is a moderate concern. Review recording timestamps to check correlation with question timing.` });
+
+                                                } else if (tabCount > 0) {
+
+                                                    signals.push({ type: "warning", title: `Tab switch detected (${tabCount}x)`, desc: "Single or low tab-switch count alone is not conclusive. Timing correlation with questions is the deciding factor." });
+
+                                                } else {
+
+                                                    signals.push({ type: "success", title: "No tab switches", desc: "Browser focus held throughout the session. No window-switching behaviour detected." });
+
+                                                }
+
+                                                if (fullscreenCount > 0) {
+
+                                                    signals.push({ type: "warning", title: "Fullscreen exit detected", desc: `Candidate exited fullscreen ${fullscreenCount} time${fullscreenCount > 1 ? "s" : ""}. This is a high-risk signal -- review recording for concurrent behaviour.` });
+
+                                                }
+
+                                                if (gazeCount > 5) {
+
+                                                    signals.push({ type: "warning", title: `Repeated gaze violations (${gazeCount}x)`, desc: "Sustained off-screen gaze detected multiple times. Could indicate reference material. Consider in context of answer quality." });
+
+                                                } else if (gazeCount > 0) {
+
+                                                    signals.push({ type: "warning", title: `Gaze drift detected (${gazeCount}x)`, desc: "Occasional off-screen gaze. Low count - insufficient alone to conclude reference use." });
+
+                                                } else {
+
+                                                    signals.push({ type: "success", title: "Gaze consistent with genuine attempt", desc: "Eye movement pattern normal throughout session. No sustained off-screen reference behaviour detected." });
+
+                                                }
+
+                                                if (headCount > 3) {
+
+                                                    signals.push({ type: "warning", title: `Head pose violations (${headCount}x)`, desc: "Repeated head turn events. May indicate reading from a second screen. Review with recording." });
+
+                                                } else if (headCount > 0) {
+
+                                                    signals.push({ type: "success", title: `Minor head movement (${headCount}x)`, desc: "Low head-pose event count. Within normal range for a voice interview environment." });
+
+                                                }
+
+                                                if (highCount === 0 && tabCount === 0 && gazeCount === 0) {
+
+                                                    signals.push({ type: "success", title: "No proxy candidate risk", desc: "No high-severity signals detected. Session telemetry is clean. Physical presence confirmed throughout." });
+
+                                                }
+
+                                                if (signals.length === 0) {
+
+                                                    signals.push({ type: "success", title: "Session looks clean", desc: "No significant proctoring signals recorded. No action required from telemetry alone." });
+
+                                                }
+
+                                                return signals.map((s, i) => (
+
+                                                    <AnalysisSignal key={i} type={s.type} title={s.title} desc={s.desc} />
+
+                                                ));
+
+                                            })()}
+
+                                        </div>
+
+                                    </div>
+
+                                </div>
+
+                                <div className="pt-16 border-t border-gray-200 mt-16 space-y-10">
+
+                                    <div className="flex flex-col items-center gap-2 text-center mb-6">
+
+                                        <h2 className="text-2xl font-bold text-slate-950 tracking-tight font-inter uppercase">Final Verdict</h2>
+
+                                        <div className="h-1 w-16 bg-indigo-600 rounded-full" />
+
+                                    </div>
+
+                                    {/* -- Score Summary -- */}
+
+                                    <div className="grid grid-cols-3 gap-8">
+
+                                        <VerdictScoreCard label="Interview / 10" value={String(interviewReportScores.interview_score ?? interviewScore.toFixed(1))} color={interviewScore >= 7 ? "green" : interviewScore >= 4 ? "orange" : "red"} />
+
+                                        <VerdictScoreCard label="Integrity / 10" value={(integrityScore / 10).toFixed(1)} color={integrityScore >= 85 ? "green" : integrityScore >= 70 ? "orange" : "red"} />
+
+                                        <VerdictScoreCard label="Combined / 10" value={String(interviewReportScores.combined_score ? (interviewReportScores.combined_score / 10).toFixed(1) : combinedScore.toFixed(1))} color={combinedScore >= 7 ? "green" : combinedScore >= 4 ? "orange" : "red"} />
+
+                                    </div>
+
+                                    {/* -- Verdict Narrative Card -- */}
+
+                                    <div className="flex justify-center">
+
+                                        <div className="w-full max-w-[1200px] p-8 rounded-3xl bg-white border border-gray-100 shadow-sm relative overflow-hidden group">
+
+                                            <div className={cn(
+
+                                                "absolute top-0 left-0 w-1.5 h-full opacity-60 group-hover:opacity-100 transition-opacity",
+
+                                                String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not") ? "bg-rose-500" :
+
+                                                    String(interviewStrategicVerdict.decision || "").toLowerCase() === "hire" ? "bg-emerald-500" : "bg-amber-500"
+
+                                            )} />
+
+                                            <div className="flex flex-col gap-6">
+
+                                                <div className="flex items-center justify-between">
+
+                                                    <h4 className="text-[12px] font-bold text-slate-400 uppercase tracking-[0.4em]">Strategic Rationale</h4>
+
+                                                    <div className="flex items-center gap-3">
+
+                                                        <span className={cn(
+
+                                                            "h-2 w-2 rounded-full animate-pulse",
+
+                                                            String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not") ? "bg-rose-500" :
+
+                                                                String(interviewStrategicVerdict.decision || "").toLowerCase() === "hire" ? "bg-emerald-500" : "bg-amber-500"
+
+                                                        )} />
+
+                                                        <span className={cn(
+
+                                                            "px-5 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-sm border",
+
+                                                            String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not") ? "bg-rose-50 border-rose-100 text-rose-600" :
+
+                                                                String(interviewStrategicVerdict.decision || "").toLowerCase() === "hire" ? "bg-emerald-50 border-emerald-100 text-emerald-700" :
+
+                                                                    "bg-amber-50 border-amber-100 text-amber-700"
+
+                                                        )}>
+
+                                                            Final Recommendation: {interviewStrategicVerdict.decision || interviewReportVerdict.recommendation || "Pending"}
+
+                                                        </span>
+
+                                                    </div>
+
+                                                </div>
+
+                                                <div className="space-y-4">
+
+                                                    <p className="text-[15px] font-medium text-slate-700 leading-[1.7] tracking-tight text-left font-inter">
+
+                                                        {interviewStrategicVerdict.summary || interviewReportVerdict.summary || interviewAiSummary || "Strategic analysis will appear here once the interview report is generated."}
+
+                                                    </p>
+
+                                                    {Array.isArray(interviewStrategicVerdict.rationale) && interviewStrategicVerdict.rationale.length > 0 && (
+
+                                                        <ul className="space-y-2 pt-2">
+
+                                                            {interviewStrategicVerdict.rationale.map((item: string, idx: number) => (
+
+                                                                <li key={idx} className="flex items-start gap-3">
+
+                                                                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-slate-400 shrink-0" />
+
+                                                                    <p className="text-[14px] font-medium text-slate-600 leading-[1.7]">{item}</p>
+
+                                                                </li>
+
+                                                            ))}
+
+                                                        </ul>
+
+                                                    )}
+
+                                                    <div className="pt-4 border-t border-slate-50">
+
+                                                        <p className={cn(
+
+                                                            "text-[14px] font-bold uppercase tracking-widest",
+
+                                                            String(interviewStrategicVerdict.decision || "").toLowerCase().includes("do not") ? "text-rose-600" :
 
                                                                 String(interviewStrategicVerdict.decision || "").toLowerCase() === "hire" ? "text-emerald-600" : "text-amber-600"
 
-                                                            )}>
+                                                        )}>
 
-                                                                {interviewReportVerdict.recommendation_reason || (interviewStrategicVerdict.decision ? `Verdict: ${interviewStrategicVerdict.decision}` : "Awaiting report generation")}
+                                                            {interviewReportVerdict.recommendation_reason || (interviewStrategicVerdict.decision ? `Verdict: ${interviewStrategicVerdict.decision}` : "Awaiting report generation")}
 
-                                                            </p>
-
-                                                        </div>
+                                                        </p>
 
                                                     </div>
 
@@ -3686,39 +3683,39 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                         </div>
 
-                                        {/* -- Recommended Next Actions -- */}
+                                    </div>
 
-                                        <div className="flex justify-center">
+                                    {/* -- Recommended Next Actions -- */}
 
-                                            <div className="w-full max-w-[1200px] p-8 rounded-3xl bg-[#EEF2FF] border border-[#E0E7FF] space-y-6">
+                                    <div className="flex justify-center">
 
-                                                <p className="text-center text-[10px] font-bold text-slate-500 font-black uppercase tracking-[0.4em] mb-3">Recommended Next Action</p>
+                                        <div className="w-full max-w-[1200px] p-8 rounded-3xl bg-[#EEF2FF] border border-[#E0E7FF] space-y-6">
 
-                                                <div className="space-y-4 flex flex-col items-center">
+                                            <p className="text-center text-[10px] font-bold text-slate-500 font-black uppercase tracking-[0.4em] mb-3">Recommended Next Action</p>
 
-                                                    <div className="space-y-3 w-full max-w-[900px]">
+                                            <div className="space-y-4 flex flex-col items-center">
 
-                                                        {Array.isArray(interviewStrategicVerdict.next_actions) && interviewStrategicVerdict.next_actions.length > 0
+                                                <div className="space-y-3 w-full max-w-[900px]">
 
-                                                            ? interviewStrategicVerdict.next_actions.map((item: string, idx: number) => (
+                                                    {Array.isArray(interviewStrategicVerdict.next_actions) && interviewStrategicVerdict.next_actions.length > 0
 
-                                                                <RecommendedActionItem key={idx} text={item} />
+                                                        ? interviewStrategicVerdict.next_actions.map((item: string, idx: number) => (
 
-                                                            ))
+                                                            <RecommendedActionItem key={idx} text={item} />
 
-                                                            : (
+                                                        ))
 
-                                                                <p className="text-[14px] font-medium text-indigo-700 leading-[1.7] text-center">
+                                                        : (
 
-                                                                    {interviewReportVerdict.recommendation_reason || "Next action recommendations will appear once the interview report is generated."}
+                                                            <p className="text-[14px] font-medium text-indigo-700 leading-[1.7] text-center">
 
-                                                                </p>
+                                                                {interviewReportVerdict.recommendation_reason || "Next action recommendations will appear once the interview report is generated."}
 
-                                                            )
+                                                            </p>
 
-                                                        }
+                                                        )
 
-                                                    </div>
+                                                    }
 
                                                 </div>
 
@@ -3734,7 +3731,9 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                         </div>
 
-                    )}
+                    </div>
+
+                )}
 
                 {showSubmissionPreview && (
 
@@ -3742,7 +3741,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                         <AnimatePresence>
 
-                            <motion.div 
+                            <motion.div
 
                                 initial={{ opacity: 0 }}
 
@@ -3750,17 +3749,17 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                 exit={{ opacity: 0 }}
 
-                                className="absolute inset-0 bg-slate-900/40 backdrop-blur-md transition-opacity" 
+                                className="absolute inset-0 bg-slate-900/40 backdrop-blur-md transition-opacity"
 
-                                onClick={() => setShowSubmissionPreview(false)} 
+                                onClick={() => setShowSubmissionPreview(false)}
 
                             />
 
                         </AnimatePresence>
 
-                        
 
-                        <motion.div 
+
+                        <motion.div
 
                             initial={{ x: '100%' }}
 
@@ -3784,11 +3783,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                 </div>
 
-                                <Button 
+                                <Button
 
-                                    variant="ghost" 
+                                    variant="ghost"
 
-                                    size="icon" 
+                                    size="icon"
 
                                     onClick={() => setShowSubmissionPreview(false)}
 
@@ -3834,11 +3833,11 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     const entries = Object.entries(subData).filter(([k]) => !['coverLetter', 'metadata', 'resumeText', 'resumeUrl', 'passportUrl'].includes(k));
 
-                                    
+
 
                                     if (entries.length === 0) return null;
 
-                                    
+
 
                                     return (
 
@@ -3882,9 +3881,9 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                             <div className="p-10 border-t border-slate-100 bg-white shadow-[0_-10px_40px_rgba(0,0,0,0.02)]">
 
-                                <Button 
+                                <Button
 
-                                    onClick={() => setShowSubmissionPreview(false)} 
+                                    onClick={() => setShowSubmissionPreview(false)}
 
                                     className="w-full h-14 rounded-2xl bg-slate-950 text-white font-bold text-[12px] uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-900/10"
 
@@ -3958,7 +3957,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                     const otherEvents = parsedProctoringEvents.filter((e: any) =>
 
-                                        !["tab_switch","gaze_violation","head_pose_violation","audio_flag","fullscreen_exit","face_absence","multiple_faces"].includes(e.eventType)
+                                        !["tab_switch", "gaze_violation", "head_pose_violation", "audio_flag", "fullscreen_exit", "face_absence", "multiple_faces"].includes(e.eventType)
 
                                     );
 
@@ -4304,7 +4303,7 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
             </div>
 
-            
+
 
             <AuditLogModal
 

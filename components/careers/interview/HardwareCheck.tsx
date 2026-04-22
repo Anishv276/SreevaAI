@@ -16,6 +16,7 @@ const VERIFICATION_PHRASES = [
 
 interface HardwareCheckProps {
     onComplete: () => void;
+    onRetry?: () => void;
     isStarting?: boolean;
     errorMessage?: string | null;
     candidateName?: string;
@@ -28,6 +29,7 @@ type CheckStatus = "idle" | "requesting" | "granted" | "denied";
 
 export function HardwareCheck({
     onComplete,
+    onRetry,
     isStarting = false,
     errorMessage = null,
     candidateName = "candidate",
@@ -362,11 +364,10 @@ export function HardwareCheck({
         }
     }, [candidateName, applicationId, interviewToken]);
 
-    const handleBeginInterview = useCallback(async () => {
-        // Trigger the handshake snapshot. 
-        // We MUST await this to ensure the database record is created 
-        // before the component unmounts (changing the phase).
-        await uploadSnapshot("INITIAL_HANDSHAKE");
+    const handleBeginInterview = useCallback(() => {
+        // Fire the handshake snapshot in the background so the UI can switch
+        // to the launching state immediately.
+        void uploadSnapshot("INITIAL_HANDSHAKE");
         onComplete();
     }, [uploadSnapshot, onComplete]);
 
@@ -730,18 +731,42 @@ export function HardwareCheck({
                 </div>
             </div>
 
-            {/* Error Banner */}
+            {/* Connection Issue Card */}
             <AnimatePresence>
                 {(error || errorMessage) && (
                     <motion.div
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -8 }}
-                        className="bg-red-50 border-b border-red-100 px-6 py-3"
+                        className="px-6 pt-6"
                     >
-                        <div className="max-w-6xl mx-auto flex items-center gap-2 text-sm text-red-600">
-                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                            {error || errorMessage}
+                        <div className="max-w-6xl mx-auto">
+                            <div className="rounded-3xl border border-red-100 bg-red-50/70 shadow-sm px-6 py-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                                <div className="flex items-start gap-3">
+                                    <div className="h-10 w-10 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                                        <AlertCircle className="w-5 h-5" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-black uppercase tracking-[0.2em] text-red-500">Connection issue</p>
+                                        <p className="text-sm font-semibold text-red-700 leading-relaxed">
+                                            {errorMessage || error || "We could not connect the interviewer in time. Please try rejoining."}
+                                        </p>
+                                        <p className="text-xs font-medium text-red-500">
+                                            There may be a connectivity issue or the interviewer worker may still be starting.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 md:justify-end">
+                                    <Button
+                                        variant="outline"
+                                        onClick={onRetry}
+                                        disabled={!onRetry || isStarting}
+                                        className="h-11 px-5 rounded-2xl border-red-200 text-red-700 hover:bg-red-100 bg-white font-bold"
+                                    >
+                                        Rejoin
+                                    </Button>
+                                </div>
+                        </div>
                         </div>
                     </motion.div>
                 )}

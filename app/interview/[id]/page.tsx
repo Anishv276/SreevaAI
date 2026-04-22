@@ -112,6 +112,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [sessionDuration, setSessionDuration] = useState(INTERVIEW_DURATION_SECONDS);
     const [remainingSeconds, setRemainingSeconds] = useState(INTERVIEW_DURATION_SECONDS);
     const [timerExpired, setTimerExpired] = useState(false);
+    const [interviewRoleLabel, setInterviewRoleLabel] = useState<string>("Interview");
+    const [candidateDisplayName, setCandidateDisplayName] = useState<string>("Candidate");
     const containerRef = useRef<HTMLDivElement>(null);
     const agentReadyCommittedRef = useRef(false);
     const launchStartedAtRef = useRef<number | null>(null);
@@ -385,7 +387,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     // Hard timeout: if agent never becomes ready within 45s, go back to check with error
     useEffect(() => {
         if (phase !== "launching") return;
-        if (launchTimeoutCheck >= 45 && !agentReadyCommittedRef.current) {
+        if (launchTimeoutCheck >= 20 && !agentReadyCommittedRef.current) {
             setJoinError("AI interviewer didn't respond in time. Please reload the website and try again.");
             agentReadyCommittedRef.current = false;
             setIsAgentReady(false);
@@ -490,6 +492,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 if (res.ok && data.token && data.serverUrl) {
                     setToken(data.token);
                     setServerUrl(data.serverUrl);
+                    setInterviewRoleLabel(data.roleLabel || data.jobTitle || "Interview");
+                    setCandidateDisplayName(data.candidateName || "Candidate");
                     if (typeof data.duration === "number" && data.duration > 0) {
                         setSessionDuration(data.duration);
                         setRemainingSeconds(data.duration);
@@ -548,59 +552,59 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         setIsJoining(true);
         setJoinError(null);
 
-        try {
-            if (!interviewToken) {
-                if (requireInterviewToken) {
-                    throw new Error("This interview link is missing its security token. Please reopen the interview link from your invitation email or dashboard.");
-                }
-            }
-
-            // Enter fullscreen on user gesture IMMEDIATELY
-            await requestFullscreenMode();
-
-            // Enter launching phase...
-            connectionAttemptRef.current += 1;
-            agentReadyCommittedRef.current = false;
-            readySignalSentFromParentRef.current = false;
-            launchStartedAtRef.current = performance.now();
-            setIsAgentReady(false);
-            setAgentReadyLatencyMs(null);
-            setPhase("launching");
-
-            const isWarmReady = await ensureWarmConnection();
-            if (!isWarmReady) {
-                throw new Error("Interview connection could not be prepared. Please retry.");
-            }
-
-            if (!interviewEndsAt) {
-                setInterviewEndsAt(Date.now() + sessionDuration * 1000);
-                setRemainingSeconds(sessionDuration);
-                setTimerExpired(false);
-            }
-
-            setShouldConnect(true);
-
-            // Unlock audio context...
-            if (lkRoomRef.current) {
-                lkRoomRef.current.startAudio().catch(() => { });
-            }
-
-        } catch (err) {
-            console.error("Phase transition failed:", err);
-            setJoinError(err instanceof Error ? err.message : "Unable to start interview.");
-            // Reset connection so a fresh dispatch is created on retry
-            connectionAttemptRef.current += 1;
-            setToken(null);
-            setServerUrl(null);
-            setShouldConnect(false);
-            setIsAgentReady(false);
-            setAgentReadyLatencyMs(null);
-            launchStartedAtRef.current = null;
-            agentReadyCommittedRef.current = false;
-            setPhase("check");
-        } finally {
+        if (!interviewToken && requireInterviewToken) {
+            setJoinError("This interview link is missing its security token. Please reopen the interview link from your invitation email or dashboard.");
             setIsJoining(false);
+            return;
         }
+
+        // Move the UI into the launching state immediately so the button feels instant.
+        connectionAttemptRef.current += 1;
+        agentReadyCommittedRef.current = false;
+        readySignalSentFromParentRef.current = false;
+        launchStartedAtRef.current = performance.now();
+        setIsAgentReady(false);
+        setAgentReadyLatencyMs(null);
+        setPhase("launching");
+
+        void (async () => {
+            try {
+                void requestFullscreenMode();
+
+                const isWarmReady = await ensureWarmConnection();
+                if (!isWarmReady) {
+                    throw new Error("Interview connection could not be prepared. Please retry.");
+                }
+
+                if (!interviewEndsAt) {
+                    setInterviewEndsAt(Date.now() + sessionDuration * 1000);
+                    setRemainingSeconds(sessionDuration);
+                    setTimerExpired(false);
+                }
+
+                setShouldConnect(true);
+
+                // Unlock audio context...
+                if (lkRoomRef.current) {
+                    lkRoomRef.current.startAudio().catch(() => { });
+                }
+            } catch (err) {
+                console.error("Phase transition failed:", err);
+                setJoinError(err instanceof Error ? err.message : "Unable to start interview.");
+                // Reset connection so a fresh dispatch is created on retry
+                connectionAttemptRef.current += 1;
+                setToken(null);
+                setServerUrl(null);
+                setShouldConnect(false);
+                setIsAgentReady(false);
+                setAgentReadyLatencyMs(null);
+                launchStartedAtRef.current = null;
+                agentReadyCommittedRef.current = false;
+                setPhase("check");
+            } finally {
+                setIsJoining(false);
+            }
+        })();
     };
 
 
@@ -770,10 +774,15 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     >
                         <HardwareCheck
                             onComplete={handleHardwareComplete}
+                            onRetry={() => {
+                                setJoinError(null);
+                                void handleHardwareComplete();
+                            }}
                             isStarting={isJoining}
                             errorMessage={joinError}
                             applicationId={id}
                             interviewToken={interviewToken}
+                            title={`${interviewRoleLabel} Interview Check`}
                         />
                     </motion.div>
                 )}
@@ -914,10 +923,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             isLaunchingActive={phase === "launching"}
                             timeLabel={formatDuration(remainingSeconds)}
                             timerExpired={timerExpired}
+                            interviewRoleLabel={interviewRoleLabel}
 
                             onRemoteAgentAudioTrack={handleRemoteAgentAudioTrack}
                             onRoomReady={(room) => { lkRoomRef.current = room; }}
-                            candidateName={"Candidate"}
+                            candidateName={candidateDisplayName}
                             onCandidateTranscript={() => {
                                 // Deepgram Nova-3 fired a candidate segment - update silence clock
                                 lastCandidateTranscriptAtRef.current = Date.now();
@@ -1258,6 +1268,7 @@ function InterviewRoomContent({
     isLaunchingActive,
     timeLabel,
     timerExpired,
+    interviewRoleLabel,
 
     onRemoteAgentAudioTrack,
     onAgentReady,
@@ -1274,6 +1285,7 @@ function InterviewRoomContent({
     isLaunchingActive: boolean,
     timeLabel: string,
     timerExpired: boolean,
+    interviewRoleLabel: string,
 
     onRemoteAgentAudioTrack: (track: MediaStreamTrack | null) => void,
     onAgentReady?: (isReady: boolean) => void,
@@ -1595,7 +1607,7 @@ function InterviewRoomContent({
                     </div>
                     <div>
                         <p className="text-[9px] font-black uppercase tracking-[0.3em] text-zinc-500">Live Interview</p>
-                        <p className="text-sm font-black text-white tracking-tight italic">Product Designer Role</p>
+                        <p className="text-sm font-black text-white tracking-tight italic">{interviewRoleLabel}</p>
                     </div>
                 </div>
             </div>
