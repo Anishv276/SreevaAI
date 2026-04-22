@@ -13,12 +13,13 @@ export async function POST(
     context: { params: Promise<{ id: string }> }
 ) {
     try {
+        let session: Awaited<ReturnType<typeof getSession>> | null = null;
         const internalSecret = process.env.WORKER_SYNC_TOKEN?.trim() || process.env.JWT_SECRET?.trim();
         const internalToken = _req.headers.get("x-internal-sync-token")?.trim();
         const isInternalRequest = Boolean(internalSecret && internalToken && internalToken === internalSecret);
 
         if (!isInternalRequest) {
-            const session = await getSession();
+            session = await getSession();
             if (!session || !isAdminRole(session.role)) {
                 return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
             }
@@ -39,7 +40,7 @@ export async function POST(
         }
 
         // -- AUTHORIZATION ---------------------------------
-        if (session.orgId && app.drive.orgId !== session.orgId) {
+        if (session?.orgId && app.drive.orgId !== session.orgId) {
             return NextResponse.json({ error: "Forbidden: Candidate belongs to another organization" }, { status: 403 });
         }
         // --------------------------------------------------
