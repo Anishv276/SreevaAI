@@ -37,7 +37,7 @@ from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice.events import ConversationItemAddedEvent
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
-from livekit.plugins import openai, deepgram, silero, sarvam
+from livekit.plugins import cartesia, openai, deepgram, silero, sarvam
 
 try:
     from livekit.plugins import ai_coustics
@@ -1022,6 +1022,13 @@ def _normalize_cartesia_model(model: str) -> str:
     return f"cartesia/{model}"
 
 
+def _cartesia_plugin_model(model: str) -> str:
+    model = _compact_text(model)
+    if not model:
+        return CARTESIA_MODEL.removeprefix("cartesia/")
+    return model.removeprefix("cartesia/")
+
+
 def truncate_to_tokens(text: str, max_tokens: int) -> str:
     """
     Rough token-aware truncation using a 4 chars/token estimate.
@@ -1517,19 +1524,19 @@ def build_cartesia_tts(
     if not api_key:
         raise RuntimeError("CARTESIA_API_KEY is not set")
 
-    # Use LiveKit Inference Cartesia TTS and pass model-specific controls via
-    # extra_kwargs, matching the documented Python API shape.
+    # Use the dedicated Cartesia plugin directly instead of the hosted
+    # LiveKit inference gateway. That avoids gateway authorization failures
+    # while keeping the same Cartesia account and voice configuration.
     tts_kwargs: dict[str, Any] = {
-        "model": _normalize_cartesia_model(model),
+        "model": _cartesia_plugin_model(model),
         "voice": voice_id,
         "language": language,
         "api_key": api_key,
-        "extra_kwargs": {
-            "speed": 1.0,
-            **(extra_kwargs or {}),
-        },
+        "speed": 1.0,
     }
-    return inference.TTS(**tts_kwargs)
+    if extra_kwargs:
+        tts_kwargs.update(extra_kwargs)
+    return cartesia.TTS(**tts_kwargs)
 
 
 def build_tts(
