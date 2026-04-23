@@ -451,8 +451,15 @@ export async function POST(req: NextRequest) {
 
             if (!inDebounceWin) {
                 try {
+                    const dispatchMetadata = JSON.stringify({
+                        applicationId,
+                        candidateName: application.fullName,
+                        roleLabel: application.drive.role || application.drive.title || "Interview",
+                        roomName,
+                        timeLimitMins: driveDurationMins,
+                    });
                     await dispatchClient.createDispatch(roomName, agentName, {
-                        metadata: JSON.stringify({ applicationId }),
+                        metadata: dispatchMetadata,
                     });
                     dispatchByRoom.set(roomName, now2);
                 } catch (dispatchErr) {

@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Pre-download AI models for plugins (like ai-coustics)
+RUN python agent.py download-files
 
 # Start the agent in production mode
 CMD ["python", "agent.py", "start"]

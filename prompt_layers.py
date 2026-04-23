@@ -10,7 +10,22 @@ def build_voice_layer_prompt(
     time_limit_mins: int,
     depth_instruction: str,
     candidate_band: str,
+    ai_name: str = "",
+    org_name: str = "",
+    org_location: str = "",
+    drive_location: str = "",
 ) -> str:
+    context_lines = []
+    if ai_name:
+        context_lines.append(f"- Interviewer name: {ai_name}")
+    if org_name:
+        context_lines.append(f"- Organization: {org_name}")
+    if org_location:
+        context_lines.append(f"- Organization location: {org_location}")
+    if drive_location:
+        context_lines.append(f"- Drive location: {drive_location}")
+    context_block = "\n".join(context_lines) if context_lines else "- No extra context provided"
+
     return f"""VOICE LAYER
 You are Ishita, a senior talent partner conducting a live voice interview for {candidate_name} on the {job_title} role.
 
@@ -35,7 +50,10 @@ RAPPORT FLOW
 - Final stretch: reflective, concise, and closing naturally
 
 TURN HANDLING
-- Ask one question per turn
+- ONE QUESTION PER TURN. This is absolute. No exceptions.
+- Never stack two questions in one response, even as a follow-up or clarification.
+- If you catch yourself writing a second question mark, delete everything after the first question.
+- ALWAYS end with `<wait for response>` after every question. This is a hard marker — do not write anything after it.
 - If the candidate is emotional, acknowledge that first
 - If the candidate gives a short answer, gently slow down and simplify
 - If the candidate is confident, treat them like a peer
@@ -46,6 +64,10 @@ SESSION CONTEXT
 - Time available: {time_limit_mins} minutes
 - Follow-up depth: {DEFAULT_FOLLOW_UP_DEPTH}/5
 - Depth instruction: {depth_instruction}
+- Candidate band: {candidate_band}
+
+JOB CONTEXT
+{context_block}
 
 NATURAL QUESTIONING
 - Start with a human opener
@@ -63,7 +85,22 @@ def build_evaluation_layer_prompt(
     time_limit_mins: int,
     depth_instruction: str,
     candidate_band: str,
+    ai_name: str = "",
+    org_name: str = "",
+    org_location: str = "",
+    drive_location: str = "",
 ) -> str:
+    context_lines = []
+    if ai_name:
+        context_lines.append(f"- Interviewer name: {ai_name}")
+    if org_name:
+        context_lines.append(f"- Organization: {org_name}")
+    if org_location:
+        context_lines.append(f"- Organization location: {org_location}")
+    if drive_location:
+        context_lines.append(f"- Drive location: {drive_location}")
+    context_block = "\n".join(context_lines) if context_lines else "- No extra context provided"
+
     return f"""EVALUATION LAYER
 You are also responsible for rigorous interview judgment for {candidate_name} on the {job_title} role.
 
@@ -96,6 +133,8 @@ FOLLOW-UP RULES
 - If the answer is polished but thin, use a verification probe
 - If it conflicts with earlier statements, use a contradiction probe
 - If the resume does not show the skill, use a sideways scenario probe
+- If the candidate gives 2 or more shallow/vague answers on the same topic, move on — do not keep probing the same gap
+- A one-word or one-sentence answer that adds no new information is a signal to move on, not to ask again
 
 STRICT PROBE MAP
 - ownership ambiguity -> ownership probe
@@ -129,6 +168,9 @@ TIME AWARENESS
 - Time available: {time_limit_mins} minutes
 - Candidate band: {candidate_band}
 - Depth instruction: {depth_instruction}
+
+JOB CONTEXT
+{context_block}
 """
 
 

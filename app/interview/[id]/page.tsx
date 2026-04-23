@@ -35,7 +35,7 @@ import "@livekit/components-styles";
 
 import { Track, RoomEvent } from "livekit-client";
 
-import type { Room } from "livekit-client";
+import type { AudioCaptureOptions, Room } from "livekit-client";
 
 
 interface InterviewPageProps {
@@ -989,9 +989,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     )}
                 >
                     <LiveKitRoom
-                        options={{ videoCaptureDefaults: { resolution: { width: 1280, height: 720, frameRate: 30 } } }}
+                        options={{
+                            dynacast: true,
+                            videoCaptureDefaults: { resolution: { width: 1280, height: 720, frameRate: 30 } },
+                        }}
                         video={phase === "interview" ? (selectedCameraId ? { deviceId: selectedCameraId } : true) : false}
-                        audio={(phase === "interview" || phase === "launching") ? (selectedMicId ? { deviceId: selectedMicId } : true) : false}
+                        audio={false}
                         token={token}
                         serverUrl={serverUrl}
                         connect={shouldConnect}
@@ -1006,6 +1009,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             onFinalizing={() => setPhase("finalizing")}
                             isInterviewActive={phase === "interview"}
                             isLaunchingActive={phase === "launching"}
+                            selectedMicId={selectedMicId}
                             timeLabel={formatDuration(remainingSeconds)}
                             timerExpired={timerExpired}
                             interviewRoleLabel={interviewRoleLabel}
@@ -1114,10 +1118,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             <AnimatePresence>
                 {faceViolationAlert && phase === "interview" && (
                     <motion.div
-                        initial={{ opacity: 0, y: 40 }}
+                        initial={{ opacity: 0, y: -40 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 40 }}
-                        className="fixed bottom-52 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
+                        exit={{ opacity: 0, y: -40 }}
+                        className="fixed top-32 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
                     >
                         <div className="flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md border border-orange-500/30 rounded-2xl px-5 py-3 shadow-2xl max-w-sm">
                             <div className="w-8 h-8 rounded-xl bg-orange-500/10 flex items-center justify-center shrink-0">
@@ -1149,10 +1153,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             <AnimatePresence>
                 {audioViolationAlert && phase === "interview" && (
                     <motion.div
-                        initial={{ opacity: 0, y: 40 }}
+                        initial={{ opacity: 0, y: -40 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 40 }}
-                        className="fixed bottom-40 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
+                        exit={{ opacity: 0, y: -40 }}
+                        className="fixed top-44 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
                     >
                         <div className="flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md border border-yellow-500/30 rounded-2xl px-5 py-3 shadow-2xl max-w-sm">
                             <div className="w-8 h-8 rounded-xl bg-yellow-500/10 flex items-center justify-center shrink-0">
@@ -1175,10 +1179,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             <AnimatePresence>
                 {hardwareViolationAlert && phase === "interview" && (
                     <motion.div
-                        initial={{ opacity: 0, y: 40 }}
+                        initial={{ opacity: 0, y: -40 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 40 }}
-                        className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
+                        exit={{ opacity: 0, y: -40 }}
+                        className="fixed top-56 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
                     >
                         <div className="flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md border border-red-500/40 rounded-2xl px-5 py-3 shadow-2xl max-w-sm">
                             <div className="w-8 h-8 rounded-xl bg-red-500/10 flex items-center justify-center shrink-0">
@@ -1205,10 +1209,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             <AnimatePresence>
                 {connectionAlert && phase === "interview" && (
                     <motion.div
-                        initial={{ opacity: 0, y: 40 }}
+                        initial={{ opacity: 0, y: -40 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 40 }}
-                        className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
+                        exit={{ opacity: 0, y: -40 }}
+                        className="fixed top-64 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
                     >
                         <div className={`flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border ${connectionAlert.eventType === "connection_restored"
                             ? "border-green-500/30"
@@ -1243,10 +1247,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             <AnimatePresence>
                 {mouseViolationAlert && mouseViolationAlert.eventType === "behavior_flag" && phase === "interview" && (
                     <motion.div
-                        initial={{ opacity: 0, y: 40 }}
+                        initial={{ opacity: 0, y: -40 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 40 }}
-                        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
+                        exit={{ opacity: 0, y: -40 }}
+                        className="fixed top-72 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
                     >
                         <div className="flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border border-orange-500/40">
                             <div className="w-8 h-8 rounded-xl bg-orange-500/10 flex items-center justify-center shrink-0">
@@ -1267,10 +1271,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             <AnimatePresence>
                 {mouseViolationAlert && mouseViolationAlert.eventType !== "behavior_flag" && phase === "interview" && (
                     <motion.div
-                        initial={{ opacity: 0, y: 40 }}
+                        initial={{ opacity: 0, y: -40 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 40 }}
-                        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
+                        exit={{ opacity: 0, y: -40 }}
+                        className="fixed top-72 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
                     >
                         <div className={`flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border ${mouseViolationAlert.severity === "high"
                             ? "border-red-500/40"
@@ -1321,10 +1325,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             <AnimatePresence>
                 {soundViolationAlert && phase === "interview" && (
                     <motion.div
-                        initial={{ opacity: 0, y: 40 }}
+                        initial={{ opacity: 0, y: -40 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 40 }}
-                        className="fixed bottom-40 left-1/2 -translate-x-1/2 z-[230] pointer-events-none"
+                        exit={{ opacity: 0, y: -40 }}
+                        className="fixed top-44 left-1/2 -translate-x-1/2 z-[230] pointer-events-none"
                     >
                         <div className="flex items-center gap-4 bg-zinc-950/90 backdrop-blur-2xl border border-red-500/40 rounded-[2rem] px-6 py-4 shadow-[0_25px_50px_-12px_rgba(239,68,68,0.5)] max-w-sm">
                             <div className="w-10 h-10 rounded-2xl bg-red-500/10 flex items-center justify-center shrink-0 border border-red-500/20">
@@ -1352,6 +1356,7 @@ function InterviewRoomContent({
     onFinalizing,
     isInterviewActive,
     isLaunchingActive,
+    selectedMicId,
     timeLabel,
     timerExpired,
     interviewRoleLabel,
@@ -1370,6 +1375,7 @@ function InterviewRoomContent({
     onFinalizing: () => void,
     isInterviewActive: boolean,
     isLaunchingActive: boolean,
+    selectedMicId?: string,
     timeLabel: string,
     timerExpired: boolean,
     interviewRoleLabel: string,
@@ -1394,11 +1400,30 @@ function InterviewRoomContent({
     const voiceAssistant = useVoiceAssistant();
     const autoFinishTriggeredRef = useRef(false);
     const interviewCompletionHandledRef = useRef(false);
+    const preConnectAudioStartedRef = useRef(false);
 
     // Give parent a ref to the room so it can call startAudio() on user gesture
     useEffect(() => {
         if (lkRoom) onRoomReady?.(lkRoom);
     }, [lkRoom, onRoomReady]);
+
+    useEffect(() => {
+        if (!lkRoom || !isLaunchingActive || preConnectAudioStartedRef.current) return;
+
+        preConnectAudioStartedRef.current = true;
+        const audioOptions: AudioCaptureOptions | undefined = selectedMicId
+            ? { deviceId: selectedMicId }
+            : undefined;
+
+        lkRoom.localParticipant.setMicrophoneEnabled(
+            true,
+            audioOptions,
+            { preConnectBuffer: true },
+        ).catch((err) => {
+            preConnectAudioStartedRef.current = false;
+            console.warn("[LiveKit] Pre-connect microphone warmup failed:", err);
+        });
+    }, [isLaunchingActive, lkRoom, selectedMicId]);
 
     // Voice assistant state from LiveKit agent lifecycle.
     const aiParticipantTrack = voiceAssistant.audioTrack;
@@ -1677,11 +1702,28 @@ function InterviewRoomContent({
 
         const audioContext = new AudioContext();
         await audioContext.resume().catch(() => { });
+
         const destination = audioContext.createMediaStreamDestination();
-        const micSource = audioContext.createMediaStreamSource(new MediaStream([micTrack]));
-        const remoteSource = audioContext.createMediaStreamSource(new MediaStream([remoteTrack]));
-        micSource.connect(destination);
-        remoteSource.connect(destination);
+        
+        // Clone tracks to isolate recording from live playback.
+        // This prevents AEC from 'ducking' the volume of the live AI speaker.
+        const micClone = micTrack.clone();
+        const remoteClone = remoteTrack.clone();
+
+        const micSource = audioContext.createMediaStreamSource(new MediaStream([micClone]));
+        const remoteSource = audioContext.createMediaStreamSource(new MediaStream([remoteClone]));
+
+        // --- Quality Improvement: Dynamics Compressor ---
+        const compressor = audioContext.createDynamicsCompressor();
+        compressor.threshold.setValueAtTime(-20, audioContext.currentTime); // Relaxed threshold
+        compressor.knee.setValueAtTime(40, audioContext.currentTime);
+        compressor.ratio.setValueAtTime(8, audioContext.currentTime); // Lower ratio for less 'low' volume effect
+        compressor.attack.setValueAtTime(0.003, audioContext.currentTime);
+        compressor.release.setValueAtTime(0.25, audioContext.currentTime);
+
+        micSource.connect(compressor);
+        remoteSource.connect(compressor);
+        compressor.connect(destination);
 
         const mixedStream = new MediaStream();
         mixedStream.addTrack(cameraTrack.clone());
@@ -1749,8 +1791,14 @@ function InterviewRoomContent({
         recordingStreamRef.current = mixedStream;
         mediaRecorderRef.current = recorder;
         recordingStartedRef.current = true;
-        recorder.start(5000);
-        console.log("[Recording] Browser recorder started.");
+        
+        // Use a tiny delay to ensure audio graph is stable before starting
+        setTimeout(() => {
+            if (recorder.state === "inactive") {
+                recorder.start(5000);
+                console.log("[Recording] Browser recorder started with isolated tracks.");
+            }
+        }, 500);
     }, [agentAudioTrack, localCameraTrack, localParticipant, uploadRecordingChunk]);
 
     const stopBrowserRecording = useCallback(async () => {
@@ -1767,8 +1815,15 @@ function InterviewRoomContent({
 
         if (recordingStopPromiseRef.current) {
             try {
-                await recordingStopPromiseRef.current;
-            } catch { }
+                // Wait for up to 5 seconds for uploads to finish.
+                // If they take longer, we proceed anyway so the user isn't stuck.
+                await Promise.race([
+                    recordingStopPromiseRef.current,
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Stop timeout")), 5000))
+                ]);
+            } catch (err) {
+                console.warn("[Recording] stop wait timed out or failed:", err);
+            }
         }
 
         try {
@@ -1871,7 +1926,7 @@ function InterviewRoomContent({
                 });
             }
         }
-        return groups;
+        return groups.filter(g => !g.isCandidate);
     }, [transcriptions, localIdentity]);
 
     // -- Deepgram Nova-3 -> Mouse cross-signal: ping parent on candidate speech --
@@ -2007,14 +2062,22 @@ function InterviewRoomContent({
         if (finishStartedRef.current) return;
         finishStartedRef.current = true;
 
-        await stopBrowserRecording().catch((err) => {
-            console.warn("[Recording] stop failed:", err);
+        // Exit fullscreen mode immediately when interview ends
+        if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => { });
+        }
+        
+        // We don't await stopBrowserRecording forever.
+        // It has its own 5s timeout now, but we want to move UI fast.
+        stopBrowserRecording().catch((err) => {
+            console.warn("[Recording] background stop failed:", err);
         });
+
         onFinalizing();
         setTimeout(() => {
             try { lkRoom?.disconnect(); } catch (_) { }
             onFinish();
-        }, 1500);
+        }, 1200);
     }, [lkRoom, onFinalizing, onFinish, stopBrowserRecording]);
 
     useEffect(() => {
@@ -2167,7 +2230,13 @@ function InterviewRoomContent({
                         <AnimatePresence mode="popLayout">
                             {groupedTranscriptions.slice(-5).reverse().map((group, idx) => {
                                 const isGroupFinal = group.segments.every(s => s.isFinal);
-                                const combinedText = group.segments.map(s => s.text.trim()).join(" ");
+                                // Only combine final segments + the single latest non-final chunk.
+                                // This prevents partial words ("bu", "thr") from stacking visibly.
+                                const finalSegs = group.segments.filter(s => s.isFinal);
+                                const nonFinalSegs = group.segments.filter(s => !s.isFinal);
+                                const latestNonFinal = nonFinalSegs.length > 0 ? nonFinalSegs[nonFinalSegs.length - 1] : null;
+                                const displaySegs = latestNonFinal ? [...finalSegs, latestNonFinal] : finalSegs;
+                                const combinedText = displaySegs.map(s => s.text.trim()).filter(Boolean).join(" ");
 
                                 return (
                                     <motion.div

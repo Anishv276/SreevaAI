@@ -38,6 +38,11 @@ from livekit.agents.voice.events import ConversationItemAddedEvent
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
 from livekit.plugins import openai, deepgram, silero, sarvam
+
+try:
+    from livekit.plugins import ai_coustics
+except ImportError:  # pragma: no cover - optional plugin
+    ai_coustics = None
 from turn_evaluator import run_turn_evaluation
 from trust_engine import apply_turn_decision, apply_proctoring_event, apply_contradiction_resolved, finalize_trust_state
 from contradiction_state import init_contradiction_state, advance_contradiction_state, summarize_contradiction_state
@@ -284,6 +289,44 @@ _HELPER_PHRASE_PATTERNS: list[_re.Pattern] = [
 ]
 
 
+async def _single_question_transform(text_stream):
+    """
+    TTS text transform: buffers the full LLM output and:
+    1. Drops everything after the first complete question (sentence ending in '?')
+    2. Strips the <wait for response> marker so it's not spoken
+    Prevents Ishita from asking two questions in one turn.
+    """
+    buffer = ""
+    async for chunk in text_stream:
+        buffer += chunk
+
+    # Strip the wait marker before processing questions
+    result = buffer.replace("<wait for response>", "").strip()
+
+    # Find the first sentence that ends with '?'
+    # Split on sentence boundaries but keep delimiters
+    sentence_pattern = re.compile(r'[^.!?]*[.!?]')
+    sentences = sentence_pattern.findall(result)
+
+    question_count = 0
+    cutoff = 0
+    pos = 0
+    for s in sentences:
+        pos += len(s)
+        if s.rstrip().endswith('?'):
+            question_count += 1
+            if question_count == 1:
+                cutoff = pos
+    # If there's a second question mark anywhere after cutoff, truncate
+    if cutoff > 0 and '?' in result[cutoff:]:
+        result = result[:cutoff].rstrip()
+        logger.debug(f"[SINGLE_Q] Truncated double question. Original: {buffer[:120]!r}")
+
+    # Yield the cleaned result
+    if result:
+        yield result
+
+
 def build_term_alias_hints(*text_blocks: str, max_lines: int = 10) -> str:
     combined = " ".join(block for block in text_blocks if isinstance(block, str)).lower()
     lines: list[str] = []
@@ -336,6 +379,23 @@ def safe_parse(val: Any, fallback: str = "Not provided") -> str:
         return fallback
     except Exception:
         return str(val).strip() or fallback
+
+
+def parse_dispatch_metadata(metadata: Any) -> dict[str, Any]:
+    if not metadata:
+        return {}
+    try:
+        parsed = _coerce_jsonish(metadata)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _compact_optional(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return text
 
 
 def infer_candidate_band(structured_resume_raw: Any, resume_text_block: str) -> str:
@@ -1209,6 +1269,27 @@ def build_candidate_summary(structured_resume: Any, resume_text: str = "") -> st
         f"Ownership risks to verify: {_join_items(context.ownership_risks, 2)}",
     ]
     return _format_compact_section("CANDIDATE SUMMARY", lines)
+
+
+def _build_context_vars_block(*, org_name: str = "", org_location: str = "", drive_location: str = "", ai_name: str = "", candidate_first_name: str = "", candidate_name: str = "", job_title: str = "", interview_lang: str = "") -> str:
+    lines = []
+    if candidate_first_name:
+        lines.append(f"- Candidate first name: {candidate_first_name}")
+    elif candidate_name:
+        lines.append(f"- Candidate name: {candidate_name}")
+    if job_title:
+        lines.append(f"- Role: {job_title}")
+    if ai_name:
+        lines.append(f"- AI interviewer name: {ai_name}")
+    if org_name:
+        lines.append(f"- Organization: {org_name}")
+    if org_location:
+        lines.append(f"- Organization location: {org_location}")
+    if drive_location:
+        lines.append(f"- Drive location: {drive_location}")
+    if interview_lang:
+        lines.append(f"- Interview language: {interview_lang}")
+    return "\n".join(lines)
 
 
 def _extract_jd_must_haves(jd_data: dict[str, Any], jd_text: str) -> list[str]:
@@ -2344,11 +2425,11 @@ async def get_interview_context(app_id: str):
 
     query = """
     SELECT a."fullName", d.title, d.role AS "role", d.description, d.skills, d."orgId" AS "orgId",
-           d."interviewLanguage", d."interviewTime", d."interviewQuestions",
+           d.location AS "driveLocation", d."interviewLanguage", d."interviewTime", d."interviewQuestions",
            COALESCE(d."ttsProvider", o."ttsProvider") AS "ttsProvider",
            COALESCE(d."cartesiaVoiceId", o."cartesiaVoiceId") AS "cartesiaVoiceId", o."cartesiaModel",
            o."sarvamModel", COALESCE(d."sarvamVoice", o."sarvamVoice") AS "sarvamVoice",
-           COALESCE(d."aiName", 'Ishitha') AS "aiName",
+           COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName", o.location AS "orgLocation",
            o."sttProvider", o."deepgramModel", o."sarvamSttModel",
            o."llmProvider", o."llmModel", o."llmTemperature"
     FROM "Application" a
@@ -2388,6 +2469,9 @@ async def get_interview_context(app_id: str):
                 "driveTitle": row["title"],
                 "jd": f"Description: {row['description']}\nSkills: {row['skills']}",
                 "orgId": row["orgId"],
+                "orgName": row["orgName"],
+                "orgLocation": row["orgLocation"],
+                "driveLocation": row["driveLocation"],
                 "language": row["interviewLanguage"],
                 "timeLimit": row["interviewTime"],
                 "questions": questions if isinstance(questions, list) else [],
@@ -3343,7 +3427,19 @@ async def entrypoint(ctx: JobContext):
     # Room name is available before connecting - derive app_id early so we can
     # fire the DB fetch in parallel with the room connect handshake.
     app_id = ctx.room.name.replace("interview_", "")
-    session_log_context: dict[str, Any] = {"app_id": app_id}
+    dispatch_metadata = parse_dispatch_metadata(getattr(ctx.job, "metadata", ""))
+    session_log_context: dict[str, Any] = {
+        "app_id": app_id,
+        "room_name": ctx.room.name,
+    }
+    if dispatch_metadata:
+        session_log_context.update({
+            "dispatch_application_id": dispatch_metadata.get("applicationId", app_id),
+            "dispatch_candidate_name": dispatch_metadata.get("candidateName"),
+            "dispatch_role_label": dispatch_metadata.get("roleLabel"),
+            "dispatch_time_limit_mins": dispatch_metadata.get("timeLimitMins"),
+            "dispatch_room_name": dispatch_metadata.get("roomName", ctx.room.name),
+        })
     ctx.log_context_fields = session_log_context
     _LOG_CONTEXT_FIELDS.set(session_log_context)
 
@@ -3482,9 +3578,39 @@ async def entrypoint(ctx: JobContext):
     session_log_context.update(
         {
             "org_id": org_id,
+            "org_name": _compact_optional(context.get("orgName")),
+            "org_location": _compact_optional(context.get("orgLocation")),
+            "drive_location": _compact_optional(context.get("driveLocation")),
             "candidate": candidate_name,
+            "candidate_first_name": candidate_first_name,
+            "job_title": job_title,
+            "time_limit_mins": time_limit_mins,
         }
     )
+    ctx.log_context_fields = session_log_context
+    _LOG_CONTEXT_FIELDS.set(session_log_context)
+
+    started_at = time.perf_counter()
+
+    async def _log_shutdown(reason: str = "") -> None:
+        elapsed_sec = round(time.perf_counter() - started_at, 1)
+        logger.info(
+            json.dumps(
+                {
+                    "event": "job_shutdown",
+                    "reason": reason or "unknown",
+                    "app_id": app_id,
+                    "room_name": ctx.room.name,
+                    "candidate": candidate_name,
+                    "job_title": job_title,
+                    "org_id": org_id,
+                    "elapsed_sec": elapsed_sec,
+                },
+                sort_keys=True,
+            )
+        )
+
+    ctx.add_shutdown_callback(_log_shutdown)
 
 
     # Org-specific model settings (strictly DB driven)
@@ -3614,6 +3740,10 @@ async def entrypoint(ctx: JobContext):
         time_limit_mins=time_limit_mins,
         depth_instruction=session_context.depth_instruction,
         candidate_band=session_context.candidate_band,
+        ai_name=_compact_optional(context.get("aiName")),
+        org_name=_compact_optional(context.get("orgName")),
+        org_location=_compact_optional(context.get("orgLocation")),
+        drive_location=_compact_optional(context.get("driveLocation")),
     )
     evaluation_layer_prompt = build_evaluation_layer_prompt(
         live_prompt_context=session_context.live_prompt_context,
@@ -3622,6 +3752,10 @@ async def entrypoint(ctx: JobContext):
         time_limit_mins=time_limit_mins,
         depth_instruction=session_context.depth_instruction,
         candidate_band=session_context.candidate_band,
+        ai_name=_compact_optional(context.get("aiName")),
+        org_name=_compact_optional(context.get("orgName")),
+        org_location=_compact_optional(context.get("orgLocation")),
+        drive_location=_compact_optional(context.get("driveLocation")),
     )
     system_prompt = build_system_prompt(
         voice_layer_prompt=voice_layer_prompt,
@@ -3733,13 +3867,23 @@ async def entrypoint(ctx: JobContext):
                 mode="dynamic",
             ),
             interruption=InterruptionOptions(
-                enabled=False, # Disable interruptions to prevent echo/voice breaking issues
+                enabled=True,
+                mode="adaptive",
+                # Sensitivity tuning: ignore short noises/backchannels.
+                # Only stop if candidate speaks for > 1.5s and > 4 words.
+                min_duration=1.5,
+                min_words=4,
+                # Keep buffered speech during AEC warmup to avoid dropping input.
+                discard_audio_if_uninterruptible=False,
+                resume_false_interruption=True,
+                false_interruption_timeout=3.0,
             ),
         ),
         use_tts_aligned_transcript=True,
         tts_text_transforms=[
             "filter_emoji",
             "filter_markdown",
+            _single_question_transform,
             text_transforms.replace({
                 "HR": "H R",
                 "SaaS": "sass",
@@ -3922,11 +4066,18 @@ async def entrypoint(ctx: JobContext):
             return
 
     # Pre-start all background processing while user is on hardware check.
+    audio_input_options = {}
+    if ai_coustics is not None:
+        audio_input_options["noise_cancellation"] = ai_coustics.audio_enhancement(
+            model=ai_coustics.EnhancerModel.QUAIL_VF_L
+        )
+
     await session.start(
         agent=agent,
         room=ctx.room,
         room_options=room_io.RoomOptions(
             close_on_disconnect=False,
+            audio_input=room_io.AudioInputOptions(**audio_input_options),
         ),
     )
 
@@ -4157,6 +4308,22 @@ async def entrypoint(ctx: JobContext):
             if short_classification is None and word_count <= 2:
                 logger.debug(
                     f"[TRANSCRIPT] Ignoring probable STT fragment ({word_count} words): '{content[:60]}'"
+                )
+                return
+
+            # Pure acknowledgments (ok/yeah/sure/alright) are STT noise — don't log to
+            # transcript or trigger the LLM. Just inject a directive so Ishita holds course.
+            if short_classification and short_classification["response_class"] == "acknowledgment":
+                if not session_context.initial_context_injected:
+                    await _inject_candidate_context_before_first_question()
+                short_directive = build_short_utterance_directive(
+                    "acknowledgment",
+                    short_classification["evidence"],
+                )
+                remove_system_messages(chat_ctx, "[SHORT_RESPONSE_DIRECTIVE")
+                chat_ctx.add_message(role="system", content=short_directive)
+                logger.debug(
+                    f"[SHORT_REPLY] dropping acknowledgment filler: '{content[:60]}'"
                 )
                 return
 
@@ -4863,8 +5030,8 @@ async def entrypoint(ctx: JobContext):
 
     # How many seconds before the end to trigger each nudge
     # Scale based on total duration (e.g., last 20% of the session, capped at 2.5 mins)
-    CANDIDATE_Q_TRIGGER_SECS = min(150, int(total_seconds * 0.2))
-    FINAL_THANKS_TRIGGER_SECS = 5
+    CANDIDATE_Q_TRIGGER_SECS = min(150, max(10, int(total_seconds * 0.2)))
+    FINAL_THANKS_TRIGGER_SECS = max(8, min(15, int(total_seconds * 0.1)))
     MIN_CANDIDATE_LINES_FOR_WRAPUP = 3
 
     # Warm inactivity nudges. Keep them short, varied, and situation-aware.
@@ -4879,8 +5046,11 @@ async def entrypoint(ctx: JobContext):
 
     async def _deliver_nudge(text: str) -> None:
         await session.say(text, allow_interruptions=True)
-        # Scripted speech doesn't fire events, manually reset to start counting 30s/60s from NOW
-        reset_inactivity_clock(start_waiting=True)
+        # Scripted speech doesn't fire agent_speech_committed, manually restart clock.
+        # Preserve the nudge/warning flags so they don't fire again for this prompt.
+        nonlocal awaiting_candidate_response, awaiting_candidate_since
+        awaiting_candidate_response = True
+        awaiting_candidate_since = time.monotonic()
 
     async def _send_termination_signal():
         try:
@@ -4955,9 +5125,14 @@ async def entrypoint(ctx: JobContext):
             break
 
         # --- Strict Inactivity Handling ---
+        # Suppressed after wrap-up nudge to avoid piling on messages near end.
         # 1. 30s: Initial warm nudge
         # 2. 60s: Termination warning
         # 3. 70s: Final exit
+        if candidate_questions_asked:
+            await asyncio.sleep(1)
+            continue
+
         inactivity_elapsed = (
             (time.monotonic() - awaiting_candidate_since)
             if awaiting_candidate_response and awaiting_candidate_since is not None
@@ -5041,7 +5216,7 @@ async def entrypoint(ctx: JobContext):
 
         try:
             await session.say(goodbye_text)
-            await asyncio.sleep(0.5)  # tiny tail for transport flush
+            await asyncio.sleep(3.0)  # wait for TTS to fully play before disconnecting
         except Exception:
             pass
 
@@ -5159,9 +5334,12 @@ async def entrypoint(ctx: JobContext):
     # Allow session to close
     logger.info("Final save complete. Closing job process.")
     try:
-        session.shutdown(drain=False)
+        session.shutdown(drain=True)
     except Exception:
-        pass
+        try:
+            session.shutdown(drain=False)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
@@ -5170,6 +5348,6 @@ if __name__ == "__main__":
             entrypoint_fnc=entrypoint,
             prewarm_fnc=prewarm,
             agent_name=AGENT_NAME,
-            num_idle_processes=5,
+            num_idle_processes=max(1, int(os.getenv("LIVEKIT_IDLE_PROCESSES", "8"))),
         )
     )
