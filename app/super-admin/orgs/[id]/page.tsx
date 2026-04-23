@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Building2, ShieldCheck, Globe, Loader2, User, Mail, ShieldAlert, RefreshCw, Lock, Play, Pause, MapPin as MapPinIcon } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Building2, ShieldCheck, Globe, Loader2, User, Mail, ShieldAlert, RefreshCw, Lock, Play, Pause, MapPin as MapPinIcon, Coins } from "lucide-react";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "@/components/ui/toast-custom";
 import { CARTESIA_VOICES } from "@/lib/constants/voices";
@@ -42,6 +42,10 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         llmTemperature: 0.7,
     });
 
+    const [creditsTotal, setCreditsTotal] = useState(0);
+    const [creditsUsed, setCreditsUsed] = useState(0);
+    const [creditsInput, setCreditsInput] = useState("");
+
     const [previewLoading, setPreviewLoading] = useState(false);
     const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
 
@@ -74,6 +78,10 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         llmModel: data.llmModel || "gpt-4o",
                         llmTemperature: data.llmTemperature != null ? data.llmTemperature : 0.7,
                     });
+
+                    setCreditsTotal(data.creditsTotal || 0);
+                    setCreditsUsed(data.creditsUsed || 0);
+                    setCreditsInput(String(data.creditsTotal || 0));
 
                     if (data.users && data.users.length > 0) {
                         setAdminInfo({ name: data.users[0].name, email: data.users[0].email });
@@ -145,6 +153,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         try {
             const payload = {
                 ...form,
+                creditsTotal: parseFloat(creditsInput) || 0,
             };
 
             const res = await fetch(`/api/super-admin/orgs/${id}`, {
@@ -295,7 +304,56 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         </div>
                     </div>
                 </div>
-            </div>
+                </div>
+
+                {/* Credits */}
+                <div className="space-y-6">
+                    <div className="flex items-center gap-4">
+                        <span className="w-1.5 h-8 bg-amber-500 rounded-full shadow-sm" />
+                        <h3 className="text-[12px] font-bold uppercase tracking-widest text-gray-500">2. Interview Credits</h3>
+                    </div>
+
+                    <div className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm space-y-6">
+                        <div className="grid md:grid-cols-3 gap-4">
+                            <div className="p-4 rounded-xl bg-amber-50 border border-amber-100">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Total Credits</p>
+                                <p className="text-2xl font-black text-gray-900 mt-1 tabular-nums">{creditsTotal}</p>
+                                <p className="text-[10px] text-gray-400 mt-1 font-medium">Allocated</p>
+                            </div>
+                            <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Used</p>
+                                <p className="text-2xl font-black text-gray-900 mt-1 tabular-nums">{creditsUsed}</p>
+                                <p className="text-[10px] text-gray-400 mt-1 font-medium">Consumed</p>
+                            </div>
+                            <div className={`p-4 rounded-xl border ${creditsTotal - creditsUsed > 0 ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100"}`}>
+                                <p className={`text-[10px] font-bold uppercase tracking-widest ${creditsTotal - creditsUsed > 0 ? "text-emerald-500" : "text-red-500"}`}>Remaining</p>
+                                <p className="text-2xl font-black text-gray-900 mt-1 tabular-nums">{Math.max(0, creditsTotal - creditsUsed)}</p>
+                                <p className="text-[10px] text-gray-400 mt-1 font-medium">{Math.max(0, creditsTotal - creditsUsed)} min remaining</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2 leading-none">
+                                <Coins className="h-3 w-3" /> Set Total Credits
+                            </label>
+                            <div className="flex gap-3 items-center">
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={creditsInput}
+                                    onChange={e => setCreditsInput(e.target.value)}
+                                    placeholder="e.g. 100"
+                                    className="h-10 w-48 rounded-xl border border-gray-200 bg-white px-3 text-sm font-bold focus:ring-2 focus:ring-amber-300 outline-none"
+                                />
+                                <p className="text-[10px] text-gray-400 font-medium">
+                                    = <span className="font-bold text-gray-700">{Math.round((parseFloat(creditsInput) || 0) / 0.2)} min</span> of interviews (0.2 credits/min · 5 min = 1 credit)
+                                </p>
+                            </div>
+                            <p className="text-[10px] text-gray-400 font-medium mt-1">0.2 credits per minute. 5 min = 1 credit. Deducted with second precision at interview end.</p>
+                        </div>
+                    </div>
+                </div>
 
                 {/* Primary HR Controller */}
                 <div className="space-y-6">

@@ -8,6 +8,7 @@ import { sanitizeObject } from "@/lib/utils";
 import { generateId } from "@/lib/ids";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { deleteDriveEmbeddings } from "@/lib/pinecone";
+import { getOrgCreditStatus } from "@/lib/credits";
 
 export async function GET(request: Request) {
     try {
@@ -158,6 +159,11 @@ export async function POST(request: Request) {
             });
             if (org?.status === "SUSPENDED" || org?.status === "CLOSED") {
                 return NextResponse.json({ error: "Drive creation is blocked because your organization is restricted." }, { status: 403 });
+            }
+
+            const creditStatus = await getOrgCreditStatus(session.orgId);
+            if (creditStatus.creditsTotal > 0 && !creditStatus.hasSufficientCredits) {
+                return NextResponse.json({ error: "Insufficient credits. Recharge to create new drives.", code: "NO_CREDITS" }, { status: 402 });
             }
         }
 

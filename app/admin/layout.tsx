@@ -7,6 +7,7 @@ import { OnboardingRedirect } from "@/components/admin/onboarding-redirect";
 import { RecruiterAssistant } from "@/components/admin/RecruiterAssistant";
 import { Toaster } from "@/components/ui/toast-custom";
 import { AccountStatusHandler } from "@/components/admin/AccountStatusHandler";
+import { LowCreditsBanner } from "@/components/admin/LowCreditsBanner";
 import { prisma } from "@/lib/prisma";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -40,6 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     return (
         <>
         <AccountStatusHandler status={orgData.status} />
+        {orgData.status === "ACTIVE" && <LowCreditsBanner />}
         <div className="flex min-h-screen bg-[#F8F9FB] relative overflow-hidden font-sans">
             {/*  Background Deck: Aurora Blobs  */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">

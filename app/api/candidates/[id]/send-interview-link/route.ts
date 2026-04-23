@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { getOrgCreditStatus } from "@/lib/credits";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
     try {
@@ -44,6 +45,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             });
             if (org?.status === "SUSPENDED" || org?.status === "CLOSED") {
                 return NextResponse.json({ error: "Interview links are blocked because your organization is restricted." }, { status: 403 });
+            }
+
+            const creditStatus = await getOrgCreditStatus(session.orgId);
+            if (creditStatus.creditsTotal > 0 && !creditStatus.hasSufficientCredits) {
+                return NextResponse.json({ error: "Insufficient credits. Recharge to send interview links.", code: "NO_CREDITS" }, { status: 402 });
             }
         }
 

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { deleteOrgEmbeddings } from "@/lib/pinecone";
@@ -25,12 +26,24 @@ export async function GET(
                 }
             }
         });
+        const creditRows = await prisma.$queryRaw<Array<{ creditsTotal: number | null; creditsUsed: number | null }>>(
+            Prisma.sql`
+                SELECT "creditsTotal", "creditsUsed"
+                FROM "Organization"
+                WHERE id = ${id}
+                LIMIT 1
+            `
+        );
 
         if (!org) {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
 
-        return NextResponse.json(org);
+        return NextResponse.json({
+            ...org,
+            creditsTotal: creditRows[0]?.creditsTotal ?? 0,
+            creditsUsed: creditRows[0]?.creditsUsed ?? 0,
+        });
     } catch (error) {
         console.error("Error fetching org:", error);
         return NextResponse.json({ error: "Failed to fetch organization" }, { status: 500 });
@@ -57,7 +70,10 @@ export async function PATCH(
             sttProvider, deepgramModel, sarvamSttModel,
             llmProvider, llmModel, llmTemperature,
             usageMetrics,
+            creditsTotal,
         } = body;
+        const parsedCreditsTotal =
+            creditsTotal !== undefined ? parseFloat(creditsTotal) : undefined;
 
         // -- INPUT VALIDATION --------------------------------
         if (plan && !["STARTER", "PROFESSIONAL", "ENTERPRISE", "TRIAL", "ENTERPRISE_CUSTOM"].includes(plan)) {
@@ -114,7 +130,11 @@ export async function PATCH(
         if (llmModel !== undefined) updateData.llmModel = llmModel;
         if (llmTemperature !== undefined) updateData.llmTemperature = Number(llmTemperature);
 
-        // Billing / usage metrics are stored as JSON
+        // Credits billing — dedicated columns, never touch usageMetrics
+        const shouldUpdateCreditsTotal =
+            parsedCreditsTotal !== undefined && !isNaN(parsedCreditsTotal) && parsedCreditsTotal >= 0;
+
+        // Usage metrics — internal API cost tracking, untouched by billing
         if (usageMetrics !== undefined) {
             if (typeof usageMetrics === "string") {
                 const trimmed = usageMetrics.trim();
@@ -163,6 +183,16 @@ export async function PATCH(
                 data: updateData,
             });
 
+            if (shouldUpdateCreditsTotal) {
+                await tx.$executeRaw(
+                    Prisma.sql`
+                        UPDATE "Organization"
+                        SET "creditsTotal" = ${parsedCreditsTotal}
+                        WHERE id = ${id}
+                    `
+                );
+            }
+
             // 2. Update Primary Admin if name/email provided
             if (adminName !== undefined || adminEmail !== undefined) {
                 // Find the first ORG_ADMIN
@@ -183,7 +213,20 @@ export async function PATCH(
                 }
             }
 
-            return org;
+            const creditRows = await tx.$queryRaw<Array<{ creditsTotal: number | null; creditsUsed: number | null }>>(
+                Prisma.sql`
+                    SELECT "creditsTotal", "creditsUsed"
+                    FROM "Organization"
+                    WHERE id = ${id}
+                    LIMIT 1
+                `
+            );
+
+            return {
+                ...org,
+                creditsTotal: creditRows[0]?.creditsTotal ?? 0,
+                creditsUsed: creditRows[0]?.creditsUsed ?? 0,
+            };
         });
 
         return NextResponse.json(updated);

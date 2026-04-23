@@ -1,115 +1,207 @@
 "use client";
 
-import React from "react";
-import { 
-    CreditCard, Crown, BarChart3, Zap, Users, Check, ExternalLink 
-} from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Crown, Zap, Check, ExternalLink, Coins, TrendingDown, Clock, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { SettingsCard } from "@/components/admin/settings/settings-shared";
 
+interface CreditStatus {
+    creditsTotal: number;
+    creditsUsed: number;
+    creditsRemaining: number;
+    minutesTotal: number;
+    minutesUsed: number;
+    minutesRemaining: number;
+    hasSufficientCredits: boolean;
+}
+
 export function BillingContent() {
+    const [credits, setCredits] = useState<CreditStatus | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        fetch("/api/admin/credits")
+            .then(r => r.json())
+            .then(data => setCredits(data))
+            .catch(console.error)
+            .finally(() => setLoading(false));
+    }, []);
+
+    const usedPct = credits && credits.creditsTotal > 0
+        ? Math.min(100, Math.round((credits.creditsUsed / credits.creditsTotal) * 100))
+        : 0;
+
     return (
         <div className="space-y-8 max-w-5xl">
-            {/*  Header  */}
+            {/* Header */}
             <div className="flex items-center gap-4 group">
                 <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
                 <div>
-                    <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Billing & Plans</h1>
+                    <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Billing & Credits</h1>
                     <p className="text-gray-500 font-medium mt-1 text-base">
-                        Manage your subscription and view usage
+                        Manage your interview credits and usage
                     </p>
                 </div>
             </div>
 
             <div className="space-y-6">
+
+                {/* Credits Overview */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+                        <div>
+                            <h2 className="text-lg font-bold text-gray-900">Interview Credits</h2>
+                            <p className="text-sm text-gray-500 font-medium mt-1">
+                                0.2 credits per minute · 5 min = 1 credit · deducted at interview end (second-precision)
+                            </p>
+                        </div>
+                        {credits && !credits.hasSufficientCredits && credits.creditsTotal > 0 && (
+                            <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg bg-red-50 border border-red-100 text-red-500 animate-pulse">
+                                Out of Credits
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="px-6 py-6">
+                        {loading ? (
+                            <div className="grid grid-cols-5 gap-4">
+                                {[1, 2, 3, 4, 5].map(i => (
+                                    <div key={i} className="h-32 rounded-xl bg-gray-100 animate-pulse" />
+                                ))}
+                            </div>
+                        ) : credits && credits.creditsTotal === 0 ? (
+                            <div className="py-10 text-center">
+                                <Coins className="h-10 w-10 text-gray-200 mx-auto mb-3" />
+                                <p className="text-sm font-bold text-gray-400">No credits allocated yet.</p>
+                                <p className="text-xs text-gray-400 mt-1">Contact your super admin to add credits.</p>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="grid grid-cols-5 gap-4">
+
+                                    {/* Total Credits */}
+                                    <div className="p-5 rounded-xl border border-amber-100 bg-amber-50 shadow-sm">
+                                        <div className="h-9 w-9 rounded-lg bg-amber-100 flex items-center justify-center mb-4">
+                                            <Coins className="h-4 w-4 text-amber-600" />
+                                        </div>
+                                        <p className="text-2xl font-black text-gray-900 tabular-nums leading-none">
+                                            {(credits?.creditsTotal ?? 0).toFixed(2)}
+                                        </p>
+                                        <p className="text-[11px] font-bold text-gray-400 mt-2 uppercase tracking-widest">Total Credits</p>
+                                        <p className="text-[10px] text-amber-600 font-semibold mt-1">{credits?.minutesTotal ?? 0} min allocated</p>
+                                    </div>
+
+                                    {/* Credits Used */}
+                                    <div className="p-5 rounded-xl border border-gray-100 bg-white shadow-sm">
+                                        <div className="h-9 w-9 rounded-lg bg-gray-100 flex items-center justify-center mb-4">
+                                            <TrendingDown className="h-4 w-4 text-gray-500" />
+                                        </div>
+                                        <p className="text-2xl font-black text-gray-900 tabular-nums leading-none">
+                                            {(credits?.creditsUsed ?? 0).toFixed(2)}
+                                        </p>
+                                        <p className="text-[11px] font-bold text-gray-400 mt-2 uppercase tracking-widest">Credits Used</p>
+                                        <p className="text-[10px] text-gray-400 font-semibold mt-1">{credits?.minutesUsed ?? 0} min consumed</p>
+                                    </div>
+
+                                    {/* Credits Remaining */}
+                                    <div className={`p-5 rounded-xl border shadow-sm ${(credits?.creditsRemaining ?? 0) > 0 ? "border-emerald-100 bg-emerald-50" : "border-red-100 bg-red-50"}`}>
+                                        <div className={`h-9 w-9 rounded-lg flex items-center justify-center mb-4 ${(credits?.creditsRemaining ?? 0) > 0 ? "bg-emerald-100" : "bg-red-100"}`}>
+                                            <Coins className={`h-4 w-4 ${(credits?.creditsRemaining ?? 0) > 0 ? "text-emerald-600" : "text-red-500"}`} />
+                                        </div>
+                                        <p className="text-2xl font-black text-gray-900 tabular-nums leading-none">
+                                            {(credits?.creditsRemaining ?? 0).toFixed(2)}
+                                        </p>
+                                        <p className="text-[11px] font-bold text-gray-400 mt-2 uppercase tracking-widest">Credits Remaining</p>
+                                        <p className={`text-[10px] font-semibold mt-1 ${(credits?.creditsRemaining ?? 0) > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                                            {(credits?.creditsRemaining ?? 0) > 0 ? "available to use" : "recharge needed"}
+                                        </p>
+                                    </div>
+
+                                    {/* Minutes Remaining */}
+                                    <div className={`p-5 rounded-xl border shadow-sm ${(credits?.minutesRemaining ?? 0) > 0 ? "border-blue-100 bg-blue-50" : "border-red-100 bg-red-50"}`}>
+                                        <div className={`h-9 w-9 rounded-lg flex items-center justify-center mb-4 ${(credits?.minutesRemaining ?? 0) > 0 ? "bg-blue-100" : "bg-red-100"}`}>
+                                            <Clock className={`h-4 w-4 ${(credits?.minutesRemaining ?? 0) > 0 ? "text-blue-600" : "text-red-500"}`} />
+                                        </div>
+                                        <p className="text-2xl font-black text-gray-900 tabular-nums leading-none">
+                                            {credits?.minutesRemaining ?? 0}
+                                        </p>
+                                        <p className="text-[11px] font-bold text-gray-400 mt-2 uppercase tracking-widest">Minutes Remaining</p>
+                                        <p className={`text-[10px] font-semibold mt-1 ${(credits?.minutesRemaining ?? 0) > 0 ? "text-blue-600" : "text-red-500"}`}>
+                                            of interview time left
+                                        </p>
+                                    </div>
+
+                                    {/* Consumed % */}
+                                    <div className="p-5 rounded-xl border border-gray-100 bg-white shadow-sm">
+                                        <div className="h-9 w-9 rounded-lg bg-blue-50 flex items-center justify-center mb-4">
+                                            <BarChart3 className="h-4 w-4 text-blue-500" />
+                                        </div>
+                                        <p className="text-2xl font-black text-gray-900 tabular-nums leading-none">{usedPct}%</p>
+                                        <p className="text-[11px] font-bold text-gray-400 mt-2 uppercase tracking-widest">Consumed</p>
+                                        <p className="text-[10px] text-gray-400 font-semibold mt-1">{100 - usedPct}% still available</p>
+                                    </div>
+
+                                </div>
+
+                                {/* Progress bar */}
+                                <div className="mt-5 space-y-1.5">
+                                    <div className="flex justify-between text-[11px] font-bold text-gray-400">
+                                        <span>{credits?.minutesUsed ?? 0} min used</span>
+                                        <span>{credits?.minutesTotal ?? 0} min total</span>
+                                    </div>
+                                    <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
+                                        <div
+                                            className="h-full rounded-full transition-all duration-700"
+                                            style={{
+                                                width: `${usedPct}%`,
+                                                background: usedPct >= 100 ? "#EF4444" : usedPct > 80 ? "#F97316" : "#10B981"
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+
+                {/* How Credits Work */}
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                     <div className="px-6 py-5 border-b border-gray-100">
-                        <h2 className="text-lg font-bold text-gray-900">Current Plan</h2>
-                        <p className="text-sm text-gray-500 font-medium mt-1">Your active subscription and usage details.</p>
+                        <h2 className="text-lg font-bold text-gray-900">How Credits Work</h2>
                     </div>
                     <div className="px-6 py-6">
-                        <div className="relative flex items-center justify-between p-6 rounded-xl bg-gradient-to-br from-slate-800 to-slate-950 text-white overflow-hidden shadow-md">
-                            <div className="absolute -right-6 -top-6 h-36 w-36 rounded-full bg-white/[0.03] pointer-events-none" />
-                            <div className="flex items-center gap-4 relative z-10">
-                                <div className="h-12 w-12 rounded-xl bg-white/10 border border-white/[0.08] flex items-center justify-center flex-shrink-0">
-                                    <Crown className="h-6 w-6 text-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.4)]" />
-                                </div>
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <p className="font-bold text-xl tracking-tight">Pro Plan</p>
-                                        <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 bg-emerald-500/20 border border-emerald-400/20 rounded-lg text-emerald-400">Active</span>
-                                    </div>
-                                    <p className="text-slate-400 text-xs font-medium mt-1">Billed monthly · Renews Mar 20, 2026</p>
-                                </div>
-                            </div>
-                            <div className="text-right relative z-10">
-                                <p className="font-bold text-3xl tracking-tight tabular-nums">$49</p>
-                                <p className="text-slate-400 text-xs font-medium mt-1">per month</p>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-4 mt-4">
+                        <div className="grid grid-cols-3 gap-4">
                             {[
-                                { label: "Next Invoice", value: "Mar 20, 2026" },
-                                { label: "Payment", value: "•••• 4242" },
-                                { label: "Status", value: "Paid" },
-                            ].map(({ label, value }) => (
-                                <div key={label} className="p-4 rounded-xl bg-gray-50 border border-gray-100">
-                                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{label}</p>
-                                    <p className="text-sm font-bold text-gray-900 mt-1.5 tracking-tight">{value}</p>
+                                { label: "Rate", value: "0.2 / min", desc: "5 min = 1.0 credit", icon: Coins, color: "text-amber-600", bg: "bg-amber-50" },
+                                { label: "Precision", value: "Per Second", desc: "4m 10s = 0.83, 5m 01s = 1.00", icon: Clock, color: "text-blue-600", bg: "bg-blue-50" },
+                                { label: "Deducted", value: "Auto", desc: "at interview completion", icon: Zap, color: "text-purple-600", bg: "bg-purple-50" },
+                            ].map(({ label, value, desc, icon: Icon, color, bg }) => (
+                                <div key={label} className="p-5 rounded-xl border border-gray-100 bg-white">
+                                    <div className={`h-10 w-10 rounded-lg ${bg} flex items-center justify-center mb-3`}>
+                                        <Icon className={`h-5 w-5 ${color}`} />
+                                    </div>
+                                    <p className="text-xs font-bold uppercase tracking-widest text-gray-400">{label}</p>
+                                    <p className="text-xl font-black text-gray-900 mt-1">{value}</p>
+                                    <p className="text-xs text-gray-400 font-medium mt-1">{desc}</p>
                                 </div>
                             ))}
                         </div>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                    <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
-                        <div>
-                            <h2 className="text-lg font-bold text-gray-900">Usage Overview</h2>
-                            <p className="text-sm text-gray-500 font-medium mt-1">Quota utilization for the current cycle</p>
-                        </div>
-                        <span className="text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-100 text-gray-500">Feb 2026 Cycle</span>
-                    </div>
-                    <div className="px-6 py-6">
-                        <div className="grid grid-cols-3 gap-4">
-                            {[
-                                { label: "Active Drives", used: 4, max: 10, icon: BarChart3, accent: "#F97316", bg: "bg-orange-50", text: "text-[#F97316]" },
-                                { label: "AI Screenings", used: 230, max: 500, icon: Zap, accent: "#8B5CF6", bg: "bg-violet-50", text: "text-violet-600" },
-                                { label: "Team Members", used: 3, max: 10, icon: Users, accent: "#10B981", bg: "bg-emerald-50", text: "text-emerald-600" },
-                            ].map(({ label, used, max, icon: Icon, accent, bg, text }) => {
-                                const pct = Math.round((used / max) * 100);
-                                return (
-                                    <div key={label} className="relative p-5 rounded-xl border border-gray-100 bg-white hover:border-[#F97316]/30 transition-all duration-300 group overflow-hidden shadow-sm">
-                                        <div className={`h-10 w-10 rounded-lg ${bg} flex items-center justify-center mb-4 shadow-sm`}>
-                                            <Icon className={`h-5 w-5 ${text}`} />
-                                        </div>
-                                        <p className="text-3xl font-bold text-gray-900 leading-none tracking-tight tabular-nums">{used}</p>
-                                        <p className="text-xs font-semibold text-gray-400 mt-2 uppercase tracking-widest">{label.split(" ")[0]} <span className="opacity-40">/ {max}</span></p>
-                                        <div className="mt-4 h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
-                                            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: accent }} />
-                                        </div>
-                                        <p className={`text-[10px] font-bold mt-2 ${text} uppercase tracking-widest`}>{pct}% utilized</p>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                </div>
-
-                <SettingsCard 
-                    title="Enterprise Solutions" 
-                    description="Unlock global hiring infrastructure and dedicated support."
+                <SettingsCard
+                    title="Need More Credits?"
+                    description="Contact your administrator to recharge credits and continue running interviews."
                     icon={Crown}
                 >
                     <div className="grid grid-cols-2 gap-y-4 gap-x-8 mb-8">
                         {[
-                            "Unlimited recruitment drives", 
-                            "Unlimited AI screenings", 
-                            "Up to 50 team members", 
-                            "Priority support & SLA", 
-                            "Custom integrations", 
-                            "White-labeled portal"
+                            "Instant credit top-up",
+                            "No subscription required",
+                            "Pay-as-you-go model",
+                            "Usage tracked per interview",
+                            "Auto-deducted at completion",
+                            "Full audit trail",
                         ].map(feat => (
                             <div key={feat} className="flex items-center gap-3">
                                 <div className="h-6 w-6 rounded-lg bg-gray-900 flex items-center justify-center flex-shrink-0">
@@ -120,9 +212,10 @@ export function BillingContent() {
                         ))}
                     </div>
                     <Button className="h-11 px-8 rounded-lg bg-[#F97316] hover:bg-orange-600 text-white font-bold shadow-md transition-all">
-                        Elevate to Enterprise <ExternalLink className="h-4 w-4 ml-2.5" />
+                        Contact Admin to Recharge <ExternalLink className="h-4 w-4 ml-2.5" />
                     </Button>
                 </SettingsCard>
+
             </div>
         </div>
     );

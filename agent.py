@@ -187,7 +187,7 @@ for logger_name in ("livekit.plugins.cartesia", "livekit.plugins.silero", "livek
 STT_MODEL = "nova-3"  # deepgram model
 CARTESIA_MODEL = "cartesia/sonic-3"  # Cartesia model via LiveKit Inference
 CARTESIA_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"  # "Jacqueline - Reassuring Agent" (verified on account)
-LLM_MODEL = "gpt-4o-mini"  # LLM model - upgraded for richer conversational quality
+LLM_MODEL = "gpt-4.1-mini"  # richer conversational quality at mini cost
 DATABASE_URL = os.environ.get("DATABASE_URL")
 AGENT_NAME = os.environ.get("LIVEKIT_AGENT_NAME", "ai_interviewer")
 APP_BASE_URL = (
@@ -313,7 +313,7 @@ async def _single_question_transform(text_stream):
     pos = 0
     for s in sentences:
         pos += len(s)
-        if s.rstrip().endswith('?'):
+        if s.rstrip().rstrip('"\'').endswith('?'):
             question_count += 1
             if question_count == 1:
                 cutoff = pos
@@ -4351,6 +4351,24 @@ async def entrypoint(ctx: JobContext):
 
             if not session_context.initial_context_injected:
                 await _inject_candidate_context_before_first_question()
+
+            # Inject recent Q&A context so Ishita can make callbacks and detect contradictions.
+            # Grab the last 6 transcript lines (3 exchanges) as a compact memory snapshot.
+            if _last_interviewer_question and turn_snapshot > 1:
+                recent_lines = transcript_lines[-6:] if len(transcript_lines) >= 6 else transcript_lines[:]
+                recent_block = "\n".join(recent_lines)
+                remove_system_messages(chat_ctx, "[RECENT_CONTEXT]")
+                chat_ctx.add_message(
+                    role="system",
+                    content=(
+                        "[RECENT_CONTEXT — DO NOT READ ALOUD]\n"
+                        "Last few exchanges (use for callbacks and contradiction detection):\n"
+                        f"{recent_block}\n"
+                        "Last question you asked: " + _last_interviewer_question + "\n"
+                        "Candidate just answered. React to what they said before asking next question."
+                    ),
+                )
+
             if short_classification:
                 short_class = short_classification["response_class"]
                 short_directive = build_short_utterance_directive(
@@ -4632,7 +4650,7 @@ async def entrypoint(ctx: JobContext):
             # and injects a NEXT_TURN_DIRECTIVE before Ishita generates her next response.
             # Decision: PROBE (which mode) or MOVE_ON - fully signal-driven, no fixed depth.
             # --- Dynamic Interview State Injection (every 3 assistant turns) ---
-            # Every 3 turns, a lightweight gpt-4o-mini call generates a coverage + pace summary
+            # Every 3 turns, a lightweight LLM call generates a coverage + pace summary
             # and injects it as a system message so Ishita knows what she's covered, what's
             # thin/untouched, and whether she needs to move on immediately.
             if role == "assistant":
@@ -5236,7 +5254,7 @@ async def entrypoint(ctx: JobContext):
         )
         if candidate_turns_final >= 4:
             goodbye_text = (
-                f"Thanks so much for your time today, {candidate_first_name or candidate_name}."
+                f"Thanks so much for your time today, {candidate_first_name or candidate_name}. "
                 "It was genuinely great speaking with you. Take care, and all the best!"
             )
         else:
