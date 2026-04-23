@@ -1498,10 +1498,11 @@ def build_candidate_context_ready_message(
 
 
 def remove_system_messages(chat_ctx, marker: str) -> None:
-    for old_msg in list(chat_ctx.messages):
+    messages = chat_ctx.messages() if callable(getattr(chat_ctx, "messages", None)) else chat_ctx.messages
+    for old_msg in list(messages):
         if getattr(old_msg, "role", "") == "system" and marker in (getattr(old_msg, "content", "") or ""):
             try:
-                chat_ctx.messages.remove(old_msg)
+                messages.remove(old_msg)
             except (ValueError, AttributeError):
                 pass
 
@@ -4563,10 +4564,11 @@ async def entrypoint(ctx: JobContext):
                             )
 
                         # Remove previous directive to keep context clean
-                        for old_msg in list(chat_ctx.messages):
+                        messages = chat_ctx.messages() if callable(getattr(chat_ctx, "messages", None)) else chat_ctx.messages
+                        for old_msg in list(messages):
                             if getattr(old_msg, "role", "") == "system" and "[NEXT_TURN_DIRECTIVE" in (getattr(old_msg, "content", "") or ""):
                                 try:
-                                    chat_ctx.messages.remove(old_msg)
+                                    messages.remove(old_msg)
                                 except (ValueError, AttributeError):
                                     pass
 
@@ -4716,9 +4718,10 @@ async def entrypoint(ctx: JobContext):
                                     })
 
                                 # --- Remove old state injections - keep only the latest 2 ---
+                                messages = chat_ctx.messages() if callable(getattr(chat_ctx, "messages", None)) else chat_ctx.messages
                                 state_msgs = [
                                     m
-                                    for m in chat_ctx.messages
+                                    for m in messages
                                     if getattr(m, "role", "") == "system"
                                     and "[INTERVIEW STATE UPDATE" in (
                                         getattr(m, "content", "") or ""
@@ -4727,7 +4730,7 @@ async def entrypoint(ctx: JobContext):
                                 if len(state_msgs) >= 2:
                                     for old_msg in state_msgs[:-1]:
                                         try:
-                                            chat_ctx.messages.remove(old_msg)
+                                            messages.remove(old_msg)
                                         except (ValueError, AttributeError):
                                             pass
 
