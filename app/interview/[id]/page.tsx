@@ -143,6 +143,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
     //  AI Face Proctoring 
     const [referenceSnapshotUrl, setReferenceSnapshotUrl] = useState<string | null>(null);
+
+    // Selected Devices
+    const [selectedCameraId, setSelectedCameraId] = useState<string | undefined>();
+    const [selectedMicId, setSelectedMicId] = useState<string | undefined>();
     const [faceViolationAlert, setFaceViolationAlert] = useState<{ type: string; reason: string } | null>(null);
     const faceViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -601,7 +605,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
     }, [launchTimeoutCheck, phase, resetToHardwareCheck]);
 
-    const handleHardwareComplete = async () => {
+    const handleHardwareComplete = async (devices?: { cameraId?: string; micId?: string }) => {
+        if (devices) {
+            setSelectedCameraId(devices.cameraId);
+            setSelectedMicId(devices.micId);
+        }
+
         setIsJoining(true);
         setJoinError(null);
 
@@ -980,8 +989,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     )}
                 >
                     <LiveKitRoom
-                        video={phase === "interview"}
-                        audio={phase === "interview" || phase === "launching"}
+                        options={{ videoCaptureDefaults: { resolution: { width: 1280, height: 720, frameRate: 30 } } }}
+                        video={phase === "interview" ? (selectedCameraId ? { deviceId: selectedCameraId } : true) : false}
+                        audio={(phase === "interview" || phase === "launching") ? (selectedMicId ? { deviceId: selectedMicId } : true) : false}
                         token={token}
                         serverUrl={serverUrl}
                         connect={shouldConnect}
@@ -1462,6 +1472,7 @@ function InterviewRoomContent({
     const recordingStartedAtRef = useRef<number | null>(null);
     const recordingChunkIndexRef = useRef(0);
     const recordingChunkUrlsRef = useRef<string[]>([]);
+    const recordingChunkKeysRef = useRef<string[]>([]);
     const recordingChunkUploadChainRef = useRef<Promise<void>>(Promise.resolve());
     const recordingFinalizePromiseRef = useRef<Promise<void> | null>(null);
     const recordingStopPromiseRef = useRef<Promise<void> | null>(null);
@@ -1534,18 +1545,35 @@ function InterviewRoomContent({
         formData.append("byteSize", String(blob.size));
         formData.append("recording", new File([blob], `chunk-${chunkIndex}.webm`, { type: blob.type || "video/webm" }));
 
-        const res = await fetch("/api/interview/recording", {
-            method: "POST",
-            body: formData,
-        });
-        if (!res.ok) {
-            const payload = await res.json().catch(() => ({}));
-            throw new Error(payload?.error || "Chunk upload failed");
+        // Retry up to 3 times with exponential backoff to guard against transient network errors.
+        const MAX_CHUNK_RETRIES = 3;
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= MAX_CHUNK_RETRIES; attempt++) {
+            try {
+                const res = await fetch("/api/interview/recording", {
+                    method: "POST",
+                    body: formData,
+                });
+                if (!res.ok) {
+                    const errPayload = await res.json().catch(() => ({}));
+                    throw new Error(errPayload?.error || `Chunk upload HTTP ${res.status}`);
+                }
+                const payload = await res.json().catch(() => ({}));
+                if (payload?.chunkUrl) {
+                    recordingChunkUrlsRef.current.push(String(payload.chunkUrl));
+                }
+                if (payload?.chunkKey) {
+                    recordingChunkKeysRef.current.push(String(payload.chunkKey));
+                }
+                return; // success
+            } catch (err) {
+                lastError = err;
+                if (attempt < MAX_CHUNK_RETRIES) {
+                    await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
+                }
+            }
         }
-        const payload = await res.json().catch(() => ({}));
-        if (payload?.chunkUrl) {
-            recordingChunkUrlsRef.current.push(String(payload.chunkUrl));
-        }
+        throw lastError;
     }, [id, interviewToken]);
 
     const finalizeRecordingChunks = useCallback(async () => {
@@ -1567,6 +1595,8 @@ function InterviewRoomContent({
             interviewToken: interviewToken || "",
             sessionId: recordingSessionIdRef.current,
             chunkUrls: recordingChunkUrlsRef.current,
+            chunkKeys: recordingChunkKeysRef.current,
+            chunkCount: recordingChunkIndexRef.current,
             duration: durationSec,
             mimeType: recordingMimeTypeRef.current,
             startedAt: new Date(startedAt).toISOString(),
@@ -1606,6 +1636,7 @@ function InterviewRoomContent({
         recordingSessionIdRef.current = null;
         recordingChunkIndexRef.current = 0;
         recordingChunkUrlsRef.current = [];
+        recordingChunkKeysRef.current = [];
         recordingChunkUploadChainRef.current = Promise.resolve();
         recordingFinalizePromiseRef.current = null;
         recordingStopPromiseRef.current = null;
@@ -1629,6 +1660,14 @@ function InterviewRoomContent({
 
         if (!cameraTrack) {
             console.warn("[Recording] Camera track not available; skipping start.");
+            return;
+        }
+        if (cameraTrack.readyState !== "live" || cameraTrack.muted) {
+            console.warn("[Recording] Camera track is not live yet; waiting.");
+            return;
+        }
+        if (localParticipant && !localParticipant.isCameraEnabled) {
+            console.warn("[Recording] Camera is disabled; waiting.");
             return;
         }
         if (!micTrack || !remoteTrack) {
@@ -1765,16 +1804,18 @@ function InterviewRoomContent({
         }
     }, [isLaunchingActive, connectionState, hasAgentPresence, assistantState, onAgentReady]);
 
-    // Start recording after the first interviewer transcript line appears.
+    // Start recording as soon as interview is active AND the agent audio track is available.
+    // Waiting for agentAudioTrack ensures the AI interviewer voice is mixed into the recording.
     useEffect(() => {
         if (!isInterviewActive || recordingStartedRef.current) return;
-        const firstAgentTranscript = transcriptions.some((segment) => {
-            const identity = segment.participantInfo?.identity || "";
-            return identity !== localIdentity && segment.text.trim().length > 0;
-        });
-        if (!firstAgentTranscript) return;
+        if (!agentAudioTrack) return; // wait until agent audio is published
+        const intervalId = window.setInterval(() => {
+            if (recordingStartedRef.current) return;
+            void startBrowserRecording();
+        }, 700);
         void startBrowserRecording();
-    }, [isInterviewActive, localIdentity, startBrowserRecording, transcriptions]);
+        return () => window.clearInterval(intervalId);
+    }, [isInterviewActive, startBrowserRecording, agentAudioTrack]);
 
     const groupedTranscriptions = useMemo(() => {
         const groups: {
@@ -2317,7 +2358,8 @@ function VideoTrack({ trackRef }: { trackRef: TrackReference }) {
             ref={videoRef}
             autoPlay
             playsInline
-                            className="w-full h-full object-cover bg-zinc-950"
+            muted
+            className="w-full h-full object-cover bg-zinc-950"
         />
     );
 }

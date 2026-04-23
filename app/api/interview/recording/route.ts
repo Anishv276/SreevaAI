@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteObject, getKeyFromUrl, putObject } from "@/lib/s3";
+import { deleteObject, getKeyFromUrl, getObjectBuffer, listObjects, putObject } from "@/lib/s3";
 import { interviewFinalizationQueue } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
@@ -43,6 +43,91 @@ type RecordingManifest = {
     chunkEvents?: ChunkEvent[];
     lastError?: string | null;
 };
+
+function sortChunkKeys(keys: string[]): string[] {
+    return [...keys].sort((a, b) => {
+        const aMatch = a.match(/part-(\d+)\.webm$/i);
+        const bMatch = b.match(/part-(\d+)\.webm$/i);
+        const aNum = aMatch ? Number.parseInt(aMatch[1], 10) : Number.MAX_SAFE_INTEGER;
+        const bNum = bMatch ? Number.parseInt(bMatch[1], 10) : Number.MAX_SAFE_INTEGER;
+        return aNum - bNum;
+    });
+}
+
+type ResolvedChunkSource = {
+    keys: string[];
+    sessionId: string | null;
+};
+
+async function resolveChunkKeys(params: {
+    bucket: string;
+    applicationId: string;
+    safeCandidate: string;
+    sessionId?: string | null;
+    chunkUrls?: string[];
+    chunkKeys?: string[];
+    chunkCount?: number | null;
+}): Promise<ResolvedChunkSource> {
+    const { bucket, applicationId, safeCandidate } = params;
+    const explicitKeys = sortChunkKeys((params.chunkKeys || []).filter(Boolean));
+    if (explicitKeys.length) {
+        return { keys: explicitKeys, sessionId: params.sessionId || null };
+    }
+
+    const explicitFromUrls = sortChunkKeys(
+        (params.chunkUrls || [])
+            .map((url) => getKeyFromUrl(url))
+            .filter((key): key is string => Boolean(key))
+    );
+    if (explicitFromUrls.length) {
+        return { keys: explicitFromUrls, sessionId: params.sessionId || null };
+    }
+
+    const manifest = await getManifest(applicationId).catch(() => ({} as RecordingManifest));
+    const manifestKeys = sortChunkKeys(
+        (manifest.chunkEvents || [])
+            .map((event) => getKeyFromUrl(String(event.chunkUrl || "")))
+            .filter((key): key is string => Boolean(key))
+    );
+    if (manifestKeys.length) {
+        return { keys: manifestKeys, sessionId: manifest.sessionId || params.sessionId || null };
+    }
+
+    const prefix = `${INTERVIEW_CANDIDATES_PREFIX}/${safeCandidate}/recordings/.chunks/`;
+    const objects = await listObjects(bucket, prefix);
+    const sessions = new Map<string, { keys: string[]; lastModified: number }>();
+
+    for (const object of objects) {
+        const sessionMatch = object.key.match(/\/recordings\/\.chunks\/([^/]+)\//);
+        if (!sessionMatch) continue;
+        const sessionKey = sessionMatch[1];
+        const current = sessions.get(sessionKey) || { keys: [], lastModified: 0 };
+        current.keys.push(object.key);
+        const modified = object.lastModified ? object.lastModified.getTime() : 0;
+        current.lastModified = Math.max(current.lastModified, modified);
+        sessions.set(sessionKey, current);
+    }
+
+    if (!sessions.size) {
+        const fallbackPrefix = params.sessionId
+            ? `${prefix}${params.sessionId}/`
+            : prefix;
+        const fallbackObjects = await listObjects(bucket, fallbackPrefix);
+        const fallbackKeys = sortChunkKeys(fallbackObjects.map((item) => item.key));
+        return { keys: fallbackKeys, sessionId: params.sessionId || null };
+    }
+
+    const bestSession = Array.from(sessions.entries()).sort((a, b) => {
+        const countDiff = b[1].keys.length - a[1].keys.length;
+        if (countDiff !== 0) return countDiff;
+        return b[1].lastModified - a[1].lastModified;
+    })[0];
+
+    return {
+        keys: sortChunkKeys(bestSession[1].keys),
+        sessionId: bestSession[0],
+    };
+}
 
 function buildCandidateRoleFolder(fullName?: string | null, roleTitle?: string | null, fallbackId?: string) {
     const raw = [fullName, roleTitle].filter(Boolean).join(" - ") || fallbackId || "candidate";
@@ -197,6 +282,15 @@ async function updateRecordingState(params: {
     );
 }
 
+async function tryUpdateRecordingState(params: Parameters<typeof updateRecordingState>[0]) {
+    try {
+        await updateRecordingState(params);
+    } catch (error) {
+        // Recording data should never be dropped due to metadata/schema drift.
+        console.warn("[RECORDING] Non-fatal state update failure:", error);
+    }
+}
+
 async function persistRecordingComplete(payload: RecordingCompletePayload) {
     const { applicationId, recordingUrl, durationSec, mimeType, startedAt, completedAt } = payload;
 
@@ -224,7 +318,7 @@ async function persistRecordingComplete(payload: RecordingCompletePayload) {
         },
     });
 
-    await updateRecordingState({
+    await tryUpdateRecordingState({
         applicationId,
         status: "COMPLETED",
         mimeType,
@@ -314,36 +408,40 @@ export async function POST(req: Request) {
                     },
                 });
 
-                const currentManifest = await getManifest(applicationId);
-                const currentEvents = Array.isArray(currentManifest.chunkEvents) ? currentManifest.chunkEvents : [];
-                const nextEvent: ChunkEvent = {
-                    chunkIndex,
-                    startedAt: chunkStartedAt ? chunkStartedAt.toISOString() : null,
-                    endedAt: chunkEndedAt ? chunkEndedAt.toISOString() : null,
-                    byteSize,
-                    chunkUrl,
-                };
-                const mergedEvents = [...currentEvents, nextEvent].slice(-300);
-                const totalByteSize = (currentManifest.totalByteSize || 0) + byteSize;
-                const chunksReceived = (currentManifest.chunksReceived || 0) + 1;
-                await updateRecordingState({
-                    applicationId,
-                    status: "CHUNKING",
-                    mimeType,
-                    startedAt,
-                    manifest: {
-                        sessionId,
+                try {
+                    const currentManifest = await getManifest(applicationId);
+                    const currentEvents = Array.isArray(currentManifest.chunkEvents) ? currentManifest.chunkEvents : [];
+                    const nextEvent: ChunkEvent = {
+                        chunkIndex,
+                        startedAt: chunkStartedAt ? chunkStartedAt.toISOString() : null,
+                        endedAt: chunkEndedAt ? chunkEndedAt.toISOString() : null,
+                        byteSize,
+                        chunkUrl,
+                    };
+                    const mergedEvents = [...currentEvents, nextEvent].slice(-300);
+                    const totalByteSize = (currentManifest.totalByteSize || 0) + byteSize;
+                    const chunksReceived = (currentManifest.chunksReceived || 0) + 1;
+                    await tryUpdateRecordingState({
+                        applicationId,
+                        status: "CHUNKING",
                         mimeType,
-                        startedAt: (startedAt || new Date()).toISOString(),
-                        chunksReceived,
-                        totalByteSize,
-                        lastChunkIndex: chunkIndex,
-                        chunkEvents: mergedEvents,
-                        uploadCompleted: false,
-                        mergeStarted: false,
-                        mergeFinished: false,
-                    },
-                });
+                        startedAt,
+                        manifest: {
+                            sessionId,
+                            mimeType,
+                            startedAt: (startedAt || new Date()).toISOString(),
+                            chunksReceived,
+                            totalByteSize,
+                            lastChunkIndex: chunkIndex,
+                            chunkEvents: mergedEvents,
+                            uploadCompleted: false,
+                            mergeStarted: false,
+                            mergeFinished: false,
+                        },
+                    });
+                } catch (stateErr) {
+                    console.warn("[RECORDING] chunk metadata update skipped:", stateErr);
+                }
 
                 return NextResponse.json({
                     success: true,
@@ -406,7 +504,7 @@ export async function POST(req: Request) {
 
             if (uploadType === "abandon") {
                 const reason = String(body?.reason || "recording_session_abandoned").slice(0, 200);
-                await updateRecordingState({
+                await tryUpdateRecordingState({
                     applicationId,
                     status: "ABANDONED",
                     manifest: {
@@ -422,7 +520,7 @@ export async function POST(req: Request) {
                 const sessionId = String(body?.sessionId || "").trim();
                 const startedAt = parseDateValue(body?.startedAt) || new Date();
                 const mimeType = String(body?.mimeType || "video/webm").trim() || "video/webm";
-                await updateRecordingState({
+                await tryUpdateRecordingState({
                     applicationId,
                     status: "STARTED",
                     mimeType,
@@ -445,7 +543,7 @@ export async function POST(req: Request) {
                 const reason = String(body?.reason || "recording_failed").slice(0, 200);
                 const durationSec = parsePositiveInt(body?.duration);
                 const startedAt = parseDateValue(body?.startedAt);
-                await updateRecordingState({
+                await tryUpdateRecordingState({
                     applicationId,
                     status: "FAILED",
                     startedAt,
@@ -463,16 +561,15 @@ export async function POST(req: Request) {
             const sessionId = String(body?.sessionId || "").trim();
             const chunkUrlsRaw = Array.isArray(body?.chunkUrls) ? body.chunkUrls : [];
             const chunkUrls = chunkUrlsRaw.map((value: unknown) => String(value || "").trim()).filter(Boolean);
+            const chunkKeysRaw = Array.isArray(body?.chunkKeys) ? body.chunkKeys : [];
+            const chunkKeys = chunkKeysRaw.map((value: unknown) => String(value || "").trim()).filter(Boolean);
+            const chunkCount = parsePositiveInt(body?.chunkCount);
             const durationSec = parsePositiveInt(body?.duration);
             const mimeType = String(body?.mimeType || "video/webm").trim() || "video/webm";
             const startedAt = parseDateValue(body?.startedAt);
             const completedAt = new Date();
 
-            if (!sessionId || !chunkUrls.length) {
-                return NextResponse.json({ error: "Missing finalize session or chunk URLs" }, { status: 400 });
-            }
-
-            await updateRecordingState({
+            await tryUpdateRecordingState({
                 applicationId,
                 status: "FINALIZING",
                 mimeType,
@@ -486,18 +583,49 @@ export async function POST(req: Request) {
 
             const buffers: Buffer[] = [];
             try {
-                for (const chunkUrl of chunkUrls) {
-                    const response = await fetch(chunkUrl);
-                    if (!response.ok) {
-                        throw new Error(`Failed to fetch recording chunk: ${chunkUrl}`);
+                const safeCandidate = await getCandidateFolder(applicationId);
+                const resolved = await resolveChunkKeys({
+                    bucket,
+                    applicationId,
+                    safeCandidate,
+                    sessionId,
+                    chunkUrls,
+                    chunkKeys,
+                    chunkCount,
+                });
+                const resolvedChunkKeys = resolved.keys;
+                const effectiveSessionId = resolved.sessionId || sessionId;
+
+                if (!resolvedChunkKeys.length && chunkCount) {
+                    const fallbackChunkKeys = Array.from({ length: chunkCount }, (_, index) => (
+                        `${INTERVIEW_CANDIDATES_PREFIX}/${safeCandidate}/recordings/.chunks/${effectiveSessionId}/part-${String(index + 1).padStart(6, "0")}.webm`
+                    ));
+                    resolvedChunkKeys.push(...fallbackChunkKeys);
+                }
+
+                if (resolvedChunkKeys.length) {
+                    for (const chunkKey of resolvedChunkKeys) {
+                        const buf = await getObjectBuffer(bucket, chunkKey);
+                        buffers.push(buf);
                     }
-                    const bytes = await response.arrayBuffer();
-                    buffers.push(Buffer.from(bytes));
+                } else {
+                    for (const chunkUrl of chunkUrls) {
+                        const response = await fetch(chunkUrl);
+                        if (!response.ok) {
+                            throw new Error(`Failed to fetch recording chunk: ${chunkUrl}`);
+                        }
+                        const bytes = await response.arrayBuffer();
+                        buffers.push(Buffer.from(bytes));
+                    }
+                }
+
+                if (!buffers.length) {
+                    throw new Error("No chunk payloads were available to merge");
                 }
 
                 const finalBuffer = Buffer.concat(buffers);
-                const safeCandidate = await getCandidateFolder(applicationId);
-                const finalKey = `${INTERVIEW_CANDIDATES_PREFIX}/${safeCandidate}/recordings/${Date.now()}-interview-${sessionId}.webm`;
+                const finalSessionId = resolved.sessionId || sessionId || crypto.randomUUID();
+                const finalKey = `${INTERVIEW_CANDIDATES_PREFIX}/${safeCandidate}/recordings/${Date.now()}-interview-${finalSessionId}.webm`;
                 const recordingUrl = await uploadWithRetry(bucket, finalKey, finalBuffer, mimeType);
 
                 await persistRecordingComplete({
@@ -510,10 +638,19 @@ export async function POST(req: Request) {
                 });
 
                 // Best-effort chunk cleanup to keep R2 clean.
+                const cleanupKeys = new Set<string>();
+                chunkUrls.forEach((url: string) => {
+                    const key = getKeyFromUrl(url);
+                    if (key) cleanupKeys.add(key);
+                });
+                chunkKeys.forEach((key: string) => {
+                    if (key) cleanupKeys.add(key);
+                });
+                resolvedChunkKeys.forEach((key: string) => {
+                    if (key) cleanupKeys.add(key);
+                });
                 await Promise.all(
-                    chunkUrls.map(async (url: string) => {
-                        const key = getKeyFromUrl(url);
-                        if (!key) return;
+                    Array.from(cleanupKeys).map(async (key: string) => {
                         await deleteObject(bucket, key).catch(() => { });
                     })
                 );
@@ -541,10 +678,10 @@ export async function POST(req: Request) {
                     jobId,
                     recordingUrl,
                     recordingKey: finalKey,
-                    chunkCount: chunkUrls.length,
+                    chunkCount: buffers.length,
                 });
             } catch (finalizeErr: any) {
-                await updateRecordingState({
+                await tryUpdateRecordingState({
                     applicationId,
                     status: "FAILED",
                     mimeType,

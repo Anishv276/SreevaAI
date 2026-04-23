@@ -5152,6 +5152,6 @@ if __name__ == "__main__":
             entrypoint_fnc=entrypoint,
             prewarm_fnc=prewarm,
             agent_name=AGENT_NAME,
-            num_idle_processes=1,
+            num_idle_processes=5,
         )
     )

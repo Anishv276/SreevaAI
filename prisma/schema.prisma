@@ -7,73 +7,70 @@ datasource db {
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
+
 model Organization {
-  id                 String      @id
-  name               String
-  slug               String      @unique
-  logoUrl            String?
-  plan               String      @default("STARTER")
-  status             String      @default("ACTIVE")
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
-  industry           String?
-  size               String?
-  website            String?
-  location           String?
-  onboardingComplete Boolean     @default(false)
-  customDomain       String?
-  ttsProvider        String?     @default("CARTESIA")
-  cartesiaVoiceId    String?     @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
-  sarvamModel        String?     @default("bulbul:v3")
-  sarvamVoice        String?     @default("shubh")
-  deepgramModel      String?     @default("nova-3-general")
-  sarvamSttModel     String?     @default("saaras:v3")
-  sttProvider        String?     @default("DEEPGRAM")
-  llmModel           String?     @default("gpt-4o")
-  llmProvider        String?     @default("OPENAI")
-  llmTemperature     Float?      @default(0.7)
-  cartesiaModel      String?     @default("cartesia/sonic-3")
-  usageMetrics       Json?       @default("{}")
-  googleAccessToken  String?
-  googleRefreshToken String?
+  id                   String      @id
+  name                 String
+  slug                 String      @unique
+  logoUrl              String?
+  plan                 String      @default("STARTER")
+  status               String      @default("ACTIVE")
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+  industry             String?
+  size                 String?
+  website              String?
+  location             String?
+  onboardingComplete   Boolean     @default(false)
+  ttsProvider          String?     @default("CARTESIA")
+  cartesiaVoiceId      String?     @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
+  sarvamModel          String?     @default("bulbul:v3")
+  sarvamVoice          String?     @default("shubh")
+  deepgramModel        String?     @default("nova-3-general")
+  sarvamSttModel       String?     @default("saaras:v3")
+  sttProvider          String?     @default("DEEPGRAM")
+  llmModel             String?     @default("gpt-4o")
+  llmProvider          String?     @default("OPENAI")
+  llmTemperature       Float?      @default(0.7)
+  cartesiaModel        String?     @default("cartesia/sonic-3")
+  usageMetrics         Json?       @default("{}")
+  googleAccessToken    String?
+  googleEmail          String?
+  googleRefreshToken   String?
   googleTokenExpiresAt DateTime?
-  googleEmail        String?
-  drives             Drive[]
-  invites            OrgInvite[]
-  users              User[]
+  customDomain         String?
+  drives               Drive[]
+  invites              OrgInvite[]
+  users                User[]
 }
 
 model SuperAdmin {
-  id                 String              @id @default(cuid())
-  email              String              @unique
-  password           String
-  name               String
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  verificationTokens VerificationToken[]
-  
-  // Platform Domain Settings
-  customDomain       String?
-  
-  // Platform Google Integration
-  googleAccessToken  String?
-  googleRefreshToken String?
+  id                   String              @id @default(cuid())
+  email                String              @unique
+  password             String
+  name                 String
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  googleAccessToken    String?
+  googleEmail          String?
+  googleRefreshToken   String?
   googleTokenExpiresAt DateTime?
-  googleEmail        String?
+  customDomain         String?
+  verificationTokens   VerificationToken[]
 }
 
 model User {
   id              String        @id
   email           String        @unique
   name            String?
-  phone           String?
-  jobTitle        String?
   role            String        @default("CANDIDATE")
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   password        String?
   orgId           String?
   orgRole         String?
+  phone           String?
+  jobTitle        String?
   resetOtp        String?
   resetOtpExpires DateTime?
   applications    Application[]
@@ -106,46 +103,45 @@ model OrgInvite {
 }
 
 model Drive {
-  title                String
-  role                 String?
-  description          String
-  department           String
-  type                 String        @default("Full-time")
-  screeningThreshold   Int           @default(60)
-  creatorId            String
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
-  deadline             DateTime?
-  positions            Int?          @default(1)
-  registrationFields   String?       @default("[]")
-  workMode             String?
-  experience           String?
-  responsibilities     String?
-  requirements         String?
-  salary               String?
-  skills               String?
-  extractedDetails     String?       @default("{}")
-  interviewLanguage    String?       @default("English")
-  interviewTime        Int?
-  proctoringLevel      String?       @default("Medium")
-  interviewQuestions   String?       @default("[]")
-  jdFileName           String?
-  jdPreviewUrl         String?
-  orgId                String?
-  status               String        @default("ACTIVE")
-  isPassportRequired   Boolean       @default(false)
-  slug                 String?       @unique
-  id                   String        @id
-  shortlistMode        String        @default("automatic")
-  location             String?
-  ttsProvider          String?       @default("CARTESIA")
-  cartesiaVoiceId      String?       @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
-  sarvamVoice          String?       @default("shubh")
-  aiName               String?       @default("Ishitha")
-
-  applications         Application[]
-  creator              User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
-  organization         Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  title              String
+  role               String?
+  description        String
+  department         String
+  type               String        @default("Full-time")
+  screeningThreshold Int           @default(60)
+  creatorId          String
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  deadline           DateTime?
+  positions          Int?          @default(1)
+  registrationFields String?       @default("[]")
+  workMode           String?
+  experience         String?
+  responsibilities   String?
+  requirements       String?
+  salary             String?
+  skills             String?
+  extractedDetails   String?       @default("{}")
+  interviewLanguage  String?       @default("English")
+  interviewTime      Int?
+  proctoringLevel    String?       @default("Medium")
+  interviewQuestions String?       @default("[]")
+  jdFileName         String?
+  jdPreviewUrl       String?
+  orgId              String?
+  status             String        @default("ACTIVE")
+  isPassportRequired Boolean       @default(false)
+  slug               String?       @unique
+  id                 String        @id
+  shortlistMode      String        @default("automatic")
+  location           String?
+  aiName             String?       @default("Ishitha")
+  cartesiaVoiceId    String?       @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
+  sarvamVoice        String?       @default("shubh")
+  ttsProvider        String?       @default("CARTESIA")
+  applications       Application[]
+  creator            User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
+  organization       Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId, status])
   @@index([slug])
@@ -187,27 +183,27 @@ model Interview {
   startedAt             DateTime?
   completedAt           DateTime?
   interviewRecordingUrl String?
-  recordingStatus       String?     @default("NOT_STARTED")
-  recordingMimeType     String?
-  recordingStartedAt    DateTime?
-  recordingCompletedAt  DateTime?
-  recordingDurationSec  Int?
-  recordingManifest     Json?       @default("{}")
   interviewTranscript   String?
   interviewRecordedAt   DateTime?
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
   interviewDuration     Int?
   aiSummary             String?
-  interviewReport       Json?       @default("{}")
-  interviewTurns        Json?       @default("[]")
-  strategicVerdict      Json?       @default("{}")
   snapshots             String[]    @default([])
   candidateFeedback     String?
   candidateRating       Int?
   proctoringEvents      Json?       @default("[]")
+  interviewReport       Json?       @default("{}")
   proctoringReport      Json?       @default("{}")
+  strategicVerdict      Json?       @default("{}")
+  interviewTurns        Json?       @default("[]")
   answerScores          Json?       @default("{}")
+  recordingStatus       String?     @default("NOT_STARTED")
+  recordingMimeType     String?
+  recordingStartedAt    DateTime?
+  recordingCompletedAt  DateTime?
+  recordingDurationSec  Int?
+  recordingManifest     Json?       @default("{}")
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 }
 

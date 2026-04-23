@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 
 const r2Endpoint = process.env.R2_ENDPOINT;
 const r2AccessKey = process.env.R2_ACCESS_KEY_ID;
@@ -128,3 +128,44 @@ export const getPresignedUploadUrl = async (bucket: string, key: string, content
 };
 
 export const uploadToR2 = putObject;
+
+const streamToBuffer = async (stream: NodeJS.ReadableStream): Promise<Buffer> => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+};
+
+export const getObjectBuffer = async (bucket: string, key: string): Promise<Buffer> => {
+  const command = new GetObjectCommand({
+    Bucket: bucket,
+    Key: key.startsWith("/") ? key.slice(1) : key,
+  });
+  const response = await r2Client.send(command);
+  if (!response.Body) {
+    throw new Error(`R2 object has no body: ${bucket}/${key}`);
+  }
+  return streamToBuffer(response.Body as NodeJS.ReadableStream);
+};
+
+export type ListedObject = {
+  key: string;
+  lastModified: Date | null;
+  size: number | null;
+};
+
+export const listObjects = async (bucket: string, prefix: string): Promise<ListedObject[]> => {
+  const command = new ListObjectsV2Command({
+    Bucket: bucket,
+    Prefix: prefix,
+  });
+  const response = await r2Client.send(command);
+  return (response.Contents || [])
+    .map((item) => ({
+      key: String(item.Key || ""),
+      lastModified: item.LastModified || null,
+      size: typeof item.Size === "number" ? item.Size : null,
+    }))
+    .filter((item) => !!item.key);
+};
