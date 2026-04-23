@@ -3728,20 +3728,12 @@ async def entrypoint(ctx: JobContext):
             turn_detection=turn_detector,
             endpointing=EndpointingOptions(
                 # Slightly longer endpointing to avoid cutting candidates mid-thought.
-                min_delay=0.6,
-                max_delay=2.4,
+                min_delay=1.5,
+                max_delay=3.0,
                 mode="dynamic",
             ),
             interruption=InterruptionOptions(
-                enabled=True,
-                mode="adaptive",
-                # Keep buffered speech when interruptions are temporarily disabled
-                # (AEC warmup / uninterruptible phase) to avoid dropping user turns.
-                discard_audio_if_uninterruptible=False,
-                min_duration=1.1,
-                min_words=3,
-                resume_false_interruption=True,
-                false_interruption_timeout=3.0,
+                enabled=False, # Disable interruptions to prevent echo/voice breaking issues
             ),
         ),
         use_tts_aligned_transcript=True,
@@ -3760,8 +3752,8 @@ async def entrypoint(ctx: JobContext):
                 "LiveKit": "Live Kit",
             }),
         ],
-        # Shorter warmup reduces paused-scheduling windows that can drop early user turns.
-        aec_warmup_duration=1.0,
+        # Increased warmup ensures AEC and audio transport are stable before greeting.
+        aec_warmup_duration=2.5,
     )
 
     @session.on("session_usage_updated")
@@ -4395,8 +4387,8 @@ async def entrypoint(ctx: JobContext):
                                 f"INCONSISTENCY DETECTED: {claim_t}\n"
                                 f"  Earlier (turn {old_t}): '{old_v}'\n"
                                 f"  Just now (turn {turn}): '{new_v}'\n"
-                                f"ACTION: Surface this with genuine confusion - not accusation. "
-                                f"Say something like: 'wait, I want to make sure I understood this right - "
+                                f"ACTION: Surface this with genuine confusion - not accusation."
+                                f"Say something like: 'wait, I want to make sure I understood this right -" 
                                 f"earlier it sounded like {old_v}, but just now it sounds more like {new_v}. "
                                 f"Help me connect those two.' "
                                 f"If they clarify convincingly, accept it and move on. "
@@ -4427,10 +4419,8 @@ async def entrypoint(ctx: JobContext):
             item = event.item
             role = getattr(item, "role", None)
             content = item.text_content
-
             if not content or not role:
                 return
-
             if role == "user":
                 turn_snapshot = turn_count
                 spawn_background_task(
@@ -4438,7 +4428,6 @@ async def entrypoint(ctx: JobContext):
                     f"process_user_turn_{turn_snapshot}",
                 )
                 return
-
             speaker = "Interviewer" if role == "assistant" else "Candidate"
             append_transcript_line(speaker, content)
             logger.info(f"[TRANSCRIPT] {speaker}: {content[:60]}...")
@@ -4823,7 +4812,10 @@ async def entrypoint(ctx: JobContext):
                 greeting_delivered = False
                 for _attempt in range(3):
                     try:
-                        await session.say(welcome_text, allow_interruptions=True)
+                        # Small delay after AEC warmup to ensure clear start
+                        await asyncio.sleep(0.5)
+                        # allow_interruptions=False for greeting prevents 'break voice' from echo bleed
+                        await session.say(welcome_text, allow_interruptions=False)
                         greeting_delivered = True
                         logger.info(
                             f"[GREETING] Welcome message delivered (attempt {_attempt + 1})"
@@ -4870,11 +4862,10 @@ async def entrypoint(ctx: JobContext):
     wrap_up_signal_sent = False
 
     # How many seconds before the end to trigger each nudge
-    # Only trigger the wrap-up nudge if the candidate has given at least 3 substantive
-    # responses - prevents premature "we're almost out of time" when no content collected.
-    CANDIDATE_Q_TRIGGER_SECS = 150  # 2.5 minutes before end
-    FINAL_THANKS_TRIGGER_SECS = 5  # 5 seconds before end
-    MIN_CANDIDATE_LINES_FOR_WRAPUP = 3  # require at least 3 candidate turns before wrap-up
+    # Scale based on total duration (e.g., last 20% of the session, capped at 2.5 mins)
+    CANDIDATE_Q_TRIGGER_SECS = min(150, int(total_seconds * 0.2))
+    FINAL_THANKS_TRIGGER_SECS = 5
+    MIN_CANDIDATE_LINES_FOR_WRAPUP = 3
 
     # Warm inactivity nudges. Keep them short, varied, and situation-aware.
     _nudge_pool = [
@@ -4888,6 +4879,17 @@ async def entrypoint(ctx: JobContext):
 
     async def _deliver_nudge(text: str) -> None:
         await session.say(text, allow_interruptions=True)
+        # Scripted speech doesn't fire events, manually reset to start counting 30s/60s from NOW
+        reset_inactivity_clock(start_waiting=True)
+
+    async def _send_termination_signal():
+        try:
+            import json
+            payload = json.dumps({"type": "interview_terminated"}).encode("utf-8")
+            await ctx.room.local_participant.publish_data(payload, reliable=True)
+            logger.info("[NUDGE] Sent termination signal to frontend")
+        except Exception as e:
+            logger.warning(f"Failed to send termination signal: {e}")
 
     def _pick_nudge() -> str:
         """Return the next configured inactivity nudge in round-robin order."""
@@ -5009,6 +5011,7 @@ async def entrypoint(ctx: JobContext):
             logger.info(
                 f"[NUDGE] Ending interview due to final inactivity timeout ({int(inactivity_elapsed)}s)"
             )
+            await _send_termination_signal()
             interview_marked_finished = True
             interview_finished_event.set()
             disconnect_event.set()
@@ -5044,6 +5047,7 @@ async def entrypoint(ctx: JobContext):
 
         # FORCE DISCONNECT ROOM
         logger.info(f"Session hard-terminated due to time limit ({time_limit_mins}m)")
+        await _send_termination_signal()
         interview_marked_finished = True
         interview_finished_event.set()
         disconnect_event.set()
