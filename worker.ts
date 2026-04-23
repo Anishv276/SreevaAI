@@ -44,11 +44,12 @@ async function persistInterviewUpdateRaw(params: {
   const { applicationId, recordingUrl, transcript, interviewStatus } = params;
 
   const now = new Date();
+  const fallbackId = generateId("int", "fallback");
 
   await prisma.$executeRawUnsafe(
     `
-    INSERT INTO "Interview" ("applicationId", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "completedAt", "createdAt", "updatedAt")
-    VALUES ($1, COALESCE($2, 'IN_PROGRESS'), $3, CASE WHEN $3 IS NOT NULL THEN $5 ELSE NULL END, $4, CASE WHEN $2 = 'COMPLETED' THEN $5 ELSE NULL END, $5, $5)
+    INSERT INTO "Interview" ("id", "applicationId", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "completedAt", "createdAt", "updatedAt")
+    VALUES ($6, $1, COALESCE($2, 'IN_PROGRESS'), $3, CASE WHEN $3 IS NOT NULL THEN $5 ELSE NULL END, $4, CASE WHEN $2 = 'COMPLETED' THEN $5 ELSE NULL END, $5, $5)
     ON CONFLICT ("applicationId")
     DO UPDATE SET
       status = COALESCE($2, "Interview".status),
@@ -62,7 +63,8 @@ async function persistInterviewUpdateRaw(params: {
     interviewStatus || null,
     recordingUrl || null,
     transcript || null,
-    now
+    now,
+    fallbackId
   );
 
 }
@@ -798,8 +800,8 @@ async function initializeWorkerMetadata() {
             console.warn("  â„¹ï¸  Running queue cleanup to free memory instead...");
         }
 
-        // Always purge queues on startup to reclaim Redis memory
-        await purgeAllQueues();
+        // Removed destructive purgeAllQueues() which deletes pending user uploads on restart
+        // await purgeAllQueues();
 
         if (await shouldSkipCronRegistration()) {
             console.warn("  âš ï¸  Cron registration skipped because Redis is still near its memory limit.");

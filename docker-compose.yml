@@ -23,6 +23,26 @@ services:
       - "traefik.http.routers.hr-app.tls=true"
       - "traefik.http.routers.hr-app.tls.certresolver=mytlschallenge"
       - "traefik.http.services.hr-app.loadbalancer.server.port=3000"
+    depends_on:
+      - redis
+
+  # Background Worker (Handles Scoring & Emails)
+  hr-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: hr-worker
+    command: npm run worker
+    env_file:
+      - .env
+    restart: always
+    depends_on:
+      - redis
+    networks:
+      - traefik-proxy
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
 
   # Python AI Agent (Backend)
   hr-agent:
