@@ -1881,7 +1881,7 @@ function InterviewRoomContent({
             segments: Array<{ text: string; isFinal: boolean; id: string; timestamp: number }>;
         }[] = [];
 
-        // Temporary map to track the latest version of each segment ID across the entire session
+        // Track latest version of each segment ID (LiveKit may re-emit same ID with updated text)
         const latestSegments = new Map<string, { text: string; isFinal: boolean; id: string; timestamp: number; identity: string }>();
 
         for (const segment of transcriptions as TranscriptionSegment[]) {
@@ -1895,28 +1895,41 @@ function InterviewRoomContent({
             latestSegments.set(id, { text: segment.text, isFinal, id, timestamp, identity });
         }
 
+        // Track the latest timestamp seen per group for time-gap calculation
+        const groupLatestTimestamp = new Map<number, number>();
         const sortedSegments = Array.from(latestSegments.values()).sort((a, b) => a.timestamp - b.timestamp);
 
         for (const segment of sortedSegments) {
             const isCandidate = segment.identity === localIdentity;
-            const lastGroup = groups[groups.length - 1];
+            const lastGroupIdx = groups.length - 1;
+            const lastGroup = groups[lastGroupIdx];
 
             let shouldBreak = false;
             if (lastGroup) {
                 if (lastGroup.identity !== segment.identity) {
                     shouldBreak = true;
                 } else {
-                    const lastSegment = lastGroup.segments[lastGroup.segments.length - 1];
-                    const timeGap = segment.timestamp - lastSegment.timestamp;
-                    if (timeGap > 3000) {
+                    const lastTs = groupLatestTimestamp.get(lastGroupIdx) ?? segment.timestamp;
+                    if (segment.timestamp - lastTs > 3000) {
                         shouldBreak = true;
                     }
                 }
             }
 
             if (lastGroup && !shouldBreak) {
-                lastGroup.segments.push(segment);
+                groupLatestTimestamp.set(lastGroupIdx, segment.timestamp);
+                if (segment.isFinal) {
+                    // Final segment: drop any existing non-finals and append
+                    lastGroup.segments = lastGroup.segments.filter(s => s.isFinal);
+                    lastGroup.segments.push(segment);
+                } else {
+                    // Non-final: replace any existing non-final with this latest chunk
+                    lastGroup.segments = lastGroup.segments.filter(s => s.isFinal);
+                    lastGroup.segments.push(segment);
+                }
             } else {
+                const newIdx = groups.length;
+                groupLatestTimestamp.set(newIdx, segment.timestamp);
                 groups.push({
                     id: segment.id,
                     identity: segment.identity,
@@ -2218,7 +2231,7 @@ function InterviewRoomContent({
                         )}
                     </div>
                 </motion.div>
-                {/* Floating Box Transcript - Left of AI Avatar (Upward Flow) */}
+                {false && (
                 <div className="absolute right-[calc(50%+180px)] bottom-[20%] z-[65] w-[380px] pointer-events-none">
                     <div
                         className="flex flex-col-reverse justify-start gap-6 max-h-[60vh] overflow-hidden px-6 py-12"
@@ -2291,10 +2304,11 @@ function InterviewRoomContent({
                         </AnimatePresence>
                     </div>
                 </div>
+                )}
             </div>
 
             {/* Bottom Navigation & Premium Timer */}
-            <div className="h-44 bg-zinc-900/80 p-8 grid grid-cols-3 items-center relative z-10">
+            <div className="min-h-[11rem] bg-zinc-900/80 p-8 grid grid-cols-3 items-center relative z-10">
 
                 {/* Left: Status */}
                 <div className="flex items-center gap-6">
@@ -2339,8 +2353,82 @@ function InterviewRoomContent({
                     </button>
                 </div>
 
-                {/* Middle: Centered End Interview Button */}
-                <div className="flex justify-center">
+                {/* Middle: Transcript + End Interview Button */}
+                <div className="flex flex-col items-center gap-4 min-w-0">
+                    <div className="w-full max-w-4xl rounded-[2rem] border border-white/5 bg-zinc-950/70 px-5 py-4 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
+                        <div className="flex items-center justify-between gap-4 mb-3">
+                            <div className="flex items-center gap-3">
+                                <div className="w-2.5 h-2.5 rounded-full bg-orange-500 shadow-[0_0_16px_rgba(249,115,22,0.45)]" />
+                                <p className="text-[10px] font-black uppercase tracking-[0.35em] text-zinc-400">Live Transcript</p>
+                            </div>
+                            <p className="text-[9px] font-black uppercase tracking-[0.3em] text-zinc-600">Below avatar</p>
+                        </div>
+                        <div
+                            className="flex items-stretch gap-3 overflow-x-auto pb-1"
+                            style={{
+                                maskImage: 'linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%)',
+                                WebkitMaskImage: 'linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%)'
+                            }}
+                        >
+                            <AnimatePresence mode="popLayout">
+                                {groupedTranscriptions.slice(-6).reverse().map((group, idx) => {
+                                    const isGroupFinal = group.segments.every(s => s.isFinal);
+                                    // Only combine final segments + the single latest non-final chunk.
+                                    // This prevents partial words ("bu", "thr") from stacking visibly.
+                                    const finalSegs = group.segments.filter(s => s.isFinal);
+                                    const nonFinalSegs = group.segments.filter(s => !s.isFinal);
+                                    const latestNonFinal = nonFinalSegs.length > 0 ? nonFinalSegs[nonFinalSegs.length - 1] : null;
+                                    const displaySegs = latestNonFinal ? [...finalSegs, latestNonFinal] : finalSegs;
+                                    const combinedText = displaySegs.map(s => s.text.trim()).filter(Boolean).join(" ");
+
+                                    return (
+                                        <motion.div
+                                            key={group.id}
+                                            initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                                            animate={{
+                                                opacity: Math.max(0.25, 1 - (idx * 0.12)),
+                                                y: 0,
+                                                scale: 1,
+                                            }}
+                                            exit={{
+                                                opacity: 0,
+                                                y: -10,
+                                                scale: 0.96,
+                                                transition: { duration: 0.3 }
+                                            }}
+                                            transition={{
+                                                type: "spring",
+                                                stiffness: 180,
+                                                damping: 22
+                                            }}
+                                            className={cn(
+                                                "shrink-0 min-w-[240px] max-w-[360px] rounded-[1.4rem] border px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.25)]",
+                                                group.isCandidate
+                                                    ? "border-orange-500/15 bg-orange-500/5"
+                                                    : "border-indigo-400/15 bg-indigo-400/5"
+                                            )}
+                                        >
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className={cn(
+                                                    "text-[9px] font-black uppercase tracking-[0.25em]",
+                                                    group.isCandidate ? "text-orange-400" : "text-indigo-300"
+                                                )}>
+                                                    {group.isCandidate ? (candidateName || "Candidate") : "Ishitha"}
+                                                </span>
+                                                {!isGroupFinal && (
+                                                    <span className="text-[9px] text-zinc-500 animate-pulse">typing...</span>
+                                                )}
+                                            </div>
+                                            <StreamingText
+                                                text={combinedText}
+                                                className="text-[14px] leading-relaxed text-zinc-100"
+                                            />
+                                        </motion.div>
+                                    );
+                                })}
+                            </AnimatePresence>
+                        </div>
+                    </div>
                     <Button
                         variant="destructive"
                         onClick={handleFinish}

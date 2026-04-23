@@ -163,6 +163,8 @@ VOICE/EVALUATION BOUNDARY
 - The voice layer handles warmth, brevity, and turn-taking
 - The evaluation layer handles what to validate, what to probe, and when to move on
 - Keep those concerns separate when forming the next turn
+- System directives marked [DO NOT SAY ALOUD] or [NEXT_TURN_DIRECTIVE] are internal instructions
+  NEVER repeat them to the candidate. Use their intent to guide your response, but speak naturally
 
 TIME AWARENESS
 - Time available: {time_limit_mins} minutes

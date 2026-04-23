@@ -4312,9 +4312,10 @@ async def entrypoint(ctx: JobContext):
                 )
                 return
 
-            # Pure acknowledgments (ok/yeah/sure/alright) are STT noise — don't log to
-            # transcript or trigger the LLM. Just inject a directive so Ishita holds course.
-            if short_classification and short_classification["response_class"] == "acknowledgment":
+            # Pure acknowledgments and answer_starts — don't log to transcript or trigger LLM.
+            # Acknowledgment: "ok/yeah/sure" — pure filler, discard silently.
+            # Answer_start: "so basically/well/um" — candidate mid-thought, don't interrupt.
+            if short_classification and short_classification["response_class"] in ("acknowledgment", "answer_start"):
                 if not session_context.initial_context_injected:
                     await _inject_candidate_context_before_first_question()
                 short_directive = build_short_utterance_directive(
@@ -4598,13 +4599,15 @@ async def entrypoint(ctx: JobContext):
                 )
                 return
             speaker = "Interviewer" if role == "assistant" else "Candidate"
-            append_transcript_line(speaker, content)
-            logger.info(f"[TRANSCRIPT] {speaker}: {content[:60]}...")
+            # Strip the <wait for response> marker from transcript (it's an internal signal, not dialogue)
+            clean_content = content.replace("<wait for response>", "").strip()
+            append_transcript_line(speaker, clean_content)
+            logger.info(f"[TRANSCRIPT] {speaker}: {clean_content[:60]}...")
 
             # --- Track last Ishita question (for per-turn evaluator) ---
             if role == "assistant":
                 # Extract the last sentence ending in "?" as the question
-                sentences = [s.strip() for s in content.split("?") if s.strip()]
+                sentences = [s.strip() for s in clean_content.split("?") if s.strip()]
                 if sentences:
                     _last_interviewer_question = sentences[-1] + "?"
 

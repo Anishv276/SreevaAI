@@ -81,8 +81,8 @@ _SHORT_UTTERANCE_FAMILIES = {
         "style": "Do not overreact. Keep the pacing steady, continue the thread, and do not mention ending the interview.",
     },
     "answer_start": {
-        "goal": "Hold space for the candidate to continue their thought before probing.",
-        "style": "Encourage them to finish the answer. Do not interrupt or redirect too early.",
+        "goal": "The candidate has started their answer. Stay silent and wait. Do NOT speak yet.",
+        "style": "Say nothing. Do not encourage, prompt, or interject. Wait for the candidate to finish speaking.",
     },
     "refusal": {
         "goal": "Acknowledge the hesitation warmly and rephrase the question more simply or narrowly.",
