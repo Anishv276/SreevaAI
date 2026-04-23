@@ -185,6 +185,10 @@ _SHORT_UTTERANCE_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "refusal": (
         re.compile(r"^\s*(?:i don't know|not sure|no idea|not really|can't say|cannot say)\s*$", re.IGNORECASE),
     ),
+    "clarification_question": (
+        re.compile(r"\b(?:what do you mean|could you repeat|can you repeat|what did you mean|could you clarify|can you clarify|sorry what|pardon|repeat that|say that again|rephrase)\b", re.IGNORECASE),
+        re.compile(r"^\s*(?:sorry\?|what\?|huh\?|pardon\?)\s*$", re.IGNORECASE),
+    ),
 }
 
 _META_QUESTION_PATTERNS = (

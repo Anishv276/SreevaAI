@@ -327,11 +327,68 @@ async def _single_question_transform(text_stream):
         yield result
 
 
+def _sanitize_claim_value(value: str, max_len: int = 80) -> str:
+    """Strip characters that could break prompt structure when injected into system messages."""
+    if not value:
+        return ""
+    cleaned = re.sub(r"[\n\r\[\]\\]", " ", str(value)).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned[:max_len]
+
+
+def _build_recent_context_block(
+    transcript_lines: list[str],
+    last_question: str,
+    n_exchanges: int = 3,
+) -> str:
+    """
+    Build a compact structured summary of the last N Q&A exchanges.
+    Pairs each Interviewer line with the following Candidate line.
+    Returns empty string if there is nothing useful to inject.
+    """
+    exchanges: list[dict[str, str]] = []
+    i = len(transcript_lines) - 1
+    while i >= 0 and len(exchanges) < n_exchanges:
+        line = transcript_lines[i]
+        if line.startswith("Candidate:"):
+            candidate_text = line[len("Candidate:"):].strip()
+            # Walk back to find the paired interviewer question
+            for j in range(i - 1, max(i - 6, -1), -1):
+                if transcript_lines[j].startswith("Interviewer:"):
+                    interviewer_text = transcript_lines[j][len("Interviewer:"):].strip()
+                    exchanges.insert(0, {"q": interviewer_text, "a": candidate_text})
+                    i = j - 1
+                    break
+            else:
+                i -= 1
+        else:
+            i -= 1
+
+    if not exchanges:
+        return ""
+
+    lines = ["PRIOR EXCHANGES (for callbacks and contradiction detection — do not read aloud):"]
+    for idx, ex in enumerate(exchanges, 1):
+        q_text = ex["q"][:150]
+        a_text = ex["a"][:250]
+        lines.append(f"Exchange {idx}:")
+        lines.append(f"  Q: {q_text}")
+        lines.append(f"  A: {a_text}")
+    lines.append(f"\nLast question asked: {last_question[:150]}")
+    lines.append("React naturally to the candidate's last answer. Reference prior context only when it adds meaning.")
+    return "\n".join(lines)
+
+
 def build_term_alias_hints(*text_blocks: str, max_lines: int = 10) -> str:
     combined = " ".join(block for block in text_blocks if isinstance(block, str)).lower()
     lines: list[str] = []
     for canonical, aliases in _TOOL_ALIAS_CATALOG.items():
-        matched = [a for a in aliases if a in combined]
+        # Use word-boundary matching to avoid false positives
+        # e.g. "nan" must not match "naan", "brand", "channel" etc.
+        matched = [
+            a for a in aliases
+            if re.search(r"\b" + re.escape(a) + r"\b", combined)
+        ]
         if not matched:
             continue
         unique_aliases = sorted(set(matched))
@@ -1532,7 +1589,7 @@ def build_cartesia_tts(
         "voice": voice_id,
         "language": language,
         "api_key": api_key,
-        "speed": 1.0,
+        "speed": 0.92,
     }
     if extra_kwargs:
         tts_kwargs.update(extra_kwargs)
@@ -2725,7 +2782,7 @@ async def generate_interview_summary(
                     "content": (
                         "You are a senior talent partner writing a confidential post-interview evaluation for the hiring team. "
                         "Your language must be professional, bias-free, and constructive at all times - never dismissive or harsh. "
-                        "Analyze the provided interview transcript for the role of '{job_title}'. "
+                        f"Analyze the provided interview transcript for the role of '{job_title}'. "
                         "Write a structured narrative evaluation (2-3 sentences) that covers: "
                         "(1) The candidate's key strengths with specific evidence from the conversation. "
                         "(2) Any gaps or areas of concern, written constructively - framed as 'areas to explore further' rather than weaknesses. "
@@ -2733,7 +2790,7 @@ async def generate_interview_summary(
                         "(4) A clear, final hiring recommendation (Strong Yes / Yes / Maybe / No) with a one-sentence justification. "
                         "RULES: Do not use JSON. Do not use numeric scores. Do not reveal the AI screening score. "
                         "Never use gender-biased language. Never make personal remarks. Focus only on professional evidence from the conversation."
-                    ).format(job_title=job_title),
+                    ),
                 },
                 {"role": "user", "content": f"Interview Transcript:\n{transcript_text}"},
             ],
@@ -3070,13 +3127,13 @@ async def score_answer_quality(
         parsed["concerns"] = parsed.get("concerns", [])
         return parsed
     except asyncio.TimeoutError:
-        logger.debug("[SCORE] Answer scorer timed out - returning neutral scores")
+        logger.warning("[SCORE] Answer scorer timed out - returning neutral scores")
         return {
             "clarity": 5, "depth": 5, "specificity": 5, "grounding": 5, "overall": 5.0,
             "signals": [], "concerns": ["timeout"],
         }
     except Exception as e:
-        logger.debug(f"[SCORE] Answer scorer failed: {e}")
+        logger.warning(f"[SCORE] Answer scorer failed: {e}", exc_info=True)
         return {
             "clarity": 5, "depth": 5, "specificity": 5, "grounding": 5, "overall": 5.0,
             "signals": [], "concerns": ["error"],
@@ -3167,10 +3224,10 @@ async def evaluate_answer_and_decide(
             parsed["depth_signal"] = "SURFACE"
         return parsed
     except asyncio.TimeoutError:
-        logger.debug("[EVAL] Per-turn evaluator timed out - defaulting to MOVE_ON")
+        logger.warning("[EVAL] Per-turn evaluator timed out - defaulting to MOVE_ON")
         return {"action": "MOVE_ON", "probe_mode": None, "reason": "timeout", "depth_signal": "SURFACE"}
     except Exception as e:
-        logger.debug(f"[EVAL] Per-turn evaluator failed: {e}")
+        logger.warning(f"[EVAL] Per-turn evaluator failed: {e}", exc_info=True)
         return {"action": "MOVE_ON", "probe_mode": None, "reason": str(e), "depth_signal": "SURFACE"}
 
 
@@ -3788,10 +3845,17 @@ async def entrypoint(ctx: JobContext):
         try:
             delayed_brief = await candidate_brief_task
         except Exception as brief_err:
-            logger.warning(f"[BRIEF] Deferred brief generation failed: {brief_err}")
+            logger.warning(
+                "[BRIEF] Deferred brief generation failed — interview proceeding without personalization. error=%s",
+                brief_err,
+            )
             return
 
-        if not delayed_brief or delayed_brief == session_context.candidate_brief_block:
+        if not delayed_brief:
+            logger.warning("[BRIEF] Brief returned empty — interview proceeding without personalization")
+            return
+        if delayed_brief == session_context.candidate_brief_block:
+            logger.info("[BRIEF] Brief unchanged from initial block — no update needed")
             return
 
         session_context.candidate_brief_block = delayed_brief
@@ -3813,6 +3877,13 @@ async def entrypoint(ctx: JobContext):
         )
 
     spawn_background_task(attach_brief_when_ready(), "attach_brief_when_ready")
+    logger.info(
+        "[SESSION] brief_available=%s opening_question=%s band=%s role=%s",
+        bool(session_context.candidate_brief_block),
+        bool(session_context.smart_opening_question),
+        session_context.candidate_band,
+        session_context.role_category,
+    )
 
     vad_instance = ctx.proc.userdata.get("vad") or build_vad()
 
@@ -3952,10 +4023,16 @@ async def entrypoint(ctx: JobContext):
     _collapse_stage: int = 0               # 0=none, 1=first probe issued, 2+=repeated collapse (hard flag)
     _trust_state = init_trust_state()  # session-level trust engine state
     _contradiction_state = init_contradiction_state()  # explicit contradiction lifecycle state
+    _active_eval_task: Optional[asyncio.Task[Any]] = None  # track active eval to prevent stale injects
 
     # Cross-turn consistency engine state
     _claim_index: dict[str, list[dict]] = {}  # claims indexed by type for contradiction checks
     _contradictions_found: list[dict] = [] # all detected contradictions for final report
+
+    # Lock protecting all shared session state that is written by background tasks.
+    # Both _evaluate_and_inject() and _inject_state() modify the same variables;
+    # this lock ensures they never interleave at async await points.
+    _session_state_lock = asyncio.Lock()
 
     def refresh_composite_risk() -> int:
         nonlocal suspicion_score
@@ -4109,7 +4186,7 @@ async def entrypoint(ctx: JobContext):
         nonlocal suspicion_score, proctoring_events, _last_interviewer_question, \
             _topic_follow_up_count, current_interview_mode, answer_scores, \
             _claim_index, _contradictions_found, \
-            _topic_depth_history, _trust_state, _contradiction_state
+            _topic_depth_history, _trust_state, _contradiction_state, _active_eval_task
         try:
             if not content or role != "user":
                 return
@@ -4166,7 +4243,8 @@ async def entrypoint(ctx: JobContext):
                     )
                     session_context.full_brief_injected = True
                     logger.info(
-                        f"[BRIEF] Full brief injected before first substantive question ({len(brief_text)} chars)"
+                        "[BRIEF] Full brief injected before first substantive question (%d chars) brief_used=True opening_question=%s",
+                        len(brief_text), bool(session_context.smart_opening_question),
                     )
                     return
 
@@ -4179,7 +4257,8 @@ async def entrypoint(ctx: JobContext):
                     ),
                 )
                 logger.info(
-                    "[BRIEF] Lightweight candidate context injected before first substantive question"
+                    "[BRIEF] Lightweight candidate context injected brief_used=False opening_question=%s",
+                    bool(session_context.smart_opening_question),
                 )
 
             # --- STT text cleanup / noise suppression ---
@@ -4350,24 +4429,21 @@ async def entrypoint(ctx: JobContext):
             logger.info(f"[TRANSCRIPT] {speaker}: {content[:60]}...")
 
             if not session_context.initial_context_injected:
+                _ctx_inject_t = time.perf_counter()
                 await _inject_candidate_context_before_first_question()
+                logger.info("[INIT] context_injection_ms=%.0f", (time.perf_counter() - _ctx_inject_t) * 1000)
 
-            # Inject recent Q&A context so Ishita can make callbacks and detect contradictions.
-            # Grab the last 6 transcript lines (3 exchanges) as a compact memory snapshot.
+            # Inject structured recent Q&A context for callbacks and contradiction detection.
             if _last_interviewer_question and turn_snapshot > 1:
-                recent_lines = transcript_lines[-6:] if len(transcript_lines) >= 6 else transcript_lines[:]
-                recent_block = "\n".join(recent_lines)
-                remove_system_messages(chat_ctx, "[RECENT_CONTEXT]")
-                chat_ctx.add_message(
-                    role="system",
-                    content=(
-                        "[RECENT_CONTEXT — DO NOT READ ALOUD]\n"
-                        "Last few exchanges (use for callbacks and contradiction detection):\n"
-                        f"{recent_block}\n"
-                        "Last question you asked: " + _last_interviewer_question + "\n"
-                        "Candidate just answered. React to what they said before asking next question."
-                    ),
+                recent_context = _build_recent_context_block(
+                    transcript_lines, _last_interviewer_question, n_exchanges=3
                 )
+                if recent_context:
+                    remove_system_messages(chat_ctx, "[RECENT_CONTEXT]")
+                    chat_ctx.add_message(
+                        role="system",
+                        content=f"[RECENT_CONTEXT — DO NOT READ ALOUD]\n{recent_context}",
+                    )
 
             if short_classification:
                 short_class = short_classification["response_class"]
@@ -4434,20 +4510,32 @@ async def entrypoint(ctx: JobContext):
                             _claim_index.setdefault(claim_type, []).append(claim)
 
                         # Step 2: Run TurnDecision pipeline (quality + signals + routing)
-                        td, directive = await run_turn_evaluation(
-                            candidate_answer=answer,
-                            last_question=question,
-                            topic_follow_up_count=follow_ups,
-                            transcript_lines=lines,
-                            depth_history=depth_hist,
-                            contradiction_detected=contradiction_alert is not None,
-                            client=_oai_eval_client,
-                            org_id=org_id,
-                            llm_model=analysis_openai_model,
-                            score_answer_quality_fn=score_answer_quality,
-                            evaluate_answer_and_decide_fn=evaluate_answer_and_decide,
-                            collapse_stage=collapse_stage,
-                        )
+                        # Hard timeout: if evaluation LLM is slow the next candidate answer
+                        # arrives before directive is injected — Ishita answers with no context.
+                        try:
+                            td, directive = await asyncio.wait_for(
+                                run_turn_evaluation(
+                                    candidate_answer=answer,
+                                    last_question=question,
+                                    topic_follow_up_count=follow_ups,
+                                    transcript_lines=lines,
+                                    depth_history=depth_hist,
+                                    contradiction_detected=contradiction_alert is not None,
+                                    client=_oai_eval_client,
+                                    org_id=org_id,
+                                    llm_model=analysis_openai_model,
+                                    score_answer_quality_fn=score_answer_quality,
+                                    evaluate_answer_and_decide_fn=evaluate_answer_and_decide,
+                                    collapse_stage=collapse_stage,
+                                ),
+                                timeout=6.0,
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning(
+                                "[EVAL] run_turn_evaluation timed out (>6s) turn=%d — skipping directive injection",
+                                turn,
+                            )
+                            return
 
                         action = td["decision"]["action"]
                         signal_events = td.get("signal_events", [])
@@ -4461,128 +4549,132 @@ async def entrypoint(ctx: JobContext):
                         elif quality_avg >= 4.5:
                             depth_signal = "SPECIFIC"
 
-                        # Log quality score for DB persistence
-                        quality_record = {
-                            "clarity": td["quality"]["clarity"],
-                            "depth": td["quality"]["depth"],
-                            "specificity": td["quality"]["specificity"],
-                            "grounding": td["quality"]["grounding"],
-                            "overall": quality_avg,
-                            "signals": [event["signal_name"] for event in signal_events if event.get("signal_name")],
-                            "concerns": [event["signal_name"] for event in signal_events if event.get("score_delta", 0.0) < 0],
-                            "turn": turn,
-                            "question": question,
-                        }
-                        answer_scores.append(quality_record)
-
-                        # Update depth history and follow-up counter
-                        _topic_depth_history.append(td["quality"]["depth"])
-                        collapse_fired = any(
-                            ev.get("signal_name") == "follow_up_collapse"
-                            for ev in signal_events
-                        )
-                        if action in ("PROBE", "VERIFY"):
-                            _topic_follow_up_count += 1
-                            if collapse_fired:
-                                # Probe issued for collapse — advance stage so next turn escalates
-                                _collapse_stage += 1
-                            elif _collapse_stage > 0 and not collapse_fired:
-                                # No collapse this follow-up — candidate recovered, reduce stage
-                                _collapse_stage = max(0, _collapse_stage - 1)
-                        else:
-                            _topic_follow_up_count = 0
-                            _topic_depth_history = []
-                            _collapse_stage = 0
-
-                        # Update the canonical TrustState only. Trust deltas are folded into the
-                        # single structured engine so we do not maintain a second trust line.
-                        _trust_state = apply_turn_decision(_trust_state, td)
-
-                        # Record the signal contract in one place and keep the legacy risk meter aligned.
-                        for event in signal_events:
-                            event_delta = float(event.get("score_delta", 0.0) or 0.0)
-                            legacy_delta = int(round(max(0.0, -event_delta) * 100))
-                            signal_layer = str(event.get("signal_layer", "") or "")
-                            if legacy_delta:
-                                if signal_layer == "hard_integrity":
-                                    integrity_risk = min(100, integrity_risk + legacy_delta)
-                                else:
-                                    depth_risk = min(100, depth_risk + legacy_delta)
-                                refresh_composite_risk()
-                            proctoring_events.append({
-                                "event": event["signal_name"],
-                                "signal_name": event["signal_name"],
-                                "signal_layer": event["signal_layer"],
-                                "risk_bucket": "integrity" if signal_layer == "hard_integrity" else "depth",
-                                "confidence": event["confidence"],
-                                "evidence": event["evidence"],
-                                "trust_bucket_affected": event["trust_bucket_affected"],
-                                "score_delta": event_delta,
-                                "probe_mode": event["probe_mode"],
-                                "recoverable": event["recoverable"],
-                                "recruiter_visible": event["recruiter_visible"],
+                        # All I/O is done. Acquire lock before mutating any shared session state.
+                        # This prevents _inject_state() (fires every 3 turns) from interleaving
+                        # with this function at async await points and corrupting shared counters.
+                        async with _session_state_lock:
+                            # Log quality score for DB persistence
+                            quality_record = {
+                                "clarity": td["quality"]["clarity"],
+                                "depth": td["quality"]["depth"],
+                                "specificity": td["quality"]["specificity"],
+                                "grounding": td["quality"]["grounding"],
+                                "overall": quality_avg,
+                                "signals": [event["signal_name"] for event in signal_events if event.get("signal_name")],
+                                "concerns": [event["signal_name"] for event in signal_events if event.get("score_delta", 0.0) < 0],
                                 "turn": turn,
-                                "score_after": suspicion_score,
-                            })
-                            logger.info(
-                                f"[SIGNAL] {event['signal_name']} layer={event['signal_layer']} "
-                                f"confidence={event['confidence']:.2f} trust_delta={event_delta:+.2f} "
-                                f"visible={event['recruiter_visible']} turn={turn}"
-                            )
+                                "question": question,
+                            }
+                            answer_scores.append(quality_record)
 
-                        # Contradiction recovery: if last turn surfaced a contradiction and
-                        # this turn the candidate moved on cleanly with decent quality,
-                        # treat it as resolved and restore hard_integrity.
-                        quality_avg_for_recovery = (
-                            td["quality"]["clarity"] + td["quality"]["depth"] +
-                            td["quality"]["specificity"] + td["quality"]["grounding"]
-                        ) / 4.0
-                        _contradiction_state, contradiction_state_event = advance_contradiction_state(
-                            _contradiction_state,
-                            contradiction_alert,
-                            turn=turn,
-                            action=action,
-                            quality_avg=quality_avg_for_recovery,
-                        )
-                        if contradiction_state_event:
-                            proctoring_events.append({
-                                "event": contradiction_state_event["event"],
-                                "source": contradiction_state_event["source"],
-                                "status": contradiction_state_event["status"],
-                                "turn": contradiction_state_event["turn"],
-                                "surfaced_turn": contradiction_state_event["surfaced_turn"],
-                                "repeat_count": contradiction_state_event["repeat_count"],
-                                "probe_type": contradiction_state_event["probe_type"],
-                                "recovery_path": contradiction_state_event["recovery_path"],
-                                "recruiter_note": contradiction_state_event["recruiter_note"],
-                                "trust_delta": contradiction_state_event["trust_delta"],
-                                "score_delta": 0,
-                                "score_after": suspicion_score,
-                                "evidence": contradiction_state_event.get("evidence", ""),
-                                "contradiction_type": contradiction_state_event.get("contradiction_type", ""),
-                            })
-                            logger.info(
-                                f"[CONTRADICTION] status={contradiction_state_event['status']} "
-                                f"source={contradiction_state_event['source']} turn={turn} "
-                                f"trust_delta={contradiction_state_event['trust_delta']:+.2f}"
+                            # Update depth history and follow-up counter
+                            _topic_depth_history.append(td["quality"]["depth"])
+                            collapse_fired = any(
+                                ev.get("signal_name") == "follow_up_collapse"
+                                for ev in signal_events
                             )
-                            if contradiction_state_event["status"] == "candidate_clarified":
-                                _trust_state = apply_contradiction_resolved(_trust_state)
-                                logger.info("[TRUST] Contradiction resolved by candidate - hard_integrity restored")
-                        # Feed depth signal into suspicion scoring
-                        if depth_signal == "SURFACE":
-                            depth_risk = min(100, depth_risk + 3)
-                            refresh_composite_risk()
-                        elif depth_signal == "DEEP" and current_interview_mode == "normal":
-                            current_interview_mode = "deep"
+                            if action in ("PROBE", "VERIFY"):
+                                _topic_follow_up_count += 1
+                                if collapse_fired:
+                                    # Probe issued for collapse — advance stage so next turn escalates
+                                    _collapse_stage += 1
+                                elif _collapse_stage > 0 and not collapse_fired:
+                                    # No collapse this follow-up — candidate recovered, reduce stage
+                                    _collapse_stage = max(0, _collapse_stage - 1)
+                            else:
+                                _topic_follow_up_count = 0
+                                _topic_depth_history = []
+                                _collapse_stage = 0
+
+                            # Update the canonical TrustState only. Trust deltas are folded into the
+                            # single structured engine so we do not maintain a second trust line.
+                            _trust_state = apply_turn_decision(_trust_state, td)
+
+                            # Record the signal contract in one place and keep the legacy risk meter aligned.
+                            for event in signal_events:
+                                event_delta = float(event.get("score_delta", 0.0) or 0.0)
+                                legacy_delta = int(round(max(0.0, -event_delta) * 100))
+                                signal_layer = str(event.get("signal_layer", "") or "")
+                                if legacy_delta:
+                                    if signal_layer == "hard_integrity":
+                                        integrity_risk = min(100, integrity_risk + legacy_delta)
+                                    else:
+                                        depth_risk = min(100, depth_risk + legacy_delta)
+                                    refresh_composite_risk()
+                                proctoring_events.append({
+                                    "event": event["signal_name"],
+                                    "signal_name": event["signal_name"],
+                                    "signal_layer": event["signal_layer"],
+                                    "risk_bucket": "integrity" if signal_layer == "hard_integrity" else "depth",
+                                    "confidence": event["confidence"],
+                                    "evidence": event["evidence"],
+                                    "trust_bucket_affected": event["trust_bucket_affected"],
+                                    "score_delta": event_delta,
+                                    "probe_mode": event["probe_mode"],
+                                    "recoverable": event["recoverable"],
+                                    "recruiter_visible": event["recruiter_visible"],
+                                    "turn": turn,
+                                    "score_after": suspicion_score,
+                                })
+                                logger.info(
+                                    f"[SIGNAL] {event['signal_name']} layer={event['signal_layer']} "
+                                    f"confidence={event['confidence']:.2f} trust_delta={event_delta:+.2f} "
+                                    f"visible={event['recruiter_visible']} turn={turn}"
+                                )
+
+                            # Contradiction recovery: if last turn surfaced a contradiction and
+                            # this turn the candidate moved on cleanly with decent quality,
+                            # treat it as resolved and restore hard_integrity.
+                            quality_avg_for_recovery = (
+                                td["quality"]["clarity"] + td["quality"]["depth"] +
+                                td["quality"]["specificity"] + td["quality"]["grounding"]
+                            ) / 4.0
+                            _contradiction_state, contradiction_state_event = advance_contradiction_state(
+                                _contradiction_state,
+                                contradiction_alert,
+                                turn=turn,
+                                action=action,
+                                quality_avg=quality_avg_for_recovery,
+                            )
+                            if contradiction_state_event:
+                                proctoring_events.append({
+                                    "event": contradiction_state_event["event"],
+                                    "source": contradiction_state_event["source"],
+                                    "status": contradiction_state_event["status"],
+                                    "turn": contradiction_state_event["turn"],
+                                    "surfaced_turn": contradiction_state_event["surfaced_turn"],
+                                    "repeat_count": contradiction_state_event["repeat_count"],
+                                    "probe_type": contradiction_state_event["probe_type"],
+                                    "recovery_path": contradiction_state_event["recovery_path"],
+                                    "recruiter_note": contradiction_state_event["recruiter_note"],
+                                    "trust_delta": contradiction_state_event["trust_delta"],
+                                    "score_delta": 0,
+                                    "score_after": suspicion_score,
+                                    "evidence": contradiction_state_event.get("evidence", ""),
+                                    "contradiction_type": contradiction_state_event.get("contradiction_type", ""),
+                                })
+                                logger.info(
+                                    f"[CONTRADICTION] status={contradiction_state_event['status']} "
+                                    f"source={contradiction_state_event['source']} turn={turn} "
+                                    f"trust_delta={contradiction_state_event['trust_delta']:+.2f}"
+                                )
+                                if contradiction_state_event["status"] == "candidate_clarified":
+                                    _trust_state = apply_contradiction_resolved(_trust_state)
+                                    logger.info("[TRUST] Contradiction resolved by candidate - hard_integrity restored")
+                            # Feed depth signal into suspicion scoring
+                            if depth_signal == "SURFACE":
+                                depth_risk = min(100, depth_risk + 3)
+                                refresh_composite_risk()
+                            elif depth_signal == "DEEP" and current_interview_mode == "normal":
+                                current_interview_mode = "deep"
 
                         # Append contradiction context to directive if needed
                         contradiction_summary = summarize_contradiction_state(_contradiction_state)
                         evidence = contradiction_summary["evidence"]
                         old_t = evidence.get("oldTurn", 0)
-                        old_v = evidence.get("oldValue", "")
-                        new_v = evidence.get("newValue", "")
-                        claim_t = contradiction_summary["contradictionType"].replace("_", " ") or "contradiction"
+                        old_v = _sanitize_claim_value(evidence.get("oldValue", ""))
+                        new_v = _sanitize_claim_value(evidence.get("newValue", ""))
+                        claim_t = re.sub(r"[^\w\s]", "", contradiction_summary["contradictionType"].replace("_", " ")).strip() or "contradiction"
                         if contradiction_summary["active"]:
                             directive = (
                                 f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
@@ -4607,11 +4699,19 @@ async def entrypoint(ctx: JobContext):
                                 except (ValueError, AttributeError):
                                     pass
 
+                        logger.info(
+                            "[DIRECTIVE] action=%s mode=%s turn=%d collapse_stage=%d",
+                            td["decision"]["action"], td["decision"]["mode"],
+                            turn, _collapse_stage,
+                        )
                         chat_ctx.add_message(role="system", content=directive)
                     except Exception as e:
-                        logger.debug(f"[EVAL] Evaluator injection failed: {e}")
+                        logger.warning(f"[EVAL] Evaluator injection failed turn={turn_snapshot}: {e}", exc_info=True)
 
-                spawn_background_task(_evaluate_and_inject(), f"eval_turn_{turn_snapshot}")
+                # Cancel any stale eval task before spawning new one
+                if _active_eval_task and not _active_eval_task.done():
+                    _active_eval_task.cancel()
+                _active_eval_task = spawn_background_task(_evaluate_and_inject(), f"eval_turn_{turn_snapshot}")
         except Exception as e:
             logger.debug(f"[TRANSCRIPT] User item processing failed: {e}")
 
@@ -4641,9 +4741,9 @@ async def entrypoint(ctx: JobContext):
             # --- Track last Ishita question (for per-turn evaluator) ---
             if role == "assistant":
                 # Extract the last sentence ending in "?" as the question
-                sentences = [s.strip() for s in clean_content.split("?") if s.strip()]
-                if sentences:
-                    _last_interviewer_question = sentences[-1] + "?"
+                q_match = re.search(r'([^.!?]+\?)\s*$', clean_content.strip())
+                if q_match:
+                    _last_interviewer_question = q_match.group(1).strip()
 
             # --- Per-Turn Answer Evaluator (Decision Engine) ---
             # Fires on every candidate response. Evaluates answer quality in real-time
@@ -4671,122 +4771,123 @@ async def entrypoint(ctx: JobContext):
                     ):
                         nonlocal environment_risk, integrity_risk, depth_risk, suspicion_score, current_interview_mode
                         try:
-                            oai_client = AsyncOpenAI()
                             state = await generate_interview_state_summary(
                                 snap,
                                 q_list,
                                 candidate_name,
                                 job_title,
-                                oai_client,
+                                _oai_eval_client,
                                 org_id=org_id,
                                 turn_count=t,
                                 total_turns_expected=exp,
                                 llm_model=analysis_openai_model,
                             )
                             if state:
-                                # --- Parse proctoring signals from state text ---
-                                if "CONTRADICTION DETECTED" in state:
-                                    proctoring_events.append({
-                                        "event": "contradiction_detected",
-                                        "turn": t,
-                                        "score_delta": 0,
-                                        "score_after": suspicion_score,
-                                        "note": "state summary surfaced a contradiction; trust handled in formal state machine",
-                                    })
-                                    logger.info(f"[PROCTOR] contradiction_detected turn={t} (formal state handles trust)")
-
-                                depth_match = re.search(r"ANSWER_DEPTH:\s*\[(SURFACE|SPECIFIC|DEEP)\]", state)
-                                if depth_match:
-                                    depth_level = depth_match.group(1)
-                                    if depth_level == "SURFACE":
-                                        depth_risk = min(100, depth_risk + 5)
-                                        refresh_composite_risk()
+                                # All I/O done — acquire lock before writing shared state.
+                                async with _session_state_lock:
+                                    # --- Parse proctoring signals from state text ---
+                                    if "CONTRADICTION DETECTED" in state:
                                         proctoring_events.append({
-                                            "event": "answer_surface",
+                                            "event": "contradiction_detected",
                                             "turn": t,
-                                            "risk_bucket": "depth",
-                                            "score_delta": 5,
+                                            "score_delta": 0,
+                                            "score_after": suspicion_score,
+                                            "note": "state summary surfaced a contradiction; trust handled in formal state machine",
+                                        })
+                                        logger.info(f"[PROCTOR] contradiction_detected turn={t} (formal state handles trust)")
+
+                                    depth_match = re.search(r"ANSWER_DEPTH:\s*\[(SURFACE|SPECIFIC|DEEP)\]", state)
+                                    if depth_match:
+                                        depth_level = depth_match.group(1)
+                                        if depth_level == "SURFACE":
+                                            depth_risk = min(100, depth_risk + 5)
+                                            refresh_composite_risk()
+                                            proctoring_events.append({
+                                                "event": "answer_surface",
+                                                "turn": t,
+                                                "risk_bucket": "depth",
+                                                "score_delta": 5,
+                                                "score_after": suspicion_score,
+                                            })
+                                        logger.info(f"[PROCTOR] answer_depth={depth_level} turn={t} score={suspicion_score}")
+
+                                    if "MOVE ON NOW" in state:
+                                        proctoring_events.append({
+                                            "event": "stuck_alert",
+                                            "turn": t,
+                                            "score_delta": 0,
                                             "score_after": suspicion_score,
                                         })
-                                    logger.info(f"[PROCTOR] answer_depth={depth_level} turn={t} score={suspicion_score}")
+                                        logger.info(f"[PROCTOR] stuck_alert turn={t}")
 
-                                if "MOVE ON NOW" in state:
-                                    proctoring_events.append({
-                                        "event": "stuck_alert",
-                                        "turn": t,
-                                        "score_delta": 0,
-                                        "score_after": suspicion_score,
-                                    })
-                                    logger.info(f"[PROCTOR] stuck_alert turn={t}")
+                                    if "PACE CRITICAL" in state:
+                                        proctoring_events.append({
+                                            "event": "pace_critical",
+                                            "turn": t,
+                                            "score_delta": 0,
+                                            "score_after": suspicion_score,
+                                        })
 
-                                if "PACE CRITICAL" in state:
-                                    proctoring_events.append({
-                                        "event": "pace_critical",
-                                        "turn": t,
-                                        "score_delta": 0,
-                                        "score_after": suspicion_score,
-                                    })
+                                    # --- Determine interview mode from proctoring risk only ---
+                                    mode_risk_score = compose_mode_risk_score(
+                                        integrity_risk,
+                                        depth_risk,
+                                    )
+                                    if integrity_risk >= 15 or mode_risk_score >= 28:
+                                        new_mode = "verification"
+                                    elif mode_risk_score >= 16 or depth_risk >= 18:
+                                        new_mode = "pressure"
+                                    else:
+                                        new_mode = mode  # keep existing (could be "deep" from genuine depth)
 
-                                # --- Determine interview mode from proctoring risk only ---
-                                mode_risk_score = compose_mode_risk_score(
-                                    integrity_risk,
-                                    depth_risk,
-                                )
-                                if integrity_risk >= 15 or mode_risk_score >= 28:
-                                    new_mode = "verification"
-                                elif mode_risk_score >= 16 or depth_risk >= 18:
-                                    new_mode = "pressure"
-                                else:
-                                    new_mode = mode  # keep existing (could be "deep" from genuine depth)
+                                    if new_mode != current_interview_mode:
+                                        logger.info(
+                                            f"[PROCTOR] mode_change {current_interview_mode}->{new_mode} "
+                                            f"proctoring_score={mode_risk_score} "
+                                            f"env={environment_risk} integrity={integrity_risk} depth={depth_risk} turn={t}"
+                                        )
+                                        current_interview_mode = new_mode
+                                        proctoring_events.append({
+                                            "event": "mode_change",
+                                            "turn": t,
+                                            "from": mode,
+                                            "to": new_mode,
+                                            "score": mode_risk_score,
+                                        })
 
-                                if new_mode != current_interview_mode:
+                                    # --- Remove old state injections - keep only the latest 2 ---
+                                    messages = chat_ctx.messages() if callable(getattr(chat_ctx, "messages", None)) else chat_ctx.messages
+                                    state_msgs = [
+                                        m
+                                        for m in messages
+                                        if getattr(m, "role", "") == "system"
+                                        and "[INTERVIEW STATE UPDATE" in (
+                                            getattr(m, "content", "") or ""
+                                        )
+                                    ]
+                                    if len(state_msgs) >= 2:
+                                        for old_msg in state_msgs[:-1]:
+                                            try:
+                                                messages.remove(old_msg)
+                                            except (ValueError, AttributeError):
+                                                pass
+
+                                    injection_text = (
+                                        f"[INTERVIEW STATE UPDATE - Turn {t}]\n"
+                                        f"ISHITA_MODE: {current_interview_mode.upper()}\n"
+                                        f"COMPOSITE_RISK: {suspicion_score}\n"
+                                        f"{state}\n"
+                                        "Use this to guide your next 3-4 exchanges. "
+                                        "Do not reference this note aloud."
+                                    )
+                                    chat_ctx.add_message(
+                                        role="system", content=injection_text
+                                    )
                                     logger.info(
-                                        f"[PROCTOR] mode_change {current_interview_mode}->{new_mode} "
-                                        f"proctoring_score={mode_risk_score} "
-                                        f"env={environment_risk} integrity={integrity_risk} depth={depth_risk} turn={t}"
+                                        f"[STATE_INJECT] Injected state at turn {t} "
+                                        f"mode={current_interview_mode} composite_risk={suspicion_score}: "
+                                        f"{state[:80]}..."
                                     )
-                                    current_interview_mode = new_mode
-                                    proctoring_events.append({
-                                        "event": "mode_change",
-                                        "turn": t,
-                                        "from": mode,
-                                        "to": new_mode,
-                                        "score": mode_risk_score,
-                                    })
-
-                                # --- Remove old state injections - keep only the latest 2 ---
-                                messages = chat_ctx.messages() if callable(getattr(chat_ctx, "messages", None)) else chat_ctx.messages
-                                state_msgs = [
-                                    m
-                                    for m in messages
-                                    if getattr(m, "role", "") == "system"
-                                    and "[INTERVIEW STATE UPDATE" in (
-                                        getattr(m, "content", "") or ""
-                                    )
-                                ]
-                                if len(state_msgs) >= 2:
-                                    for old_msg in state_msgs[:-1]:
-                                        try:
-                                            messages.remove(old_msg)
-                                        except (ValueError, AttributeError):
-                                            pass
-
-                                injection_text = (
-                                    f"[INTERVIEW STATE UPDATE - Turn {t}]\n"
-                                    f"ISHITA_MODE: {current_interview_mode.upper()}\n"
-                                    f"COMPOSITE_RISK: {suspicion_score}\n"
-                                    f"{state}\n"
-                                    "Use this to guide your next 3-4 exchanges. "
-                                    "Do not reference this note aloud."
-                                )
-                                chat_ctx.add_message(
-                                    role="system", content=injection_text
-                                )
-                                logger.info(
-                                    f"[STATE_INJECT] Injected state at turn {t} "
-                                    f"mode={current_interview_mode} composite_risk={suspicion_score}: "
-                                    f"{state[:80]}..."
-                                )
                         except Exception as e:
                             logger.warning(
                                 f"[STATE_INJECT] Injection failed at turn {t}: {e}"
@@ -4968,6 +5069,11 @@ async def entrypoint(ctx: JobContext):
 
     if ready_event.is_set() and not disconnect_event.is_set():
         session_start_time = time.time()
+        logger.info(
+            "[SESSION_START] app_id=%s candidate=%s role=%s band=%s",
+            app_id, candidate_name, job_title,
+            getattr(session_context, "candidate_band", "unknown"),
+        )
 
         ai_name = context.get("aiName") or "Ishita"
         # Dynamic, personalized, warm greeting - adapted per language
@@ -5076,14 +5182,6 @@ async def entrypoint(ctx: JobContext):
     FINAL_THANKS_TRIGGER_SECS = max(8, min(15, int(total_seconds * 0.1)))
     MIN_CANDIDATE_LINES_FOR_WRAPUP = 3
 
-    # Warm inactivity nudges. Keep them short, varied, and situation-aware.
-    _nudge_pool = [
-        "If you're thinking aloud, feel free to keep going - that helps me follow your reasoning.",
-        "Take your time, {name}. I can wait while you gather your thoughts.",
-        "Just a reminder that I'm here whenever you're ready to share your thoughts.",
-        "If you went quiet because you were mid-thought, you can continue right from there.",
-        "You can also answer with one concrete example if that is easier than a broad explanation.",
-    ]
     inactivity_nudge_count = 0
 
     async def _deliver_nudge(text: str) -> None:
@@ -5103,13 +5201,52 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.warning(f"Failed to send termination signal: {e}")
 
+    def _inactivity_thresholds() -> tuple[float, float, float]:
+        """Return (nudge_secs, warning_secs, terminate_secs) scaled to last question complexity."""
+        words = len((_last_interviewer_question or "").split())
+        if words > 20:
+            return 12.0, 24.0, 34.0
+        if words > 10:
+            return 9.0, 21.0, 31.0
+        return 7.0, 18.0, 28.0
+
     def _pick_nudge() -> str:
-        """Return the next configured inactivity nudge in round-robin order."""
-        if not _nudge_pool:
-            return "Could you share one specific example from your work?"
-        return _nudge_pool[inactivity_nudge_count % len(_nudge_pool)].format(
-            name=candidate_first_name or candidate_name
-        )
+        """Return a context-aware inactivity nudge based on the type of question asked."""
+        name = candidate_first_name or candidate_name
+        q = (_last_interviewer_question or "").lower()
+
+        # Technical/explanatory questions — candidate may need thinking time
+        if any(w in q for w in ("how", "why", "explain", "walk me through", "describe", "what happened", "tell me about")):
+            technical_nudges = [
+                f"Take your time, {name} — I want to hear the full picture.",
+                "No rush — think it through and share whenever you're ready.",
+                "If it helps, start with a specific example and work from there.",
+            ]
+            return technical_nudges[inactivity_nudge_count % len(technical_nudges)]
+
+        # Reflective questions — candidate may be searching for the right words
+        if any(w in q for w in ("feel", "think", "would you", "looking back", "what would you", "in hindsight")):
+            reflective_nudges = [
+                "No rush — happy to wait while you think that through.",
+                f"Take a moment, {name}. There is no right answer here.",
+            ]
+            return reflective_nudges[inactivity_nudge_count % len(reflective_nudges)]
+
+        # Example / story requests — candidate may be picking which story to tell
+        if any(w in q for w in ("example", "specific", "moment", "situation", "time when", "instance")):
+            example_nudges = [
+                "Pick whichever example comes to mind first — the specifics matter more than finding the perfect one.",
+                f"You can also answer with just one concrete example if that is easier, {name}.",
+            ]
+            return example_nudges[inactivity_nudge_count % len(example_nudges)]
+
+        # Generic fallback nudges
+        generic_nudges = [
+            f"If you're thinking aloud, feel free to keep going — that helps me follow your reasoning.",
+            f"Just checking in, {name} — whenever you're ready.",
+            "If you went quiet mid-thought, you can continue right from there.",
+        ]
+        return generic_nudges[inactivity_nudge_count % len(generic_nudges)]
 
     session_loop_start = time.monotonic()
 
@@ -5181,9 +5318,10 @@ async def entrypoint(ctx: JobContext):
             else 0.0
         )
 
-        # -- Stage 1: 30s Nudge --
+        # -- Stage 1: Nudge (threshold scaled to question complexity) --
         # Extra guard: don't fire if agent just finished speaking within last 5s
         # (covers the LLM "thinking/typing" window before TTS starts)
+        _nudge_t, _warn_t, _term_t = _inactivity_thresholds()
         agent_just_spoke = (
             awaiting_candidate_since is not None
             and (time.monotonic() - awaiting_candidate_since) < 5.0
@@ -5194,43 +5332,43 @@ async def entrypoint(ctx: JobContext):
             and awaiting_candidate_response
             and not inactivity_nudge_sent_for_current_prompt
             and not agent_just_spoke
-            and inactivity_elapsed >= 30
+            and inactivity_elapsed >= _nudge_t
         ):
             nudge_text = _pick_nudge()
             try:
                 spawn_background_task(_deliver_nudge(nudge_text), "inactivity_nudge")
                 inactivity_nudge_sent_for_current_prompt = True
                 inactivity_nudge_count += 1
-                logger.info(f"[NUDGE] 30s inactivity nudge delivered: '{nudge_text[:40]}...'")
+                logger.info(f"[NUDGE] {_nudge_t:.0f}s inactivity nudge delivered: '{nudge_text[:40]}...'")
             except Exception as e:
-                logger.warning(f"[NUDGE] Failed to deliver 30s nudge: {e}")
+                logger.warning(f"[NUDGE] Failed to deliver nudge: {e}")
 
-        # -- Stage 2: 60s Termination Warning --
+        # -- Stage 2: Termination Warning --
         if (
             not is_agent_speaking
             and not is_candidate_speaking
             and awaiting_candidate_response
             and not inactivity_warning_sent_for_current_prompt
-            and inactivity_elapsed >= 60
+            and inactivity_elapsed >= _warn_t
         ):
             try:
                 inactivity_warning_sent_for_current_prompt = True
                 warning_text = (
-                    f"I haven't heard from you in a minute, {candidate_first_name or candidate_name}. "
+                    f"I haven't heard from you in a while, {candidate_first_name or candidate_name}. "
                     "If you're still there, please say something, otherwise I will have to end the call in 10 seconds."
                 )
                 spawn_background_task(_deliver_nudge(warning_text), "inactivity_warning")
-                logger.info("[NUDGE] 60s termination warning delivered")
+                logger.info(f"[NUDGE] {_warn_t:.0f}s termination warning delivered")
             except Exception as e:
-                logger.warning(f"[NUDGE] Failed to deliver 60s warning: {e}")
+                logger.warning(f"[NUDGE] Failed to deliver warning: {e}")
 
-        # -- Stage 3: 70s Final Termination --
+        # -- Stage 3: Final Termination --
         if (
             not is_agent_speaking
             and not is_candidate_speaking
             and awaiting_candidate_response
             and inactivity_warning_sent_for_current_prompt
-            and inactivity_elapsed >= 70
+            and inactivity_elapsed >= _term_t
         ):
             logger.info(
                 f"[NUDGE] Ending interview due to final inactivity timeout ({int(inactivity_elapsed)}s)"

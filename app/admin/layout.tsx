@@ -7,7 +7,7 @@ import { OnboardingRedirect } from "@/components/admin/onboarding-redirect";
 import { RecruiterAssistant } from "@/components/admin/RecruiterAssistant";
 import { Toaster } from "@/components/ui/toast-custom";
 import { AccountStatusHandler } from "@/components/admin/AccountStatusHandler";
-import { LowCreditsBanner } from "@/components/admin/LowCreditsBanner";
+import { LowCreditsBanner } from "../../components/admin/LowCreditsBanner";
 import { prisma } from "@/lib/prisma";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {

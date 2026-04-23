@@ -11,38 +11,79 @@ _PROBE_FAMILIES: dict[str, dict[str, str]] = {
     "clarification": {
         "goal": "Surface the inconsistency naturally. Ask them to reconcile the two statements.",
         "style": "Use genuine confusion, not accusation. Anchor on the two conflicting claims.",
+        "starters": [
+            "Earlier you said X, but just now you said Y — help me understand which is closer to what actually happened.",
+            "I want to make sure I'm following — those two things sound a bit different to me. Can you walk me through it again?",
+        ],
     },
     "ownership": {
         "goal": "Ask what THEY personally owned, built, or decided - not the team.",
         "style": "Push from team-language into individual responsibility.",
+        "starters": [
+            "What specifically did you do versus the rest of the team?",
+            "If I called your manager, what would they say your individual contribution was?",
+            "Walk me through what you personally built or decided — not what the team did.",
+        ],
     },
     "evidence": {
         "goal": "Ask for a concrete example, named project, or real moment from work.",
         "style": "Move from claim to proof. Ask for the exact instance, not the summary.",
+        "starters": [
+            "Give me a specific example of when that actually happened.",
+            "That sounds practiced — give me a real moment where this played out.",
+            "What's the most concrete instance you can think of? Name the project, the situation.",
+        ],
     },
     "compression": {
         "goal": "Ask for the sequence step by step and compress the story into the real turning point.",
         "style": "Use when the answer gets too short or too collapsed on a follow-up.",
+        "starters": [
+            "Walk me through it step by step — what happened first, then what?",
+            "What was the actual turning point? Not the outcome — the moment the decision was made.",
+        ],
     },
     "follow_up_collapse_staged": {
         "goal": "Recover depth lost after a strong first answer. Use a staged memory probe, not a concept probe.",
         "style": "Escalate naturally: L1 ask for more detail, L2 ask what they personally owned, L3 reconstruct the exact moment.",
+        "starters": [
+            "Can you walk me through that in a bit more detail?",
+            "What was your specific role in that — what did you personally own or build?",
+            "Forget the overview — tell me about one specific day or meeting where that actually happened.",
+        ],
     },
     "depth": {
         "goal": "Go one level deeper on the real decision, tradeoff, or failure story.",
         "style": "Use when the answer is already substantive but not yet fully tested.",
+        "starters": [
+            "What was the hardest part of that — not in general, the specific hardest moment?",
+            "What would have broken if you'd made a different call there?",
+            "What did you get wrong before you got it right?",
+        ],
     },
     "verification": {
         "goal": "Test recall on the specific moment before or after the claim.",
         "style": "Use when the answer sounds polished but lightly grounded.",
+        "starters": [
+            "What was the state of things right before that happened? Walk me through it.",
+            "I want to make sure I understand — you said X, can you walk me through what that looked like concretely?",
+            "When you say Y, what does that mean in practice? Give me a real example.",
+        ],
     },
     "rapport": {
         "goal": "Respond like a real person first, show you know the candidate's context, then bridge back naturally.",
         "style": "Start with a human acknowledgment. Do not pivot immediately into a new interview question.",
+        "starters": [
+            "That makes sense — [brief acknowledgment]. Let me come back to what we were discussing.",
+            "Got it. [acknowledge]. Now — [bridge to question].",
+        ],
     },
     "normal": {
         "goal": "Topic sufficiently covered. Move to the next uncovered area from your interview plan.",
         "style": "No special probe needed.",
+        "starters": [
+            "Okay, that gives me what I need there. Let me shift to something different.",
+            "Got it. Before we move on, one quick thing — [targeted follow-up if needed].",
+        ],
     },
 }
 
@@ -92,6 +133,10 @@ _SHORT_UTTERANCE_FAMILIES = {
         "goal": "Accept the brief answer as real, then ask one focused follow-up for specifics.",
         "style": "Briefly accept the answer, then move to one concrete follow-up.",
     },
+    "clarification_question": {
+        "goal": "The candidate is asking for clarification on your question. Answer their question directly and briefly, then re-ask the same question.",
+        "style": "Give a short, clear answer to what they asked. Do not probe, do not advance the topic. Re-ask your original question after clarifying.",
+    },
 }
 
 
@@ -117,6 +162,10 @@ def _family_goal(family: str) -> str:
 
 def _family_style(family: str) -> str:
     return _PROBE_FAMILIES.get(family, _PROBE_FAMILIES["normal"])["style"]
+
+
+def _family_starters(family: str) -> list[str]:
+    return _PROBE_FAMILIES.get(family, _PROBE_FAMILIES["normal"]).get("starters", [])
 
 
 def build_short_utterance_directive(short_class: str, evidence: str) -> str:
@@ -209,11 +258,12 @@ def _build_collapse_probe_lines(collapse_stage: int, signal_events: list) -> lis
             "If they deflect to team again: this becomes stage 2 — strong authenticity flag.",
         ]
     else:
+        claim_anchor = f'about "{evidence[:80]}"' if evidence else "from their first answer"
         probe_lines = [
             "PROBE LEVEL: L3 — memory reconstruction. This is a strong integrity flag.",
-            "PROBE: Go back to the specific claim in their first answer. Ask them to reconstruct the exact moment.",
-            'EXAMPLE: "Go back to that decision — what exactly were you looking at when you realised that was the problem?"',
-            'EXAMPLE: "What was the state of the system right before you made that call?"',
+            f"PROBE: Go back to the specific claim {claim_anchor}. Ask them to reconstruct the exact moment — not the summary.",
+            f'EXAMPLE: "Forget the overview for a second — tell me about one specific day or meeting where {claim_anchor.replace("about ", "", 1)} actually happened. What was said? What did you do?"',
+            'EXAMPLE: "What was the state of things right before you made that call? Walk me through it step by step."',
             "AI and rehearsed answers cannot reconstruct this. Real candidates will have imperfect recall with texture.",
             "If they cannot reconstruct: log as strong authenticity flag. Continue but weight this heavily.",
         ]
@@ -264,6 +314,11 @@ def build_directive(td: TurnDecision, depth_signal: str, topic_follow_up_count: 
     lines.append(f"NEXT MOVE: {next_goal}")
     if style and style != "No special probe needed.":
         lines.append(f"QUESTION STYLE: {style}")
+    starters = _family_starters(mode)
+    if starters and action != "MOVE_ON":
+        lines.append("EXAMPLE OPENERS (use as inspiration, not verbatim):")
+        for s in starters[:2]:
+            lines.append(f"  - {s}")
 
     if action != "MOVE_ON":
         lines.append(

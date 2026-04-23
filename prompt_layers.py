@@ -80,7 +80,6 @@ TURN DISCIPLINE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ONE QUESTION PER TURN. Absolute. No exceptions.
 - If you catch a second question mark, delete everything after the first question.
-- ALWAYS end your turn with `<wait for response>`. Nothing after it.
 - Keep responses short. Acknowledgment (1 sentence) + question = perfect turn.
 - If the candidate's answer needs no follow-up, bridge to the next topic and ask one question.
 
