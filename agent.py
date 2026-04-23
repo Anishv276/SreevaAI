@@ -1536,8 +1536,15 @@ def build_tts(
     language: str = "en", model: str = CARTESIA_MODEL, voice_id: str = CARTESIA_VOICE_ID
 ):
     primary_tts = build_cartesia_tts(language=language, model=model, voice_id=voice_id)
-    fallback_tts = build_sarvam_tts(language=language)
-    return lk_tts.FallbackAdapter([primary_tts, fallback_tts], max_retry_per_tts=1)
+    # Fallback uses Jacqueline (verified on account) — not Sarvam.
+    # This ensures voice stays on Cartesia even if the selected voice ID is invalid.
+    fallback_voice = CARTESIA_VOICE_ID if voice_id != CARTESIA_VOICE_ID else None
+    if fallback_voice:
+        fallback_tts = build_cartesia_tts(language=language, model=model, voice_id=fallback_voice)
+        logger.info(f"[TTS] Primary voice={voice_id}, fallback voice={fallback_voice} (Jacqueline)")
+        return lk_tts.FallbackAdapter([primary_tts, fallback_tts], max_retry_per_tts=1)
+    # Already using Jacqueline — no fallback needed
+    return primary_tts
 
 
 def build_sarvam_tts(
@@ -3631,11 +3638,12 @@ async def entrypoint(ctx: JobContext):
     org_llm_temperature = float(require_db_value("llmTemperature"))
 
     if org_tts_provider == "CARTESIA":
-        org_cartesia_model = str(require_db_value("cartesiaModel"))
-        org_cartesia_voice = str(require_db_value("cartesiaVoiceId"))
+        # cartesiaModel may be null at org level when drive overrides ttsProvider to CARTESIA
+        org_cartesia_model = str(require_db_value("cartesiaModel", default=CARTESIA_MODEL, required=False) or CARTESIA_MODEL)
+        org_cartesia_voice = str(require_db_value("cartesiaVoiceId", default=CARTESIA_VOICE_ID, required=False) or CARTESIA_VOICE_ID)
     elif org_tts_provider == "SARVAM":
-        org_sarvam_model = str(require_db_value("sarvamModel"))
-        org_sarvam_voice = str(require_db_value("sarvamVoice"))
+        org_sarvam_model = str(require_db_value("sarvamModel", default="bulbul:v2", required=False) or "bulbul:v2")
+        org_sarvam_voice = str(require_db_value("sarvamVoice", default="anushka", required=False) or "anushka")
     else:
         raise RuntimeError(f"Unsupported DB ttsProvider: {org_tts_provider}")
 
@@ -3840,11 +3848,12 @@ async def entrypoint(ctx: JobContext):
             raise RuntimeError(
                 "DB config missing cartesiaModel/cartesiaVoiceId for CARTESIA"
             )
+        logger.info(f"[TTS] Using Cartesia — model={org_cartesia_model} voice={org_cartesia_voice}")
         tts_plugin = build_tts(
             language=lang_codes["tts"],
             model=org_cartesia_model,
             voice_id=org_cartesia_voice,
-    )
+        )
 
     if org_llm_provider == "SARVAM":
         llm_plugin = build_sarvam_llm(model=org_llm_model)
@@ -5146,11 +5155,18 @@ async def entrypoint(ctx: JobContext):
         )
 
         # -- Stage 1: 30s Nudge --
+        # Extra guard: don't fire if agent just finished speaking within last 5s
+        # (covers the LLM "thinking/typing" window before TTS starts)
+        agent_just_spoke = (
+            awaiting_candidate_since is not None
+            and (time.monotonic() - awaiting_candidate_since) < 5.0
+        )
         if (
             not is_agent_speaking
             and not is_candidate_speaking
             and awaiting_candidate_response
             and not inactivity_nudge_sent_for_current_prompt
+            and not agent_just_spoke
             and inactivity_elapsed >= 30
         ):
             nudge_text = _pick_nudge()
