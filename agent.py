@@ -3728,7 +3728,7 @@ async def entrypoint(ctx: JobContext):
             turn_detection=turn_detector,
             endpointing=EndpointingOptions(
                 # Slightly longer endpointing to avoid cutting candidates mid-thought.
-                min_delay=0.55,
+                min_delay=0.6,
                 max_delay=2.4,
                 mode="dynamic",
             ),
@@ -4880,14 +4880,11 @@ async def entrypoint(ctx: JobContext):
     _nudge_pool = [
         "If you're thinking aloud, feel free to keep going - that helps me follow your reasoning.",
         "Take your time, {name}. I can wait while you gather your thoughts.",
-        "That was a short answer, so if there is a bit more context, please add it when you're ready.",
+        "Just a reminder that I'm here whenever you're ready to share your thoughts.",
         "If you went quiet because you were mid-thought, you can continue right from there.",
         "You can also answer with one concrete example if that is easier than a broad explanation.",
     ]
     inactivity_nudge_count = 0
-    max_inactivity_nudges = int(os.environ.get("MAX_INACTIVITY_NUDGES", "1"))
-    inactivity_nudge_after_secs = int(os.environ.get("INACTIVITY_NUDGE_SECONDS", "30"))
-    inactivity_end_after_secs = int(os.environ.get("INACTIVITY_END_SECONDS", "60"))
 
     async def _deliver_nudge(text: str) -> None:
         await session.say(text, allow_interruptions=True)
@@ -4977,6 +4974,7 @@ async def entrypoint(ctx: JobContext):
             try:
                 spawn_background_task(_deliver_nudge(nudge_text), "inactivity_nudge")
                 inactivity_nudge_sent_for_current_prompt = True
+                inactivity_nudge_count += 1
                 logger.info(f"[NUDGE] 30s inactivity nudge delivered: '{nudge_text[:40]}...'")
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver 30s nudge: {e}")
