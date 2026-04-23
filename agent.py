@@ -182,7 +182,7 @@ for logger_name in ("livekit.plugins.cartesia", "livekit.plugins.silero", "livek
 STT_MODEL = "nova-3"  # deepgram model
 CARTESIA_MODEL = "cartesia/sonic-3"  # Cartesia model via LiveKit Inference
 CARTESIA_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"  # "Jacqueline - Reassuring Agent" (verified on account)
-LLM_MODEL = "gpt-4.1-mini"  # LLM model - upgraded for richer conversational quality
+LLM_MODEL = "gpt-4o-mini"  # LLM model - upgraded for richer conversational quality
 DATABASE_URL = os.environ.get("DATABASE_URL")
 AGENT_NAME = os.environ.get("LIVEKIT_AGENT_NAME", "ai_interviewer")
 APP_BASE_URL = (
@@ -4035,8 +4035,9 @@ async def entrypoint(ctx: JobContext):
                 cleaned_tokens: list[str] = []
                 for token in tokens:
                     alpha = re.sub(r"[^a-zA-Z]", "", token).lower()
-                    # Drop tiny consonant-only fragments like "bu", "thr", "qu".
-                    if alpha and len(alpha) <= 3 and not re.search(r"[aeiou]", alpha):
+                    # RELAXED: Only drop very short consonant-only fragments if they look like filler.
+                    # "thr" or "qu" might be part of "through" or "quite" being evolving.
+                    if alpha and len(alpha) <= 2 and not re.search(r"[aeiou]", alpha):
                         continue
                     if cleaned_tokens and cleaned_tokens[-1].lower() == token.lower():
                         # Collapse immediate duplicates like "name name", "a a a".
@@ -4632,14 +4633,17 @@ async def entrypoint(ctx: JobContext):
     awaiting_candidate_response = False
     awaiting_candidate_since: float | None = None
     inactivity_nudge_sent_for_current_prompt = False
+    inactivity_warning_sent_for_current_prompt = False
     first_agent_turn_committed_at: float | None = None
     greeting_echo_suppression_secs = 6.0
 
     def reset_inactivity_clock(start_waiting: bool) -> None:
-        nonlocal awaiting_candidate_response, awaiting_candidate_since, inactivity_nudge_sent_for_current_prompt
+        nonlocal awaiting_candidate_response, awaiting_candidate_since, \
+            inactivity_nudge_sent_for_current_prompt, inactivity_warning_sent_for_current_prompt
         awaiting_candidate_response = start_waiting
         awaiting_candidate_since = time.monotonic() if start_waiting else None
         inactivity_nudge_sent_for_current_prompt = False
+        inactivity_warning_sent_for_current_prompt = False
         if start_waiting:
             logger.debug("[NUDGE] Inactivity clock started (awaiting candidate response)")
         else:
@@ -4952,49 +4956,61 @@ async def entrypoint(ctx: JobContext):
             break
 
         # --- Strict Inactivity Handling ---
-        # Start counting only after AI stops speaking.
-        # Reset when either side starts speaking.
-        # Fire nudge at 30s, end at 60s of continuous inactivity.
+        # 1. 30s: Initial warm nudge
+        # 2. 60s: Termination warning
+        # 3. 70s: Final exit
         inactivity_elapsed = (
             (time.monotonic() - awaiting_candidate_since)
             if awaiting_candidate_response and awaiting_candidate_since is not None
             else 0.0
         )
 
+        # -- Stage 1: 30s Nudge --
         if (
             not is_agent_speaking
             and not is_candidate_speaking
             and awaiting_candidate_response
-            and inactivity_nudge_count < max_inactivity_nudges
             and not inactivity_nudge_sent_for_current_prompt
-            and inactivity_elapsed >= inactivity_nudge_after_secs
+            and inactivity_elapsed >= 30
         ):
             nudge_text = _pick_nudge()
             try:
                 spawn_background_task(_deliver_nudge(nudge_text), "inactivity_nudge")
-                inactivity_nudge_count += 1
                 inactivity_nudge_sent_for_current_prompt = True
-                logger.info(f"[NUDGE] Inactivity nudge delivered: '{nudge_text[:40]}...'")
+                logger.info(f"[NUDGE] 30s inactivity nudge delivered: '{nudge_text[:40]}...'")
             except Exception as e:
-                logger.warning(f"[NUDGE] Failed to deliver nudge: {e}")
+                logger.warning(f"[NUDGE] Failed to deliver 30s nudge: {e}")
 
+        # -- Stage 2: 60s Termination Warning --
         if (
             not is_agent_speaking
             and not is_candidate_speaking
             and awaiting_candidate_response
-            and inactivity_elapsed >= inactivity_end_after_secs
+            and not inactivity_warning_sent_for_current_prompt
+            and inactivity_elapsed >= 60
+        ):
+            try:
+                inactivity_warning_sent_for_current_prompt = True
+                warning_text = (
+                    f"I haven't heard from you in a minute, {candidate_first_name or candidate_name}. "
+                    "If you're still there, please say something, otherwise I will have to end the call in 10 seconds."
+                )
+                spawn_background_task(_deliver_nudge(warning_text), "inactivity_warning")
+                logger.info("[NUDGE] 60s termination warning delivered")
+            except Exception as e:
+                logger.warning(f"[NUDGE] Failed to deliver 60s warning: {e}")
+
+        # -- Stage 3: 70s Final Termination --
+        if (
+            not is_agent_speaking
+            and not is_candidate_speaking
+            and awaiting_candidate_response
+            and inactivity_warning_sent_for_current_prompt
+            and inactivity_elapsed >= 70
         ):
             logger.info(
-                f"[NUDGE] Ending interview due to inactivity timeout ({int(inactivity_elapsed)}s)"
+                f"[NUDGE] Ending interview due to final inactivity timeout ({int(inactivity_elapsed)}s)"
             )
-            try:
-                await session.say(
-                    "I am not hearing a response, so I will end this interview now. "
-                    "Please rejoin using your interview link if you want to continue.",
-                    allow_interruptions=True,
-                )
-            except Exception:
-                pass
             interview_marked_finished = True
             interview_finished_event.set()
             disconnect_event.set()

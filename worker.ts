@@ -49,15 +49,15 @@ async function persistInterviewUpdateRaw(params: {
   await prisma.$executeRawUnsafe(
     `
     INSERT INTO "Interview" ("id", "applicationId", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "completedAt", "createdAt", "updatedAt")
-    VALUES ($6, $1, COALESCE($2, 'IN_PROGRESS'), $3, CASE WHEN $3 IS NOT NULL THEN $5 ELSE NULL END, $4, CASE WHEN $2 = 'COMPLETED' THEN $5 ELSE NULL END, $5, $5)
+    VALUES ($6::text, $1::text, COALESCE($2::text, 'IN_PROGRESS'), $3::text, CASE WHEN $3::text IS NOT NULL THEN $5::timestamp ELSE NULL END, $4::text, CASE WHEN $2::text = 'COMPLETED' THEN $5::timestamp ELSE NULL END, $5::timestamp, $5::timestamp)
     ON CONFLICT ("applicationId")
     DO UPDATE SET
-      status = COALESCE($2, "Interview".status),
-      "interviewRecordingUrl" = COALESCE($3, "Interview"."interviewRecordingUrl"),
-      "interviewRecordedAt" = CASE WHEN $3 IS NOT NULL THEN $5 ELSE "Interview"."interviewRecordedAt" END,
-      "interviewTranscript" = COALESCE($4, "Interview"."interviewTranscript"),
-      "completedAt" = CASE WHEN $2 = 'COMPLETED' THEN $5 ELSE "Interview"."completedAt" END,
-      "updatedAt" = $5
+      status = COALESCE($2::text, "Interview".status),
+      "interviewRecordingUrl" = COALESCE($3::text, "Interview"."interviewRecordingUrl"),
+      "interviewRecordedAt" = CASE WHEN $3::text IS NOT NULL THEN $5::timestamp ELSE "Interview"."interviewRecordedAt" END,
+      "interviewTranscript" = COALESCE($4::text, "Interview"."interviewTranscript"),
+      "completedAt" = CASE WHEN $2::text = 'COMPLETED' THEN $5::timestamp ELSE "Interview"."completedAt" END,
+      "updatedAt" = $5::timestamp
     `,
     applicationId,
     interviewStatus || null,

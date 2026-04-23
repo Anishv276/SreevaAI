@@ -264,14 +264,14 @@ async function updateRecordingState(params: {
 
     await prisma.$executeRawUnsafe(
         `UPDATE "Interview"
-         SET "recordingStatus" = $1,
-             "recordingMimeType" = COALESCE($2, "recordingMimeType"),
-             "recordingStartedAt" = COALESCE("recordingStartedAt", $3),
-             "recordingCompletedAt" = CASE WHEN $4 IS NOT NULL THEN $4 ELSE "recordingCompletedAt" END,
-             "recordingDurationSec" = CASE WHEN $5 IS NOT NULL THEN $5 ELSE "recordingDurationSec" END,
+         SET "recordingStatus" = $1::text,
+             "recordingMimeType" = COALESCE($2::text, "recordingMimeType"),
+             "recordingStartedAt" = COALESCE("recordingStartedAt", $3::timestamp),
+             "recordingCompletedAt" = CASE WHEN $4::timestamp IS NOT NULL THEN $4::timestamp ELSE "recordingCompletedAt" END,
+             "recordingDurationSec" = CASE WHEN $5::integer IS NOT NULL THEN $5::integer ELSE "recordingDurationSec" END,
              "recordingManifest" = $6::jsonb,
              "updatedAt" = NOW()
-         WHERE "applicationId" = $7`,
+         WHERE "applicationId" = $7::text`,
         status,
         mimeType,
         startedAt,
