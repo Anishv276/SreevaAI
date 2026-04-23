@@ -994,7 +994,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             videoCaptureDefaults: { resolution: { width: 1280, height: 720, frameRate: 30 } },
                         }}
                         video={phase === "interview" ? (selectedCameraId ? { deviceId: selectedCameraId } : true) : false}
-                        audio={phase === "interview"}
+                        audio={phase === "interview" ? (selectedMicId ? { deviceId: selectedMicId } : true) : false}
                         token={token}
                         serverUrl={serverUrl}
                         connect={shouldConnect}
@@ -1451,12 +1451,38 @@ function InterviewRoomContent({
     }, [lkRoom, isInterviewActive]);
     const isAiListening = assistantState === "listening";
 
+    const sanitizeTranscriptText = useCallback((text: string) => {
+        return text
+            .replace(/<wait for response>/gi, "")
+            .replace(/\s{2,}/g, " ")
+            .trim();
+    }, []);
+
 
     // Media Control Logic
     const isMicEnabled = localParticipant?.isMicrophoneEnabled ?? false;
+    const didAutoEnableMicRef = useRef(false);
     const toggleMic = useCallback(() => {
         localParticipant?.setMicrophoneEnabled(!isMicEnabled);
     }, [localParticipant, isMicEnabled]);
+
+    useEffect(() => {
+        if (!isInterviewActive || connectionState !== "connected" || !localParticipant) {
+            didAutoEnableMicRef.current = false;
+            return;
+        }
+
+        if (didAutoEnableMicRef.current || localParticipant.isMicrophoneEnabled) {
+            didAutoEnableMicRef.current = true;
+            return;
+        }
+
+        void localParticipant.setMicrophoneEnabled(true, selectedMicId ? { deviceId: selectedMicId } : undefined).then(() => {
+            didAutoEnableMicRef.current = true;
+        }).catch((err) => {
+            console.warn("[Mic] Failed to auto-enable microphone:", err);
+        });
+    }, [connectionState, isInterviewActive, localParticipant, selectedMicId]);
 
     // startAudio is now called from handleHardwareComplete (user gesture) in the parent.
     // This useEffect is a fallback only - if the room reconnects mid-interview.
@@ -1866,14 +1892,15 @@ function InterviewRoomContent({
         const latestSegments = new Map<string, { text: string; isFinal: boolean; id: string; timestamp: number; identity: string }>();
 
         for (const segment of transcriptions as TranscriptionSegment[]) {
-            if (!segment.text.trim()) continue;
+            const cleanText = sanitizeTranscriptText(segment.text);
+            if (!cleanText) continue;
 
             const identity = segment.participantInfo?.identity || "";
             const isFinal = segment.streamInfo.attributes?.["lk.transcription_final"] === "true";
             const id = segment.streamInfo.id;
             const timestamp = segment.streamInfo.timestamp;
 
-            latestSegments.set(id, { text: segment.text, isFinal, id, timestamp, identity });
+            latestSegments.set(id, { text: cleanText, isFinal, id, timestamp, identity });
         }
 
         // Track the latest timestamp seen per group for time-gap calculation
@@ -1921,7 +1948,7 @@ function InterviewRoomContent({
             }
         }
         return groups.filter(g => !g.isCandidate);
-    }, [transcriptions, localIdentity]);
+    }, [sanitizeTranscriptText, transcriptions, localIdentity]);
 
     // -- Deepgram Nova-3 -> Mouse cross-signal: ping parent on candidate speech --
     // Fires whenever a new transcript segment from the candidate arrives, resetting
@@ -1932,13 +1959,13 @@ function InterviewRoomContent({
         let candidateSegments = 0;
         for (const seg of transcriptions as TranscriptionSegment[]) {
             const identity = seg.participantInfo?.identity || "";
-            if (identity === localIdentity && seg.text.trim()) candidateSegments++;
+            if (identity === localIdentity && sanitizeTranscriptText(seg.text)) candidateSegments++;
         }
         if (candidateSegments > prevTranscriptCountRef.current) {
             onCandidateTranscript();
         }
         prevTranscriptCountRef.current = candidateSegments;
-    }, [transcriptions, localIdentity, onCandidateTranscript]);
+    }, [sanitizeTranscriptText, transcriptions, localIdentity, onCandidateTranscript]);
 
     // Ensure camera is explicitly enabled when interview becomes active
     useEffect(() => {
@@ -2336,8 +2363,8 @@ function InterviewRoomContent({
 
                 {/* Middle: Transcript + End Interview Button */}
                 <div className="flex flex-col items-center gap-3 min-w-0">
-                    {/* Live transcript — single line, left-to-right fade, no boxes */}
-                    <div className="w-full max-w-2xl overflow-hidden h-10 flex items-center">
+                    {/* Live transcript — left-to-right fade, full sentence visible */}
+                    <div className="w-full max-w-2xl overflow-hidden min-h-[3rem] flex items-start pt-1">
                         <AnimatePresence mode="wait">
                             {groupedTranscriptions.length > 0 && (() => {
                                 const latest = groupedTranscriptions[groupedTranscriptions.length - 1];
@@ -2345,7 +2372,7 @@ function InterviewRoomContent({
                                 const nonFinalSegs = latest.segments.filter(s => !s.isFinal);
                                 const latestNonFinal = nonFinalSegs.length > 0 ? nonFinalSegs[nonFinalSegs.length - 1] : null;
                                 const displaySegs = latestNonFinal ? [...finalSegs, latestNonFinal] : finalSegs;
-                                const text = displaySegs.map(s => s.text.trim()).filter(Boolean).join(" ");
+                                const text = sanitizeTranscriptText(displaySegs.map(s => s.text).join(" "));
                                 const isFinal = latest.segments.every(s => s.isFinal);
                                 if (!text) return null;
                                 return (
@@ -2355,7 +2382,7 @@ function InterviewRoomContent({
                                         animate={{ opacity: 1, x: 0 }}
                                         exit={{ opacity: 0, x: -20 }}
                                         transition={{ duration: 0.3, ease: "easeOut" }}
-                                        className="flex items-center gap-2 w-full"
+                                        className="flex items-start gap-2 w-full flex-wrap"
                                     >
                                         <span className={cn(
                                             "text-[9px] font-black uppercase tracking-[0.2em] shrink-0",
@@ -2364,7 +2391,7 @@ function InterviewRoomContent({
                                             {latest.isCandidate ? (candidateName || "You") : "Ishitha"}
                                         </span>
                                         <span className={cn(
-                                            "text-[13px] font-medium text-zinc-200 truncate",
+                                            "text-[13px] font-medium text-zinc-200 leading-snug",
                                             !isFinal && "text-zinc-400"
                                         )}>
                                             {text}

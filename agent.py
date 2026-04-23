@@ -4815,13 +4815,14 @@ async def entrypoint(ctx: JobContext):
     first_agent_turn_committed_at: float | None = None
     greeting_echo_suppression_secs = 6.0
 
-    def reset_inactivity_clock(start_waiting: bool) -> None:
+    def reset_inactivity_clock(start_waiting: bool, preserve_nudge_flags: bool = False) -> None:
         nonlocal awaiting_candidate_response, awaiting_candidate_since, \
             inactivity_nudge_sent_for_current_prompt, inactivity_warning_sent_for_current_prompt
         awaiting_candidate_response = start_waiting
         awaiting_candidate_since = time.monotonic() if start_waiting else None
-        inactivity_nudge_sent_for_current_prompt = False
-        inactivity_warning_sent_for_current_prompt = False
+        if not preserve_nudge_flags:
+            inactivity_nudge_sent_for_current_prompt = False
+            inactivity_warning_sent_for_current_prompt = False
         if start_waiting:
             logger.debug("[NUDGE] Inactivity clock started (awaiting candidate response)")
         else:
@@ -4838,8 +4839,8 @@ async def entrypoint(ctx: JobContext):
     def on_user_speech_committed(_msg):
         nonlocal is_candidate_speaking
         is_candidate_speaking = False
-        # Keep inactivity clock cleared until AI asks/speaks again.
-        reset_inactivity_clock(start_waiting=False)
+        # Candidate spoke — new question cycle, reset nudge flags.
+        reset_inactivity_clock(start_waiting=False, preserve_nudge_flags=False)
 
     @session.on("agent_speech_started")
     def on_agent_speech_started():
@@ -4854,8 +4855,9 @@ async def entrypoint(ctx: JobContext):
         is_agent_speaking = False
         if first_agent_turn_committed_at is None:
             first_agent_turn_committed_at = time.monotonic()
-        # Timer starts only when AI has finished speaking and candidate is expected to respond.
-        reset_inactivity_clock(start_waiting=True)
+        # Preserve nudge flags so a nudge firing doesn't re-arm itself.
+        # Only a real new question from Ishita should reset them (handled in user_speech_committed).
+        reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=True)
         logger.debug("[NUDGE] AI finished speaking; starting inactivity countdown")
 
     # Wait for participant to join so we have their identity for tracking.
