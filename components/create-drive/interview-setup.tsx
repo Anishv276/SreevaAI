@@ -13,8 +13,7 @@ interface InterviewProps {
 }
 
 const LANGUAGES = [
-    "English", "Hindi", "Spanish", "French", "German", 
-    "Mandarin", "Japanese", "Korean", "Arabic", "Portuguese", "Russian"
+    "English", "Hindi"
 ];
 
 function safeArray(val: any): string[] {

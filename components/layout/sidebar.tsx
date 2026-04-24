@@ -191,7 +191,7 @@ export function Sidebar() {
                                     className="h-full w-full object-contain p-2 bg-white" 
                                 />
                             ) : (
-                                <Sparkles className="h-5 w-5 text-white" />
+                                <img src="/Logo.png" alt="Sreeva AI" className="h-full w-full object-contain p-2 bg-white" />
                             )}
                         </div>
                         <div className="flex flex-col min-w-0">

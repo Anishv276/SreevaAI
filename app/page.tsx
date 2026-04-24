@@ -302,9 +302,9 @@ export default function Home() {
 
                     <Link href="/" className="flex items-center gap-3 group">
 
-                        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#F97316] to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/20 group-hover:scale-110 transition-transform">
+                        <div className="h-10 w-10 overflow-hidden rounded-xl bg-white flex items-center justify-center shadow-lg shadow-orange-500/10 group-hover:scale-110 transition-transform">
 
-                            <Briefcase className="h-5 w-5 text-white" />
+                            <img src="/Logo.png" alt="Sreeva AI" className="h-full w-full object-contain" />
 
                         </div>
 

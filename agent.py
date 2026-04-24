@@ -3735,15 +3735,6 @@ async def entrypoint(ctx: JobContext):
     LANGUAGE_MAPPING = {
         "English": {"stt": "en-US", "tts": "en"},
         "Hindi": {"stt": "hi", "tts": "hi"},
-        "Spanish": {"stt": "es", "tts": "es"},
-        "French": {"stt": "fr", "tts": "fr"},
-        "German": {"stt": "de", "tts": "de"},
-        "Mandarin": {"stt": "zh", "tts": "zh"},
-        "Japanese": {"stt": "ja", "tts": "ja"},
-        "Korean": {"stt": "ko", "tts": "ko"},
-        "Arabic": {"stt": "ar", "tts": "ar"},
-        "Portuguese": {"stt": "pt", "tts": "pt"},
-        "Russian": {"stt": "ru", "tts": "ru"},
     }
 
     lang_codes = LANGUAGE_MAPPING.get(interview_lang)

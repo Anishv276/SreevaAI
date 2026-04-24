@@ -48,8 +48,8 @@ export default function LoginPage() {
             <div className="w-full max-w-md space-y-10 animate-fade-slide">
                 {/* Logo Section - Matching Admin Sidebar */}
                 <div className="flex flex-col items-center gap-6 text-center">
-                    <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-[#F97316] to-orange-600 flex items-center justify-center shadow-[0_4px_15px_rgba(249,115,22,0.3)]">
-                        <span className="text-white font-black text-2xl">L</span>
+                    <div className="h-14 w-14 rounded-xl bg-white flex items-center justify-center shadow-[0_4px_15px_rgba(249,115,22,0.1)] overflow-hidden">
+                        <img src="/Logo.png" alt="Logo" className="h-full w-full object-contain p-2" />
                     </div>
                     <div>
                         <h1 className="text-2xl font-black text-gray-900 tracking-tighter uppercase">SREEVA AI</h1>

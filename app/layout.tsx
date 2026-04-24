@@ -15,6 +15,11 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Sreeva AI - AI-Powered Recruitment Platform",
   description: "Automate your hiring process with AI-driven screening and interviews.",
+  icons: {
+    icon: "/Logo.png",
+    shortcut: "/Logo.png",
+    apple: "/Logo.png",
+  },
 };
 
 export default function RootLayout({
@@ -26,6 +31,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className={inter.variable}>
 
       <head>
+        <link rel="icon" href="/Logo.png" />
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
       </head>
       <body className="font-sans antialiased" suppressHydrationWarning>

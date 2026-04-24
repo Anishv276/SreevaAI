@@ -5,7 +5,8 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com"
+        NEXT_PUBLIC_LIVEKIT_URL: "wss://new-wi7dgqfb.livekit.cloud"
+        # NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com" # Self-hosted (commented)
         NEXT_PUBLIC_APP_URL: "https://www.sreevaai.com"
     container_name: hr-frontend
     networks:
@@ -59,33 +60,33 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     depends_on:
-      - livekit
+      # - livekit
       - redis
 
-  # LiveKit Server (Self-Hosted)
-  livekit:
-    image: livekit/livekit-server:latest
-    container_name: livekit
-    restart: always
-    command: --config /etc/livekit.yaml
-    networks:
-      - traefik-proxy
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    volumes:
-      - ./livekit.yaml:/etc/livekit.yaml:ro
-    ports:
-      - "5000-5100:5000-5100/udp"
-      - "7880:7880"
-      - "7881:7881"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.livekit.rule=Host(`lk.sreevaai.com`)"
-      - "traefik.http.routers.livekit.entrypoints=websecure"
-      - "traefik.http.routers.livekit.tls=true"
-      - "traefik.http.routers.livekit.tls.certresolver=mytlschallenge"
-      - "traefik.http.services.livekit.loadbalancer.server.port=7880"
+  # LiveKit Server (Self-Hosted - Commented for local shift)
+  # livekit:
+  #   image: livekit/livekit-server:latest
+  #   container_name: livekit
+  #   restart: always
+  #   command: --config /etc/livekit.yaml
+  #   networks:
+  #     - traefik-proxy
+  #   dns:
+  #     - 8.8.8.8
+  #     - 8.8.4.4
+  #   volumes:
+  #     - ./livekit.yaml:/etc/livekit.yaml:ro
+  #   ports:
+  #     - "5000-5100:5000-5100/udp"
+  #     - "7880:7880"
+  #     - "7881:7881"
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.livekit.rule=Host(`lk.sreevaai.com`)"
+  #     - "traefik.http.routers.livekit.entrypoints=websecure"
+  #     - "traefik.http.routers.livekit.tls=true"
+  #     - "traefik.http.routers.livekit.tls.certresolver=mytlschallenge"
+  #     - "traefik.http.services.livekit.loadbalancer.server.port=7880"
 
   # Redis (Required by LiveKit)
   redis:
