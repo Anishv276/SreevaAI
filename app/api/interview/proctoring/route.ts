@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { generateId } from "@/lib/ids";
-import { normalizeProctoringEvents, type ProctoringEvent } from "@/lib/proctoring";
+import { getProctoringCategory, normalizeProctoringEvents, type ProctoringEvent } from "@/lib/proctoring";
+import { DEFAULT_PROCTORING_SIGNALS, isProctoringSignalEnabled, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { z } from "zod";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 
@@ -59,19 +60,40 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized: Invalid security token" }, { status: 401 });
     }
 
-    const events = normalizeProctoringEvents(result.data.events);
-
-    const app = await prisma.application.findUnique({
-      where: { id: applicationId },
-      select: { fullName: true },
-    });
-
+    const requestedEvents = normalizeProctoringEvents(result.data.events);
     const interview = await prisma.interview.findUnique({
       where: { applicationId },
       select: { id: true, proctoringEvents: true },
     });
-
     const currentEvents = parseStoredEvents(interview?.proctoringEvents);
+
+    const app = await prisma.application.findUnique({
+      where: { id: applicationId },
+      select: {
+        fullName: true,
+        drive: {
+          select: {
+            organization: {
+              select: { proctoringSignals: true },
+            },
+          },
+        },
+      },
+    });
+    const orgToggles = normalizeProctoringSignals(
+      app?.drive?.organization?.proctoringSignals || DEFAULT_PROCTORING_SIGNALS,
+    );
+    const events = requestedEvents.filter((event) => {
+      const normalizedType = getProctoringCategory(event.eventType);
+      return isProctoringSignalEnabled(orgToggles, normalizedType);
+    });
+    if (events.length === 0) {
+      return NextResponse.json({
+        success: true,
+        saved: 0,
+        total: currentEvents.length,
+      });
+    }
     const mergedEvents = [...currentEvents, ...events].slice(-400);
     const now = new Date();
 

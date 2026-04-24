@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import { isInterviewReopenAllowed, isInterviewTokenRequired } from "@/lib/interview-access";
 import { z } from "zod";
+import { DEFAULT_PROCTORING_SIGNALS, isProctoringSignalEnabled, normalizeProctoringSignals } from "@/lib/proctoring-signals";
+import { getProctoringCategory } from "@/lib/proctoring";
 
 const DISPATCH_DEBOUNCE_MS = 12_000;
 const dispatchByRoom = new Map<string, number>();
@@ -205,11 +207,22 @@ export async function POST(req: NextRequest) {
         console.log("[DEBUG] Fetching token for applicationId:", applicationId);
         const application = await prisma.application.findUnique({
             where:   { id: applicationId },
-            include: { drive: true },
+            include: {
+                drive: {
+                    include: {
+                        organization: {
+                            select: { proctoringSignals: true },
+                        },
+                    },
+                },
+            },
         });
         if (!application) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
+        const orgToggles = normalizeProctoringSignals(
+            application.drive.organization?.proctoringSignals || DEFAULT_PROCTORING_SIGNALS,
+        );
 
         // -- SMART COLLUSION DETECTION ---------------------------------------
         //
@@ -233,6 +246,10 @@ export async function POST(req: NextRequest) {
         void (async () => {
 
             try {
+                if (!isProctoringSignalEnabled(orgToggles, getProctoringCategory("duplicate_ip"))) {
+                    return;
+                }
+
                 const rawIp = extractClientIp(req);
                 if (!rawIp) return; // local dev / internal - skip
 
@@ -502,6 +519,9 @@ export async function POST(req: NextRequest) {
             duration:  durationSeconds,
             roleLabel: application.drive.role || application.drive.title || "Interview",
             candidateName: application.fullName,
+            proctoringSignals: normalizeProctoringSignals(
+                application.drive.organization?.proctoringSignals || DEFAULT_PROCTORING_SIGNALS,
+            ),
         });
 
     } catch (err) {

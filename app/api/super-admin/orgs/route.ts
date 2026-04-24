@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { generateId } from "@/lib/ids";
 import { validatePasswordStrength } from "@/lib/validation";
 import { sendSuperAdminGmailEmail } from "@/lib/google-auth";
+import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
+import { DEFAULT_PROCTORING_SIGNALS, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 
 // GET /api/super-admin/orgs - list organizations with stats, pagination, and search
 export async function GET(request: Request) {
@@ -20,41 +23,165 @@ export async function GET(request: Request) {
         const search = searchParams.get("q")?.trim() || "";
         const offset = (page - 1) * limit;
 
-        // -- Phase 1: Total Count (Search Filtered) -------------------
-        const whereClause = search ? {
+        const from = searchParams.get("from");
+        const to = searchParams.get("to");
+        const fromDate = from ? new Date(from) : null;
+        const toDate = to ? new Date(to) : null;
+
+        // -- Phase 1: Total Count (Filtered) -------------------
+        let whereClause: any = search ? {
             OR: [
                 { name: { contains: search, mode: "insensitive" as const } },
                 { slug: { contains: search, mode: "insensitive" as const } },
             ]
         } : {};
 
+        if (fromDate && toDate) {
+            whereClause.createdAt = {
+                gte: fromDate,
+                lte: toDate
+            };
+        }
+
         const total = await prisma.organization.count({ where: whereClause });
         const totalPages = Math.ceil(total / limit);
 
         // -- Phase 2: Paginated Org Data (Unified SQL) --------------
-        // This query merges the organization fetch with count calculations
-        // for Admins, Drives, and Candidates into one database round-trip.
         const sqlSearch = search ? `%${search}%` : "%";
         
+        // We use queryRaw for complex subcounts
         const orgs = (await prisma.$queryRaw`
             SELECT 
                 o.*,
                 (SELECT COUNT(*)::INT FROM "User" u WHERE u."orgId" = o.id) as "adminCount",
                 (SELECT COUNT(*)::INT FROM "Drive" d WHERE d."orgId" = o.id) as "driveCount",
-                (SELECT COUNT(*)::INT FROM "Application" a JOIN "Drive" d ON d.id = a."driveId" WHERE d."orgId" = o.id) as "candidateCount"
+                (SELECT COUNT(*)::INT FROM "Application" a JOIN "Drive" d ON d.id = a."driveId" WHERE d."orgId" = o.id) as "candidateCount",
+                (SELECT COUNT(*)::INT FROM "Interview" i 
+                 JOIN "Application" a ON a.id = i."applicationId" 
+                 JOIN "Drive" d ON d.id = a."driveId" 
+                 WHERE d."orgId" = o.id) as "interviewCount"
             FROM "Organization" o
             WHERE (o."name" ILIKE ${sqlSearch} OR o."slug" ILIKE ${sqlSearch})
+            ${fromDate && toDate ? Prisma.sql`AND o."createdAt" BETWEEN ${fromDate} AND ${toDate}` : Prisma.empty}
             ORDER BY o."createdAt" DESC
             LIMIT ${limit} OFFSET ${offset}
         `) as Array<Record<string, unknown> & {
             adminCount: number;
             driveCount: number;
             candidateCount: number;
+            interviewCount: number;
         }>;
+
+        const stats = await prisma.$transaction(async (tx) => {
+            const totalOrgs = await tx.organization.count();
+            const activeOrgs = await tx.organization.count({ where: { status: "ACTIVE" } });
+            const suspendedOrgs = await tx.organization.count({ where: { status: { in: ["SUSPENDED", "CLOSED"] } } });
+            
+            const counts = await tx.$queryRaw`
+                SELECT 
+                    (SELECT COUNT(*)::INT FROM "User") as "totalAdmins",
+                    (SELECT COUNT(*)::INT FROM "Drive") as "totalDrives",
+                    (SELECT COUNT(*)::INT FROM "Application") as "totalCandidates",
+                    (SELECT COUNT(*)::INT FROM "Application" WHERE "resumeStatus" = 'shortlisted') as "totalShortlisted",
+                    (SELECT COUNT(*)::INT FROM "Interview" WHERE "status" = 'COMPLETED') as "totalInterviewed",
+                    (SELECT COUNT(*)::INT FROM "Application" WHERE "hiringStatus" = 'hired') as "totalHired",
+                    COALESCE(SUM("creditsTotal"), 0)::FLOAT as "totalCreditsAllocated",
+                    COALESCE(SUM("creditsUsed"), 0)::FLOAT as "totalCreditsConsumed"
+                FROM "Organization"
+            ` as any[];
+
+            const orgCreditStats = await tx.$queryRaw<Array<{ name: string, creditsTotal: number, creditsUsed: number }>>`
+                SELECT "name", "creditsTotal", "creditsUsed"
+                FROM "Organization"
+                ORDER BY "creditsUsed" DESC
+                LIMIT 5
+            `;
+
+            // New: Get top orgs by interview volume
+            const orgInterviewStats = await tx.$queryRaw<Array<{ name: string, count: number }>>`
+                SELECT o."name", COUNT(i.id)::INT as "count"
+                FROM "Organization" o
+                JOIN "Drive" d ON d."orgId" = o.id
+                JOIN "Application" a ON a."driveId" = d.id
+                JOIN "Interview" i ON i."applicationId" = a.id
+                GROUP BY o."name"
+                ORDER BY "count" DESC
+                LIMIT 5
+            `;
+
+            // New: Get Recent Global Activity
+            const recentActivity = await tx.$queryRaw<Array<{ type: string, detail: string, org: string, at: Date }>>`
+                (SELECT 'ORG' as type, name as detail, '' as org, "createdAt" as at FROM "Organization")
+                UNION ALL
+                (SELECT 'DRIVE' as type, title as detail, (SELECT name FROM "Organization" o WHERE o.id = d."orgId") as org, "createdAt" as at FROM "Drive" d)
+                UNION ALL
+                (SELECT 'CANDIDATE' as type, "fullName" as detail, (SELECT name FROM "Organization" o JOIN "Drive" d2 ON d2."orgId" = o.id WHERE d2.id = a."driveId") as org, "createdAt" as at FROM "Application" a)
+                UNION ALL
+                (SELECT 'INTERVIEW' as type, 'Completed' as detail, (SELECT name FROM "Organization" o JOIN "Drive" d3 ON d3."orgId" = o.id JOIN "Application" a2 ON a2."driveId" = d3.id WHERE a2.id = i."applicationId") as org, "completedAt" as at FROM "Interview" i WHERE i."status" = 'COMPLETED')
+                ORDER BY at DESC
+                LIMIT 10
+            `;
+
+            const lastWeek = new Date();
+            lastWeek.setDate(lastWeek.getDate() - 7);
+            const twoWeeksAgo = new Date();
+            twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
+            const trends = await tx.$queryRaw`
+                SELECT 
+                    (SELECT COUNT(*)::INT FROM "Organization" WHERE "createdAt" >= ${lastWeek}) as "orgsNew",
+                    (SELECT COUNT(*)::INT FROM "Organization" WHERE "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "orgsPrev",
+                    (SELECT COUNT(*)::INT FROM "User" WHERE "createdAt" >= ${lastWeek}) as "adminsNew",
+                    (SELECT COUNT(*)::INT FROM "User" WHERE "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "adminsPrev",
+                    (SELECT COUNT(*)::INT FROM "Drive" WHERE "createdAt" >= ${lastWeek}) as "drivesNew",
+                    (SELECT COUNT(*)::INT FROM "Drive" WHERE "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "drivesPrev",
+                    (SELECT COUNT(*)::INT FROM "Application" WHERE "createdAt" >= ${lastWeek}) as "candidatesNew",
+                    (SELECT COUNT(*)::INT FROM "Application" WHERE "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "candidatesPrev"
+            ` as any[];
+
+            const calculateTrend = (curr: number, prev: number) => {
+                if (prev === 0) return curr > 0 ? 100 : 0;
+                return Math.round(((curr - prev) / prev) * 100);
+            };
+
+            const t = trends[0] || {};
+            
+            return {
+                totalOrgs,
+                activeOrgs,
+                suspendedOrgs,
+                totalAdmins: counts[0]?.totalAdmins || 0,
+                totalDrives: counts[0]?.totalDrives || 0,
+                totalCandidates: counts[0]?.totalCandidates || 0,
+                totalShortlisted: counts[0]?.totalShortlisted || 0,
+                totalInterviewed: counts[0]?.totalInterviewed || 0,
+                totalHired: counts[0]?.totalHired || 0,
+                totalCreditsAllocated: counts[0]?.totalCreditsAllocated || 0,
+                totalCreditsConsumed: counts[0]?.totalCreditsConsumed || 0,
+                orgCreditStats: orgCreditStats.map(o => ({
+                    name: o.name,
+                    creditsTotal: Number(o.creditsTotal || 0),
+                    creditsUsed: Number(o.creditsUsed || 0)
+                })),
+                orgInterviewStats: orgInterviewStats.map(o => ({
+                    name: o.name,
+                    count: Number(o.count || 0)
+                })),
+                recentActivity,
+                trends: {
+                    orgs: calculateTrend(t.orgsNew, t.orgsPrev),
+                    admins: calculateTrend(t.adminsNew, t.adminsPrev),
+                    drives: calculateTrend(t.drivesNew, t.drivesPrev),
+                    candidates: calculateTrend(t.candidatesNew, t.candidatesPrev),
+                    credits: 0
+                }
+            };
+        });
 
         return NextResponse.json({
             orgs,
             pagination: { total, page, limit, totalPages },
+            stats,
         });
     } catch (error) {
         console.error("Error fetching orgs:", error);
@@ -144,8 +271,11 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { 
-            orgName, slug, plan, logoUrl, adminEmail, adminName, adminPassword, 
+        const {
+            orgName, slug, plan, logoUrl, adminEmail, adminName, adminPassword,
+            maxActiveDrives,
+            maxTeamMembers,
+            proctoringSignals,
             ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice,
             sttProvider, deepgramModel, sarvamSttModel,
             llmProvider, llmModel, llmTemperature,
@@ -157,7 +287,7 @@ export async function POST(request: Request) {
         }
 
         // Plan Validation
-        if (plan && !["STARTER", "PROFESSIONAL", "ENTERPRISE", "TRIAL", "ENTERPRISE_CUSTOM"].includes(String(plan).toUpperCase())) {
+        if (plan && !isOrgPlan(plan)) {
             return NextResponse.json({ error: "Invalid organization plan" }, { status: 400 });
         }
 
@@ -189,7 +319,10 @@ export async function POST(request: Request) {
             const orgData: any = {
                 name: orgName,
                 slug: slug.toLowerCase().replace(/\s+/g, "-"),
-                plan: plan || "STARTER",
+                plan: normalizeOrgPlan(plan) || DEFAULT_ORG_PLAN,
+                maxActiveDrives: Math.max(0, Number(maxActiveDrives ?? 0) || 0),
+                maxTeamMembers: Math.max(0, Number(maxTeamMembers ?? 0) || 0),
+                proctoringSignals: normalizeProctoringSignals(proctoringSignals || DEFAULT_PROCTORING_SIGNALS),
                 logoUrl: logoUrl || null,
                 usageMetrics: {},
                 location: location || null,

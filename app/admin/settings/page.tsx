@@ -3,6 +3,7 @@
 
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 
@@ -48,6 +49,7 @@ import {
     Field, 
     Toggle 
 } from "@/components/admin/settings/settings-shared";
+import { formatTeamLimit, getTeamLimitRemaining, isTeamLimitReached } from "@/lib/team-limits";
 
 
 
@@ -114,6 +116,7 @@ type TeamResponse = {
 export default function SettingsPage() {
 
     const { user } = useAuth();
+    const router = useRouter();
 
     const searchParams = useSearchParams();
 
@@ -165,7 +168,9 @@ export default function SettingsPage() {
 
         customSenderEmail: "",
 
-        customSenderName: ""
+        customSenderName: "",
+
+        maxTeamMembers: 0
 
     });
 
@@ -339,7 +344,9 @@ export default function SettingsPage() {
 
                         customSenderEmail: data.customSenderEmail || "",
 
-                        customSenderName: data.customSenderName || ""
+                        customSenderName: data.customSenderName || "",
+
+                        maxTeamMembers: Number(data.maxTeamMembers || 0)
 
                     });
 
@@ -683,10 +690,19 @@ export default function SettingsPage() {
                 await loadTeamData();
 
                 setInviteMessage(data.warning || "Invitation sent successfully.");
+                if (data.code === "TEAM_LIMIT_REACHED") {
+                    toast.error(data.error || "Team member limit reached. Please upgrade your plan.");
+                    router.push("/admin/billing");
+                    return;
+                }
 
             } else {
 
                 setInviteError(data.error || "Failed to send invite.");
+                if (data.code === "TEAM_LIMIT_REACHED") {
+                    toast.error(data.error || "Team member limit reached. Please upgrade your plan.");
+                    router.push("/admin/billing");
+                }
 
             }
 
@@ -792,6 +808,11 @@ export default function SettingsPage() {
         TEAM: "bg-gray-50 text-gray-500 ring-1 ring-gray-200/50",
         RECRUITER: "bg-gray-50 text-gray-500 ring-1 ring-gray-200/50",
     }[role] ?? "bg-gray-50 text-gray-400 ring-1 ring-gray-100/50");
+
+    const teamLimitLabel = formatTeamLimit(company.maxTeamMembers);
+    const teamAllocationCount = team.length + pendingInvites.length;
+    const teamSlotsRemaining = getTeamLimitRemaining(company.maxTeamMembers, teamAllocationCount);
+    const teamLimitReached = isTeamLimitReached(company.maxTeamMembers, teamAllocationCount);
 
 
 
@@ -1277,7 +1298,7 @@ export default function SettingsPage() {
 
                             <div className="space-y-6">
 
-                                <SettingsCard title="Invite Team Member" description="Send an invitation to join your workspace.">
+                                <SettingsCard title="Invite Team Member" description={`Send an invitation to join your workspace. Team cap: ${teamLimitLabel}.`}>
                                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-1.5 rounded-2xl bg-gray-50/50 border border-gray-100/80">
                                         <div className="flex-1 relative group">
                                             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-gray-400 group-focus-within:text-[#F97316] transition-colors" />
@@ -1299,13 +1320,29 @@ export default function SettingsPage() {
                                             <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 transform rotate-90 pointer-events-none" />
                                         </div>
                                         <Button
-                                            disabled={isInviting || !inviteEmail}
+                                            disabled={isInviting || !inviteEmail || teamLimitReached}
                                             onClick={handleInviteSubmit}
                                             className="h-12 px-8 rounded-xl bg-gray-950 hover:bg-[#F97316] text-white font-bold text-sm transition-all shadow-xl shadow-gray-200/50 active:scale-95 disabled:grayscale"
                                         >
-                                            {isInviting ? <Loader2 className="h-5 w-5 animate-spin" /> : "Invite"}
+                                            {isInviting ? <Loader2 className="h-5 w-5 animate-spin" /> : teamLimitReached ? "Upgrade Billing" : "Invite"}
                                         </Button>
                                     </div>
+
+                                    {teamLimitReached && (
+                                        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-orange-100 bg-orange-50/60 px-4 py-3">
+                                            <div>
+                                                <p className="text-[11px] font-black uppercase tracking-widest text-[#F97316]">Team limit reached</p>
+                                                <p className="text-xs font-medium text-gray-600 mt-1">Go to Billing to upgrade your plan and add more members.</p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => router.push("/admin/billing")}
+                                                className="h-9 px-4 rounded-lg bg-[#F97316] text-white text-[11px] font-bold uppercase tracking-widest hover:bg-orange-600 transition-all"
+                                            >
+                                                Billing
+                                            </button>
+                                        </div>
+                                    )}
 
                                     {inviteMessage && (
                                         <div className="mt-4 flex items-center gap-2 p-3.5 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 animate-in fade-in slide-in-from-top-1">

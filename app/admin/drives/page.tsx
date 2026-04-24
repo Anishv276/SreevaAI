@@ -65,6 +65,7 @@ import { cn } from "@/lib/utils";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { motion, AnimatePresence } from "framer-motion";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
+import { getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
 
 const container = {
     hidden: { opacity: 0 },
@@ -93,7 +94,7 @@ export default function DrivesPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const orgId = searchParams.get("orgId");
-    const { jobs, pagination, deleteJob, fetchJobs, toggleDriveStatus, bulkDeleteJobs } = useJobs();
+    const { jobs, pagination, deleteJob, fetchJobs, toggleDriveStatus, bulkDeleteJobs, organization } = useJobs();
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
     const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -125,6 +126,8 @@ export default function DrivesPage() {
     // Detailed View State
     const [previewDriveId, setPreviewDriveId] = useState<string | null>(null);
     const [copySuccess, setCopySuccess] = useState(false);
+    const activeDriveCount = organization?.activeDriveCount ?? getActiveDriveCount(jobs);
+    const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount);
 
     // Modal State
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -338,6 +341,20 @@ export default function DrivesPage() {
                             <Lock className="h-4 w-4 mr-2" />
                             New Drive
                         </Button>
+                    ) : driveCreationLocked ? (
+                        <div className="flex items-center gap-3">
+                            <button
+                                disabled
+                                className="bg-gray-100 text-gray-400 border border-gray-200 h-12 px-6 font-bold rounded-2xl cursor-not-allowed opacity-70 flex items-center gap-2"
+                                title="Drive limit reached"
+                            >
+                                <Lock className="h-4 w-4" />
+                                New Drive
+                            </button>
+                            <Link href="/admin/billing" className="text-[12px] font-bold text-[#F97316] hover:text-orange-700 uppercase tracking-widest">
+                                Go to Billing
+                            </Link>
+                        </div>
                     ) : (
                         <Link href="/admin/create-drive">
                             <Button className="bg-gradient-to-r from-[#F97316] to-orange-500 hover:shadow-orange-500/25 hover:shadow-xl transition-all duration-300 h-12 px-6 font-bold rounded-2xl text-white shadow-lg">
@@ -444,13 +461,25 @@ export default function DrivesPage() {
                                             <p className="text-gray-500 font-medium text-sm mb-10 leading-relaxed">
                                                 Post a job role to start screening candidates with AI. You can customize the interview flow and evaluation criteria.
                                             </p>
-                                            <Link href="/admin/create-drive">
-                                                <Button className="bg-[#F97316] hover:bg-black transition-all duration-300 h-14 px-10 font-bold rounded-2xl text-white shadow-lg shadow-orange-500/20 gap-3 group">
-                                                    <Plus className="h-5 w-5" />
-                                                    <span>Create New Drive</span>
-                                                    <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                                                </Button>
-                                            </Link>
+                                            {driveCreationLocked ? (
+                                                <div className="flex flex-col items-center gap-3">
+                                                    <Button disabled className="bg-gray-100 text-gray-400 transition-all duration-300 h-14 px-10 font-bold rounded-2xl shadow-none gap-3 cursor-not-allowed border border-gray-200">
+                                                        <Lock className="h-5 w-5" />
+                                                        <span>Create Locked</span>
+                                                    </Button>
+                                                    <Link href="/admin/billing" className="text-[12px] font-bold text-[#F97316] hover:text-orange-700 uppercase tracking-widest">
+                                                        Go to Billing
+                                                    </Link>
+                                                </div>
+                                            ) : (
+                                                <Link href="/admin/create-drive">
+                                                    <Button className="bg-[#F97316] hover:bg-black transition-all duration-300 h-14 px-10 font-bold rounded-2xl text-white shadow-lg shadow-orange-500/20 gap-3 group">
+                                                        <Plus className="h-5 w-5" />
+                                                        <span>Create New Drive</span>
+                                                        <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                                                    </Button>
+                                                </Link>
+                                            )}
                                         </div>
                                     </TableCell>
                                 </TableRow>

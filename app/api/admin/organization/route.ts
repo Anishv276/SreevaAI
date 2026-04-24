@@ -9,6 +9,17 @@ export async function GET() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
+        const activeDriveCount = await prisma.drive.count({
+            where: {
+                orgId: session.orgId,
+                status: "ACTIVE",
+                OR: [
+                    { deadline: null },
+                    { deadline: { gte: new Date() } }
+                ],
+            }
+        });
+
         const org = await prisma.organization.findUnique({
             where: { id: session.orgId },
             select: {
@@ -31,6 +42,9 @@ export async function GET() {
                 llmProvider: true,
                 llmModel: true,
                 llmTemperature: true,
+                maxActiveDrives: true,
+                maxTeamMembers: true,
+                proctoringSignals: true,
             }
         });
 
@@ -38,7 +52,10 @@ export async function GET() {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
 
-        return NextResponse.json(org);
+        return NextResponse.json({
+            ...org,
+            activeDriveCount,
+        });
     } catch (error) {
         console.error("Error fetching organization:", error);
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

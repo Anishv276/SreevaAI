@@ -13,7 +13,7 @@ Called from agent.py's _evaluate_and_inject() instead of the inline pipeline.
 """
 import asyncio
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from turn_decision import (
     TurnDecision,
@@ -29,6 +29,25 @@ from probe_strategy import route, build_directive
 logger = logging.getLogger("interview-agent")
 
 
+def _is_signal_enabled(signal_toggles: Optional[dict[str, Any]], signal_name: str) -> bool:
+    if not signal_toggles:
+        return True
+    raw_value = signal_toggles.get(signal_name)
+    if raw_value is None:
+        return True
+    if isinstance(raw_value, bool):
+        return raw_value
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip().lower()
+        if normalized in ("true", "1", "yes", "on"):
+            return True
+        if normalized in ("false", "0", "no", "off"):
+            return False
+    if isinstance(raw_value, (int, float)):
+        return bool(raw_value)
+    return True
+
+
 async def run_turn_evaluation(
     *,
     candidate_answer: str,
@@ -42,6 +61,7 @@ async def run_turn_evaluation(
     llm_model: str,
     score_answer_quality_fn,              # imported from agent.py at call site
     evaluate_answer_and_decide_fn,        # imported from agent.py at call site
+    signal_toggles: Optional[dict[str, Any]] = None,
     max_follow_ups: int = 3,
     collapse_stage: int = 0,
 ) -> tuple[TurnDecision, str]:
@@ -87,7 +107,14 @@ async def run_turn_evaluation(
         contradiction_detected=contradiction_detected,
         collapse_stage=collapse_stage,
     )
+    signal_events = [
+        event
+        for event in signal_events
+        if _is_signal_enabled(signal_toggles, str(event.get("signal_name", "")))
+    ]
     signals = build_signal_flags(signal_events)
+    contradiction_enabled = _is_signal_enabled(signal_toggles, "contradiction")
+    effective_contradiction_detected = contradiction_detected and contradiction_enabled
 
     # Route to action/mode/goal
     action, mode, next_goal = route(
@@ -95,7 +122,7 @@ async def run_turn_evaluation(
         depth_signal=llm_decision.get("depth_signal", "SURFACE"),
         topic_follow_up_count=topic_follow_up_count,
         max_follow_ups=max_follow_ups,
-        contradiction_detected=contradiction_detected,
+        contradiction_detected=effective_contradiction_detected,
         llm_action=llm_decision.get("action", "MOVE_ON"),
         llm_probe_mode=llm_decision.get("probe_mode"),
     )

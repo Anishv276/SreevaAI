@@ -5,6 +5,7 @@
 import { useState, useRef, useEffect, Suspense } from "react";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 
@@ -27,8 +28,9 @@ import { InterviewSetup } from "@/components/create-drive/interview-setup";
 import { useJobs } from "@/context/jobs-context";
 
 import { cn } from "@/lib/utils";
+import { formatDriveLimit, getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
 
-import { Copy, CheckCircle2, Rocket, AlertCircle, X, Eye, PenLine, Sparkles, ChevronLeft, ChevronRight, Upload, Bot, ExternalLink, Loader2 } from "lucide-react";
+import { Copy, CheckCircle2, Rocket, AlertCircle, X, Eye, PenLine, Sparkles, ChevronLeft, ChevronRight, Upload, Bot, ExternalLink, Loader2, Lock } from "lucide-react";
 
 
 
@@ -110,7 +112,7 @@ function CreateDriveForm() {
 
 
 
-    const { addJob, jobs, updateJob, fetchJobs } = useJobs();
+    const { addJob, jobs, updateJob, fetchJobs, organization } = useJobs();
 
     const [currentStep, setCurrentStep] = useState(0);
 
@@ -215,6 +217,9 @@ function CreateDriveForm() {
     const hasInitialLoadedRef = useRef<string | null>(null);
 
     const formDataRef = useRef<any>(formData);
+    const activeDriveCount = organization?.activeDriveCount ?? getActiveDriveCount(jobs);
+    const maxActiveDrives = Number(organization?.maxActiveDrives || 0);
+    const driveCreationLocked = !isEditMode && isDriveCreationLocked(maxActiveDrives, activeDriveCount);
 
 
 
@@ -904,6 +909,10 @@ function CreateDriveForm() {
 
         const currentFormData = formDataRef.current;
 
+        if (driveCreationLocked && !isEditMode) {
+            return;
+        }
+
         // Collect data
 
         let parsedQuestions = currentFormData.interviewQuestions || [];
@@ -1049,6 +1058,11 @@ function CreateDriveForm() {
 
         }
 
+        if (driveCreationLocked && !isEditMode) {
+            toast.error("Drive limit reached. Go to Billing to upgrade your plan.");
+            return;
+        }
+
         if (!isStepValid(currentStep)) {
 
             toast.error(STEP_VALIDATION_HINTS[currentStep]);
@@ -1082,6 +1096,10 @@ function CreateDriveForm() {
     const handleStepClick = async (index: number) => {
 
         if (isSavingDraft) return;
+        if (driveCreationLocked && !isEditMode) {
+            toast.error("Drive limit reached. Go to Billing to upgrade your plan.");
+            return;
+        }
 
 
 
@@ -1134,6 +1152,11 @@ function CreateDriveForm() {
     const handlePublish = async () => {
 
         const currentFormData = formDataRef.current;
+
+        if (driveCreationLocked && !isEditMode) {
+            toast.error("Drive limit reached. Go to Billing to upgrade your plan.");
+            return;
+        }
 
         setIsSavingDraft(true);
 
@@ -1748,6 +1771,34 @@ function CreateDriveForm() {
 
                 </div>
 
+                {driveCreationLocked && !isEditMode && (
+                    <div className="mt-6 rounded-3xl border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 px-5 py-4 shadow-sm">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex items-start gap-3">
+                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-orange-100 text-[#F97316]">
+                                    <Lock className="h-5 w-5" />
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#F97316]">
+                                        Drive limit reached
+                                    </p>
+                                    <h2 className="text-lg font-bold text-gray-900">
+                                        Go to Billing to upgrade your plan
+                                    </h2>
+                                    <p className="text-sm font-medium text-gray-600">
+                                        Your plan allows {formatDriveLimit(maxActiveDrives)} active drives and you currently have {activeDriveCount} active drives.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <Link href="/admin/billing" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#F97316] px-5 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-orange-600">
+                                Upgrade Plan
+                                <ChevronRight className="h-4 w-4" />
+                            </Link>
+                        </div>
+                    </div>
+                )}
+
             </div>
 
             <Steps steps={STEPS} currentStep={currentStep} onStepClick={handleStepClick} isEditMode={isEditMode} maxStepReached={maxStepReached} />
@@ -1995,59 +2046,63 @@ function CreateDriveForm() {
 
                             </Button>
 
-                            <button
-
-                                type="button"
-
-                                onClick={handlePublish}
-
-                                disabled={isSavingDraft}
-
-                                className={cn(
-
-                                    "flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed",
-
-                                    !isSavingDraft && "hover:shadow-lg"
-
-                                )}
-
+                            {driveCreationLocked && !isEditMode ? (
+                            <Link
+                                href="/admin/billing"
+                                className="flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 hover:shadow-lg"
                                 style={{
-
                                     background: "linear-gradient(135deg, #F97316, #ea6608)",
-
-                                    animation: isSavingDraft ? "none" : "pulse-glow 2s infinite",
-
                                 }}
-
                             >
-
-                                {isSavingDraft ? <Loader2 className="h-5 w-5 animate-spin" /> : <Rocket className="h-5 w-5" />}
-
-                                {isSavingDraft ? "Saving..." : (isEditMode ? "Update Drive" : "Publish Drive")}
-
-                            </button>
+                                <Lock className="h-5 w-5" />
+                                Go to Billing
+                            </Link>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={handlePublish}
+                                    disabled={isSavingDraft}
+                                    className={cn(
+                                        "flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed",
+                                        !isSavingDraft && "hover:shadow-lg"
+                                    )}
+                                    style={{
+                                        background: "linear-gradient(135deg, #F97316, #ea6608)",
+                                        animation: isSavingDraft ? "none" : "pulse-glow 2s infinite",
+                                    }}
+                                >
+                                    {isSavingDraft ? <Loader2 className="h-5 w-5 animate-spin" /> : <Rocket className="h-5 w-5" />}
+                                    {isSavingDraft ? "Saving..." : (isEditMode ? "Update Drive" : "Publish Drive")}
+                                </button>
+                            )}
 
                         </div>
 
                     ) : (
 
-                        <Button
+                        driveCreationLocked && !isEditMode ? (
+                            <Link
+                                href="/admin/billing"
+                                className="bg-gradient-to-r from-[#F97316] to-orange-500 hover:from-orange-600 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all duration-200 px-6 h-9 min-w-[140px] flex items-center justify-center gap-2 rounded-md text-sm font-medium"
+                            >
+                                <Lock className="h-4 w-4" />
+                                Go to Billing
+                            </Link>
+                        ) : (
+                            <Button
 
-                            onClick={nextStep}
+                                onClick={nextStep}
 
-                            disabled={isSavingDraft}
+                                disabled={isSavingDraft}
 
-                            size="sm"
+                                size="sm"
 
-                            className="bg-gradient-to-r from-[#F97316] to-orange-500 hover:from-orange-600 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all duration-200 px-6 h-9 min-w-[140px]"
-
-                        >
-
-                            {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-
-                            {isSavingDraft ? "Saving..." : "Save & Continue"}
-
-                        </Button>
+                                className="bg-gradient-to-r from-[#F97316] to-orange-500 hover:from-orange-600 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all duration-200 px-6 h-9 min-w-[140px]"
+                            >
+                                {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                                {isSavingDraft ? "Saving..." : "Save & Continue"}
+                            </Button>
+                        )
 
                     )}
 

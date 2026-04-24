@@ -9,16 +9,19 @@ import { ActiveDrivesSummary } from "@/components/admin/active-drives-summary";
 import { TopCandidates } from "@/components/admin/top-candidates";
 import { LiveFeed } from "@/components/admin/live-feed";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
-import { Plus, Archive } from "lucide-react";
+import { Plus, Archive, Lock, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useJobs } from "@/context/jobs-context";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
 
 export default function DashboardPage() {
     const [dateRange, setDateRange] = useState<DateRange>({ type: "month" });
     const [mounted, setMounted] = useState(false);
-    const { jobs } = useJobs();
-    const hasNoDrives = jobs.length === 0;
+    const { jobs, organization } = useJobs();
+    const hasNoDrives = jobs.length === 0;
+    const activeDriveCount = organization?.activeDriveCount ?? getActiveDriveCount(jobs);
+    const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount);
 
     useEffect(() => {
         setMounted(true);
@@ -49,12 +52,28 @@ export default function DashboardPage() {
 
                 <div className="flex items-center gap-3 flex-shrink-0 flex-wrap justify-end">
                     <DateFilter value={dateRange} onChange={setDateRange} />
-                    <Link href="/admin/create-drive">
+                    {driveCreationLocked ? (
+                        <div className="flex items-center gap-3">
+                            <button
+                                className="flex items-center gap-2 bg-gray-100 text-gray-400 text-[13.5px] font-medium px-4 py-2 rounded-lg shadow-sm cursor-not-allowed border border-gray-200"
+                                disabled
+                                title="Drive limit reached"
+                            >
+                                <Lock className="h-4 w-4" />
+                                Create New Drive
+                            </button>
+                            <Link href="/admin/billing" className="flex items-center gap-1.5 text-[12px] font-bold text-[#F97316] hover:text-orange-700 uppercase tracking-widest">
+                                Go to Billing <ArrowRight className="h-3.5 w-3.5" />
+                            </Link>
+                        </div>
+                    ) : (
+                    <Link href="/admin/create-drive">
                         <button className="btn-shimmer flex items-center gap-2 bg-[#F97316] hover:bg-orange-600 text-white text-[13.5px] font-medium px-4 py-2 rounded-lg transition-all duration-150 shadow-sm hover:shadow-md">
                             <Plus className="h-4 w-4" />
                             Create New Drive
                         </button>
-                    </Link>
+                    </Link>
+                    )}
                 </div>
             </div>
 

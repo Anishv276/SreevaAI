@@ -9,6 +9,7 @@ import { generateId } from "@/lib/ids";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { getOrgCreditStatus } from "@/lib/credits";
+import { isDriveCreationLocked } from "@/lib/drive-limits";
 
 export async function GET(request: Request) {
     try {
@@ -155,7 +156,7 @@ export async function POST(request: Request) {
         if (session.orgId) {
             const org = await prisma.organization.findUnique({
                 where: { id: session.orgId },
-                select: { status: true }
+                select: { status: true, maxActiveDrives: true }
             });
             if (org?.status === "SUSPENDED" || org?.status === "CLOSED") {
                 return NextResponse.json({ error: "Drive creation is blocked because your organization is restricted." }, { status: 403 });
@@ -164,6 +165,32 @@ export async function POST(request: Request) {
             const creditStatus = await getOrgCreditStatus(session.orgId);
             if (creditStatus.creditsTotal > 0 && !creditStatus.hasSufficientCredits) {
                 return NextResponse.json({ error: "Insufficient credits. Recharge to create new drives.", code: "NO_CREDITS" }, { status: 402 });
+            }
+
+            const maxActiveDrives = Number(org?.maxActiveDrives || 0);
+            if (maxActiveDrives > 0) {
+                const activeDriveCount = await prisma.drive.count({
+                    where: {
+                        orgId: session.orgId,
+                        status: "ACTIVE",
+                        OR: [
+                            { deadline: null },
+                            { deadline: { gte: new Date() } }
+                        ],
+                    }
+                });
+
+                if (isDriveCreationLocked(maxActiveDrives, activeDriveCount)) {
+                    return NextResponse.json(
+                        {
+                            error: "Drive limit reached. Upgrade your plan or increase the limit to create another drive.",
+                            code: "DRIVE_LIMIT_REACHED",
+                            activeDriveCount,
+                            maxActiveDrives,
+                        },
+                        { status: 409 }
+                    );
+                }
             }
         }
 

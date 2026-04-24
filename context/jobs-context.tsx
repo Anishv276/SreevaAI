@@ -33,9 +33,16 @@ interface Pagination {
     totalPages: number;
 }
 
+interface OrganizationSettings {
+    status?: string;
+    maxActiveDrives?: number;
+    activeDriveCount?: number;
+}
+
 interface JobsContextType {
     jobs: Job[];
     pagination: Pagination;
+    organization: OrganizationSettings | null;
     addJob: (job: Omit<Job, "id" | "applicants" | "status" | "daysLeft" | "createdAt">) => Promise<Job>;
     deleteJob: (id: string) => Promise<void>;
     fetchJobs: (page?: number, limit?: number, search?: string, status?: string, type?: string, startDate?: string, endDate?: string) => Promise<void>;
@@ -54,6 +61,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         limit: 10,
         totalPages: 0
     });
+    const [organization, setOrganization] = useState<OrganizationSettings | null>(null);
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const orgIdFromUrl = searchParams.get("orgId");
@@ -61,6 +69,24 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const isCareersRoute = pathname.startsWith("/careers");
     const hasLoadedOnceRef = useRef({ admin: false, careers: false });
     const inFlightRef = useRef<Promise<void> | null>(null);
+
+    const refreshOrganization = async () => {
+        try {
+            const res = await fetch("/api/admin/organization");
+            if (!res.ok) {
+                setOrganization(null);
+                return;
+            }
+            const data = await res.json();
+            setOrganization({
+                status: data.status || "ACTIVE",
+                maxActiveDrives: Number(data.maxActiveDrives || 0),
+                activeDriveCount: Number(data.activeDriveCount || 0),
+            });
+        } catch {
+            setOrganization(null);
+        }
+    };
 
     const fetchJobs = async (page: number = 1, limit: number = 10, search: string = "", status: string = "all", type: string = "all", startDate: string = "", endDate: string = "") => {
         if (inFlightRef.current) {
@@ -110,6 +136,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         if (isAdminRoute && !hasLoadedOnceRef.current.admin) {
             hasLoadedOnceRef.current.admin = true;
             fetchJobs().catch(() => undefined);
+            refreshOrganization();
             return;
         }
 
@@ -130,6 +157,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             if (res.ok) {
                 const data = await res.json();
                 fetchJobs(); // Refresh list
+                if (isAdminRoute) {
+                    refreshOrganization();
+                }
                 return data;
             } else {
                 const errorData = await res.json();
@@ -155,6 +185,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             if (res.ok) {
                 // Optimistic update or refetch
                 setJobs((prev) => prev.filter((job) => job.id !== id));
+                if (isAdminRoute) {
+                    refreshOrganization();
+                }
             } else {
                 throw new Error("Failed to delete drive");
             }
@@ -175,6 +208,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ status: newStatus }),
             });
+            if (isAdminRoute) {
+                refreshOrganization();
+            }
         } catch (error) {
             console.error("Failed to toggle drive status:", error);
             fetchJobs(); // Revert on error
@@ -192,6 +228,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             if (res.ok) {
                 const data = await res.json();
                 fetchJobs(); // Refresh list
+                if (isAdminRoute) {
+                    refreshOrganization();
+                }
                 return data;
             } else {
                 const errorData = await res.json();
@@ -227,7 +266,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <JobsContext.Provider value={{ jobs, pagination, addJob, deleteJob, fetchJobs, toggleDriveStatus, updateJob, bulkDeleteJobs }}>
+        <JobsContext.Provider value={{ jobs, pagination, organization, addJob, deleteJob, fetchJobs, toggleDriveStatus, updateJob, bulkDeleteJobs }}>
             {children}
         </JobsContext.Provider>
     );

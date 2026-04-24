@@ -13,7 +13,7 @@ Design:
   - No LLM calls - pure math on existing signals
 """
 import time
-from typing import Optional
+from typing import Any, Optional
 from session_state import TrustState, init_trust_state, INTEGRITY_BAND, QUALITY_BAND
 
 
@@ -21,7 +21,7 @@ from session_state import TrustState, init_trust_state, INTEGRITY_BAND, QUALITY_
 _BUCKET_WEIGHTS = {
     "intelligence_quality": 0.45,   # answer depth, specificity, clarity, grounding
     "behavioral_confidence": 0.30,  # ownership, example quality, follow-up consistency
-    "hard_integrity": 0.25,         # contradictions, proctoring events, audio leaks
+    "hard_integrity": 0.25,         # contradictions and proctoring events
 }
 
 # -- Per-turn delta table ------------------------------------------------------
@@ -54,9 +54,6 @@ _PROCTOR_DELTAS = {
     "face_absent":         -0.03,
     "gaze_violation":       0.00,
     "multiple_faces":      -0.15,
-    "clipboard_paste":     -0.07,
-    "background_voice":    -0.12,
-    "audio_leak":          -0.08,
     "contradiction_detected": -0.10,
     "answer_depth_surface":-0.02,
 }
@@ -65,7 +62,31 @@ _PROCTOR_DELTAS = {
 _TREND_WINDOW = 4   # last N turns used for trend calculation
 
 
-def apply_turn_decision(state: TrustState, td: dict) -> TrustState:
+def _is_toggle_enabled(toggles: Optional[dict[str, Any]], key: str) -> bool:
+    if not toggles:
+        return True
+    raw_value = toggles.get(key)
+    if raw_value is None:
+        return True
+    if isinstance(raw_value, bool):
+        return raw_value
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip().lower()
+        if normalized in ("true", "1", "yes", "on"):
+            return True
+        if normalized in ("false", "0", "no", "off"):
+            return False
+    if isinstance(raw_value, (int, float)):
+        return bool(raw_value)
+    return True
+
+
+def apply_turn_decision(
+    state: TrustState,
+    td: dict,
+    *,
+    behavioral_toggles: Optional[dict[str, Any]] = None,
+) -> TrustState:
     """
     Update trust state from one TurnDecision object.
     td is the TurnDecision TypedDict from turn_decision.py.
@@ -120,13 +141,27 @@ def apply_turn_decision(state: TrustState, td: dict) -> TrustState:
     # Recovery: check if previous concern is now resolved
     prev_signals = state.get("_last_signals", {})
     bc_delta = 0.0
-    if prev_signals.get("ownership_ambiguity") and not signals.get("ownership_ambiguity") and action == "MOVE_ON":
+    if (
+        _is_toggle_enabled(behavioral_toggles, "ownership_clarified")
+        and prev_signals.get("ownership_ambiguity")
+        and not signals.get("ownership_ambiguity")
+        and action == "MOVE_ON"
+    ):
         bc_delta += _TURN_DELTAS["ownership_clarified"]
         _add_recovery(state, "ownership_clarified")
-    if prev_signals.get("example_evasion") and not signals.get("example_evasion") and overall >= 6.0:
+    if (
+        _is_toggle_enabled(behavioral_toggles, "example_given")
+        and prev_signals.get("example_evasion")
+        and not signals.get("example_evasion")
+        and overall >= 6.0
+    ):
         bc_delta += _TURN_DELTAS["example_given"]
         _add_recovery(state, "concrete_example_after_evasion")
-    if state.get("_last_action") == "PROBE" and overall >= 6.5:
+    if (
+        _is_toggle_enabled(behavioral_toggles, "strong_under_pressure")
+        and state.get("_last_action") == "PROBE"
+        and overall >= 6.5
+    ):
         bc_delta += _TURN_DELTAS["strong_under_pressure"]
         _add_recovery(state, "strong_under_pressure")
 
@@ -137,7 +172,7 @@ def apply_turn_decision(state: TrustState, td: dict) -> TrustState:
     )
 
     # Contradiction flag from signals
-    if signals.get("contradiction"):
+    if _is_toggle_enabled(behavioral_toggles, "contradiction") and signals.get("contradiction"):
         state["buckets"]["hard_integrity"] = _clamp(
             state["buckets"]["hard_integrity"] + _TURN_DELTAS["contradiction_found"]
         )

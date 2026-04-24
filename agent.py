@@ -221,9 +221,6 @@ PROCTORING_WEIGHTS: dict[str, int] = {
     "face_absent": 3,          # weak unless repeated/prolonged
     "gaze_violation": 0,       # supporting context only; excluded from core trust math
     "multiple_faces": 30,      # multiple people detected (suspicious)
-    "clipboard_paste": 15,     # detected clipboard paste event
-    "background_voice": 25,    # second speaker diarized by Deepgram Nova-3
-    "audio_leak": 8,           # helper phrase detected in transcript; strongest when corroborated
 }
 
 _COMPOSITE_RISK_WEIGHTS = {
@@ -261,33 +258,6 @@ def compose_mode_risk_score(
     elif integrity_risk >= 8:
         weighted += 4
     return max(0, min(100, int(round(weighted))))
-
-# --- Audio Proctoring: Keyterms for Nova-3 boost + helper-phrase patterns ---
-# Keyterms tell Deepgram Nova-3 to specifically "listen out" for these words.
-# Even quiet whispers are more likely to be captured accurately.
-DEEPGRAM_KEYTERMS: list[str] = [
-    "the answer is",
-    "tell her",
-    "tell him",
-    "tell them",
-    "say that",
-    "just say",
-    "repeat after me",
-    "you should say",
-]
-
-# Regex patterns that indicate a third party is providing answers (helper instructions).
-# Applied to candidate transcript segments in real-time.
-import re as _re
-_HELPER_PHRASE_PATTERNS: list[_re.Pattern] = [
-    _re.compile(r"\bthe answer is\b", _re.IGNORECASE),
-    _re.compile(r"\btell (her|him|them)\b", _re.IGNORECASE),
-    _re.compile(r"\bjust say\b", _re.IGNORECASE),
-    _re.compile(r"\bsay that\b", _re.IGNORECASE),
-    _re.compile(r"\brepeat after me\b", _re.IGNORECASE),
-    _re.compile(r"\byou should say\b", _re.IGNORECASE),
-]
-
 
 async def _single_question_transform(text_stream):
     """
@@ -1649,14 +1619,7 @@ def build_sarvam_tts(
 
 
 def build_stt(language_code: str = "en", model: str = STT_MODEL):
-    """Build Deepgram Nova-3 STT with diarization and keyterm detection.
-
-    - enable_diarization: Labels each speech segment with a speaker_id (e.g. 0, 1).
-      If speaker_id > 0 appears during the candidate's turn it means a second
-      person is speaking in the room - triggers a 'background_voice' proctor event.
-    - keyterm: Deepgram Nova-3 specific feature that boosts transcription accuracy
-      for these phrases. Even quiet whispers of "the answer is..." are captured.
-    """
+    """Build Deepgram Nova-3 STT with optional diarization."""
     stt_kwargs: dict[str, Any] = {
         "model": model,
         "smart_format": True,
@@ -1665,9 +1628,8 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
         "punctuate": True,
     }
 
-    # Add diarization and keyterms only for Nova-3 models (not Sarvam/legacy).
+    # Add diarization only for Nova-3 models (not Sarvam/legacy).
     if "nova" in model.lower():
-        stt_kwargs["keyterm"] = DEEPGRAM_KEYTERMS
         # Note: enable_diarization may not be supported in all livekit-plugins-deepgram
         # versions. We add it defensively and fall back gracefully if rejected.
         stt_kwargs["enable_diarization"] = True
@@ -1680,28 +1642,26 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
             if attempt == 0:
                 attempt_kwargs["endpointing_ms"] = 300
                 logger.info(
-                    "[STT] Building Deepgram STT with diarization + keyterms + endpointing_ms"
+                    "[STT] Building Deepgram STT with diarization + endpointing_ms"
                 )
             elif attempt == 1:
                 attempt_kwargs["endpointing"] = 300
                 logger.info(
-                    "[STT] Falling back to Deepgram STT with diarization + keyterms + endpointing"
+                    "[STT] Falling back to Deepgram STT with diarization + endpointing"
                 )
             else:
                 # Final fallback: strip diarization in case it's unsupported
                 attempt_kwargs.pop("enable_diarization", None)
-                attempt_kwargs.pop("keyterm", None)
                 attempt_kwargs["endpointing_ms"] = 300
                 logger.info(
-                    "[STT] Final fallback: Deepgram STT without diarization/keyterms + endpointing_ms"
+                    "[STT] Final fallback: Deepgram STT without diarization + endpointing_ms"
                 )
             stt = deepgram.STT(**attempt_kwargs)
             logger.info(
-                "[STT] Active Deepgram config: model=%s language=%s diarization=%s keyterms=%s endpointing=%s endpointing_ms=%s",
+                "[STT] Active Deepgram config: model=%s language=%s diarization=%s endpointing=%s endpointing_ms=%s",
                 attempt_kwargs.get("model"),
                 attempt_kwargs.get("language"),
                 bool(attempt_kwargs.get("enable_diarization", False)),
-                bool(attempt_kwargs.get("keyterm")),
                 attempt_kwargs.get("endpointing"),
                 attempt_kwargs.get("endpointing_ms"),
             )
@@ -2490,6 +2450,52 @@ async def persist_org_usage_metrics(
         logger.error(f"[USAGE] Failed to save org usage metrics for {org_id}: {e}")
 
 
+_EVALUATION_SIGNAL_KEYS = {
+    "ownership_ambiguity",
+    "example_evasion",
+    "latency_mismatch",
+    "resume_claim_mismatch",
+    "ownership_clarified",
+    "example_given",
+    "strong_under_pressure",
+    "follow_up_collapse",
+    "contradiction",
+    "contradiction_resolved",
+}
+
+
+def _toggle_bool(value: Any, default: bool = True) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("true", "1", "yes", "on"):
+            return True
+        if normalized in ("false", "0", "no", "off"):
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
+def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
+    parsed: dict[str, Any] = {}
+    if isinstance(raw_signals, dict):
+        parsed = raw_signals
+    elif isinstance(raw_signals, str):
+        try:
+            maybe_obj = json.loads(raw_signals)
+            if isinstance(maybe_obj, dict):
+                parsed = maybe_obj
+        except Exception:
+            parsed = {}
+
+    return {
+        key: _toggle_bool(parsed.get(key), True)
+        for key in _EVALUATION_SIGNAL_KEYS
+    }
+
+
 async def get_interview_context(app_id: str):
     """Fetches Candidate and Job Description context from PostgreSQL via asyncpg."""
     if not DATABASE_URL:
@@ -2503,7 +2509,7 @@ async def get_interview_context(app_id: str):
            o."sarvamModel", COALESCE(d."sarvamVoice", o."sarvamVoice") AS "sarvamVoice",
            COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName", o.location AS "orgLocation",
            o."sttProvider", o."deepgramModel", o."sarvamSttModel",
-           o."llmProvider", o."llmModel", o."llmTemperature"
+           o."llmProvider", o."llmModel", o."llmTemperature", o."proctoringSignals"
     FROM "Application" a
     JOIN "Drive" d ON a."driveId" = d.id
     LEFT JOIN "Organization" o ON d."orgId" = o.id
@@ -2560,6 +2566,7 @@ async def get_interview_context(app_id: str):
                 "llmProvider": row["llmProvider"],
                 "llmModel": row["llmModel"],
                 "llmTemperature": row["llmTemperature"],
+                "proctoringSignals": row["proctoringSignals"],
             }
         except Exception as e:
             last_error = e
@@ -3610,6 +3617,9 @@ async def entrypoint(ctx: JobContext):
         return
 
     context: dict[str, Any] = context_result
+    evaluation_signal_toggles = _extract_evaluation_signal_toggles(
+        context.get("proctoringSignals")
+    )
 
     # Read Room Metadata Context (available after connect)
     room_meta = {}
@@ -3996,7 +4006,7 @@ async def entrypoint(ctx: JobContext):
     turn_count = 0           # counts assistant turns for state injection cadence
     last_injection_turn = 0  # tracks which turn last received a state injection
     environment_risk = 0     # browser-side proctoring signals
-    integrity_risk = 0       # audio leak / helper voice / background voice
+    integrity_risk = 0       # integrity-related proctoring signals
     depth_risk = 0           # surface answers / compression failures
     suspicion_score = 0      # composite risk score used only for mode switching
     current_interview_mode = "normal"  # normal / pressure / verification / deep
@@ -4320,73 +4330,6 @@ async def entrypoint(ctx: JobContext):
                     )
                     return
 
-            # --- Deepgram Diarization: Secondary Speaker Detection ---
-            # When diarization is enabled, Deepgram labels segments with a speaker_id.
-            # Any segment with speaker_id > 0 during a candidate turn means a second
-            # person is speaking - this is our "background_voice" proctoring signal.
-            try:
-                speaker_id = None
-                raw_event = getattr(event, "item", event)
-                # Deepgram speaker info may surface in alternatives or metadata
-                for attr in ("speaker", "speaker_id", "channel"):
-                    speaker_id = getattr(raw_event, attr, None)
-                    if speaker_id is not None:
-                        break
-
-                if speaker_id is not None and int(speaker_id) > 0:
-                    # A second speaker (speaker_id >= 1) was detected
-                    delta = PROCTORING_WEIGHTS["background_voice"]
-                    integrity_risk = min(100, integrity_risk + delta)
-                    refresh_composite_risk()
-                    reason = f"Multiple speakers detected in session (Speaker ID: {speaker_id})"
-                    proctoring_events.append({
-                        "event": "background_voice",
-                        "timestamp": time.time(),
-                        "risk_bucket": "integrity",
-                        "speaker_id": int(speaker_id),
-                        "score_delta": delta,
-                        "score_after": suspicion_score,
-                        "snippet": content[:80],
-                    })
-                    logger.warning(
-                        f"[PROCTOR] background_voice detected: speaker_id={speaker_id} "
-                        f"score={suspicion_score} snippet='{content[:60]}'"
-                    )
-                    # Sync real-time
-                    spawn_background_task(_report_proctoring_realtime("background_voice", reason, delta), "report_bg_voice")
-                    spawn_background_task(_signal_client_proctoring_violation("background_voice", "Background voice detected. Please ensure you are in a quiet, private space."), "signal_bg_voice")
-            except Exception:
-                pass  # Diarization metadata not available - silent skip
-
-            # --- Audio Leak: Helper Phrase Detection ---
-            # Scan every transcribed segment for phrases that indicate a third party
-            # is providing answers (e.g. "the answer is X", "tell her to say...").
-            # This catches cases where the candidate's mic picks up a roommate
-            # whispering instructions that Deepgram can transcribe.
-            for pattern in _HELPER_PHRASE_PATTERNS:
-                if pattern.search(content):
-                    delta = PROCTORING_WEIGHTS["audio_leak"]
-                    integrity_risk = min(100, integrity_risk + delta)
-                    refresh_composite_risk()
-                    reason = f"Helper phrase detected via Deepgram: '{content[:50]}...'"
-                    proctoring_events.append({
-                        "event": "audio_leak",
-                        "timestamp": time.time(),
-                        "risk_bucket": "integrity",
-                        "matched_pattern": pattern.pattern,
-                        "score_delta": delta,
-                        "score_after": suspicion_score,
-                        "snippet": content[:120],
-                    })
-                    logger.warning(
-                        f"[PROCTOR] audio_leak detected: pattern='{pattern.pattern}' "
-                        f"score={suspicion_score} snippet='{content[:80]}'"
-                    )
-                    # Sync real-time
-                    spawn_background_task(_report_proctoring_realtime("audio_leak", reason, delta, sev="high"), "report_audio_leak")
-                    spawn_background_task(_signal_client_proctoring_violation("audio_leak", "Sound anomaly detected. Please ensure you are performing the interview without external assistance.", sev="high"), "signal_audio_leak")
-                    break  # one flag per segment is enough
-
             # Ignore tiny fragments unless they match an explicit short-answer pattern.
             # This cuts down on STT hallucinations, echo bleed, and half-words like
             # "bu", "thr", or "qu" being treated as real candidate turns.
@@ -4517,6 +4460,7 @@ async def entrypoint(ctx: JobContext):
                                     llm_model=analysis_openai_model,
                                     score_answer_quality_fn=score_answer_quality,
                                     evaluate_answer_and_decide_fn=evaluate_answer_and_decide,
+                                    signal_toggles=evaluation_signal_toggles,
                                     collapse_stage=collapse_stage,
                                 ),
                                 timeout=6.0,
@@ -4579,7 +4523,11 @@ async def entrypoint(ctx: JobContext):
 
                             # Update the canonical TrustState only. Trust deltas are folded into the
                             # single structured engine so we do not maintain a second trust line.
-                            _trust_state = apply_turn_decision(_trust_state, td)
+                            _trust_state = apply_turn_decision(
+                                _trust_state,
+                                td,
+                                behavioral_toggles=evaluation_signal_toggles,
+                            )
 
                             # Record the signal contract in one place and keep the legacy risk meter aligned.
                             for event in signal_events:
@@ -4620,38 +4568,43 @@ async def entrypoint(ctx: JobContext):
                                 td["quality"]["clarity"] + td["quality"]["depth"] +
                                 td["quality"]["specificity"] + td["quality"]["grounding"]
                             ) / 4.0
-                            _contradiction_state, contradiction_state_event = advance_contradiction_state(
-                                _contradiction_state,
-                                contradiction_alert,
-                                turn=turn,
-                                action=action,
-                                quality_avg=quality_avg_for_recovery,
+                            contradiction_enabled = bool(evaluation_signal_toggles.get("contradiction", True))
+                            contradiction_resolved_enabled = bool(
+                                evaluation_signal_toggles.get("contradiction_resolved", True)
                             )
-                            if contradiction_state_event:
-                                proctoring_events.append({
-                                    "event": contradiction_state_event["event"],
-                                    "source": contradiction_state_event["source"],
-                                    "status": contradiction_state_event["status"],
-                                    "turn": contradiction_state_event["turn"],
-                                    "surfaced_turn": contradiction_state_event["surfaced_turn"],
-                                    "repeat_count": contradiction_state_event["repeat_count"],
-                                    "probe_type": contradiction_state_event["probe_type"],
-                                    "recovery_path": contradiction_state_event["recovery_path"],
-                                    "recruiter_note": contradiction_state_event["recruiter_note"],
-                                    "trust_delta": contradiction_state_event["trust_delta"],
-                                    "score_delta": 0,
-                                    "score_after": suspicion_score,
-                                    "evidence": contradiction_state_event.get("evidence", ""),
-                                    "contradiction_type": contradiction_state_event.get("contradiction_type", ""),
-                                })
-                                logger.info(
-                                    f"[CONTRADICTION] status={contradiction_state_event['status']} "
-                                    f"source={contradiction_state_event['source']} turn={turn} "
-                                    f"trust_delta={contradiction_state_event['trust_delta']:+.2f}"
+                            if contradiction_enabled:
+                                _contradiction_state, contradiction_state_event = advance_contradiction_state(
+                                    _contradiction_state,
+                                    contradiction_alert,
+                                    turn=turn,
+                                    action=action,
+                                    quality_avg=quality_avg_for_recovery,
                                 )
-                                if contradiction_state_event["status"] == "candidate_clarified":
-                                    _trust_state = apply_contradiction_resolved(_trust_state)
-                                    logger.info("[TRUST] Contradiction resolved by candidate - hard_integrity restored")
+                                if contradiction_state_event:
+                                    proctoring_events.append({
+                                        "event": contradiction_state_event["event"],
+                                        "source": contradiction_state_event["source"],
+                                        "status": contradiction_state_event["status"],
+                                        "turn": contradiction_state_event["turn"],
+                                        "surfaced_turn": contradiction_state_event["surfaced_turn"],
+                                        "repeat_count": contradiction_state_event["repeat_count"],
+                                        "probe_type": contradiction_state_event["probe_type"],
+                                        "recovery_path": contradiction_state_event["recovery_path"],
+                                        "recruiter_note": contradiction_state_event["recruiter_note"],
+                                        "trust_delta": contradiction_state_event["trust_delta"],
+                                        "score_delta": 0,
+                                        "score_after": suspicion_score,
+                                        "evidence": contradiction_state_event.get("evidence", ""),
+                                        "contradiction_type": contradiction_state_event.get("contradiction_type", ""),
+                                    })
+                                    logger.info(
+                                        f"[CONTRADICTION] status={contradiction_state_event['status']} "
+                                        f"source={contradiction_state_event['source']} turn={turn} "
+                                        f"trust_delta={contradiction_state_event['trust_delta']:+.2f}"
+                                    )
+                                    if contradiction_state_event["status"] == "candidate_clarified" and contradiction_resolved_enabled:
+                                        _trust_state = apply_contradiction_resolved(_trust_state)
+                                        logger.info("[TRUST] Contradiction resolved by candidate - hard_integrity restored")
                             # Feed depth signal into suspicion scoring
                             if depth_signal == "SURFACE":
                                 depth_risk = min(100, depth_risk + 3)
@@ -4666,7 +4619,7 @@ async def entrypoint(ctx: JobContext):
                         old_v = _sanitize_claim_value(evidence.get("oldValue", ""))
                         new_v = _sanitize_claim_value(evidence.get("newValue", ""))
                         claim_t = re.sub(r"[^\w\s]", "", contradiction_summary["contradictionType"].replace("_", " ")).strip() or "contradiction"
-                        if contradiction_summary["active"]:
+                        if contradiction_summary["active"] and bool(evaluation_signal_toggles.get("contradiction", True)):
                             directive = (
                                 f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                                 f"DECISION: CONTRADICTION {contradiction_summary['status'].upper()}\n"

@@ -1,9 +1,12 @@
 "use client";
 import { Suspense, useState, use, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User, MousePointer2 } from "lucide-react";
+import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User, MousePointer2, ChevronDown, MessageSquare, LifeBuoy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
 import { HardwareCheck } from "@/components/careers/interview/HardwareCheck";
 import { FaceProctoring } from "@/components/careers/interview/FaceProctoring";
@@ -14,6 +17,7 @@ import { ConnectionProctoring } from "@/components/careers/interview/ConnectionP
 import { collectDeviceFingerprint } from "@/lib/device-fingerprint";
 import { useSearchParams } from "next/navigation";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { DEFAULT_PROCTORING_SIGNALS, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import {
     LiveKitRoom,
     useLocalParticipant,
@@ -112,6 +116,10 @@ function getAttachableTrack(trackRef: TrackReference): AttachableTrack | null {
     return candidate;
 }
 
+const StableRoomAudioRenderer = memo(function StableRoomAudioRenderer() {
+    return <RoomAudioRenderer />;
+});
+
 function InterviewContent({ id, params }: { id: string, params: Promise<{ id: string }> }) {
     const [phase, setPhase] = useState<"check" | "launching" | "interview" | "finalizing" | "completed">("check");
     const [token, setToken] = useState<string | null>(null);
@@ -140,6 +148,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [launchRecoveryMessage, setLaunchRecoveryMessage] = useState<string | null>(null);
     const [isTabViolation, setIsTabViolation] = useState(false);
     const [isFullscreenViolation, setIsFullscreenViolation] = useState(false);
+    const tabViolationTimerRef = useRef<number | null>(null);
+    const fullscreenViolationTimerRef = useRef<number | null>(null);
 
     //  AI Face Proctoring 
     const [referenceSnapshotUrl, setReferenceSnapshotUrl] = useState<string | null>(null);
@@ -167,6 +177,16 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const mouseViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
     const [soundViolationAlert, setSoundViolationAlert] = useState<{ eventType: string; reason: string; severity: string } | null>(null);
     const soundViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const [proctoringSignals, setProctoringSignals] = useState(DEFAULT_PROCTORING_SIGNALS);
+    const [supportDialogOpen, setSupportDialogOpen] = useState(false);
+    const [supportSubmitting, setSupportSubmitting] = useState(false);
+    const [supportMessage, setSupportMessage] = useState<string | null>(null);
+    const [supportError, setSupportError] = useState<string | null>(null);
+    const [supportForm, setSupportForm] = useState({
+        name: "",
+        email: "",
+        issueAbout: "",
+    });
     /**
      * Shared ref updated by InterviewRoomContent whenever a candidate transcript
      * segment arrives from Deepgram Nova-3. MouseProctoring reads this to
@@ -177,6 +197,23 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const searchParams = useSearchParams();
     const interviewToken = searchParams.get("token") || "";
     const requireInterviewToken = isInterviewTokenRequired();
+    const isTabSwitchEnabled = Boolean(proctoringSignals.tab_switch);
+    const isFullscreenExitEnabled = Boolean(proctoringSignals.fullscreen_exit);
+    const isCameraDisabledEnabled = Boolean(proctoringSignals.camera_disabled);
+    const isMicrophoneDisabledEnabled = Boolean(proctoringSignals.microphone_disabled);
+    const isConnectionLostEnabled = Boolean(proctoringSignals.connection_lost);
+    const isFaceAbsenceEnabled = Boolean(proctoringSignals.face_absence);
+    const isMultipleFacesEnabled = Boolean(proctoringSignals.multiple_faces);
+    const isGazeViolationEnabled = Boolean(proctoringSignals.gaze_violation);
+    const isHeadPoseViolationEnabled = Boolean(proctoringSignals.head_pose_violation);
+    const isIdentityMismatchEnabled = Boolean(proctoringSignals.identity_mismatch);
+
+    const clearDelayedViolation = useCallback((ref: { current: number | null }) => {
+        if (ref.current !== null) {
+            window.clearTimeout(ref.current);
+            ref.current = null;
+        }
+    }, []);
 
     // Load reference snapshot from sessionStorage (set by HardwareCheck after camera capture)
     useEffect(() => {
@@ -188,6 +225,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
     //  Face violation handler 
     const handleFaceViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
+        if (eventType === "face_absence" && !isFaceAbsenceEnabled) return;
+        if (eventType === "multiple_faces" && !isMultipleFacesEnabled) return;
+        if (eventType === "gaze_violation" && !isGazeViolationEnabled) return;
+        if (eventType === "head_pose_violation" && !isHeadPoseViolationEnabled) return;
+        if (eventType === "identity_mismatch" && !isIdentityMismatchEnabled) return;
+
         // 1. Show transient alert to candidate (auto-dismiss after 6s)
         setFaceViolationAlert({ type: eventType, reason });
         if (faceViolationTimerRef.current) clearTimeout(faceViolationTimerRef.current);
@@ -217,7 +260,15 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
             } catch { }
         }
-    }, [id, interviewToken]);
+    }, [
+        id,
+        interviewToken,
+        isFaceAbsenceEnabled,
+        isMultipleFacesEnabled,
+        isGazeViolationEnabled,
+        isHeadPoseViolationEnabled,
+        isIdentityMismatchEnabled,
+    ]);
 
     //  Audio violation handler 
     const handleAudioViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
@@ -254,6 +305,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
     //  Hardware heartbeat violation handler 
     const handleHardwareViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
+        if (eventType === "camera_disabled" && !isCameraDisabledEnabled) return;
+        if (eventType === "microphone_disabled" && !isMicrophoneDisabledEnabled) return;
+
         // 1. Show transient alert to candidate (8s - longer for high-severity)
         setHardwareViolationAlert({ type: eventType, reason });
         if (hardwareViolationTimerRef.current) clearTimeout(hardwareViolationTimerRef.current);
@@ -283,10 +337,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
             } catch { }
         }
-    }, [id, interviewToken]);
+    }, [id, interviewToken, isCameraDisabledEnabled, isMicrophoneDisabledEnabled]);
 
     //  Connection violation handler 
     const handleConnectionViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
+        if (eventType === "connection_lost" && !isConnectionLostEnabled) return;
+
         // 1. Show toast to candidate (5 s for restored, 8 s for lost)
         const displayMs = eventType === "connection_restored" ? 5000 : 8000;
         setConnectionAlert({ eventType, reason });
@@ -308,7 +364,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 }],
             }),
         }).catch(() => { });
-    }, [id, interviewToken]);
+    }, [id, interviewToken, isConnectionLostEnabled]);
 
     // -- Mouse violation handler (Deepgram Nova-3 cross-signal) -----------------
     const handleMouseViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
@@ -348,41 +404,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
     }, [id, interviewToken]);
 
-    // -- Clipboard Paste violation handler -------------------------------------
-    const handlePasteViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
-        // 1. Show transient alert to candidate
-        setMouseViolationAlert({ eventType: "behavior_flag", reason, severity: "medium" });
-        if (mouseViolationTimerRef.current) clearTimeout(mouseViolationTimerRef.current);
-        mouseViolationTimerRef.current = setTimeout(() => setMouseViolationAlert(null), 6000);
-
-        // 2. Send to backend for audit trail
-        fetch("/api/interview/proctoring", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                applicationId: id,
-                interviewToken,
-                events: [{
-                    eventType,
-                    severity: severity ?? "medium",
-                    timestamp: Date.now(),
-                    reason,
-                }],
-            }),
-        }).catch(() => { });
-
-        // 3. Signal agent via data channel
-        const room = lkRoomRef.current;
-        if (room?.localParticipant) {
-            try {
-                const data = new TextEncoder().encode(
-                    JSON.stringify({ type: "clipboard_paste", eventType, timestamp: Date.now() })
-                );
-                room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
-            } catch { }
-        }
-    }, [id, interviewToken]);
-
     // -- Generic Agent-Detected Violation handler (Syncs Agent events to Candidate UI) --
     const handleAgentDetectedViolation = useCallback((eventType: string, reason: string, severity?: string) => {
         // This is called when the Agent sends a 'proctoring_violation' packet over the data channel
@@ -390,6 +411,56 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         if (soundViolationTimerRef.current) clearTimeout(soundViolationTimerRef.current);
         soundViolationTimerRef.current = setTimeout(() => setSoundViolationAlert(null), 8000);
     }, []);
+
+    const submitSupportRequest = useCallback(async () => {
+        const normalizedName = supportForm.name.trim();
+        const normalizedEmail = supportForm.email.trim().toLowerCase();
+        const normalizedIssueAbout = supportForm.issueAbout.trim();
+
+        if (!normalizedName || !normalizedEmail || !normalizedIssueAbout) {
+            setSupportError("Please fill name, email, and issue description.");
+            return;
+        }
+
+        setSupportSubmitting(true);
+        setSupportError(null);
+        setSupportMessage(null);
+
+        try {
+            const res = await fetch(`/api/interview/${encodeURIComponent(id)}/support`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    ...supportForm,
+                    name: normalizedName,
+                    email: normalizedEmail,
+                    issueAbout: normalizedIssueAbout,
+                    interviewToken,
+                }),
+            });
+
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setSupportError(data.error || "Failed to submit support request.");
+                return;
+            }
+
+            setSupportMessage(data.warning || "Support request sent successfully.");
+            setSupportForm((prev) => ({
+                ...prev,
+                issueAbout: "",
+            }));
+
+            window.setTimeout(() => {
+                setSupportDialogOpen(false);
+                setSupportMessage(null);
+            }, 1400);
+        } catch {
+            setSupportError("Unable to submit support request right now.");
+        } finally {
+            setSupportSubmitting(false);
+        }
+    }, [id, interviewToken, supportForm]);
 
     // Countdown ticker - purely visual, counts up for display purposes
     useEffect(() => {
@@ -433,6 +504,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         agentReadyCommittedRef.current = true;
         setPhase("interview");
     }, [phase, isAgentReady]);
+
+    useEffect(() => {
+        if (!candidateDisplayName || candidateDisplayName === "Candidate") return;
+        setSupportForm((prev) => (prev.name.trim() ? prev : { ...prev, name: candidateDisplayName }));
+    }, [candidateDisplayName]);
 
     const isExitUnlocked = phase === "completed" || timerExpired;
     const isInterviewLocked = (phase === "interview") && !isExitUnlocked;
@@ -494,6 +570,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     setServerUrl(data.serverUrl);
                     setInterviewRoleLabel(data.roleLabel || data.jobTitle || "Interview");
                     setCandidateDisplayName(data.candidateName || "Candidate");
+                    setProctoringSignals(normalizeProctoringSignals(data.proctoringSignals));
                     if (typeof data.duration === "number" && data.duration > 0) {
                         sessionDurationRef.current = data.duration;
                         setRemainingSeconds(data.duration);
@@ -670,73 +747,19 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
 
     useEffect(() => {
-        if (phase !== "interview") {
+        if (phase !== "interview" || !isTabSwitchEnabled) {
             setIsTabViolation(false);
+            clearDelayedViolation(tabViolationTimerRef);
             return;
         }
 
         const handleViolation = () => {
-            setIsTabViolation(true);
+            if (tabViolationTimerRef.current !== null) return;
+            tabViolationTimerRef.current = window.setTimeout(() => {
+                tabViolationTimerRef.current = null;
+                setIsTabViolation(true);
 
-            // Telemetry: Log to backend
-            fetch("/api/interview/proctoring", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    applicationId: id,
-                    interviewToken: interviewToken,
-                    events: [{
-                        eventType: "tab_switch",
-                        severity: "medium",
-                        timestamp: Date.now(),
-                        reason: document.hidden ? "Tab Switched" : "Window Blurred"
-                    }]
-                })
-            }).catch(() => { });
-
-            // Also signal to agent if possible via data channel
-            const room = lkRoomRef.current;
-            if (room?.localParticipant) {
-                const encoder = new TextEncoder();
-                const data = encoder.encode(JSON.stringify({
-                    type: "tab_violation",
-                    timestamp: Date.now()
-                }));
-                room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
-            }
-        };
-
-        const onVisibilityChange = () => {
-            if (document.hidden) handleViolation();
-        };
-
-        document.addEventListener("visibilitychange", onVisibilityChange);
-        window.addEventListener("blur", handleViolation);
-
-        return () => {
-            document.removeEventListener("visibilitychange", onVisibilityChange);
-            window.removeEventListener("blur", handleViolation);
-        };
-    }, [phase, id]);
-
-    useEffect(() => {
-        if (phase !== "completed" && phase !== "finalizing") return;
-        void exitFullscreenMode();
-    }, [phase, exitFullscreenMode]);
-
-    useEffect(() => {
-        if (phase !== "interview") {
-            setIsFullscreenViolation(false);
-            return;
-        }
-
-        const onFullscreenChange = () => {
-            const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
-
-            if (!isFS) {
-                setIsFullscreenViolation(true);
-
-                // Telemetry
+                // Telemetry: Log to backend
                 fetch("/api/interview/proctoring", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -744,25 +767,95 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         applicationId: id,
                         interviewToken: interviewToken,
                         events: [{
-                            eventType: "fullscreen_exit",
-                            severity: "high",
+                            eventType: "tab_switch",
+                            severity: "medium",
                             timestamp: Date.now(),
-                            reason: "Manually Exited Fullscreen"
+                            reason: document.hidden ? "Tab Switched" : "Window Blurred"
                         }]
                     })
                 }).catch(() => { });
 
+                // Also signal to agent if possible via data channel
                 const room = lkRoomRef.current;
                 if (room?.localParticipant) {
                     const encoder = new TextEncoder();
                     const data = encoder.encode(JSON.stringify({
-                        type: "candidate_out_of_screen",
+                        type: "tab_violation",
                         timestamp: Date.now()
                     }));
                     room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
                 }
+            }, 250);
+        };
+
+        const onVisibilityChange = () => {
+            if (document.hidden) handleViolation();
+            else clearDelayedViolation(tabViolationTimerRef);
+        };
+        const onWindowFocus = () => clearDelayedViolation(tabViolationTimerRef);
+
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        window.addEventListener("blur", handleViolation);
+        window.addEventListener("focus", onWindowFocus);
+
+        return () => {
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+            window.removeEventListener("blur", handleViolation);
+            window.removeEventListener("focus", onWindowFocus);
+            clearDelayedViolation(tabViolationTimerRef);
+        };
+    }, [phase, id, clearDelayedViolation, isTabSwitchEnabled]);
+
+    useEffect(() => {
+        if (phase !== "completed" && phase !== "finalizing") return;
+        void exitFullscreenMode();
+    }, [phase, exitFullscreenMode]);
+
+    useEffect(() => {
+        if (phase !== "interview" || !isFullscreenExitEnabled) {
+            setIsFullscreenViolation(false);
+            clearDelayedViolation(fullscreenViolationTimerRef);
+            return;
+        }
+
+        const onFullscreenChange = () => {
+            const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
+
+            if (!isFS) {
+                if (fullscreenViolationTimerRef.current !== null) return;
+                fullscreenViolationTimerRef.current = window.setTimeout(() => {
+                    fullscreenViolationTimerRef.current = null;
+                    setIsFullscreenViolation(true);
+
+                    // Telemetry
+                    fetch("/api/interview/proctoring", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            applicationId: id,
+                            interviewToken: interviewToken,
+                            events: [{
+                                eventType: "fullscreen_exit",
+                                severity: "high",
+                                timestamp: Date.now(),
+                                reason: "Manually Exited Fullscreen"
+                            }]
+                        })
+                    }).catch(() => { });
+
+                    const room = lkRoomRef.current;
+                    if (room?.localParticipant) {
+                        const encoder = new TextEncoder();
+                        const data = encoder.encode(JSON.stringify({
+                            type: "candidate_out_of_screen",
+                            timestamp: Date.now()
+                        }));
+                        room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
+                    }
+                }, 250);
             } else {
                 setIsFullscreenViolation(false);
+                clearDelayedViolation(fullscreenViolationTimerRef);
             }
         };
 
@@ -779,8 +872,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
             document.removeEventListener("mozfullscreenchange", onFullscreenChange);
             document.removeEventListener("MSFullscreenChange", onFullscreenChange);
+            clearDelayedViolation(fullscreenViolationTimerRef);
         };
-    }, [phase, id]);
+    }, [phase, id, clearDelayedViolation, isFullscreenExitEnabled]);
 
     useEffect(() => {
         if (!isInterviewLocked) return;
@@ -838,6 +932,113 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         transition={{ duration: 0.8 }}
                         className="flex-1 w-full bg-white z-50 absolute inset-0 overflow-y-auto"
                     >
+                        <div className="mx-auto w-full max-w-5xl px-4 pt-8 pb-4">
+                            <div className="rounded-[2rem] border border-orange-100 bg-gradient-to-br from-orange-50 via-white to-zinc-50 shadow-[0_20px_60px_rgba(249,115,22,0.08)] p-6 sm:p-8 space-y-4">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <div className="h-10 w-10 rounded-xl bg-orange-500 text-white flex items-center justify-center shadow-md shadow-orange-100">
+                                        <ShieldAlert className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                        <p className="text-[11px] font-black uppercase tracking-[0.25em] text-[#F97316]">Important interview instructions</p>
+                                        <h2 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">Please read this before you start</h2>
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-3 sm:grid-cols-3">
+                                    {[
+                                        "This interview is proctored, so please do not try to cheat.",
+                                        "Sit in a quiet environment with no interruptions.",
+                                        "If you face any issue, use the Contact button right away.",
+                                    ].map((line) => (
+                                        <div key={line} className="rounded-2xl border border-gray-100 bg-white/80 px-4 py-4 text-sm font-medium text-gray-700 leading-relaxed shadow-sm">
+                                            {line}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
+                                    <p className="text-xs font-medium text-gray-500 leading-relaxed max-w-2xl">
+                                        Make sure your camera, microphone, and internet connection are stable before you begin. Any issue during the session can be reported through support.
+                                    </p>
+                                    <Dialog open={supportDialogOpen} onOpenChange={setSupportDialogOpen}>
+                                        <DialogTrigger asChild>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                className="h-11 rounded-xl border-orange-200 bg-white text-[#F97316] hover:bg-orange-50 hover:text-orange-700 font-bold"
+                                            >
+                                                Contact Support
+                                            </Button>
+                                        </DialogTrigger>
+                                        <DialogContent className="sm:max-w-lg">
+                                            <DialogHeader>
+                                                <DialogTitle className="text-xl font-black tracking-tight">Contact Support</DialogTitle>
+                                            </DialogHeader>
+                                            <div className="space-y-4 py-2">
+                                                <div className="space-y-2">
+                                                    <Label className="text-[11px] font-black uppercase tracking-widest text-gray-400">Name</Label>
+                                                    <Input
+                                                        value={supportForm.name}
+                                                        onChange={(e) => setSupportForm((prev) => ({ ...prev, name: e.target.value }))}
+                                                        placeholder="Your full name"
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label className="text-[11px] font-black uppercase tracking-widest text-gray-400">Email</Label>
+                                                    <Input
+                                                        type="email"
+                                                        value={supportForm.email}
+                                                        onChange={(e) => setSupportForm((prev) => ({ ...prev, email: e.target.value }))}
+                                                        placeholder="you@example.com"
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label className="text-[11px] font-black uppercase tracking-widest text-gray-400">What is the issue about?</Label>
+                                                    <textarea
+                                                        value={supportForm.issueAbout}
+                                                        onChange={(e) => setSupportForm((prev) => ({ ...prev, issueAbout: e.target.value }))}
+                                                        placeholder="Describe the issue you are facing..."
+                                                        rows={4}
+                                                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none transition-all focus:border-orange-400 focus:ring-4 focus:ring-orange-50"
+                                                    />
+                                                </div>
+
+                                                {supportError && (
+                                                    <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-600">
+                                                        {supportError}
+                                                    </div>
+                                                )}
+
+                                                {supportMessage && (
+                                                    <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+                                                        {supportMessage}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <DialogFooter>
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    className="rounded-xl"
+                                                    onClick={() => setSupportDialogOpen(false)}
+                                                    disabled={supportSubmitting}
+                                                >
+                                                    Cancel
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    onClick={submitSupportRequest}
+                                                    disabled={supportSubmitting}
+                                                    className="rounded-xl bg-[#F97316] text-white hover:bg-orange-600"
+                                                >
+                                                    {supportSubmitting ? "Sending..." : "Send Request"}
+                                                </Button>
+                                            </DialogFooter>
+                                        </DialogContent>
+                                    </Dialog>
+                                </div>
+                            </div>
+                        </div>
                         <HardwareCheck
                             onComplete={handleHardwareComplete}
                             onRetry={() => {
@@ -970,12 +1171,14 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             />
 
             {/*  Hardware Heartbeat (MediaStreamTrack API camera/mic monitoring) */}
-            <HardwareHeartbeat
-                applicationId={id}
-                interviewToken={interviewToken}
-                isActive={phase === "interview"}
-                onViolation={handleHardwareViolation}
-            />
+            {(isCameraDisabledEnabled || isMicrophoneDisabledEnabled) && (
+                <HardwareHeartbeat
+                    applicationId={id}
+                    interviewToken={interviewToken}
+                    isActive={phase === "interview"}
+                    onViolation={handleHardwareViolation}
+                />
+            )}
 
             {/* Interview room - outside AnimatePresence intentionally.
                 It pre-renders as soon as the launching phase has prepared a token
@@ -1022,13 +1225,14 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 lastCandidateTranscriptAtRef.current = Date.now();
                             }}
                             onAgentDetectedViolation={handleAgentDetectedViolation}
-                            onPasteViolation={handlePasteViolation}
                         />
                         {/*  Connection Proctoring (lives inside LiveKitRoom for useRoomContext) */}
-                        <ConnectionProctoring
-                            isActive={phase === "interview"}
-                            onViolation={handleConnectionViolation}
-                        />
+                        {isConnectionLostEnabled && (
+                            <ConnectionProctoring
+                                isActive={phase === "interview"}
+                                onViolation={handleConnectionViolation}
+                            />
+                        )}
                     </LiveKitRoom>
                 </div>
             )}
@@ -1052,7 +1256,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[200] bg-zinc-950/90 backdrop-blur-md flex items-center justify-center p-6"
+                        className="fixed inset-0 z-[200] bg-zinc-950/90 backdrop-blur-sm flex items-center justify-center p-6"
                     >
                         <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-6">
                             <div className="mx-auto w-20 h-20 rounded-2xl bg-orange-500/10 flex items-center justify-center">
@@ -1086,7 +1290,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[210] bg-zinc-950/90 backdrop-blur-md flex items-center justify-center p-6"
+                        className="fixed inset-0 z-[210] bg-zinc-950/90 backdrop-blur-sm flex items-center justify-center p-6"
                     >
                         <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-6">
                             <div className="mx-auto w-20 h-20 rounded-2xl bg-orange-500/10 flex items-center justify-center">
@@ -1367,7 +1571,6 @@ function InterviewRoomContent({
     candidateName,
     onCandidateTranscript,
     onAgentDetectedViolation,
-    onPasteViolation,
 }: {
     id: string,
     interviewToken: string,
@@ -1391,7 +1594,6 @@ function InterviewRoomContent({
      */
     onCandidateTranscript?: () => void;
     onAgentDetectedViolation?: (eventType: string, reason: string, severity?: string) => void;
-    onPasteViolation?: (eventType: string, reason: string, severity?: "low" | "medium" | "high") => void;
 }) {
     const { localParticipant } = useLocalParticipant();
     const cameraTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
@@ -1400,11 +1602,11 @@ function InterviewRoomContent({
     const voiceAssistant = useVoiceAssistant();
     const autoFinishTriggeredRef = useRef(false);
     const interviewCompletionHandledRef = useRef(false);
+    const [remoteForceFinish, setRemoteForceFinish] = useState(false);
 
-    // Give parent a ref to the room so it can call startAudio() on user gesture
-    useEffect(() => {
-        if (lkRoom) onRoomReady?.(lkRoom);
-    }, [lkRoom, onRoomReady]);
+    const localCameraTrack = cameraTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera) || null;
+    const localIdentity = lkRoom?.localParticipant?.identity ?? "";
+    const transcriptions = useTranscriptions({ room: lkRoom });
 
     // Voice assistant state from LiveKit agent lifecycle.
     const aiParticipantTrack = voiceAssistant.audioTrack;
@@ -1413,6 +1615,12 @@ function InterviewRoomContent({
     const assistantState = String(voiceAssistant.state);
     const isAiSpeaking = assistantState === "speaking";
     const isAiThinking = assistantState === "thinking" || assistantState === "initializing";
+    const isAiListening = assistantState === "listening";
+
+    // Give parent a ref to the room so it can call startAudio() on user gesture
+    useEffect(() => {
+        if (lkRoom) onRoomReady?.(lkRoom);
+    }, [lkRoom, onRoomReady]);
 
     useEffect(() => {
         if (!isInterviewActive) {
@@ -1449,7 +1657,6 @@ function InterviewRoomContent({
             lkRoom.off(RoomEvent.Disconnected, handleRoomDisconnected);
         };
     }, [lkRoom, isInterviewActive]);
-    const isAiListening = assistantState === "listening";
 
     const sanitizeTranscriptText = useCallback((text: string) => {
         return text
@@ -1512,12 +1719,7 @@ function InterviewRoomContent({
     const recordingStopRejectRef = useRef<((reason?: unknown) => void) | null>(null);
     const recordingLastChunkEndedAtRef = useRef<number | null>(null);
     const recordingAbandonedSentRef = useRef(false);
-    const [remoteForceFinish, setRemoteForceFinish] = useState(false);
     const transcriptPanelRef = useRef<HTMLDivElement>(null);
-    const transcriptions = useTranscriptions({ room: lkRoom });
-    const localIdentity = lkRoom?.localParticipant?.identity ?? "";
-    const localCameraTrack =
-        cameraTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera) || null;
 
     const markRecordingAbandoned = useCallback((reason: string) => {
         if (recordingAbandonedSentRef.current || !recordingSessionIdRef.current || !recordingStartedRef.current) return;
@@ -1711,7 +1913,7 @@ function InterviewRoomContent({
         await audioContext.resume().catch(() => { });
 
         const destination = audioContext.createMediaStreamDestination();
-        
+
         // Clone tracks to isolate recording from live playback.
         // This prevents AEC from 'ducking' the volume of the live AI speaker.
         const micClone = micTrack.clone();
@@ -1798,7 +2000,7 @@ function InterviewRoomContent({
         recordingStreamRef.current = mixedStream;
         mediaRecorderRef.current = recorder;
         recordingStartedRef.current = true;
-        
+
         // Use a tiny delay to ensure audio graph is stable before starting
         setTimeout(() => {
             if (recorder.state === "inactive") {
@@ -2038,10 +2240,10 @@ function InterviewRoomContent({
                 if (packet.type === "interview_terminated") {
                     setRemoteForceFinish(true);
                 } else if (packet.type === "proctoring_violation") {
-                    // Agent detected something (e.g. background voice, phrase)
+                    // Agent detected a proctoring event.
                     // Sync to candidate UI for immediate feedback
                     onAgentDetectedViolation?.(
-                        packet.eventType || "audio_leak",
+                        packet.eventType || "proctoring_violation",
                         packet.reason || "Sound anomaly detected",
                         packet.severity || "medium"
                     );
@@ -2057,23 +2259,6 @@ function InterviewRoomContent({
         };
     }, [lkRoom, onAgentDetectedViolation]);
 
-    // -- Clipboard Paste Detection ---------------------------------------------
-    useEffect(() => {
-        if (!isInterviewActive) return;
-
-        const handlePaste = (e: ClipboardEvent) => {
-            // High-precision detection: multiple pastes in a short window
-            // or large blocks of text usually indicate cheating / prep-reading.
-            onPasteViolation?.(
-                "clipboard_paste",
-                "Unnatural input detected (clipboard paste). Please provide your answers naturally and verbally."
-            );
-        };
-
-        window.addEventListener("paste", handlePaste as any);
-        return () => window.removeEventListener("paste", handlePaste as any);
-    }, [isInterviewActive, onPasteViolation]);
-
     useEffect(() => {
         if (!transcriptPanelRef.current) return;
         transcriptPanelRef.current.scrollTop = transcriptPanelRef.current.scrollHeight;
@@ -2087,7 +2272,7 @@ function InterviewRoomContent({
         if (document.fullscreenElement) {
             document.exitFullscreen().catch(() => { });
         }
-        
+
         // We don't await stopBrowserRecording forever.
         // It has its own 5s timeout now, but we want to move UI fast.
         stopBrowserRecording().catch((err) => {
@@ -2131,7 +2316,7 @@ function InterviewRoomContent({
             {/* Ambient Background Glow */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,_rgba(249,115,22,0.04)_0%,_transparent_50%)] pointer-events-none" />
 
-            {isInterviewActive && <RoomAudioRenderer />}
+            {isInterviewActive && <StableRoomAudioRenderer />}
 
             {/* Role Context - TOP LEFT */}
             <div className="absolute top-10 left-10 z-[60]">
@@ -2240,78 +2425,78 @@ function InterviewRoomContent({
                     </div>
                 </motion.div>
                 {false && (
-                <div className="absolute right-[calc(50%+180px)] bottom-[20%] z-[65] w-[380px] pointer-events-none">
-                    <div
-                        className="flex flex-col-reverse justify-start gap-6 max-h-[60vh] overflow-hidden px-6 py-12"
-                        style={{
-                            maskImage: 'linear-gradient(to top, transparent 0%, transparent 5%, black 20%, black 70%, transparent 95%, transparent 100%)',
-                            WebkitMaskImage: 'linear-gradient(to top, transparent 0%, transparent 5%, black 20%, black 70%, transparent 95%, transparent 100%)'
-                        }}
-                    >
-                        <AnimatePresence mode="popLayout">
-                            {groupedTranscriptions.slice(-5).reverse().map((group, idx) => {
-                                const isGroupFinal = group.segments.every(s => s.isFinal);
-                                // Only combine final segments + the single latest non-final chunk.
-                                // This prevents partial words ("bu", "thr") from stacking visibly.
-                                const finalSegs = group.segments.filter(s => s.isFinal);
-                                const nonFinalSegs = group.segments.filter(s => !s.isFinal);
-                                const latestNonFinal = nonFinalSegs.length > 0 ? nonFinalSegs[nonFinalSegs.length - 1] : null;
-                                const displaySegs = latestNonFinal ? [...finalSegs, latestNonFinal] : finalSegs;
-                                const combinedText = displaySegs.map(s => s.text.trim()).filter(Boolean).join(" ");
+                    <div className="absolute right-[calc(50%+180px)] bottom-[20%] z-[65] w-[380px] pointer-events-none">
+                        <div
+                            className="flex flex-col-reverse justify-start gap-6 max-h-[60vh] overflow-hidden px-6 py-12"
+                            style={{
+                                maskImage: 'linear-gradient(to top, transparent 0%, transparent 5%, black 20%, black 70%, transparent 95%, transparent 100%)',
+                                WebkitMaskImage: 'linear-gradient(to top, transparent 0%, transparent 5%, black 20%, black 70%, transparent 95%, transparent 100%)'
+                            }}
+                        >
+                            <AnimatePresence mode="popLayout">
+                                {groupedTranscriptions.slice(-5).reverse().map((group, idx) => {
+                                    const isGroupFinal = group.segments.every(s => s.isFinal);
+                                    // Only combine final segments + the single latest non-final chunk.
+                                    // This prevents partial words ("bu", "thr") from stacking visibly.
+                                    const finalSegs = group.segments.filter(s => s.isFinal);
+                                    const nonFinalSegs = group.segments.filter(s => !s.isFinal);
+                                    const latestNonFinal = nonFinalSegs.length > 0 ? nonFinalSegs[nonFinalSegs.length - 1] : null;
+                                    const displaySegs = latestNonFinal ? [...finalSegs, latestNonFinal] : finalSegs;
+                                    const combinedText = displaySegs.map(s => s.text.trim()).filter(Boolean).join(" ");
 
-                                return (
-                                    <motion.div
-                                        key={group.id}
-                                        initial={{ opacity: 0, y: 40, scale: 0.95 }}
-                                        animate={{
-                                            opacity: Math.max(0.2, 1 - (idx * 0.15)),
-                                            y: 0,
-                                            scale: 1
-                                        }}
-                                        exit={{
-                                            opacity: 0,
-                                            y: -60,
-                                            scale: 0.9,
-                                            transition: { duration: 0.5 }
-                                        }}
-                                        transition={{
-                                            type: "spring",
-                                            stiffness: 150,
-                                            damping: 20
-                                        }}
-                                        className={cn(
-                                            "w-full filter drop-shadow-[0_4px_10px_rgba(0,0,0,0.3)]",
-                                            "pointer-events-auto"
-                                        )}
-                                    >
-                                        <div className="relative group/item">
-                                            {/* Minimalist Message Layout (No Cards) */}
-                                            <div className="flex flex-col gap-1">
-                                                <div className="flex items-baseline gap-2">
-                                                    <span className={cn(
-                                                        "text-[10px] font-black uppercase tracking-[0.2em]",
-                                                        group.isCandidate ? "text-orange-500" : "text-indigo-400"
-                                                    )}>
-                                                        {group.isCandidate ? (candidateName || "Candidate") : "Ishitha"}
-                                                    </span>
-                                                    {!isGroupFinal && (
-                                                        <span className="text-[10px] text-zinc-600 animate-pulse">•••</span>
-                                                    )}
+                                    return (
+                                        <motion.div
+                                            key={group.id}
+                                            initial={{ opacity: 0, y: 40, scale: 0.95 }}
+                                            animate={{
+                                                opacity: Math.max(0.2, 1 - (idx * 0.15)),
+                                                y: 0,
+                                                scale: 1
+                                            }}
+                                            exit={{
+                                                opacity: 0,
+                                                y: -60,
+                                                scale: 0.9,
+                                                transition: { duration: 0.5 }
+                                            }}
+                                            transition={{
+                                                type: "spring",
+                                                stiffness: 150,
+                                                damping: 20
+                                            }}
+                                            className={cn(
+                                                "w-full filter drop-shadow-[0_4px_10px_rgba(0,0,0,0.3)]",
+                                                "pointer-events-auto"
+                                            )}
+                                        >
+                                            <div className="relative group/item">
+                                                {/* Minimalist Message Layout (No Cards) */}
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex items-baseline gap-2">
+                                                        <span className={cn(
+                                                            "text-[10px] font-black uppercase tracking-[0.2em]",
+                                                            group.isCandidate ? "text-orange-500" : "text-indigo-400"
+                                                        )}>
+                                                            {group.isCandidate ? (candidateName || "Candidate") : "Ishitha"}
+                                                        </span>
+                                                        {!isGroupFinal && (
+                                                            <span className="text-[10px] text-zinc-600 animate-pulse">•••</span>
+                                                        )}
+                                                    </div>
+                                                    <StreamingText
+                                                        text={combinedText}
+                                                        className={cn(
+                                                            "text-[15px] font-medium tracking-tight leading-relaxed text-zinc-200"
+                                                        )}
+                                                    />
                                                 </div>
-                                                <StreamingText
-                                                    text={combinedText}
-                                                    className={cn(
-                                                        "text-[15px] font-medium tracking-tight leading-relaxed text-zinc-200"
-                                                    )}
-                                                />
                                             </div>
-                                        </div>
-                                    </motion.div>
-                                );
-                            })}
-                        </AnimatePresence>
+                                        </motion.div>
+                                    );
+                                })}
+                            </AnimatePresence>
+                        </div>
                     </div>
-                </div>
                 )}
             </div>
 
@@ -2362,9 +2547,9 @@ function InterviewRoomContent({
                 </div>
 
                 {/* Middle: Transcript + End Interview Button */}
-                <div className="flex flex-col items-center gap-3 min-w-0">
+                <div className="flex flex-col items-center gap-3 ">
                     {/* Live transcript — left-to-right fade, full sentence visible */}
-                    <div className="w-full max-w-2xl overflow-hidden min-h-[3rem] flex items-start pt-1">
+                    <div className="hidden">
                         <AnimatePresence mode="wait">
                             {groupedTranscriptions.length > 0 && (() => {
                                 const latest = groupedTranscriptions[groupedTranscriptions.length - 1];
@@ -2417,6 +2602,48 @@ function InterviewRoomContent({
                 </div>
 
                 {/* Right: Interaction Status */}
+                <div className="absolute bottom-44 left-1/2 -translate-x-1/2 z-[70] w-full max-w-3xl px-6 pointer-events-none">
+                    <AnimatePresence mode="wait">
+                        {groupedTranscriptions.length > 0 && (() => {
+                            const latest = groupedTranscriptions[groupedTranscriptions.length - 1];
+                            const finalSegs = latest.segments.filter(s => s.isFinal);
+                            const nonFinalSegs = latest.segments.filter(s => !s.isFinal);
+                            const latestNonFinal = nonFinalSegs.length > 0 ? nonFinalSegs[nonFinalSegs.length - 1] : null;
+                            const displaySegs = latestNonFinal ? [...finalSegs, latestNonFinal] : finalSegs;
+                            const text = sanitizeTranscriptText(displaySegs.map(s => s.text).join(" "));
+                            const isFinal = latest.segments.every(s => s.isFinal);
+                            if (!text) return null;
+
+                            return (
+                                <motion.div
+                                    key={latest.id}
+                                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                                    transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
+                                    className="pointer-events-auto"
+                                >
+                                    <div className="bg-[#27272a]/90 backdrop-blur-xl border border-white/5 px-8 py-5 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center justify-between gap-6 group">
+                                        <div className="flex items-center gap-4 min-w-0">
+                                            <div className={cn(
+                                                "w-2 h-2 rounded-full shrink-0",
+                                                isFinal ? (latest.isCandidate ? "bg-orange-500" : "bg-indigo-500") : "bg-zinc-600 animate-pulse"
+                                            )} />
+                                            <p className="text-[15px] font-medium text-white leading-relaxed tracking-tight">
+                                                {text}
+                                                {!isFinal && <span className="inline-block ml-1 opacity-40">...</span>}
+                                            </p>
+                                        </div>
+                                        <div className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center shrink-0 border border-white/5 group-hover:bg-white/10 transition-colors">
+                                            <ChevronDown className="w-4 h-4 text-zinc-400" />
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            );
+                        })()}
+                    </AnimatePresence>
+                </div>
+
                 <div className="flex justify-end pr-4">
                     <div className="flex flex-col items-end">
                         <p className="text-[9px] font-black uppercase tracking-[0.3em] text-zinc-600 mb-1">Session Mode</p>
@@ -2661,4 +2888,3 @@ function CompletionView({ id, interviewToken }: { id: string; interviewToken: st
         </div>
     );
 }
-

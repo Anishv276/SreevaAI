@@ -12,7 +12,8 @@ import {
     Sparkles, 
     X,
     ShieldAlert,
-    Loader2
+    Loader2,
+    LifeBuoy
 } from "lucide-react";
 import { Toaster } from "@/components/ui/toast-custom";
 
@@ -92,8 +93,8 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
                 {/* Logo */}
                 <div className="p-8 border-b border-gray-50">
                     <div className="flex items-center gap-4 group cursor-pointer">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#F97316] to-orange-600 flex items-center justify-center shadow-[0_4px_15px_rgba(249,115,22,0.2)] group-hover:rotate-6 transition-transform">
-                            <Sparkles className="text-white h-5 w-5" />
+                        <div className="w-10 h-10 rounded-xl overflow-hidden shadow-[0_4px_15px_rgba(249,115,22,0.1)] transition-transform group-hover:scale-105">
+                            <img src="/Logo.png" alt="Sreeva AI" className="w-full h-full object-cover" />
                         </div>
                         <div>
                             <p className="text-gray-900 font-black text-lg tracking-tight leading-none">Sreeva AI</p>
@@ -104,9 +105,10 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 
                 {/* Nav */}
                 <nav className="flex-1 p-4 space-y-1 mt-4">
-                    {[
+                    {[ 
                         { href: "/super-admin", label: "Dashboard", icon: LayoutDashboard },
                         { href: "/super-admin/orgs", label: "Organizations", icon: Users },
+                        { href: "/super-admin/support", label: "Support Tickets", icon: LifeBuoy },
                         { href: "/super-admin/settings", label: "Settings", icon: Settings },
                     ].map((item) => {
                         const isActive = pathname === item.href;
@@ -129,19 +131,19 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
 
                 {/* User */}
                 <div className="p-4 border-t border-gray-50 bg-white">
-                    <div className="flex items-center gap-4 p-4 rounded-[1.5rem] bg-gray-50 border border-gray-100 mb-3 overflow-hidden shadow-sm">
-                        <div className="w-10 h-10 rounded-xl bg-gray-950 flex items-center justify-center text-white font-black text-sm flex-shrink-0 shadow-lg uppercase">
-                            {user?.name?.[0] || user?.email?.[0] || "V"}
+                    <div className="flex items-center gap-4 p-4 rounded-2xl bg-gray-50 border border-gray-100 mb-3 overflow-hidden shadow-sm">
+                        <div className="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center text-white font-black text-sm flex-shrink-0 shadow-lg uppercase">
+                            S
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-gray-950 text-[12px] font-black truncate uppercase tracking-tight">{user?.name || user?.email?.split("@")[0] || "Admin"}</p>
-                            <p className="text-gray-500 text-[10px] font-black truncate lowercase mt-1 tracking-widest leading-none">{user?.email}</p>
+                            <p className="text-gray-950 text-[11px] font-black truncate uppercase tracking-tight">Super Administrator</p>
+                            <p className="text-gray-500 text-[10px] font-bold truncate lowercase mt-1 tracking-wider leading-none">support@sreevaai.co</p>
                         </div>
                     </div>
                     
                     <button
                         onClick={() => setShowLogoutConfirm(true)}
-                        className="w-full h-14 flex items-center gap-3 px-6 rounded-2xl text-[11px] text-gray-900 hover:text-red-600 hover:bg-red-50 font-black uppercase tracking-[0.2em] transition-all group"
+                        className="w-full h-12 flex items-center gap-3 px-6 rounded-xl text-[11px] text-gray-900 hover:text-rose-600 hover:bg-rose-50 font-black uppercase tracking-[0.2em] transition-all group"
                     >
                         <LogOut className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
                         Sign Out

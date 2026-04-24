@@ -6,6 +6,7 @@ import { normalizeRole } from "@/lib/auth";
 import { hashInviteToken, normalizeOrgRole } from "@/lib/invite";
 import { generateId } from "@/lib/ids";
 import { validatePasswordStrength } from "@/lib/validation";
+import { isTeamLimitReached } from "@/lib/team-limits";
 
 type InviteRow = {
     id: string;
@@ -82,6 +83,31 @@ export async function POST(
             const existingUser = await tx.user.findUnique({ where: { email: invite.email } });
             if (existingUser?.orgId && existingUser.orgId !== invite.orgId) {
                 throw new Error("USER_OTHER_ORG");
+            }
+
+            const orgRows = await tx.$queryRawUnsafe<Array<{ maxTeamMembers: number | null }>>(
+                `
+                SELECT "maxTeamMembers"
+                FROM "Organization"
+                WHERE id = $1
+                LIMIT 1
+                FOR UPDATE
+                `,
+                invite.orgId
+            );
+            const org = orgRows?.[0];
+            if (!org) throw new Error("ORG_NOT_FOUND");
+
+            const currentTeamCount = await tx.user.count({
+                where: {
+                    orgId: invite.orgId,
+                    role: { not: "CANDIDATE" },
+                },
+            });
+
+            const isExistingOrgMember = existingUser?.orgId === invite.orgId && existingUser.role !== "CANDIDATE";
+            if (!isExistingOrgMember && isTeamLimitReached(org.maxTeamMembers, currentTeamCount)) {
+                throw new Error("TEAM_LIMIT_REACHED");
             }
 
             // -- Session role: use invite's orgRole, NOT a hardcoded "ADMIN" ----------
@@ -177,6 +203,13 @@ export async function POST(
 
         if (message === "USER_OTHER_ORG") {
             return NextResponse.json({ error: "This email already belongs to another organization" }, { status: 409 });
+        }
+
+        if (message === "TEAM_LIMIT_REACHED") {
+            return NextResponse.json({
+                error: "Team member limit reached. Please go to Billing and upgrade your plan.",
+                code: "TEAM_LIMIT_REACHED",
+            }, { status: 409 });
         }
 
         console.error("Accept invitation error:", error);

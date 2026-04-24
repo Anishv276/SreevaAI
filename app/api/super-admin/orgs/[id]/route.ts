@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { deleteOrgEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
+import { isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
+import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 
 // GET /api/super-admin/orgs/[id] - fetch org for editing
 export async function GET(
@@ -64,7 +66,8 @@ export async function PATCH(
         const { id } = await params;
         const body = await request.json();
         const {
-            name, plan, status, logoUrl, slug, location,
+            name, plan, status, logoUrl, slug, location, maxActiveDrives, maxTeamMembers,
+            proctoringSignals,
             adminName, adminEmail,
             ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice,
             sttProvider, deepgramModel, sarvamSttModel,
@@ -76,7 +79,7 @@ export async function PATCH(
             creditsTotal !== undefined ? parseFloat(creditsTotal) : undefined;
 
         // -- INPUT VALIDATION --------------------------------
-        if (plan && !["STARTER", "PROFESSIONAL", "ENTERPRISE", "TRIAL", "ENTERPRISE_CUSTOM"].includes(plan)) {
+        if (plan && !isOrgPlan(plan)) {
             return NextResponse.json({ error: "Invalid organization plan" }, { status: 400 });
         }
         if (status && !["ACTIVE", "SUSPENDED", "PENDING", "DEACTIVATED", "CLOSED"].includes(status)) {
@@ -91,7 +94,10 @@ export async function PATCH(
         // Build update - only write fields that were sent
         const updateData: any = {};
         if (name !== undefined) updateData.name = name;
-        if (plan !== undefined) updateData.plan = plan;
+        if (plan !== undefined) updateData.plan = normalizeOrgPlan(plan) || plan;
+        if (maxActiveDrives !== undefined) updateData.maxActiveDrives = Math.max(0, Number(maxActiveDrives) || 0);
+        if (maxTeamMembers !== undefined) updateData.maxTeamMembers = Math.max(0, Number(maxTeamMembers) || 0);
+        if (proctoringSignals !== undefined) updateData.proctoringSignals = normalizeProctoringSignals(proctoringSignals);
         if (status !== undefined) updateData.status = status;
         if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
         if (slug !== undefined) updateData.slug = slug;
