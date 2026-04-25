@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "@/components/ui/toast-custom";
+import { cn } from "@/lib/utils";
 
 type Step = "EMAIL" | "OTP" | "RESET" | "SUCCESS";
 
@@ -221,38 +222,52 @@ function ForgotPasswordContent() {
                                 onSubmit={handleVerifyOTP}
                                 className="space-y-6"
                             >
-                                <div className="space-y-4">
+                                <div className="space-y-8">
                                     <div className="flex flex-col items-center gap-2 text-center">
-                                        <p className="text-[11px] font-bold text-gray-900 leading-tight">
+                                        <p className="text-[12px] font-bold text-gray-900 leading-tight">
                                             A 6-digit security code was sent to <br />
-                                            <span className="text-[#F97316] underline underline-offset-4">{email}</span>
+                                            <span className="text-[#F97316] font-black">{email}</span>
                                         </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => setStep("EMAIL")}
+                                            className="mt-1 flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-50 text-[9px] font-black text-gray-400 uppercase tracking-widest hover:bg-orange-50 hover:text-[#F97316] transition-all border border-gray-100"
+                                        >
+                                            <ArrowLeft className="w-2.5 h-2.5" />
+                                            Change Email
+                                        </button>
                                     </div>
-                                    <div className="relative">
-                                        <input
-                                            autoFocus
-                                            type="text"
-                                            maxLength={6}
-                                            value={otp}
-                                            onChange={e => setOtp(e.target.value.replace(/[^0-9]/g, ""))}
-                                            placeholder="0 0 0 0 0 0"
-                                            className="w-full h-16 text-center text-2xl font-black tracking-[0.5em] bg-gray-50 border border-transparent rounded-2xl text-gray-900 placeholder-gray-200 outline-none focus:bg-white focus:border-gray-950 transition-all"
-                                        />
+
+                                    <div className="flex justify-between gap-2 px-2">
+                                        {[...Array(6)].map((_, i) => (
+                                            <div
+                                                key={i}
+                                                className={cn(
+                                                    "w-12 h-14 rounded-xl border-2 flex items-center justify-center text-xl font-black transition-all",
+                                                    otp[i] ? "border-[#F97316] bg-white text-[#F97316] shadow-[0_8px_20px_rgba(249,115,22,0.15)]" : "border-gray-100 bg-gray-50 text-gray-200"
+                                                )}
+                                            >
+                                                {otp[i] || "0"}
+                                            </div>
+                                        ))}
                                     </div>
+
+                                    <input
+                                        autoFocus
+                                        type="text"
+                                        maxLength={6}
+                                        value={otp}
+                                        onChange={e => setOtp(e.target.value.replace(/[^0-9]/g, ""))}
+                                        className="absolute inset-0 opacity-0 cursor-default"
+                                    />
                                 </div>
+                                
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full h-12 rounded-xl bg-[#F97316] text-white font-black text-[11px] tracking-widest uppercase shadow-[0_5px_15px_rgba(249,115,22,0.2)] hover:shadow-orange-200 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+                                    className="w-full h-14 rounded-2xl bg-[#F97316] text-white font-black text-[12px] tracking-[0.2em] uppercase shadow-[0_20px_40px_rgba(249,115,22,0.2)] hover:shadow-orange-200 hover:-translate-y-0.5 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3"
                                 >
-                                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "VERIFY CODE"}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setStep("EMAIL")}
-                                    className="w-full text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-gray-900 transition-colors"
-                                >
-                                    Wrong email? Change
+                                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "VERIFY CODE"}
                                 </button>
                             </motion.form>
                         )}
@@ -340,8 +355,8 @@ function ForgotPasswordContent() {
 
                 <div className="text-center space-y-3">
                     <p className="text-gray-400 text-[8px] font-black uppercase tracking-[0.4em] leading-relaxed">
-                        Sreeva AI Cloud Identity & Access Mgmt <br />
-                        Secure Shell Environment v2.4
+                        Secured by Sreeva AI Network <br />
+                        Sreeva AI Cloud Identity & Access Mgmt
                     </p>
                     <div className="flex items-center justify-center gap-4 text-gray-300">
                         <ShieldCheck className="w-3 h-3" />

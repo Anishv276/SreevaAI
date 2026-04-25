@@ -7,12 +7,14 @@ import {
     Lock, Upload, Globe, Eye, EyeOff, Phone, Briefcase, Mail,
     CheckCircle2, ChevronRight, Loader2, Sparkles, Target, BarChart3, Users,
     AlertCircle, X, MapPin as MapPinIcon, ChevronLeft,
-    Trash2, ImageIcon
+    Trash2, ImageIcon, LogOut
 } from "lucide-react"; 
+import { motion, AnimatePresence } from "framer-motion";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { PhoneInput } from "@/components/application/phone-input";
 import { cn } from "@/lib/utils";
 import { validatePasswordStrength } from "@/lib/validation";
+import { toast } from "@/components/ui/toast-custom";
 
 const STEPS = ["Profile", "Company", "Proceed"];
 
@@ -47,6 +49,7 @@ export default function OnboardingPage() {
     const [googleStatus, setGoogleStatus] = useState<{ isConnected: boolean; email: string | null }>({ isConnected: false, email: null });
     const [googleMessage, setGoogleMessage] = useState<string | null>(null);
     const [googleLoading, setGoogleLoading] = useState(false);
+    const [showWelcomeCard, setShowWelcomeCard] = useState(false);
 
     useEffect(() => {
         if (hasLoaded.current) return;
@@ -98,9 +101,12 @@ export default function OnboardingPage() {
                     try {
                         const parsed = JSON.parse(draft);
                         if (parsed && typeof parsed === 'object') {
-                            const { company: draftCo, profile: draftProfile } = parsed;
+                            const { company: draftCo, profile: draftProfile, step: draftStep } = parsed;
                             if (draftCo) setCompany(prev => ({ ...prev, ...draftCo }));
                             if (draftProfile) setProfile(prev => ({ ...prev, ...draftProfile }));
+                            if (typeof draftStep === 'number' && draftStep >= 0 && draftStep < STEPS.length) {
+                                setCurrentStep(draftStep);
+                            }
                         }
                     } catch (e) {
                         console.warn("Failed to parse onboarding draft:", e);
@@ -122,13 +128,14 @@ export default function OnboardingPage() {
         const googleError = params.get("google_error");
 
         if (googleSuccess) {
-            setGoogleMessage("Google connected successfully. Emails will now send from that inbox.");
+            toast.success("Google connected successfully. Emails will now send from that inbox.");
             params.delete("google_success");
             window.history.replaceState({}, "", `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`);
         }
 
         if (googleError) {
-            setError(googleError === "missing_params" ? "Google connection was not completed." : `Google connection failed: ${googleError}`);
+            const msg = googleError === "missing_params" ? "Google connection was not completed." : `Google connection failed: ${googleError}`;
+            toast.error(msg);
             params.delete("google_error");
             window.history.replaceState({}, "", `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`);
         }
@@ -139,11 +146,11 @@ export default function OnboardingPage() {
         if (isLoading) return;
         
         const timer = setTimeout(() => {
-            localStorage.setItem("onboarding_draft", JSON.stringify({ company, profile }));
+            localStorage.setItem("onboarding_draft", JSON.stringify({ company, profile, step: currentStep }));
         }, 1000);
 
         return () => clearTimeout(timer);
-    }, [company, profile, isLoading]);
+    }, [company, profile, currentStep, isLoading]);
 
     const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -163,8 +170,9 @@ export default function OnboardingPage() {
                 await fetch("/api/upload/logo", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: oldLogoUrl }) });
             }
             setCompany(prev => ({ ...prev, logoUrl: url }));
+            toast.success("Branding asset uploaded.");
         } catch (err: any) {
-            setError(err.message);
+            toast.error(err.message);
         } finally {
             setIsUploading(false);
         }
@@ -189,7 +197,7 @@ export default function OnboardingPage() {
             // STEP 0: Profile
             if (currentStep === 0) {
                 if (!profile.name || !profile.jobTitle) { 
-                    setError("Full name and job title are required."); 
+                    toast.error("Full name and job title are required."); 
                     setIsSaving(false); 
                     return; 
                 }
@@ -211,12 +219,12 @@ export default function OnboardingPage() {
             if (currentStep === 1) {
                 const urlRegex = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,63})([/\w .-]*)*\/?$/;
                 if (!company.name || !company.website || !company.industry || !company.size || !company.location) {
-                    setError("All company fields are required."); 
+                    toast.error("All company fields are required."); 
                     setIsSaving(false); 
                     return;
                 }
                 if (!urlRegex.test(company.website)) { 
-                    setError("Website must be a valid URL (e.g., company.com)."); 
+                    toast.error("Website must be a valid URL (e.g., company.com)."); 
                     setIsSaving(false); 
                     return; 
                 }
@@ -226,7 +234,7 @@ export default function OnboardingPage() {
             // STEP 2: Proceed (final activation)
             if (currentStep === STEPS.length - 1) {
                 if (!googleStatus.isConnected) {
-                    setError("Connect Gmail in step 3 before proceeding.");
+                    toast.error("Connect Gmail in step 3 before proceeding.");
                     setIsSaving(false);
                     return;
                 }
@@ -244,14 +252,14 @@ export default function OnboardingPage() {
                 });
                 if (!res.ok) { 
                     const d = await res.json(); 
-                    setError(d.error || "Workspace activation failed."); 
+                    toast.error(d.error || "Workspace activation failed."); 
                     setIsSaving(false); 
                     return; 
                 }
                 localStorage.removeItem("onboarding_draft");
                 
-                // FORCE FULL RELOAD to ensure sidebar and session are updated
-                window.location.href = "/admin/welcome";
+                // Show the SaaS-style Welcome Card instead of redirecting immediately
+                setShowWelcomeCard(true);
                 return;
             }
             setCurrentStep(prev => prev + 1);
@@ -263,24 +271,28 @@ export default function OnboardingPage() {
     };
 
     if (isLoading) return (
-        <div className="h-screen flex flex-col items-center justify-center gap-4 bg-white">
+        <div className="h-screen flex flex-col items-center justify-center gap-4 bg-white font-sans">
             <Loader2 className="h-10 w-10 animate-spin text-[#F97316]" />
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-400 italic">Syncing Workspace Identity</p>
+            <div className="text-center space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 font-sans">Syncing Workspace Identity</p>
+                <p className="text-[9px] font-medium text-gray-300 font-sans">Sreeva AI Cloud Identity & Access Mgmt</p>
+                <p className="text-[9px] font-bold text-gray-400 font-sans mt-2">Secured by Sreeva AI Network</p>
+            </div>
         </div>
     );
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-white py-12 px-6">
-            <div className="w-full max-w-4xl mx-auto">
+        <div className="h-screen w-screen flex items-center justify-center bg-white overflow-hidden p-6 font-sans">
+            <div className="w-full max-w-3xl mx-auto animate-in-fade zoom-in-[0.98] duration-700">
                 {/* Header */}
-                <div className="mb-12">
-                    <div className="flex items-center gap-6 mb-10">
-                        <div className="h-14 w-14 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#F97316] shadow-sm">
-                            <Rocket className="h-8 w-8" />
+                <div className="mb-8">
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className="h-12 w-12 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#F97316] shadow-sm">
+                            <Rocket className="h-6 w-6" />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-bold text-gray-900 tracking-tight leading-none">Workspace Onboarding</h1>
-                            <p className="text-gray-500 font-medium text-sm mt-2">Set up your organization in a few simple steps.</p>
+                            <h1 className="text-2xl font-bold text-gray-900 tracking-tight leading-none">Workspace Onboarding</h1>
+                            <p className="text-gray-400 font-medium text-[13px] mt-1.5">Set up your organization in a few simple steps.</p>
                         </div>
                     </div>
                 </div>
@@ -320,8 +332,8 @@ export default function OnboardingPage() {
                 </div>
 
                 {/* Step Card */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_4px_24px_rgba(0,0,0,0.06),0_1px_4px_rgba(0,0,0,0.04)] border-t-[4px] border-t-[#F97316]">
-                    <div className="p-8">
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_20px_50px_rgba(0,0,0,0.04)] border-t-[4px] border-t-[#F97316]">
+                    <div className="p-6 md:p-8">
 
                         {/* --- STEP 0: PROFILE & SECURITY --- */}
                         {currentStep === 0 && (
@@ -525,141 +537,112 @@ export default function OnboardingPage() {
                             </div>
                         )}
 
-                        {/* --- STEP 2: HIRING GOALS --- */}
-                        {/* REMOVED STEP 2 (Hiring Goals) */}
-
-
-
                         {/* --- STEP 2: PROCEED / READY --- */}
                         {currentStep === 2 && (
-                            <div className="py-8 space-y-12 animate-in-fade-slide">
-                                <div className="text-center space-y-4">
-                                    <div className="relative inline-block">
-                                        <div className="absolute inset-0 bg-orange-400 blur-2xl opacity-20 animate-pulse" />
-                                        <div className="h-20 w-20 bg-white border border-orange-100 rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl relative z-10 text-[#F97316]">
-                                            <Sparkles className="h-10 w-10 animate-bounce" />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <h2 className="text-4xl font-black text-gray-900 uppercase italic tracking-tighter leading-none">All Set!</h2>
-                                        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-3">Your workspace is configured and ready to go.</p>
-                                    </div>
+                            <div className="animate-in-fade-slide font-sans space-y-12">
+                                <div className="space-y-3">
+                                    <h2 className="text-3xl font-bold text-gray-900 tracking-tight">Final Step: Workspace Activation</h2>
+                                    <p className="text-[14px] text-gray-400 font-medium leading-relaxed max-w-xl">
+                                        Connect your official Google account to activate automated interview scheduling and workspace synchronization.
+                                    </p>
                                 </div>
 
-                                <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-                                    <div className="flex items-center justify-between gap-4 px-6 py-5 border-b border-gray-100">
-                                        <div className="flex items-center gap-4">
-                                            <div className={cn(
-                                                "h-11 w-11 rounded-xl flex items-center justify-center border",
-                                                googleStatus.isConnected ? "bg-emerald-50 border-emerald-100" : "bg-gray-50 border-gray-100"
-                                            )}>
-                                                <Mail className={cn("h-5 w-5", googleStatus.isConnected ? "text-emerald-600" : "text-gray-400")} />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-[16px] font-bold text-gray-900">Connect Gmail</h3>
-                                                <p className="text-[13px] text-gray-400 font-medium mt-0.5">
-                                                    {googleStatus.isConnected
-                                                        ? `Connected - ${googleStatus.email}`
-                                                        : "Connect the inbox this workspace should use for outgoing emails"}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className={cn(
-                                            "h-9 w-9 rounded-xl flex items-center justify-center border transition-all",
-                                            googleStatus.isConnected ? "bg-emerald-50 border-emerald-100 text-emerald-600" : "bg-white border-gray-200 text-gray-400"
-                                        )}>
-                                            <CheckCircle2 className="h-4 w-4" />
-                                        </div>
-                                    </div>
-
-                                    <div className="px-6 py-6">
-                                        {googleMessage && (
-                                            <div className="mb-4 p-4 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 text-[12px] font-medium">
-                                                {googleMessage}
-                                            </div>
-                                        )}
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                                            <div className="p-4 rounded-xl bg-blue-50/40 border border-blue-100/60">
-                                                <div className="flex items-center gap-2 mb-2">
-                                                    <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center">
-                                                        <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                                                    </div>
-                                                    <h5 className="text-[13px] font-bold text-blue-900">Workspace sender</h5>
-                                                </div>
-                                                <p className="text-[12px] text-blue-800/70 leading-relaxed">This Google inbox will be used for onboarding, invites, and application emails.</p>
-                                            </div>
-                                            <div className="p-4 rounded-xl bg-orange-50/40 border border-orange-100/60">
-                                                <div className="flex items-center gap-2 mb-2">
-                                                    <div className="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center">
-                                                        <Sparkles className="w-3.5 h-3.5 text-orange-600" />
-                                                    </div>
-                                                    <h5 className="text-[13px] font-bold text-orange-900">Automatic setup</h5>
-                                                </div>
-                                                <p className="text-[12px] text-orange-800/70 leading-relaxed">Once connected, the workspace starts using that email automatically for sending.</p>
-                                            </div>
+                                {/* Integration Row (SaaS Style) */}
+                                <div className="relative">
+                                    <div className="bg-gray-50/30 rounded-2xl border border-gray-100 p-6 flex flex-col md:flex-row items-center gap-6 transition-all hover:bg-white hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                                        <div className="h-12 w-12 rounded-xl bg-white border border-gray-100 shadow-sm flex items-center justify-center shrink-0">
+                                            <svg className="h-6 w-6" viewBox="0 0 24 24">
+                                                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                                                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                                                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                                                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                                            </svg>
                                         </div>
 
-                                        <div className="flex items-center gap-3 flex-wrap">
+                                        <div className="flex-1 text-center md:text-left">
+                                            <div className="flex items-center justify-center md:justify-start gap-2 mb-1">
+                                                <h3 className="text-[15px] font-bold text-gray-900 font-sans tracking-tight">Syncing Workspace Identity</h3>
+                                                <span className="px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 text-[9px] font-black uppercase tracking-wider border border-orange-100/50">Required</span>
+                                            </div>
+                                            <p className="text-[12px] text-gray-400 font-medium">This Google inbox will be used for onboarding, invites, and application emails.</p>
+                                        </div>
+
+                                        <div className="shrink-0">
                                             {!googleStatus.isConnected ? (
                                                 <button
                                                     type="button"
                                                     onClick={() => { setGoogleLoading(true); window.location.href = "/api/admin/integrations/google/authorize?next=/admin/setup"; }}
                                                     disabled={googleLoading}
-                                                    className="h-11 px-6 rounded-xl bg-gray-900 text-white font-bold text-[13px] shadow-md hover:bg-black disabled:opacity-50 flex items-center gap-2"
+                                                    className="h-11 px-6 rounded-xl bg-white border border-gray-200 text-gray-700 font-bold text-[13px] hover:border-gray-900 hover:bg-gray-50 disabled:opacity-50 flex items-center justify-center gap-3 transition-all active:scale-[0.98] shadow-sm"
                                                 >
-                                                    {googleLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                                                    Connect Gmail
+                                                    {googleLoading ? <Loader2 className="h-4 w-4 animate-spin text-gray-400" /> : <ShieldCheck className="h-4 w-4 text-emerald-500" />}
+                                                    Connect Google
                                                 </button>
                                             ) : (
-                                                <div className="h-11 px-4 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center gap-2 text-emerald-700 font-bold text-[12px]">
-                                                    <CheckCircle2 className="h-4 w-4" />
-                                                    Gmail connected
+                                                <div className="h-11 px-5 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center gap-3 text-emerald-700 font-bold text-[13px]">
+                                                    <div className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
+                                                    {googleStatus.email?.split('@')[0]}...
                                                 </div>
                                             )}
-
-                                            <p className="text-[11px] text-gray-400 font-medium">
-                                                Google connection is required before you can proceed to the dashboard.
-                                            </p>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="max-w-md mx-auto space-y-4">
-                                    <p className="text-center text-[11px] text-gray-400 font-medium leading-relaxed">
-                                        Click <strong className="text-gray-700">Proceed to Dashboard</strong> to start creating job drives and hiring with AI.
-                                    </p>
-                                    <div className="flex items-center gap-3 p-3 bg-orange-50/50 border border-orange-100 rounded-xl">
-                                        <Globe className="h-4 w-4 text-[#F97316] shrink-0" />
-                                        <p className="text-[9px] text-orange-800 font-semibold uppercase tracking-wider leading-relaxed">
-                                            Note: Recruitment emails will be sent from the Google account you connect in this step.
-                                        </p>
+                                <div className="p-5 rounded-2xl bg-orange-50/30 border border-orange-100/50 flex items-center gap-4">
+                                    <div className="h-9 w-9 rounded-xl bg-white border border-orange-100 flex items-center justify-center shrink-0">
+                                        <Sparkles className="h-4 w-4 text-orange-500" />
                                     </div>
+                                    <p className="text-[12px] text-orange-900/60 font-medium leading-relaxed">
+                                        Almost there! Once connected, you can activate your workspace and start your first recruitment drive.
+                                    </p>
                                 </div>
                             </div>
                         )}
 
-                    </div>
+                        </div>
 
-                    {/* Navigation Footer */}
-                    <div className="bg-gray-50/70 px-8 py-5 flex justify-between items-center border-t border-gray-100 rounded-b-2xl">
-                        <button
-                            disabled={currentStep === 0 || isSaving}
-                            onClick={() => setCurrentStep(prev => prev - 1)}
-                            className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-gray-400 hover:text-[#F97316] disabled:opacity-0 transition-all"
-                        >
-                            <ChevronLeft className="h-3 w-3" /> Back
-                        </button>
-                        <button
-                            onClick={handleNext}
-                            disabled={isSaving || isUploading}
-                            className={cn("flex items-center gap-2 px-10 h-11 rounded-xl font-bold text-[13px] transition-all hover:-translate-y-0.5 active:scale-95 disabled:opacity-50 shadow-lg", "bg-gray-900 text-white hover:bg-black")}
-                        >
-                            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : (currentStep === STEPS.length - 1 ? "Proceed to Dashboard" : "Continue")}
-                            {!isSaving && <ChevronRight className="h-3.5 w-3.5" />}
-                        </button>
+                        {/* Navigation Footer */}
+                        <div className="bg-gray-50/70 px-8 py-5 flex justify-between items-center border-t border-gray-100 rounded-b-2xl">
+                            {currentStep === 0 ? (
+                                <button
+                                    onClick={() => window.location.href = "/login"}
+                                    className="group flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-gray-400 hover:text-gray-900 transition-all"
+                                >
+                                    <LogOut className="h-3 w-3 transition-transform group-hover:-translate-x-1" /> Back to Login
+                                </button>
+                            ) : (
+                                <button
+                                    disabled={isSaving}
+                                    onClick={() => setCurrentStep(prev => prev - 1)}
+                                    className="group flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-gray-400 hover:text-gray-900 transition-all"
+                                >
+                                    <ChevronLeft className="h-3 w-3 transition-transform group-hover:-translate-x-1" /> Back
+                                </button>
+                            )}
+                            
+                            {(() => {
+                                const isProfileComplete = !!(profile.name && profile.jobTitle);
+                                const isCompanyComplete = !!(company.name && company.website && company.industry && company.size && company.location);
+                                const canContinue = currentStep === 0 ? isProfileComplete : currentStep === 1 ? isCompanyComplete : true;
+
+                                return (
+                                    <button
+                                        onClick={handleNext}
+                                        disabled={isSaving || isUploading || !canContinue}
+                                        className={cn(
+                                            "flex items-center gap-2 px-10 h-11 rounded-xl font-bold text-[13px] transition-all shadow-lg", 
+                                            canContinue 
+                                                ? "bg-gray-900 text-white hover:bg-black hover:-translate-y-0.5 active:scale-95" 
+                                                : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
+                                        )}
+                                    >
+                                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : (currentStep === STEPS.length - 1 ? "Proceed to Dashboard" : "Continue")}
+                                        {!isSaving && <ChevronRight className="h-3.5 w-3.5" />}
+                                    </button>
+                                );
+                            })()}
+                        </div>
                     </div>
-                </div>
 
                 {/* LOGO PREVIEW MODAL */}
                 {showLogoPreview && company.logoUrl && (
@@ -676,6 +659,49 @@ export default function OnboardingPage() {
                         </div>
                     </div>
                 )}
+
+                {/* FINAL WELCOME CARD (SaaS Popup) */}
+                <AnimatePresence>
+                    {showWelcomeCard && (
+                        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-gray-950/20 backdrop-blur-md">
+                            <motion.div 
+                                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                className="w-full max-w-md bg-white rounded-3xl border border-gray-100 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.14)] overflow-hidden font-sans"
+                            >
+                                <div className="p-10 text-center space-y-6">
+                                    <div className="h-20 w-20 rounded-2xl bg-orange-50 flex items-center justify-center mx-auto text-orange-500 ring-1 ring-orange-100 shadow-sm">
+                                        <Sparkles className="h-10 w-10" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h2 className="text-3xl font-bold text-gray-900 tracking-tight leading-none">Welcome to Sreeva AI</h2>
+                                        <p className="text-[14px] text-gray-500 font-medium leading-relaxed">
+                                            Your workspace has been successfully activated. You're ready to start your first AI-powered recruitment drive.
+                                        </p>
+                                    </div>
+                                    <div className="pt-4">
+                                        <button
+                                            onClick={() => window.location.href = "/admin"}
+                                            className="w-full h-12 bg-gray-900 hover:bg-black text-white rounded-2xl font-bold text-sm transition-all shadow-xl shadow-gray-200 active:scale-95 flex items-center justify-center gap-2"
+                                        >
+                                            Let's Go
+                                            <ChevronRight className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="bg-gray-50/50 border-t border-gray-100 py-4 text-center">
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-sans">Secured by Sreeva AI Network</p>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
+
+                {/* Page Security Footer */}
+                <div className="mt-8 text-center space-y-1 opacity-50">
+                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest font-sans">Secured by Sreeva AI Network</p>
+                    <p className="text-[8px] font-medium text-gray-300 font-sans">Sreeva AI Cloud Identity & Access Mgmt</p>
+                </div>
             </div>
         </div>
     );

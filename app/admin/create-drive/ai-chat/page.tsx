@@ -3,18 +3,20 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { escapeHtml, nl2br } from "@/lib/sanitize";
-import { 
-    Sparkles, Send, Bot, User, 
-    ArrowLeft, CheckCircle2, Loader2, 
-    Zap, Rocket, MessageSquare, 
+import {
+    Sparkles, Send, Bot, User,
+    ArrowLeft, CheckCircle2, Loader2,
+    Zap, Rocket, MessageSquare,
     RefreshCcw, FileText, Check,
-    Plus, ExternalLink, ChevronRight, ChevronLeft, X
+    Plus, ExternalLink, ChevronRight, ChevronLeft, X,
+    BrainCircuit, Terminal
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "@/components/ui/toast-custom";
 
 type Message = {
     id: string;
@@ -22,7 +24,48 @@ type Message = {
     content: string;
     data?: any;
     status?: "thinking" | "done" | "error";
+    thinkingState?: string;
+    options?: string[];
 };
+
+const GUIDED_STEPS = [
+    {
+        question: "Which department are we hiring for?",
+        options: ["Engineering", "Product", "Sales", "Marketing", "Design", "HR", "Finance", "Operations"],
+        key: "department"
+    },
+    {
+        question: "What's the employment type?",
+        options: ["Full-time", "Part-time", "Contract", "Internship"],
+        key: "employmentType"
+    },
+    {
+        question: "What's the required experience level?",
+        options: ["Entry-level", "Mid-level", "Senior", "Lead / Manager"],
+        key: "experience"
+    },
+    {
+        question: "What's the preferred work mode?",
+        options: ["Remote", "Hybrid", "On-site"],
+        key: "workMode"
+    }
+];
+
+const THINKING_STATES = [
+    "Understanding role...",
+    "Extracting requirements...",
+    "Optimizing for reach...",
+    "Analyzing market benchmarks...",
+    "Synthesizing candidate profile...",
+    "Architecting neural synthesis..."
+];
+
+const SUGGESTED_ROLES = [
+    { text: "Senior React Developer", subtitle: "Frontend - 4+ years", icon: "⚛️" },
+    { text: "Backend Engineer", subtitle: "Node.js + PostgreSQL", icon: "⚡" },
+    { text: "Product Manager", subtitle: "B2B SaaS - Remote", icon: "📦" },
+    { text: "UX Architect", subtitle: "Design Systems - Figma", icon: "🎨" },
+];
 
 export default function AiChatJdPage() {
     const router = useRouter();
@@ -32,6 +75,8 @@ export default function AiChatJdPage() {
     const [isGenerating, setIsGenerating] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [generatedJd, setGeneratedJd] = useState<any>(null);
+    const [activeThinkingState, setActiveThinkingState] = useState(THINKING_STATES[0]);
+    const [guidedStepIndex, setGuidedStepIndex] = useState(-1);
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // Initial load from localStorage
@@ -44,14 +89,16 @@ export default function AiChatJdPage() {
                 console.error("Failed to parse chat history", e);
             }
         } else {
-            // Default first message if no history
+            // Default first message
             setMessages([
                 {
                     id: "1",
                     role: "assistant" as const,
-                    content: "Hey! Tell me about the role you're hiring for - the title, what kind of experience you're looking for, compensation range, and whether it's remote or in-office. The more context you give me upfront, the sharper the JD will be. I'll ask if anything's missing.",
+                    content: "Hey! Let's architect a high-impact Job Description. To start, which department are we hiring for?",
+                    options: GUIDED_STEPS[0].options
                 }
             ]);
+            setGuidedStepIndex(0);
         }
         setIsLoaded(true);
     }, []);
@@ -70,10 +117,31 @@ export default function AiChatJdPage() {
                 behavior: "smooth"
             });
         }
-    }, [messages]);
+    }, [messages, isGenerating]);
+
+    // Rotate thinking states when generating
+    useEffect(() => {
+        let interval: any;
+        if (isGenerating) {
+            let i = 0;
+            interval = setInterval(() => {
+                i = (i + 1) % THINKING_STATES.length;
+                setActiveThinkingState(THINKING_STATES[i]);
+            }, 1500);
+        }
+        return () => clearInterval(interval);
+    }, [isGenerating]);
 
     const clearChat = () => {
-        setMessages([]);
+        setMessages([
+            {
+                id: "1",
+                role: "assistant" as const,
+                content: "Hey! Let's architect a high-impact Job Description. To start, which department are we hiring for?",
+                options: GUIDED_STEPS[0].options
+            }
+        ]);
+        setGuidedStepIndex(0);
         localStorage.removeItem("ai_chat_history");
     };
 
@@ -83,22 +151,49 @@ export default function AiChatJdPage() {
 
         const userMsg: Message = { id: Date.now().toString(), role: "user", content: messageText };
         const updatedMessages = [...messages, userMsg];
-        setMessages(updatedMessages);
+
+        // Remove options from the previous assistant message once answered
+        setMessages(prev => prev.map(m => m.role === "assistant" ? { ...m, options: undefined } : m));
+        setMessages(prev => [...prev, userMsg]);
         setInput("");
+
+        // Check for guided flow
+        if (guidedStepIndex !== -1 && guidedStepIndex < GUIDED_STEPS.length - 1) {
+            const nextStepIndex = guidedStepIndex + 1;
+            setGuidedStepIndex(nextStepIndex);
+
+            // Add thinking state briefly for realism
+            setIsGenerating(true);
+            setTimeout(() => {
+                const nextStep = GUIDED_STEPS[nextStepIndex];
+                const assistantMsg: Message = {
+                    id: (Date.now() + 1).toString(),
+                    role: "assistant",
+                    content: nextStep.question,
+                    options: nextStep.options
+                };
+                setMessages(prev => [...prev, assistantMsg]);
+                setIsGenerating(false);
+            }, 600);
+            return;
+        }
+
+        // If guided flow is finished or not started, call the API
+        setGuidedStepIndex(-1);
         setIsGenerating(true);
 
         const thinkingMsgId = (Date.now() + 1).toString();
-        setMessages(prev => [...prev, { 
-            id: thinkingMsgId, 
-            role: "assistant", 
-            content: "", 
-            status: "thinking" 
+        setMessages(prev => [...prev, {
+            id: thinkingMsgId,
+            role: "assistant",
+            content: "",
+            status: "thinking"
         }]);
 
         try {
             const res = await fetch("/api/admin/create-drive/generate-jd", {
                 method: "POST",
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     prompt: messageText,
                     history: updatedMessages
                 }),
@@ -106,7 +201,7 @@ export default function AiChatJdPage() {
 
             if (res.ok) {
                 const data = await res.json();
-                
+
                 if (data.job_title === "INCOMPLETE_SPECIFICATIONS") {
                     setMessages(prev => [
                         ...prev.filter(m => m.status !== "thinking"),
@@ -122,9 +217,9 @@ export default function AiChatJdPage() {
 
                 setGeneratedJd(data);
 
-                setMessages(prev => prev.map(m => m.id === thinkingMsgId ? { 
-                    ...m, 
-                    content: "", 
+                setMessages(prev => prev.map(m => m.id === thinkingMsgId ? {
+                    ...m,
+                    content: "",
                     status: "done",
                     data: data
                 } : m));
@@ -133,10 +228,10 @@ export default function AiChatJdPage() {
                 throw new Error(errorData.message || "The neural engine encountered an unexpected interruption.");
             }
         } catch (err: any) {
-            setMessages(prev => prev.map(m => m.id === thinkingMsgId ? { 
-                ...m, 
-                content: `<strong>ERROR DURING SYNTHESIS:</strong> I was unable to complete your architecture. Reason: ${err.message}. Please try again or refine your prompt.`, 
-                status: "error" 
+            setMessages(prev => prev.map(m => m.id === thinkingMsgId ? {
+                ...m,
+                content: `<strong>ERROR DURING SYNTHESIS:</strong> I was unable to complete your architecture. Reason: ${err.message}. Please try again or refine your prompt.`,
+                status: "error"
             } : m));
         } finally {
             setIsGenerating(false);
@@ -144,18 +239,17 @@ export default function AiChatJdPage() {
     };
 
     const generateJdPdfBlob = async (jd: any): Promise<Blob> => {
-        // Create an invisible element for capture
         const element = document.createElement("div");
         element.style.padding = "40px";
-        element.style.width = "794px"; // A4 width in pixels at 96dpi
+        element.style.width = "794px";
         element.style.fontFamily = "Inter, sans-serif";
         element.style.background = "white";
         element.style.color = "#111827";
-        
+
         element.innerHTML = `
             <div style="border-bottom: 2px solid #F97316; padding-bottom: 20px; margin-bottom: 30px;">
                 <h1 style="font-size: 28px; font-weight: 900; margin: 0; letter-spacing: -0.025em;">${escapeHtml(jd.job_title)}</h1>
-                <p style="color: #6B7280; font-weight: 700; text-transform: uppercase; font-size: 10px; margin-top: 8px; letter-spacing: 0.1em;">${escapeHtml(jd.department)} • ${escapeHtml(jd.work_mode)}</p>
+                <p style="color: #6B7280; font-weight: 700; text-transform: uppercase; font-size: 10px; margin-top: 8px; letter-spacing: 0.1em;">${escapeHtml(jd.department)}  ${escapeHtml(jd.work_mode)}</p>
             </div>
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
@@ -196,20 +290,20 @@ export default function AiChatJdPage() {
             </div>
 
             <div style="margin-top: 50px; border-top: 1px solid #F3F4F6; padding-top: 20px; text-align: center;">
-                <p style="font-size: 10px; font-weight: 700; color: #D1D5DB; text-transform: uppercase; letter-spacing: 0.2em;">Created by Sreeva AI Neural Engine</p>
+                <p style="font-size: 10px; font-weight: 700; color: #D1D5DB; text-transform: uppercase; letter-spacing: 0.2em;">Created by Hirer AI Neural Engine</p>
             </div>
         `;
-        
+
         document.body.appendChild(element);
-        
+
         try {
             const canvas = await html2canvas(element, { scale: 2, useCORS: true });
             const imgData = canvas.toDataURL("image/png");
-            
+
             const pdf = new jsPDF("p", "mm", "a4");
             const imgWidth = 210;
             const imgHeight = (canvas.height * imgWidth) / canvas.width;
-            
+
             pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
             return pdf.output("blob");
         } finally {
@@ -219,19 +313,14 @@ export default function AiChatJdPage() {
 
     const handleUseJd = async (dataToUse: any) => {
         const jd = dataToUse || generatedJd;
-        if (!jd || isUploading) {
-            console.error("No JD data found for sync or already uploading");
-            return;
-        }
+        if (!jd || isUploading) return;
 
         setIsUploading(true);
 
         try {
-            // 1. Generate PDF Blob
             const pdfBlob = await generateJdPdfBlob(jd);
             const fileName = `Assistant_JD_${jd.job_title.replace(/\s+/g, '_')}_${Date.now()}.pdf`;
 
-            // 2. Upload to R2 via our new API
             const formData = new FormData();
             formData.append("file", pdfBlob, fileName);
             formData.append("fileName", fileName);
@@ -242,39 +331,36 @@ export default function AiChatJdPage() {
             });
 
             if (!uploadRes.ok) throw new Error("Cloudflare R2 sync failed");
-            
+
             const { url } = await uploadRes.json();
 
-            // 3. Format and save to localStorage
             const formattedData = {
-               title: jd.job_title,
-               role: jd.role_name || jd.job_title,
-               department: jd.department,
-               workMode: jd.work_mode,
-               employmentType: jd.employment_type || "Full-time",
-               location: jd.location || "",
-               description: jd.description,
-               salary: jd.salary,
-               experience: jd.experience,
-               jdFileName: fileName,
-               jdPreviewUrl: url,
-               skills: Array.isArray(jd.technical_skills) ? jd.technical_skills.join(", ") : (jd.technical_skills || ""),
-               responsibilities: Array.isArray(jd.responsibilities) ? jd.responsibilities.join("\n") : (jd.responsibilities || ""),
-               requirements: Array.isArray(jd.candidate_requirements) ? jd.candidate_requirements.join("\n") : (jd.candidate_requirements || ""),
-               extractedDetails: {
-                   ...jd,
-                   perks: Array.isArray(jd.perks) ? jd.perks : [],
-               },
+                title: jd.job_title,
+                role: jd.role_name || jd.job_title,
+                department: jd.department,
+                workMode: jd.work_mode,
+                employmentType: jd.employment_type || "Full-time",
+                location: jd.location || "",
+                description: jd.description,
+                salary: jd.salary,
+                experience: jd.experience,
+                jdFileName: fileName,
+                jdPreviewUrl: url,
+                skills: Array.isArray(jd.technical_skills) ? jd.technical_skills.join(", ") : (jd.technical_skills || ""),
+                responsibilities: Array.isArray(jd.responsibilities) ? jd.responsibilities.join("\n") : (jd.responsibilities || ""),
+                requirements: Array.isArray(jd.candidate_requirements) ? jd.candidate_requirements.join("\n") : (jd.candidate_requirements || ""),
+                extractedDetails: {
+                    ...jd,
+                    perks: Array.isArray(jd.perks) ? jd.perks : [],
+                },
             };
 
             localStorage.setItem("jd_draft", JSON.stringify(formattedData));
             router.push("/admin/create-drive?method=ai-chat");
         } catch (error) {
             console.error("Sync failed:", error);
-            // Fallback: save without R2 URL if upload fails (can be manually uploaded in the form)
             const formattedData = {
                 title: jd.job_title,
-                // ... same as above but without R2 url
                 role: jd.role_name || jd.job_title,
                 department: jd.department,
                 workMode: jd.work_mode,
@@ -310,419 +396,340 @@ export default function AiChatJdPage() {
     };
 
     return (
-        <div className="fixed inset-0 md:left-[220px] z-40 flex flex-col bg-white overflow-hidden border-l border-gray-100 font-sans animate-entry-flow">
-            {/* Header - Transparent Modern Glassmorphism (Only show during conversation) */}
+        <div className="fixed inset-0 md:left-[220px] z-40 flex flex-col bg-[#FAFAFA] overflow-hidden border-l border-[#EAEAEA] font-inter antialiased selection:bg-orange-100 selection:text-orange-900">
+            {/* Background Grain */}
+            <div className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-multiply"
+                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}
+            />
+
+            {/* Header - Glassmorphism */}
             <AnimatePresence>
                 {messages.length > 0 && (
-                    <motion.header 
+                    <motion.header
                         initial={{ opacity: 0, y: -20 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -20 }}
-                        className="shrink-0 px-8 py-5 bg-white/80 backdrop-blur-md border-b border-gray-100 z-30 relative shadow-sm"
+                        className="shrink-0 px-8 py-4 bg-white/70 backdrop-blur-xl border-b border-[#EAEAEA] z-30 sticky top-0"
                     >
-                        <div className="max-w-5xl mx-auto w-full flex items-center justify-between">
+                        <div className="max-w-4xl mx-auto w-full flex items-center justify-between">
                             <div className="flex items-center gap-4">
-                                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-[#F97316] to-orange-600 flex items-center justify-center text-white shadow-lg shadow-orange-500/20 transform hover:scale-105 transition-all">
-                                    <Bot className="h-6 w-6" />
+                                <div className="h-10 w-10 rounded-full overflow-hidden border-2 border-white shadow-sm ring-1 ring-[#EAEAEA]">
+                                    <img src="/avatars/ishitha.png" alt="Ishitha" className="h-full w-full object-cover" />
                                 </div>
-                                <div>
-                                    <h1 className="text-xl font-black text-gray-900 tracking-tight leading-none mb-1">
+                                <div className="flex flex-col">
+                                    <h1 className="text-lg font-bold text-gray-900 tracking-tight leading-none">
                                         Create Drive
                                     </h1>
-                                    <div className="flex items-center gap-2">
-                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                        <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest leading-none"> Neural Engine V2 </p>
-                                    </div>
+                                    <p className="text-[#888] font-medium text-[10px] uppercase tracking-widest mt-1">AI Assistant</p>
                                 </div>
                             </div>
 
                             <div className="flex items-center gap-4">
-                                <button 
-                                    onClick={clearChat}
-                                    className="group flex items-center gap-2 px-4 py-2 rounded-xl text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-all duration-300"
-                                >
-                                    <RefreshCcw className="h-4 w-4 transition-transform group-hover:rotate-180" />
-                                    <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">Reset</span>
-                                </button>
-                                <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    onClick={() => {
-                                        clearChat();
-                                        router.push("/admin/drives");
-                                    }}
-                                    className="h-10 w-10 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                                >
-                                    <X className="h-6 w-6" />
-                                </Button>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={clearChat}
+                                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-500 hover:text-orange-500 hover:bg-orange-50 transition-all font-bold text-xs"
+                                        title="Reset Chat"
+                                    >
+                                        <Plus className="h-4 w-4" />
+                                        <span>New Chat</span>
+                                    </button>
+                                </div>
+                                <div className="h-6 w-px bg-[#EAEAEA]" />
+                                <div className="h-8">
+                                    <img src="/Logo.png" alt="Company Logo" className="h-full object-contain opacity-80" />
+                                </div>
                             </div>
                         </div>
                     </motion.header>
                 )}
             </AnimatePresence>
 
-            {/* Chat Scroll Sanctuary */}
-            <main 
+            {/* Chat Area */}
+            <main
                 ref={scrollRef}
-                className="flex-1 overflow-y-auto px-6 pb-32 bg-[#FDFDFF] custom-scrollbar scroll-smooth"
+                className="flex-1 overflow-y-auto px-6 pb-40 pt-8 custom-scrollbar scroll-smooth relative z-10"
             >
-                <AnimatePresence>
-                {messages.length === 0 ? (
-                    <motion.div 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className="min-h-[85vh] flex flex-col items-center justify-center px-8 text-center max-w-5xl mx-auto relative"
-                    >
-                        <button
-                            onClick={() => router.push("/admin/create-drive")}
-                            className="absolute top-12 left-0 flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors"
-                        >
-                            <ChevronLeft className="h-4 w-4" /> Back to Methods
-                        </button>
-                        <motion.div 
-                            initial={{ opacity: 0, y: 30 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-                            className="w-full flex flex-col items-center"
-                        >
-                            <div className="mb-10 group">
-                                <div className="flex flex-col items-center gap-4">
-                                    <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-14" />
-                                    <h1 className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tighter leading-none mb-2">
-                                        Create your JD
-                                    </h1>
-                                    <p className="text-gray-400 font-bold text-[11px] uppercase tracking-[0.6em]">
-                                        Hirer AI Neural Synthesis Online
-                                    </p>
-                                </div>
-                            </div>
-                            
-                            <div className="w-full max-w-4xl group mt-6">
-                                <div className="relative bg-white rounded-[2rem] p-1.5 shadow-[0_30px_100px_rgba(0,0,0,0.04)] border border-gray-100 flex items-center transition-all duration-700 hover:shadow-[0_40px_120px_rgba(249,115,22,0.08)] focus-within:border-orange-200 focus-within:shadow-[0_40px_120px_rgba(249,115,22,0.12)]">
-                                    <div className="pl-6 text-orange-400">
-                                        <Sparkles className="h-5 w-5" />
-                                    </div>
-                                    <input 
-                                        className="flex-1 bg-transparent border-none outline-none ring-0 focus:ring-0 focus:outline-none px-5 h-14 text-[18px] font-bold text-gray-900 placeholder:text-gray-300"
-                                        placeholder="Brief your high-impact requirements..."
-                                        value={input}
-                                        onChange={e => setInput(e.target.value)}
-                                        onKeyPress={e => e.key === "Enter" && handleSend()}
-                                    />
-                                    <button 
-                                        disabled={!input.trim() || isGenerating}
-                                        onClick={() => handleSend()}
-                                        className="h-12 px-10 rounded-[1.25rem] text-white font-bold shadow-xl transition-all duration-300 flex items-center justify-center gap-3 overflow-hidden hover:scale-[1.02] active:scale-95 shrink-0"
-                                        style={{
-                                            background: "linear-gradient(135deg, #F97316, #ea6608)",
-                                        }}
-                                    >
-                                        <span className="text-[11px] font-black uppercase tracking-widest">Create Drive</span>
-                                        <Zap className="h-4 w-4" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Sequential Suggestions: Rect and Circle Layout */}
-                            <motion.div 
-                                initial="hidden"
-                                animate="visible"
-                                variants={{
-                                    hidden: { opacity: 0 },
-                                    visible: {
-                                        opacity: 1,
-                                        transition: { staggerChildren: 0.1, delayChildren: 0.5 }
-                                    }
-                                }}
-                                className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-4xl mt-20"
+                <div className="max-w-4xl mx-auto w-full">
+                    <AnimatePresence mode="wait">
+                        {messages.length === 0 ? (
+                            <motion.div
+                                key="empty-state"
+                                initial={{ opacity: 0, scale: 0.98 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.98 }}
+                                className="min-h-[75vh] flex flex-col items-center justify-center text-center"
                             >
-                                {[
-                                    { text: "Senior React Developer, 4yrs exp, 12-15 LPA INR", icon: "⚛️" },
-                                    { text: "Backend Engineer, Node.js + Postgre, 20 LPA INR", icon: "⚡" },
-                                    { text: "Product Manager, B2B SaaS, Hybrid", icon: "📦" },
-                                    { text: "UX Architect, Figma Pro, 5+ years", icon: "🎨" },
-                                ].map((s, idx) => (
-                                    <motion.button 
-                                        key={idx}
-                                        variants={{
-                                            hidden: { opacity: 0, y: 15 },
-                                            visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } }
-                                        }}
-                                        onClick={() => handleSend(s.text)}
-                                        className="group flex items-center gap-4 p-4 rounded-2xl bg-white border border-gray-50 shadow-sm hover:border-orange-200 hover:shadow-[0_15px_30px_rgba(249,115,22,0.06)] transition-all duration-500 text-left"
-                                    >
-                                        {/* Circle Layout */}
-                                        <div className="h-11 w-11 shrink-0 rounded-full bg-orange-50 border border-orange-100 flex items-center justify-center text-[20px] group-hover:scale-110 group-hover:rotate-6 transition-all duration-500 shadow-sm">
-                                            {s.icon}
-                                        </div>
-                                        {/* Rect Layout */}
-                                        <div className="flex-1">
-                                            <p className="text-[13px] font-bold text-gray-500 group-hover:text-gray-900 transition-colors leading-snug">
-                                                {s.text}
-                                            </p>
-                                        </div>
-                                        <ChevronRight className="h-4 w-4 text-gray-200 group-hover:text-orange-400 group-hover:translate-x-1 transition-all" />
-                                    </motion.button>
-                                ))}
-                            </motion.div>
-                        </motion.div>
-                    </motion.div>
-                ) : (
-                    <div className="max-w-4xl mx-auto w-full space-y-12">
-                        {messages.map((m) => (
-                        <div 
-                            key={m.id}
-                            className={cn(
-                                "flex gap-6 animate-in-fade group",
-                                m.role === "user" ? "flex-row-reverse" : "flex-row"
-                            )}
-                        >
-                            <div className={cn(
-                                "h-10 w-10 rounded-xl flex items-center justify-center shrink-0 border shadow-sm transition-all duration-500",
-                                m.role === "user" 
-                                    ? "bg-gray-900 border-gray-800 text-white text-xs font-black uppercase" 
-                                    : "bg-white border-orange-50 text-[#F97316] group-hover:border-orange-200"
-                            )}>
-                                {m.role === "user" ? "ME" : <Bot className="h-5 w-5" />}
-                            </div>
+                                <motion.div
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                                    className="w-full"
+                                >
+                                    <div className="mb-8">
+                                        <h1 className="text-3xl font-bold text-gray-900 tracking-tight mb-2">
+                                            Create your JD
+                                        </h1>
+                                        <p className="text-[#888] font-medium text-[12px] uppercase tracking-[0.3em]">
+                                            HIRER AI NEURAL SYNTHESIS ONLINE
+                                        </p>
+                                    </div>
 
-                            <div className={cn(
-                                "max-w-[85%] sm:max-w-[80%] flex flex-col",
-                                m.role === "user" ? "items-end" : "items-start"
-                            )}>
-                                {m.status === "thinking" ? (
-                                    <div className="bg-white border border-orange-100 p-6 rounded-3xl rounded-tl-none shadow-2xl flex flex-col gap-3 w-max">
-                                        <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest leading-none">Ishita is typing...</p>
-                                        <div className="flex gap-1.5 items-center">
-                                            <span className="h-2 w-2 bg-orange-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                                            <span className="h-2 w-2 bg-orange-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                                            <span className="h-2 w-2 bg-orange-400 rounded-full animate-bounce" />
+                                    <div className="relative w-full group mb-16">
+                                        <div className="relative bg-white rounded-[20px] p-2 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#EAEAEA] flex items-center transition-all duration-500 focus-within:shadow-[0_20px_50px_rgba(0,0,0,0.08)] focus-within:border-orange-200">
+                                            <div className="pl-5 text-orange-400">
+                                                <Sparkles className="h-5 w-5" />
+                                            </div>
+                                            <input
+                                                className="flex-1 bg-transparent border-none outline-none ring-0 focus:ring-0 px-4 h-14 text-[16px] font-medium text-gray-900 placeholder:text-[#BBB]"
+                                                placeholder="Job Title? Role? Or Just paste a JD link..."
+                                                value={input}
+                                                onChange={e => setInput(e.target.value)}
+                                                onKeyPress={e => e.key === "Enter" && handleSend()}
+                                            />
+                                            <button
+                                                disabled={!input.trim() || isGenerating}
+                                                onClick={() => handleSend()}
+                                                className="h-12 px-8 rounded-[14px] bg-gray-900 text-white font-bold text-sm transition-all hover:bg-black active:scale-95 disabled:opacity-50"
+                                            >
+                                                Create Drive
+                                            </button>
                                         </div>
                                     </div>
-                                ) : (
-                                    <div className="space-y-4 w-full">
-                                        {/* Regular text message */}
-                                        {m.content && (
-                                            <div 
-                                                className={cn(
-                                                    "p-7 rounded-[2.5rem] text-[15px] leading-relaxed transition-all duration-500",
-                                                    m.role === "user" 
-                                                        ? "bg-gray-900 text-white rounded-tr-none font-bold shadow-2xl" 
-                                                        : "bg-white text-gray-800 rounded-tl-none border border-gray-100 shadow-xl shadow-gray-200/20"
-                                                )}
-                                                dangerouslySetInnerHTML={{ __html: nl2br(m.content) }}
-                                            />
+
+                                    <div className="grid grid-cols-2 gap-4 text-left">
+                                        {SUGGESTED_ROLES.map((role, idx) => (
+                                            <motion.button
+                                                key={idx}
+                                                whileHover={{ y: -4, boxShadow: "0 10px 25px rgba(0,0,0,0.05)", borderColor: "#F97316" }}
+                                                onClick={() => handleSend(role.text)}
+                                                className="p-5 rounded-[20px] bg-white border border-[#EAEAEA] transition-all duration-200 group text-left"
+                                            >
+                                                <div className="h-10 w-10 rounded-full bg-orange-50 flex items-center justify-center text-xl mb-4 group-hover:scale-110 transition-transform">
+                                                    {role.icon}
+                                                </div>
+                                                <h3 className="font-bold text-gray-900 text-sm mb-1">{role.text}</h3>
+                                                <p className="text-[12px] text-[#888] font-medium">{role.subtitle}</p>
+                                            </motion.button>
+                                        ))}
+                                    </div>
+                                </motion.div>
+                            </motion.div>
+                        ) : (
+                            <div className="space-y-8 pb-10">
+                                {messages.map((m) => (
+                                    <motion.div
+                                        key={m.id}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className={cn(
+                                            "flex w-full",
+                                            m.role === "user" ? "justify-end" : "justify-start"
                                         )}
+                                    >
+                                        {m.role === "assistant" && (
+                                            <div className="w-full flex items-start gap-3">
+                                                <div className="h-8 w-8 rounded-full overflow-hidden border border-[#EAEAEA] shrink-0 mt-1">
+                                                    <img src="/avatars/ishitha.png" alt="AI" className="h-full w-full object-cover" />
+                                                </div>
+                                                <div className="flex-1 space-y-4">
+                                                    {m.content && (
+                                                        <div className="max-w-[90%] bg-white border border-[#EAEAEA] p-4 rounded-[18px] rounded-tl-none shadow-sm text-[13px] leading-relaxed text-gray-800 font-medium animate-in-fade">
+                                                            <div dangerouslySetInnerHTML={{ __html: nl2br(m.content).replace(/\*/g, '') }} />
 
-                                        {/* Premium JD Card */}
-                                        {m.data && m.data.job_title !== "INCOMPLETE_SPECIFICATIONS" && (
-                                            <div className="bg-white rounded-3xl border border-gray-100 shadow-2xl shadow-gray-200/30 overflow-hidden w-full animate-in-fade">
-                                                {/* Card Header */}
-                                                <div className="px-8 py-7 border-b border-gray-50" style={{ background: "linear-gradient(135deg, #fff7ed 0%, #fff 60%)" }}>
-                                                    <div className="flex items-start justify-between gap-4 flex-wrap">
-                                                        <div>
-                                                            <p className="text-[10px] font-black text-orange-400 uppercase tracking-[0.3em] mb-2">Architect Complete</p>
-                                                            <h3 className="text-2xl font-black text-gray-900 tracking-tight leading-none">{m.data.job_title}</h3>
-                                                            <p className="text-sm font-bold text-gray-400 mt-1">{m.data.role_name} · {m.data.department}</p>
+                                                            {m.options && m.options.length > 0 && (
+                                                                <div className="flex flex-wrap gap-2 mt-4">
+                                                                    {m.options.map((opt, i) => (
+                                                                        <button
+                                                                            key={i}
+                                                                            onClick={() => handleSend(opt)}
+                                                                            className="px-4 py-2 rounded-xl bg-orange-50 border border-orange-100 text-orange-600 text-sm font-bold transition-all hover:bg-orange-100 active:scale-95"
+                                                                        >
+                                                                            {opt}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                        <div className="flex flex-wrap gap-2 mt-1">
-                                                            <span className="px-4 py-2 rounded-full bg-orange-100 text-orange-700 text-[11px] font-black uppercase tracking-widest">{m.data.work_mode}</span>
-                                                            <span className="px-4 py-2 rounded-full bg-gray-100 text-gray-600 text-[11px] font-black uppercase tracking-widest">{m.data.employment_type}</span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex gap-6 mt-5">
-                                                        <div>
-                                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Experience</p>
-                                                            <p className="text-[15px] font-black text-gray-900 mt-0.5">{m.data.experience}</p>
-                                                        </div>
-                                                        <div className="w-px bg-gray-100" />
-                                                        <div>
-                                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Compensation</p>
-                                                            <p className="text-[15px] font-black text-gray-900 mt-0.5">{m.data.salary}</p>
-                                                        </div>
-                                                        {m.data.location && (<>
-                                                            <div className="w-px bg-gray-100" />
-                                                            <div>
-                                                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Location</p>
-                                                                <p className="text-[15px] font-black text-gray-900 mt-0.5">{m.data.location}</p>
+                                                    )}
+
+                                                    {m.status === "thinking" && (
+                                                        <div className="max-w-[90%] bg-white border border-orange-100 p-5 rounded-[18px] rounded-tl-none shadow-md flex flex-col gap-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <Loader2 className="h-3 w-3 animate-spin text-orange-500" />
+                                                                <p className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">Ishitha is {activeThinkingState.toLowerCase()}</p>
                                                             </div>
-                                                        </>)}
-                                                    </div>
-                                                </div>
-
-                                                {/* Executive Summary */}
-                                                <div className="px-8 py-6 border-b border-gray-50">
-                                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-3">Executive Summary</p>
-                                                    <p className="text-[14px] text-gray-600 leading-relaxed font-medium">{m.data.description}</p>
-                                                </div>
-
-                                                {/* Responsibilities */}
-                                                {m.data.responsibilities?.length > 0 && (
-                                                    <div className="px-8 py-6 border-b border-gray-50">
-                                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4">Key Responsibilities</p>
-                                                        <ul className="space-y-3">
-                                                            {m.data.responsibilities.map((r: string, i: number) => (
-                                                                <li key={i} className="flex gap-3 text-[13px] text-gray-700 font-medium leading-relaxed">
-                                                                    <span className="h-5 w-5 rounded-full bg-orange-50 border border-orange-100 text-orange-500 text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">{i+1}</span>
-                                                                    {r}
-                                                                </li>
-                                                            ))}
-                                                        </ul>
-                                                    </div>
-                                                )}
-
-                                                {/* Technical Skills */}
-                                                {m.data.technical_skills?.length > 0 && (
-                                                    <div className="px-8 py-6 border-b border-gray-50">
-                                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4">Required Skills</p>
-                                                        <div className="flex flex-wrap gap-2">
-                                                            {m.data.technical_skills.map((s: string, i: number) => (
-                                                                <span key={i} className="px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-100 text-[12px] font-bold text-gray-600">{s}</span>
-                                                            ))}
+                                                            <div className="flex gap-1">
+                                                                <span className="h-1.5 w-1.5 bg-orange-200 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                                                                <span className="h-1.5 w-1.5 bg-orange-200 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                                                                <span className="h-1.5 w-1.5 bg-orange-200 rounded-full animate-bounce" />
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                )}
+                                                    )}
 
-                                                {/* Candidate Requirements */}
-                                                {m.data.candidate_requirements?.length > 0 && (
-                                                    <div className="px-8 py-6 border-b border-gray-50">
-                                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4">Candidate Profile</p>
-                                                        <ul className="space-y-2.5">
-                                                            {m.data.candidate_requirements.map((req: string, i: number) => (
-                                                                <li key={i} className="flex gap-3 text-[13px] text-gray-700 font-medium leading-relaxed">
-                                                                    <span className="text-orange-400 font-black mt-0.5">•</span>
-                                                                    {req}
-                                                                </li>
-                                                            ))}
-                                                        </ul>
-                                                    </div>
-                                                )}
+                                                    {m.data && m.data.job_title !== "INCOMPLETE_SPECIFICATIONS" && (
+                                                        <motion.div
+                                                            initial={{ opacity: 0, y: 20 }}
+                                                            animate={{ opacity: 1, y: 0 }}
+                                                            className="w-full bg-white rounded-[24px] border border-[#EAEAEA] shadow-[0_10px_40px_rgba(0,0,0,0.03)] overflow-hidden"
+                                                        >
+                                                            {/* Premium JD Card Header */}
+                                                            <div className="p-5 border-b border-[#F9F9F9] bg-gradient-to-br from-white to-[#FAFAFA]">
+                                                                <div className="flex justify-between items-start mb-3">
+                                                                    <div>
+                                                                        <div className="flex items-center gap-2 mb-1.5">
+                                                                            <span className="px-2 py-0.5 bg-orange-50 text-orange-600 text-[8px] font-bold uppercase tracking-widest rounded-md">Architected JD</span>
+                                                                            <span className="h-1 w-1 rounded-full bg-gray-300" />
+                                                                            <span className="text-[9px] text-gray-400 font-medium">{m.data.department}</span>
+                                                                        </div>
+                                                                        <h3 className="text-xl font-bold text-gray-900 tracking-tight">{m.data.job_title}</h3>
+                                                                    </div>
+                                                                    <div className="flex gap-2">
+                                                                        <span className="px-3 py-1.5 bg-gray-50 border border-[#EEE] rounded-full text-[11px] font-bold text-gray-600">{m.data.work_mode}</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="grid grid-cols-2 gap-6">
+                                                                    <div>
+                                                                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">Experience</p>
+                                                                        <p className="text-[13px] font-bold text-gray-900">{m.data.experience}</p>
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1">Compensation</p>
+                                                                        <p className="text-[13px] font-bold text-gray-900">{m.data.salary}</p>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
 
-                                                {/* Perks */}
-                                                {m.data.perks?.length > 0 && (
-                                                    <div className="px-8 py-6 border-b border-gray-50">
-                                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-4">Perks & Benefits</p>
-                                                        <div className="flex flex-wrap gap-2">
-                                                            {m.data.perks.map((p: string, i: number) => (
-                                                                <span key={i} className="px-4 py-2 rounded-full bg-emerald-50 border border-emerald-100 text-[11px] font-bold text-emerald-700">{p}</span>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
+                                                            {/* JD Content Sections */}
+                                                            <div className="p-5 space-y-5">
+                                                                <div>
+                                                                    <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">The Mission</p>
+                                                                    <p className="text-[12px] text-gray-600 leading-relaxed font-medium">{m.data.description}</p>
+                                                                </div>
 
-                                                {/* Footer CTA */}
-                                                <div className="px-8 py-5 bg-gray-50/50 flex flex-wrap gap-3">
-                                                    <button 
-                                                        disabled={isUploading}
-                                                        onClick={() => handleUseJd(m.data)}
-                                                        className={cn(
-                                                            "h-11 px-8 rounded-xl text-white font-bold text-[10px] uppercase tracking-widest shadow-lg transition-all flex items-center gap-3",
-                                                            isUploading ? "opacity-90 scale-[0.98] cursor-not-allowed" : "hover:scale-105 active:scale-95"
-                                                        )}
-                                                        style={{ 
-                                                            background: "linear-gradient(135deg, #F97316, #ea6608)", 
-                                                            boxShadow: isUploading ? "none" : "0 10px 20px rgba(249,115,22,0.2)" 
-                                                        }}
-                                                    >
-                                                        {isUploading ? (
-                                                            <>
-                                                                <Loader2 className="h-4 w-4 animate-spin" />
-                                                                <span>Brain-syncing to R2...</span>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <Rocket className="h-4 w-4" />
-                                                                <span>Add to Drive</span>
-                                                                <ChevronRight className="h-4 w-4" />
-                                                            </>
-                                                        )}
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => handleDownloadPdf(m.data)}
-                                                        className="h-11 px-8 rounded-xl border-2 border-gray-200 text-gray-600 font-bold text-[10px] uppercase tracking-widest transition-all hover:border-gray-900 hover:text-gray-900 active:scale-95 flex items-center gap-3"
-                                                    >
-                                                        <FileText className="h-4 w-4" />
-                                                        <span>Download PDF</span>
-                                                    </button>
+                                                                {m.data.responsibilities?.length > 0 && (
+                                                                    <div>
+                                                                        <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mb-2">Core Focus Areas</p>
+                                                                        <ul className="space-y-1.5">
+                                                                            {m.data.responsibilities.map((r: string, i: number) => (
+                                                                                <li key={i} className="flex gap-2.5 text-[11px] text-gray-600 font-medium">
+                                                                                    <span className="text-orange-400 font-bold shrink-0 mt-0.5"></span>
+                                                                                    {r}
+                                                                                </li>
+                                                                            ))}
+                                                                        </ul>
+                                                                    </div>
+                                                                )}
+
+                                                                {m.data.technical_skills?.length > 0 && (
+                                                                    <div>
+                                                                        <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mb-2">Neural Stack</p>
+                                                                        <div className="flex flex-wrap gap-1.5">
+                                                                            {m.data.technical_skills.map((s: string, i: number) => (
+                                                                                <span key={i} className="px-2.5 py-1 bg-[#FDFDFD] border border-[#F0F0F0] rounded-md text-[10px] font-bold text-gray-600">{s}</span>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Footer Actions */}
+                                                            <div className="p-4 bg-[#FAFAFA] border-t border-[#EAEAEA] flex gap-2.5">
+                                                                <button
+                                                                    disabled={isUploading}
+                                                                    onClick={() => handleUseJd(m.data)}
+                                                                    className="flex-1 h-10 rounded-[10px] bg-gray-900 text-white font-bold text-[11px] transition-all hover:bg-black active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                                                                >
+                                                                    {isUploading ? (
+                                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                                    ) : (
+                                                                        <Rocket className="h-3.5 w-3.5" />
+                                                                    )}
+                                                                    {isUploading ? "Syncing..." : "Initialize Drive"}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDownloadPdf(m.data)}
+                                                                    className="h-10 px-4 rounded-[10px] border border-[#EAEAEA] bg-white text-gray-600 font-bold text-[11px] transition-all hover:border-gray-900 hover:text-gray-900 active:scale-95 flex items-center justify-center gap-2"
+                                                                >
+                                                                    <FileText className="h-3.5 w-3.5" />
+                                                                </button>
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
                                                 </div>
                                             </div>
                                         )}
 
-                                        {/* Legacy action buttons fallback for non-JD data messages */}
-                                        {m.data && m.data.job_title === "INCOMPLETE_SPECIFICATIONS" && (
-                                            <div className="pl-4 pt-2"></div>
+                                        {m.role === "user" && (
+                                            <div className="max-w-[85%] flex items-start gap-3">
+                                                <div className="flex-1 flex justify-end">
+                                                    <div className="bg-gray-900 text-white p-3.5 rounded-[18px] rounded-tr-none shadow-lg text-[13px] font-bold">
+                                                        {m.content}
+                                                    </div>
+                                                </div>
+                                                <div className="h-7 w-7 rounded-full overflow-hidden border border-[#EAEAEA] shrink-0 mt-1 bg-white p-1">
+                                                    <img src="/Logo.png" alt="User" className="h-full w-full object-contain" />
+                                                </div>
+                                            </div>
                                         )}
-                                    </div>
-                                )}
+                                    </motion.div>
+                                ))}
                             </div>
-                        </div>
-                    ))}
-                    </div>
-                )}
-                </AnimatePresence>
+                        )}
+                    </AnimatePresence>
+                </div>
             </main>
 
-            {/* Floating Interaction Sanctuary */}
-            {messages.length > 0 && (
-                <div className="fixed bottom-0 left-0 right-0 md:left-[220px] pointer-events-none p-8 z-40">
-                    <div className="max-w-4xl mx-auto w-full flex flex-col items-center gap-6">
-                        {/* Floating Input Pill */}
-                        <div className="relative w-full pointer-events-auto group">
-                            <div className="relative bg-white/80 backdrop-blur-2xl rounded-[2.5rem] p-2 shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-white flex items-center transition-all duration-500 focus-within:shadow-[0_20px_60px_rgba(249,115,22,0.15)] focus-within:border-orange-200">
-                                <div className="pl-6 text-gray-400">
-                                    <MessageSquare className="h-5 w-5" />
-                                </div>
-                                <input 
-                                    className="flex-1 bg-transparent border-none outline-none ring-0 focus:ring-0 px-5 h-16 text-[16px] font-bold text-gray-900 placeholder:text-gray-300"
+            {/* Input Bar - Floating at Bottom */}
+            <AnimatePresence>
+                {messages.length > 0 && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="shrink-0 p-8 pt-0 z-40 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA] to-transparent sticky bottom-0"
+                    >
+                        <div className="max-w-4xl mx-auto w-full relative">
+                            <div className="relative bg-white rounded-[24px] p-2 shadow-[0_20px_50px_rgba(0,0,0,0.06)] border border-[#EAEAEA] flex items-center transition-all duration-300 focus-within:shadow-[0_25px_60px_rgba(0,0,0,0.1)] focus-within:border-orange-200">
+                                <input
+                                    className="flex-1 bg-transparent border-none outline-none ring-0 focus:ring-0 px-5 h-12 text-[13px] font-medium text-gray-900 placeholder:text-[#BBB]"
                                     placeholder="Refine requirements here..."
                                     value={input}
                                     onChange={e => setInput(e.target.value)}
                                     onKeyPress={e => e.key === "Enter" && handleSend()}
                                 />
-                                <button 
+                                <button
                                     disabled={!input.trim() || isGenerating}
                                     onClick={() => handleSend()}
-                                    className="h-14 w-14 rounded-xl text-white font-bold shadow-lg transition-all duration-300 disabled:opacity-20 flex items-center justify-center overflow-hidden hover:scale-105 active:scale-95 shrink-0"
-                                    style={{
-                                        background: "linear-gradient(135deg, #F97316, #ea6608)",
-                                    }}
+                                    className="h-14 w-14 rounded-[18px] bg-gray-900 text-white font-bold transition-all hover:bg-black active:scale-95 disabled:opacity-20 flex items-center justify-center"
                                 >
                                     {isGenerating ? (
                                         <Loader2 className="h-5 w-5 animate-spin" />
                                     ) : (
-                                        <Zap className="h-5 w-5" />
+                                        <ArrowLeft className="h-5 w-5 rotate-180" />
                                     )}
                                 </button>
                             </div>
                         </div>
-                    </div>
-                </div>
-            )}
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-            <style dangerouslySetInnerHTML={{ __html: `
+            <style dangerouslySetInnerHTML={{
+                __html: `
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+                
+                .font-inter { font-family: 'Inter', sans-serif; }
+
                 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
                 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { background: #F1F5F9; border-radius: 10px; }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #E2E8F0; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background: #EEE; border-radius: 10px; }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #DDD; }
 
-                @keyframes entry-flow {
-                    from { opacity: 0; transform: translateY(20px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-                .animate-entry-flow { animation: entry-flow 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-
-                @keyframes slide-up {
-                    from { transform: translateY(10px); opacity: 0; }
-                    to { transform: translateY(0); opacity: 1; }
-                }
-                .animate-in-slide-up { animation: slide-up 0.4s ease-out forwards; }
-                
                 @keyframes fade {
-                    from { opacity: 0; transform: translateY(10px); }
+                    from { opacity: 0; transform: translateY(8px); }
                     to { opacity: 1; transform: translateY(0); }
                 }
-                .animate-in-fade { animation: fade 0.3s ease-out forwards; }
+                .animate-in-fade { animation: fade 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
             `}} />
         </div>
     );
