@@ -122,6 +122,7 @@ const StableRoomAudioRenderer = memo(function StableRoomAudioRenderer() {
 
 function InterviewContent({ id, params }: { id: string, params: Promise<{ id: string }> }) {
     const [phase, setPhase] = useState<"check" | "launching" | "interview" | "finalizing" | "completed">("check");
+    const [endMode, setEndMode] = useState<"normal" | "timeout">("normal");
     const [token, setToken] = useState<string | null>(null);
     const [serverUrl, setServerUrl] = useState<string | null>(null);
     const [isJoining, setIsJoining] = useState(false);
@@ -1148,7 +1149,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         animate={{ opacity: 1, scale: 1 }}
                         className="flex-1 min-h-screen w-full flex items-center justify-center bg-white z-[100] absolute inset-0"
                     >
-                        <CompletionView id={id} interviewToken={interviewToken} />
+                        {endMode === "timeout" ? (
+                            <TimeoutThankYouView candidateName={candidateDisplayName} />
+                        ) : (
+                            <CompletionView id={id} interviewToken={interviewToken} />
+                        )}
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -1208,7 +1213,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             id={id}
                             interviewToken={interviewToken}
                             onAgentReady={handleAgentReady}
-                            onFinish={() => setPhase("completed")}
+                            onFinish={(reason = "normal") => {
+                                setEndMode(reason);
+                                setPhase("completed");
+                            }}
                             onFinalizing={() => setPhase("finalizing")}
                             isInterviewActive={phase === "interview"}
                             isLaunchingActive={phase === "launching"}
@@ -1574,7 +1582,7 @@ function InterviewRoomContent({
 }: {
     id: string,
     interviewToken: string,
-    onFinish: () => void,
+    onFinish: (reason?: "normal" | "timeout") => void,
     onFinalizing: () => void,
     isInterviewActive: boolean,
     isLaunchingActive: boolean,
@@ -1603,6 +1611,7 @@ function InterviewRoomContent({
     const autoFinishTriggeredRef = useRef(false);
     const interviewCompletionHandledRef = useRef(false);
     const [remoteForceFinish, setRemoteForceFinish] = useState(false);
+    const [remoteForceFinishReason, setRemoteForceFinishReason] = useState<"normal" | "timeout">("normal");
 
     const localCameraTrack = cameraTracks.find((t) => t.participant.isLocal && t.source === Track.Source.Camera) || null;
     const localIdentity = lkRoom?.localParticipant?.identity ?? "";
@@ -2238,6 +2247,7 @@ function InterviewRoomContent({
             try {
                 const packet = JSON.parse(decoder.decode(payload));
                 if (packet.type === "interview_terminated") {
+                    setRemoteForceFinishReason(packet.reason === "inactivity_timeout" ? "timeout" : "normal");
                     setRemoteForceFinish(true);
                 } else if (packet.type === "proctoring_violation") {
                     // Agent detected a proctoring event.
@@ -2264,7 +2274,7 @@ function InterviewRoomContent({
         transcriptPanelRef.current.scrollTop = transcriptPanelRef.current.scrollHeight;
     }, [transcriptions]);
 
-    const handleFinish = useCallback(async () => {
+    const handleFinish = useCallback(async (reason: "normal" | "timeout" = "normal") => {
         if (finishStartedRef.current) return;
         finishStartedRef.current = true;
 
@@ -2282,7 +2292,7 @@ function InterviewRoomContent({
         onFinalizing();
         setTimeout(() => {
             try { lkRoom?.disconnect(); } catch (_) { }
-            onFinish();
+            onFinish(reason);
         }, 1200);
     }, [lkRoom, onFinalizing, onFinish, stopBrowserRecording]);
 
@@ -2303,13 +2313,13 @@ function InterviewRoomContent({
 
     useEffect(() => {
         if (!timerExpired || !isInterviewActive) return;
-        void handleFinish();
+        void handleFinish("normal");
     }, [timerExpired, isInterviewActive, handleFinish]);
 
     useEffect(() => {
         if (!remoteForceFinish || !isInterviewActive) return;
-        void handleFinish();
-    }, [remoteForceFinish, isInterviewActive, handleFinish]);
+        void handleFinish(remoteForceFinishReason);
+    }, [remoteForceFinish, remoteForceFinishReason, isInterviewActive, handleFinish]);
 
     return (
         <div className="flex-1 flex flex-col h-full w-full relative bg-[#121214] text-white overflow-hidden">
@@ -2591,7 +2601,7 @@ function InterviewRoomContent({
                     </div>
                     <Button
                         variant="destructive"
-                        onClick={handleFinish}
+                        onClick={() => handleFinish("normal")}
                         className="h-20 px-16 rounded-[2.5rem] bg-red-600 text-white hover:bg-black hover:text-white font-black uppercase tracking-[0.3em] text-[12px] transition-all shadow-[0_20px_50px_rgba(220,38,38,0.3)] active:scale-95 border-none group"
                     >
                         <span className="flex items-center gap-3">
@@ -2733,6 +2743,23 @@ function AudioTrack({ trackRef }: { trackRef: TrackReference }) {
         }
     }, [trackRef]);
     return <audio ref={audioRef} autoPlay />;
+}
+
+function TimeoutThankYouView({ candidateName }: { candidateName: string }) {
+    return (
+        <div className="w-full max-w-xl mx-auto px-6 text-center">
+            <div className="w-24 h-24 bg-gradient-to-br from-orange-500 to-orange-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 shadow-[0_20px_40px_rgba(249,115,22,0.3)] rotate-3">
+                <CheckCircle2 className="w-12 h-12 text-white" />
+            </div>
+            <h2 className="text-5xl font-black text-gray-900 uppercase italic tracking-tighter mb-6">Thank You</h2>
+            <p className="text-sm font-bold text-gray-500 uppercase tracking-[0.2em] leading-relaxed mb-4 max-w-sm mx-auto">
+                The interview session has ended.
+            </p>
+            <p className="text-sm font-medium text-gray-400 leading-relaxed max-w-md mx-auto">
+                Thank you for your time, {candidateName}. You can close this screen now.
+            </p>
+        </div>
+    );
 }
 
 function CompletionView({ id, interviewToken }: { id: string; interviewToken: string }) {

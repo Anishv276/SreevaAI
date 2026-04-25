@@ -5166,12 +5166,12 @@ async def entrypoint(ctx: JobContext):
         awaiting_candidate_response = True
         awaiting_candidate_since = time.monotonic()
 
-    async def _send_termination_signal():
+    async def _send_termination_signal(reason: str):
         try:
             import json
-            payload = json.dumps({"type": "interview_terminated"}).encode("utf-8")
+            payload = json.dumps({"type": "interview_terminated", "reason": reason}).encode("utf-8")
             await ctx.room.local_participant.publish_data(payload, reliable=True)
-            logger.info("[NUDGE] Sent termination signal to frontend")
+            logger.info(f"[NUDGE] Sent termination signal to frontend (reason={reason})")
         except Exception as e:
             logger.warning(f"Failed to send termination signal: {e}")
 
@@ -5320,7 +5320,7 @@ async def entrypoint(ctx: JobContext):
             logger.info(
                 f"[NUDGE] Ending interview due to final inactivity timeout ({int(inactivity_elapsed)}s)"
             )
-            await _send_termination_signal()
+            await _send_termination_signal("inactivity_timeout")
             interview_marked_finished = True
             interview_finished_event.set()
             disconnect_event.set()
@@ -5356,7 +5356,7 @@ async def entrypoint(ctx: JobContext):
 
         # FORCE DISCONNECT ROOM
         logger.info(f"Session hard-terminated due to time limit ({time_limit_mins}m)")
-        await _send_termination_signal()
+        await _send_termination_signal("time_expired")
         interview_marked_finished = True
         interview_finished_event.set()
         disconnect_event.set()
