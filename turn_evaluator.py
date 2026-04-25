@@ -66,6 +66,7 @@ async def run_turn_evaluation(
     collapse_stage: int = 0,
     session_score_history: Optional[list[float]] = None,
     turns_since_last_decay: int = 999,
+    response_latency_sec: Optional[float] = None,
 ) -> tuple[TurnDecision, str]:
     """
     Run full per-turn evaluation pipeline.
@@ -110,6 +111,7 @@ async def run_turn_evaluation(
         collapse_stage=collapse_stage,
         session_score_history=session_score_history,
         turns_since_last_decay=turns_since_last_decay,
+        response_latency_sec=response_latency_sec,
     )
     signal_events = [
         event

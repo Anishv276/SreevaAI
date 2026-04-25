@@ -25,7 +25,8 @@ class SignalFlags(TypedDict):
     contradiction: bool         # conflicts with prior answer or resume claim
     follow_up_collapse: bool    # depth dropped sharply from first to follow-up answer
     meta_question: bool         # candidate is checking if Ishita is a bot or if she's present
-    depth_decay: bool           # cross-topic quality degradation across rolling window of turns
+    depth_decay: bool                    # cross-topic quality degradation across rolling window of turns
+    complexity_latency_mismatch: bool    # inverted timing pattern — hard Q instant, easy Q slow
 
 
 class TrustDelta(TypedDict):
@@ -537,6 +538,132 @@ def _detect_depth_decay_event(
     )
 
 
+# -- Complexity-Latency Mismatch -------------------------------------------
+# Catches AI-assisted candidates: hard questions answered instantly (pre-generated
+# text read aloud), and simple factual questions with unusual delay (looking things up).
+# Thresholds tuned for 20-min interviews with ~50-sec turns.
+
+_CLM_COMPLEX_PHRASES = {
+    "tell me about a time", "walk me through", "describe a situation",
+    "give me an example", "how did you handle", "what was the hardest",
+    "explain your decision", "what tradeoff", "what would you have done differently",
+    "how did you influence", "what was the impact", "how did you prioritize",
+    "describe a challenge", "what did you learn", "tell me about a project",
+    "how did you approach", "what was your strategy", "describe your process",
+}
+_CLM_SIMPLE_PHRASES = {
+    "what is your", "how many years", "which company", "when did you",
+    "what tools", "have you used", "do you know about", "are you familiar",
+    "what's your", "how long have", "where did you", "what is your current",
+    "what languages", "what frameworks", "which team",
+}
+
+# Fast complex: AI reads pre-generated answer, no real thinking time needed
+_CLM_FAST_COMPLEX_SEC = 5.5   # complex Q answered in < 5.5s = suspicious
+# Slow simple: candidate is looking something up (tab switch, reading notes)
+_CLM_SLOW_SIMPLE_SEC = 22.0   # simple Q takes > 22s = suspicious
+# Minimum answer substance — ignore greetings / single-sentence filler
+_CLM_MIN_WORDS = 20
+
+
+def _score_question_complexity(question: str) -> str:
+    """
+    Classify question as 'simple', 'moderate', or 'complex' using phrase matching
+    + word count heuristic. No LLM call — runs in microseconds.
+    """
+    q = question.lower()
+    word_count = len(q.split())
+    complex_hits = sum(1 for p in _CLM_COMPLEX_PHRASES if p in q)
+    simple_hits = sum(1 for p in _CLM_SIMPLE_PHRASES if p in q)
+
+    if complex_hits >= 1 or word_count >= 20:
+        return "complex"
+    if simple_hits >= 1 or word_count <= 8:
+        return "simple"
+    return "moderate"
+
+
+def _detect_complexity_latency_mismatch_event(
+    answer: str,
+    last_question: str,
+    current_depth: float,
+    prior_depth_scores: list[float],
+    topic_follow_up_count: int,
+    contradiction_detected: bool,
+    *,
+    response_latency_sec: Optional[float],
+) -> Optional[SignalEvent]:
+    """
+    Complexity-Latency Mismatch detector.
+
+    Two distinct failure patterns caught:
+
+    1. FAST-COMPLEX: Candidate answers a deep behavioral question in < 5.5s with
+       >= 25 words. Real humans need time to recall, structure, and articulate a
+       specific past experience. An instant polished answer strongly suggests
+       AI-generated text being read aloud.
+
+    2. SLOW-SIMPLE: Candidate takes > 22s to answer a simple factual question
+       (tools used, company name, years of experience). Slow simple answers suggest
+       the candidate is switching context — looking at notes, searching, or asking AI.
+
+    Both patterns are recruiter-visible and affect behavioral_confidence.
+    The signal is NOT fired if latency data is unavailable (response_latency_sec=None).
+    """
+    del current_depth, prior_depth_scores, topic_follow_up_count, contradiction_detected
+
+    if response_latency_sec is None:
+        return None
+
+    words = len(answer.split())
+    if words < _CLM_MIN_WORDS:
+        return None  # too short — not a substantive answer, skip
+
+    complexity = _score_question_complexity(last_question)
+
+    # Case 1: Complex behavioral question → instant full answer (AI-read pattern)
+    if complexity == "complex" and response_latency_sec < _CLM_FAST_COMPLEX_SEC:
+        time_under = _CLM_FAST_COMPLEX_SEC - response_latency_sec
+        confidence = min(0.92, 0.62 + time_under * 0.06)
+        return _build_signal_event(
+            signal_name="complexity_latency_mismatch",
+            signal_layer="behavioral_confidence",
+            confidence=confidence,
+            evidence=(
+                f"complex question answered in {response_latency_sec:.1f}s "
+                f"(expected >={_CLM_FAST_COMPLEX_SEC}s for genuine recall), "
+                f"words={words}, complexity={complexity}"
+            ),
+            trust_bucket_affected="behavioral_confidence",
+            score_delta=-0.14,
+            probe_mode="evidence",
+            recoverable=True,
+            recruiter_visible=True,
+        )
+
+    # Case 2: Simple factual question → abnormally slow answer (lookup pattern)
+    if complexity == "simple" and response_latency_sec > _CLM_SLOW_SIMPLE_SEC:
+        time_over = response_latency_sec - _CLM_SLOW_SIMPLE_SEC
+        confidence = min(0.82, 0.48 + time_over * 0.012)
+        return _build_signal_event(
+            signal_name="complexity_latency_mismatch",
+            signal_layer="behavioral_confidence",
+            confidence=confidence,
+            evidence=(
+                f"simple question took {response_latency_sec:.1f}s "
+                f"(expected <={_CLM_SLOW_SIMPLE_SEC}s), "
+                f"words={words}, complexity={complexity}"
+            ),
+            trust_bucket_affected="behavioral_confidence",
+            score_delta=-0.08,
+            probe_mode="compression",
+            recoverable=True,
+            recruiter_visible=True,
+        )
+
+    return None
+
+
 def _detect_meta_question_event(
     answer: str,
     last_question: str,
@@ -574,6 +701,7 @@ def detect_signal_events(
     collapse_stage: int = 0,
     session_score_history: Optional[list[float]] = None,
     turns_since_last_decay: int = 999,
+    response_latency_sec: Optional[float] = None,
 ) -> list[SignalEvent]:
     # All detectors share the same positional signature; extra params are injected
     # for specific detectors via wrapper closures.
@@ -587,6 +715,12 @@ def detect_signal_events(
             turns_since_last_decay=turns_since_last_decay,
         )
 
+    def _clm_detector(a, q, d, h, f, c):
+        return _detect_complexity_latency_mismatch_event(
+            a, q, d, h, f, c,
+            response_latency_sec=response_latency_sec,
+        )
+
     detectors: dict[str, Callable[[str, str, float, list[float], int, bool], Optional[SignalEvent]]] = {
         "ownership_ambiguity": _detect_ownership_ambiguity_event,
         "example_evasion": _detect_example_evasion_event,
@@ -596,6 +730,7 @@ def detect_signal_events(
         "contradiction": _detect_contradiction_event,
         "meta_question": _detect_meta_question_event,
         "depth_decay": _decay_detector,
+        "complexity_latency_mismatch": _clm_detector,
     }
     events: list[SignalEvent] = []
     for signal_name, detector in detectors.items():
@@ -626,6 +761,7 @@ def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
         follow_up_collapse="follow_up_collapse" in names,
         meta_question="meta_question" in names,
         depth_decay="depth_decay" in names,
+        complexity_latency_mismatch="complexity_latency_mismatch" in names,
     )
 
 
@@ -700,6 +836,15 @@ register_signal_rule(
     recoverable=True,
     recruiter_visible=True,
     detector=_detect_depth_decay_event,  # type: ignore[arg-type]  # closure wrapper used at runtime
+)
+register_signal_rule(
+    "complexity_latency_mismatch",
+    signal_layer="behavioral_confidence",
+    trust_bucket_affected="behavioral_confidence",
+    probe_mode="evidence",
+    recoverable=True,
+    recruiter_visible=True,
+    detector=_detect_complexity_latency_mismatch_event,  # type: ignore[arg-type]
 )
 
 

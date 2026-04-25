@@ -23,7 +23,8 @@ export type ManagedProctoringSignal =
   | "audio_flag"
   | "duplicate_ip"
   | "connection_restored"
-  | "depth_decay";
+  | "depth_decay"
+  | "complexity_latency_mismatch";
 
 export type ProctoringSignalToggles = Record<ManagedProctoringSignal, boolean>;
 
@@ -53,6 +54,7 @@ export const MANAGED_PROCTORING_SIGNALS: ManagedProctoringSignal[] = [
   "duplicate_ip",
   "connection_restored",
   "depth_decay",
+  "complexity_latency_mismatch",
 ];
 
 export const DEFAULT_PROCTORING_SIGNALS: ProctoringSignalToggles = {
@@ -81,6 +83,7 @@ export const DEFAULT_PROCTORING_SIGNALS: ProctoringSignalToggles = {
   duplicate_ip: true,
   connection_restored: true,
   depth_decay: true,
+  complexity_latency_mismatch: true,
 };
 
 function toBoolean(value: unknown, fallback: boolean): boolean {
@@ -122,6 +125,7 @@ export function normalizeProctoringSignals(raw: unknown): ProctoringSignalToggle
     duplicate_ip: toBoolean(source.duplicate_ip, DEFAULT_PROCTORING_SIGNALS.duplicate_ip),
     connection_restored: toBoolean(source.connection_restored, DEFAULT_PROCTORING_SIGNALS.connection_restored),
     depth_decay: toBoolean(source.depth_decay, DEFAULT_PROCTORING_SIGNALS.depth_decay),
+    complexity_latency_mismatch: toBoolean(source.complexity_latency_mismatch, DEFAULT_PROCTORING_SIGNALS.complexity_latency_mismatch),
   };
 }
 

@@ -4024,6 +4024,8 @@ async def entrypoint(ctx: JobContext):
     _collapse_stage: int = 0               # 0=none, 1=first probe issued, 2+=repeated collapse (hard flag)
     _last_depth_decay_turn: int = -999     # turn number when depth_decay last fired; -999 = never
     _depth_decay_ever_fired: bool = False  # True once depth_decay has fired at least once
+    _question_asked_at: float = 0.0        # perf_counter() when Ishita finished speaking
+    _answer_received_at: float = 0.0       # perf_counter() when candidate answer arrived
     _trust_state = init_trust_state()  # session-level trust engine state
     _contradiction_state = init_contradiction_state()  # explicit contradiction lifecycle state
     _active_eval_task: Optional[asyncio.Task[Any]] = None  # track active eval to prevent stale injects
@@ -4412,6 +4414,11 @@ async def entrypoint(ctx: JobContext):
                     if _last_depth_decay_turn >= 0
                     else 999
                 )
+                response_latency_snap: Optional[float] = (
+                    round(_answer_received_at - _question_asked_at, 3)
+                    if _question_asked_at > 0 and _answer_received_at > _question_asked_at
+                    else None
+                )
 
                 async def _evaluate_and_inject(
                     answer=answer_snap,
@@ -4423,6 +4430,7 @@ async def entrypoint(ctx: JobContext):
                     collapse_stage=collapse_stage_snap,
                     score_history=score_history_snap,
                     turns_since_decay=turns_since_decay_snap,
+                    response_latency=response_latency_snap,
                 ):
                     nonlocal _topic_follow_up_count, environment_risk, integrity_risk, depth_risk, suspicion_score, current_interview_mode, \
                         answer_scores, _claim_index, _contradictions_found, \
@@ -4475,6 +4483,7 @@ async def entrypoint(ctx: JobContext):
                                     collapse_stage=collapse_stage,
                                     session_score_history=score_history,
                                     turns_since_last_decay=turns_since_decay,
+                                    response_latency_sec=response_latency,
                                 ),
                                 timeout=6.0,
                             )
@@ -4680,7 +4689,8 @@ async def entrypoint(ctx: JobContext):
     @session.on("conversation_item_added")
     def on_conversation_item_added(event) -> None:
         nonlocal session_start_time, turn_count, last_injection_turn, \
-            _last_interviewer_question, _topic_follow_up_count
+            _last_interviewer_question, _topic_follow_up_count, \
+            _question_asked_at, _answer_received_at
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -4688,6 +4698,7 @@ async def entrypoint(ctx: JobContext):
             if not content or not role:
                 return
             if role == "user":
+                _answer_received_at = time.perf_counter()
                 turn_snapshot = turn_count
                 spawn_background_task(
                     _process_user_conversation_item(event, content, role, turn_snapshot),
@@ -4716,6 +4727,7 @@ async def entrypoint(ctx: JobContext):
             # and injects it as a system message so Ishita knows what she's covered, what's
             # thin/untouched, and whether she needs to move on immediately.
             if role == "assistant":
+                _question_asked_at = time.perf_counter()
                 turn_count += 1
                 if turn_count % 3 == 0 and turn_count != last_injection_turn:
                     last_injection_turn = turn_count
@@ -4892,18 +4904,16 @@ async def entrypoint(ctx: JobContext):
     awaiting_candidate_response = False
     awaiting_candidate_since: float | None = None
     inactivity_nudge_sent_for_current_prompt = False
-    inactivity_warning_sent_for_current_prompt = False
     first_agent_turn_committed_at: float | None = None
     greeting_echo_suppression_secs = 6.0
 
     def reset_inactivity_clock(start_waiting: bool, preserve_nudge_flags: bool = False) -> None:
         nonlocal awaiting_candidate_response, awaiting_candidate_since, \
-            inactivity_nudge_sent_for_current_prompt, inactivity_warning_sent_for_current_prompt
+            inactivity_nudge_sent_for_current_prompt
         awaiting_candidate_response = start_waiting
         awaiting_candidate_since = time.monotonic() if start_waiting else None
         if not preserve_nudge_flags:
             inactivity_nudge_sent_for_current_prompt = False
-            inactivity_warning_sent_for_current_prompt = False
         if start_waiting:
             logger.debug("[NUDGE] Inactivity clock started (awaiting candidate response)")
         else:
@@ -5138,11 +5148,12 @@ async def entrypoint(ctx: JobContext):
     candidate_questions_asked = False
     wrap_up_signal_sent = False
 
-    # How many seconds before the end to trigger each nudge
-    # Scale based on total duration (e.g., last 20% of the session, capped at 2.5 mins)
-    CANDIDATE_Q_TRIGGER_SECS = min(150, max(10, int(total_seconds * 0.2)))
-    # Give the candidate a clear closing cue right around the last 10 seconds.
-    FINAL_THANKS_TRIGGER_SECS = max(8, min(10, int(total_seconds * 0.1)))
+    # Fixed inactivity timing so the candidate always gets the same experience.
+    # 50s silence -> warning, 60s silence -> end call.
+    INACTIVITY_WARNING_SECS = 50
+    INACTIVITY_END_SECS = 60
+    CANDIDATE_Q_TRIGGER_SECS = max(10, min(120, int(total_seconds * 0.2)))
+    FINAL_THANKS_TRIGGER_SECS = 10
     MIN_CANDIDATE_LINES_FOR_WRAPUP = 3
 
     inactivity_nudge_count = 0
@@ -5150,7 +5161,7 @@ async def entrypoint(ctx: JobContext):
     async def _deliver_nudge(text: str) -> None:
         await session.say(text, allow_interruptions=True)
         # Scripted speech doesn't fire agent_speech_committed, manually restart clock.
-        # Preserve the nudge/warning flags so they don't fire again for this prompt.
+        # Preserve the warning flag so it doesn't fire again for this prompt.
         nonlocal awaiting_candidate_response, awaiting_candidate_since
         awaiting_candidate_response = True
         awaiting_candidate_since = time.monotonic()
@@ -5163,15 +5174,6 @@ async def entrypoint(ctx: JobContext):
             logger.info("[NUDGE] Sent termination signal to frontend")
         except Exception as e:
             logger.warning(f"Failed to send termination signal: {e}")
-
-    def _inactivity_thresholds() -> tuple[float, float, float]:
-        """Return (nudge_secs, warning_secs, terminate_secs) scaled to last question complexity."""
-        words = len((_last_interviewer_question or "").split())
-        if words > 20:
-            return 12.0, 24.0, 34.0
-        if words > 10:
-            return 9.0, 21.0, 31.0
-        return 7.0, 18.0, 28.0
 
     def _pick_nudge() -> str:
         """Return a context-aware inactivity nudge based on the type of question asked."""
@@ -5281,10 +5283,9 @@ async def entrypoint(ctx: JobContext):
             else 0.0
         )
 
-        # -- Stage 1: Nudge (threshold scaled to question complexity) --
+        # -- Stage 1: Warning --
         # Extra guard: don't fire if agent just finished speaking within last 5s
         # (covers the LLM "thinking/typing" window before TTS starts)
-        _nudge_t, _warn_t, _term_t = _inactivity_thresholds()
         agent_just_spoke = (
             awaiting_candidate_since is not None
             and (time.monotonic() - awaiting_candidate_since) < 5.0
@@ -5293,45 +5294,28 @@ async def entrypoint(ctx: JobContext):
             not is_agent_speaking
             and not is_candidate_speaking
             and awaiting_candidate_response
-            and not inactivity_nudge_sent_for_current_prompt
-            and not agent_just_spoke
-            and inactivity_elapsed >= _nudge_t
-        ):
-            nudge_text = _pick_nudge()
-            try:
-                spawn_background_task(_deliver_nudge(nudge_text), "inactivity_nudge")
-                inactivity_nudge_sent_for_current_prompt = True
-                inactivity_nudge_count += 1
-                logger.info(f"[NUDGE] {_nudge_t:.0f}s inactivity nudge delivered: '{nudge_text[:40]}...'")
-            except Exception as e:
-                logger.warning(f"[NUDGE] Failed to deliver nudge: {e}")
-
-        # -- Stage 2: Termination Warning --
-        if (
-            not is_agent_speaking
-            and not is_candidate_speaking
-            and awaiting_candidate_response
             and not inactivity_warning_sent_for_current_prompt
-            and inactivity_elapsed >= _warn_t
+            and not agent_just_spoke
+            and inactivity_elapsed >= INACTIVITY_WARNING_SECS
         ):
             try:
-                inactivity_warning_sent_for_current_prompt = True
                 warning_text = (
                     f"I haven't heard from you in a while, {candidate_first_name or candidate_name}. "
-                    "If you're still there, please say something, otherwise I will have to end the call in 10 seconds."
+                    f"If you're still there, please say something, otherwise I will have to end the call in {INACTIVITY_END_SECS - INACTIVITY_WARNING_SECS} seconds."
                 )
                 spawn_background_task(_deliver_nudge(warning_text), "inactivity_warning")
-                logger.info(f"[NUDGE] {_warn_t:.0f}s termination warning delivered")
+                inactivity_warning_sent_for_current_prompt = True
+                logger.info(f"[NUDGE] {INACTIVITY_WARNING_SECS:.0f}s termination warning delivered")
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver warning: {e}")
 
-        # -- Stage 3: Final Termination --
+        # -- Stage 2: Final Termination --
         if (
             not is_agent_speaking
             and not is_candidate_speaking
             and awaiting_candidate_response
             and inactivity_warning_sent_for_current_prompt
-            and inactivity_elapsed >= _term_t
+            and inactivity_elapsed >= INACTIVITY_END_SECS
         ):
             logger.info(
                 f"[NUDGE] Ending interview due to final inactivity timeout ({int(inactivity_elapsed)}s)"
@@ -5355,13 +5339,13 @@ async def entrypoint(ctx: JobContext):
         )
         if candidate_turns_final >= 4:
             goodbye_text = (
-                f"Bye {candidate_first_name or candidate_name}. Thanks so much for your time today. "
-                "It was genuinely great speaking with you. Take care, and all the best!"
+                f"That concludes our interview, {candidate_first_name or candidate_name}. "
+                "Thank you for your time today. I’m ending the session now, and I wish you all the best."
             )
         else:
             goodbye_text = (
-                f"Bye {candidate_first_name or candidate_name}. Thanks for joining today. "
-                "Really appreciate you being here. Take care, and all the best!"
+                f"That concludes our interview, {candidate_first_name or candidate_name}. "
+                "Thank you for joining today. I’m ending the session now, and I wish you all the best."
             )
 
         try:

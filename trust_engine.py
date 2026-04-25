@@ -51,6 +51,11 @@ _TURN_DELTAS = {
     # Applied via SignalEvent.score_delta — these entries are documentation only.
     "depth_decay_mild":     -0.06,   # rolling window drop >= 1.5 quality points
     "depth_decay_severe":   -0.12,   # rolling window drop >= 2.5 quality points
+
+    # complexity-latency mismatch (-> behavioral_confidence bucket)
+    # Applied via SignalEvent.score_delta — documentation only.
+    "complexity_latency_mismatch_fast_complex": -0.14,  # hard Q answered instantly (AI-read)
+    "complexity_latency_mismatch_slow_simple":  -0.08,  # easy Q answered slowly (lookup)
 }
 
 # -- Proctoring event delta table (-> hard_integrity bucket) -------------------
