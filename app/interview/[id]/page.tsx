@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useState, use, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User, MousePointer2, ChevronDown, MessageSquare, LifeBuoy } from "lucide-react";
+import { Star, Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User, MousePointer2, ChevronDown, MessageSquare, LifeBuoy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -2763,7 +2763,7 @@ function TimeoutThankYouView({ candidateName }: { candidateName: string }) {
 }
 
 function CompletionView({ id, interviewToken }: { id: string; interviewToken: string }) {
-    const [step, setStep] = useState<"sync" | "feedback" | "thanks">("sync");
+    const [step, setStep] = useState<"feedback" | "thanks">("feedback");
     const [rating, setRating] = useState(0);
     const [hoverRating, setHoverRating] = useState(0);
     const [feedback, setFeedback] = useState("");
@@ -2791,60 +2791,35 @@ function CompletionView({ id, interviewToken }: { id: string; interviewToken: st
     };
 
     return (
-        <div className="w-full max-w-xl mx-auto px-6">
+        <div className="w-full max-w-xl mx-auto px-6 font-sans">
             <AnimatePresence mode="wait">
-                {step === "sync" && (
-                    <motion.div
-                        key="sync"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, x: -20 }}
-                        className="text-center"
-                    >
-                        <div className="w-24 h-24 bg-gradient-to-br from-orange-500 to-orange-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 shadow-[0_20px_40px_rgba(249,115,22,0.3)] rotate-3">
-                            <CheckCircle2 className="w-12 h-12 text-white" />
-                        </div>
-                        <h2 className="text-5xl font-black text-gray-900 uppercase italic tracking-tighter mb-6">Sync Complete</h2>
-                        <p className="text-sm font-bold text-gray-400 uppercase tracking-[0.2em] leading-relaxed mb-12 max-w-sm mx-auto">
-                            Your interview session has been encrypted and secured for review.
-                        </p>
-                        <Button
-                            onClick={() => setStep("feedback")}
-                            className="w-full h-20 rounded-[2rem] bg-gray-900 text-white font-black uppercase tracking-[0.3em] text-[13px] hover:bg-black transition-all shadow-2xl group"
-                        >
-                            Next Step
-                            <ArrowRight className="ml-4 w-5 h-5 group-hover:translate-x-2 transition-transform" />
-                        </Button>
-                    </motion.div>
-                )}
-
                 {step === "feedback" && (
                     <motion.div
                         key="feedback"
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -20 }}
-                        className="bg-white/40 backdrop-blur-3xl p-10 rounded-[3rem] border border-white border-b-gray-100 shadow-[0_40px_80px_rgba(0,0,0,0.06)]"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="bg-white border border-gray-100 rounded-[2.5rem] p-10 shadow-[0_8px_30px_rgba(0,0,0,0.04)]"
                     >
                         <div className="mb-10 text-center">
-                            <p className="text-[10px] font-black uppercase tracking-[0.4em] text-orange-500 mb-2">Anonymous Feedback</p>
-                            <h2 className="text-3xl font-black text-gray-900 tracking-tight">How was your session?</h2>
+                            <h2 className="text-3xl font-bold text-gray-900 tracking-tight mb-2">Thank you for submitting</h2>
+                            <p className="text-[12px] font-bold text-gray-400 uppercase tracking-widest">How was your interview experience?</p>
                         </div>
 
-                        <div className="flex justify-center gap-3 mb-12">
+                        <div className="flex justify-center gap-2 mb-10">
                             {[1, 2, 3, 4, 5].map((star) => (
                                 <button
                                     key={star}
                                     onMouseEnter={() => setHoverRating(star)}
                                     onMouseLeave={() => setHoverRating(0)}
                                     onClick={() => setRating(star)}
-                                    className="transition-all duration-300 transform active:scale-90"
+                                    className="p-1 transition-transform active:scale-90"
                                 >
-                                    <Sparkles
+                                    <Star
                                         className={cn(
-                                            "w-12 h-12 transition-all duration-300",
+                                            "w-10 h-10 transition-all duration-200",
                                             (hoverRating || rating) >= star
-                                                ? "text-orange-500 fill-orange-500 scale-110 drop-shadow-[0_0_15px_rgba(249,115,22,0.4)]"
+                                                ? "text-orange-500 fill-orange-500 scale-110"
                                                 : "text-gray-200"
                                         )}
                                     />
@@ -2853,34 +2828,27 @@ function CompletionView({ id, interviewToken }: { id: string; interviewToken: st
                         </div>
 
                         <div className="space-y-6">
-                            <div className="relative group">
-                                <textarea
-                                    value={feedback}
-                                    onChange={(e) => setFeedback(e.target.value)}
-                                    placeholder="What did you like about Ishita? (Optional)"
-                                    className="w-full h-40 bg-white/60 border-2 border-transparent focus:border-orange-500/20 focus:bg-white rounded-[2rem] p-6 text-sm font-bold text-gray-700 placeholder:text-gray-300 outline-none transition-all resize-none shadow-inner"
-                                />
-                                <div className="absolute top-6 right-6 opacity-20">
-                                    <Zap className="w-5 h-5 text-orange-500" />
-                                </div>
-                            </div>
+                            <textarea
+                                value={feedback}
+                                onChange={(e) => setFeedback(e.target.value)}
+                                placeholder="Tell us more about your experience (optional)..."
+                                className="w-full h-32 bg-gray-50/50 border border-gray-100 focus:border-orange-500/30 focus:bg-white rounded-2xl p-5 text-sm font-medium text-gray-700 placeholder:text-gray-400 outline-none transition-all resize-none shadow-inner"
+                            />
 
                             <Button
                                 onClick={handleSubmit}
                                 disabled={rating === 0 || isSubmitting}
                                 className={cn(
-                                    "w-full h-20 rounded-[2rem] font-black uppercase tracking-[0.3em] text-[13px] transition-all shadow-2xl",
+                                    "w-full h-16 rounded-2xl font-bold uppercase tracking-widest text-[12px] transition-all shadow-lg",
                                     rating > 0
-                                        ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:scale-[1.02] active:scale-95 shadow-orange-500/20"
+                                        ? "bg-gray-900 text-white hover:bg-black shadow-gray-900/10"
                                         : "bg-gray-100 text-gray-400 cursor-not-allowed border-none shadow-none"
                                 )}
                             >
                                 {isSubmitting ? (
-                                    <Loader2 className="w-6 h-6 animate-spin" />
+                                    <Loader2 className="w-5 h-5 animate-spin" />
                                 ) : (
-                                    <span className="flex items-center gap-3">
-                                        Submit Review <Send className="w-4 h-4" />
-                                    </span>
+                                    "Submit Feedback"
                                 )}
                             </Button>
                         </div>
@@ -2890,21 +2858,22 @@ function CompletionView({ id, interviewToken }: { id: string; interviewToken: st
                 {step === "thanks" && (
                     <motion.div
                         key="thanks"
-                        initial={{ opacity: 0, scale: 0.95 }}
+                        initial={{ opacity: 0, scale: 0.98 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="max-w-md w-full mx-auto"
+                        className="text-center"
                     >
-                        <div className="bg-white border border-gray-200 rounded-3xl p-8 shadow-sm text-center">
-                            <div className="w-16 h-16 bg-green-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                                <CheckCircle2 className="w-8 h-8 text-green-600" />
+                        <div className="bg-white border border-gray-100 rounded-[2.5rem] p-12 shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
+                            <div className="w-20 h-20 bg-green-50 rounded-3xl flex items-center justify-center mx-auto mb-8">
+                                <CheckCircle2 className="w-10 h-10 text-green-500" />
                             </div>
-                            <h2 className="text-2xl font-bold text-gray-900 mb-2">Interview Complete</h2>
-                            <p className="text-gray-500 text-sm mb-8 leading-relaxed">
-                                Thank you for your time. Your interview has been successfully recorded and shared with the hiring team.
+                            <h2 className="text-3xl font-bold text-gray-900 tracking-tight mb-3">Thank you for submitting</h2>
+                            <p className="text-gray-500 font-medium text-base mb-10 leading-relaxed">
+                                Your response has been recorded. <br />
+                                We will get back to you soon.
                             </p>
                             <Button
                                 onClick={() => window.location.href = "/careers"}
-                                className="w-full h-12 rounded-xl bg-gray-900 text-white font-semibold hover:bg-black transition-all shadow-sm"
+                                className="h-14 px-10 rounded-xl bg-gray-900 text-white font-bold hover:bg-black transition-all shadow-sm text-xs uppercase tracking-widest"
                             >
                                 Return to Careers
                             </Button>
