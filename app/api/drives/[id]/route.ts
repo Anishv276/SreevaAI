@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { updateDriveSchema } from "@/lib/validation";
 import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
+import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
 
 export const dynamic = "force-dynamic";
 
@@ -100,6 +101,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                         (data.deadline && !isNaN(new Date(data.deadline).getTime()) ? new Date(data.deadline) : undefined);
         
         const positions = data.positions !== undefined ? data.positions : undefined;
+        const existingDrive = await prisma.drive.findUnique({
+            where: { id: driveId },
+            select: {
+                ttsProvider: true,
+                cartesiaVoiceId: true,
+                sarvamVoice: true,
+                googleModel: true,
+                googleVoiceName: true,
+            },
+        });
+
+        if (!existingDrive) {
+            return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        }
 
         const updateData: any = {};
         
@@ -140,9 +155,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if ((data as any).shortlistMode !== undefined) updateData.shortlistMode = (data as any).shortlistMode;
         if (data.status !== undefined) updateData.status = data.status;
 
-        if (data.ttsProvider !== undefined) updateData.ttsProvider = data.ttsProvider;
-        if (data.cartesiaVoiceId !== undefined) updateData.cartesiaVoiceId = data.cartesiaVoiceId;
-        if (data.sarvamVoice !== undefined) updateData.sarvamVoice = data.sarvamVoice;
+        Object.assign(
+            updateData,
+            normalizeDriveAiConfig({
+                current: existingDrive,
+                next: {
+                    ttsProvider: data.ttsProvider,
+                    cartesiaVoiceId: data.cartesiaVoiceId,
+                    sarvamVoice: data.sarvamVoice,
+                    googleModel: data.googleModel,
+                    googleVoiceName: data.googleVoiceName,
+                },
+            })
+        );
         if (data.aiName !== undefined) updateData.aiName = data.aiName;
         
 

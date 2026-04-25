@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Mic, ShieldAlert, Languages, Clock, Plus, Trash2, HelpCircle, BrainCircuit, ChevronDown, Globe, Play, Pause, RefreshCw, AudioLines, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CARTESIA_VOICES, SARVAM_VOICES, Voice } from "@/lib/constants/voices";
+import { CARTESIA_VOICES, DEFAULT_GOOGLE_TTS_MODEL, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
 
 interface InterviewProps {
     formData: any;
@@ -62,7 +62,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
     };
 
     useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
+        const handleClickOutside = (event: globalThis.MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setShowLangDropdown(false);
             }
@@ -82,11 +82,32 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
     }, []);
 
     const getAiNameForVoice = (voiceId: string) => {
-        const voices = [...CARTESIA_VOICES, ...SARVAM_VOICES];
+        const voices = [...CARTESIA_VOICES, ...SARVAM_VOICES, ...GOOGLE_VOICES];
         const selected = voices.find(v => v.id === voiceId);
         if (!selected) return "Ishitha";
         
         return selected.gender === "male" ? "Ishaan" : "Ishitha";
+    };
+
+    const getVoicesForProvider = (provider?: string) => {
+        const normalized = (provider || "CARTESIA").toUpperCase();
+        if (normalized === "SARVAM") return SARVAM_VOICES;
+        if (normalized === "GOOGLE") return GOOGLE_VOICES;
+        return CARTESIA_VOICES;
+    };
+
+    const getVoiceIdForProvider = (provider?: string) => {
+        const normalized = (provider || "CARTESIA").toUpperCase();
+        if (normalized === "SARVAM") return formData.sarvamVoice || "shubh";
+        if (normalized === "GOOGLE") return formData.googleVoiceName || "Puck";
+        return formData.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
+    };
+
+    const getModelForProvider = (provider?: string) => {
+        const normalized = (provider || "CARTESIA").toUpperCase();
+        if (normalized === "SARVAM") return formData.sarvamModel || "bulbul:v3";
+        if (normalized === "GOOGLE") return formData.googleModel || DEFAULT_GOOGLE_TTS_MODEL;
+        return formData.cartesiaModel || "cartesia/sonic-3";
     };
 
     const handleVoiceChange = (voiceId: string) => {
@@ -95,20 +116,20 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
         
         updateFormData((prev: any) => ({
             ...prev,
-            [provider === "CARTESIA" ? "cartesiaVoiceId" : "sarvamVoice"]: voiceId,
+            [provider === "CARTESIA" ? "cartesiaVoiceId" : provider === "SARVAM" ? "sarvamVoice" : "googleVoiceName"]: voiceId,
             aiName: newName
         }));
     };
 
-    const playSample = async (e?: React.MouseEvent, overrideVoiceId?: string, overrideProvider?: string, overrideName?: string) => {
+    const playSample = async (e?: ReactMouseEvent, overrideVoiceId?: string, overrideProvider?: string, overrideName?: string) => {
         if (e) {
             e.preventDefault();
             e.stopPropagation();
         }
 
         const provider = overrideProvider || formData.ttsProvider || "CARTESIA";
-        const voiceId = overrideVoiceId || (provider === "CARTESIA" ? (formData.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc") : (formData.sarvamVoice || "shubh"));
-        const modelId = provider === "CARTESIA" ? "cartesia/sonic-3" : "bulbul:v3";
+        const voiceId = overrideVoiceId || getVoiceIdForProvider(provider);
+        const modelId = getModelForProvider(provider);
         const aiName = overrideName || formData.aiName || "Ishitha";
         
         // Handle stop if already playing the same voice
@@ -144,7 +165,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
             }
 
             const arrayBuffer = await res.arrayBuffer();
-            const mimeType = provider === "SARVAM" ? "audio/wav" : "audio/mpeg";
+                const mimeType = provider === "CARTESIA" ? "audio/mpeg" : "audio/wav";
 
             try {
                 const blob = new Blob([arrayBuffer], { type: mimeType });
@@ -199,7 +220,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
         }
     };
 
-    const addQuestion = (e?: React.MouseEvent | React.KeyboardEvent) => {
+    const addQuestion = (e?: ReactMouseEvent | ReactKeyboardEvent) => {
         if (e) { e.preventDefault(); e.stopPropagation(); }
         if (!newQuestion.trim()) return;
         updateFormData((prev: any) => ({
@@ -320,14 +341,14 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                                                 {/* Mini Preview for current selection - Now on the left */}
                                                 <button
                                                     type="button"
-                                                    disabled={previewLoading || (!formData.cartesiaVoiceId && !formData.sarvamVoice)}
+                                                    disabled={previewLoading || !getVoiceIdForProvider(formData.ttsProvider)}
                                                     onClick={(e) => playSample(e)}
                                                     className="h-11 w-11 rounded-xl bg-gray-900 hover:bg-gray-800 text-white flex items-center justify-center transition-all disabled:opacity-50 flex-shrink-0"
                                                     title="Preview current selection"
                                                 >
                                                     {previewLoading ? (
                                                         <RefreshCw className="h-4 w-4 animate-spin" />
-                                                    ) : (playingVoiceId === (formData.ttsProvider === "SARVAM" ? (formData.sarvamVoice || "shubh") : (formData.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")) && !loadingVoiceId) ? (
+                                                    ) : (playingVoiceId === getVoiceIdForProvider(formData.ttsProvider) && !loadingVoiceId) ? (
                                                         <Pause className="h-4 w-4 fill-white" />
                                                     ) : (
                                                         <Play className="h-4 w-4 fill-white ml-0.5" />
@@ -344,18 +365,18 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                                                         <div className="flex flex-col items-start min-w-0">
                                                             <span className="truncate w-full text-left">
                                                                 {(() => {
-                                                                    const currentId = formData.ttsProvider === "SARVAM" ? formData.sarvamVoice : formData.cartesiaVoiceId;
-                                                                    const voices = formData.ttsProvider === "SARVAM" ? SARVAM_VOICES : CARTESIA_VOICES;
+                                                                    const currentId = getVoiceIdForProvider(formData.ttsProvider);
+                                                                    const voices = getVoicesForProvider(formData.ttsProvider);
                                                                     const found = voices.find(v => v.id === currentId);
                                                                     return found ? found.name : "Select a voice";
                                                                 })()}
                                                             </span>
                                                             <div className="flex gap-1 overflow-hidden">
                                                                 {(() => {
-                                                                    const currentId = formData.ttsProvider === "SARVAM" ? formData.sarvamVoice : formData.cartesiaVoiceId;
-                                                                    const voices = formData.ttsProvider === "SARVAM" ? SARVAM_VOICES : CARTESIA_VOICES;
+                                                                    const currentId = getVoiceIdForProvider(formData.ttsProvider);
+                                                                    const voices = getVoicesForProvider(formData.ttsProvider);
                                                                     const found = voices.find(v => v.id === currentId);
-                                                                    return found?.tags?.slice(0, 2).map(tag => (
+                                                                    return found?.tags?.slice(0, 2).map((tag: string) => (
                                                                         <span key={tag} className="text-[7px] text-gray-400 bg-gray-50 px-1 rounded border border-gray-100 uppercase tracking-tighter">{tag}</span>
                                                                     ));
                                                                 })()}
@@ -387,13 +408,13 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
 
                                                     {/* Scrollable List */}
                                                     <div className="overflow-y-auto flex-1 custom-scrollbar">
-                                                        {(formData.ttsProvider === "SARVAM" ? SARVAM_VOICES : CARTESIA_VOICES)
-                                                            .filter(v => 
+                                                        {getVoicesForProvider(formData.ttsProvider)
+                                                            .filter((v) => 
                                                                 v.name.toLowerCase().includes(voiceSearch.toLowerCase()) || 
                                                                 v.description.toLowerCase().includes(voiceSearch.toLowerCase()) ||
                                                                 v.tags?.some(t => t.toLowerCase().includes(voiceSearch.toLowerCase()))
                                                             )
-                                                            .map(v => (
+                                                            .map((v) => (
                                                                 <button
                                                                     key={v.id}
                                                                     type="button"
@@ -403,7 +424,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                                                                         setVoiceSearch("");
                                                                     }}
                                                                     className={`w-full p-3 text-left hover:bg-orange-50/50 transition-all border-b border-gray-50 last:border-0 group flex items-center justify-between gap-4 ${
-                                                                        (formData.ttsProvider === "SARVAM" ? formData.sarvamVoice : formData.cartesiaVoiceId) === v.id 
+                                                                        (getVoiceIdForProvider(formData.ttsProvider)) === v.id 
                                                                         ? 'bg-orange-50/30' : ''
                                                                     }`}
                                                                 >
@@ -429,7 +450,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                                                                         <div className="flex-1 min-w-0 space-y-0.5">
                                                                             <div className="flex items-center gap-2">
                                                                                 <span className={`text-[13px] font-bold tracking-tight font-sans ${
-                                                                                    (formData.ttsProvider === "SARVAM" ? formData.sarvamVoice : formData.cartesiaVoiceId) === v.id 
+                                                                                    (getVoiceIdForProvider(formData.ttsProvider)) === v.id 
                                                                                     ? 'text-orange-600' : 'text-gray-900 group-hover:text-orange-600'
                                                                                 }`}>
                                                                                     {v.name}
@@ -441,7 +462,7 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
                                                                     
                                                                     <div className="flex flex-col items-end gap-1 flex-shrink-0">
                                                                         <div className="flex flex-wrap justify-end gap-1 max-w-[100px]">
-                                                                            {v.tags?.slice(0, 3).map(tag => (
+                                                                            {v.tags?.slice(0, 3).map((tag: string) => (
                                                                                 <span key={tag} className="px-1.5 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wide font-sans whitespace-nowrap bg-gray-50 text-gray-500 border border-gray-100">
                                                                                     {tag}
                                                                                 </span>

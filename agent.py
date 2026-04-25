@@ -1,3 +1,4 @@
+import base64
 import os
 import sys
 import asyncio
@@ -11,6 +12,7 @@ import json
 import time
 import asyncpg
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Optional, Any
@@ -23,6 +25,11 @@ from dotenv import load_dotenv
 from livekit.agents import (
     Agent,
     AgentSession,
+    APIConnectOptions,
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    DEFAULT_API_CONNECT_OPTIONS,
     JobContext,
     JobProcess,
     inference,
@@ -38,6 +45,9 @@ from livekit.agents.voice.events import ConversationItemAddedEvent
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
 from livekit.plugins import cartesia, openai, deepgram, silero, sarvam
+from livekit.plugins.google import realtime as google_realtime
+from google import genai as google_genai
+from google.genai import types as google_genai_types
 
 try:
     from livekit.plugins import ai_coustics
@@ -188,6 +198,8 @@ STT_MODEL = "nova-3"  # deepgram model
 CARTESIA_MODEL = "cartesia/sonic-3"  # Cartesia model via LiveKit Inference
 CARTESIA_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"  # "Jacqueline - Reassuring Agent" (verified on account)
 LLM_MODEL = "gpt-4.1-mini"  # richer conversational quality at mini cost
+GOOGLE_REALTIME_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
+GOOGLE_ANALYSIS_MODEL = "gemini-2.5-flash"
 DATABASE_URL = os.environ.get("DATABASE_URL")
 AGENT_NAME = os.environ.get("LIVEKIT_AGENT_NAME", "ai_interviewer")
 APP_BASE_URL = (
@@ -1618,6 +1630,245 @@ def build_sarvam_tts(
     return sarvam.TTS(**tts_kwargs)
 
 
+class _GoogleGeminiHttpChunkedStream(lk_tts.ChunkedStream):
+    def __init__(self, *, tts: "GoogleGeminiHttpTTS", input_text: str, conn_options: APIConnectOptions) -> None:
+        super().__init__(tts=tts, input_text=input_text, conn_options=conn_options)
+        self._tts = tts
+
+    async def _run(self, output_emitter: lk_tts.AudioEmitter) -> None:
+        try:
+            audio_bytes = await self._tts._generate_audio(self._input_text, timeout=self._conn_options.timeout)
+            output_emitter.initialize(
+                request_id=uuid.uuid4().hex,
+                sample_rate=self._tts.sample_rate,
+                num_channels=self._tts.num_channels,
+                mime_type="audio/pcm",
+            )
+            output_emitter.push(audio_bytes)
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="ignore") if hasattr(e, "read") else None
+            retryable = e.code in {429, 499} or 500 <= e.code < 600
+            raise APIStatusError(
+                f"Google Gemini TTS error: {e.reason}",
+                status_code=int(e.code or -1),
+                body=body,
+                retryable=retryable,
+            ) from e
+        except urllib.error.URLError as e:
+            raise APIConnectionError(f"Google Gemini TTS connection error: {e.reason}") from e
+        except TimeoutError as e:
+            raise APITimeoutError("Google Gemini TTS request timed out.") from e
+        except Exception as e:
+            raise APIConnectionError(f"Google Gemini TTS error: {e}", retryable=True) from e
+
+
+class GoogleGeminiHttpTTS(lk_tts.TTS):
+    def __init__(self, *, api_key: str, model: str = "gemini-2.5-flash-preview-tts", voice_name: str = "Kore") -> None:
+        super().__init__(
+            capabilities=lk_tts.TTSCapabilities(streaming=False),
+            sample_rate=24000,
+            num_channels=1,
+        )
+        self._api_key = api_key.strip()
+        self._model = model.strip() or "gemini-2.5-flash-preview-tts"
+        self._voice_name = voice_name.strip() or "Kore"
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def provider(self) -> str:
+        return "Google Gemini"
+
+    async def _generate_audio(self, text: str, *, timeout: float) -> bytes:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{urllib.parse.quote(self._model, safe='')}:generateContent"
+        payload = {
+            "contents": [{"parts": [{"text": text}]}],
+            "generationConfig": {
+                "responseModalities": ["AUDIO"],
+                "speechConfig": {
+                    "voiceConfig": {
+                        "prebuiltVoiceConfig": {
+                            "voiceName": self._voice_name,
+                        }
+                    }
+                },
+            },
+            "model": self._model,
+        }
+        req = urllib.request.Request(
+            url,
+            method="POST",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": self._api_key,
+            },
+        )
+
+        def _do_request() -> bytes:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+            data = json.loads(raw.decode("utf-8"))
+            inline_data = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            for part in inline_data:
+                encoded = (part.get("inlineData") or {}).get("data")
+                mime_type = (part.get("inlineData") or {}).get("mimeType") or ""
+                if isinstance(encoded, str) and encoded.strip() and mime_type.startswith("audio/"):
+                    return base64.b64decode(encoded)
+            raise RuntimeError("Invalid audio response from Google Gemini")
+
+        return await asyncio.to_thread(_do_request)
+
+    def synthesize(
+        self, text: str, *, conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS
+    ) -> lk_tts.ChunkedStream:
+        return _GoogleGeminiHttpChunkedStream(tts=self, input_text=text, conn_options=conn_options)
+
+
+def build_google_tts(model: str = "gemini-2.5-flash-preview-tts", voice_name: str = "Kore"):
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise RuntimeError("GOOGLE_API_KEY is not set")
+    return GoogleGeminiHttpTTS(api_key=api_key, model=model, voice_name=voice_name)
+
+
+class _GoogleCompletionPromptDetails:
+    def __init__(self, cached_tokens: int = 0) -> None:
+        self.cached_tokens = cached_tokens
+
+
+class _GoogleCompletionUsage:
+    def __init__(self, prompt_tokens: int = 0, completion_tokens: int = 0, cached_tokens: int = 0) -> None:
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+        self.prompt_tokens_details = _GoogleCompletionPromptDetails(cached_tokens=cached_tokens)
+
+
+class _GoogleCompletionMessage:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
+class _GoogleCompletionChoice:
+    def __init__(self, content: str) -> None:
+        self.message = _GoogleCompletionMessage(content)
+
+
+class _GoogleCompletionResponse:
+    def __init__(self, *, model: str, content: str, prompt_tokens: int = 0, completion_tokens: int = 0, cached_tokens: int = 0) -> None:
+        self.model = model
+        self.choices = [_GoogleCompletionChoice(content)]
+        self.usage = _GoogleCompletionUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cached_tokens=cached_tokens,
+        )
+
+
+class _GoogleChatCompletions:
+    def __init__(self, client: google_genai.Client) -> None:
+        self._client = client
+
+    @staticmethod
+    def _join_message_content(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            pieces: list[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    pieces.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text")
+                    if text:
+                        pieces.append(str(text))
+            return "\n".join(piece for piece in pieces if piece)
+        return str(content)
+
+    async def create(self, *, model: str, temperature: float | None = None, max_tokens: int | None = None, messages: list[dict[str, Any]] | None = None, **_: Any) -> _GoogleCompletionResponse:
+        system_sections: list[str] = []
+        contents: list[dict[str, Any]] = []
+
+        for message in messages or []:
+            role = str(message.get("role") or "user").lower()
+            text = self._join_message_content(message.get("content", ""))
+            if not text.strip():
+                continue
+            if role == "system":
+                system_sections.append(text)
+            else:
+                contents.append(
+                    {
+                        "role": "model" if role == "assistant" else "user",
+                        "parts": [{"text": text}],
+                    }
+                )
+
+        config = google_genai_types.GenerateContentConfig(
+            systemInstruction="\n\n".join(system_sections) if system_sections else None,
+            temperature=temperature,
+            maxOutputTokens=max_tokens,
+            responseModalities=["TEXT"],
+        )
+        response = await self._client.aio.models.generate_content(
+            model=model,
+            contents=contents or "",
+            config=config,
+        )
+        response_text = str(getattr(response, "text", "") or "").strip()
+        usage = getattr(response, "usage_metadata", None)
+        prompt_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)
+        completion_tokens = int(getattr(usage, "candidates_token_count", 0) or 0)
+        cached_tokens = int(getattr(usage, "cached_content_token_count", 0) or 0)
+        return _GoogleCompletionResponse(
+            model=model,
+            content=response_text,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cached_tokens=cached_tokens,
+        )
+
+
+class _GoogleChatNamespace:
+    def __init__(self, client: google_genai.Client) -> None:
+        self.completions = _GoogleChatCompletions(client)
+
+
+class GoogleAnalysisClient:
+    def __init__(self, api_key: str) -> None:
+        self._client = google_genai.Client(api_key=api_key)
+        self.chat = _GoogleChatNamespace(self._client)
+
+
+def build_google_analysis_client() -> GoogleAnalysisClient:
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise RuntimeError("GOOGLE_API_KEY is not set")
+    return GoogleAnalysisClient(api_key=api_key)
+
+
+def build_google_realtime_llm(
+    *,
+    model: str = GOOGLE_REALTIME_MODEL,
+    voice_name: str = "Puck",
+    language: str = "en-US",
+    temperature: float = 0.4,
+):
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise RuntimeError("GOOGLE_API_KEY is not set")
+    return google_realtime.RealtimeModel(
+        model=model,
+        api_key=api_key,
+        voice=voice_name,
+        language=language,
+        modalities=[google_genai_types.Modality.AUDIO, google_genai_types.Modality.TEXT],
+        temperature=temperature,
+    )
+
+
 def build_stt(language_code: str = "en", model: str = STT_MODEL):
     """Build Deepgram Nova-3 STT with optional diarization."""
     stt_kwargs: dict[str, Any] = {
@@ -2507,6 +2758,7 @@ async def get_interview_context(app_id: str):
            COALESCE(d."ttsProvider", o."ttsProvider") AS "ttsProvider",
            COALESCE(d."cartesiaVoiceId", o."cartesiaVoiceId") AS "cartesiaVoiceId", o."cartesiaModel",
            o."sarvamModel", COALESCE(d."sarvamVoice", o."sarvamVoice") AS "sarvamVoice",
+           o."googleModel", o."googleVoiceName",
            COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName", o.location AS "orgLocation",
            o."sttProvider", o."deepgramModel", o."sarvamSttModel",
            o."llmProvider", o."llmModel", o."llmTemperature", o."proctoringSignals"
@@ -2559,6 +2811,8 @@ async def get_interview_context(app_id: str):
                 "cartesiaModel": row["cartesiaModel"],
                 "sarvamModel": row["sarvamModel"],
                 "sarvamVoice": row["sarvamVoice"],
+                "googleModel": row["googleModel"],
+                "googleVoiceName": row["googleVoiceName"],
                 "aiName": row["aiName"],
                 "sttProvider": row["sttProvider"],
                 "deepgramModel": row["deepgramModel"],
@@ -2768,14 +3022,20 @@ async def generate_interview_summary(
     llm_model: str = LLM_MODEL,
 ):
     """Generate a high-quality AI narrative summary after the interview completes."""
-    if not transcript_lines or not os.environ.get("OPENAI_API_KEY") or not DATABASE_URL:
+    is_google_model = str(llm_model).lower().startswith("gemini")
+    if not transcript_lines or not DATABASE_URL:
         logger.warning(
-            "[SUMMARY] Skipping: missing transcript, OPENAI_API_KEY, or DATABASE_URL"
+            "[SUMMARY] Skipping: missing transcript or DATABASE_URL"
+        )
+        return
+    if not is_google_model and not os.environ.get("OPENAI_API_KEY"):
+        logger.warning(
+            "[SUMMARY] Skipping: missing OPENAI_API_KEY for non-Google summary"
         )
         return
 
     try:
-        client = AsyncOpenAI()
+        client = build_google_analysis_client() if is_google_model else AsyncOpenAI()
         transcript_text = "\n".join(transcript_lines)
         transcript_text = truncate_to_tokens(transcript_text, 2500)
 
@@ -3695,46 +3955,73 @@ async def entrypoint(ctx: JobContext):
     ctx.add_shutdown_callback(_log_shutdown)
 
 
-    # Org-specific model settings (strictly DB driven)
+    # Org-specific model settings.
     org_tts_provider = str(require_db_value("ttsProvider")).upper()
-    org_stt_provider = str(require_db_value("sttProvider")).upper()
-    org_llm_provider = str(require_db_value("llmProvider")).upper()
+    runtime_tts_provider = org_tts_provider
 
     org_cartesia_model: Optional[str] = None
     org_cartesia_voice: Optional[str] = None
     org_sarvam_model: Optional[str] = None
     org_sarvam_voice: Optional[str] = None
+    org_google_model: Optional[str] = None
+    org_google_voice_name: Optional[str] = None
 
     org_deepgram_model: Optional[str] = None
     org_sarvam_stt_model: Optional[str] = None
 
-    org_llm_model = require_db_value("llmModel")
-    org_llm_temperature = float(require_db_value("llmTemperature"))
+    org_llm_model: Optional[str] = None
+    org_llm_temperature: float = 0.4
+    org_stt_provider: str = "GOOGLE" if org_tts_provider == "GOOGLE" else ""
+    org_llm_provider: str = "GOOGLE" if org_tts_provider == "GOOGLE" else ""
 
-    if org_tts_provider == "CARTESIA":
-        # cartesiaModel may be null at org level when drive overrides ttsProvider to CARTESIA
-        org_cartesia_model = str(require_db_value("cartesiaModel", default=CARTESIA_MODEL, required=False) or CARTESIA_MODEL)
-        org_cartesia_voice = str(require_db_value("cartesiaVoiceId", default=CARTESIA_VOICE_ID, required=False) or CARTESIA_VOICE_ID)
-    elif org_tts_provider == "SARVAM":
-        org_sarvam_model = str(require_db_value("sarvamModel", default="bulbul:v2", required=False) or "bulbul:v2")
-        org_sarvam_voice = str(require_db_value("sarvamVoice", default="anushka", required=False) or "anushka")
+    if org_tts_provider == "GOOGLE":
+        org_google_model = str(require_db_value("googleModel", default=DEFAULT_GOOGLE_TTS_MODEL, required=False) or DEFAULT_GOOGLE_TTS_MODEL)
+        org_google_voice_name = str(require_db_value("googleVoiceName", default=DEFAULT_GOOGLE_VOICE_NAME, required=False) or DEFAULT_GOOGLE_VOICE_NAME)
+        analysis_client = build_google_analysis_client()
+        analysis_model = GOOGLE_ANALYSIS_MODEL
+        logger.info(
+            "[GOOGLE_MODE] Active Google-only runtime selected; DB STT/LLM providers will be ignored"
+        )
     else:
-        raise RuntimeError(f"Unsupported DB ttsProvider: {org_tts_provider}")
+        org_stt_provider = str(require_db_value("sttProvider")).upper()
+        org_llm_provider = str(require_db_value("llmProvider")).upper()
+        org_llm_model = require_db_value("llmModel")
+        org_llm_temperature = float(require_db_value("llmTemperature"))
 
-    if org_stt_provider == "DEEPGRAM":
-        org_deepgram_model = str(require_db_value("deepgramModel"))
-    elif org_stt_provider == "SARVAM":
-        org_sarvam_stt_model = str(require_db_value("sarvamSttModel"))
-    else:
-        raise RuntimeError(f"Unsupported DB sttProvider: {org_stt_provider}")
+        if org_tts_provider == "CARTESIA":
+            # cartesiaModel may be null at org level when drive overrides ttsProvider to CARTESIA
+            org_cartesia_model = str(require_db_value("cartesiaModel", default=CARTESIA_MODEL, required=False) or CARTESIA_MODEL)
+            org_cartesia_voice = str(require_db_value("cartesiaVoiceId", default=CARTESIA_VOICE_ID, required=False) or CARTESIA_VOICE_ID)
+        elif org_tts_provider == "SARVAM":
+            org_sarvam_model = str(require_db_value("sarvamModel", default="bulbul:v2", required=False) or "bulbul:v2")
+            org_sarvam_voice = str(require_db_value("sarvamVoice", default="anushka", required=False) or "anushka")
+        else:
+            raise RuntimeError(f"Unsupported DB ttsProvider: {org_tts_provider}")
 
-    if org_llm_provider not in {"OPENAI", "SARVAM"}:
-        raise RuntimeError(f"Unsupported DB llmProvider: {org_llm_provider}")
-    analysis_openai_model = org_llm_model if org_llm_provider == "OPENAI" else LLM_MODEL
+        if org_stt_provider == "DEEPGRAM":
+            org_deepgram_model = str(require_db_value("deepgramModel"))
+        elif org_stt_provider == "SARVAM":
+            org_sarvam_stt_model = str(require_db_value("sarvamSttModel"))
+        else:
+            raise RuntimeError(f"Unsupported DB sttProvider: {org_stt_provider}")
+
+        if org_llm_provider not in {"OPENAI", "SARVAM"}:
+            raise RuntimeError(f"Unsupported DB llmProvider: {org_llm_provider}")
+
+        analysis_client = AsyncOpenAI()
+        analysis_model = org_llm_model if org_llm_provider == "OPENAI" else LLM_MODEL
 
     logger.info(
-        f"Org models -> STT: {org_deepgram_model if org_stt_provider != 'SARVAM' else org_sarvam_stt_model}, TTS: {org_cartesia_model if org_tts_provider != 'SARVAM' else org_sarvam_model} "
-        f"voice={org_cartesia_voice if org_tts_provider != 'SARVAM' else org_sarvam_voice}, LLM: {org_llm_model} ({org_llm_provider})"
+        (
+            f"Org models -> GOOGLE runtime voice={org_google_voice_name}, analysis={analysis_model}"
+            if org_tts_provider == "GOOGLE"
+            else (
+                f"Org models -> STT: {org_deepgram_model if org_stt_provider != 'SARVAM' else org_sarvam_stt_model}, "
+                f"TTS: {org_google_model if runtime_tts_provider == 'GOOGLE' else (org_sarvam_model if runtime_tts_provider == 'SARVAM' else org_cartesia_model)} "
+                f"voice={org_google_voice_name if runtime_tts_provider == 'GOOGLE' else (org_sarvam_voice if runtime_tts_provider == 'SARVAM' else org_cartesia_voice)}, "
+                f"LLM: {org_llm_model} ({org_llm_provider})"
+            )
+        )
     )
 
     # Keep custom question text only; we will combine it with a mandatory
@@ -3781,7 +4068,6 @@ async def entrypoint(ctx: JobContext):
 
     # Generate personalized candidate brief in the background.
     # We wait only briefly so first greeting is not blocked by this network call.
-    oai_client_brief = AsyncOpenAI()
     candidate_brief_task = spawn_background_task(
         generate_candidate_brief(
             candidate_name=candidate_first_name or candidate_name,
@@ -3791,9 +4077,9 @@ async def entrypoint(ctx: JobContext):
             ai_report_block=ai_report_block,
             questions_list=session_context.questions_list,
             time_limit_mins=time_limit_mins,
-            client=oai_client_brief,
+            client=analysis_client,
             org_id=org_id,
-            llm_model=analysis_openai_model,
+            llm_model=analysis_model,
         ),
         "candidate_brief_generation",
     )
@@ -3888,106 +4174,138 @@ async def entrypoint(ctx: JobContext):
 
     vad_instance = ctx.proc.userdata.get("vad") or build_vad()
 
-    if org_stt_provider == "SARVAM":
-        if org_sarvam_stt_model is None:
-            raise RuntimeError("DB config missing sarvamSttModel for SARVAM")
-        stt_plugin = build_sarvam_stt(
-            language=lang_codes["stt"], model=org_sarvam_stt_model
+    google_mode = org_tts_provider == "GOOGLE"
+    if google_mode:
+        if org_google_voice_name is None:
+            raise RuntimeError("DB config missing googleVoiceName for GOOGLE")
+        logger.info(
+            f"[TTS] Using Google Gemini realtime runtime — voice={org_google_voice_name}"
         )
+        llm_plugin = build_google_realtime_llm(
+            voice_name=org_google_voice_name,
+            language=lang_codes["stt"],
+        )
+        turn_detector = "realtime_llm"
+        session_kwargs = {
+            "vad": vad_instance,
+            "llm": llm_plugin,
+            "turn_handling": TurnHandlingOptions(
+                turn_detection=turn_detector,
+                interruption=InterruptionOptions(
+                    enabled=True,
+                    mode="adaptive",
+                    min_duration=1.5,
+                    min_words=4,
+                    discard_audio_if_uninterruptible=False,
+                    resume_false_interruption=True,
+                    false_interruption_timeout=3.0,
+                ),
+            ),
+            "use_tts_aligned_transcript": False,
+            "aec_warmup_duration": 2.5,
+        }
     else:
-        if org_deepgram_model is None:
-            raise RuntimeError("DB config missing deepgramModel for DEEPGRAM")
-        stt_plugin = build_stt(
-            language_code=lang_codes["stt"], model=org_deepgram_model
-        )
+        if org_stt_provider == "SARVAM":
+            if org_sarvam_stt_model is None:
+                raise RuntimeError("DB config missing sarvamSttModel for SARVAM")
+            stt_plugin = build_sarvam_stt(
+                language=lang_codes["stt"], model=org_sarvam_stt_model
+            )
+        else:
+            if org_deepgram_model is None:
+                raise RuntimeError("DB config missing deepgramModel for DEEPGRAM")
+            stt_plugin = build_stt(
+                language_code=lang_codes["stt"], model=org_deepgram_model
+            )
 
-    if org_tts_provider == "SARVAM":
-        if org_sarvam_model is None or org_sarvam_voice is None:
-            raise RuntimeError("DB config missing sarvamModel/sarvamVoice for SARVAM")
-        sarvam_tts = build_sarvam_tts(
-            language=lang_codes["tts"],
-            model=org_sarvam_model,
-            voice_id=org_sarvam_voice,
-        )
-        # Keep a Cartesia fallback ready so a Sarvam websocket hiccup does not
-        # tear down the whole interview session.
-        if org_cartesia_model is not None and org_cartesia_voice is not None:
-            cartesia_tts = build_cartesia_tts(
+        if runtime_tts_provider == "SARVAM":
+            if org_sarvam_model is None or org_sarvam_voice is None:
+                raise RuntimeError("DB config missing sarvamModel/sarvamVoice for SARVAM")
+            sarvam_tts = build_sarvam_tts(
+                language=lang_codes["tts"],
+                model=org_sarvam_model,
+                voice_id=org_sarvam_voice,
+            )
+            # Keep a Cartesia fallback ready so a Sarvam websocket hiccup does not
+            # tear down the whole interview session.
+            if org_cartesia_model is not None and org_cartesia_voice is not None:
+                cartesia_tts = build_cartesia_tts(
+                    language=lang_codes["tts"],
+                    model=org_cartesia_model,
+                    voice_id=org_cartesia_voice,
+                )
+                tts_plugin = lk_tts.FallbackAdapter(
+                    [sarvam_tts, cartesia_tts], max_retry_per_tts=1
+                )
+            else:
+                tts_plugin = sarvam_tts
+        else:
+            if org_cartesia_model is None or org_cartesia_voice is None:
+                raise RuntimeError(
+                    "DB config missing cartesiaModel/cartesiaVoiceId for CARTESIA"
+                )
+            logger.info(f"[TTS] Using Cartesia — model={org_cartesia_model} voice={org_cartesia_voice}")
+            tts_plugin = build_tts(
                 language=lang_codes["tts"],
                 model=org_cartesia_model,
                 voice_id=org_cartesia_voice,
             )
-            tts_plugin = lk_tts.FallbackAdapter(
-                [sarvam_tts, cartesia_tts], max_retry_per_tts=1
-            )
+
+        if org_llm_provider == "SARVAM":
+            llm_plugin = build_sarvam_llm(model=str(org_llm_model))
         else:
-            tts_plugin = sarvam_tts
-    else:
-        if org_cartesia_model is None or org_cartesia_voice is None:
-            raise RuntimeError(
-                "DB config missing cartesiaModel/cartesiaVoiceId for CARTESIA"
-            )
-        logger.info(f"[TTS] Using Cartesia — model={org_cartesia_model} voice={org_cartesia_voice}")
-        tts_plugin = build_tts(
-            language=lang_codes["tts"],
-            model=org_cartesia_model,
-            voice_id=org_cartesia_voice,
-        )
+            llm_plugin = build_llm(model=str(org_llm_model), temperature=org_llm_temperature)
 
-    if org_llm_provider == "SARVAM":
-        llm_plugin = build_sarvam_llm(model=org_llm_model)
-    else:
-        llm_plugin = build_llm(model=org_llm_model, temperature=org_llm_temperature)
+        turn_detector = ctx.proc.userdata.get("turn_detector")
+        session_kwargs = {
+            "vad": vad_instance,
+            "stt": stt_plugin,
+            "llm": llm_plugin,
+            "tts": tts_plugin,
+            "turn_handling": TurnHandlingOptions(
+                turn_detection=turn_detector,
+                endpointing=EndpointingOptions(
+                    # Slightly longer endpointing to avoid cutting candidates mid-thought.
+                    min_delay=1.5,
+                    max_delay=3.0,
+                    mode="dynamic",
+                ),
+                interruption=InterruptionOptions(
+                    enabled=True,
+                    mode="adaptive",
+                    # Sensitivity tuning: ignore short noises/backchannels.
+                    # Only stop if candidate speaks for > 1.5s and > 4 words.
+                    min_duration=1.5,
+                    min_words=4,
+                    # Keep buffered speech during AEC warmup to avoid dropping input.
+                    discard_audio_if_uninterruptible=False,
+                    resume_false_interruption=True,
+                    false_interruption_timeout=3.0,
+                ),
+            ),
+            "use_tts_aligned_transcript": True,
+            "tts_text_transforms": [
+                "filter_emoji",
+                "filter_markdown",
+                _single_question_transform,
+                text_transforms.replace({
+                    "HR": "H R",
+                    "SaaS": "sass",
+                    "API": "A P I",
+                    "SQL": "sequel",
+                    "URL": "U R L",
+                    "UI": "U I",
+                    "UX": "U X",
+                    "DevOps": "dev ops",
+                    "LiveKit": "Live Kit",
+                }),
+            ],
+            "aec_warmup_duration": 2.5,
+        }
 
-    turn_detector = ctx.proc.userdata.get("turn_detector")
     latest_session_usage: Optional[AgentSessionUsage] = None
 
-    session = AgentSession(
-        vad=vad_instance,
-        stt=stt_plugin,
-        llm=llm_plugin,
-        tts=tts_plugin,
-        turn_handling=TurnHandlingOptions(
-            turn_detection=turn_detector,
-            endpointing=EndpointingOptions(
-                # Slightly longer endpointing to avoid cutting candidates mid-thought.
-                min_delay=1.5,
-                max_delay=3.0,
-                mode="dynamic",
-            ),
-            interruption=InterruptionOptions(
-                enabled=True,
-                mode="adaptive",
-                # Sensitivity tuning: ignore short noises/backchannels.
-                # Only stop if candidate speaks for > 1.5s and > 4 words.
-                min_duration=1.5,
-                min_words=4,
-                # Keep buffered speech during AEC warmup to avoid dropping input.
-                discard_audio_if_uninterruptible=False,
-                resume_false_interruption=True,
-                false_interruption_timeout=3.0,
-            ),
-        ),
-        use_tts_aligned_transcript=True,
-        tts_text_transforms=[
-            "filter_emoji",
-            "filter_markdown",
-            _single_question_transform,
-            text_transforms.replace({
-                "HR": "H R",
-                "SaaS": "sass",
-                "API": "A P I",
-                "SQL": "sequel",
-                "URL": "U R L",
-                "UI": "U I",
-                "UX": "U X",
-                "DevOps": "dev ops",
-                "LiveKit": "Live Kit",
-            }),
-        ],
-        # Increased warmup ensures AEC and audio transport are stable before greeting.
-        aec_warmup_duration=2.5,
-    )
+    session = AgentSession(**session_kwargs)
 
     @session.on("session_usage_updated")
     def on_session_usage_updated(event) -> None:
@@ -4018,7 +4336,7 @@ async def entrypoint(ctx: JobContext):
     # Per-turn decision engine state
     _last_interviewer_question = ""   # most recent question Ishita asked
     _topic_follow_up_count = 0        # consecutive follow-ups on same topic
-    _oai_eval_client = AsyncOpenAI()  # reused client for per-turn evaluations
+    _oai_eval_client = analysis_client  # reused client for per-turn evaluations
     answer_scores: list[dict] = []    # log of all answer quality scores for final DB save
     _topic_depth_history: list[float] = []  # depth scores per answer on current topic (reset on MOVE_ON)
     _collapse_stage: int = 0               # 0=none, 1=first probe issued, 2+=repeated collapse (hard flag)
@@ -4443,7 +4761,7 @@ async def entrypoint(ctx: JobContext):
                             turn=turn,
                             client=_oai_eval_client,
                             org_id=org_id,
-                            llm_model=analysis_openai_model,
+                            llm_model=analysis_model,
                         )
                         contradiction_alert: Optional[dict] = None
                         for claim in new_claims:
@@ -4476,7 +4794,7 @@ async def entrypoint(ctx: JobContext):
                                     contradiction_detected=contradiction_alert is not None,
                                     client=_oai_eval_client,
                                     org_id=org_id,
-                                    llm_model=analysis_openai_model,
+                                    llm_model=analysis_model,
                                     score_answer_quality_fn=score_answer_quality,
                                     evaluate_answer_and_decide_fn=evaluate_answer_and_decide,
                                     signal_toggles=evaluation_signal_toggles,
@@ -4754,7 +5072,7 @@ async def entrypoint(ctx: JobContext):
                                 org_id=org_id,
                                 turn_count=t,
                                 total_turns_expected=exp,
-                                llm_model=analysis_openai_model,
+                                llm_model=analysis_model,
                             )
                             if state:
                                 # All I/O done — acquire lock before writing shared state.
@@ -5294,7 +5612,7 @@ async def entrypoint(ctx: JobContext):
             not is_agent_speaking
             and not is_candidate_speaking
             and awaiting_candidate_response
-            and not inactivity_warning_sent_for_current_prompt
+            and not inactivity_nudge_sent_for_current_prompt
             and not agent_just_spoke
             and inactivity_elapsed >= INACTIVITY_WARNING_SECS
         ):
@@ -5304,7 +5622,7 @@ async def entrypoint(ctx: JobContext):
                     f"If you're still there, please say something, otherwise I will have to end the call in {INACTIVITY_END_SECS - INACTIVITY_WARNING_SECS} seconds."
                 )
                 spawn_background_task(_deliver_nudge(warning_text), "inactivity_warning")
-                inactivity_warning_sent_for_current_prompt = True
+                inactivity_nudge_sent_for_current_prompt = True
                 logger.info(f"[NUDGE] {INACTIVITY_WARNING_SECS:.0f}s termination warning delivered")
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver warning: {e}")
@@ -5314,7 +5632,7 @@ async def entrypoint(ctx: JobContext):
             not is_agent_speaking
             and not is_candidate_speaking
             and awaiting_candidate_response
-            and inactivity_warning_sent_for_current_prompt
+            and inactivity_nudge_sent_for_current_prompt
             and inactivity_elapsed >= INACTIVITY_END_SECS
         ):
             logger.info(
@@ -5421,12 +5739,22 @@ async def entrypoint(ctx: JobContext):
     # Save answer quality scores
     await persist_answer_scores(app_id, answer_scores)
 
-    selected_tts_model = org_sarvam_model if org_tts_provider == "SARVAM" else org_cartesia_model
-    selected_stt_model = org_sarvam_stt_model if org_stt_provider == "SARVAM" else org_deepgram_model
+    selected_tts_model = (
+        GOOGLE_REALTIME_MODEL
+        if runtime_tts_provider == "GOOGLE"
+        else org_sarvam_model
+        if runtime_tts_provider == "SARVAM"
+        else org_cartesia_model
+    )
+    selected_stt_model = (
+        GOOGLE_REALTIME_MODEL
+        if org_tts_provider == "GOOGLE"
+        else org_sarvam_stt_model if org_stt_provider == "SARVAM" else org_deepgram_model
+    )
     await persist_org_usage_metrics(
         org_id,
         latest_session_usage or session.usage,
-        tts_provider=org_tts_provider,
+        tts_provider=runtime_tts_provider,
         tts_model=selected_tts_model,
         stt_provider=org_stt_provider,
         stt_model=selected_stt_model,
@@ -5441,7 +5769,7 @@ async def entrypoint(ctx: JobContext):
                     transcript_lines,
                     job_title,
                     org_id=org_id,
-                    llm_model=analysis_openai_model,
+                    llm_model=analysis_model,
                 ),
                 timeout=8,
             )

@@ -27,13 +27,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         if (org) orgData = org;
     }
 
+
     // Allow Super Admins to access admin routes for "inspections"
     if (isSuperAdminRole(session.role)) {
         // We skip the redirect to /super-admin here to allow viewing admin dashboards
     } else if (!isAdminRole(session.role)) {
         redirect("/login");
     }
-
     // Real-time synchronization: prioritize DB state over session cookie for onboarding UI
     const needsOnboarding = orgData.onboardingComplete !== true;
     const showSidebar = !needsOnboarding;
@@ -41,7 +41,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     return (
         <>
         <AccountStatusHandler status={orgData.status} />
-        {orgData.status === "ACTIVE" && <LowCreditsBanner />}
         <div className="flex min-h-screen bg-[#F8F9FB] relative overflow-hidden font-sans">
             {/*  Background Deck: Aurora Blobs  */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
@@ -91,4 +90,3 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </>
     );
 }
-

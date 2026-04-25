@@ -8,6 +8,7 @@ import { validatePasswordStrength } from "@/lib/validation";
 import { sendSuperAdminGmailEmail } from "@/lib/google-auth";
 import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
 import { DEFAULT_PROCTORING_SIGNALS, normalizeProctoringSignals } from "@/lib/proctoring-signals";
+import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 
 // GET /api/super-admin/orgs - list organizations with stats, pagination, and search
 export async function GET(request: Request) {
@@ -276,7 +277,7 @@ export async function POST(request: Request) {
             maxActiveDrives,
             maxTeamMembers,
             proctoringSignals,
-            ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice,
+            ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice, googleModel, googleVoiceName,
             sttProvider, deepgramModel, sarvamSttModel,
             llmProvider, llmModel, llmTemperature,
             location
@@ -326,36 +327,28 @@ export async function POST(request: Request) {
                 logoUrl: logoUrl || null,
                 usageMetrics: {},
                 location: location || null,
-                ttsProvider: ttsProvider || "CARTESIA",
-                sttProvider: sttProvider || "DEEPGRAM",
             };
 
-            // TTS Hierarchy
-            if (ttsProvider === "SARVAM") {
-                orgData.sarvamModel = sarvamModel || "bulbul:v3";
-                orgData.sarvamVoice = sarvamVoice || "shubh";
-                orgData.cartesiaVoiceId = null;
-                orgData.cartesiaModel = null;
-            } else {
-                orgData.cartesiaVoiceId = cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
-                orgData.cartesiaModel = cartesiaModel || "cartesia/sonic-3";
-                orgData.sarvamModel = null;
-                orgData.sarvamVoice = null;
-            }
-
-            // STT Hierarchy
-            if (sttProvider === "SARVAM") {
-                orgData.sarvamSttModel = sarvamSttModel || "saaras:v3";
-                orgData.deepgramModel = null;
-            } else {
-                orgData.deepgramModel = deepgramModel || "nova-3-general";
-                orgData.sarvamSttModel = null;
-            }
-
-            // LLM Hierarchy
-            orgData.llmProvider = llmProvider || "OPENAI";
-            orgData.llmModel = llmModel || "gpt-4o";
-            orgData.llmTemperature = llmTemperature !== undefined ? Number(llmTemperature) : 0.7;
+            Object.assign(
+                orgData,
+                normalizeOrgAiConfig({
+                    next: {
+                        ttsProvider,
+                        cartesiaVoiceId,
+                        cartesiaModel,
+                        sarvamModel,
+                        sarvamVoice,
+                        googleModel,
+                        googleVoiceName,
+                        sttProvider,
+                        deepgramModel,
+                        sarvamSttModel,
+                        llmProvider,
+                        llmModel,
+                        llmTemperature,
+                    },
+                })
+            );
 
             const orgId = generateId("org", orgName);
             const userName = adminName || adminEmail.split("@")[0];

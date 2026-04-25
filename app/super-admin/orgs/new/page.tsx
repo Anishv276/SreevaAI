@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Sparkles, Volume2, Mic2, BrainCircuit, Activity, Coins, Mic, ChevronDown } from "lucide-react";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "@/components/ui/toast-custom";
-import { CARTESIA_VOICES } from "@/lib/constants/voices";
+import { CARTESIA_VOICES, DEFAULT_GOOGLE_TTS_MODEL, GOOGLE_TTS_MODELS, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS } from "@/lib/org-plans";
 import { DEFAULT_PROCTORING_SIGNALS } from "@/lib/proctoring-signals";
 import { cn } from "@/lib/utils";
@@ -139,6 +139,8 @@ export default function NewOrgPage() {
         cartesiaModel: "cartesia/sonic-3",
         sarvamModel: "bulbul:v3",
         sarvamVoice: "shubh",
+        googleModel: DEFAULT_GOOGLE_TTS_MODEL,
+        googleVoiceName: "Puck",
         sttProvider: "DEEPGRAM",
         deepgramModel: "nova-3-general",
         sarvamSttModel: "saaras:v3",
@@ -157,14 +159,82 @@ export default function NewOrgPage() {
         }));
     };
 
+    const applyTtsProvider = (provider: string) => {
+        const normalized = provider.toUpperCase();
+        setForm((prev) => {
+            if (normalized === "GOOGLE") {
+                return {
+                    ...prev,
+                    ttsProvider: "GOOGLE",
+                    cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+                    cartesiaModel: "cartesia/sonic-3",
+                    sarvamModel: "bulbul:v3",
+                    sarvamVoice: "shubh",
+                    googleModel: DEFAULT_GOOGLE_TTS_MODEL,
+                    googleVoiceName: "Puck",
+                    sttProvider: "GOOGLE",
+                    deepgramModel: "nova-3-general",
+                    sarvamSttModel: "saaras:v3",
+                    llmProvider: "GOOGLE",
+                    llmModel: "gemini-2.5-flash",
+                };
+            }
+
+            if (normalized === "SARVAM") {
+                return {
+                    ...prev,
+                    ttsProvider: "SARVAM",
+                    cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+                    cartesiaModel: "cartesia/sonic-3",
+                    googleModel: DEFAULT_GOOGLE_TTS_MODEL,
+                    googleVoiceName: "Puck",
+                    sarvamModel: prev.sarvamModel || "bulbul:v3",
+                    sarvamVoice: prev.sarvamVoice || "shubh",
+                    sttProvider: "DEEPGRAM",
+                    deepgramModel: prev.deepgramModel || "nova-3-general",
+                    sarvamSttModel: prev.sarvamSttModel || "saaras:v3",
+                    llmProvider: "OPENAI",
+                    llmModel: prev.llmModel || "gpt-4o",
+                };
+            }
+
+            return {
+                ...prev,
+                ttsProvider: "CARTESIA",
+                sarvamModel: "bulbul:v3",
+                sarvamVoice: "shubh",
+                googleModel: DEFAULT_GOOGLE_TTS_MODEL,
+                googleVoiceName: "Puck",
+                cartesiaVoiceId: prev.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+                cartesiaModel: prev.cartesiaModel || "cartesia/sonic-3",
+                sttProvider: "DEEPGRAM",
+                deepgramModel: prev.deepgramModel || "nova-3-general",
+                sarvamSttModel: prev.sarvamSttModel || "saaras:v3",
+                llmProvider: "OPENAI",
+                llmModel: prev.llmModel || "gpt-4o",
+            };
+        });
+    };
+
     const playSample = async () => {
-        const isCartesia = form.ttsProvider === "CARTESIA";
-        const voiceId = isCartesia ? form.cartesiaVoiceId : form.sarvamVoice;
-        const modelId = isCartesia ? form.cartesiaModel : form.sarvamModel;
+        const provider = form.ttsProvider;
+        const voiceId =
+            provider === "SARVAM"
+                ? form.sarvamVoice
+                : provider === "GOOGLE"
+                    ? form.googleVoiceName
+                    : form.cartesiaVoiceId;
+        const modelId =
+            provider === "SARVAM"
+                ? form.sarvamModel
+                : provider === "GOOGLE"
+                    ? form.googleModel
+                    : form.cartesiaModel;
         const endpoint = "/api/admin/voice/preview";
-        const transcript = isCartesia
-            ? "Hello! I am ready to conduct high-quality AI interviews for your team."
-            : "नमस्ते, मैं आपकी टीम के लिए उच्च गुणवत्ता वाले साक्षात्कार आयोजित करने के लिए तैयार हूं।";
+        const transcript =
+            provider === "SARVAM"
+                ? "नमस्ते, मैं आपकी टीम के लिए उच्च गुणवत्ता वाले साक्षात्कार आयोजित करने के लिए तैयार हूं।"
+                : "Hello! I am ready to conduct high-quality AI interviews for your team.";
 
         if (!voiceId) return;
 
@@ -264,7 +334,7 @@ export default function NewOrgPage() {
 
                     <div className="flex flex-col sm:flex-row gap-4 pt-4">
                         <button
-                            onClick={() => { setSuccess(null); setForm({ orgName: "", slug: "", location: "", plan: DEFAULT_ORG_PLAN, maxActiveDrives: 0, maxTeamMembers: 0, creditsTotal: 100, proctoringSignals: { ...DEFAULT_PROCTORING_SIGNALS }, adminName: "", adminEmail: "", adminPassword: "", ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", cartesiaModel: "cartesia/sonic-3", sarvamModel: "bulbul:v3", sarvamVoice: "shubh", sttProvider: "DEEPGRAM", deepgramModel: "nova-3-general", sarvamSttModel: "saaras:v3", llmProvider: "OPENAI", llmModel: "gpt-4o", llmTemperature: 0.7 }); }}
+                        onClick={() => { setSuccess(null); setForm({ orgName: "", slug: "", location: "", plan: DEFAULT_ORG_PLAN, maxActiveDrives: 0, maxTeamMembers: 0, creditsTotal: 100, proctoringSignals: { ...DEFAULT_PROCTORING_SIGNALS }, adminName: "", adminEmail: "", adminPassword: "", ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", cartesiaModel: "cartesia/sonic-3", sarvamModel: "bulbul:v3", sarvamVoice: "shubh", googleModel: DEFAULT_GOOGLE_TTS_MODEL, googleVoiceName: "Puck", sttProvider: "DEEPGRAM", deepgramModel: "nova-3-general", sarvamSttModel: "saaras:v3", llmProvider: "OPENAI", llmModel: "gpt-4o", llmTemperature: 0.7 }); }}
                             className="flex-1 h-12 rounded-xl border border-gray-200 bg-white text-gray-500 font-bold text-[11px] uppercase tracking-widest hover:bg-gray-50 transition-all shadow-sm"
                         >
                             Onboard Another
@@ -476,6 +546,11 @@ export default function NewOrgPage() {
                     </div>
 
                     <div className="bg-white border border-gray-100 rounded-xl p-8 shadow-sm space-y-12">
+                        {form.ttsProvider === "GOOGLE" && (
+                            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">
+                                Google mode is exclusive. Saving this org clears Cartesia, Sarvam, Deepgram, and OpenAI settings and runs the Google-only runtime.
+                            </div>
+                        )}
                         {/* TTS SECTION */}
                         <div className="space-y-8">
                             <div className="flex items-center gap-2 pb-2 border-b border-gray-50">
@@ -489,24 +564,31 @@ export default function NewOrgPage() {
                                         <div className="grid grid-cols-2 gap-3">
                                             {[
                                                 { id: "CARTESIA", label: "Cartesia", sub: "Ultra-Low Latency" },
-                                                { id: "SARVAM", label: "Sarvam AI", sub: "Regional Authenticity" }
+                                                { id: "SARVAM", label: "Sarvam AI", sub: "Regional Authenticity" },
+                                                { id: "GOOGLE", label: "Google TTS", sub: "Live Preview" }
                                             ].map((provider) => (
                                                 <button
                                                     key={provider.id}
                                                     type="button"
-                                                    onClick={() => setForm(prev => ({ ...prev, ttsProvider: provider.id }))}
+                                                    onClick={() => applyTtsProvider(provider.id)}
                                                     className={cn(
                                                         "p-4 rounded-xl border text-left transition-all",
                                                         form.ttsProvider === provider.id
                                                             ? provider.id === "CARTESIA"
                                                                 ? "border-gray-300 bg-white shadow-sm ring-4 ring-gray-50"
-                                                                : "border-[#F97316] bg-orange-50 shadow-sm ring-4 ring-orange-50"
+                                                                : provider.id === "SARVAM"
+                                                                    ? "border-[#F97316] bg-orange-50 shadow-sm ring-4 ring-orange-50"
+                                                                    : "border-blue-500 bg-blue-50 shadow-sm ring-4 ring-blue-50"
                                                             : "border-gray-100 bg-gray-50/30 hover:border-gray-300"
                                                     )}
                                                 >
                                                     <p className={cn("text-[11px] font-black uppercase tracking-widest",
                                                         form.ttsProvider === provider.id
-                                                            ? provider.id === "CARTESIA" ? "text-gray-900" : "text-[#F97316]"
+                                                            ? provider.id === "CARTESIA"
+                                                                ? "text-gray-900"
+                                                                : provider.id === "SARVAM"
+                                                                    ? "text-[#F97316]"
+                                                                    : "text-blue-600"
                                                             : "text-gray-400"
                                                     )}>{provider.label}</p>
                                                     <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-tighter">{provider.sub}</p>
@@ -516,19 +598,21 @@ export default function NewOrgPage() {
                                     </div>
                                     <CustomSelect
                                         label="TTS Neural Engine"
-                                        value={form.ttsProvider === "CARTESIA" ? form.cartesiaModel : form.sarvamModel}
-                                        onChange={val => setForm(prev => ({ ...prev, [form.ttsProvider === "CARTESIA" ? "cartesiaModel" : "sarvamModel"]: val }))}
+                                        value={form.ttsProvider === "CARTESIA" ? form.cartesiaModel : form.ttsProvider === "SARVAM" ? form.sarvamModel : form.googleModel}
+                                        onChange={val => setForm(prev => ({ ...prev, [form.ttsProvider === "CARTESIA" ? "cartesiaModel" : form.ttsProvider === "SARVAM" ? "sarvamModel" : "googleModel"]: val }))}
                                         options={form.ttsProvider === "CARTESIA"
                                             ? [
                                                 { value: "cartesia/sonic-3", label: "Sonic-3 (Elite Latency)" },
                                                 { value: "cartesia/sonic-2", label: "Sonic-2 (Stable)" },
                                                 { value: "cartesia/sonic-turbo", label: "Sonic-Turbo" }
                                             ]
-                                            : [
+                                            : form.ttsProvider === "SARVAM"
+                                                ? [
                                                 { value: "bulbul:v3", label: "Bulbul v3 (Flagship)" },
                                                 { value: "bulbul:v2", label: "Bulbul v2" },
                                                 { value: "bulbul:v1", label: "Bulbul v1" }
-                                            ]
+                                                ]
+                                                : GOOGLE_TTS_MODELS.map(model => ({ value: model.value, label: model.label }))
                                         }
                                     />
                                 </div>
@@ -558,99 +642,82 @@ export default function NewOrgPage() {
                                     </div>
                                     <CustomSelect
                                         label="Neural Persona"
-                                        value={form.ttsProvider === "CARTESIA" ? form.cartesiaVoiceId : form.sarvamVoice}
-                                        onChange={val => setForm(prev => ({ ...prev, [form.ttsProvider === "CARTESIA" ? "cartesiaVoiceId" : "sarvamVoice"]: val }))}
+                                        value={form.ttsProvider === "CARTESIA" ? form.cartesiaVoiceId : form.ttsProvider === "SARVAM" ? form.sarvamVoice : form.googleVoiceName}
+                                        onChange={val => setForm(prev => ({ ...prev, [form.ttsProvider === "CARTESIA" ? "cartesiaVoiceId" : form.ttsProvider === "SARVAM" ? "sarvamVoice" : "googleVoiceName"]: val }))}
                                         options={form.ttsProvider === "CARTESIA"
                                             ? CARTESIA_VOICES.map(v => ({ value: v.id, label: `${v.name} (${v.description})` }))
-                                            : [
-                                                { value: "shubh", label: "Shubh (Flagship)" },
-                                                { value: "manan", label: "Manan (Male)" },
-                                                { value: "ishita", label: "Ishita (Female)" },
-                                                { value: "shreya", label: "Shreya (Female)" },
-                                                { value: "aditya", label: "Aditya (Male)" },
-                                                { value: "ritu", label: "Ritu (Female)" },
-                                                { value: "priya", label: "Priya (Female)" },
-                                                { value: "neha", label: "Neha (Female)" },
-                                                { value: "rahul", label: "Rahul (Deep Male)" },
-                                                { value: "pooja", label: "Pooja (Female)" },
-                                                { value: "rohan", label: "Rohan (Male)" },
-                                                { value: "simran", label: "Simran (Female)" },
-                                                { value: "kavya", label: "Kavya (Female)" },
-                                                { value: "amit", label: "Amit (Male)" },
-                                                { value: "dev", label: "Dev (Male)" },
-                                                { value: "varun", label: "Varun (Male)" },
-                                                { value: "kabir", label: "Kabir (Male)" },
-                                                { value: "tanya", label: "Tanya (Female)" },
-                                                { value: "sunny", label: "Sunny (Male)" },
-                                            ]
+                                            : form.ttsProvider === "SARVAM"
+                                                ? SARVAM_VOICES.map(v => ({ value: v.id, label: `${v.name} (${v.description})` }))
+                                                : GOOGLE_VOICES.map(v => ({ value: v.name, label: `${v.name} (${v.description})` }))
                                         }
                                     />
                                 </div>
                             </div>
                         </div>
 
-                        {/* STT SECTION */}
-                        <div className="space-y-8 pt-8 border-t border-gray-50">
-                            <div className="flex items-center gap-2 pb-2 border-b border-gray-50">
-                                <Mic className="h-4 w-4 text-indigo-500" />
-                                <h3 className="text-xs font-black text-gray-900 uppercase tracking-widest">Speech-to-Text (STT)</h3>
-                            </div>
-                            <div className="grid md:grid-cols-2 gap-10">
-                                <div className="space-y-4">
-                                    <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">STT Provider</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {[
-                                            { id: "DEEPGRAM", label: "Deepgram", sub: "Flux Architecture" },
-                                            { id: "SARVAM", label: "Sarvam AI", sub: "Regional Saaras" }
-                                        ].map((provider) => (
-                                            <button
-                                                key={provider.id}
-                                                type="button"
-                                                onClick={() => setForm(prev => ({ ...prev, sttProvider: provider.id }))}
-                                                className={cn(
-                                                    "p-4 rounded-xl border text-left transition-all",
-                                                    form.sttProvider === provider.id
-                                                        ? provider.id === "DEEPGRAM"
-                                                            ? "border-emerald-500 bg-emerald-50 shadow-sm ring-4 ring-emerald-50"
-                                                            : "border-[#F97316] bg-orange-50 shadow-sm ring-4 ring-orange-50"
-                                                        : "border-gray-100 bg-gray-50/30 hover:border-gray-300"
-                                                )}
-                                            >
-                                                <p className={cn("text-[11px] font-black uppercase tracking-widest",
-                                                    form.sttProvider === provider.id
-                                                        ? provider.id === "DEEPGRAM" ? "text-emerald-600" : "text-[#F97316]"
-                                                        : "text-gray-400"
-                                                )}>{provider.label}</p>
-                                                <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-tighter">{provider.sub}</p>
-                                            </button>
-                                        ))}
+                        {form.ttsProvider !== "GOOGLE" && (
+                            <div className="space-y-8 pt-8 border-t border-gray-50">
+                                <div className="flex items-center gap-2 pb-2 border-b border-gray-50">
+                                    <Mic className="h-4 w-4 text-indigo-500" />
+                                    <h3 className="text-xs font-black text-gray-900 uppercase tracking-widest">Speech-to-Text (STT)</h3>
+                                </div>
+                                <div className="grid md:grid-cols-2 gap-10">
+                                    <div className="space-y-4">
+                                        <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">STT Provider</label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {[
+                                                { id: "DEEPGRAM", label: "Deepgram", sub: "Flux Architecture" },
+                                                { id: "SARVAM", label: "Sarvam AI", sub: "Regional Saaras" }
+                                            ].map((provider) => (
+                                                <button
+                                                    key={provider.id}
+                                                    type="button"
+                                                    onClick={() => setForm(prev => ({ ...prev, sttProvider: provider.id }))}
+                                                    className={cn(
+                                                        "p-4 rounded-xl border text-left transition-all",
+                                                        form.sttProvider === provider.id
+                                                            ? provider.id === "DEEPGRAM"
+                                                                ? "border-emerald-500 bg-emerald-50 shadow-sm ring-4 ring-emerald-50"
+                                                                : "border-[#F97316] bg-orange-50 shadow-sm ring-4 ring-orange-50"
+                                                            : "border-gray-100 bg-gray-50/30 hover:border-gray-300"
+                                                    )}
+                                                >
+                                                    <p className={cn("text-[11px] font-black uppercase tracking-widest",
+                                                        form.sttProvider === provider.id
+                                                            ? provider.id === "DEEPGRAM" ? "text-emerald-600" : "text-[#F97316]"
+                                                            : "text-gray-400"
+                                                    )}>{provider.label}</p>
+                                                    <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-tighter">{provider.sub}</p>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <CustomSelect
+                                            label="Transcription Model"
+                                            value={form.sttProvider === "DEEPGRAM" ? form.deepgramModel : form.sarvamSttModel}
+                                            onChange={val => setForm(prev => ({ ...prev, [form.sttProvider === "DEEPGRAM" ? "deepgramModel" : "sarvamSttModel"]: val }))}
+                                            options={form.sttProvider === "DEEPGRAM"
+                                                ? [
+                                                    { value: "flux-general-en", label: "Flux General (English)" },
+                                                    { value: "nova-3-general", label: "Nova-3 General" },
+                                                    { value: "nova-3", label: "Nova-3 (Balanced)" },
+                                                    { value: "nova-2-general", label: "Nova-2 General" },
+                                                    { value: "nova-2-conversationalai", label: "Nova-2 Conversational AI" },
+                                                    { value: "whisper-large", label: "Whisper Large" },
+                                                    { value: "whisper-medium", label: "Whisper Medium" }
+                                                ]
+                                                : [
+                                                    { value: "saaras:v3", label: "Saaras v3 (High Quality)" },
+                                                    { value: "saarika:v2.5", label: "Saarika v2.5 (Streaming)" },
+                                                    { value: "saaras:v2", label: "Saaras v2 (Standard)" }
+                                                ]
+                                            }
+                                        />
                                     </div>
                                 </div>
-                                <div className="space-y-4">
-                                    <CustomSelect
-                                        label="Transcription Model"
-                                        value={form.sttProvider === "DEEPGRAM" ? form.deepgramModel : form.sarvamSttModel}
-                                        onChange={val => setForm(prev => ({ ...prev, [form.sttProvider === "DEEPGRAM" ? "deepgramModel" : "sarvamSttModel"]: val }))}
-                                        options={form.sttProvider === "DEEPGRAM"
-                                            ? [
-                                                { value: "flux-general-en", label: "Flux General (English)" },
-                                                { value: "nova-3-general", label: "Nova-3 General" },
-                                                { value: "nova-3", label: "Nova-3 (Balanced)" },
-                                                { value: "nova-2-general", label: "Nova-2 General" },
-                                                { value: "nova-2-conversationalai", label: "Nova-2 Conversational AI" },
-                                                { value: "whisper-large", label: "Whisper Large" },
-                                                { value: "whisper-medium", label: "Whisper Medium" }
-                                            ]
-                                            : [
-                                                { value: "saaras:v3", label: "Saaras v3 (High Quality)" },
-                                                { value: "saarika:v2.5", label: "Saarika v2.5 (Streaming)" },
-                                                { value: "saaras:v2", label: "Saaras v2 (Standard)" }
-                                            ]
-                                        }
-                                    />
-                                </div>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </section>
 
@@ -705,86 +772,92 @@ export default function NewOrgPage() {
                     </div>
                 </section>
 
-                {/* 5. Reasoning Infrastructure (LLM) */}
-                <section className="space-y-6">
-                    <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-lg bg-gray-900 flex items-center justify-center text-white shadow-md shadow-gray-200">
-                            <BrainCircuit className="h-4 w-4" />
+                {form.ttsProvider !== "GOOGLE" ? (
+                    <section className="space-y-6">
+                        <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-lg bg-gray-900 flex items-center justify-center text-white shadow-md shadow-gray-200">
+                                <BrainCircuit className="h-4 w-4" />
+                            </div>
+                            <h2 className="text-lg font-black text-gray-900 tracking-tight">Reasoning Infrastructure (LLM)</h2>
                         </div>
-                        <h2 className="text-lg font-black text-gray-900 tracking-tight">Reasoning Infrastructure (LLM)</h2>
-                    </div>
 
-                    <div className="bg-white border border-gray-100 rounded-xl p-8 shadow-sm space-y-10">
-                        <div className="grid md:grid-cols-2 gap-10">
-                            <div className="space-y-4">
-                                <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">LLM Provider</label>
-                                <div className="grid grid-cols-1 gap-3">
-                                    <button
-                                        type="button"
-                                        className="p-4 rounded-xl border border-gray-200 bg-white text-left transition-all shadow-sm ring-4 ring-gray-50"
-                                    >
-                                        <p className="text-[11px] font-black uppercase tracking-widest text-gray-900">OpenAI</p>
-                                        <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-tighter">Global Intelligence Standard</p>
-                                    </button>
+                        <div className="bg-white border border-gray-100 rounded-xl p-8 shadow-sm space-y-10">
+                            <div className="grid md:grid-cols-2 gap-10">
+                                <div className="space-y-4">
+                                    <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">LLM Provider</label>
+                                    <div className="grid grid-cols-1 gap-3">
+                                        <button
+                                            type="button"
+                                            className="p-4 rounded-xl border border-gray-200 bg-white text-left transition-all shadow-sm ring-4 ring-gray-50"
+                                        >
+                                            <p className="text-[11px] font-black uppercase tracking-widest text-gray-900">OpenAI</p>
+                                            <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-tighter">Global Intelligence Standard</p>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <CustomSelect
+                                        label="Intelligence Model"
+                                        value={form.llmModel}
+                                        onChange={val => setForm(prev => ({ ...prev, llmModel: val }))}
+                                        options={[
+                                            { value: "gpt-4o", label: "GPT-4o (Elite Reasoning)" },
+                                            { value: "gpt-4o-mini", label: "GPT-4o-mini (Efficient)" },
+                                            { value: "gpt-4.1", label: "GPT-4.1 (Next Gen)" },
+                                            { value: "gpt-4.1-mini", label: "GPT-4.1-mini" },
+                                            { value: "o1-preview", label: "o1-preview" },
+                                            { value: "o1-mini", label: "o1-mini" },
+                                            { value: "gpt-5.1", label: "GPT-5.1 (Research)" },
+                                            { value: "gpt-5.1-mini", label: "GPT-5.1-mini" },
+                                            { value: "gpt-5.0", label: "GPT-5.0 (Frontier)" },
+                                            { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
+                                            { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
+                                        ]}
+                                    />
                                 </div>
                             </div>
-                            <div className="space-y-4">
-                                <CustomSelect
-                                    label="Intelligence Model"
-                                    value={form.llmModel}
-                                    onChange={val => setForm(prev => ({ ...prev, llmModel: val }))}
-                                    options={[
-                                        { value: "gpt-4o", label: "GPT-4o (Elite Reasoning)" },
-                                        { value: "gpt-4o-mini", label: "GPT-4o-mini (Efficient)" },
-                                        { value: "gpt-4.1", label: "GPT-4.1 (Next Gen)" },
-                                        { value: "gpt-4.1-mini", label: "GPT-4.1-mini" },
-                                        { value: "o1-preview", label: "o1-preview" },
-                                        { value: "o1-mini", label: "o1-mini" },
-                                        { value: "gpt-5.1", label: "GPT-5.1 (Research)" },
-                                        { value: "gpt-5.1-mini", label: "GPT-5.1-mini" },
-                                        { value: "gpt-5.0", label: "GPT-5.0 (Frontier)" },
-                                        { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
-                                        { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
-                                    ]}
+
+                            <div className="pt-8 border-t border-gray-50">
+                                <div className="flex items-center justify-between mb-8">
+                                    <div className="space-y-1">
+                                        <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest block">LLM Temperature</label>
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                                            {form.llmTemperature <= 0.3 ? "Deterministic / Precise" : form.llmTemperature >= 0.8 ? "Creative / Variable" : "Balanced Reasoning"}
+                                        </p>
+                                    </div>
+                                    <div className="h-9 px-4 rounded-lg bg-gray-900 text-white flex items-center justify-center font-black text-xs shadow-md">
+                                        {Number(form.llmTemperature).toFixed(1)}
+                                    </div>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.1"
+                                    value={form.llmTemperature}
+                                    onChange={e => setForm(prev => ({ ...prev, llmTemperature: parseFloat(e.target.value) }))}
+                                    className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-gray-900"
                                 />
                             </div>
                         </div>
-
-                        <div className="pt-8 border-t border-gray-50">
-                            <div className="flex items-center justify-between mb-8">
-                                <div className="space-y-1">
-                                    <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest block">LLM Temperature</label>
-                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                                        {form.llmTemperature <= 0.3 ? "Deterministic / Precise" : form.llmTemperature >= 0.8 ? "Creative / Variable" : "Balanced Reasoning"}
-                                    </p>
-                                </div>
-                                <div className="h-9 px-4 rounded-lg bg-gray-900 text-white flex items-center justify-center font-black text-xs shadow-md">
-                                    {Number(form.llmTemperature).toFixed(1)}
-                                </div>
+                    </section>
+                ) : (
+                    <section className="space-y-6">
+                        <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-lg bg-gray-900 flex items-center justify-center text-white shadow-md shadow-gray-200">
+                                <BrainCircuit className="h-4 w-4" />
                             </div>
-                            <input
-                                type="range"
-                                min="0"
-                                max="1"
-                                step="0.1"
-                                value={form.llmTemperature}
-                                onChange={e => setForm(prev => ({ ...prev, llmTemperature: parseFloat(e.target.value) }))}
-                                className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-gray-900"
-                            />
+                            <h2 className="text-lg font-black text-gray-900 tracking-tight">Google-Only Reasoning</h2>
                         </div>
-                    </div>
-                </section>
+                        <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 text-sm font-semibold text-blue-800">
+                            Google mode uses the Google runtime for STT, LLM, and TTS. The other provider fields are cleared automatically on save.
+                        </div>
+                    </section>
+                )}
 
                 {/* Final Actions */}
                 <div className="pt-12 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-8">
                     <div className="flex items-center gap-4">
-                        <div className="h-11 w-11 rounded-xl bg-orange-50 flex items-center justify-center text-orange-500 shadow-inner">
-                            <Activity className="h-5 w-5 animate-pulse" />
-                        </div>
-                        <div>
-                            <p className="text-gray-900 font-black text-sm tracking-tight">Infrastructure Ready</p>
-                            <p className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mt-0.5">Initialize partner organization node</p>
-                        </div>
                     </div>
 
                     <div className="flex items-center gap-4 w-full sm:w-auto">

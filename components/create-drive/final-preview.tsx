@@ -1,6 +1,6 @@
 import { Clock, ShieldCheck, Zap, Brain, Rocket, Mic, Languages, ShieldAlert } from "lucide-react";
 import { ScreeningConfig } from "./screening-settings";
-import { CARTESIA_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
+import { CARTESIA_VOICES, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
 
 interface FinalPreviewProps {
     formData: any;
@@ -9,8 +9,12 @@ interface FinalPreviewProps {
 }
 
 export function FinalPreview({ formData, weights, regFieldCount }: FinalPreviewProps) {
-    const selectedVoiceId = formData.ttsProvider === "SARVAM" ? formData.sarvamVoice : formData.cartesiaVoiceId;
-    const selectedVoice = [...CARTESIA_VOICES, ...SARVAM_VOICES].find(v => v.id === selectedVoiceId);
+    const selectedVoiceId = formData.ttsProvider === "SARVAM"
+        ? formData.sarvamVoice
+        : formData.ttsProvider === "GOOGLE"
+            ? formData.googleVoiceName
+            : formData.cartesiaVoiceId;
+    const selectedVoice = [...CARTESIA_VOICES, ...SARVAM_VOICES, ...GOOGLE_VOICES].find(v => v.id === selectedVoiceId);
 
     return (
         <div className="space-y-6">

@@ -100,6 +100,10 @@ interface OrgDetail {
 
     sarvamVoice?: string;
 
+    googleModel?: string;
+
+    googleVoiceName?: string;
+
     sttProvider?: string;
 
     deepgramModel?: string;
@@ -925,7 +929,9 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                             ? (org?.sarvamModel || "bulbul:v3")
 
-                                            : (org?.cartesiaModel || "cartesia/sonic-3"),
+                                            : (org?.ttsProvider || "").toUpperCase() === "GOOGLE"
+                                                ? (org?.googleModel || "gemini-3.1-flash-tts-preview")
+                                                : (org?.cartesiaModel || "cartesia/sonic-3"),
                                     )
 
                                     : null;

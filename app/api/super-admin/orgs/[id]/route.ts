@@ -6,6 +6,7 @@ import { deleteOrgEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
+import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 
 // GET /api/super-admin/orgs/[id] - fetch org for editing
 export async function GET(
@@ -69,7 +70,7 @@ export async function PATCH(
             name, plan, status, logoUrl, slug, location, maxActiveDrives, maxTeamMembers,
             proctoringSignals,
             adminName, adminEmail,
-            ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice,
+            ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice, googleModel, googleVoiceName,
             sttProvider, deepgramModel, sarvamSttModel,
             llmProvider, llmModel, llmTemperature,
             usageMetrics,
@@ -77,6 +78,29 @@ export async function PATCH(
         } = body;
         const parsedCreditsTotal =
             creditsTotal !== undefined ? parseFloat(creditsTotal) : undefined;
+
+        const existingOrg = await prisma.organization.findUnique({
+            where: { id },
+            select: {
+                ttsProvider: true,
+                cartesiaModel: true,
+                cartesiaVoiceId: true,
+                sarvamModel: true,
+                sarvamVoice: true,
+                googleModel: true,
+                googleVoiceName: true,
+                sttProvider: true,
+                deepgramModel: true,
+                sarvamSttModel: true,
+                llmProvider: true,
+                llmModel: true,
+                llmTemperature: true,
+            },
+        });
+
+        if (!existingOrg) {
+            return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+        }
 
         // -- INPUT VALIDATION --------------------------------
         if (plan && !isOrgPlan(plan)) {
@@ -103,38 +127,27 @@ export async function PATCH(
         if (slug !== undefined) updateData.slug = slug;
         if (location !== undefined) updateData.location = location;
 
-        // TTS - save exact values the user chose, null out the other provider's fields
-        if (ttsProvider !== undefined) {
-            updateData.ttsProvider = ttsProvider;
-            if (ttsProvider === "CARTESIA") {
-                updateData.cartesiaVoiceId = cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
-                updateData.cartesiaModel = cartesiaModel || "cartesia/sonic-3";
-                updateData.sarvamModel = null;
-                updateData.sarvamVoice = null;
-            } else if (ttsProvider === "SARVAM") {
-                updateData.sarvamModel = sarvamModel || "bulbul:v3";
-                updateData.sarvamVoice = sarvamVoice || "shubh";
-                updateData.cartesiaVoiceId = null;
-                updateData.cartesiaModel = null;
-            }
-        }
-
-        // STT - save exact values the user chose
-        if (sttProvider !== undefined) {
-            updateData.sttProvider = sttProvider;
-            if (sttProvider === "DEEPGRAM") {
-                updateData.deepgramModel = deepgramModel || "nova-3-general";
-                updateData.sarvamSttModel = null;
-            } else if (sttProvider === "SARVAM") {
-                updateData.sarvamSttModel = sarvamSttModel || "saaras:v3";
-                updateData.deepgramModel = null;
-            }
-        }
-
-        // LLM
-        if (llmProvider !== undefined) updateData.llmProvider = llmProvider;
-        if (llmModel !== undefined) updateData.llmModel = llmModel;
-        if (llmTemperature !== undefined) updateData.llmTemperature = Number(llmTemperature);
+        Object.assign(
+            updateData,
+            normalizeOrgAiConfig({
+                current: existingOrg,
+                next: {
+                    ttsProvider,
+                    cartesiaVoiceId,
+                    cartesiaModel,
+                    sarvamModel,
+                    sarvamVoice,
+                    googleModel,
+                    googleVoiceName,
+                    sttProvider,
+                    deepgramModel,
+                    sarvamSttModel,
+                    llmProvider,
+                    llmModel,
+                    llmTemperature,
+                },
+            })
+        );
 
         // Credits billing — dedicated columns, never touch usageMetrics
         const shouldUpdateCreditsTotal =

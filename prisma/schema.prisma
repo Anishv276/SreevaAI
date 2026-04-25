@@ -29,6 +29,8 @@ model Organization {
   cartesiaVoiceId      String?     @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
   sarvamModel          String?     @default("bulbul:v3")
   sarvamVoice          String?     @default("shubh")
+  googleModel          String?     @default("gemini-3.1-flash-tts-preview")
+  googleVoiceName      String?     @default("Puck")
   deepgramModel        String?     @default("nova-3-general")
   sarvamSttModel       String?     @default("saaras:v3")
   sttProvider          String?     @default("DEEPGRAM")
@@ -158,6 +160,9 @@ model Drive {
   aiName             String?       @default("Ishitha")
   cartesiaVoiceId    String?       @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
   sarvamVoice        String?       @default("shubh")
+  sarvamModel        String?       @default("bulbul:v3")
+  googleModel        String?       @default("gemini-3.1-flash-tts-preview")
+  googleVoiceName    String?       @default("Puck")
   ttsProvider        String?       @default("CARTESIA")
   applications       Application[]
   creator            User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)

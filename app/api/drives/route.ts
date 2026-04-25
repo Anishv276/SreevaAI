@@ -10,6 +10,7 @@ import { deleteUrlTargets } from "@/lib/delete-utils";
 import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { getOrgCreditStatus } from "@/lib/credits";
 import { isDriveCreationLocked } from "@/lib/drive-limits";
+import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
 
 export async function GET(request: Request) {
     try {
@@ -208,6 +209,15 @@ export async function POST(request: Request) {
 
         const data = result.data;
         const deadline = data.deadline ? new Date(data.deadline) : null;
+        const aiConfig = normalizeDriveAiConfig({
+            next: {
+                ttsProvider: data.ttsProvider,
+                cartesiaVoiceId: data.cartesiaVoiceId,
+                sarvamVoice: data.sarvamVoice,
+                googleModel: data.googleModel,
+                googleVoiceName: data.googleVoiceName,
+            },
+        });
 
         const slug = crypto.randomUUID();
         const driveId = generateId("drv", data.title);
@@ -242,9 +252,6 @@ export async function POST(request: Request) {
                 proctoringLevel: data.interviewAntiCheat || "Medium",
                 interviewQuestions: data.interviewQuestions ? JSON.stringify(data.interviewQuestions) : "[]",
                 
-                ttsProvider: data.ttsProvider || "CARTESIA",
-                cartesiaVoiceId: (data.ttsProvider || "CARTESIA") === "SARVAM" ? null : (data.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"),
-                sarvamVoice: (data.ttsProvider || "CARTESIA") === "SARVAM" ? (data.sarvamVoice || "shubh") : null,
                 aiName: data.aiName || "Ishitha",
                 
                 isPassportRequired: data.isPassportRequired || false,
@@ -252,6 +259,7 @@ export async function POST(request: Request) {
 
                 orgId: (session as any).orgId,
                 creatorId: (session as any).userId,
+                ...aiConfig,
             },
         });
 

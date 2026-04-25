@@ -36,6 +36,8 @@ export async function GET() {
                 cartesiaModel: true,
                 sarvamVoice: true,
                 sarvamModel: true,
+                googleModel: true,
+                googleVoiceName: true,
                 sttProvider: true,
                 deepgramModel: true,
                 sarvamSttModel: true,

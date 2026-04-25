@@ -1,7 +1,7 @@
 export interface Voice {
   id: string;
   name: string;
-  provider: "CARTESIA" | "SARVAM";
+  provider: "CARTESIA" | "SARVAM" | "GOOGLE";
   description: string;
   gender: "male" | "female";
   tags?: string[];
@@ -95,3 +95,46 @@ export const SARVAM_VOICES: Voice[] = [
   { id: "tanya", name: "Tanya", provider: "SARVAM", gender: "female", description: "Clear Female", tags: ["Concise"] },
   { id: "sunny", name: "Sunny", provider: "SARVAM", gender: "male", description: "Friendly Youth", tags: ["Casual"] },
 ];
+
+export const GOOGLE_VOICES: Voice[] = [
+  { id: "Zephyr", name: "Zephyr", provider: "GOOGLE", gender: "female", description: "Soft and airy", tags: ["Preview"] },
+  { id: "Puck", name: "Puck", provider: "GOOGLE", gender: "male", description: "Bright and conversational", tags: ["Preview", "Official"] },
+  { id: "Charon", name: "Charon", provider: "GOOGLE", gender: "male", description: "Rich and authoritative", tags: ["Preview"] },
+  { id: "Kore", name: "Kore", provider: "GOOGLE", gender: "female", description: "Warm and clear", tags: ["Preview", "Official"] },
+  { id: "Fenrir", name: "Fenrir", provider: "GOOGLE", gender: "male", description: "Deep and grounded", tags: ["Preview"] },
+  { id: "Leda", name: "Leda", provider: "GOOGLE", gender: "female", description: "Smooth and polished", tags: ["Preview"] },
+  { id: "Aoede", name: "Aoede", provider: "GOOGLE", gender: "female", description: "Friendly and expressive", tags: ["Preview"] },
+  { id: "Orus", name: "Orus", provider: "GOOGLE", gender: "male", description: "Confident and crisp", tags: ["Preview"] },
+  { id: "Mira", name: "Mira", provider: "GOOGLE", gender: "female", description: "Clear and present", tags: ["Preview"] },
+  { id: "Lyra", name: "Lyra", provider: "GOOGLE", gender: "female", description: "Smooth and lyrical", tags: ["Preview"] },
+  { id: "Vega", name: "Vega", provider: "GOOGLE", gender: "female", description: "Bright and energetic", tags: ["Preview"] },
+  { id: "Cetus", name: "Cetus", provider: "GOOGLE", gender: "male", description: "Deep and steady", tags: ["Preview"] },
+  { id: "Hadar", name: "Hadar", provider: "GOOGLE", gender: "male", description: "Warm and grounded", tags: ["Preview"] },
+  { id: "Algieba", name: "Algieba", provider: "GOOGLE", gender: "male", description: "Crisp and articulate", tags: ["Preview"] },
+  { id: "Eridani", name: "Eridani", provider: "GOOGLE", gender: "female", description: "Calm and polished", tags: ["Preview"] },
+  { id: "Sulafat", name: "Sulafat", provider: "GOOGLE", gender: "female", description: "Soft and elegant", tags: ["Preview"] },
+  { id: "Rasalgethi", name: "Rasalgethi", provider: "GOOGLE", gender: "male", description: "Rich and measured", tags: ["Preview"] },
+  { id: "Sirius", name: "Sirius", provider: "GOOGLE", gender: "male", description: "Clear and confident", tags: ["Preview"] },
+  { id: "Procyon", name: "Procyon", provider: "GOOGLE", gender: "male", description: "Friendly and natural", tags: ["Preview"] },
+  { id: "Altair", name: "Altair", provider: "GOOGLE", gender: "male", description: "Sharp and lively", tags: ["Preview"] },
+  { id: "Deneb", name: "Deneb", provider: "GOOGLE", gender: "female", description: "Smooth and radiant", tags: ["Preview"] },
+  { id: "Rigel", name: "Rigel", provider: "GOOGLE", gender: "male", description: "Low and authoritative", tags: ["Preview"] },
+  { id: "Bellatrix", name: "Bellatrix", provider: "GOOGLE", gender: "female", description: "Bold and expressive", tags: ["Preview"] },
+  { id: "Spica", name: "Spica", provider: "GOOGLE", gender: "female", description: "Bright and crisp", tags: ["Preview"] },
+  { id: "Arcturus", name: "Arcturus", provider: "GOOGLE", gender: "male", description: "Deep and reassuring", tags: ["Preview"] },
+  { id: "Vela", name: "Vela", provider: "GOOGLE", gender: "female", description: "Gentle and open", tags: ["Preview"] },
+  { id: "Polaris", name: "Polaris", provider: "GOOGLE", gender: "female", description: "Steady and clear", tags: ["Preview"] },
+  { id: "Atria", name: "Atria", provider: "GOOGLE", gender: "female", description: "Warm and balanced", tags: ["Preview"] },
+  { id: "Rana", name: "Rana", provider: "GOOGLE", gender: "female", description: "Friendly and bright", tags: ["Preview"] },
+  { id: "Alnair", name: "Alnair", provider: "GOOGLE", gender: "male", description: "Polished and direct", tags: ["Preview"] },
+  { id: "Gacrux", name: "Gacrux", provider: "GOOGLE", gender: "male", description: "Measured and calm", tags: ["Preview"] },
+  { id: "Schedar", name: "Schedar", provider: "GOOGLE", gender: "female", description: "Clear and confident", tags: ["Preview"] },
+];
+
+export const GOOGLE_TTS_MODELS = [
+  { value: "gemini-3.1-flash-tts-preview", label: "Gemini 3.1 Flash TTS Preview" },
+  { value: "gemini-2.5-flash-preview-tts", label: "Gemini 2.5 Flash Preview TTS" },
+  { value: "gemini-2.5-pro-preview-tts", label: "Gemini 2.5 Pro Preview TTS" },
+] as const;
+
+export const DEFAULT_GOOGLE_TTS_MODEL = GOOGLE_TTS_MODELS[0].value;

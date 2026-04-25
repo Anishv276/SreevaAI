@@ -160,6 +160,10 @@ function CreateDriveForm() {
 
         sarvamVoice: null,
 
+        googleModel: null,
+
+        googleVoiceName: null,
+
         aiName: "Ishitha",
 
     });
@@ -258,6 +262,8 @@ function CreateDriveForm() {
                         // Only set the active provider's voice; null out the other
                         cartesiaVoiceId: orgProvider === "CARTESIA" ? (data.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc") : null,
                         sarvamVoice: orgProvider === "SARVAM" ? (data.sarvamVoice || "shubh") : null,
+                        googleModel: orgProvider === "GOOGLE" ? (data.googleModel || "gemini-3.1-flash-tts-preview") : null,
+                        googleVoiceName: orgProvider === "GOOGLE" ? (data.googleVoiceName || "Puck") : null,
                     }));
                 })
                 .catch(() => { });
@@ -334,6 +340,12 @@ function CreateDriveForm() {
                             sarvamVoice: orgProvider === "SARVAM"
                                 ? ((drive as any).sarvamVoice || orgData.sarvamVoice || "shubh")
                                 : null,
+                            googleModel: orgProvider === "GOOGLE"
+                                ? ((drive as any).googleModel || orgData.googleModel || "gemini-3.1-flash-tts-preview")
+                                : null,
+                            googleVoiceName: orgProvider === "GOOGLE"
+                                ? ((drive as any).googleVoiceName || orgData.googleVoiceName || "Puck")
+                                : null,
                             aiName: (drive as any).aiName || "Ishitha",
                         }));
                     })
@@ -367,6 +379,8 @@ function CreateDriveForm() {
                             ttsProvider: (drive as any).ttsProvider || "CARTESIA",
                             cartesiaVoiceId: (drive as any).cartesiaVoiceId || null,
                             sarvamVoice: (drive as any).sarvamVoice || null,
+                            googleModel: (drive as any).googleModel || null,
+                            googleVoiceName: (drive as any).googleVoiceName || null,
                             aiName: (drive as any).aiName || "Ishitha",
                         }));
                     });
@@ -519,6 +533,18 @@ function CreateDriveForm() {
 
 
                     interviewQuestions: [],
+
+                    ttsProvider: "",
+
+                    cartesiaVoiceId: null,
+
+                    sarvamVoice: null,
+
+                    googleModel: null,
+
+                    googleVoiceName: null,
+
+                    aiName: "Ishitha",
 
                 });
 
@@ -970,8 +996,10 @@ function CreateDriveForm() {
             interviewQuestions: parsedQuestions,
 
             ttsProvider: currentFormData.ttsProvider || "CARTESIA",
-            cartesiaVoiceId: currentFormData.ttsProvider === "SARVAM" ? null : (currentFormData.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"),
+            cartesiaVoiceId: currentFormData.ttsProvider === "SARVAM" || currentFormData.ttsProvider === "GOOGLE" ? null : (currentFormData.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"),
             sarvamVoice: (currentFormData.ttsProvider || "CARTESIA") === "SARVAM" ? (currentFormData.sarvamVoice || "shubh") : null,
+            googleModel: currentFormData.ttsProvider === "GOOGLE" ? (currentFormData.googleModel || "gemini-3.1-flash-tts-preview") : null,
+            googleVoiceName: currentFormData.ttsProvider === "GOOGLE" ? (currentFormData.googleVoiceName || "Puck") : null,
             aiName: currentFormData.aiName || "Ishitha",
 
             registrationFields: customFields,
@@ -1234,8 +1262,10 @@ function CreateDriveForm() {
 
             interviewQuestions: parsedQuestions,
             ttsProvider: currentFormData.ttsProvider || "CARTESIA",
-            cartesiaVoiceId: currentFormData.ttsProvider === "SARVAM" ? null : (currentFormData.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"),
+            cartesiaVoiceId: currentFormData.ttsProvider === "SARVAM" || currentFormData.ttsProvider === "GOOGLE" ? null : (currentFormData.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"),
             sarvamVoice: (currentFormData.ttsProvider || "CARTESIA") === "SARVAM" ? (currentFormData.sarvamVoice || "shubh") : null,
+            googleModel: currentFormData.ttsProvider === "GOOGLE" ? (currentFormData.googleModel || "gemini-3.1-flash-tts-preview") : null,
+            googleVoiceName: currentFormData.ttsProvider === "GOOGLE" ? (currentFormData.googleVoiceName || "Puck") : null,
             aiName: currentFormData.aiName || "Ishitha",
 
 

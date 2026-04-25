@@ -62,6 +62,8 @@ export const createDriveSchema = z.object({
   ttsProvider: z.string().optional(),
   cartesiaVoiceId: z.string().nullable().optional(),
   sarvamVoice: z.string().nullable().optional(),
+  googleModel: z.string().nullable().optional(),
+  googleVoiceName: z.string().nullable().optional(),
   aiName: z.string().optional(),
   registrationFields: z.array(z.any()).optional(),
   extractedDetails: z.record(z.string(), z.any()).optional(),

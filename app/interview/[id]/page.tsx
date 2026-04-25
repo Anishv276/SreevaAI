@@ -180,8 +180,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const soundViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
     const [proctoringSignals, setProctoringSignals] = useState(DEFAULT_PROCTORING_SIGNALS);
     const [supportDialogOpen, setSupportDialogOpen] = useState(false);
+    const [instructionsDialogOpen, setInstructionsDialogOpen] = useState(false);
     const [supportSubmitting, setSupportSubmitting] = useState(false);
-    const [supportMessage, setSupportMessage] = useState<string | null>(null);
+    const [supportSuccess, setSupportSuccess] = useState(false);
     const [supportError, setSupportError] = useState<string | null>(null);
     const [supportForm, setSupportForm] = useState({
         name: "",
@@ -425,7 +426,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
         setSupportSubmitting(true);
         setSupportError(null);
-        setSupportMessage(null);
 
         try {
             const res = await fetch(`/api/interview/${encodeURIComponent(id)}/support`, {
@@ -446,7 +446,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 return;
             }
 
-            setSupportMessage(data.warning || "Support request sent successfully.");
+            setSupportSuccess(true);
             setSupportForm((prev) => ({
                 ...prev,
                 issueAbout: "",
@@ -454,8 +454,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
             window.setTimeout(() => {
                 setSupportDialogOpen(false);
-                setSupportMessage(null);
-            }, 1400);
+                setSupportSuccess(false);
+            }, 3000);
         } catch {
             setSupportError("Unable to submit support request right now.");
         } finally {
@@ -934,110 +934,23 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         className="flex-1 w-full bg-white z-50 absolute inset-0 overflow-y-auto"
                     >
                         <div className="mx-auto w-full max-w-5xl px-4 pt-8 pb-4">
-                            <div className="rounded-[2rem] border border-orange-100 bg-gradient-to-br from-orange-50 via-white to-zinc-50 shadow-[0_20px_60px_rgba(249,115,22,0.08)] p-6 sm:p-8 space-y-4">
-                                <div className="flex flex-wrap items-center gap-3">
-                                    <div className="h-10 w-10 rounded-xl bg-orange-500 text-white flex items-center justify-center shadow-md shadow-orange-100">
-                                        <ShieldAlert className="h-5 w-5" />
-                                    </div>
-                                    <div>
-                                        <p className="text-[11px] font-black uppercase tracking-[0.25em] text-[#F97316]">Important interview instructions</p>
-                                        <h2 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">Please read this before you start</h2>
-                                    </div>
-                                </div>
-
-                                <div className="grid gap-3 sm:grid-cols-3">
-                                    {[
-                                        "This interview is proctored, so please do not try to cheat.",
-                                        "Sit in a quiet environment with no interruptions.",
-                                        "If you face any issue, use the Contact button right away.",
-                                    ].map((line) => (
-                                        <div key={line} className="rounded-2xl border border-gray-100 bg-white/80 px-4 py-4 text-sm font-medium text-gray-700 leading-relaxed shadow-sm">
-                                            {line}
-                                        </div>
-                                    ))}
-                                </div>
-
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
-                                    <p className="text-xs font-medium text-gray-500 leading-relaxed max-w-2xl">
-                                        Make sure your camera, microphone, and internet connection are stable before you begin. Any issue during the session can be reported through support.
-                                    </p>
-                                    <Dialog open={supportDialogOpen} onOpenChange={setSupportDialogOpen}>
-                                        <DialogTrigger asChild>
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                className="h-11 rounded-xl border-orange-200 bg-white text-[#F97316] hover:bg-orange-50 hover:text-orange-700 font-bold"
-                                            >
-                                                Contact Support
-                                            </Button>
-                                        </DialogTrigger>
-                                        <DialogContent className="sm:max-w-lg">
-                                            <DialogHeader>
-                                                <DialogTitle className="text-xl font-black tracking-tight">Contact Support</DialogTitle>
-                                            </DialogHeader>
-                                            <div className="space-y-4 py-2">
-                                                <div className="space-y-2">
-                                                    <Label className="text-[11px] font-black uppercase tracking-widest text-gray-400">Name</Label>
-                                                    <Input
-                                                        value={supportForm.name}
-                                                        onChange={(e) => setSupportForm((prev) => ({ ...prev, name: e.target.value }))}
-                                                        placeholder="Your full name"
-                                                    />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <Label className="text-[11px] font-black uppercase tracking-widest text-gray-400">Email</Label>
-                                                    <Input
-                                                        type="email"
-                                                        value={supportForm.email}
-                                                        onChange={(e) => setSupportForm((prev) => ({ ...prev, email: e.target.value }))}
-                                                        placeholder="you@example.com"
-                                                    />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <Label className="text-[11px] font-black uppercase tracking-widest text-gray-400">What is the issue about?</Label>
-                                                    <textarea
-                                                        value={supportForm.issueAbout}
-                                                        onChange={(e) => setSupportForm((prev) => ({ ...prev, issueAbout: e.target.value }))}
-                                                        placeholder="Describe the issue you are facing..."
-                                                        rows={4}
-                                                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none transition-all focus:border-orange-400 focus:ring-4 focus:ring-orange-50"
-                                                    />
-                                                </div>
-
-                                                {supportError && (
-                                                    <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-600">
-                                                        {supportError}
-                                                    </div>
-                                                )}
-
-                                                {supportMessage && (
-                                                    <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
-                                                        {supportMessage}
-                                                    </div>
-                                                )}
+                            <div className="space-y-6">
+                                <div className="flex flex-col gap-2">
+                                    <h2 className="text-2xl font-black text-gray-900 tracking-tight">System Check</h2>
+                                    <div className="flex flex-wrap gap-4">
+                                        {[
+                                            "Proctored Session",
+                                            "Quiet Environment",
+                                            "Support Available"
+                                        ].map((text, i) => (
+                                            <div key={text} className="flex items-center gap-2">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                                                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{text}</span>
                                             </div>
-                                            <DialogFooter>
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    className="rounded-xl"
-                                                    onClick={() => setSupportDialogOpen(false)}
-                                                    disabled={supportSubmitting}
-                                                >
-                                                    Cancel
-                                                </Button>
-                                                <Button
-                                                    type="button"
-                                                    onClick={submitSupportRequest}
-                                                    disabled={supportSubmitting}
-                                                    className="rounded-xl bg-[#F97316] text-white hover:bg-orange-600"
-                                                >
-                                                    {supportSubmitting ? "Sending..." : "Send Request"}
-                                                </Button>
-                                            </DialogFooter>
-                                        </DialogContent>
-                                    </Dialog>
+                                        ))}
+                                    </div>
                                 </div>
+                                <div className="h-px w-full bg-gray-100" />
                             </div>
                         </div>
                         <HardwareCheck
@@ -1233,6 +1146,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 lastCandidateTranscriptAtRef.current = Date.now();
                             }}
                             onAgentDetectedViolation={handleAgentDetectedViolation}
+                            setSupportDialogOpen={setSupportDialogOpen}
+                            setInstructionsDialogOpen={setInstructionsDialogOpen}
                         />
                         {/*  Connection Proctoring (lives inside LiveKitRoom for useRoomContext) */}
                         {isConnectionLostEnabled && (
@@ -1557,6 +1472,121 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 )}
             </AnimatePresence>
 
+            <Dialog open={instructionsDialogOpen} onOpenChange={setInstructionsDialogOpen}>
+                <DialogContent className="sm:max-w-xl">
+                    <DialogHeader>
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="h-8 w-8 rounded-lg bg-orange-500 text-white flex items-center justify-center">
+                                <ShieldAlert className="h-4 w-4" />
+                            </div>
+                            <DialogTitle className="text-xl font-black tracking-tight uppercase tracking-widest">Interview Guidelines</DialogTitle>
+                        </div>
+                    </DialogHeader>
+                    <div className="space-y-6 py-4">
+                        <div className="space-y-4">
+                            {[
+                                { title: "Proctored Session", text: "This interview is proctored, so please do not try to cheat." },
+                                { title: "Quiet Environment", text: "Sit in a quiet environment with no interruptions." },
+                                { title: "Reporting Issues", text: "If you face any issue, use the Contact button right away." }
+                            ].map((item, i) => (
+                                <div key={i} className="flex gap-4 p-5 rounded-3xl bg-gray-50 border border-gray-100 transition-all hover:bg-orange-50/30 hover:border-orange-100 group">
+                                    <div className="w-10 h-10 rounded-2xl bg-white border border-gray-100 flex items-center justify-center text-orange-500 font-black text-sm shadow-sm group-hover:border-orange-200">
+                                        {i + 1}
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-black text-gray-900 uppercase tracking-[0.2em]">{item.title}</p>
+                                        <p className="text-sm font-medium text-gray-500 leading-relaxed">{item.text}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="text-[10px] font-bold text-gray-400 text-center px-4 uppercase tracking-widest">
+                            Technical issues can be reported via the Support button.
+                        </p>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Support Dialog */}
+            <Dialog open={supportDialogOpen} onOpenChange={setSupportDialogOpen}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-black tracking-tight uppercase tracking-widest">Contact Support</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        {supportSuccess ? (
+                            <div className="py-8 text-center space-y-4">
+                                <div className="mx-auto w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center">
+                                    <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+                                </div>
+                                <div className="space-y-1">
+                                    <h3 className="text-xl font-black text-gray-900">Thank You</h3>
+                                    <p className="text-sm text-gray-500 font-medium">Your support request has been sent successfully. Our team will get back to you if needed.</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="space-y-2">
+                                    <Label className="text-[11px] font-black uppercase tracking-widest text-gray-400">Name</Label>
+                                    <Input
+                                        value={supportForm.name}
+                                        onChange={(e) => setSupportForm((prev) => ({ ...prev, name: e.target.value }))}
+                                        placeholder="Your full name"
+                                        className="rounded-xl"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-[11px] font-black uppercase tracking-widest text-gray-400">Email</Label>
+                                    <Input
+                                        type="email"
+                                        value={supportForm.email}
+                                        onChange={(e) => setSupportForm((prev) => ({ ...prev, email: e.target.value }))}
+                                        placeholder="you@example.com"
+                                        className="rounded-xl"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-[11px] font-black uppercase tracking-widest text-gray-400">What is the issue about?</Label>
+                                    <textarea
+                                        value={supportForm.issueAbout}
+                                        onChange={(e) => setSupportForm((prev) => ({ ...prev, issueAbout: e.target.value }))}
+                                        placeholder="Describe the issue you are facing..."
+                                        rows={4}
+                                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none transition-all focus:border-orange-400 focus:ring-4 focus:ring-orange-50"
+                                    />
+                                </div>
+
+                                {supportError && (
+                                    <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-600">
+                                        {supportError}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                    {!supportSuccess && (
+                        <DialogFooter>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="rounded-xl"
+                                onClick={() => setSupportDialogOpen(false)}
+                                disabled={supportSubmitting}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="button"
+                                onClick={submitSupportRequest}
+                                disabled={supportSubmitting}
+                                className="rounded-xl bg-[#F97316] text-white hover:bg-orange-600"
+                            >
+                                {supportSubmitting ? "Sending..." : "Send Request"}
+                            </Button>
+                        </DialogFooter>
+                    )}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
@@ -1579,6 +1609,8 @@ function InterviewRoomContent({
     candidateName,
     onCandidateTranscript,
     onAgentDetectedViolation,
+    setSupportDialogOpen,
+    setInstructionsDialogOpen,
 }: {
     id: string,
     interviewToken: string,
@@ -1602,6 +1634,8 @@ function InterviewRoomContent({
      */
     onCandidateTranscript?: () => void;
     onAgentDetectedViolation?: (eventType: string, reason: string, severity?: string) => void;
+    setSupportDialogOpen: (open: boolean) => void;
+    setInstructionsDialogOpen: (open: boolean) => void;
 }) {
     const { localParticipant } = useLocalParticipant();
     const cameraTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
@@ -2352,21 +2386,41 @@ function InterviewRoomContent({
             </div>
 
             {/* Candidate Video Feed - TOP RIGHT */}
-            <div className="absolute top-40 right-10 z-50 w-72 aspect-[4/3] bg-zinc-900 rounded-[2rem] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.6)] group border border-white/10 ring-1 ring-white/5" style={{ transform: 'translateZ(0)' }}>
-                <div className="w-full h-full rounded-[2rem] overflow-hidden bg-zinc-950 relative">
-                    {localCameraTrack ? (
-                        <div className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover [&>canvas]:w-full [&>canvas]:h-full [&>canvas]:object-cover scale-x-[-1]">
-                            <VideoTrack trackRef={localCameraTrack} />
+            <div className="absolute top-40 right-10 z-50 flex flex-col gap-3 items-end">
+                <div className="w-72 aspect-[4/3] bg-zinc-900 rounded-[2rem] p-1 shadow-[0_20px_60px_rgba(0,0,0,0.6)] group border border-white/10 ring-1 ring-white/5" style={{ transform: 'translateZ(0)' }}>
+                    <div className="w-full h-full rounded-[2rem] overflow-hidden bg-zinc-950 relative">
+                        {localCameraTrack ? (
+                            <div className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover [&>canvas]:w-full [&>canvas]:h-full [&>canvas]:object-cover scale-x-[-1]">
+                                <VideoTrack trackRef={localCameraTrack} />
+                            </div>
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-zinc-900/50">
+                                <Camera className="w-8 h-8 text-zinc-800" />
+                            </div>
+                        )}
+                        <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 bg-black/80 rounded-full border border-white/10">
+                            <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_20px_rgba(34,197,94,0.3)]" />
+                            <p className="text-[10px] font-black uppercase tracking-widest text-white drop-shadow-md">You (Live)</p>
                         </div>
-                    ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-zinc-900/50">
-                            <Camera className="w-8 h-8 text-zinc-800" />
-                        </div>
-                    )}
-                    <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 bg-black/80 rounded-full border border-white/10">
-                        <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_20px_rgba(34,197,94,0.3)]" />
-                        <p className="text-[10px] font-black uppercase tracking-widest text-white drop-shadow-md">You (Live)</p>
                     </div>
+                </div>
+
+                {/* Session Actions - beside camera */}
+                <div className="flex items-center gap-2 pr-4">
+                    <button
+                        onClick={() => setInstructionsDialogOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900/90 border border-white/10 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all shadow-xl"
+                    >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        Guidelines
+                    </button>
+                    <button
+                        onClick={() => setSupportDialogOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-900/90 border border-white/10 text-[10px] font-black uppercase tracking-widest text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all shadow-xl"
+                    >
+                        <LifeBuoy className="w-3.5 h-3.5" />
+                        Contact
+                    </button>
                 </div>
             </div>
 

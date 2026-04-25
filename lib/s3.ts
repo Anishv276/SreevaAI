@@ -114,13 +114,14 @@ export const getKeyFromUrl = (url: string) => {
  * Generates a presigned URL for direct client-side uploads.
  * Essential for large PDF resumes and JD documents to avoid server timeouts.
  */
-export const getPresignedUploadUrl = async (bucket: string, key: string, contentType: string) => {
+export const getPresignedUploadUrl = async (bucket: string, key: string, contentType: string, contentEncoding?: string) => {
     const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
     
     const command = new PutObjectCommand({
         Bucket: bucket,
         Key: key,
         ContentType: contentType,
+        ContentEncoding: contentEncoding,
     });
 
     // Valid for 10 minutes
