@@ -45,9 +45,6 @@ from livekit.agents.voice.events import ConversationItemAddedEvent
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
 from livekit.plugins import cartesia, openai, deepgram, silero, sarvam
-from livekit.plugins.google import realtime as google_realtime
-from google import genai as google_genai
-from google.genai import types as google_genai_types
 
 try:
     from livekit.plugins import ai_coustics
@@ -200,6 +197,8 @@ CARTESIA_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"  # "Jacqueline - Reas
 LLM_MODEL = "gpt-4.1-mini"  # richer conversational quality at mini cost
 GOOGLE_REALTIME_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 GOOGLE_ANALYSIS_MODEL = "gemini-2.5-flash"
+DEFAULT_GOOGLE_TTS_MODEL = GOOGLE_REALTIME_MODEL
+DEFAULT_GOOGLE_VOICE_NAME = "Puck"
 DATABASE_URL = os.environ.get("DATABASE_URL")
 AGENT_NAME = os.environ.get("LIVEKIT_AGENT_NAME", "ai_interviewer")
 APP_BASE_URL = (
@@ -1768,7 +1767,7 @@ class _GoogleCompletionResponse:
 
 
 class _GoogleChatCompletions:
-    def __init__(self, client: google_genai.Client) -> None:
+    def __init__(self, client: Any) -> None:
         self._client = client
 
     @staticmethod
@@ -1806,6 +1805,8 @@ class _GoogleChatCompletions:
                     }
                 )
 
+        from google.genai import types as google_genai_types
+
         config = google_genai_types.GenerateContentConfig(
             systemInstruction="\n\n".join(system_sections) if system_sections else None,
             temperature=temperature,
@@ -1832,12 +1833,14 @@ class _GoogleChatCompletions:
 
 
 class _GoogleChatNamespace:
-    def __init__(self, client: google_genai.Client) -> None:
+    def __init__(self, client: Any) -> None:
         self.completions = _GoogleChatCompletions(client)
 
 
 class GoogleAnalysisClient:
     def __init__(self, api_key: str) -> None:
+        from google import genai as google_genai
+
         self._client = google_genai.Client(api_key=api_key)
         self.chat = _GoogleChatNamespace(self._client)
 
@@ -1859,6 +1862,22 @@ def build_google_realtime_llm(
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError("GOOGLE_API_KEY is not set")
+    try:
+        from google.genai import types as google_genai_types
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "google-genai is not available in this environment. "
+            "Install or repair the Google SDK dependencies, or set the org "
+            "to use a non-Google TTS provider."
+        ) from exc
+    try:
+        from livekit.plugins.google import realtime as google_realtime
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "livekit.plugins.google.realtime is not available in this environment. "
+            "Install or repair the livekit-plugins-google package, or set the org "
+            "to use a non-Google TTS provider."
+        ) from exc
     return google_realtime.RealtimeModel(
         model=model,
         api_key=api_key,
@@ -3957,7 +3976,6 @@ async def entrypoint(ctx: JobContext):
 
     # Org-specific model settings.
     org_tts_provider = str(require_db_value("ttsProvider")).upper()
-    runtime_tts_provider = org_tts_provider
 
     org_cartesia_model: Optional[str] = None
     org_cartesia_voice: Optional[str] = None
@@ -4011,18 +4029,25 @@ async def entrypoint(ctx: JobContext):
         analysis_client = AsyncOpenAI()
         analysis_model = org_llm_model if org_llm_provider == "OPENAI" else LLM_MODEL
 
-    logger.info(
-        (
-            f"Org models -> GOOGLE runtime voice={org_google_voice_name}, analysis={analysis_model}"
-            if org_tts_provider == "GOOGLE"
-            else (
-                f"Org models -> STT: {org_deepgram_model if org_stt_provider != 'SARVAM' else org_sarvam_stt_model}, "
-                f"TTS: {org_google_model if runtime_tts_provider == 'GOOGLE' else (org_sarvam_model if runtime_tts_provider == 'SARVAM' else org_cartesia_model)} "
-                f"voice={org_google_voice_name if runtime_tts_provider == 'GOOGLE' else (org_sarvam_voice if runtime_tts_provider == 'SARVAM' else org_cartesia_voice)}, "
-                f"LLM: {org_llm_model} ({org_llm_provider})"
-            )
+    if org_tts_provider == "GOOGLE":
+        logger.info(
+            "Org models -> GOOGLE runtime model=%s voice=%s analysis=%s",
+            org_google_model,
+            org_google_voice_name,
+            analysis_model,
         )
-    )
+    else:
+        tts_model_for_log = org_sarvam_model if org_tts_provider == "SARVAM" else org_cartesia_model
+        tts_voice_for_log = org_sarvam_voice if org_tts_provider == "SARVAM" else org_cartesia_voice
+        stt_model_for_log = org_sarvam_stt_model if org_stt_provider == "SARVAM" else org_deepgram_model
+        logger.info(
+            "Org models -> STT=%s TTS=%s voice=%s LLM=%s (%s)",
+            stt_model_for_log,
+            tts_model_for_log,
+            tts_voice_for_log,
+            org_llm_model,
+            org_llm_provider,
+        )
 
     # Keep custom question text only; we will combine it with a mandatory
     # candidate-band checklist after parsing resume context.
@@ -4182,6 +4207,7 @@ async def entrypoint(ctx: JobContext):
             f"[TTS] Using Google Gemini realtime runtime — voice={org_google_voice_name}"
         )
         llm_plugin = build_google_realtime_llm(
+            model=str(org_google_model or DEFAULT_GOOGLE_TTS_MODEL),
             voice_name=org_google_voice_name,
             language=lang_codes["stt"],
         )
@@ -4218,7 +4244,7 @@ async def entrypoint(ctx: JobContext):
                 language_code=lang_codes["stt"], model=org_deepgram_model
             )
 
-        if runtime_tts_provider == "SARVAM":
+        if org_tts_provider == "SARVAM":
             if org_sarvam_model is None or org_sarvam_voice is None:
                 raise RuntimeError("DB config missing sarvamModel/sarvamVoice for SARVAM")
             sarvam_tts = build_sarvam_tts(
@@ -5740,21 +5766,21 @@ async def entrypoint(ctx: JobContext):
     await persist_answer_scores(app_id, answer_scores)
 
     selected_tts_model = (
-        GOOGLE_REALTIME_MODEL
-        if runtime_tts_provider == "GOOGLE"
+        str(org_google_model or DEFAULT_GOOGLE_TTS_MODEL)
+        if org_tts_provider == "GOOGLE"
         else org_sarvam_model
-        if runtime_tts_provider == "SARVAM"
+        if org_tts_provider == "SARVAM"
         else org_cartesia_model
     )
     selected_stt_model = (
-        GOOGLE_REALTIME_MODEL
+        str(org_google_model or DEFAULT_GOOGLE_TTS_MODEL)
         if org_tts_provider == "GOOGLE"
         else org_sarvam_stt_model if org_stt_provider == "SARVAM" else org_deepgram_model
     )
     await persist_org_usage_metrics(
         org_id,
         latest_session_usage or session.usage,
-        tts_provider=runtime_tts_provider,
+        tts_provider=org_tts_provider,
         tts_model=selected_tts_model,
         stt_provider=org_stt_provider,
         stt_model=selected_stt_model,

@@ -76,7 +76,8 @@ export async function GET(request: Request) {
         const stats = await prisma.$transaction(async (tx) => {
             const totalOrgs = await tx.organization.count();
             const activeOrgs = await tx.organization.count({ where: { status: "ACTIVE" } });
-            const suspendedOrgs = await tx.organization.count({ where: { status: { in: ["SUSPENDED", "CLOSED"] } } });
+            const suspendedOrgs = await tx.organization.count({ where: { status: "SUSPENDED" } });
+            const closedOrgs = await tx.organization.count({ where: { status: "CLOSED" } });
             
             const counts = await tx.$queryRaw`
                 SELECT 
@@ -151,6 +152,7 @@ export async function GET(request: Request) {
                 totalOrgs,
                 activeOrgs,
                 suspendedOrgs,
+                closedOrgs,
                 totalAdmins: counts[0]?.totalAdmins || 0,
                 totalDrives: counts[0]?.totalDrives || 0,
                 totalCandidates: counts[0]?.totalCandidates || 0,

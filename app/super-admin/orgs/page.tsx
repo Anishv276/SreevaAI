@@ -111,7 +111,8 @@ export function OrgStatsRow({ stats, isLoading }: { stats: any; isLoading: boole
     const kpis = [
         { label: "Organizations", value: stats.totalOrgs, icon: Building2, color: "text-blue-600", bg: "bg-blue-50" },
         { label: "Active", value: stats.activeOrgs, icon: ShieldCheck, color: "text-emerald-600", bg: "bg-emerald-50" },
-        { label: "Suspended", value: stats.suspendedOrgs, icon: ShieldOff, color: "text-rose-600", bg: "bg-rose-50" },
+        { label: "Suspended", value: stats.suspendedOrgs, icon: ShieldOff, color: "text-amber-600", bg: "bg-amber-50" },
+        { label: "Closed", value: stats.closedOrgs, icon: X, color: "text-rose-600", bg: "bg-rose-50" },
         { label: "Candidates", value: stats.totalCandidates, icon: Target, color: "text-orange-600", bg: "bg-orange-50" },
         { label: "Drives", value: stats.totalDrives, icon: Briefcase, color: "text-indigo-600", bg: "bg-indigo-50" },
         { label: "Admins", value: stats.totalAdmins, icon: Users, color: "text-amber-600", bg: "bg-amber-50" },
@@ -128,7 +129,7 @@ export function OrgStatsRow({ stats, isLoading }: { stats: any; isLoading: boole
     }
 
     return (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
             {kpis.map((kpi, idx) => (
                 <motion.div
                     key={kpi.label}
@@ -524,6 +525,18 @@ export default function OrgsPage() {
                                                         <div className={cn("h-1.5 w-1.5 rounded-full", org.status === "SUSPENDED" ? "bg-red-500" : "bg-gray-300")} />
                                                         Suspend Client
                                                         {org.status === "SUSPENDED" && <Check className="ml-auto h-3.5 w-3.5" />}
+                                                    </DropdownMenuItem>
+
+                                                    <DropdownMenuItem
+                                                        className={cn(
+                                                            "rounded-xl px-3 py-2.5 font-bold text-xs cursor-pointer gap-2 mt-1",
+                                                            org.status === "CLOSED" ? "bg-rose-50 text-rose-700" : "text-gray-600 hover:bg-gray-50"
+                                                        )}
+                                                        onClick={() => handleStatusChange(org.id, "CLOSED")}
+                                                    >
+                                                        <div className={cn("h-1.5 w-1.5 rounded-full", org.status === "CLOSED" ? "bg-rose-500" : "bg-gray-300")} />
+                                                        Close Portal
+                                                        {org.status === "CLOSED" && <Check className="ml-auto h-3.5 w-3.5" />}
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
