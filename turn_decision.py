@@ -25,6 +25,7 @@ class SignalFlags(TypedDict):
     contradiction: bool         # conflicts with prior answer or resume claim
     follow_up_collapse: bool    # depth dropped sharply from first to follow-up answer
     meta_question: bool         # candidate is checking if Ishita is a bot or if she's present
+    depth_decay: bool           # cross-topic quality degradation across rolling window of turns
 
 
 class TrustDelta(TypedDict):
@@ -465,6 +466,77 @@ def classify_short_utterance(utterance: str) -> Optional[ShortUtteranceClassific
     )
 
 
+_DECAY_WINDOW = 3             # rolling window of overall scores; smaller for 20-min interviews
+_DECAY_MILD_THRESHOLD = 1.2   # first-half avg minus second-half avg triggers mild decay
+_DECAY_SEVERE_THRESHOLD = 2.0 # same, severe tier
+_DECAY_COOLDOWN = 2           # minimum turns between consecutive firings; tighter for short interviews
+
+
+def _detect_depth_decay_event(
+    answer: str,
+    last_question: str,
+    current_depth: float,
+    prior_depth_scores: list[float],
+    topic_follow_up_count: int,
+    contradiction_detected: bool,
+    *,
+    session_score_history: list[float],
+    turns_since_last_decay: int,
+) -> Optional[SignalEvent]:
+    """
+    Cross-topic depth decay detector.
+
+    Uses session_score_history (overall quality scores across ALL topics) — not the
+    topic-scoped prior_depth_scores — to detect interview-wide progressive decline.
+
+    Window split: first half vs second half of last _DECAY_WINDOW scores.
+    If second-half avg is materially lower than first-half avg, candidate is declining.
+
+    Cooldown: will not re-fire within _DECAY_COOLDOWN turns of last firing to avoid
+    noise oscillation on borderline candidates.
+    """
+    del answer, last_question, current_depth, prior_depth_scores, topic_follow_up_count, contradiction_detected
+
+    if len(session_score_history) < _DECAY_WINDOW:
+        return None
+
+    if turns_since_last_decay < _DECAY_COOLDOWN:
+        return None
+
+    window = session_score_history[-_DECAY_WINDOW:]
+    mid = len(window) // 2
+    first_half_avg = sum(window[:mid]) / mid
+    second_half_avg = sum(window[mid:]) / (len(window) - mid)
+    drop = first_half_avg - second_half_avg
+
+    if drop >= _DECAY_SEVERE_THRESHOLD:
+        severity = "severe"
+        confidence = min(0.95, 0.70 + drop * 0.04)
+        score_delta = -0.12
+    elif drop >= _DECAY_MILD_THRESHOLD:
+        severity = "mild"
+        confidence = min(0.88, 0.55 + drop * 0.04)
+        score_delta = -0.06
+    else:
+        return None
+
+    return _build_signal_event(
+        signal_name="depth_decay",
+        signal_layer="intelligence_quality",
+        confidence=confidence,
+        evidence=(
+            f"{severity} cross-topic decay: window={_DECAY_WINDOW} turns, "
+            f"first_half_avg={first_half_avg:.2f}, second_half_avg={second_half_avg:.2f}, "
+            f"drop={drop:.2f}"
+        ),
+        trust_bucket_affected="intelligence_quality",
+        score_delta=score_delta,
+        probe_mode="depth",
+        recoverable=True,
+        recruiter_visible=True,
+    )
+
+
 def _detect_meta_question_event(
     answer: str,
     last_question: str,
@@ -500,11 +572,20 @@ def detect_signal_events(
     topic_follow_up_count: int,
     contradiction_detected: bool,
     collapse_stage: int = 0,
+    session_score_history: Optional[list[float]] = None,
+    turns_since_last_decay: int = 999,
 ) -> list[SignalEvent]:
-    # All detectors share the same positional signature; collapse_stage is injected
-    # only for the follow_up_collapse detector via a wrapper closure.
+    # All detectors share the same positional signature; extra params are injected
+    # for specific detectors via wrapper closures.
     def _collapse_detector(a, q, d, h, f, c):
         return _detect_follow_up_collapse_event(a, q, d, h, f, c, collapse_stage=collapse_stage)
+
+    def _decay_detector(a, q, d, h, f, c):
+        return _detect_depth_decay_event(
+            a, q, d, h, f, c,
+            session_score_history=session_score_history or [],
+            turns_since_last_decay=turns_since_last_decay,
+        )
 
     detectors: dict[str, Callable[[str, str, float, list[float], int, bool], Optional[SignalEvent]]] = {
         "ownership_ambiguity": _detect_ownership_ambiguity_event,
@@ -514,6 +595,7 @@ def detect_signal_events(
         "follow_up_collapse": _collapse_detector,
         "contradiction": _detect_contradiction_event,
         "meta_question": _detect_meta_question_event,
+        "depth_decay": _decay_detector,
     }
     events: list[SignalEvent] = []
     for signal_name, detector in detectors.items():
@@ -543,6 +625,7 @@ def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
         contradiction="contradiction" in names,
         follow_up_collapse="follow_up_collapse" in names,
         meta_question="meta_question" in names,
+        depth_decay="depth_decay" in names,
     )
 
 
@@ -608,6 +691,15 @@ register_signal_rule(
     recoverable=True,
     recruiter_visible=False,
     detector=_detect_meta_question_event,
+)
+register_signal_rule(
+    "depth_decay",
+    signal_layer="intelligence_quality",
+    trust_bucket_affected="intelligence_quality",
+    probe_mode="depth",
+    recoverable=True,
+    recruiter_visible=True,
+    detector=_detect_depth_decay_event,  # type: ignore[arg-type]  # closure wrapper used at runtime
 )
 
 

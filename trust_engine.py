@@ -46,6 +46,11 @@ _TURN_DELTAS = {
     # integrity (-> hard_integrity bucket)
     "contradiction_found":  -0.10,
     "contradiction_resolved":+0.06,
+
+    # depth decay (-> intelligence_quality bucket)
+    # Applied via SignalEvent.score_delta — these entries are documentation only.
+    "depth_decay_mild":     -0.06,   # rolling window drop >= 1.5 quality points
+    "depth_decay_severe":   -0.12,   # rolling window drop >= 2.5 quality points
 }
 
 # -- Proctoring event delta table (-> hard_integrity bucket) -------------------

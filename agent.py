@@ -4022,6 +4022,8 @@ async def entrypoint(ctx: JobContext):
     answer_scores: list[dict] = []    # log of all answer quality scores for final DB save
     _topic_depth_history: list[float] = []  # depth scores per answer on current topic (reset on MOVE_ON)
     _collapse_stage: int = 0               # 0=none, 1=first probe issued, 2+=repeated collapse (hard flag)
+    _last_depth_decay_turn: int = -999     # turn number when depth_decay last fired; -999 = never
+    _depth_decay_ever_fired: bool = False  # True once depth_decay has fired at least once
     _trust_state = init_trust_state()  # session-level trust engine state
     _contradiction_state = init_contradiction_state()  # explicit contradiction lifecycle state
     _active_eval_task: Optional[asyncio.Task[Any]] = None  # track active eval to prevent stale injects
@@ -4404,6 +4406,12 @@ async def entrypoint(ctx: JobContext):
                 lines_snap_eval = list(transcript_lines)
                 depth_snap = list(_topic_depth_history)
                 collapse_stage_snap = _collapse_stage
+                score_history_snap = list(_trust_state.get("score_history", []))
+                turns_since_decay_snap = (
+                    (turn_snapshot - _last_depth_decay_turn)
+                    if _last_depth_decay_turn >= 0
+                    else 999
+                )
 
                 async def _evaluate_and_inject(
                     answer=answer_snap,
@@ -4413,10 +4421,13 @@ async def entrypoint(ctx: JobContext):
                     turn=turn_snapshot,
                     depth_hist=depth_snap,
                     collapse_stage=collapse_stage_snap,
+                    score_history=score_history_snap,
+                    turns_since_decay=turns_since_decay_snap,
                 ):
                     nonlocal _topic_follow_up_count, environment_risk, integrity_risk, depth_risk, suspicion_score, current_interview_mode, \
                         answer_scores, _claim_index, _contradictions_found, \
-                        _topic_depth_history, _trust_state, _contradiction_state, _collapse_stage
+                        _topic_depth_history, _trust_state, _contradiction_state, _collapse_stage, \
+                        _last_depth_decay_turn, _depth_decay_ever_fired
                     try:
                         # Step 1: Extract claims and check consistency (before quality eval)
                         new_claims = await extract_claims(
@@ -4462,6 +4473,8 @@ async def entrypoint(ctx: JobContext):
                                     evaluate_answer_and_decide_fn=evaluate_answer_and_decide,
                                     signal_toggles=evaluation_signal_toggles,
                                     collapse_stage=collapse_stage,
+                                    session_score_history=score_history,
+                                    turns_since_last_decay=turns_since_decay,
                                 ),
                                 timeout=6.0,
                             )
@@ -4520,6 +4533,11 @@ async def entrypoint(ctx: JobContext):
                                 _topic_follow_up_count = 0
                                 _topic_depth_history = []
                                 _collapse_stage = 0
+
+                            # Update depth_decay cooldown state
+                            if any(ev.get("signal_name") == "depth_decay" for ev in signal_events):
+                                _last_depth_decay_turn = turn
+                                _depth_decay_ever_fired = True
 
                             # Update the canonical TrustState only. Trust deltas are folded into the
                             # single structured engine so we do not maintain a second trust line.
@@ -5123,7 +5141,8 @@ async def entrypoint(ctx: JobContext):
     # How many seconds before the end to trigger each nudge
     # Scale based on total duration (e.g., last 20% of the session, capped at 2.5 mins)
     CANDIDATE_Q_TRIGGER_SECS = min(150, max(10, int(total_seconds * 0.2)))
-    FINAL_THANKS_TRIGGER_SECS = max(8, min(15, int(total_seconds * 0.1)))
+    # Give the candidate a clear closing cue right around the last 10 seconds.
+    FINAL_THANKS_TRIGGER_SECS = max(8, min(10, int(total_seconds * 0.1)))
     MIN_CANDIDATE_LINES_FOR_WRAPUP = 3
 
     inactivity_nudge_count = 0
@@ -5243,7 +5262,7 @@ async def entrypoint(ctx: JobContext):
                     f"[TIMING] Failed to deliver candidate-questions nudge: {e}"
                 )
 
-        # --- 5 seconds remaining: warm thank-you ---
+        # --- Final 10 seconds: warm thank-you ---
         if remaining <= FINAL_THANKS_TRIGGER_SECS:
             break
 
@@ -5336,12 +5355,12 @@ async def entrypoint(ctx: JobContext):
         )
         if candidate_turns_final >= 4:
             goodbye_text = (
-                f"Thanks so much for your time today, {candidate_first_name or candidate_name}. "
+                f"Bye {candidate_first_name or candidate_name}. Thanks so much for your time today. "
                 "It was genuinely great speaking with you. Take care, and all the best!"
             )
         else:
             goodbye_text = (
-                f"Thanks for joining today, {candidate_first_name or candidate_name}. "
+                f"Bye {candidate_first_name or candidate_name}. Thanks for joining today. "
                 "Really appreciate you being here. Take care, and all the best!"
             )
 

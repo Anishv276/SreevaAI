@@ -64,6 +64,8 @@ async def run_turn_evaluation(
     signal_toggles: Optional[dict[str, Any]] = None,
     max_follow_ups: int = 3,
     collapse_stage: int = 0,
+    session_score_history: Optional[list[float]] = None,
+    turns_since_last_decay: int = 999,
 ) -> tuple[TurnDecision, str]:
     """
     Run full per-turn evaluation pipeline.
@@ -106,6 +108,8 @@ async def run_turn_evaluation(
         topic_follow_up_count=topic_follow_up_count,
         contradiction_detected=contradiction_detected,
         collapse_stage=collapse_stage,
+        session_score_history=session_score_history,
+        turns_since_last_decay=turns_since_last_decay,
     )
     signal_events = [
         event
