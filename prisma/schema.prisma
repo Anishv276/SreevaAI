@@ -283,19 +283,3 @@ model ResumeBatch {
   @@index([driveId, status])
 }
 
-model BulkImport {
-  id             String         @id @default(cuid())
-  orgId          String
-  driveId        String
-  status         String         @default("PROCESSING")
-  totalCount     Int            @default(0)
-  processedCount Int            @default(0)
-  failedCount    Int            @default(0)
-  errorMessage   String?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  completedAt    DateTime?
-
-  @@index([orgId, driveId, status])
-  @@index([createdAt])
-}
