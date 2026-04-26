@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resumeQueue } from "@/lib/queue";
-import { createCandidateSchema, bulkDeleteCandidatesSchema } from "@/lib/validation";
+import { bulkDeleteCandidatesSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
-import { sanitizeObject } from "@/lib/utils";
 import { deleteCandidateEmbeddings } from "@/lib/pinecone";
-import { submissionLimiter } from "@/lib/rate-limit";
-import { generateId } from "@/lib/ids";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 
 export async function GET(request: Request) {
@@ -87,7 +84,7 @@ export async function GET(request: Request) {
                 include: {
                     drive: { select: { title: true, role: true } }
                 },
-                orderBy: { createdAt: "desc" },
+                orderBy: { updatedAt: "desc" },
                 skip: offset,
                 take: limit,
             }),
@@ -142,7 +139,6 @@ export async function GET(request: Request) {
                 status: app.resumeStatus,
                 interviewStatus: app.interviewStatus,
                 hiringStatus: app.hiringStatus,
-                date: new Date(app.createdAt).toLocaleDateString(),
                 experienceYears: app.experienceYears,
                 relevantYears: app.relevantYears,
                 passportUrl: app.passportUrl,
@@ -169,149 +165,6 @@ export async function GET(request: Request) {
     } catch (error) {
         console.error("Error fetching candidates:", error);
         return NextResponse.json({ error: "Failed to fetch candidates" }, { status: 500 });
-    }
-}
-
-export async function POST(request: Request) {
-    try {
-        // -- RATE LIMITING -------------------
-        const ip = request.headers.get("x-forwarded-for") || "unknown";
-        const { success, remaining, reset } = await submissionLimiter.check(ip);
-        
-        if (!success) {
-            return NextResponse.json({ 
-                error: "Too many application attempts. Please try again later.",
-                code: "RATE_LIMIT_EXCEEDED",
-                resetAt: new Date(reset).toISOString()
-            }, { 
-                status: 429,
-                headers: {
-                    'X-RateLimit-Limit': '2000',
-                    'X-RateLimit-Remaining': remaining.toString(),
-                    'X-RateLimit-Reset': reset.toString()
-                }
-            });
-        }
-
-        const rawBody = await request.json();
-        const body = sanitizeObject(rawBody);
-
-        const result = createCandidateSchema.safeParse(body);
-        if (!result.success) {
-            return NextResponse.json(
-                { error: "Validation failed", details: result.error.flatten().fieldErrors },
-                { status: 400 }
-            );
-        }
-
-        const data = result.data;
-
-        const drive = await prisma.drive.findUnique({
-            where: { id: data.driveId }, include: { organization: { select: { status: true } } },
-        } as any);
-
-        if (!drive) {
-            return NextResponse.json({ error: "Drive not found" }, { status: 404 });
-        }
-
-        const now = new Date();
-        const deadline = drive.deadline ? new Date(drive.deadline) : null;
-        const isClosed = (deadline && deadline < now) || (drive as any).status === "CLOSED";
-
-        if (isClosed) {
-            return NextResponse.json({ 
-                error: "Applications for this position are no longer being accepted.",
-                code: "DRIVE_CLOSED"
-            }, { status: 410 });
-        }
-
-        if ((drive as any).organization && (drive as any).organization.status !== "ACTIVE") {
-            return NextResponse.json({ error: "Access Denied: This organization's recruitment portal is currently suspended." }, { status: 403 });
-        }
-
-        const existingApplication = await prisma.application.findFirst({
-            where: {
-                driveId: data.driveId,
-                OR: [
-                    { email: data.email.toLowerCase() },
-                    { phone: data.phone.trim() }
-                ]
-            }
-        });
-
-        if (existingApplication) {
-            const duplicateField = existingApplication.email.toLowerCase() === data.email.toLowerCase() 
-                ? "email" : "phone";
-            return NextResponse.json({ 
-                error: `You have already applied for this position with the same ${duplicateField}.`,
-                code: "ALREADY_APPLIED"
-            }, { status: 409 });
-        }
-
-        const jdText = drive.description?.trim();
-        if (!jdText || jdText.length < 50) {
-            return NextResponse.json({ 
-                error: "Job Description is missing or too short for AI analysis. Please update the Drive description first.",
-                details: "JD length must be at least 50 characters." 
-            }, { status: 400 });
-        }
-
-        const resumeText = data.resumeText?.trim() || "";
-
-        const { 
-            driveId, fullName, email, phone, resumeUrl, passportUrl, structuredResume, 
-            experienceYears, ...submissionData 
-        } = data;
-
-        // EMERGENCY GUARD: Never save blob URLs to the database
-        const finalResumeUrl = resumeUrl?.startsWith("blob:") ? undefined : resumeUrl?.trim();
-        const finalPassportUrl = passportUrl?.startsWith("blob:") ? undefined : passportUrl?.trim();
-
-        const session = await getSession();
-        const applicationId = generateId("app", fullName);
-        const application = await prisma.application.create({
-            data: {
-                id: applicationId,
-                driveId,
-                fullName: fullName.trim(),
-                email: email.toLowerCase().trim(),
-                phone: phone.trim(),
-                userId: session?.userId || null,
-                resumeUrl: finalResumeUrl || "https://example.com/resume.pdf",
-                passportUrl: finalPassportUrl,
-                resumeText: resumeText,
-                experienceYears: experienceYears ?? (structuredResume as any)?.experience?.total_years ?? null,
-                structuredResume: structuredResume ? JSON.stringify(structuredResume) : null,
-                submissionData: submissionData as any,
-                resumeStatus: "pending",
-                interviewStatus: "pending",
-                hiringStatus: "pending",
-                aiScore: null,
-                aiReport: null,
-            },
-        });
-
-        await resumeQueue.add('process-new-candidate', {
-            applicationId: application.id,
-            resumeText, 
-            resumeUrl: application.resumeUrl,
-            structuredResume: structuredResume,
-            jdText,
-            drive,
-            applicantEmail: application.email,
-            applicantName: application.fullName
-        }, {
-            jobId: `resume-${application.id}`,
-            attempts: 3,
-            backoff: { type: 'exponential', delay: 2000 },
-            removeOnComplete: true, 
-            removeOnFail: { count: 50 } 
-        });
-
-        return NextResponse.json(application);
-    } catch (error) {
-        console.error("Error creating application:", error);
-        return NextResponse.json({ error: "Failed to create application" }, { status: 500 });
     }
 }
 

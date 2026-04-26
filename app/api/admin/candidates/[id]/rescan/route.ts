@@ -5,6 +5,7 @@ import { spawn } from "child_process";
 import { writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
+import { safeJsonParse } from "@/lib/utils";
 
 export async function POST(
     request: Request,
@@ -48,8 +49,8 @@ export async function POST(
 
         const threshold = Number(drive.screeningThreshold ?? 0);
         const scoringInput = {
-            resume: application.structuredResume ? JSON.parse(application.structuredResume as string) : {},
-            jd: drive.extractedDetails ? (typeof drive.extractedDetails === "string" ? JSON.parse(drive.extractedDetails) : drive.extractedDetails) : {},
+            resume: safeJsonParse(application.structuredResume, {}),
+            jd: safeJsonParse(drive.extractedDetails, {}),
             resume_raw_text: resumeText,
             jd_raw_text: jdText,
             threshold,

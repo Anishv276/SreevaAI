@@ -4,6 +4,7 @@ import { updateDriveSchema } from "@/lib/validation";
 import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
+import { safeJsonParse } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +14,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         
         const drive = await prisma.drive.findFirst({
             where: {
-                OR: [
-                    { id },
-                    { slug: id }
-                ]
+                id
             },
             include: {
                 organization: {
@@ -52,8 +50,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 enabled: true,
                 weights: {} // Schema doesn't have a weights field yet
             },
-            registrationFields: (drive as any).registrationFields ? JSON.parse((drive as any).registrationFields) : [],
-            extractedDetails: (drive as any).extractedDetails ? JSON.parse((drive as any).extractedDetails) : {}
+            extractedDetails: safeJsonParse((drive as any).extractedDetails, {})
         });
     } catch (error: any) {
         console.error("[GET_DRIVE_ERROR]:", error);

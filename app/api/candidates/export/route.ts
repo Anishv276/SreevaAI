@@ -22,11 +22,11 @@ export async function GET(request: Request) {
                     select: { title: true }
                 }
             },
-            orderBy: { createdAt: "desc" }
+            orderBy: { updatedAt: "desc" }
         });
 
         // Convert to CSV
-        const headers = ["Candidate ID", "Name", "Email", "Phone", "Role", "AI Score", "Resume Status", "Interview Status", "Hiring Status", "Applied Date"];
+        const headers = ["Candidate ID", "Name", "Email", "Phone", "Role", "AI Score", "Resume Status", "Interview Status", "Hiring Status"];
         const rows = candidates.map((c: (typeof candidates)[number]) => [
             c.id,
             `"${c.fullName}"`,
@@ -36,8 +36,8 @@ export async function GET(request: Request) {
             c.aiScore || 0,
             `"${c.resumeStatus || "pending"}"`,
             `"${c.interviewStatus || "pending"}"`,
-            `"${c.hiringStatus || "pending"}"`,
-            `"${new Date(c.createdAt).toLocaleDateString()}"`
+            `"${c.hiringStatus || "pending"}"`
+
         ]);
 
         const csvContent = [headers.join(","), ...rows.map((r: (typeof rows)[number]) => r.join(","))].join("\n");

@@ -107,53 +107,7 @@ type BillingFeatureMetrics = {
     sttByModel?: Record<string, any>;
 };
 
-export function OrgStatsRow({ stats, isLoading }: { stats: any; isLoading: boolean }) {
-    const kpis = [
-        { label: "Organizations", value: stats.totalOrgs, icon: Building2, color: "text-blue-600", bg: "bg-blue-50" },
-        { label: "Active", value: stats.activeOrgs, icon: ShieldCheck, color: "text-emerald-600", bg: "bg-emerald-50" },
-        { label: "Suspended", value: stats.suspendedOrgs, icon: ShieldOff, color: "text-amber-600", bg: "bg-amber-50" },
-        { label: "Closed", value: stats.closedOrgs, icon: X, color: "text-rose-600", bg: "bg-rose-50" },
-        { label: "Candidates", value: stats.totalCandidates, icon: Target, color: "text-orange-600", bg: "bg-orange-50" },
-        { label: "Drives", value: stats.totalDrives, icon: Briefcase, color: "text-indigo-600", bg: "bg-indigo-50" },
-        { label: "Admins", value: stats.totalAdmins, icon: Users, color: "text-amber-600", bg: "bg-amber-50" },
-    ];
 
-    if (isLoading && !stats.totalOrgs) {
-        return (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                {[...Array(6)].map((_, i) => (
-                    <div key={i} className="h-24 rounded-3xl bg-white/40 animate-pulse border border-white/20" />
-                ))}
-            </div>
-        );
-    }
-
-    return (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
-            {kpis.map((kpi, idx) => (
-                <motion.div
-                    key={kpi.label}
-                    initial={{ opacity: 0, y: 15 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.05, duration: 0.5 }}
-                    className="group relative flex flex-col gap-2 p-5 bg-white/40 backdrop-blur-xl rounded-3xl border border-white/40 shadow-sm hover:shadow-xl hover:shadow-orange-500/5 transition-all duration-500 hover:-translate-y-1"
-                >
-                    <div className={cn("h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 transition-all duration-500 group-hover:scale-110 group-hover:rotate-3 shadow-sm", kpi.bg, kpi.color)}>
-                        <kpi.icon className="h-6 w-6" />
-                    </div>
-                    <div className="flex flex-col mt-1">
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 truncate">{kpi.label}</span>
-                        <div className="flex items-center gap-2">
-                            <span className="text-2xl font-black text-gray-900 tabular-nums tracking-tighter">{kpi.value?.toLocaleString() || 0}</span>
-                        </div>
-                    </div>
-                    {/* Subtle hover effect overlay */}
-                    <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-                </motion.div>
-            ))}
-        </div>
-    );
-}
 
 export default function OrgsPage() {
     const [orgs, setOrgs] = useState<Org[]>([]);
@@ -378,8 +332,6 @@ export default function OrgsPage() {
                 </div>
             </div>
 
-            {/* Stats Row */}
-            <OrgStatsRow stats={stats} isLoading={loading} />
 
             {/* Registry Container - Glassmorphism */}
             <div className="group relative bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)] overflow-hidden transition-all duration-700 hover:shadow-[0_20px_60px_rgba(0,0,0,0.08)] mt-10">

@@ -19,8 +19,6 @@ import { JobDescription } from "@/components/create-drive/job-description";
 
 import { ScreeningSettings, ScreeningConfig } from "@/components/create-drive/screening-settings";
 
-import { RegistrationForm, CustomField } from "@/components/create-drive/registration-form";
-
 import { FinalPreview } from "@/components/create-drive/final-preview";
 
 import { InterviewSetup } from "@/components/create-drive/interview-setup";
@@ -43,8 +41,6 @@ const STEPS = [
     "Screening",
 
     "Interview",
-
-    "Registration",
 
     "Preview"
 
@@ -174,10 +170,6 @@ function CreateDriveForm() {
 
     const [publishedDriveId, setPublishedDriveId] = useState<string | null>(null);
 
-    const [publishedSlug, setPublishedSlug] = useState<string | null>(null);
-
-    const [copied, setCopied] = useState(false);
-
 
 
     // Lifted state
@@ -188,10 +180,6 @@ function CreateDriveForm() {
 
     const [weights, setWeights] = useState<ScreeningConfig>({ threshold: 60 });
 
-    const [customFields, setCustomFields] = useState<CustomField[]>([]);
-
-    const [isPassportRequired, setIsPassportRequired] = useState(false);
-
 
 
     // AI Analysis State
@@ -200,15 +188,13 @@ function CreateDriveForm() {
 
     const [analysisError, setAnalysisError] = useState<string | null>(null);
 
-    const [candidatePreviewSlug, setCandidatePreviewSlug] = useState<string | null>(null);
-
 
 
     // Track which steps have been explicitly completed
 
-    const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set(isEditMode ? [0, 1, 2, 3, 4, 5] : []));
+    const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set(isEditMode ? [0, 1, 2, 3, 4] : []));
 
-    const [maxStepReached, setMaxStepReached] = useState(isEditMode ? 5 : 0);
+    const [maxStepReached, setMaxStepReached] = useState(isEditMode ? 4 : 0);
 
     const [syncedFromAi, setSyncedFromAi] = useState(false);
 
@@ -407,19 +393,9 @@ function CreateDriveForm() {
 
                     try {
 
-                        const fields = typeof (drive as any).registrationFields === 'string'
-
-                            ? JSON.parse((drive as any).registrationFields)
-
-                            : (drive as any).registrationFields;
-
-                        setCustomFields(fields);
-
                     } catch (e) { console.error("Failed to parse reg fields", e); }
 
                 }
-
-                setIsPassportRequired((drive as any).isPassportRequired || false);
 
                 if ((drive as any).shortlistMode) {
 
@@ -919,12 +895,6 @@ function CreateDriveForm() {
 
         }
 
-        if (step === 4) {
-
-            return true; // Registration fields are now optional
-
-        }
-
         return true;
 
     };
@@ -1002,13 +972,9 @@ function CreateDriveForm() {
             googleVoiceName: currentFormData.ttsProvider === "GOOGLE" ? (currentFormData.googleVoiceName || "Puck") : null,
             aiName: currentFormData.aiName || "Ishitha",
 
-            registrationFields: customFields,
-
             extractedDetails: currentFormData.extractedDetails || {},
 
             screeningThreshold: weights?.threshold || 0,
-
-            isPassportRequired: isPassportRequired,
 
             shortlistMode: shortlistMode,
 
@@ -1269,13 +1235,9 @@ function CreateDriveForm() {
             aiName: currentFormData.aiName || "Ishitha",
 
 
-            registrationFields: customFields,
-
             extractedDetails: currentFormData.extractedDetails || {},
 
             screeningThreshold: weights?.threshold || 0,
-
-            isPassportRequired: isPassportRequired,
 
             shortlistMode: shortlistMode,
 
@@ -1337,8 +1299,6 @@ function CreateDriveForm() {
 
                 setPublishedDriveId(savedId);
 
-                setPublishedSlug(result?.slug || null);
-
                 setPublished(true);
 
                 toast.success(isEditMode ? "Drive updated successfully!" : "Drive published successfully!");
@@ -1369,21 +1329,9 @@ function CreateDriveForm() {
 
 
 
-    const handleCopy = () => {
-
-        const link = `${window.location.origin}/careers/jobs/${publishedSlug || publishedDriveId}`;
-
-        navigator.clipboard.writeText(link);
-
-        setCopied(true);
-
-        setTimeout(() => setCopied(false), 2000);
-
-    };
 
 
-
-    const previewTarget = publishedSlug || publishedDriveId || (isEditMode ? driveId : null);
+    const previewTarget = publishedDriveId || (isEditMode ? driveId : null);
 
 
 
@@ -1671,11 +1619,11 @@ function CreateDriveForm() {
 
                 <div>
 
-                    <h1 className="text-2xl font-bold text-gray-900">Your Drive is {isEditMode ? "Updated" : "Live"}! 🎉</h1>
+                    <h1 className="text-2xl font-bold text-gray-900">Your Drive is {isEditMode ? "Updated" : "Created"}! 🎉</h1>
 
                     <p className="text-gray-500 mt-2 text-[15px]">
 
-                        Candidates can now apply. Share the link below to start receiving applications.
+                        Your recruitment drive is ready. Go to your drives list to start uploading resumes.
 
                     </p>
 
@@ -1683,61 +1631,13 @@ function CreateDriveForm() {
 
 
 
-                <div className="w-full rounded-2xl border-2 border-[#F97316] bg-orange-50 p-6 space-y-4"
-
-                    style={{ boxShadow: "0 0 24px rgba(249,115,22,0.15)" }}>
-
-                    <p className="text-[11px] font-bold text-[#F97316] uppercase tracking-widest">Candidate Link</p>
-
-                    <div className="flex items-center gap-3 rounded-xl bg-white border border-orange-200 px-4 py-3">
-
-                        <span className="flex-1 text-[13px] font-sans text-gray-700 text-left truncate">
-
-                            {publishedDriveId
-
-                                ? `${typeof window !== 'undefined' ? window.location.origin : ''}/careers/jobs/${publishedSlug || publishedDriveId}`
-
-                                : "Generating link..."}
-
-                        </span>
-
-                        <button
-
-                            onClick={handleCopy}
-
-                            disabled={!publishedDriveId}
-
-                            className="flex items-center gap-1.5 rounded-lg bg-[#F97316] px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-orange-600 transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-
-                        >
-
-                            {copied ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-
-                            {copied ? "Copied!" : "Copy URL"}
-
-                        </button>
-
-                    </div>
-
-                </div>
-
-
-
                 <div className="flex gap-3">
 
-                    <Button variant="outline" className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                    <Button className="flex-1 bg-[#F97316] hover:bg-orange-600 text-white"
 
-                        onClick={() => router.push("/admin")}>
+                        onClick={() => router.push("/admin/drives")}>
 
-                        Go to Dashboard
-
-                    </Button>
-
-                    <Button className="bg-[#F97316] hover:bg-orange-600 text-white"
-
-                        onClick={() => { setPublished(false); setCurrentStep(0); setCompletedSteps(new Set()); }}>
-
-                        Create Another Drive
+                        Go to All Drives
 
                     </Button>
 
@@ -1916,29 +1816,11 @@ function CreateDriveForm() {
 
                     {currentStep === 4 && (
 
-                        <RegistrationForm
-
-                            customFields={customFields}
-
-                            setCustomFields={setCustomFields}
-
-                            isPassportRequired={isPassportRequired}
-
-                            setIsPassportRequired={setIsPassportRequired}
-
-                        />
-
-                    )}
-
-                    {currentStep === 5 && (
-
                         <FinalPreview
 
                             formData={formData}
 
                             weights={weights}
-
-                            regFieldCount={customFields.length + 6}
 
                         />
 
@@ -2014,67 +1896,6 @@ function CreateDriveForm() {
 
                         <div className="flex gap-3">
 
-                            <Button
-
-                                type="button"
-
-                                variant="outline"
-
-                                onClick={() => {
-
-                                    // Map current form data to a structure compatible with JobDetailsView
-
-                                    const previewPayload = {
-
-                                        ...formData,
-
-                                        id: "preview",
-
-                                        applicants: 0,
-
-                                        status: "ACTIVE",
-
-                                        // Ensure split-able strings are present
-
-                                        responsibilities: formData.responsibilities || "",
-
-                                        requirements: formData.requirements || "",
-
-                                        skills: formData.skills || "",
-
-                                        location: formData.workMode || "",
-
-                                        type: formData.employmentType || "Full-time"
-
-                                    };
-
-
-
-                                    localStorage.setItem("candidate_preview_data", JSON.stringify(previewPayload));
-
-
-
-                                    if (!previewTarget) {
-
-                                        setCandidatePreviewSlug("preview");
-
-                                    } else {
-
-                                        setCandidatePreviewSlug(previewTarget);
-
-                                    }
-
-                                }}
-
-                                className="flex items-center gap-2 rounded-xl px-4 py-3 border-gray-200 text-gray-500 font-bold hover:bg-gray-50 h-auto"
-
-                            >
-
-                                <Eye className="h-4 w-4" />
-
-                                Preview as Candidate
-
-                            </Button>
 
                             {driveCreationLocked && !isEditMode ? (
                             <Link
@@ -2155,101 +1976,6 @@ function CreateDriveForm() {
 
 
 
-            {candidatePreviewSlug && (
-
-                <div className="fixed inset-0 z-[200] flex flex-col bg-black/60 backdrop-blur-sm">
-
-                    <div className="flex items-center gap-3 px-4 py-3 bg-gray-900 border-b border-white/10 shrink-0">
-
-                        <div className="flex items-center gap-1.5">
-
-                            <button
-
-                                onClick={() => setCandidatePreviewSlug(null)}
-
-                                className="h-3.5 w-3.5 rounded-full bg-red-500 hover:bg-red-400 transition-colors flex items-center justify-center group"
-
-                                title="Close preview"
-
-                            >
-
-                                <X className="h-2 w-2 text-red-900 opacity-0 group-hover:opacity-100 transition-opacity" />
-
-                            </button>
-
-                            <div className="h-3.5 w-3.5 rounded-full bg-yellow-400/60" />
-
-                            <div className="h-3.5 w-3.5 rounded-full bg-green-500/60" />
-
-                        </div>
-
-                        <div className="flex-1 flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1.5 mx-2">
-
-                            <div className="h-1.5 w-1.5 rounded-full bg-green-400" />
-
-                            <span className="text-[11px] text-gray-400 font-sans truncate select-none">
-
-                                {typeof window !== "undefined" ? window.location.origin : ""}/careers/jobs/{candidatePreviewSlug}
-
-                            </span>
-
-                        </div>
-
-                        <div className="flex items-center gap-2">
-
-                            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-400">
-
-                                Preview as Candidate
-
-                            </span>
-
-                            <button
-
-                                onClick={() => window.open(`/careers/jobs/${candidatePreviewSlug}`, "_blank")}
-
-                                className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
-
-                                title="Open in new tab"
-
-                            >
-
-                                <ExternalLink className="h-4 w-4" />
-
-                            </button>
-
-                            <button
-
-                                onClick={() => setCandidatePreviewSlug(null)}
-
-                                className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
-
-                                title="Close"
-
-                            >
-
-                                <X className="h-4 w-4" />
-
-                            </button>
-
-                        </div>
-
-                    </div>
-
-                    <iframe
-
-                        key={candidatePreviewSlug}
-
-                        src={`/careers/jobs/${candidatePreviewSlug}`}
-
-                        className="flex-1 w-full border-0 bg-white"
-
-                        title="Candidate Portal Preview"
-
-                    />
-
-                </div>
-
-            )}
 
         </div>
 

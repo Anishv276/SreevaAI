@@ -5,10 +5,9 @@ import { CARTESIA_VOICES, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/v
 interface FinalPreviewProps {
     formData: any;
     weights: ScreeningConfig;
-    regFieldCount: number;
 }
 
-export function FinalPreview({ formData, weights, regFieldCount }: FinalPreviewProps) {
+export function FinalPreview({ formData, weights }: FinalPreviewProps) {
     const selectedVoiceId = formData.ttsProvider === "SARVAM"
         ? formData.sarvamVoice
         : formData.ttsProvider === "GOOGLE"
@@ -27,9 +26,9 @@ export function FinalPreview({ formData, weights, regFieldCount }: FinalPreviewP
                         </svg>
                     </div>
                 </div>
-                <h2 className="text-lg font-bold text-orange-700">Ready to Publish!</h2>
+                <h2 className="text-lg font-bold text-orange-700">Ready to Create Drive!</h2>
                 <p className="text-sm text-orange-600 max-w-lg mx-auto mt-1">
-                    Review the summary below. Once you publish, candidates will be able to apply immediately.
+                    Review the summary below. Once you create the drive, you can upload resumes and start screening.
                 </p>
             </div>
 
@@ -92,10 +91,6 @@ export function FinalPreview({ formData, weights, regFieldCount }: FinalPreviewP
                                 </div>
                             </div>
 
-                            <div className="flex justify-between pt-1 border-t border-gray-50">
-                                <span className="text-gray-500">Registration Fields</span>
-                                <span className="font-semibold text-gray-800">{regFieldCount} fields</span>
-                            </div>
                         </div>
                     </div>
 

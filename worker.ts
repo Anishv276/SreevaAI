@@ -228,9 +228,8 @@ const worker = new Worker('resume-processing', async (job) => {
     // Update the DB with the latest structured data
     await (prisma.application as any).update({
       where: { id: applicationId },
-      data: { 
+      data: {
         resumeText: resumeText || "",
-        structuredResume: JSON.stringify(structuredResume || {}),
         experienceYears: (structuredResume as any)?.experience?.total_years != null ? parseFloat(String((structuredResume as any).experience.total_years)) : null,
       }
     });
@@ -321,25 +320,14 @@ const worker = new Worker('resume-processing', async (job) => {
     // 2. Update DB
     const exists = await prisma.application.findUnique({
       where: { id: applicationId },
-      select: { id: true, submissionData: true, experienceYears: true }
+      select: { id: true, experienceYears: true }
     });
     if (!exists) {
       console.warn(`[JOB] Application ${applicationId} no longer exists. Skipping update.`);
       return;
     }
 
-    // Restore experienceYears from submissionData if not already set in DB column
-    const submissionData = (exists.submissionData as any) || {};
-    const savedExpYears = exists.experienceYears;
-    const expFromSubmission =
-      submissionData.experienceYears != null
-        ? parseFloat(String(submissionData.experienceYears))
-        : submissionData.experience != null && submissionData.experience !== ""
-          ? parseFloat(String(submissionData.experience))
-          : null;
-    const resolvedExperienceYears = (savedExpYears != null && !isNaN(savedExpYears))
-      ? savedExpYears
-      : (!isNaN(expFromSubmission as number) ? expFromSubmission : null);
+    const resolvedExperienceYears = exists.experienceYears;
 
     await prisma.application.update({
       where: { id: applicationId },

@@ -127,6 +127,7 @@ model SupportTicket {
 }
 
 model Drive {
+  id                 String        @id
   title              String
   role               String?
   description        String
@@ -138,7 +139,6 @@ model Drive {
   updatedAt          DateTime      @updatedAt
   deadline           DateTime?
   positions          Int?          @default(1)
-  registrationFields String?       @default("[]")
   workMode           String?
   experience         String?
   responsibilities   String?
@@ -154,9 +154,6 @@ model Drive {
   jdPreviewUrl       String?
   orgId              String?
   status             String        @default("ACTIVE")
-  isPassportRequired Boolean       @default(false)
-  slug               String?       @unique
-  id                 String        @id
   shortlistMode      String        @default("automatic")
   location           String?
   aiName             String?       @default("Ishitha")
@@ -171,7 +168,6 @@ model Drive {
   organization       Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId, status])
-  @@index([slug])
 }
 
 model Application {
@@ -186,10 +182,6 @@ model Application {
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
   resumeText       String?
-  experienceYears  Float?
-  structuredResume String?    @default("{}")
-  submissionData   Json?      @default("{}")
-  passportUrl      String?
   driveId          String
   resumeStatus     String     @default("pending")
   interviewStatus  String     @default("pending")
@@ -249,4 +241,21 @@ model VerificationToken {
 model ProcessedWebhook {
   id          String   @id
   processedAt DateTime @default(now())
+}
+
+model BulkImport {
+  id             String         @id @default(cuid())
+  orgId          String
+  driveId        String
+  status         String         @default("PROCESSING")
+  totalCount     Int            @default(0)
+  processedCount Int            @default(0)
+  failedCount    Int            @default(0)
+  errorMessage   String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  completedAt    DateTime?
+
+  @@index([orgId, driveId, status])
+  @@index([createdAt])
 }

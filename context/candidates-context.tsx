@@ -65,14 +65,14 @@ interface CandidatesContextType {
     error: string | null;
     addCandidate: (candidate: Omit<Candidate, "id" | "date" | "status" | "score">) => Promise<void>;
     fetchCandidates: (
-        page?: number, 
-        limit?: number, 
-        driveId?: string, 
-        resumeStatus?: string, 
-        interviewStatus?: string, 
-        hiringStatus?: string, 
-        startDate?: string, 
-        endDate?: string, 
+        page?: number,
+        limit?: number,
+        driveId?: string,
+        resumeStatus?: string,
+        interviewStatus?: string,
+        hiringStatus?: string,
+        startDate?: string,
+        endDate?: string,
         search?: string
     ) => Promise<void>;
     clearError: () => void;
@@ -437,7 +437,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 const errorMessage = errorData.error || "Failed to create application";
-                
+
                 // Formulate detailed error message
                 let detailMsg = "";
                 if (errorData.details) {
@@ -449,7 +449,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                         detailMsg = `\n\nDetails: ${errorData.details}`;
                     }
                 }
-                
+
                 // Throw error with status code so frontend can handle duplicates specifically
                 const error = new Error(detailMsg ? `${errorMessage}${detailMsg}` : errorMessage);
                 (error as any).status = response.status;

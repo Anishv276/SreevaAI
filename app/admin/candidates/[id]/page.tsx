@@ -1187,10 +1187,6 @@ export default function CandidateProfilePage({ params }: { params: Promise<{ id:
 
                                                     <span>•</span>
 
-                                                    <span>{mounted ? new Date(candidate.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : "-- --- ----"}</span>
-
-                                                    <span>•</span>
-
                                                     <span className="flex items-center gap-1.5"><MessageSquare className="h-3.5 w-3.5" /> Voice AI</span>
 
                                                     <span>•</span>

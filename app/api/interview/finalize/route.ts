@@ -7,6 +7,7 @@ import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { generateInterviewReport } from "@/lib/interview-analysis";
 import { deductInterviewCredits } from "@/lib/credits";
+import { safeJsonParse } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -323,10 +324,10 @@ export async function POST(req: Request) {
           })();
 
         const structuredResume = app.structuredResume
-          ? (typeof app.structuredResume === "string" ? JSON.parse(app.structuredResume) : app.structuredResume)
+          ? safeJsonParse(app.structuredResume, {})
           : {};
         const driveDetails = app.drive?.extractedDetails
-          ? (typeof app.drive.extractedDetails === "string" ? JSON.parse(app.drive.extractedDetails) : app.drive.extractedDetails)
+          ? safeJsonParse(app.drive.extractedDetails, {})
           : {};
         const jdText = [
           app.drive?.title || "",

@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createDriveSchema, bulkDeleteSchema, driveQuerySchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
@@ -128,7 +127,6 @@ export async function GET(request: Request) {
                 aiScreening: {
                     enabled: (drive as any).aiScreeningEnabled
                 },
-                registrationFields: drive.registrationFields ? JSON.parse(drive.registrationFields) : [],
                 extractedDetails: drive.extractedDetails ? JSON.parse(drive.extractedDetails) : {},
                 interviewQuestions: drive.interviewQuestions ? JSON.parse(drive.interviewQuestions) : []
             };
@@ -219,13 +217,11 @@ export async function POST(request: Request) {
             },
         });
 
-        const slug = crypto.randomUUID();
         const driveId = generateId("drv", data.title);
 
         const drive = await prisma.drive.create({
             data: {
                 id: driveId,
-                slug,
                 title: data.title,
                 description: data.description || "",
                 role: data.role || null,

@@ -7,6 +7,7 @@ import { tmpdir } from "os";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { safeJsonParse } from "@/lib/utils";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -43,8 +44,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         // 3. Build scoring input - pass threshold so Python's report reflects what we decided
         const threshold = Number(application.drive.screeningThreshold ?? 0);
         const scoringInput = {
-            resume: JSON.parse(application.structuredResume || "{}"),
-            jd: JSON.parse(application.drive.extractedDetails || "{}"),
+            resume: safeJsonParse(application.structuredResume, {}),
+            jd: safeJsonParse(application.drive.extractedDetails, {}),
             resume_raw_text: resumeText,
             jd_raw_text: application.drive.description || "",
             threshold,

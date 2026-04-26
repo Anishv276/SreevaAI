@@ -44,10 +44,10 @@ import { useSearchParams } from "next/navigation";
 
 import { toast } from "@/components/ui/toast-custom";
 import { PasswordInput } from "@/components/ui/password-input";
-import { 
-    SettingsCard, 
-    Field, 
-    Toggle 
+import {
+    SettingsCard,
+    Field,
+    Toggle
 } from "@/components/admin/settings/settings-shared";
 import { formatTeamLimit, getTeamLimitRemaining, isTeamLimitReached } from "@/lib/team-limits";
 
@@ -623,10 +623,10 @@ export default function SettingsPage() {
             const res = await fetch("/api/auth/profile", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ 
-                    currentPassword: passwords.current, 
+                body: JSON.stringify({
+                    currentPassword: passwords.current,
                     newPassword: passwords.next,
-                    otp 
+                    otp
                 }),
             });
 
@@ -984,17 +984,17 @@ export default function SettingsPage() {
 
                                         <Field label="Phone Number">
 
-                                             <PhoneInput
+                                            <PhoneInput
 
-                                                 value={profile.phone}
+                                                value={profile.phone}
 
-                                                 onChange={val => setProfile(p => ({ ...p, phone: val }))}
+                                                onChange={val => setProfile(p => ({ ...p, phone: val }))}
 
-                                                 className="mt-1"
+                                                className="mt-1"
 
-                                             />
+                                            />
 
-                                         </Field>
+                                        </Field>
 
                                     </div>
 
@@ -1244,17 +1244,17 @@ export default function SettingsPage() {
 
                                         <Field label="Phone Number">
 
-                                             <PhoneInput
+                                            <PhoneInput
 
-                                                 value={profile.phone}
+                                                value={profile.phone}
 
-                                                 onChange={val => setProfile(p => ({ ...p, phone: val }))}
+                                                onChange={val => setProfile(p => ({ ...p, phone: val }))}
 
-                                                 className="mt-1"
+                                                className="mt-1"
 
-                                             />
+                                            />
 
-                                         </Field>
+                                        </Field>
 
                                         <Field label="Headquarters / Location">
 
@@ -1302,16 +1302,16 @@ export default function SettingsPage() {
                                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-1.5 rounded-2xl bg-gray-50/50 border border-gray-100/80">
                                         <div className="flex-1 relative group">
                                             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-gray-400 group-focus-within:text-[#F97316] transition-colors" />
-                                            <Input 
+                                            <Input
                                                 className="pl-11 h-12 rounded-xl border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all text-sm"
-                                                placeholder="colleague@company.com" 
-                                                value={inviteEmail} 
-                                                onChange={e => setInviteEmail(e.target.value)} 
+                                                placeholder="colleague@company.com"
+                                                value={inviteEmail}
+                                                onChange={e => setInviteEmail(e.target.value)}
                                             />
                                         </div>
                                         <div className="w-full sm:w-36 relative">
-                                            <select 
-                                                value={inviteRole} 
+                                            <select
+                                                value={inviteRole}
                                                 onChange={e => setInviteRole(e.target.value)}
                                                 className="w-full h-12 pl-4 pr-10 rounded-xl border border-gray-200 bg-white font-bold text-[13px] text-gray-700 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all appearance-none cursor-pointer"
                                             >
@@ -1396,7 +1396,7 @@ export default function SettingsPage() {
                                                                 </Badge>
                                                             </TableCell>
                                                             <TableCell className="py-3 px-0 text-right">
-                                                                <button 
+                                                                <button
                                                                     onClick={() => cancelInvite(invite.id)}
                                                                     className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100 ml-auto"
                                                                 >
@@ -1440,7 +1440,7 @@ export default function SettingsPage() {
                                                         </TableCell>
                                                         <TableCell className="py-3 px-0 text-right">
                                                             {member.role !== "ADMIN" && (
-                                                                <button 
+                                                                <button
                                                                     onClick={() => removeMember(member.id)}
                                                                     className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all ml-auto"
                                                                 >
@@ -1490,14 +1490,14 @@ export default function SettingsPage() {
                             <div className="space-y-6">
                                 <SettingsCard title="Change Password" description="Update your password to keep your account secure.">
                                     <div className="space-y-6">
-                                        <PasswordInput 
+                                        <PasswordInput
                                             label="Current Password"
                                             placeholder="Enter current password"
                                             value={passwords.current}
                                             onChange={e => setPasswords(p => ({ ...p, current: e.target.value }))}
                                         />
 
-                                        <PasswordInput 
+                                        <PasswordInput
                                             label="New Password"
                                             placeholder="Enter new password"
                                             value={passwords.next}
@@ -1506,7 +1506,7 @@ export default function SettingsPage() {
                                             onValidationChange={setIsNewPasswordValid}
                                         />
 
-                                        <PasswordInput 
+                                        <PasswordInput
                                             label="Confirm New Password"
                                             placeholder="Re-enter new password"
                                             value={passwords.confirm}
