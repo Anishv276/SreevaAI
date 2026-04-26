@@ -8,33 +8,114 @@ import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { safeJsonParse } from "@/lib/utils";
 
 const CHUNK_SIZE = 5;
+const pythonCmd = process.platform === "win32" ? "python" : "python3";
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function runPython(args: string[]): Promise<string> {
+    return new Promise((resolve, reject) => {
+        let out = "", err = "";
+        const p = spawn(pythonCmd, args);
+        p.stdout.on("data", (d) => (out += d.toString()));
+        p.stderr.on("data", (d) => (err += d.toString()));
+        p.on("close", (code) => {
+            if (code !== 0) reject(new Error(err || `python exited ${code}`));
+            else resolve(out);
+        });
+    });
+}
+
+/**
+ * Step 1 – Extract text + structured resume data from PDF.
+ * Calls: python scripts/extract_pdf.py <pdf> RESUME [model]
+ * Returns { text: string, data: object, usage: object }
+ */
+async function extractResume(
+    pdfPath: string,
+    model: string
+): Promise<{ text: string; data: Record<string, any>; usage: any }> {
+    const raw = await runPython(["scripts/extract_pdf.py", pdfPath, "RESUME", model]);
+    const parsed = JSON.parse(raw);
+    if (parsed.error) throw new Error(parsed.error);
+    return {
+        text: parsed.text || "",
+        data: parsed.data || {},
+        usage: parsed.usage || {},
+    };
+}
+
+/**
+ * Step 2 – Score the structured resume against the JD.
+ * Calls: python scripts/extract_pdf.py <json_path> SCORE [model]
+ * Input JSON: { resume: structuredData, jd: structuredJD,
+ *               resume_raw_text, jd_raw_text, threshold }
+ * Returns { data: scoreReport, usage }
+ */
+async function scoreResume(
+    structuredResume: Record<string, any>,
+    structuredJD: Record<string, any>,
+    resumeRawText: string,
+    jdRawText: string,
+    threshold: number,
+    model: string
+): Promise<{ data: Record<string, any>; usage: any }> {
+    const tmpJson = join(tmpdir(), `score_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
+    try {
+        const payload = {
+            resume: structuredResume,
+            jd: structuredJD,
+            resume_raw_text: resumeRawText,
+            jd_raw_text: jdRawText,
+            threshold,
+        };
+        await writeFile(tmpJson, JSON.stringify(payload));
+        const raw = await runPython(["scripts/extract_pdf.py", tmpJson, "SCORE", model]);
+        const parsed = JSON.parse(raw);
+        if (parsed.error) throw new Error(parsed.error);
+        return {
+            data: parsed.data || parsed,
+            usage: parsed.usage || {},
+        };
+    } finally {
+        await unlink(tmpJson).catch(() => {});
+    }
+}
+
+// ── Routes ─────────────────────────────────────────────────────────────────
 
 // POST /api/drives/[id]/resume-screening — start a batch
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+    request: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
     try {
         const { id: driveId } = await params;
         const formData = await request.formData();
         const files = formData.getAll("files") as File[];
 
-        if (!files.length) return NextResponse.json({ error: "No files provided" }, { status: 400 });
+        if (!files.length)
+            return NextResponse.json({ error: "No files provided" }, { status: 400 });
 
         const drive = await prisma.drive.findUnique({
             where: { id: driveId },
             include: { organization: true },
         });
-        if (!drive) return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        if (!drive)
+            return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        if (!drive.orgId)
+            return NextResponse.json({ error: "Drive has no organisation" }, { status: 400 });
 
         const batch = await prisma.resumeBatch.create({
             data: {
                 driveId,
-                orgId: drive.orgId!,
+                orgId: drive.orgId,
                 totalCount: files.length,
                 status: "PROCESSING",
             },
         });
 
-        // Fire-and-forget async processing
-        processBatch(batch.id, driveId, files, drive).catch(err =>
+        // Fire-and-forget
+        processBatch(batch.id, driveId, files, drive).catch((err) =>
             console.error("[RESUME-SCREENING] Fatal:", err)
         );
 
@@ -45,21 +126,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 }
 
-// GET /api/drives/[id]/resume-screening — list batches + candidates for drive
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+// GET /api/drives/[id]/resume-screening — poll batch OR fetch all
+export async function GET(
+    request: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
     try {
         const { id: driveId } = await params;
         const { searchParams } = new URL(request.url);
         const batchId = searchParams.get("batchId");
 
         if (batchId) {
-            // Poll single batch progress
             const batch = await prisma.resumeBatch.findUnique({ where: { id: batchId } });
-            if (!batch) return NextResponse.json({ error: "Batch not found" }, { status: 404 });
+            if (!batch)
+                return NextResponse.json({ error: "Batch not found" }, { status: 404 });
             return NextResponse.json(batch);
         }
 
-        // Return all batches + candidates for the drive
         const [batches, candidates] = await Promise.all([
             prisma.resumeBatch.findMany({
                 where: { driveId },
@@ -79,129 +162,186 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 }
 
-// ── Async batch processor ──────────────────────────────────────────────────
+// ── Batch processor ────────────────────────────────────────────────────────
 
-async function processBatch(batchId: string, driveId: string, files: File[], drive: any) {
+async function processBatch(
+    batchId: string,
+    driveId: string,
+    files: File[],
+    drive: any
+) {
     let processedCount = 0;
     let failedCount = 0;
 
     try {
-        let orgOpenAIModel = "gpt-4o-mini";
+        // Resolve org LLM model
+        let orgModel = "gpt-4.1-mini";
         if (drive.orgId) {
             const org = await prisma.organization.findUnique({
                 where: { id: drive.orgId },
                 select: { llmProvider: true, llmModel: true },
             });
             if ((org?.llmProvider || "OPENAI") === "OPENAI" && org?.llmModel) {
-                orgOpenAIModel = org.llmModel;
+                orgModel = org.llmModel;
             }
         }
 
-        const threshold = drive.screeningThreshold ?? 60;
+        const threshold: number = drive.screeningThreshold ?? 60;
+        // Parse the drive's extracted JD once — reuse for every resume
+        const structuredJD = safeJsonParse(drive.extractedDetails, {});
+        const jdRawText: string = drive.description || "";
 
         for (let i = 0; i < files.length; i += CHUNK_SIZE) {
             const chunk = files.slice(i, i + CHUNK_SIZE);
+
             const results = await Promise.allSettled(
-                chunk.map(f => processOneResume(f, driveId, batchId, drive, threshold, orgOpenAIModel, drive.orgId!))
+                chunk.map((file) =>
+                    processOneResume(
+                        file,
+                        driveId,
+                        batchId,
+                        structuredJD,
+                        jdRawText,
+                        threshold,
+                        orgModel,
+                        drive.orgId!
+                    )
+                )
             );
+
             for (const r of results) {
                 if (r.status === "fulfilled") processedCount++;
-                else { failedCount++; console.error("[RESUME-SCREENING] file failed:", r.reason); }
+                else {
+                    failedCount++;
+                    console.error("[RESUME-SCREENING] file failed:", r.reason);
+                }
             }
+
             await prisma.resumeBatch.update({
                 where: { id: batchId },
                 data: { processedCount, failedCount },
             });
+
+            console.log(
+                `[RESUME-SCREENING] chunk done — ${processedCount}/${files.length}`
+            );
         }
 
         await prisma.resumeBatch.update({
             where: { id: batchId },
             data: { status: "COMPLETED", completedAt: new Date() },
         });
+
+        console.log(
+            `[RESUME-SCREENING] batch ${batchId} complete — processed:${processedCount} failed:${failedCount}`
+        );
     } catch (err) {
+        console.error("[RESUME-SCREENING] processBatch error:", err);
         await prisma.resumeBatch.update({
             where: { id: batchId },
-            data: { status: "FAILED" },
+            data: {
+                status: "FAILED",
+                processedCount,
+                failedCount,
+            },
         }).catch(() => {});
     }
 }
 
 async function processOneResume(
-    file: File, driveId: string, batchId: string,
-    drive: any, threshold: number, model: string, orgId: string
+    file: File,
+    driveId: string,
+    batchId: string,
+    structuredJD: Record<string, any>,
+    jdRawText: string,
+    threshold: number,
+    model: string,
+    orgId: string
 ): Promise<void> {
-    const tmpPdf = join(tmpdir(), `rs_${Date.now()}_${Math.random().toString(36).slice(2)}.pdf`);
-    const tmpJson = join(tmpdir(), `rs_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
+    const tmpPdf = join(
+        tmpdir(),
+        `rs_${Date.now()}_${Math.random().toString(36).slice(2)}.pdf`
+    );
 
     try {
+        // Write PDF to temp disk
         await writeFile(tmpPdf, Buffer.from(await file.arrayBuffer()));
 
-        const extractedText = await extractText(tmpPdf);
+        // ── Step 1: Extract resume text + structured data ──
+        const { text: resumeRawText, data: structuredResume, usage: extractUsage } =
+            await extractResume(tmpPdf, model);
 
-        const scoringInput = {
-            resume: extractedText,
-            jd: safeJsonParse(drive.extractedDetails, {}),
-            resume_raw_text: extractedText,
-            jd_raw_text: drive.description || "",
-            threshold,
-        };
-        await writeFile(tmpJson, JSON.stringify(scoringInput));
-
-        const pythonCmd = process.platform === "win32" ? "python" : "python3";
-        let out = "", err = "";
-        await new Promise<void>((res, rej) => {
-            const p = spawn(pythonCmd, ["scripts/extract_pdf.py", tmpJson, "SCORE", model]);
-            p.stdout.on("data", d => (out += d));
-            p.stderr.on("data", d => (err += d));
-            p.on("close", code => code !== 0 ? rej(new Error(err)) : res());
-        });
-
-        const parsed = JSON.parse(out);
-        const aiResult = parsed.data || parsed;
-
-        if (parsed?.usage) {
+        // Record extraction billing
+        if (extractUsage?.inputTokens || extractUsage?.outputTokens) {
             await recordOrgBillingUsage({
-                orgId, feature: "resumeExtraction",
+                orgId,
+                feature: "resumeExtraction",
                 usage: {
-                    model: parsed.usage.model || model,
-                    inputTokens: parsed.usage.inputTokens || 0,
-                    outputTokens: parsed.usage.outputTokens || 0,
-                    cachedInputTokens: parsed.usage.cachedInputTokens || 0,
+                    model: extractUsage.model || model,
+                    inputTokens: extractUsage.inputTokens || 0,
+                    outputTokens: extractUsage.outputTokens || 0,
+                    cachedInputTokens: extractUsage.cachedInputTokens || 0,
                 },
-            });
+            }).catch(() => {});
         }
 
-        const score: number = typeof aiResult.score === "number"
-            ? aiResult.score : parseInt(aiResult.score || "0") || 0;
+        // ── Step 2: Score against JD ──
+        const { data: aiResult, usage: scoreUsage } = await scoreResume(
+            structuredResume,
+            structuredJD,
+            resumeRawText,
+            jdRawText,
+            threshold,
+            model
+        );
+
+        // Record scoring billing
+        if (scoreUsage?.inputTokens || scoreUsage?.outputTokens) {
+            await recordOrgBillingUsage({
+                orgId,
+                feature: "resumeReport",
+                usage: {
+                    model: scoreUsage.model || model,
+                    inputTokens: scoreUsage.inputTokens || 0,
+                    outputTokens: scoreUsage.outputTokens || 0,
+                    cachedInputTokens: scoreUsage.cachedInputTokens || 0,
+                },
+            }).catch(() => {});
+        }
+
+        // ── Compute final status ──
+        const score: number =
+            typeof aiResult.score === "number"
+                ? aiResult.score
+                : parseInt(String(aiResult.score || "0")) || 0;
         const resumeStatus = score >= threshold ? "SHORTLISTED" : "REJECTED";
 
-        const baseName = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]+/g, " ");
-        const fullName = baseName || "Unknown";
+        // Extract full_name from structured resume, fall back to filename
+        const extractedName: string =
+            structuredResume?.full_name ||
+            file.name.replace(/\.[^/.]+$/, "").replace(/[_\-]+/g, " ").trim() ||
+            "Unknown";
 
+        // ── Persist ──
         await prisma.resumeCandidate.create({
             data: {
-                driveId, bulkBatchId: batchId,
-                fullName, fileName: file.name,
-                resumeText: extractedText,
+                driveId,
+                bulkBatchId: batchId,
+                fullName: extractedName,
+                email: structuredResume?.email || null,
+                phone: structuredResume?.phone || null,
+                fileName: file.name,
+                resumeText: resumeRawText,
                 aiScore: score,
                 aiReport: JSON.stringify(aiResult),
                 resumeStatus,
             },
         });
+
+        console.log(
+            `[RESUME-SCREENING] ${extractedName} — score:${score} status:${resumeStatus}`
+        );
     } finally {
         await unlink(tmpPdf).catch(() => {});
-        await unlink(tmpJson).catch(() => {});
     }
-}
-
-async function extractText(filePath: string): Promise<string> {
-    const pythonCmd = process.platform === "win32" ? "python" : "python3";
-    let out = "", err = "";
-    await new Promise<void>((res, rej) => {
-        const p = spawn(pythonCmd, ["scripts/extract_pdf.py", filePath, "EXTRACT"]);
-        p.stdout.on("data", d => (out += d));
-        p.stderr.on("data", d => (err += d));
-        p.on("close", code => code !== 0 ? rej(new Error(err)) : res());
-    });
-    try { return JSON.parse(out).text || ""; } catch { return ""; }
 }
