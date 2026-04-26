@@ -210,6 +210,10 @@ APP_BASE_URL = (
 _DB_POOL: asyncpg.Pool | None = None
 _DB_POOL_INIT_TASK: asyncio.Task[asyncpg.Pool] | None = None
 
+# In-memory accumulator for manual billing usage — flushed once per session end.
+# Keyed by org_id → list of (feature, usage) tuples; avoids a DB round-trip on every LLM call.
+_PENDING_MANUAL_BILLING: dict[str, list[tuple[str, dict]]] = {}
+
 # Follow-up depth is now a fixed internal default.
 # Actual probing is controlled per-turn by evaluate_answer_and_decide().
 
@@ -2053,11 +2057,12 @@ async def _create_db_pool() -> asyncpg.Pool:
 async def get_db_pool() -> asyncpg.Pool:
     global _DB_POOL, _DB_POOL_INIT_TASK
 
-    if _DB_POOL is not None:
+    if _DB_POOL is not None and not _DB_POOL._closed:
         return _DB_POOL
 
-    if _DB_POOL_INIT_TASK is None:
-        _DB_POOL_INIT_TASK = asyncio.create_task(_create_db_pool())
+    # Pool absent or closed (e.g. stale from a prewarm subprocess) — create fresh.
+    _DB_POOL = None
+    _DB_POOL_INIT_TASK = asyncio.create_task(_create_db_pool())
 
     try:
         _DB_POOL = await _DB_POOL_INIT_TASK
@@ -2573,11 +2578,19 @@ def merge_manual_billing_usage(
 async def persist_org_manual_billing_usage(
     org_id: Optional[str], feature: str, usage: dict[str, Any]
 ) -> None:
+    """Accumulate manual billing usage in-memory. Flushed to DB once at session end."""
+    if not org_id or not DATABASE_URL or not usage:
+        return
+    _PENDING_MANUAL_BILLING.setdefault(org_id, []).append((feature, usage))
+
+
+async def flush_pending_manual_billing(org_id: Optional[str]) -> None:
+    """Write all accumulated manual billing usage to DB in a single transaction."""
     if not org_id or not DATABASE_URL:
         return
-    if not usage:
+    pending = _PENDING_MANUAL_BILLING.pop(org_id, None)
+    if not pending:
         return
-
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -2593,9 +2606,9 @@ async def persist_org_manual_billing_usage(
                 )
                 if not row:
                     return
-
-                existing_metrics = _coerce_jsonish(row["usageMetrics"])
-                merged_metrics = merge_manual_billing_usage(existing_metrics, feature, usage)
+                merged = _coerce_jsonish(row["usageMetrics"])
+                for feature, usage in pending:
+                    merged = merge_manual_billing_usage(merged, feature, usage)
                 await conn.execute(
                     """
                     UPDATE "Organization"
@@ -2603,11 +2616,12 @@ async def persist_org_manual_billing_usage(
                         "updatedAt" = NOW()
                     WHERE id = $2
                     """,
-                    json.dumps(merged_metrics),
+                    json.dumps(merged),
                     org_id,
                 )
+        logger.info(f"[USAGE] Flushed {len(pending)} manual billing entries for {org_id}")
     except Exception as e:
-        logger.error(f"[USAGE] Failed to save manual billing usage for {org_id}: {e}")
+        logger.error(f"[USAGE] Failed to flush manual billing for {org_id}: {e}")
 
 
 async def persist_org_usage_metrics(
@@ -2846,6 +2860,11 @@ async def get_interview_context(app_id: str):
             logger.error(
                 f"Database error during context fetch (attempt {attempt}/5): {e}"
             )
+            # Stale pool from prewarm subprocess — force recreation on next attempt.
+            if "executor shutdown" in str(e).lower():
+                global _DB_POOL, _DB_POOL_INIT_TASK
+                _DB_POOL = None
+                _DB_POOL_INIT_TASK = None
             if attempt < 5:
                 await asyncio.sleep(0.4 * attempt)
 
@@ -5785,6 +5804,7 @@ async def entrypoint(ctx: JobContext):
         stt_provider=org_stt_provider,
         stt_model=selected_stt_model,
     )
+    await flush_pending_manual_billing(org_id)
 
     # 🤖 AI Scorecard (NEW)
     if session_start_time:

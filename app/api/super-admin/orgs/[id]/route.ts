@@ -194,6 +194,13 @@ export async function PATCH(
             }
         }
 
+        // When org switches away from GOOGLE, cascade-clear Google fields on all drives
+        // so COALESCE(drive.ttsProvider, org.ttsProvider) doesn't resurrect the Google path.
+        const newTtsProvider = String(updateData.ttsProvider || "").toUpperCase();
+        const wasGoogle = String(existingOrg.ttsProvider || "").toUpperCase() === "GOOGLE";
+        const isNowNonGoogle = newTtsProvider && newTtsProvider !== "GOOGLE";
+        const shouldClearDriveGoogleFields = wasGoogle && isNowNonGoogle;
+
         // -- TRANSACTION: Update Org & Admin ------------------
         const updated = await prisma.$transaction(async (tx) => {
             // 1. Update Org
@@ -201,6 +208,18 @@ export async function PATCH(
                 where: { id },
                 data: updateData,
             });
+
+            // 2. Clear stale Google overrides on all drives under this org
+            if (shouldClearDriveGoogleFields) {
+                await tx.drive.updateMany({
+                    where: { orgId: id, ttsProvider: "GOOGLE" },
+                    data: {
+                        ttsProvider: null,
+                        googleModel: null,
+                        googleVoiceName: null,
+                    },
+                });
+            }
 
             if (shouldUpdateCreditsTotal) {
                 await tx.$executeRaw(

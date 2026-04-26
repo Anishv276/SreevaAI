@@ -20,7 +20,8 @@ export type ManagedProctoringSignal =
   | "contradiction"
   | "contradiction_resolved"
   | "meta_question"
-  | "audio_flag"
+  | "mouse_erratic"
+  | "mouse_snap"
   | "duplicate_ip"
   | "connection_restored"
   | "depth_decay"
@@ -50,7 +51,8 @@ export const MANAGED_PROCTORING_SIGNALS: ManagedProctoringSignal[] = [
   "contradiction",
   "contradiction_resolved",
   "meta_question",
-  "audio_flag",
+  "mouse_erratic",
+  "mouse_snap",
   "duplicate_ip",
   "connection_restored",
   "depth_decay",
@@ -79,7 +81,8 @@ export const DEFAULT_PROCTORING_SIGNALS: ProctoringSignalToggles = {
   contradiction: true,
   contradiction_resolved: true,
   meta_question: true,
-  audio_flag: true,
+  mouse_erratic: true,
+  mouse_snap: true,
   duplicate_ip: true,
   connection_restored: true,
   depth_decay: true,
@@ -121,7 +124,8 @@ export function normalizeProctoringSignals(raw: unknown): ProctoringSignalToggle
     contradiction: toBoolean(source.contradiction, DEFAULT_PROCTORING_SIGNALS.contradiction),
     contradiction_resolved: toBoolean(source.contradiction_resolved, DEFAULT_PROCTORING_SIGNALS.contradiction_resolved),
     meta_question: toBoolean(source.meta_question, DEFAULT_PROCTORING_SIGNALS.meta_question),
-    audio_flag: toBoolean(source.audio_flag, DEFAULT_PROCTORING_SIGNALS.audio_flag),
+    mouse_erratic: toBoolean(source.mouse_erratic, DEFAULT_PROCTORING_SIGNALS.mouse_erratic),
+    mouse_snap: toBoolean(source.mouse_snap, DEFAULT_PROCTORING_SIGNALS.mouse_snap),
     duplicate_ip: toBoolean(source.duplicate_ip, DEFAULT_PROCTORING_SIGNALS.duplicate_ip),
     connection_restored: toBoolean(source.connection_restored, DEFAULT_PROCTORING_SIGNALS.connection_restored),
     depth_decay: toBoolean(source.depth_decay, DEFAULT_PROCTORING_SIGNALS.depth_decay),

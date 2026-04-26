@@ -161,9 +161,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [faceViolationAlert, setFaceViolationAlert] = useState<{ type: string; reason: string } | null>(null);
     const faceViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-    //  Audio Proctoring 
-    const [audioViolationAlert, setAudioViolationAlert] = useState<{ reason: string } | null>(null);
-    const audioViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     //  Hardware Heartbeat 
     const [hardwareViolationAlert, setHardwareViolationAlert] = useState<{ type: string; reason: string } | null>(null);
@@ -209,6 +206,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const isGazeViolationEnabled = Boolean(proctoringSignals.gaze_violation);
     const isHeadPoseViolationEnabled = Boolean(proctoringSignals.head_pose_violation);
     const isIdentityMismatchEnabled = Boolean(proctoringSignals.identity_mismatch);
+    const isMouseErraticEnabled = Boolean(proctoringSignals.mouse_erratic);
+    const isMouseSnapEnabled = Boolean(proctoringSignals.mouse_snap);
 
     const clearDelayedViolation = useCallback((ref: { current: number | null }) => {
         if (ref.current !== null) {
@@ -272,38 +271,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         isIdentityMismatchEnabled,
     ]);
 
-    //  Audio violation handler 
-    const handleAudioViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
-        // 1. Show transient toast to candidate (auto-dismiss after 6s)
-        setAudioViolationAlert({ reason });
-        if (audioViolationTimerRef.current) clearTimeout(audioViolationTimerRef.current);
-        audioViolationTimerRef.current = setTimeout(() => setAudioViolationAlert(null), 6000);
-
-        // 2. Send to backend for audit trail
-        fetch("/api/interview/proctoring", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                applicationId: id,
-                interviewToken,
-                events: [{
-                    eventType,
-                    severity: severity ?? "medium",
-                    timestamp: Date.now(),
-                    reason,
-                }],
-            }),
-        }).catch(() => { });
-
-        // 3. Signal agent via data channel
-        const room = lkRoomRef.current;
-        if (room?.localParticipant) {
-            try {
-                const data = new TextEncoder().encode(JSON.stringify({ type: "audio_proctoring_violation", eventType, timestamp: Date.now() }));
-                room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
-            } catch { }
-        }
-    }, [id, interviewToken]);
 
     //  Hardware heartbeat violation handler 
     const handleHardwareViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
@@ -370,6 +337,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
     // -- Mouse violation handler (Deepgram Nova-3 cross-signal) -----------------
     const handleMouseViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
+        if (eventType === "mouse_erratic" && !isMouseErraticEnabled) return;
+        if (eventType === "mouse_snap" && !isMouseSnapEnabled) return;
+
         // Determine display duration by severity
         const displayMs = severity === "high" ? 9000 : severity === "low" ? 5000 : 7000;
 
@@ -404,7 +374,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
             } catch { }
         }
-    }, [id, interviewToken]);
+    }, [id, interviewToken, isMouseErraticEnabled, isMouseSnapEnabled]);
 
     // -- Generic Agent-Detected Violation handler (Syncs Agent events to Candidate UI) --
     const handleAgentDetectedViolation = useCallback((eventType: string, reason: string, severity?: string) => {
@@ -667,10 +637,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         setPhase("check");
     }, [exitFullscreenMode]);
 
-    // Hard timeout: if agent never becomes ready within 45s, show a popup and return to check.
+    // Hard timeout: if agent never becomes ready within 1.5 minutes (90s), show a popup and return to check.
     useEffect(() => {
         if (phase !== "launching") return;
-        if (launchTimeoutCheck >= 20 && !agentReadyCommittedRef.current) {
+        if (launchTimeoutCheck >= 90 && !agentReadyCommittedRef.current) {
             setLaunchRecoveryMessage("AI interviewer didn't respond in time.");
             if (launchRecoveryTimerRef.current !== null) {
                 window.clearTimeout(launchRecoveryTimerRef.current);
@@ -1080,13 +1050,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 onViolation={handleFaceViolation}
             />
 
-            {/*  Audio Proctoring (Web Audio API secondary-voice detection)  */}
-            <AudioProctoring
-                applicationId={id}
-                interviewToken={interviewToken}
-                isActive={phase === "interview"}
-                onViolation={handleAudioViolation}
-            />
 
             {/*  Hardware Heartbeat (MediaStreamTrack API camera/mic monitoring) */}
             {(isCameraDisabledEnabled || isMicrophoneDisabledEnabled) && (
@@ -1114,8 +1077,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             dynacast: true,
                             videoCaptureDefaults: { resolution: { width: 1280, height: 720, frameRate: 30 } },
                         }}
-                        video={phase === "interview" ? (selectedCameraId ? { deviceId: selectedCameraId } : true) : false}
-                        audio={phase === "interview" ? (selectedMicId ? { deviceId: selectedMicId } : true) : false}
+                        video={shouldConnect ? (selectedCameraId ? { deviceId: selectedCameraId } : true) : false}
+                        audio={shouldConnect ? (selectedMicId ? { deviceId: selectedMicId } : true) : false}
                         token={token}
                         serverUrl={serverUrl}
                         connect={shouldConnect}
@@ -1276,31 +1239,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 )}
             </AnimatePresence>
 
-            {/*  Audio Proctoring Violation Alert  */}
-            <AnimatePresence>
-                {audioViolationAlert && phase === "interview" && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -40 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -40 }}
-                        className="fixed top-44 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
-                    >
-                        <div className="flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md border border-yellow-500/30 rounded-2xl px-5 py-3 shadow-2xl max-w-sm">
-                            <div className="w-8 h-8 rounded-xl bg-yellow-500/10 flex items-center justify-center shrink-0">
-                                <Volume2 className="w-4 h-4 text-yellow-400" />
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-yellow-400">
-                                    Audio Alert
-                                </p>
-                                <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
-                                    {audioViolationAlert.reason}
-                                </p>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
 
             {/*  Hardware Violation Alert (camera / mic disabled)  */}
             <AnimatePresence>
@@ -2666,7 +2604,7 @@ function InterviewRoomContent({
                 </div>
 
                 {/* Right: Interaction Status */}
-                <div className="absolute bottom-44 left-1/2 -translate-x-1/2 z-[70] w-full max-w-3xl px-6 pointer-events-none">
+                <div className="absolute bottom-[16rem] left-1/2 -translate-x-1/2 z-[70] w-full max-w-3xl px-6 pointer-events-none">
                     <AnimatePresence mode="wait">
                         {groupedTranscriptions.length > 0 && (() => {
                             const latest = groupedTranscriptions[groupedTranscriptions.length - 1];
@@ -2687,19 +2625,16 @@ function InterviewRoomContent({
                                     transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
                                     className="pointer-events-auto"
                                 >
-                                    <div className="bg-[#27272a]/90 backdrop-blur-xl border border-white/5 px-8 py-5 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center justify-between gap-6 group">
-                                        <div className="flex items-center gap-4 min-w-0">
+                                    <div className="bg-[#27272a]/95 backdrop-blur-2xl border border-white/10 px-10 py-6 rounded-[2.5rem] shadow-[0_20px_80px_rgba(0,0,0,0.6)] flex items-center gap-6 group">
+                                        <div className="flex items-start gap-4 min-w-0">
                                             <div className={cn(
-                                                "w-2 h-2 rounded-full shrink-0",
+                                                "w-2.5 h-2.5 rounded-full shrink-0 mt-2",
                                                 isFinal ? (latest.isCandidate ? "bg-orange-500" : "bg-indigo-500") : "bg-zinc-600 animate-pulse"
                                             )} />
-                                            <p className="text-[15px] font-medium text-white leading-relaxed tracking-tight">
+                                            <p className="text-[17px] font-medium text-white leading-relaxed tracking-tight">
                                                 {text}
                                                 {!isFinal && <span className="inline-block ml-1 opacity-40">...</span>}
                                             </p>
-                                        </div>
-                                        <div className="w-9 h-9 rounded-full bg-white/5 flex items-center justify-center shrink-0 border border-white/5 group-hover:bg-white/10 transition-colors">
-                                            <ChevronDown className="w-4 h-4 text-zinc-400" />
                                         </div>
                                     </div>
                                 </motion.div>

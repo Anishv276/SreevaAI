@@ -754,9 +754,12 @@ export default function NewOrgPage() {
                                 { key: "contradiction", label: "Contradiction" },
                                 { key: "contradiction_resolved", label: "Contradiction Resolved" },
                                 { key: "meta_question", label: "Meta Question" },
-                                { key: "audio_flag", label: "Audio Flag" },
+                                { key: "mouse_erratic", label: "Mouse Erratic" },
+                                { key: "mouse_snap", label: "Mouse Snap" },
                                 { key: "duplicate_ip", label: "Duplicate IP" },
                                 { key: "connection_restored", label: "Connection Restored" },
+                                { key: "depth_decay", label: "Depth Decay" },
+                                { key: "complexity_latency_mismatch", label: "Complexity Latency Mismatch" },
                             ].map((signal) => (
                                 <PremiumToggle
                                     key={signal.key}
