@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-    Briefcase, Users, Calendar, Laptop, Layers, Building2, ChevronDown, Check,
+    Briefcase, Users, Laptop, Layers, Building2, ChevronDown, Check,
     ChevronLeft, ChevronRight, MapPin,
 } from "lucide-react";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
@@ -343,7 +343,7 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
                 <span className={displayValue ? "text-gray-900 font-medium" : "text-gray-400"}>
                     {displayValue || "Pick a date"}
                 </span>
-                <Calendar className={cn("h-4 w-4 transition-colors", open ? "text-[#F97316]" : "text-gray-400")} />
+                <Building2 className={cn("h-4 w-4 transition-colors", open ? "text-[#F97316]" : "text-gray-400")} />
             </button>
             {error && <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest px-1">{error}</p>}
             {typeof window !== "undefined" && createPortal(calendar, document.body)}
@@ -547,14 +547,6 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                         value={formData.positions || 1}
                         onChange={(v: number) => { handleChange("positions", v); handleBlur("positions"); }}
                         error={getError("positions")}
-                    />
-                    <PremiumDatePicker
-                        label="Application Deadline"
-                        icon={Calendar}
-                        id="deadline"
-                        value={formData.deadline || ""}
-                        onChange={(v: string) => { handleChange("deadline", v); handleBlur("deadline"); }}
-                        error={getError("deadline")}
                     />
                 </div>
             </section>

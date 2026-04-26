@@ -67,6 +67,7 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
     const criteria = config?.criteria ?? {};
     const [expandedSection, setExpandedSection] = useState<string>("skills");
     const [newSkill, setNewSkill] = useState("");
+    const [newSkillProficiency, setNewSkillProficiency] = useState("intermediate");
     const [newNiceSkill, setNewNiceSkill] = useState("");
     const [newCert, setNewCert] = useState("");
     const [newNiceCert, setNewNiceCert] = useState("");
@@ -85,10 +86,11 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
         updateCriteria({
             skills: {
                 ...criteria.skills,
-                required: [...current, { name: newSkill.trim(), proficiency: "intermediate", weight: 8 }]
+                required: [...current, { name: newSkill.trim(), proficiency: newSkillProficiency, weight: 8 }]
             }
         });
         setNewSkill("");
+        setNewSkillProficiency("intermediate");
     };
 
     const removeRequiredSkill = (index: number) => {
@@ -286,8 +288,8 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                     </button>
                                 </div>
                                 <select
-                                    value={newSkill ? "intermediate" : ""}
-                                    onChange={(e) => {}}
+                                    value={newSkillProficiency}
+                                    onChange={(e) => setNewSkillProficiency(e.target.value)}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs bg-white"
                                 >
                                     <option value="">Proficiency level</option>

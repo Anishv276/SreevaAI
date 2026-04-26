@@ -1,8 +1,6 @@
 export const UNLIMITED_ACTIVE_DRIVES = 0;
 
 export type DriveLike = {
-  status?: string | null;
-  deadline?: string | Date | null;
 };
 
 export function isDriveLimitEnabled(maxActiveDrives?: number | null): boolean {
@@ -10,24 +8,7 @@ export function isDriveLimitEnabled(maxActiveDrives?: number | null): boolean {
 }
 
 export function getActiveDriveCount(drives: DriveLike[]): number {
-  const now = Date.now();
-
-  return drives.reduce((count, drive) => {
-    if (String(drive.status || "").toUpperCase() !== "ACTIVE") {
-      return count;
-    }
-
-    if (!drive.deadline) {
-      return count + 1;
-    }
-
-    const deadlineMs = new Date(drive.deadline).getTime();
-    if (!Number.isNaN(deadlineMs) && deadlineMs >= now) {
-      return count + 1;
-    }
-
-    return count;
-  }, 0);
+  return drives.length;
 }
 
 export function isDriveCreationLocked(maxActiveDrives?: number | null, activeDriveCount = 0): boolean {

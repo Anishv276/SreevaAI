@@ -3,21 +3,21 @@
  * Uses dedicated creditsTotal / creditsUsed columns on Organization (Float).
  * Completely separate from usageMetrics (which tracks API cost for internal use).
  *
- * Rate: 0.2 credits per minute (second-precision).
- * Formula: round(durationSeconds / 60 * 0.2, 2)
+ * Rate: 1 credit per minute (second-precision).
+ * Formula: round(durationSeconds / 60 * 1, 2)
  *
  * Examples:
- *   1m 00s (60s)   = 0.20 credits
- *   1m 30s (90s)   = 0.30 credits
- *   4m 10s (250s)  = 0.83 credits
- *   5m 00s (300s)  = 1.00 credit
- *   6m 20s (380s)  = 1.27 credits
+ *   1m 00s (60s)   = 1.00 credit
+ *   1m 30s (90s)   = 1.50 credits
+ *   4m 10s (250s)  = 4.17 credits
+ *   5m 00s (300s)  = 5.00 credits
+ *   6m 20s (380s)  = 6.33 credits
  */
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
-export const CREDITS_PER_MINUTE = 0.2;
+export const CREDITS_PER_MINUTE = 1;
 
 export interface CreditStatus {
     creditsTotal: number;
@@ -56,7 +56,7 @@ export async function getOrgCreditStatus(orgId: string): Promise<CreditStatus> {
 
 /**
  * Deduct credits at interview completion.
- * 0.2 credits per minute, second-precision, rounded to 2dp.
+ * 1 credit per minute, second-precision, rounded to 2dp.
  */
 export async function deductInterviewCredits(orgId: string, durationSeconds: number): Promise<{
     deducted: number;

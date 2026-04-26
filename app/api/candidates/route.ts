@@ -19,9 +19,36 @@ export async function GET(request: Request) {
         const resumeStatus = searchParams.get("resumeStatus") || searchParams.get("status") || "all";
         const interviewStatus = searchParams.get("interviewStatus") || "all";
         const hiringStatus = searchParams.get("hiringStatus") || "all";
+        const shortlistOnly = searchParams.get("shortlistOnly") === "true";
         const page = parseInt(searchParams.get("page") || "1");
         const limit = parseInt(searchParams.get("limit") || "10");
         const offset = (page - 1) * limit;
+
+        const statusVariants = (value: string) => {
+            const normalized = value.trim().toLowerCase().replace(/[_-]+/g, " ");
+            switch (normalized) {
+                case "shortlisted":
+                    return ["shortlisted", "SHORTLISTED", "Shortlisted", "accepted", "ACCEPTED", "Accepted"];
+                case "rejected":
+                    return ["rejected", "REJECTED", "Rejected"];
+                case "not shortlisted":
+                    return ["not shortlisted", "NOT SHORTLISTED", "Not Shortlisted"];
+                case "inprogress":
+                case "in progress":
+                    return ["inprogress", "in progress", "IN_PROGRESS", "IN PROGRESS", "In Progress"];
+                case "completed":
+                case "finished":
+                    return ["completed", "COMPLETED", "Completed", "finished", "FINISHED", "Finished"];
+                case "not hired":
+                    return ["not hired", "NOT HIRED", "Not Hired"];
+                case "not qualified":
+                    return ["not qualified", "NOT QUALIFIED", "Not Qualified"];
+                case "pending":
+                    return ["pending", "PENDING", "Pending"];
+                default:
+                    return [value, normalized];
+            }
+        };
 
         const baseSelect = `
             SELECT a.*, d.title AS "driveTitle"
@@ -58,16 +85,27 @@ export async function GET(request: Request) {
             }
         }
 
-        if (resumeStatus && resumeStatus !== "all") {
-            where.resumeStatus = resumeStatus.toLowerCase();
+        if (shortlistOnly) {
+            where.resumeStatus = {
+                in: [
+                    "shortlisted",
+                    "SHORTLISTED",
+                    "Shortlisted",
+                    "accepted",
+                    "ACCEPTED",
+                    "Accepted",
+                ],
+            };
+        } else if (resumeStatus && resumeStatus !== "all") {
+            where.resumeStatus = { in: statusVariants(resumeStatus) };
         }
 
         if (interviewStatus && interviewStatus !== "all") {
-            where.interviewStatus = interviewStatus.toLowerCase();
+            where.interviewStatus = { in: statusVariants(interviewStatus) };
         }
 
         if (hiringStatus && hiringStatus !== "all") {
-            where.hiringStatus = hiringStatus.toLowerCase();
+            where.hiringStatus = { in: statusVariants(hiringStatus) };
         }
 
         if (search) {
@@ -75,6 +113,18 @@ export async function GET(request: Request) {
                 { fullName: { contains: search, mode: "insensitive" } },
                 { email: { contains: search, mode: "insensitive" } },
                 { drive: { title: { contains: search, mode: "insensitive" } } }
+            ];
+        }
+
+        if (shortlistOnly) {
+            where.AND = [
+                ...(where.AND || []),
+                {
+                    NOT: [
+                        { resumeStatus: { in: ["rejected", "REJECTED", "Rejected"] } },
+                        { resumeStatus: { in: ["not shortlisted", "NOT SHORTLISTED", "Not Shortlisted"] } },
+                    ],
+                },
             ];
         }
 
@@ -141,7 +191,6 @@ export async function GET(request: Request) {
                 hiringStatus: app.hiringStatus,
                 experienceYears: app.experienceYears,
                 relevantYears: app.relevantYears,
-                passportUrl: app.passportUrl,
             };
         });
 
@@ -212,7 +261,6 @@ export async function DELETE(request: Request) {
                 where: { id: { in: validIds } },
                 select: {
                     resumeUrl: true,
-                    passportUrl: true,
                     interview: {
                         select: {
                             interviewRecordingUrl: true,
@@ -225,7 +273,6 @@ export async function DELETE(request: Request) {
             const urls: string[] = [];
             for (const cand of candidatesToCleanup) {
                 if (cand.resumeUrl) urls.push(cand.resumeUrl);
-                if (cand.passportUrl) urls.push(cand.passportUrl);
                 if (cand.interview?.interviewRecordingUrl) urls.push(cand.interview.interviewRecordingUrl);
                 if (cand.interview?.snapshots?.length) urls.push(...cand.interview.snapshots);
             }

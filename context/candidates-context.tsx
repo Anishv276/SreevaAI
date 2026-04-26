@@ -73,7 +73,10 @@ interface CandidatesContextType {
         hiringStatus?: string,
         startDate?: string,
         endDate?: string,
-        search?: string
+        search?: string,
+        options?: {
+            shortlistOnly?: boolean;
+        }
     ) => Promise<void>;
     clearError: () => void;
     bulkDeleteCandidates: (ids: string[]) => Promise<void>;
@@ -134,7 +137,8 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         hiringStatus?: string,
         startDate?: string,
         endDate?: string,
-        search?: string
+        search?: string,
+        options?: { shortlistOnly?: boolean }
     ) => {
         return [
             page,
@@ -145,7 +149,8 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             hiringStatus || "all",
             startDate || "none",
             endDate || "none",
-            search || ""
+            search || "",
+            options?.shortlistOnly !== false ? "shortlistOnly" : "allVisible"
         ].join("|");
     };
 
@@ -159,9 +164,11 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         startDate?: string,
         endDate?: string,
         search?: string,
-        options?: { force?: boolean; background?: boolean }
+        options?: { force?: boolean; background?: boolean; shortlistOnly?: boolean }
     ) => {
-        const key = buildFetchKey(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search);
+        const key = buildFetchKey(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search, {
+            shortlistOnly: options?.shortlistOnly,
+        });
         const now = Date.now();
 
         const inFlight = inFlightRequestsRef.current.get(key);
@@ -234,6 +241,9 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 }
                 if (search && search.trim()) {
                     params.set("search", search.trim());
+                }
+                if (options?.shortlistOnly !== false) {
+                    params.set("shortlistOnly", "true");
                 }
 
                 const res = await fetchWithRetry(`/api/candidates?${params.toString()}`);
@@ -309,9 +319,13 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         hiringStatus?: string,
         startDate?: string,
         endDate?: string,
-        search?: string
+        search?: string,
+        options?: { shortlistOnly?: boolean }
     ) => {
-        await fetchCandidatesInternal(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search);
+        await fetchCandidatesInternal(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search, {
+            ...options,
+            shortlistOnly: options?.shortlistOnly !== false,
+        });
     }, [fetchCandidatesInternal]);
 
     const scheduleStreamRefresh = useCallback(() => {

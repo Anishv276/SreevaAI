@@ -9,8 +9,6 @@ export type Job = {
     title: string;
     department: string;
     applicants: number;
-    status: string;
-    daysLeft: number;
     description?: string;
     salary?: string;
     type?: string;
@@ -22,7 +20,6 @@ export type Job = {
     registrationFields?: string;
     slug?: string;
     role?: string;
-    deadline?: string;
     createdAt: string;
 };
 
@@ -43,10 +40,9 @@ interface JobsContextType {
     jobs: Job[];
     pagination: Pagination;
     organization: OrganizationSettings | null;
-    addJob: (job: Omit<Job, "id" | "applicants" | "status" | "daysLeft" | "createdAt">) => Promise<Job>;
+    addJob: (job: Omit<Job, "id" | "applicants" | "createdAt">) => Promise<Job>;
     deleteJob: (id: string) => Promise<void>;
     fetchJobs: (page?: number, limit?: number, search?: string, status?: string, type?: string, startDate?: string, endDate?: string) => Promise<void>;
-    toggleDriveStatus: (id: string, newStatus: "ACTIVE" | "CLOSED" | "DISABLED") => Promise<void>;
     updateJob: (id: string, data: any) => Promise<Job>;
     bulkDeleteJobs: (ids: string[]) => Promise<void>;
 }
@@ -146,7 +142,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         }
     }, [isAdminRoute, isCareersRoute]);
 
-    const addJob = async (newJobData: Omit<Job, "id" | "applicants" | "status" | "daysLeft" | "createdAt">): Promise<Job> => {
+    const addJob = async (newJobData: Omit<Job, "id" | "applicants" | "createdAt">): Promise<Job> => {
         try {
             const res = await fetch("/api/drives", {
                 method: "POST",
@@ -194,26 +190,6 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         } catch (error) {
             console.error("Failed to delete job:", error);
             throw error; // Re-throw so component can handle UI feedback
-        }
-    };
-
-    const toggleDriveStatus = async (id: string, newStatus: "ACTIVE" | "CLOSED" | "DISABLED") => {
-        // Optimistic update
-        setJobs((prev) =>
-            prev.map((job) => (job.id === id ? { ...job, status: newStatus } : job))
-        );
-        try {
-            await fetch(`/api/drives/${id}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ status: newStatus }),
-            });
-            if (isAdminRoute) {
-                refreshOrganization();
-            }
-        } catch (error) {
-            console.error("Failed to toggle drive status:", error);
-            fetchJobs(); // Revert on error
         }
     };
 
@@ -266,7 +242,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <JobsContext.Provider value={{ jobs, pagination, organization, addJob, deleteJob, fetchJobs, toggleDriveStatus, updateJob, bulkDeleteJobs }}>
+        <JobsContext.Provider value={{ jobs, pagination, organization, addJob, deleteJob, fetchJobs, updateJob, bulkDeleteJobs }}>
             {children}
         </JobsContext.Provider>
     );

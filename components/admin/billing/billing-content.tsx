@@ -52,7 +52,9 @@ const primaryBtn: React.CSSProperties = {
 };
 
 export function BillingContent() {
-  const [credits, setCredits] = React.useState({ total: 100, used: 27.4 });
+  const [credits, setCredits] = React.useState({ total: 0, used: 0 });
+  const [creditsLoading, setCreditsLoading] = React.useState(true);
+  const [creditsError, setCreditsError] = React.useState<string | null>(null);
   const [buyOpen, setBuyOpen] = React.useState(false);
   const [openRow, setOpenRow] = React.useState<InterviewRow | null>(null);
 
@@ -60,9 +62,42 @@ export function BillingContent() {
     injectBillingAnimStyles();
   }, []);
 
-  const remaining = credits.total - credits.used;
-  const minsRemaining = Math.round(remaining * 5);
-  const usedPct = (credits.used / credits.total) * 100;
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const loadCredits = async () => {
+      try {
+        setCreditsLoading(true);
+        setCreditsError(null);
+        const res = await fetch("/api/admin/credits", { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error(`Failed to load credits (${res.status})`);
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        setCredits({
+          total: Number(data.creditsTotal ?? 0),
+          used: Number(data.creditsUsed ?? 0),
+        });
+      } catch (error) {
+        if (cancelled) return;
+        console.error("[BillingContent] Failed to load credits:", error);
+        setCreditsError("Unable to load live credit balance.");
+      } finally {
+        if (!cancelled) setCreditsLoading(false);
+      }
+    };
+
+    loadCredits();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const remaining = Math.max(0, credits.total - credits.used);
+  const minsRemaining = Math.round(remaining);
+  const usedPct = credits.total > 0 ? (credits.used / credits.total) * 100 : 0;
 
   const animTotal = useCount(credits.total, [credits.total]);
   const animRem = useCount(remaining, [credits.total, credits.used]);
@@ -105,7 +140,7 @@ export function BillingContent() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
               <div>
                 <Eyebrow>Interview credits</Eyebrow>
-                <div style={{ fontSize: 13, color: MUTED, marginTop: 6 }}>0.2 credits/min · second-precision billing</div>
+                <div style={{ fontSize: 13, color: MUTED, marginTop: 6 }}>1 credit/min · second-precision billing</div>
               </div>
               <div
                 style={{
@@ -142,8 +177,12 @@ export function BillingContent() {
                 </svg>
                 <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
                   <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" }}>Remaining</div>
-                  <div style={{ fontSize: 44, fontWeight: 700, color: INK, letterSpacing: "-0.03em", marginTop: 6 }}>{animRem.toFixed(1)}</div>
-                  <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>of {animTotal.toFixed(0)} credits</div>
+                  <div style={{ fontSize: 44, fontWeight: 700, color: INK, letterSpacing: "-0.03em", marginTop: 6 }}>
+                    {creditsLoading ? "…" : animRem.toFixed(1)}
+                  </div>
+                  <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>
+                    of {creditsLoading ? "…" : animTotal.toFixed(0)} credits
+                  </div>
                 </div>
               </div>
 
@@ -152,8 +191,8 @@ export function BillingContent() {
                 <div style={{ height: 1, background: LINE_2 }} />
                 <RingStat
                   label="Credits used"
-                  value={(credits.total - animRem).toFixed(2)}
-                  hint={`${Math.round((credits.total - animRem) * 5)} min consumed`}
+                  value={(credits.used).toFixed(2)}
+                  hint={`${Math.round(credits.used)} min consumed`}
                 />
                 <div style={{ height: 1, background: LINE_2 }} />
                 <RingStat label="Consumption" value={`${animPct.toFixed(1)}%`} hint={`${(100 - animPct).toFixed(1)}% still available`} accent />
@@ -162,13 +201,16 @@ export function BillingContent() {
 
             <div style={{ marginTop: 32 }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: MUTED, marginBottom: 8, fontWeight: 500 }}>
-                <span>{Math.round((credits.total - remaining) * 5)} min used</span>
-                <span>{(credits.total * 5).toLocaleString()} min total</span>
+                <span>{Math.round(credits.used)} min used</span>
+                <span>{credits.total.toLocaleString()} min total</span>
               </div>
               <div style={{ height: 6, background: LINE_2, borderRadius: 999, overflow: "hidden" }}>
                 <div style={{ width: `${animPct}%`, height: "100%", background: ORANGE, borderRadius: 999, transition: "width .3s ease" }} />
               </div>
             </div>
+            {creditsError ? (
+              <div style={{ marginTop: 12, fontSize: 12.5, color: "#B45309" }}>{creditsError}</div>
+            ) : null}
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -258,9 +300,9 @@ export function BillingContent() {
           <div style={{ padding: "20px 24px" }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: INK, marginBottom: 14 }}>How credits work</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)" }}>
-              <Fact label="Rate" value="0.2 / min" sub="5 min = 1.0 credit" />
-              <Fact label="Precision" value="Per second" sub="4m 10s = 0.83, 5m 01s = 1.00" divider />
-              <Fact label="Deducted" value="Auto" sub="At interview completion" divider />
+              <Fact label="Rate" value="1 credit/min" sub="60 seconds = 1.00 credit" />
+              <Fact label="Precision" value="Second-precision" sub="4m 10s = 4.17, 5m 01s = 5.02" divider />
+              <Fact label="Deducted" value="On finalize" sub="Based on actual interview duration" divider />
             </div>
           </div>
         </div>

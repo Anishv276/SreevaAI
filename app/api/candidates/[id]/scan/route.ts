@@ -16,7 +16,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         // 1. Fetch Application & Drive
         const application = await prisma.application.findUnique({
             where: { id },
-            include: { drive: true }
+            select: {
+                id: true,
+                fullName: true,
+                email: true,
+                resumeText: true,
+                aiReport: true,
+                drive: {
+                    select: {
+                        id: true,
+                        title: true,
+                        description: true,
+                        screeningThreshold: true,
+                        shortlistMode: true,
+                        extractedDetails: true,
+                        orgId: true,
+                    }
+                }
+            }
         });
 
         if (!application) {
@@ -42,7 +59,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
 
         // 3. Build scoring input - pass threshold so Python's report reflects what we decided
-        const threshold = Number(application.drive.screeningThreshold ?? 0);
+        const screeningCriteria = safeJsonParse((application.drive as any).screeningCriteria, {});
+        const threshold = Number((screeningCriteria as any)?.threshold ?? application.drive.screeningThreshold ?? 0);
         const scoringInput = {
             resume: safeJsonParse(application.structuredResume, {}),
             jd: safeJsonParse(application.drive.extractedDetails, {}),
@@ -122,7 +140,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         });
 
         // 6. Email & interview invite (only in automatic mode)
-        const isAutomatic = ((application.drive as any).shortlistMode || "automatic") === "automatic";
+        const isAutomatic = (((screeningCriteria as any)?.shortlistMode) || (application.drive as any).shortlistMode || "automatic") === "automatic";
 
         if (resumeStatus === "SHORTLISTED") {
                 const interview = await (prisma as any).interview.upsert({

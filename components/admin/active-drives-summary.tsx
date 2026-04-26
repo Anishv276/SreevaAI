@@ -14,9 +14,6 @@ interface DriveSummary {
     title: string;
     department: string;
     workMode: string;
-    deadline: string | null;
-    daysLeft: number | null;
-    isClosingSoon: boolean;
     screeningThreshold: number;
     screeningPct: number;
     applied: number;
@@ -89,7 +86,7 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
             {/* Header */}
             <div className="flex items-center justify-between px-8 py-6 border-b border-gray-100/50">
                 <div>
-                    <h3 className="text-xl font-black text-gray-900 tracking-tight text-premium">Active Drives</h3>
+                    <h3 className="text-xl font-black text-gray-900 tracking-tight text-premium">Drives</h3>
                     <p className="text-[11px] font-bold text-gray-400 mt-1 uppercase tracking-[0.2em]">Neural Pipeline Sync</p>
                 </div>
                 <Link href="/admin/drives">
@@ -155,12 +152,6 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                             >
                                 {drives.map((drive) => {
                                     const color = barColor(drive.screeningPct, drive.screeningThreshold);
-                                    const deadlineLabel = drive.deadline
-                                        ? `${new Date(drive.deadline).toLocaleDateString(undefined, {
-                                              month: "short",
-                                              day: "numeric",
-                                          })}`
-                                        : null;
 
                                     return (
                                         <motion.div
@@ -179,26 +170,10 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                                         <h4 className="text-[15px] font-black text-gray-800 group-hover:text-orange-600 transition-colors truncate tracking-tight">
                                                             {drive.title}
                                                         </h4>
-                                                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                                                     </div>
                                                     <p className="text-[11px] font-bold text-gray-400 flex items-center gap-2 uppercase tracking-wider">
                                                         {drive.department}
-                                                        {deadlineLabel && (
-                                                            <span className="flex items-center gap-1.5 before:content-['·'] before:text-gray-200">
-                                                                {deadlineLabel}
-                                                            </span>
-                                                        )}
                                                     </p>
-                                                </div>
-                                                <div
-                                                    className={cn(
-                                                        "shrink-0 px-3 py-1 rounded-lg border text-[9px] font-black uppercase tracking-[0.15em]",
-                                                        drive.isClosingSoon
-                                                            ? "bg-amber-50 text-amber-600 border-amber-100"
-                                                            : "bg-emerald-50 text-emerald-600 border-emerald-100",
-                                                    )}
-                                                >
-                                                    {drive.isClosingSoon ? "Closing" : "Optimal"}
                                                 </div>
                                             </div>
 

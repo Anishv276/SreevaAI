@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
     Search,
-    Filter,
     MoreHorizontal,
     Plus,
     Briefcase,
@@ -16,13 +15,8 @@ import {
     Edit,
     Loader2,
     ChevronRight,
-    X,
-    Upload,
-    Settings,
     Lock,
     Rocket,
-    Sparkles,
-    CalendarDays,
     Target,
     ArrowUpRight,
 } from "lucide-react";
@@ -40,7 +34,6 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useJobs } from "@/context/jobs-context";
-import { cn } from "@/lib/utils";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
@@ -50,19 +43,16 @@ export default function DrivesPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const orgId = searchParams.get("orgId");
-    const { jobs, pagination, deleteJob, fetchJobs, toggleDriveStatus, organization } = useJobs();
+    const { jobs, pagination, deleteJob, fetchJobs, organization } = useJobs();
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
     const [orgStatus, setOrgStatus] = useState<string>("ACTIVE");
-    const [statusFilter, setStatusFilter] = useState("all");
     const [typeFilter, setTypeFilter] = useState("all");
     const [timeline, setTimeline] = useState<DateRange>({ type: "month" });
 
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [driveToDelete, setDriveToDelete] = useState<string | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
-    const [isTogglingStatus, setIsTogglingStatus] = useState(false);
-    const [statusModalDrive, setStatusModalDrive] = useState<{ id: string; currentStatus: string } | null>(null);
 
     useEffect(() => {
         const fetchOrgStatus = async () => {
@@ -100,11 +90,11 @@ export default function DrivesPage() {
                 endDate = timeline.to;
             }
 
-            fetchJobs(1, pagination.limit, searchQuery, statusFilter, typeFilter, startDate, endDate).finally(() => setIsLoading(false));
+            fetchJobs(1, pagination.limit, searchQuery, "all", typeFilter, startDate, endDate).finally(() => setIsLoading(false));
         }, 300);
 
         return () => clearTimeout(handler);
-    }, [searchQuery, statusFilter, typeFilter, timeline, pagination.limit]);
+    }, [searchQuery, typeFilter, timeline, pagination.limit]);
 
     const handlePageChange = (newPage: number) => {
         if (newPage >= 1 && newPage <= pagination.totalPages) {
@@ -128,7 +118,7 @@ export default function DrivesPage() {
                 endDate = timeline.to;
             }
 
-            fetchJobs(newPage, pagination.limit, searchQuery, statusFilter, typeFilter, startDate, endDate).finally(() => setIsLoading(false));
+            fetchJobs(newPage, pagination.limit, searchQuery, "all", typeFilter, startDate, endDate).finally(() => setIsLoading(false));
         }
     };
 
@@ -207,21 +197,6 @@ export default function DrivesPage() {
                     </div>
                     <div className="flex items-center gap-4 w-full md:w-auto">
                         <DateFilter value={timeline} onChange={setTimeline} />
-                        <Select value={statusFilter} onValueChange={setStatusFilter}>
-                            <SelectTrigger className="h-11 min-w-[140px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-medium">
-                                <div className="flex items-center gap-2">
-                                    <Filter className="h-4 w-4" />
-                                    <SelectValue placeholder="Status" />
-                                </div>
-                            </SelectTrigger>
-                            <SelectContent className="rounded-2xl">
-                                <SelectItem value="all">All Status</SelectItem>
-                                <SelectItem value="ACTIVE">Active</SelectItem>
-                                <SelectItem value="CLOSED">Closed</SelectItem>
-                                <SelectItem value="EXPIRED">Expired</SelectItem>
-                            </SelectContent>
-                        </Select>
-
                         <Select value={typeFilter} onValueChange={setTypeFilter}>
                             <SelectTrigger className="h-11 min-w-[140px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-medium">
                                 <SelectValue placeholder="Job Type" />
@@ -239,7 +214,7 @@ export default function DrivesPage() {
             {/* Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 justify-items-start">
                 {isLoading ? (
-                    <div className="col-span-full flex flex-col items-center justify-center py-24">
+                    <div className="col-span-full flex w-full flex-col items-center justify-center py-24 min-h-[320px]">
                         <Loader2 className="h-10 w-10 text-orange-500 animate-spin mb-3" />
                         <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Loading drives...</p>
                     </div>
@@ -276,23 +251,12 @@ export default function DrivesPage() {
                     </div>
                 ) : (
                     jobs.map((drive) => {
-                        const effectiveExpired = drive.deadline && new Date(drive.deadline) < new Date();
-                        let statusLabel = "Active";
-                        let dotColor = "bg-green-500 animate-pulse";
                         const applicants = Number(drive.applicants || 0);
                         const createdAt = drive.createdAt ? new Date(drive.createdAt).toLocaleDateString(undefined, {
                             month: "short",
                             day: "numeric",
                             year: "numeric",
                         }) : "Unknown";
-
-                        if (drive.status === "CLOSED") {
-                            statusLabel = "Closed";
-                            dotColor = "bg-red-500";
-                        } else if (effectiveExpired) {
-                            statusLabel = "Expired";
-                            dotColor = "bg-orange-500";
-                        }
 
                         return (
                             <div
@@ -347,15 +311,8 @@ export default function DrivesPage() {
                                         </h3>
                                         <div className="flex flex-wrap items-center gap-2">
                                             <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-slate-500">
-                                                <div className={cn("h-2 w-2 rounded-full", dotColor)} />
-                                                {statusLabel}
+                                                Drive
                                             </span>
-                                            {effectiveExpired && drive.status !== "CLOSED" && (
-                                                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-amber-700">
-                                                    <Sparkles className="h-3.5 w-3.5" />
-                                                    Expiring
-                                                </span>
-                                            )}
                                         </div>
                                     </div>
 
@@ -378,11 +335,11 @@ export default function DrivesPage() {
                                             </div>
                                             <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_2px_10px_rgba(15,23,42,0.03)]">
                                                 <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400 mb-2">
-                                                    <CalendarDays className="h-3.5 w-3.5 text-orange-500" />
-                                                    Deadline
+                                                    <Target className="h-3.5 w-3.5 text-orange-500" />
+                                                    Created
                                                 </div>
                                                 <p className="text-[14px] font-bold text-slate-800 leading-tight">
-                                                    {drive.deadline ? new Date(drive.deadline).toLocaleDateString() : "None"}
+                                                    {createdAt}
                                                 </p>
                                             </div>
                                         </div>
@@ -393,7 +350,7 @@ export default function DrivesPage() {
                                                     <Target className="h-3.5 w-3.5 text-orange-500" />
                                                     Drive Snapshot
                                                 </div>
-                                                <span className="text-[11px] font-semibold text-slate-500">{createdAt}</span>
+                                                <span className="text-[11px] font-semibold text-slate-500">Bulk Upload</span>
                                             </div>
                                         </div>
                                     </div>
@@ -401,29 +358,17 @@ export default function DrivesPage() {
                                     {/* Card Footer */}
                                     <div className="relative p-5 pt-0 mt-auto">
                                         <div className="mb-3 h-px bg-gradient-to-r from-slate-200 via-slate-100 to-transparent" />
-                                        <div className="grid grid-cols-2 gap-3">
+                                        <div className="grid grid-cols-1 gap-3">
                                             <Button
                                                 size="sm"
                                                 className="h-10 rounded-xl bg-slate-950 text-white font-bold shadow-[0_10px_20px_rgba(15,23,42,0.14)] transition-all hover:bg-orange-600 hover:shadow-[0_14px_30px_rgba(249,115,22,0.22)]"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    router.push(`/admin/drives/${drive.id}${orgId ? `?orgId=${orgId}` : ''}`);
+                                                    router.push(`/admin/drives/${drive.id}/resume-screening`);
                                                 }}
                                             >
-                                                View Details
+                                                View More
                                                 <ArrowUpRight className="ml-2 h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                className="h-10 rounded-xl border-slate-300 bg-white font-bold text-slate-700 shadow-sm transition-all hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    router.push(`/admin/candidates?driveId=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`);
-                                                }}
-                                            >
-                                                View
-                                                <Users className="ml-2 h-4 w-4" />
                                             </Button>
                                         </div>
                                     </div>

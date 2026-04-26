@@ -102,7 +102,21 @@ export async function POST(
 
         const drive = await prisma.drive.findUnique({
             where: { id: driveId },
-            include: { organization: true },
+            select: {
+                id: true,
+                title: true,
+                description: true,
+                screeningThreshold: true,
+                shortlistMode: true,
+                extractedDetails: true,
+                orgId: true,
+                organization: {
+                    select: {
+                        llmProvider: true,
+                        llmModel: true,
+                    },
+                },
+            },
         });
         if (!drive)
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
@@ -190,12 +204,14 @@ async function processBatch(
             }
         }
 
-        const threshold: number = drive.screeningThreshold ?? 60;
+        const threshold: number = Number(drive.screeningThreshold ?? 60);
         // Parse the drive's extracted JD once — reuse for every resume
         const structuredJD = safeJsonParse(drive.extractedDetails, {});
         const jdRawText: string = drive.description || "";
-        // Parse screening criteria
-        const screeningCriteria = safeJsonParse(drive.screeningCriteria, {});
+        const screeningCriteria = {
+            threshold,
+            shortlistMode: drive.shortlistMode || "automatic",
+        };
 
         for (let i = 0; i < files.length; i += CHUNK_SIZE) {
             const chunk = files.slice(i, i + CHUNK_SIZE);
@@ -264,7 +280,7 @@ async function processOneResume(
     threshold: number,
     model: string,
     orgId: string,
-    screeningCriteria?: Record<string, any>
+        screeningCriteria?: Record<string, any>
 ): Promise<void> {
     const tmpPdf = join(
         tmpdir(),

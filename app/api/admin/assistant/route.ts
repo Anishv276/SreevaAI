@@ -466,37 +466,26 @@ async function filterByDate(message: string, orgId: string) {
 }
 
 async function getDrives(orgId: string) {
-    const drives = await prisma.drive.findMany({
-        where: { orgId },
-        orderBy: { createdAt: 'desc' },
-        select: {
-            id: true,
-            title: true,
-            status: true,
-            department: true,
-            createdAt: true,
-            _count: { select: { applications: true } }
-        }
+        const drives = await prisma.drive.findMany({
+            where: { orgId },
+            orderBy: { createdAt: 'desc' },
+            select: {
+                id: true,
+                title: true,
+                department: true,
+                createdAt: true,
+                _count: { select: { applications: true } }
+            }
     });
     
     if (drives.length === 0) {
         return { type: 'list', message: "No recruitment drives found. Create one to get started!" };
     }
     
-    const active = drives.filter((d: any) => d.status === 'ACTIVE');
-    
-    let response = `**Active Drives (${active.length}):**\n`;
-    response += active.slice(0, 5).map((d: any) => 
+    let response = `**Drives (${drives.length}):**\n`;
+    response += drives.slice(0, 5).map((d: any) => 
         `• **${d.title}** (${d._count.applications} candidates) - ${d.department}`
     ).join('\n');
-    
-    const closed = drives.filter((d: any) => d.status === 'CLOSED');
-    if (closed.length > 0) {
-        response += `\n\n**Closed Drives (${closed.length}):**\n`;
-        response += closed.slice(0, 3).map((d: any) => 
-            `• ${d.title} (${d._count.applications} candidates)`
-        ).join('\n');
-    }
     
     return {
         type: 'list',
@@ -872,7 +861,7 @@ Keep responses concise and use bold for important info. Always sign off as Ishit
             recentApps
         ] = await Promise.all([
             prisma.application.count({ where: { drive: { orgId } } }),
-            prisma.drive.count({ where: { orgId, status: 'ACTIVE' } }),
+            prisma.drive.count({ where: { orgId } }),
             prisma.application.count({ where: { hiringStatus: 'hired', drive: { orgId } } }),
             prisma.application.findMany({
                 where: { drive: { orgId } },

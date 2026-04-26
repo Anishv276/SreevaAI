@@ -10,12 +10,13 @@ import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { getOrgCreditStatus } from "@/lib/credits";
 import { isDriveCreationLocked } from "@/lib/drive-limits";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
+import { safeJsonParse } from "@/lib/utils";
 
 export async function GET(request: Request) {
     try {
         const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
         const { searchParams } = new URL(request.url);
-        const status = searchParams.get("status");
         const type = searchParams.get("type");
         const search = searchParams.get("search") || "";
         const page = parseInt(searchParams.get("page") || "1");
@@ -24,7 +25,6 @@ export async function GET(request: Request) {
         const orgId = searchParams.get("orgId");
         const startDate = searchParams.get("startDate");
         const endDate = searchParams.get("endDate");
-        const now = new Date();
 
         const where: any = {};
 
@@ -43,44 +43,15 @@ export async function GET(request: Request) {
             };
         }
 
-        if (session) {
-            // -- ADMIN ACCESS: Filter by Role & Org -----------
-            if ((session as any).role === "SUPER_ADMIN") {
-                if (orgId) where.orgId = orgId;
-            } else {
-                where.orgId = (session as any).orgId;
-            }
-
-            if (status && status !== "all") {
-                if (status === "ACTIVE") {
-                    where.status = "ACTIVE";
-                    where.AND = [
-                        ...(where.AND || []),
-                        { OR: [{ deadline: null }, { deadline: { gte: now } }] }
-                    ];
-                } else if (status === "CLOSED") {
-                    where.status = "CLOSED";
-                } else if (status === "EXPIRED") {
-                    where.status = "ACTIVE";
-                    where.deadline = { lt: now };
-                }
-            }
-
-            if (type && type !== "all") {
-                where.type = { equals: type, mode: "insensitive" };
-            }
-        } else {
-            // -- PUBLIC ACCESS: Only show Active & Non-Expired --
-            where.status = "ACTIVE";
-            where.AND = [
-                {
-                    OR: [
-                        { deadline: null },
-                        { deadline: { gte: now } }
-                    ]
-                }
-            ];
+        // -- ADMIN ACCESS: Filter by Role & Org -----------
+        if ((session as any).role === "SUPER_ADMIN") {
             if (orgId) where.orgId = orgId;
+        } else {
+            where.orgId = (session as any).orgId;
+        }
+
+        if (type && type !== "all") {
+            where.type = { equals: type, mode: "insensitive" };
         }
 
         // Search filters
@@ -98,7 +69,41 @@ export async function GET(request: Request) {
                 orderBy: { createdAt: "desc" },
                 skip,
                 take: limit,
-                include: {
+                select: {
+                    id: true,
+                    title: true,
+                    role: true,
+                    description: true,
+                    department: true,
+                    type: true,
+                    screeningThreshold: true,
+                    creatorId: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    positions: true,
+                    workMode: true,
+                    experience: true,
+                    responsibilities: true,
+                    requirements: true,
+                    salary: true,
+                    skills: true,
+                    extractedDetails: true,
+                    interviewLanguage: true,
+                    interviewTime: true,
+                    proctoringLevel: true,
+                    interviewQuestions: true,
+                    jdFileName: true,
+                    jdPreviewUrl: true,
+                    orgId: true,
+                    shortlistMode: true,
+                    location: true,
+                    aiName: true,
+                    cartesiaVoiceId: true,
+                    sarvamVoice: true,
+                    sarvamModel: true,
+                    googleModel: true,
+                    googleVoiceName: true,
+                    ttsProvider: true,
                     _count: {
                         select: { applications: true },
                     },
@@ -108,22 +113,19 @@ export async function GET(request: Request) {
         ]);
 
         const formattedDrives = drives.map((drive: any) => {
-            const now = new Date();
-            const deadline = drive.deadline ? new Date(drive.deadline) : null;
-            const isExpired = drive.status !== "CLOSED" && deadline && deadline < now;
-
-            // Calculate real days left based on the specific deadline or fallback to 30 days
-            const targetDate = deadline || new Date(new Date(drive.createdAt).getTime() + 30 * 24 * 60 * 60 * 1000);
-            const diffTime = Math.max(0, targetDate.getTime() - now.getTime());
-            const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-            const effectiveStatus = drive.status === "CLOSED" ? "CLOSED" : isExpired ? "EXPIRED" : "ACTIVE";
+            const screeningThreshold = Number(drive.screeningThreshold ?? 60);
+            const shortlistMode = drive.shortlistMode || "automatic";
 
             return {
                 ...drive,
-                status: effectiveStatus,
                 applicants: drive._count?.applications || 0,
-                daysLeft,
+                screeningThreshold,
+                shortlistMode,
+                screeningCriteria: JSON.stringify({
+                    threshold: screeningThreshold,
+                    shortlistMode,
+                    criteria: {},
+                }),
                 aiScreening: {
                     enabled: (drive as any).aiScreeningEnabled
                 },
@@ -169,14 +171,7 @@ export async function POST(request: Request) {
             const maxActiveDrives = Number(org?.maxActiveDrives || 0);
             if (maxActiveDrives > 0) {
                 const activeDriveCount = await prisma.drive.count({
-                    where: {
-                        orgId: session.orgId,
-                        status: "ACTIVE",
-                        OR: [
-                            { deadline: null },
-                            { deadline: { gte: new Date() } }
-                        ],
-                    }
+                    where: { orgId: session.orgId }
                 });
 
                 if (isDriveCreationLocked(maxActiveDrives, activeDriveCount)) {
@@ -206,7 +201,6 @@ export async function POST(request: Request) {
         }
 
         const data = result.data;
-        const deadline = data.deadline ? new Date(data.deadline) : null;
         const aiConfig = normalizeDriveAiConfig({
             next: {
                 ttsProvider: data.ttsProvider,
@@ -216,6 +210,23 @@ export async function POST(request: Request) {
                 googleVoiceName: data.googleVoiceName,
             },
         });
+        const screeningCriteria = (() => {
+            const raw = data.screeningCriteria;
+            if (!raw) return {};
+            if (typeof raw === "string") {
+                try {
+                    return JSON.parse(raw);
+                } catch {
+                    return {};
+                }
+            }
+            return raw;
+        })();
+        const mergedScreeningCriteria = {
+            ...(screeningCriteria && typeof screeningCriteria === "object" ? screeningCriteria : {}),
+            ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
+            ...(data.shortlistMode !== undefined ? { shortlistMode: data.shortlistMode } : {}),
+        };
 
         const driveId = generateId("drv", data.title);
 
@@ -230,7 +241,6 @@ export async function POST(request: Request) {
                 workMode: data.workMode || null,
                 location: data.location || null,
                 positions: data.positions || 1,
-                deadline: deadline,
                 salary: data.salary || null,
                 experience: data.experience || null,
                 skills: data.skills || null,
@@ -240,7 +250,7 @@ export async function POST(request: Request) {
                 jdFileName: data.jdFileName || null,
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
                 registrationFields: JSON.stringify(data.registrationFields || []),
-                screeningThreshold: data.screeningThreshold || 0,
+                screeningCriteria: JSON.stringify(mergedScreeningCriteria),
 
                 // Interview configuration
                 interviewLanguage: data.interviewLanguage || "English",
@@ -251,7 +261,6 @@ export async function POST(request: Request) {
                 aiName: data.aiName || "Ishitha",
                 
                 isPassportRequired: data.isPassportRequired || false,
-                shortlistMode: data.shortlistMode || "automatic",
 
                 orgId: (session as any).orgId,
                 creatorId: (session as any).userId,

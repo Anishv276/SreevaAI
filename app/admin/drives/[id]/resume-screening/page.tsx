@@ -31,7 +31,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
 import { ResumeReportHyring, buildHyringResumeViewModel } from "@/components/admin/candidate-profile/resume-report-hyring";
-import { ScreeningSettings, ScreeningConfig } from "@/components/create-drive/screening-settings";
+import { ScreeningSettings } from "@/components/create-drive/screening-settings";
 
 interface ResumeCandidate {
     id: string;
@@ -119,7 +119,9 @@ export default function ResumeScreeningDetailsPage({
     const [uploadProgress, setUploadProgress] = useState({ processed: 0, total: 0 });
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<"results" | "settings">("results");
+    const [screeningThreshold, setScreeningThreshold] = useState(60);
     const [screeningCriteria, setScreeningCriteria] = useState<Record<string, any>>({});
+    const [shortlistMode, setShortlistMode] = useState<"automatic" | "manual">("automatic");
     const uploadInputRef = useRef<HTMLInputElement>(null);
 
     const handleShortlist = async (candidateId: string) => {
@@ -206,16 +208,20 @@ export default function ResumeScreeningDetailsPage({
             if (driveRes.ok) {
                 const drive = await driveRes.json();
                 setDriveTitle(String(drive?.title || drive?.role || "Resume Screening"));
+                let parsed: Record<string, any> = {};
                 if (drive?.screeningCriteria) {
                     try {
-                        const criteria = typeof drive.screeningCriteria === "string"
+                        parsed = typeof drive.screeningCriteria === "string"
                             ? JSON.parse(drive.screeningCriteria)
                             : drive.screeningCriteria;
-                        setScreeningCriteria(criteria);
                     } catch {
-                        setScreeningCriteria({});
+                        parsed = {};
                     }
                 }
+                setScreeningThreshold(Number(parsed.threshold ?? drive?.screeningThreshold ?? 60));
+                setShortlistMode((parsed.shortlistMode as "automatic" | "manual") || (drive?.shortlistMode as "automatic" | "manual") || "automatic");
+                const { threshold: _threshold, shortlistMode: _shortlistMode, criteria: innerCriteria, ...rest } = parsed || {};
+                setScreeningCriteria((innerCriteria && typeof innerCriteria === "object") ? innerCriteria : rest);
             }
 
             if (!res.ok) return;
@@ -249,7 +255,13 @@ export default function ResumeScreeningDetailsPage({
             const res = await fetch(`/api/drives/${driveId}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ screeningCriteria: JSON.stringify(screeningCriteria) }),
+                body: JSON.stringify({
+                    screeningCriteria: JSON.stringify({
+                        threshold: screeningThreshold,
+                        shortlistMode,
+                        criteria: screeningCriteria,
+                    }),
+                }),
             });
             if (!res.ok) throw new Error("Failed to update screening criteria");
             toast.success("Screening criteria updated");
@@ -451,7 +463,7 @@ export default function ResumeScreeningDetailsPage({
                                 : "border-transparent text-gray-600 hover:text-gray-900"
                         )}
                     >
-                        Screening Settings
+                        Screening Criteria
                     </button>
                 </div>
             </div>
@@ -459,24 +471,27 @@ export default function ResumeScreeningDetailsPage({
             {/* Main content */}
             <div className="max-w-full px-8 py-8">
                 {activeTab === "settings" ? (
-                    <div className="bg-white rounded-lg border border-gray-200 p-8">
-                        <div className="mb-6">
-                            <h2 className="text-lg font-semibold text-gray-900 mb-2">Screening Settings</h2>
-                            <p className="text-sm text-gray-600">
-                                Configure AI screening criteria. These settings will be applied when you upload resumes.
-                            </p>
-                        </div>
+                        <div className="bg-white rounded-lg border border-gray-200 p-8">
+                            <div className="mb-6">
+                                <h2 className="text-lg font-semibold text-gray-900 mb-2">Screening Criteria</h2>
+                                <p className="text-sm text-gray-600">
+                                    Configure AI screening criteria. These settings will be applied when you upload resumes.
+                                </p>
+                            </div>
                         <ScreeningSettings
-                            config={{ threshold: 60, criteria: screeningCriteria }}
+                            config={{ threshold: screeningThreshold, criteria: screeningCriteria }}
                             setConfig={(cfg) => {
                                 if (typeof cfg === "function") {
-                                    setScreeningCriteria((prev) => cfg({ threshold: 60, criteria: prev }).criteria || {});
+                                    const next = cfg({ threshold: screeningThreshold, criteria: screeningCriteria });
+                                    setScreeningThreshold(next.threshold ?? 60);
+                                    setScreeningCriteria(next.criteria || {});
                                 } else {
+                                    setScreeningThreshold(cfg.threshold ?? 60);
                                     setScreeningCriteria(cfg.criteria || {});
                                 }
                             }}
-                            shortlistMode="automatic"
-                            setShortlistMode={() => {}}
+                            shortlistMode={shortlistMode}
+                            setShortlistMode={setShortlistMode}
                         />
                         <div className="mt-8 flex justify-end gap-3">
                             <Button

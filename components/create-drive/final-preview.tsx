@@ -1,10 +1,10 @@
-import { Clock, ShieldCheck, Zap, Brain, Rocket, Mic, Languages, ShieldAlert } from "lucide-react";
+import { Brain, Mic, Languages, ShieldAlert } from "lucide-react";
 import { ScreeningConfig } from "./screening-settings";
 import { CARTESIA_VOICES, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
 
 interface FinalPreviewProps {
     formData: any;
-    weights: ScreeningConfig;
+    weights?: ScreeningConfig;
 }
 
 export function FinalPreview({ formData, weights }: FinalPreviewProps) {
@@ -54,17 +54,6 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
                         </div>
                     </div>
 
-                    {/* Timeline */}
-                    <div>
-                        <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Timeline</h3>
-                        <div className="rounded-lg border bg-white p-4 space-y-2.5 text-[13px]">
-                            <div className="flex items-center gap-3">
-                                <Clock className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                                <span className="text-gray-500">Last Date to Apply</span>
-                                <span className="font-semibold text-gray-800 ml-auto">{formData.deadline || "N/A"}</span>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 {/* Right column - Configuration Phases */}
@@ -73,24 +62,31 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
                     <div>
                         <h3 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2">Screening Setup</h3>
                         <div className="rounded-lg border bg-white p-4 space-y-2.5 text-[13px]">
-                            <div className="flex justify-between items-center">
-                                <div className="flex items-center gap-2 text-gray-500">
-                                    <Brain className="h-3.5 w-3.5" />
-                                    <span>AI Resume Screening</span>
-                                </div>
-                                <span className="flex items-center gap-1.5 font-semibold text-green-600">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />
-                                    Active
-                                </span>
-                            </div>
+                            {weights ? (
+                                <>
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2 text-gray-500">
+                                            <Brain className="h-3.5 w-3.5" />
+                                            <span>AI Resume Screening</span>
+                                        </div>
+                                        <span className="flex items-center gap-1.5 font-semibold text-green-600">
+                                            <span className="h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />
+                                            Configured
+                                        </span>
+                                    </div>
 
-                            <div className="ml-5 py-2 border-l-2 border-green-50 pl-4">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-gray-400 text-[12px]">Match Threshold</span>
-                                    <span className="font-black text-green-600 text-sm">{weights.threshold}%</span>
-                                </div>
-                            </div>
-
+                                    <div className="ml-5 py-2 border-l-2 border-green-50 pl-4">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-gray-400 text-[12px]">Match Threshold</span>
+                                            <span className="font-black text-green-600 text-sm">{weights.threshold}%</span>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <p className="text-gray-600 text-sm">
+                                    Screening criteria will be configured on the resume screening page after the drive is created.
+                                </p>
+                            )}
                         </div>
                     </div>
 

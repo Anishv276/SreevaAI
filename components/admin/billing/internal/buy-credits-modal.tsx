@@ -6,9 +6,9 @@ import { INK, LINE, MUTED, ORANGE, ORANGE_DEEP, ORANGE_SOFT } from "./tokens";
 import type { CreditPack } from "./types";
 
 export const PACKS: CreditPack[] = [
-  { id: "s", credits: 100, mins: 500, price: 49, blurb: "Good for ~25 interviews" },
-  { id: "m", credits: 250, mins: 1250, price: 109, blurb: "Most popular", popular: true, save: "12%" },
-  { id: "l", credits: 600, mins: 3000, price: 239, blurb: "Best value", save: "20%" },
+  { id: "s", credits: 100, mins: 100, price: 49, blurb: "Good for ongoing screening" },
+  { id: "m", credits: 250, mins: 250, price: 109, blurb: "Most popular", popular: true, save: "12%" },
+  { id: "l", credits: 600, mins: 600, price: 239, blurb: "Best value", save: "20%" },
 ];
 
 export function BuyCreditsModal({

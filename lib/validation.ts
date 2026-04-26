@@ -43,7 +43,6 @@ export const createDriveSchema = z.object({
     const n = Number(val);
     return isNaN(n) ? 1 : n;
   }, z.coerce.number().int().min(1).optional()).default(1),
-  deadline: z.preprocess((val) => (val === "" || val === undefined) ? null : val, z.string().nullable().optional()),
   salary: z.string().optional(),
   experience: z.string().optional(),
   skills: z.string().optional(),
@@ -70,7 +69,6 @@ export const createDriveSchema = z.object({
   extractedDetails: z.record(z.string(), z.any()).optional(),
   screeningThreshold: z.coerce.number().int().optional(),
   screeningCriteria: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
-  status: z.enum(["ACTIVE", "CLOSED", "DISABLED"]).optional(),
   isPassportRequired: z.boolean().optional(),
   shortlistMode: z.enum(["automatic", "manual"]).optional(),
 });

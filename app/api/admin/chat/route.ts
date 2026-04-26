@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
         type: "function",
         function: {
           name: "get_drives_overview",
-          description: "List all recruitment drives with title, department, status, deadline, screening threshold, interview enabled flag, and application count. Use for 'show drives', 'active jobs', 'open positions', 'which drives are closing'.",
+          description: "List all recruitment drives with title, department, screening threshold, interview enabled flag, and application count. Use for 'show drives', 'all jobs', 'open positions', or drive-level summaries.",
           parameters: { type: "object", properties: {} },
         },
       },
@@ -271,8 +271,7 @@ You have complete, real-time access to the organization's hiring database. Every
 **DRIVES / JOBS:**
 | Question | Tool |
 |---|---|
-| Show all drives / active jobs / open positions | get_drives_overview |
-| Which drives are closing soon? / Upcoming deadlines | get_drives_overview |
+| Show all drives / all jobs / open positions | get_drives_overview |
 | Tell me about the [Oracle / Backend / etc.] drive | get_drive_by_name |
 | How many applied for [role]? / Candidates for [drive] | get_candidates_for_drive |
 | What are the drive requirements / threshold? | get_drive_by_name |
@@ -434,21 +433,16 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             where: { orgId },
             select: {
               id: true, title: true, department: true, role: true,
-              status: true, deadline: true, screeningThreshold: true,
+              screeningThreshold: true,
               positions: true, workMode: true,
               createdAt: true,
               _count: { select: { applications: true } },
             },
             orderBy: { createdAt: "desc" },
           });
-          const now = new Date();
           result = JSON.stringify(drives.map((d: (typeof drives)[number]) => ({
             ...d,
             applicationCount: d._count.applications,
-            daysLeft: d.deadline
-              ? Math.max(0, Math.ceil((new Date(d.deadline).getTime() - now.getTime()) / 86400000))
-              : null,
-            isExpired: d.deadline ? new Date(d.deadline) < now : false,
             _count: undefined,
           })));
 
@@ -461,7 +455,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             },
             select: {
               id: true, title: true, department: true, role: true,
-              description: true, status: true, deadline: true,
+              description: true,
               screeningThreshold: true,
               positions: true, workMode: true, salary: true,
               experience: true, skills: true, requirements: true,

@@ -13,26 +13,59 @@ export async function GET(
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
-        const { searchParams } = new URL(request.url);
         const { id } = await params;
-        const targetOrgId = searchParams.get("orgId") || session.orgId;
-
-        const candidate = await prisma.application.findFirst({
-            where: {
-                id,
-                ...(session.role !== "SUPER_ADMIN" ? { drive: { orgId: targetOrgId } } : (targetOrgId ? { drive: { orgId: targetOrgId } } : {}))
-            },
-            include: {
+        const candidate = await prisma.application.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                fullName: true,
+                email: true,
+                phone: true,
+                resumeUrl: true,
+                aiScore: true,
+                aiReport: true,
+                resumeText: true,
+                resumeStatus: true,
+                interviewStatus: true,
+                hiringStatus: true,
+                createdAt: true,
                 drive: {
                     select: {
                         title: true,
                         department: true,
-                        type: true,
                         orgId: true,
-                        extractedDetails: true
+                        role: true
                     }
                 },
-                interview: true
+                interview: {
+                    select: {
+                        id: true,
+                        applicationId: true,
+                        status: true,
+                        startedAt: true,
+                        completedAt: true,
+                        interviewRecordingUrl: true,
+                        interviewTranscript: true,
+                        interviewRecordedAt: true,
+                        interviewDuration: true,
+                        aiSummary: true,
+                        candidateFeedback: true,
+                        candidateRating: true,
+                        proctoringEvents: true,
+                        interviewReport: true,
+                        proctoringReport: true,
+                        strategicVerdict: true,
+                        interviewTurns: true,
+                        answerScores: true,
+                        recordingStatus: true,
+                        recordingMimeType: true,
+                        recordingStartedAt: true,
+                        recordingCompletedAt: true,
+                        recordingDurationSec: true,
+                        recordingManifest: true,
+                        snapshots: true,
+                    }
+                }
             }
         });
 
@@ -40,21 +73,13 @@ export async function GET(
             return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
         }
 
-        const interviewReportRows = await prisma.$queryRaw<Array<{ interviewReport: unknown; strategicVerdict: unknown }>>`
-            SELECT "interviewReport", "strategicVerdict"
-            FROM "Interview"
-            WHERE "applicationId" = ${id}
-            LIMIT 1
-        `;
-        const interviewReport = interviewReportRows?.[0]?.interviewReport ?? null;
-        const strategicVerdict = interviewReportRows?.[0]?.strategicVerdict ?? null;
-        const interview = candidate.interview
-            ? { ...(candidate.interview as any), interviewReport, strategicVerdict }
-            : candidate.interview;
+        const candidateOrgId = candidate.drive?.orgId || null;
+        if (session.role !== "SUPER_ADMIN" && session.orgId && candidateOrgId && candidateOrgId !== session.orgId) {
+            return NextResponse.json({ error: "Candidate belongs to a different organization" }, { status: 403 });
+        }
 
         return NextResponse.json({
             ...candidate,
-            interview,
             formattedDate: new Date(candidate.createdAt).toLocaleDateString(),
             driveTitle: candidate.drive?.title || "Role N/A"
         });
@@ -85,7 +110,6 @@ export async function DELETE(
             select: {
                 id: true,
                 resumeUrl: true,
-                passportUrl: true,
                 interview: {
                     select: {
                         interviewRecordingUrl: true,
@@ -103,7 +127,6 @@ export async function DELETE(
         try {
             const urls: string[] = [];
             if (candidate.resumeUrl) urls.push(candidate.resumeUrl);
-            if (candidate.passportUrl) urls.push(candidate.passportUrl);
             if (candidate.interview?.interviewRecordingUrl) urls.push(candidate.interview.interviewRecordingUrl);
             if (candidate.interview?.snapshots?.length) urls.push(...candidate.interview.snapshots);
             await deleteUrlTargets(urls);

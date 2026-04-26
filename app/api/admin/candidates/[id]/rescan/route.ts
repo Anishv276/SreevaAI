@@ -19,7 +19,24 @@ export async function POST(
 
         const application = await prisma.application.findUnique({
             where: { id },
-            include: { drive: true }
+            select: {
+                id: true,
+                fullName: true,
+                email: true,
+                resumeText: true,
+                aiReport: true,
+                drive: {
+                    select: {
+                        id: true,
+                        title: true,
+                        description: true,
+                        screeningThreshold: true,
+                        shortlistMode: true,
+                        extractedDetails: true,
+                        orgId: true,
+                    }
+                }
+            }
         });
 
         if (!application) {
@@ -47,7 +64,8 @@ export async function POST(
             return NextResponse.json({ error: "No resume text found to scan. Please re-upload resume." }, { status: 400 });
         }
 
-        const threshold = Number(drive.screeningThreshold ?? 0);
+        const screeningCriteria = safeJsonParse((drive as any).screeningCriteria, {});
+        const threshold = Number((screeningCriteria as any)?.threshold ?? drive.screeningThreshold ?? 0);
         const scoringInput = {
             resume: safeJsonParse(application.structuredResume, {}),
             jd: safeJsonParse(drive.extractedDetails, {}),

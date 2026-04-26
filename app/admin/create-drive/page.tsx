@@ -17,8 +17,6 @@ import { BasicInfo } from "@/components/create-drive/basic-info";
 
 import { JobDescription } from "@/components/create-drive/job-description";
 
-import { ScreeningSettings, ScreeningConfig } from "@/components/create-drive/screening-settings";
-
 import { FinalPreview } from "@/components/create-drive/final-preview";
 
 import { InterviewSetup } from "@/components/create-drive/interview-setup";
@@ -37,8 +35,6 @@ const STEPS = [
     "Basic Info",
 
     "Job Description",
-
-    "Screening",
 
     "Interview",
 
@@ -59,10 +55,7 @@ const STEP_VALIDATION_HINTS: Record<number, string> = {
     0: "Please fill all required fields.",
 
     1: "Job description is too short. Please add more details before continuing.",
-
-    2: "Please set an AI match threshold before continuing.",
-
-    3: "Configure registration form fields (optional).",
+    2: "Configure interview settings (optional).",
 
 };
 
@@ -126,8 +119,6 @@ function CreateDriveForm() {
 
         employmentType: "",
 
-        deadline: "",
-
         description: "",
 
         salary: "",
@@ -173,15 +164,6 @@ function CreateDriveForm() {
 
 
     // Lifted state
-
-    const aiEnabled = true;
-
-    const [shortlistMode, setShortlistMode] = useState<"automatic" | "manual">("automatic");
-
-    const [weights, setWeights] = useState<ScreeningConfig>({ threshold: 60 });
-
-
-
     // AI Analysis State
 
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -192,9 +174,9 @@ function CreateDriveForm() {
 
     // Track which steps have been explicitly completed
 
-    const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set(isEditMode ? [0, 1, 2, 3, 4] : []));
+    const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set(isEditMode ? [0, 1, 2, 3] : []));
 
-    const [maxStepReached, setMaxStepReached] = useState(isEditMode ? 4 : 0);
+    const [maxStepReached, setMaxStepReached] = useState(isEditMode ? 3 : 0);
 
     const [syncedFromAi, setSyncedFromAi] = useState(false);
 
@@ -301,7 +283,6 @@ function CreateDriveForm() {
                             workMode: (drive as any).workMode || "",
                             location: (drive as any).location || "",
                             employmentType: drive.type,
-                            deadline: (drive as any).deadline ? new Date((drive as any).deadline).toISOString().split('T')[0] : "",
                             description: drive.description,
                             skills: (drive as any).skills || "",
                             responsibilities: (drive as any).responsibilities || "",
@@ -345,7 +326,6 @@ function CreateDriveForm() {
                             workMode: (drive as any).workMode || "",
                             location: (drive as any).location || "",
                             employmentType: drive.type,
-                            deadline: (drive as any).deadline ? new Date((drive as any).deadline).toISOString().split('T')[0] : "",
                             description: drive.description,
                             skills: (drive as any).skills || "",
                             responsibilities: (drive as any).responsibilities || "",
@@ -372,23 +352,6 @@ function CreateDriveForm() {
                     });
 
 
-
-                // Load screening configuration correctly
-
-                const dbThreshold = (drive as any).screeningThreshold;
-
-
-                // Set weights, giving priority to the specific threshold column
-
-                setWeights({
-
-                    threshold: typeof dbThreshold === 'number' ? dbThreshold : 60
-
-                });
-
-
-
-
                 if ((drive as any).registrationFields) {
 
                     try {
@@ -396,13 +359,6 @@ function CreateDriveForm() {
                     } catch (e) { console.error("Failed to parse reg fields", e); }
 
                 }
-
-                if ((drive as any).shortlistMode) {
-
-                    setShortlistMode((drive as any).shortlistMode as "automatic" | "manual");
-
-                }
-
             }
 
         }
@@ -482,8 +438,6 @@ function CreateDriveForm() {
                     location: "",
 
                     employmentType: "",
-
-                    deadline: "",
 
                     description: "",
 
@@ -861,9 +815,9 @@ function CreateDriveForm() {
 
         if (step === 0) {
 
-            const { title, role, department, workMode, employmentType, deadline } = formData;
+            const { title, role, department, workMode, employmentType } = formData;
 
-            return !!(title && role && department && workMode && employmentType && deadline);
+            return !!(title && role && department && workMode && employmentType);
 
         }
 
@@ -883,13 +837,7 @@ function CreateDriveForm() {
 
         }
 
-        if (step === 2 && aiEnabled) {
-
-            return (weights?.threshold ?? 0) > 0;
-
-        }
-
-        if (step === 3) {
+        if (step === 2) {
 
             return true; // Interview always valid
 
@@ -939,8 +887,6 @@ function CreateDriveForm() {
 
             positions: currentFormData.positions || 1,
 
-            deadline: currentFormData.deadline || null,
-
             salary: currentFormData.salary || "",
 
             experience: currentFormData.experience || "",
@@ -974,18 +920,6 @@ function CreateDriveForm() {
 
             extractedDetails: currentFormData.extractedDetails || {},
 
-            screeningThreshold: weights?.threshold || 0,
-
-            screeningCriteria: JSON.stringify(weights?.criteria || {}),
-
-            shortlistMode: shortlistMode,
-
-            aiScreening: {
-
-                enabled: aiEnabled
-
-            },
-
         };
 
 
@@ -1007,9 +941,6 @@ function CreateDriveForm() {
                     const result = await addJob({
 
                         ...jobData,
-
-                        status: "ACTIVE",
-
                         postedAt: new Date().toISOString(),
 
                     } as any);
@@ -1204,8 +1135,6 @@ function CreateDriveForm() {
 
             positions: currentFormData.positions,
 
-            deadline: currentFormData.deadline || null,
-
             salary: currentFormData.salary,
 
             experience: currentFormData.experience,
@@ -1239,18 +1168,6 @@ function CreateDriveForm() {
 
             extractedDetails: currentFormData.extractedDetails || {},
 
-            screeningThreshold: weights?.threshold || 0,
-
-            screeningCriteria: JSON.stringify(weights?.criteria || {}),
-
-            shortlistMode: shortlistMode,
-
-            aiScreening: {
-
-                enabled: aiEnabled
-
-            },
-
         };
 
 
@@ -1282,9 +1199,6 @@ function CreateDriveForm() {
                 result = await addJob({
 
                     ...jobData,
-
-                    status: "ACTIVE",
-
                     postedAt: new Date().toISOString(),
 
                 } as any);
@@ -1791,23 +1705,6 @@ function CreateDriveForm() {
 
                     {currentStep === 2 && (
 
-                        <ScreeningSettings
-
-                            config={weights}
-
-                            setConfig={setWeights}
-
-
-                            shortlistMode={shortlistMode}
-
-                            setShortlistMode={setShortlistMode}
-
-                        />
-
-                    )}
-
-                    {currentStep === 3 && (
-
                         <InterviewSetup
 
                             formData={formData}
@@ -1818,13 +1715,11 @@ function CreateDriveForm() {
 
                     )}
 
-                    {currentStep === 4 && (
+                    {currentStep === 3 && (
 
                         <FinalPreview
 
                             formData={formData}
-
-                            weights={weights}
 
                         />
 

@@ -9,7 +9,7 @@ import { Briefcase, Calendar, Users, ChevronRight, Plus } from "lucide-react";
 
 export function DriveList() {
     const { jobs } = useJobs();
-    const activeDrives = jobs.filter(j => j.status === "ACTIVE" || j.status === "Active");
+    const drives = jobs;
     const router = useRouter();
 
     return (
@@ -18,7 +18,7 @@ export function DriveList() {
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 group">
                     <div className="h-8 w-1 bg-[#F97316] rounded-full shadow-[0_0_8px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-10" />
-                    <h2 className="text-xl font-bold text-gray-900 tracking-tight">Active Drives</h2>
+                    <h2 className="text-xl font-bold text-gray-900 tracking-tight">Drives</h2>
                 </div>
                 <Link
                     href="/admin/drives"
@@ -29,13 +29,13 @@ export function DriveList() {
             </div>
 
             {/* Cards Grid */}
-            {activeDrives.length === 0 ? (
+            {drives.length === 0 ? (
                 <Card className="p-12 border-dashed border-2 bg-gray-50/50 flex flex-col items-center text-center gap-4 group hover:border-orange-200 transition-colors">
                     <div className="h-16 w-16 rounded-2xl bg-orange-50 flex items-center justify-center text-[#F97316] shadow-sm group-hover:scale-110 transition-transform duration-300">
                         <Briefcase className="h-8 w-8" />
                     </div>
                     <div>
-                        <p className="text-lg font-bold text-gray-900">No active drives</p>
+                        <p className="text-lg font-bold text-gray-900">No drives yet</p>
                         <p className="text-sm text-gray-400 mt-1 max-w-[280px]">Ready to hire? Launch your first recruitment drive.</p>
                     </div>
                     <Link href="/admin/create-drive">
@@ -46,7 +46,7 @@ export function DriveList() {
                 </Card>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {activeDrives.slice(0, 3).map((drive) => (
+                    {drives.slice(0, 3).map((drive) => (
                         <div
                             key={drive.id}
                             className="bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_12px_30px_rgba(0,0,0,0.06)] hover:border-orange-100 transition-all duration-300 group flex flex-col justify-between h-full cursor-pointer relative overflow-hidden"
@@ -56,18 +56,11 @@ export function DriveList() {
                             <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-orange-400 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                             
                             <div>
-                                {/* Header: Title & Active Badge */}
+                                {/* Header: Title */}
                                 <div className="flex justify-between items-start gap-4 mb-3">
                                     <h3 className="text-lg font-extrabold text-gray-900 group-hover:text-[#F97316] transition-colors leading-tight line-clamp-2">
                                         {drive.title}
                                     </h3>
-                                    <div className="flex-shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-50 border border-green-100">
-                                        <span className="relative flex h-2 w-2">
-                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                                        </span>
-                                        <span className="text-[9px] font-black text-green-700 uppercase tracking-wider">Active</span>
-                                    </div>
                                 </div>
                                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-6">
                                     {drive.department}

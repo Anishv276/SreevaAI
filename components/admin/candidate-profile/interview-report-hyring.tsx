@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -778,28 +778,33 @@ export const HYRING_REPORT_CARD = "rounded-2xl border border-[#DDE1E5] bg-white 
 const bgPage = HYRING_REPORT_PAGE_BG;
 const card = HYRING_REPORT_CARD;
 
-export function InterviewReportHyring({ model }: { model: HyringInterviewViewModel }) {
+export function InterviewReportHyring({
+  model,
+  showHeader = true,
+  headerActions,
+}: {
+  model: HyringInterviewViewModel;
+  showHeader?: boolean;
+  headerActions?: ReactNode;
+}) {
   const [intel, setIntel] = useState<IntelId>("integrity");
   return (
     <div className={cn("w-full", bgPage)}>
       <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 pt-2 sm:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DDE1E5] pb-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Link
-              href={model.backHref}
-              className="inline-flex items-center gap-1.5 text-[12px] font-bold text-[#0D4D2E] hover:underline"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Interview report
-            </Link>
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full border border-[#1E9D55]/30 bg-[#E6F4EC] px-3 py-1 text-[10px] font-extrabold uppercase tracking-widest text-[#0D4D2E]"
-            >
-              <Link2 className="h-3.5 w-3.5" />
-              Two-way interview
-            </span>
+        {showHeader && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DDE1E5] pb-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href={model.backHref}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-bold text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Interview report
+              </Link>
+            </div>
+            {headerActions ? <div className="flex items-center gap-2">{headerActions}</div> : null}
           </div>
-        </div>
+        )}
 
         <div className={cn(card, "p-4 sm:p-6")}>
           <div className="flex flex-col justify-between gap-6 lg:flex-row">

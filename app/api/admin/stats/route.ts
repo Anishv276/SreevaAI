@@ -19,7 +19,6 @@ export async function GET(req: NextRequest) {
 
         const { start, prevStart, prevEnd } = getRangeWindow(range, from, to);
         const now = new Date();
-        const closingSoonCutoff = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
         type AppStatsRow = {
@@ -73,12 +72,8 @@ export async function GET(req: NextRequest) {
             ` as Promise<AppStatsRow[]>,
             prisma.$queryRaw`
                 SELECT
-                    COUNT(*) FILTER (WHERE status IN ('ACTIVE','Active'))::INT AS "activeDrives",
-                    COUNT(*) FILTER (
-                        WHERE status IN ('ACTIVE','Active')
-                        AND deadline >= ${now}
-                        AND deadline <= ${closingSoonCutoff}
-                    )::INT AS "closingSoon"
+                    COUNT(*)::INT AS "activeDrives",
+                    0::INT AS "closingSoon"
                 FROM "Drive"
                 WHERE "orgId" = ${orgId}
             ` as Promise<DriveStatsRow[]>,

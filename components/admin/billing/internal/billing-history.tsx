@@ -21,29 +21,29 @@ import {
 import type { HistorySort, InterviewRow } from "./types";
 
 export const INTERVIEW_HISTORY: InterviewRow[] = [
-  { id: "INT-2841", candidate: "Aisha Nakamura", role: "Senior Product Manager", interviewer: "You", type: "Technical", durationSec: 1454, credits: 4.85, status: "completed", date: "2026-04-26T11:42:00", cost: 2.43, recording: true, transcript: true },
-  { id: "INT-2840", candidate: "Marco De Luca", role: "Frontend Engineer", interviewer: "You", type: "Screening", durationSec: 1928, credits: 6.43, status: "completed", date: "2026-04-26T09:15:00", cost: 3.21, recording: true, transcript: true },
-  { id: "INT-2839", candidate: "Priya Raghavan", role: "Senior Product Designer", interviewer: "You", type: "Portfolio", durationSec: 1127, credits: 3.76, status: "completed", date: "2026-04-25T16:30:00", cost: 1.88, recording: true, transcript: true },
-  { id: "INT-2838", candidate: "Tom Lindqvist", role: "Data Scientist", interviewer: "You", type: "Technical", durationSec: 2722, credits: 9.07, status: "completed", date: "2026-04-25T13:05:00", cost: 4.54, recording: true, transcript: true },
-  { id: "INT-2837", candidate: "Sara Khoury", role: "Backend Engineer", interviewer: "You", type: "System Design", durationSec: 1683, credits: 5.61, status: "completed", date: "2026-04-24T15:20:00", cost: 2.81, recording: true, transcript: true },
+  { id: "INT-2841", candidate: "Aisha Nakamura", role: "Senior Product Manager", interviewer: "You", type: "Technical", durationSec: 1454, credits: 24.23, status: "completed", date: "2026-04-26T11:42:00", cost: 12.15, recording: true, transcript: true },
+  { id: "INT-2840", candidate: "Marco De Luca", role: "Frontend Engineer", interviewer: "You", type: "Screening", durationSec: 1928, credits: 32.13, status: "completed", date: "2026-04-26T09:15:00", cost: 16.05, recording: true, transcript: true },
+  { id: "INT-2839", candidate: "Priya Raghavan", role: "Senior Product Designer", interviewer: "You", type: "Portfolio", durationSec: 1127, credits: 18.78, status: "completed", date: "2026-04-25T16:30:00", cost: 9.4, recording: true, transcript: true },
+  { id: "INT-2838", candidate: "Tom Lindqvist", role: "Data Scientist", interviewer: "You", type: "Technical", durationSec: 2722, credits: 45.37, status: "completed", date: "2026-04-25T13:05:00", cost: 22.7, recording: true, transcript: true },
+  { id: "INT-2837", candidate: "Sara Khoury", role: "Backend Engineer", interviewer: "You", type: "System Design", durationSec: 1683, credits: 28.05, status: "completed", date: "2026-04-24T15:20:00", cost: 14.05, recording: true, transcript: true },
   { id: "INT-2836", candidate: "Devin Park", role: "Frontend Engineer", interviewer: "You", type: "Screening", durationSec: 0, credits: 0, status: "no-show", date: "2026-04-24T11:00:00", cost: 0, recording: false, transcript: false },
-  { id: "INT-2835", candidate: "Lucia Romano", role: "Engineering Manager", interviewer: "You", type: "Behavioral", durationSec: 2189, credits: 7.3, status: "completed", date: "2026-04-23T17:45:00", cost: 3.65, recording: true, transcript: true },
-  { id: "INT-2834", candidate: "Hassan Mehmood", role: "DevOps Engineer", interviewer: "You", type: "Technical", durationSec: 1512, credits: 5.04, status: "completed", date: "2026-04-23T14:10:00", cost: 2.52, recording: true, transcript: true },
-  { id: "INT-2833", candidate: "Elena Volkov", role: "Product Manager", interviewer: "You", type: "Cultural", durationSec: 1351, credits: 4.5, status: "completed", date: "2026-04-23T10:30:00", cost: 2.25, recording: true, transcript: true },
-  { id: "INT-2832", candidate: "Akira Tanaka", role: "Senior Backend Engineer", interviewer: "You", type: "System Design", durationSec: 2876, credits: 9.59, status: "completed", date: "2026-04-22T16:00:00", cost: 4.79, recording: true, transcript: true },
-  { id: "INT-2831", candidate: "Ngozi Okafor", role: "Data Analyst", interviewer: "You", type: "Technical", durationSec: 738, credits: 2.46, status: "abandoned", date: "2026-04-22T13:15:00", cost: 1.23, recording: true, transcript: true },
-  { id: "INT-2830", candidate: "Felix Schneider", role: "iOS Engineer", interviewer: "You", type: "Screening", durationSec: 1845, credits: 6.15, status: "completed", date: "2026-04-22T11:00:00", cost: 3.08, recording: true, transcript: true },
-  { id: "INT-2829", candidate: "Maya Joshi", role: "Senior Product Designer", interviewer: "You", type: "Portfolio", durationSec: 1622, credits: 5.41, status: "completed", date: "2026-04-21T15:30:00", cost: 2.7, recording: true, transcript: true },
-  { id: "INT-2828", candidate: "Owen Davies", role: "Engineering Manager", interviewer: "You", type: "Behavioral", durationSec: 2014, credits: 6.71, status: "completed", date: "2026-04-21T11:15:00", cost: 3.36, recording: true, transcript: true },
-  { id: "INT-2827", candidate: "Zara Ahmed", role: "Frontend Engineer", interviewer: "You", type: "Technical", durationSec: 1290, credits: 4.3, status: "completed", date: "2026-04-20T16:45:00", cost: 2.15, recording: true, transcript: true },
-  { id: "INT-2826", candidate: "Bruno Costa", role: "Backend Engineer", interviewer: "You", type: "Screening", durationSec: 1568, credits: 5.23, status: "completed", date: "2026-04-20T14:00:00", cost: 2.61, recording: true, transcript: true },
-  { id: "INT-2825", candidate: "Ines Garcia", role: "Product Manager", interviewer: "You", type: "Cultural", durationSec: 1431, credits: 4.77, status: "completed", date: "2026-04-19T13:20:00", cost: 2.38, recording: true, transcript: true },
-  { id: "INT-2824", candidate: "Kenji Watanabe", role: "Data Scientist", interviewer: "You", type: "Technical", durationSec: 2456, credits: 8.19, status: "completed", date: "2026-04-19T10:00:00", cost: 4.09, recording: true, transcript: true },
-  { id: "INT-2823", candidate: "Fatima Al-Sayed", role: "Senior Frontend Engineer", interviewer: "You", type: "System Design", durationSec: 1992, credits: 6.64, status: "completed", date: "2026-04-18T15:00:00", cost: 3.32, recording: true, transcript: true },
-  { id: "INT-2822", candidate: "Jonas Bergstrom", role: "DevOps Engineer", interviewer: "You", type: "Screening", durationSec: 1147, credits: 3.82, status: "completed", date: "2026-04-18T11:30:00", cost: 1.91, recording: true, transcript: true },
-  { id: "INT-2821", candidate: "Ana Ribeiro", role: "iOS Engineer", interviewer: "You", type: "Technical", durationSec: 1773, credits: 5.91, status: "completed", date: "2026-04-17T14:45:00", cost: 2.96, recording: true, transcript: true },
-  { id: "INT-2820", candidate: "Yuki Sato", role: "Senior Product Manager", interviewer: "You", type: "Behavioral", durationSec: 1856, credits: 6.19, status: "completed", date: "2026-04-17T10:20:00", cost: 3.09, recording: true, transcript: true },
-  { id: "INT-2819", candidate: "Rashid Khan", role: "Backend Engineer", interviewer: "You", type: "System Design", durationSec: 2234, credits: 7.45, status: "completed", date: "2026-04-16T16:10:00", cost: 3.72, recording: true, transcript: true },
+  { id: "INT-2835", candidate: "Lucia Romano", role: "Engineering Manager", interviewer: "You", type: "Behavioral", durationSec: 2189, credits: 36.48, status: "completed", date: "2026-04-23T17:45:00", cost: 18.25, recording: true, transcript: true },
+  { id: "INT-2834", candidate: "Hassan Mehmood", role: "DevOps Engineer", interviewer: "You", type: "Technical", durationSec: 1512, credits: 25.2, status: "completed", date: "2026-04-23T14:10:00", cost: 12.6, recording: true, transcript: true },
+  { id: "INT-2833", candidate: "Elena Volkov", role: "Product Manager", interviewer: "You", type: "Cultural", durationSec: 1351, credits: 22.52, status: "completed", date: "2026-04-23T10:30:00", cost: 11.25, recording: true, transcript: true },
+  { id: "INT-2832", candidate: "Akira Tanaka", role: "Senior Backend Engineer", interviewer: "You", type: "System Design", durationSec: 2876, credits: 47.93, status: "completed", date: "2026-04-22T16:00:00", cost: 23.95, recording: true, transcript: true },
+  { id: "INT-2831", candidate: "Ngozi Okafor", role: "Data Analyst", interviewer: "You", type: "Technical", durationSec: 738, credits: 12.3, status: "abandoned", date: "2026-04-22T13:15:00", cost: 6.15, recording: true, transcript: true },
+  { id: "INT-2830", candidate: "Felix Schneider", role: "iOS Engineer", interviewer: "You", type: "Screening", durationSec: 1845, credits: 30.75, status: "completed", date: "2026-04-22T11:00:00", cost: 15.4, recording: true, transcript: true },
+  { id: "INT-2829", candidate: "Maya Joshi", role: "Senior Product Designer", interviewer: "You", type: "Portfolio", durationSec: 1622, credits: 27.03, status: "completed", date: "2026-04-21T15:30:00", cost: 13.5, recording: true, transcript: true },
+  { id: "INT-2828", candidate: "Owen Davies", role: "Engineering Manager", interviewer: "You", type: "Behavioral", durationSec: 2014, credits: 33.57, status: "completed", date: "2026-04-21T11:15:00", cost: 16.8, recording: true, transcript: true },
+  { id: "INT-2827", candidate: "Zara Ahmed", role: "Frontend Engineer", interviewer: "You", type: "Technical", durationSec: 1290, credits: 21.5, status: "completed", date: "2026-04-20T16:45:00", cost: 10.75, recording: true, transcript: true },
+  { id: "INT-2826", candidate: "Bruno Costa", role: "Backend Engineer", interviewer: "You", type: "Screening", durationSec: 1568, credits: 26.13, status: "completed", date: "2026-04-20T14:00:00", cost: 13.05, recording: true, transcript: true },
+  { id: "INT-2825", candidate: "Ines Garcia", role: "Product Manager", interviewer: "You", type: "Cultural", durationSec: 1431, credits: 23.85, status: "completed", date: "2026-04-19T13:20:00", cost: 11.9, recording: true, transcript: true },
+  { id: "INT-2824", candidate: "Kenji Watanabe", role: "Data Scientist", interviewer: "You", type: "Technical", durationSec: 2456, credits: 40.93, status: "completed", date: "2026-04-19T10:00:00", cost: 20.45, recording: true, transcript: true },
+  { id: "INT-2823", candidate: "Fatima Al-Sayed", role: "Senior Frontend Engineer", interviewer: "You", type: "System Design", durationSec: 1992, credits: 33.2, status: "completed", date: "2026-04-18T15:00:00", cost: 16.6, recording: true, transcript: true },
+  { id: "INT-2822", candidate: "Jonas Bergstrom", role: "DevOps Engineer", interviewer: "You", type: "Screening", durationSec: 1147, credits: 19.12, status: "completed", date: "2026-04-18T11:30:00", cost: 9.55, recording: true, transcript: true },
+  { id: "INT-2821", candidate: "Ana Ribeiro", role: "iOS Engineer", interviewer: "You", type: "Technical", durationSec: 1773, credits: 29.55, status: "completed", date: "2026-04-17T14:45:00", cost: 14.8, recording: true, transcript: true },
+  { id: "INT-2820", candidate: "Yuki Sato", role: "Senior Product Manager", interviewer: "You", type: "Behavioral", durationSec: 1856, credits: 30.93, status: "completed", date: "2026-04-17T10:20:00", cost: 15.45, recording: true, transcript: true },
+  { id: "INT-2819", candidate: "Rashid Khan", role: "Backend Engineer", interviewer: "You", type: "System Design", durationSec: 2234, credits: 37.23, status: "completed", date: "2026-04-16T16:10:00", cost: 18.6, recording: true, transcript: true },
 ];
 
 const PAGE_SIZE = 10;
@@ -276,7 +276,7 @@ export function HistoryTable({ rows, onRowClick }: { rows: InterviewRow[]; onRow
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: INK, letterSpacing: "-0.005em" }}>Interview history</div>
             <div style={{ fontSize: 12.5, color: MUTED, marginTop: 3 }}>
-              Per-second credit usage across {rows.length} interviews. Click any row for full breakdown.
+              Second-precision credit usage at 1 credit/min across {rows.length} interviews. Click any row for full breakdown.
             </div>
           </div>
           <button
@@ -677,7 +677,7 @@ export function RowDetailPanel({ row, onClose }: { row: InterviewRow | null; onC
               <span style={{ fontSize: 13, color: MUTED, marginLeft: "auto" }}>≈ ${row.cost.toFixed(2)}</span>
             </div>
             <div style={{ fontSize: 12.5, color: MUTED_2, marginTop: 8, fontFamily: "JetBrains Mono, monospace" }}>
-              {fmtDuration(totalSec)} × 0.2/min = {row.credits.toFixed(2)} credits
+              {fmtDuration(totalSec)} × 1/min = {row.credits.toFixed(2)} credits
             </div>
           </div>
 
@@ -698,7 +698,7 @@ export function RowDetailPanel({ row, onClose }: { row: InterviewRow | null; onC
             <DetailCell label="Date" value={fmtDate(row.date).split(",")[0]} top divider />
           </div>
 
-          <Eyebrow>Per-second breakdown</Eyebrow>
+          <Eyebrow>Second-precision breakdown</Eyebrow>
           <div style={{ marginTop: 14, padding: 16, border: `1px solid ${LINE}`, borderRadius: 12 }}>
             <div
               style={{

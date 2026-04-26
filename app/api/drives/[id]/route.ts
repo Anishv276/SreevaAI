@@ -16,7 +16,41 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             where: {
                 id
             },
-            include: {
+            select: {
+                id: true,
+                title: true,
+                role: true,
+                description: true,
+                department: true,
+                type: true,
+                screeningThreshold: true,
+                creatorId: true,
+                createdAt: true,
+                updatedAt: true,
+                positions: true,
+                workMode: true,
+                experience: true,
+                responsibilities: true,
+                requirements: true,
+                salary: true,
+                skills: true,
+                extractedDetails: true,
+                interviewLanguage: true,
+                interviewTime: true,
+                proctoringLevel: true,
+                interviewQuestions: true,
+                jdFileName: true,
+                jdPreviewUrl: true,
+                orgId: true,
+                shortlistMode: true,
+                location: true,
+                aiName: true,
+                cartesiaVoiceId: true,
+                sarvamVoice: true,
+                sarvamModel: true,
+                googleModel: true,
+                googleVoiceName: true,
+                ttsProvider: true,
                 organization: {
                     select: { 
                         status: true,
@@ -41,11 +75,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             return NextResponse.json({ error: "This organization is currently suspended. Access is restricted." }, { status: 403 });
         }
 
+        const screeningThreshold = Number((drive as any).screeningThreshold ?? 60);
+        const shortlistMode = (drive as any).shortlistMode || "automatic";
+
         return NextResponse.json({
             ...drive,
             orgId: (drive as any).orgId,
+            screeningThreshold,
+            shortlistMode,
+            screeningCriteria: JSON.stringify({
+                threshold: screeningThreshold,
+                shortlistMode,
+                criteria: {},
+            }),
             applicants: (drive as any)._count?.applications || 0,
-            daysLeft: Math.max(0, Math.ceil((new Date((drive as any).createdAt).getTime() + 30 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24))),
             aiScreening: {
                 enabled: true,
                 weights: {} // Schema doesn't have a weights field yet
@@ -94,9 +137,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         }
 
         const data = result.data;
-        const deadline = data.deadline === "" || data.deadline === null ? null : 
-                        (data.deadline && !isNaN(new Date(data.deadline).getTime()) ? new Date(data.deadline) : undefined);
-        
         const positions = data.positions !== undefined ? data.positions : undefined;
         const existingDrive = await prisma.drive.findUnique({
             where: { id: driveId },
@@ -125,8 +165,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.workMode !== undefined) updateData.workMode = data.workMode;
         if (data.location !== undefined) updateData.location = data.location;
         if (positions !== undefined) updateData.positions = positions;
-        if (deadline !== undefined) updateData.deadline = deadline;
-        
         if (data.salary !== undefined) updateData.salary = data.salary;
         if (data.experience !== undefined) updateData.experience = data.experience;
         if (data.skills !== undefined) updateData.skills = data.skills;
@@ -139,10 +177,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         
         if (data.registrationFields !== undefined) updateData.registrationFields = JSON.stringify(data.registrationFields);
         
-        if (data.screeningThreshold !== undefined) updateData.screeningThreshold = data.screeningThreshold;
-        if ((data as any).screeningCriteria !== undefined) {
-            const criteria = (data as any).screeningCriteria;
-            updateData.screeningCriteria = typeof criteria === "string" ? criteria : JSON.stringify(criteria);
+        if (data.screeningThreshold !== undefined || (data as any).screeningCriteria !== undefined || (data as any).shortlistMode !== undefined) {
+            const rawCriteria = (data as any).screeningCriteria;
+            const parsedCriteria = typeof rawCriteria === "string"
+                ? safeJsonParse(rawCriteria, {})
+                : (rawCriteria || {});
+            const mergedCriteria = {
+                ...(parsedCriteria && typeof parsedCriteria === "object" ? parsedCriteria : {}),
+                ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
+                ...((data as any).shortlistMode !== undefined ? { shortlistMode: (data as any).shortlistMode } : {}),
+            };
+            updateData.screeningCriteria = JSON.stringify(mergedCriteria);
         }
 
         // Add new interview fields to PATCH
@@ -153,9 +198,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.interviewQuestions !== undefined) updateData.interviewQuestions = JSON.stringify(data.interviewQuestions);
         if (data.requirements !== undefined) updateData.requirements = data.requirements;
         if ((data as any).isPassportRequired !== undefined) updateData.isPassportRequired = (data as any).isPassportRequired;
-        if ((data as any).shortlistMode !== undefined) updateData.shortlistMode = (data as any).shortlistMode;
-        if (data.status !== undefined) updateData.status = data.status;
-
         Object.assign(
             updateData,
             normalizeDriveAiConfig({

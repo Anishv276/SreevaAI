@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, XCircle, RefreshCw, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, CheckSquare, Square, Send, Loader2, Lock } from "lucide-react";
+import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, RefreshCw, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, CheckSquare, Square, Send, Loader2, Lock } from "lucide-react";
 
 import Link from "next/link";
 
@@ -424,6 +424,23 @@ function CandidateStatsRow() {
 
 }
 
+function formatCandidateStatusLabel(value?: string) {
+    const normalized = String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
+    if (!normalized) return "Pending";
+    if (normalized === "inprogress" || normalized === "in progress") return "In Progress";
+    if (normalized === "finished" || normalized === "completed") return "Completed";
+    if (normalized === "shortlisted") return "Shortlisted";
+    if (normalized === "rejected") return "Rejected";
+    if (normalized === "not shortlisted") return "Not Shortlisted";
+    if (normalized === "not hired") return "Not Hired";
+    if (normalized === "not qualified") return "Not Qualified";
+    return normalized.replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+function normalizeStatusKey(value?: string) {
+    return String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
+}
+
 
 
 export default function CandidatesPage() {
@@ -467,6 +484,7 @@ export default function CandidatesPage() {
     const router = useRouter();
 
     const driveIdParam = searchParams.get("driveId");
+    const orgIdParam = searchParams.get("orgId");
 
     // Organization Status
     const [orgStatus, setOrgStatus] = useState<string>("ACTIVE");
@@ -546,7 +564,7 @@ export default function CandidatesPage() {
 
 
 
-            fetchCandidates(1, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
+            fetchCandidates(1, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, { shortlistOnly: true });
 
         }, 200); // 200ms Search Debounce
 
@@ -600,7 +618,7 @@ export default function CandidatesPage() {
 
 
 
-            fetchCandidates(newPage, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
+            fetchCandidates(newPage, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, { shortlistOnly: true });
 
         }
 
@@ -690,7 +708,7 @@ export default function CandidatesPage() {
 
 
 
-                fetchCandidates(pagination.page, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
+                fetchCandidates(pagination.page, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, { shortlistOnly: true });
 
             } else {
 
@@ -827,7 +845,7 @@ export default function CandidatesPage() {
 
 
 
-            fetchCandidates(pagination.page, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
+            fetchCandidates(pagination.page, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, { shortlistOnly: true });
 
             const msg = pendingAction === "hire" ? `${count} candidate(s) hired - emails sent`
 
@@ -1053,48 +1071,6 @@ export default function CandidatesPage() {
 
                             
 
-                            {/* Resume Status Group */}
-
-                            <div className="flex items-center gap-2 px-1">
-
-                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest mr-1">Resume Status:</span>
-
-                                <Button
-
-                                    size="sm"
-
-                                    onClick={() => handleBulkAction("shortlist")}
-
-                                    className="h-9 px-4 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
-
-                                >
-
-                                    <Target className="h-3.5 w-3.5" /> Shortlisted
-
-                                </Button>
-
-                                <Button
-
-                                    size="sm"
-
-                                    onClick={() => handleBulkAction("reject")}
-
-                                    className="h-9 px-4 rounded-xl bg-gray-500 hover:bg-gray-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
-
-                                >
-
-                                    <XCircle className="h-3.5 w-3.5" /> Reject
-
-                                </Button>
-
-                            </div>
-
-
-
-                            <div className="h-4 w-px bg-gray-200 mx-1" />
-
-
-
                             {/* Hiring Status Group */}
 
                             <div className="flex items-center gap-2 px-1">
@@ -1245,32 +1221,6 @@ export default function CandidatesPage() {
 
                             <PremiumFilter
 
-                                value={resumeFilter}
-
-                                onChange={setResumeFilter}
-
-                                icon={Target}
-
-                                placeholder="Resume"
-
-                                options={[
-
-                                    { value: "all", label: "All Resume" },
-
-                                    { value: "pending", label: "Pending", colorClass: "text-amber-600" },
-
-                                    { value: "shortlisted", label: "Shortlisted", colorClass: "text-emerald-600" },
-
-                                    { value: "rejected", label: "Rejected", colorClass: "text-rose-600" },
-
-                                ]}
-
-                            />
-
-
-
-                            <PremiumFilter
-
                                 value={interviewFilter}
 
                                 onChange={setInterviewFilter}
@@ -1287,33 +1237,7 @@ export default function CandidatesPage() {
 
                                     { value: "inprogress", label: "In Progress", colorClass: "text-orange-600" },
 
-                                    { value: "finished", label: "Finished", colorClass: "text-indigo-600" },
-
-                                ]}
-
-                            />
-
-
-
-                            <PremiumFilter
-
-                                value={hiringFilter}
-
-                                onChange={setHiringFilter}
-
-                                icon={Award}
-
-                                placeholder="Hiring"
-
-                                options={[
-
-                                    { value: "all", label: "All Hiring" },
-
-                                    { value: "pending", label: "Decision Pending", colorClass: "text-amber-600" },
-
-                                    { value: "hired", label: "Hired", colorClass: "text-emerald-600" },
-
-                                    { value: "not hired", label: "Not Hired", colorClass: "text-rose-600" },
+                                    { value: "finished", label: "Completed", colorClass: "text-indigo-600" },
 
                                 ]}
 
@@ -1391,8 +1315,6 @@ export default function CandidatesPage() {
 
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Decision</TableHead>
 
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Applied Date</TableHead>
-
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Reports</TableHead>
 
                                 <TableHead className="text-right pr-8 h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Actions</TableHead>
@@ -1407,7 +1329,7 @@ export default function CandidatesPage() {
 
                                 <TableRow>
 
-                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={isSelectionMode ? 9 : 8} className="py-12 text-center text-sm font-bold text-gray-400">
 
                                         Loading candidates...
 
@@ -1419,7 +1341,7 @@ export default function CandidatesPage() {
 
                                 <TableRow>
 
-                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={isSelectionMode ? 9 : 8} className="py-12 text-center text-sm font-bold text-gray-400">
 
                                         No candidates found for selected filters
 
@@ -1431,11 +1353,14 @@ export default function CandidatesPage() {
 
                                 filteredCandidates.map((candidate: any, index: number) => {
 
-                                    const mainStatus = candidate.status?.toLowerCase() || "pending";
+                                    const mainStatus = normalizeStatusKey(candidate.status) || "pending";
+                                    const mainStatusLabel = formatCandidateStatusLabel(candidate.status);
 
-                                    const interviewStage = candidate.interviewStatus?.toLowerCase() || "pending";
+                                    const interviewStage = normalizeStatusKey(candidate.interviewStatus) || "pending";
+                                    const interviewStageLabel = formatCandidateStatusLabel(candidate.interviewStatus);
 
-                                    const hiringDecision = candidate.hiringStatus?.toLowerCase() || "pending";
+                                    const hiringDecision = normalizeStatusKey(candidate.hiringStatus) || "pending";
+                                    const hiringDecisionLabel = formatCandidateStatusLabel(candidate.hiringStatus);
 
 
 
@@ -1571,7 +1496,7 @@ export default function CandidatesPage() {
 
                                                     )}>
 
-                                                        {mainStatus}
+                                                        {mainStatusLabel}
 
                                                     </Badge>
 
@@ -1587,25 +1512,25 @@ export default function CandidatesPage() {
 
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-gray-100 shadow-sm transition-all",
 
-                                                        interviewStage === 'finished' ? 'text-indigo-600 bg-indigo-50/20 shadow-none border-indigo-100' :
+                                                        interviewStage === 'completed' || interviewStage === 'finished' ? 'text-indigo-600 bg-indigo-50/20 shadow-none border-indigo-100' :
 
-                                                            interviewStage === 'inprogress' ? 'text-blue-600 bg-blue-50/20 shadow-none border-blue-100' :
+                                                            interviewStage === 'in progress' ? 'text-blue-600 bg-blue-50/20 shadow-none border-blue-100' :
 
                                                                 interviewStage === 'pending' ? 'text-amber-600 bg-amber-50/20 shadow-none border-amber-100' : 'text-gray-500 bg-gray-50'
 
                                                     )}>
 
-                                                        {interviewStage.length > 20 ? (
+                                                        {interviewStageLabel.length > 20 ? (
 
-                                                            <span title={interviewStage}>
+                                                            <span title={interviewStageLabel}>
 
-                                                                {interviewStage.substring(0, 17)}...
+                                                                {interviewStageLabel.substring(0, 17)}...
 
                                                             </span>
 
                                                         ) : (
 
-                                                            interviewStage
+                                                            interviewStageLabel
 
                                                         )}
 
@@ -1623,7 +1548,7 @@ export default function CandidatesPage() {
 
                                                         <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
 
-                                                            Hired
+                                                            {hiringDecisionLabel}
 
                                                         </Badge>
 
@@ -1631,7 +1556,7 @@ export default function CandidatesPage() {
 
                                                         <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
 
-                                                            Not Hired
+                                                            {hiringDecisionLabel}
 
                                                         </Badge>
 
@@ -1639,7 +1564,7 @@ export default function CandidatesPage() {
 
                                                         <Badge variant="outline" className="bg-rose-50 text-rose-600 border-rose-200 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
 
-                                                            Not Shortlisted
+                                                            {hiringDecisionLabel}
 
                                                         </Badge>
 
@@ -1647,7 +1572,7 @@ export default function CandidatesPage() {
 
                                                         <Badge variant="outline" className="bg-slate-50/50 text-slate-400 border-slate-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest">
 
-                                                            Pending
+                                                            {hiringDecisionLabel}
 
                                                         </Badge>
 
@@ -1657,15 +1582,12 @@ export default function CandidatesPage() {
 
                                             </TableCell>
 
-                                            <TableCell className="py-5 text-[12px] font-bold text-gray-400 text-center">
-
-                                                {candidate.date}
-
-                                            </TableCell>
-
                                             <TableCell className="py-5 text-center">
 
-                                                <Link href={`/admin/candidates/${candidate.id}`} onClick={(e) => isSelectionMode && e.stopPropagation()}>
+                                                <Link
+                                                    href={orgIdParam ? `/admin/candidates/${candidate.id}?orgId=${encodeURIComponent(orgIdParam)}` : `/admin/candidates/${candidate.id}`}
+                                                    onClick={(e) => isSelectionMode && e.stopPropagation()}
+                                                >
 
                                                     <Button
 
@@ -1986,6 +1908,3 @@ export default function CandidatesPage() {
     );
 
 }
-
-
-

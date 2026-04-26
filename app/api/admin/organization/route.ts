@@ -10,14 +10,7 @@ export async function GET() {
         }
 
         const activeDriveCount = await prisma.drive.count({
-            where: {
-                orgId: session.orgId,
-                status: "ACTIVE",
-                OR: [
-                    { deadline: null },
-                    { deadline: { gte: new Date() } }
-                ],
-            }
+            where: { orgId: session.orgId }
         });
 
         const org = await prisma.organization.findUnique({

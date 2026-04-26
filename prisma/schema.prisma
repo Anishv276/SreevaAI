@@ -137,7 +137,6 @@ model Drive {
   creatorId          String
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
-  deadline           DateTime?
   positions          Int?          @default(1)
   workMode           String?
   experience         String?
@@ -154,7 +153,6 @@ model Drive {
   jdFileName         String?
   jdPreviewUrl       String?
   orgId              String?
-  status             String        @default("ACTIVE")
   shortlistMode      String        @default("automatic")
   location           String?
   aiName             String?       @default("Ishitha")
