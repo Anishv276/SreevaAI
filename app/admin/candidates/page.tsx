@@ -1,8 +1,10 @@
 "use client";
+
+
+
 import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
-import { BulkImportModal } from "@/components/admin/bulk-import-modal";
-import { BulkImportHistory } from "@/components/admin/bulk-import-history";
 
 import { Input } from "@/components/ui/input";
 
@@ -12,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, XCircle, RefreshCw, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, CheckSquare, Square, Send, Loader2, Lock, Upload } from "lucide-react";
+import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, XCircle, RefreshCw, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, CheckSquare, Square, Send, Loader2, Lock } from "lucide-react";
 
 import Link from "next/link";
 
@@ -57,6 +59,7 @@ import {
     SelectTrigger,
 
     SelectValue,
+
 } from "@/components/ui/select";
 
 import { useEffect, useRef } from "react";
@@ -158,9 +161,13 @@ function EmailComposer({
     };
 
 
+
     if (!candidate) return null;
 
+
+
     return (
+
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm" onClick={onClose}>
 
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -454,8 +461,6 @@ export default function CandidatesPage() {
     const [interviewLinkCandidate, setInterviewLinkCandidate] = useState<{ id: string; name: string; interviewStatus?: string } | null>(null);
 
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
-
-    const [isBulkImportModalOpen, setIsBulkImportModalOpen] = useState(false);
 
     const searchParams = useSearchParams();
 
@@ -828,11 +833,11 @@ export default function CandidatesPage() {
 
                 : pendingAction === "reject" ? `${count} candidate(s) marked as not hired - emails sent`
 
-                    : pendingAction === "shortlist" ? `${count} candidate(s) shortlisted - interview emails sent`
+                : pendingAction === "shortlist" ? `${count} candidate(s) shortlisted - interview emails sent`
 
-                        : pendingAction === "not_hired" ? `${count} candidate(s) marked as not hired`
+                : pendingAction === "not_hired" ? `${count} candidate(s) marked as not hired`
 
-                            : `${count} candidate(s) deleted`;
+                : `${count} candidate(s) deleted`;
 
             toast.success(msg);
 
@@ -843,19 +848,31 @@ export default function CandidatesPage() {
         } finally {
 
             setIsBulkLoading(false);
+
             setPendingAction(null);
 
         }
 
     };
+
+
+
     return (
-        <div className="space-y-10 pb-12 animate-in fade-in duration-700 font-sans" style={{ zoom: 0.85 }}>
+
+        <div className="space-y-10 pb-12 animate-in fade-in duration-700 font-sans">
+
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-2">
+
                 <div className="flex items-center gap-5 group">
+
                     <div className="h-14 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-16" />
+
                     <div className="space-y-1">
+
                         <h1 className="text-4xl sm:text-5xl font-black text-gray-900 leading-none tracking-tighter">
+
                             Candidates
+
                         </h1>
 
                         <div className="flex items-center gap-3">
@@ -877,20 +894,6 @@ export default function CandidatesPage() {
 
 
                 <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-
-                    <Button
-
-                        onClick={() => setIsBulkImportModalOpen(true)}
-
-                        className="h-12 px-6 rounded-2xl font-bold bg-orange-600 hover:bg-orange-700 text-white flex items-center gap-2 transition-all shadow-sm"
-
-                    >
-
-                        <Upload className="h-4 w-4" />
-
-                        Import Resumes
-
-                    </Button>
 
                     <Button
 
@@ -948,7 +951,7 @@ export default function CandidatesPage() {
 
                                 if (hiringFilter !== "all") url += `&hiringStatus=${hiringFilter}`;
 
-
+                                
 
                                 const res = await fetch(url);
 
@@ -960,7 +963,7 @@ export default function CandidatesPage() {
 
                                 }
 
-
+                                
 
                                 const blob = await res.blob();
 
@@ -1048,7 +1051,7 @@ export default function CandidatesPage() {
 
                             <div className="h-4 w-px bg-gray-200 mx-1" />
 
-
+                            
 
                             {/* Resume Status Group */}
 
@@ -1132,7 +1135,7 @@ export default function CandidatesPage() {
 
                             <div className="h-4 w-px bg-gray-200 ml-auto" />
 
-
+                            
 
                             <Button
 
@@ -1229,8 +1232,21 @@ export default function CandidatesPage() {
                         </div>
 
                         <div className="flex items-center gap-4 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 no-scrollbar">
+
+                            <DateFilter
+
+                                value={timeline}
+
+                                onChange={setTimeline}
+
+                            />
+
+
+
                             <PremiumFilter
+
                                 value={resumeFilter}
+
                                 onChange={setResumeFilter}
 
                                 icon={Target}
@@ -1374,6 +1390,9 @@ export default function CandidatesPage() {
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview</TableHead>
 
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Decision</TableHead>
+
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Applied Date</TableHead>
+
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Reports</TableHead>
 
                                 <TableHead className="text-right pr-8 h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Actions</TableHead>
@@ -1486,13 +1505,13 @@ export default function CandidatesPage() {
 
                                                     </div>
 
-                                                    <div className="flex flex-col relative">
+                                                        <div className="flex flex-col relative">
 
-                                                        <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{candidate.name}</span>
+                                                            <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{candidate.name}</span>
 
-                                                        <span className="text-[11px] text-gray-400 font-bold mt-0.5">{candidate.email}</span>
+                                                            <span className="text-[11px] text-gray-400 font-bold mt-0.5">{candidate.email}</span>
 
-                                                    </div>
+                                                        </div>
 
                                                 </div>
 
@@ -1528,9 +1547,9 @@ export default function CandidatesPage() {
 
                                                                 candidate.score >= 80 ? "text-emerald-600" :
 
-                                                                    candidate.score >= 50 ? "text-amber-500" :
+                                                                candidate.score >= 50 ? "text-amber-500" :
 
-                                                                        "text-rose-500"
+                                                                "text-rose-500"
 
                                                             )}>
 
@@ -1602,17 +1621,15 @@ export default function CandidatesPage() {
 
                                                     {isHiredResult ? (
 
-                                                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm flex items-center gap-1 w-fit mx-auto">
-
-                                                            <Award className="h-3 w-3" />
+                                                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
 
                                                             Hired
+
                                                         </Badge>
+
                                                     ) : isNotHiredResult ? (
 
-                                                        <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm flex items-center gap-1 w-fit mx-auto">
-
-                                                            <UserX className="h-3 w-3" />
+                                                        <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
 
                                                             Not Hired
 
@@ -1640,7 +1657,11 @@ export default function CandidatesPage() {
 
                                             </TableCell>
 
+                                            <TableCell className="py-5 text-[12px] font-bold text-gray-400 text-center">
 
+                                                {candidate.date}
+
+                                            </TableCell>
 
                                             <TableCell className="py-5 text-center">
 
@@ -1772,8 +1793,6 @@ export default function CandidatesPage() {
 
                                                             >
 
-                                                                <ShieldCheck className="h-4 w-4 mr-2" />
-
                                                                 Hire this person
 
                                                             </DropdownMenuItem>
@@ -1880,13 +1899,13 @@ export default function CandidatesPage() {
 
                     pendingAction === "hire" ? "Hire Candidates" :
 
-                        pendingAction === "shortlist" ? "Shortlist Candidates" :
+                    pendingAction === "shortlist" ? "Shortlist Candidates" :
 
-                            pendingAction === "not_hired" ? "Mark as Not Hired" :
+                    pendingAction === "not_hired" ? "Mark as Not Hired" :
 
-                                pendingAction === "reject" ? "Mark as Not Hired" :
+                    pendingAction === "reject" ? "Mark as Not Hired" :
 
-                                    "Delete Candidates"
+                    "Delete Candidates"
 
                 }
 
@@ -1900,11 +1919,11 @@ export default function CandidatesPage() {
 
                             ? `Shortlist ${selectedIds.size} selected candidate(s)? An interview invitation email will be sent to each.`
 
-                            : pendingAction === "not_hired" || pendingAction === "reject"
+                        : pendingAction === "not_hired" || pendingAction === "reject"
 
-                                ? `Mark ${selectedIds.size} selected candidate(s) as Not Hired? A rejection email will be sent to each.`
+                            ? `Mark ${selectedIds.size} selected candidate(s) as Not Hired? A rejection email will be sent to each.`
 
-                                : `Permanently delete ${selectedIds.size} selected candidate(s)? This cannot be undone.`
+                        : `Permanently delete ${selectedIds.size} selected candidate(s)? This cannot be undone.`
 
                 }
 
@@ -1912,11 +1931,11 @@ export default function CandidatesPage() {
 
                     pendingAction === "hire" ? `Confirm Hire (${selectedIds.size})` :
 
-                        pendingAction === "shortlist" ? `Shortlist (${selectedIds.size})` :
+                    pendingAction === "shortlist" ? `Shortlist (${selectedIds.size})` :
 
-                            pendingAction === "not_hired" || pendingAction === "reject" ? `Not Hired (${selectedIds.size})` :
+                    pendingAction === "not_hired" || pendingAction === "reject" ? `Not Hired (${selectedIds.size})` :
 
-                                `Confirm Delete (${selectedIds.size})`
+                    `Confirm Delete (${selectedIds.size})`
 
                 }
 
@@ -1961,33 +1980,6 @@ export default function CandidatesPage() {
             {/* Email Composer */}
 
             <EmailComposer candidate={emailCandidate} onClose={() => setEmailCandidate(null)} />
-
-            {/* Recent Imports History */}
-            <div className="mt-16">
-                <BulkImportHistory driveId={roleFilter !== "all" ? roleFilter : undefined} />
-            </div>
-
-            {/* Bulk Import Modal */}
-
-            <BulkImportModal
-
-                open={isBulkImportModalOpen}
-
-                onClose={() => setIsBulkImportModalOpen(false)}
-
-                driveId={roleFilter !== "all" ? roleFilter : ""}
-
-                driveName={jobs.find(j => j.id === roleFilter)?.title || "All Drives"}
-
-                onSuccess={() => {
-
-                    setIsBulkImportModalOpen(false);
-
-                    fetchCandidates(1, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter);
-
-                }}
-
-            />
 
         </div>
 

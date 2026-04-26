@@ -164,6 +164,8 @@ model Drive {
   googleVoiceName    String?       @default("Puck")
   ttsProvider        String?       @default("CARTESIA")
   applications       Application[]
+  resumeCandidates   ResumeCandidate[]
+  resumeBatches      ResumeBatch[]
   creator            User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
   organization       Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -241,6 +243,44 @@ model VerificationToken {
 model ProcessedWebhook {
   id          String   @id
   processedAt DateTime @default(now())
+}
+
+model ResumeCandidate {
+  id              String    @id @default(cuid())
+  driveId         String
+  bulkBatchId     String
+  fullName        String
+  email           String?
+  phone           String?
+  fileName        String
+  resumeText      String?
+  aiScore         Int?
+  aiReport        String?
+  resumeStatus    String    @default("pending")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  drive           Drive     @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  batch           ResumeBatch @relation(fields: [bulkBatchId], references: [id], onDelete: Cascade)
+
+  @@index([driveId, bulkBatchId])
+  @@index([driveId, resumeStatus])
+}
+
+model ResumeBatch {
+  id             String            @id @default(cuid())
+  driveId        String
+  orgId          String
+  status         String            @default("PROCESSING")
+  totalCount     Int               @default(0)
+  processedCount Int               @default(0)
+  failedCount    Int               @default(0)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  completedAt    DateTime?
+  drive          Drive             @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  candidates     ResumeCandidate[]
+
+  @@index([driveId, status])
 }
 
 model BulkImport {

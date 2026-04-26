@@ -18,6 +18,7 @@ import {
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { ResumeScreening } from "@/components/admin/resume-screening";
 
 export default function DriveDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const router = useRouter();
@@ -182,97 +183,12 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                 {/* Tab Content */}
                 <div className="bg-white/60 backdrop-blur-xl rounded-b-3xl border border-white/20 border-t-0 p-8 shadow-[0_8px_32px_rgba(0,0,0,0.03)]">
                     {activeTab === "upload" ? (
-                        <div className="space-y-8">
-                            <div>
-                                <h2 className="text-xl font-bold text-gray-900 mb-2">Upload Resumes</h2>
-                                <p className="text-gray-600">Upload candidate resumes in PDF format. Our AI will automatically screen and rank them based on the criteria below.</p>
-                            </div>
-
-                            {/* Drag & Drop Zone */}
-                            <div
-                                onDragOver={handleDragOver}
-                                onDragLeave={handleDragLeave}
-                                onDrop={handleDrop}
-                                className={cn(
-                                    "relative border-2 border-dashed rounded-3xl p-16 text-center transition-all",
-                                    isDragging
-                                        ? "border-[#F97316] bg-orange-50/50"
-                                        : "border-gray-200 bg-gray-50/50 hover:border-[#F97316] hover:bg-orange-50/30"
-                                )}
-                            >
-                                <div className="flex flex-col items-center gap-3">
-                                    <div className="h-14 w-14 rounded-xl bg-white flex items-center justify-center text-orange-500 border border-gray-200">
-                                        <Upload className="h-7 w-7" />
-                                    </div>
-                                    <div>
-                                        <p className="text-lg font-bold text-gray-900">Drag and drop resumes here</p>
-                                        <p className="text-sm text-gray-500 mt-1">or click to browse your files</p>
-                                    </div>
-                                    <input
-                                        type="file"
-                                        multiple
-                                        accept=".pdf"
-                                        onChange={handleFileSelect}
-                                        className="absolute inset-0 opacity-0 cursor-pointer rounded-3xl"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* File List */}
-                            {resumeFiles.length > 0 && (
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <p className="text-lg font-bold text-gray-900">{resumeFiles.length} Resumes Ready</p>
-                                            <p className="text-sm text-gray-500">Click "Start Screening" to begin the AI screening process</p>
-                                        </div>
-                                        <button
-                                            onClick={() => setResumeFiles([])}
-                                            className="text-sm text-gray-500 hover:text-gray-700 font-medium px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors"
-                                        >
-                                            Clear All
-                                        </button>
-                                    </div>
-
-                                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                                        {resumeFiles.map((file, idx) => (
-                                            <div key={idx} className="flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-100 hover:border-gray-200 transition-colors">
-                                                <div className="flex items-center gap-3 flex-1 min-w-0">
-                                                    <div className="h-10 w-10 rounded-lg bg-red-50 flex items-center justify-center text-red-600 flex-shrink-0 text-xs font-bold">
-                                                        PDF
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
-                                                        <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    onClick={() => setResumeFiles(prev => prev.filter((_, i) => i !== idx))}
-                                                    className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0 p-2"
-                                                >
-                                                    <X className="h-4 w-4" />
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Action Buttons */}
-                            <div className="flex gap-4 pt-4 border-t border-gray-100">
-                                <Link href="/admin/drives" className="flex-1">
-                                    <Button variant="outline" className="w-full rounded-xl border-gray-200 text-gray-900 font-bold text-sm h-12">
-                                        Cancel
-                                    </Button>
-                                </Link>
-                                {resumeFiles.length > 0 && (
-                                    <Button className="flex-1 rounded-xl bg-[#F97316] hover:bg-orange-600 text-white font-bold text-sm h-12">
-                                        Start Screening ({resumeFiles.length})
-                                    </Button>
-                                )}
-                            </div>
-                        </div>
+                        <ResumeScreening
+                            driveId={driveId}
+                            driveName={drive?.title || ""}
+                        />
                     ) : (
+                        /* Settings tab */
                         <div className="space-y-8">
                             <div>
                                 <h2 className="text-xl font-bold text-gray-900 mb-2">Screening Rules</h2>
