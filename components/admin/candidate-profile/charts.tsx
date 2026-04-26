@@ -175,9 +175,12 @@ export const CommunicationDonutChart = memo(function CommunicationDonutChart({ m
     const active = hovered !== null ? metrics[hovered] : null;
 
     return (
-        <div className="flex flex-col items-center gap-6 py-2">
-            <div className="relative" style={{ width: size, height: size }}>
-                <svg width={size} height={size} style={{ overflow: 'visible' }}>
+        <div className="grid w-full grid-cols-1 items-start gap-5 py-1 sm:grid-cols-[min(220px,42vw)_minmax(0,1fr)] sm:items-center sm:gap-6 lg:grid-cols-[220px_1fr] lg:gap-8">
+            <div
+                className="relative mx-auto shrink-0 sm:mx-0"
+                style={{ width: size, height: size }}
+            >
+                <svg width={size} height={size} className="overflow-visible">
                     <defs>
                         <filter id="slice-shadow" x="-20%" y="-20%" width="140%" height="140%">
                             <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="#00000022" />
@@ -190,10 +193,10 @@ export const CommunicationDonutChart = memo(function CommunicationDonutChart({ m
                                 fill={s.color}
                                 opacity={hovered === null ? 1 : hovered === i ? 1 : 0.3}
                                 style={{
-                                    transform: hovered === i ? `translate(${Math.cos(s.midRad) * 5}px, ${Math.sin(s.midRad) * 5}px)` : 'none',
-                                    transition: 'opacity 0.2s ease, transform 0.2s ease',
-                                    cursor: 'pointer',
-                                    filter: hovered === i ? 'url(#slice-shadow)' : 'none',
+                                    transform: hovered === i ? `translate(${Math.cos(s.midRad) * 5}px, ${Math.sin(s.midRad) * 5}px)` : "none",
+                                    transition: "opacity 0.2s ease, transform 0.2s ease",
+                                    cursor: "pointer",
+                                    filter: hovered === i ? "url(#slice-shadow)" : "none",
                                 }}
                                 onMouseEnter={() => setHovered(i)}
                                 onMouseLeave={() => setHovered(null)}
@@ -201,42 +204,47 @@ export const CommunicationDonutChart = memo(function CommunicationDonutChart({ m
                         </g>
                     ))}
                 </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-2 text-center">
                     <span
                         className="font-bold leading-none tabular-nums transition-all"
-                        style={{ fontSize: active ? 34 : 28, color: active ? active.color : '#111827' }}
+                        style={{ fontSize: active ? 36 : 28, color: active ? active.color : "#111827" }}
                     >
                         {active ? active.value : avg}
                     </span>
                     <span
-                        className="text-[9px] font-bold uppercase tracking-[0.18em] mt-1 transition-all"
-                        style={{ color: active ? active.color : '#9CA3AF' }}
+                        className="mt-1.5 min-h-[2.25em] text-[9px] font-bold uppercase leading-tight tracking-[0.16em] transition-all"
+                        style={{ color: active ? active.color : "#6B7280" }}
                     >
-                        {active ? active.label : 'Overall'}
+                        {active ? active.label : "Overall"}
                     </span>
                 </div>
             </div>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3 w-full px-2">
-                {metrics.map((m, i) => (
-                    <div
-                        key={m.label}
-                        className="flex items-center gap-2.5 cursor-pointer group"
-                        onMouseEnter={() => setHovered(i)}
-                        onMouseLeave={() => setHovered(null)}
-                    >
-                        <div
-                            className="h-2.5 w-2.5 rounded-full flex-shrink-0 transition-transform group-hover:scale-125"
-                            style={{ backgroundColor: m.color }}
-                        />
-                        <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider flex-1">{m.label}</span>
-                        <span
-                            className="text-[12px] font-bold tabular-nums transition-colors"
-                            style={{ color: hovered === i ? m.color : '#111827' }}
-                        >
-                            {m.value}
-                        </span>
-                    </div>
-                ))}
+            <div className="flex min-w-0 flex-col justify-center sm:min-h-0">
+                <p className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">Dimensions</p>
+                <p className="mb-2 text-[10px] leading-snug text-slate-500">Score shows in the chart center when you hover a segment or a row.</p>
+                <ul className="flex flex-col gap-1.5" role="list">
+                    {metrics.map((m, i) => (
+                        <li key={m.label} className="list-none">
+                            <button
+                                type="button"
+                                className="group flex w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border border-transparent bg-transparent px-1 py-1.5 text-left transition-colors hover:border-slate-200 hover:bg-slate-50/80"
+                                onMouseEnter={() => setHovered(i)}
+                                onMouseLeave={() => setHovered(null)}
+                                onFocus={() => setHovered(i)}
+                                onBlur={() => setHovered(null)}
+                            >
+                                <div
+                                    className="h-2.5 w-2.5 shrink-0 rounded-full transition-transform group-hover:scale-125"
+                                    style={{ backgroundColor: m.color }}
+                                    aria-hidden
+                                />
+                                <span className="min-w-0 text-[10px] font-bold uppercase leading-normal tracking-wide text-slate-600 sm:text-[11px]">
+                                    {m.label}
+                                </span>
+                            </button>
+                        </li>
+                    ))}
+                </ul>
             </div>
         </div>
     );
