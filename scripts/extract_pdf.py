@@ -373,55 +373,53 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     if screening_criteria is None:
         screening_criteria = {}
 
-    # -- Pull JD data -------------------------------------------
-    jd_skills = jd_data.get("skills", {})
-
-    raw_must = jd_skills.get("must_have", [])
-    if raw_must and isinstance(raw_must[0], dict):
-        jd_must_have = [(s["skill"], s.get("weight", "high")) for s in raw_must]
-    else:
-        jd_must_have = [(s, "high") for s in raw_must]
-
-    raw_good = jd_skills.get("good_to_have", [])
-    if raw_good and isinstance(raw_good[0], dict):
-        jd_good_to_have = [s["skill"] for s in raw_good]
-    else:
-        jd_good_to_have = raw_good
-
-    # -- Merge screening criteria skills if provided ---
+    # -- Pull screening criteria if provided (takes precedence over JD) ---
     hr_criteria_skills = screening_criteria.get("skills", {})
+    hr_experience = screening_criteria.get("experience", {})
+
+    # Use HR screening criteria skills if provided, otherwise fall back to JD
     if hr_criteria_skills:
         hr_required = hr_criteria_skills.get("required", [])
         if hr_required and isinstance(hr_required[0], dict):
-            for s in hr_required:
-                skill_name = s.get("name", "")
-                if skill_name:
-                    weight = s.get("weight", "high") if s.get("weight") else "high"
-                    if not any(sk[0].lower() == skill_name.lower() for sk in jd_must_have):
-                        jd_must_have.append((skill_name, weight))
+            jd_must_have = [(s.get("name", ""), s.get("weight", "high") if s.get("weight") else "high") for s in hr_required]
+        else:
+            jd_must_have = [(s, "high") for s in hr_required] if hr_required else []
 
         hr_nice = hr_criteria_skills.get("niceToHave", [])
         if hr_nice:
-            for s in hr_nice:
-                skill_name = s.get("name", "") if isinstance(s, dict) else s
-                if skill_name and not any(sk.lower() == skill_name.lower() for sk in jd_good_to_have):
-                    jd_good_to_have.append(skill_name)
+            jd_good_to_have = [s.get("name", "") if isinstance(s, dict) else s for s in hr_nice]
+        else:
+            jd_good_to_have = []
+    else:
+        # Fallback to JD skills if no screening criteria
+        jd_skills = jd_data.get("skills", {})
 
-    jd_experience = _as_dict(jd_data.get("experience", {}))
-    jd_min_years = jd_experience.get("min_years")
-    jd_max_years = jd_experience.get("max_years")
-    jd_seniority = _as_dict(jd_data.get("role_context", {})).get("seniority")
+        raw_must = jd_skills.get("must_have", [])
+        if raw_must and isinstance(raw_must[0], dict):
+            jd_must_have = [(s["skill"], s.get("weight", "high")) for s in raw_must]
+        else:
+            jd_must_have = [(s, "high") for s in raw_must]
+
+        raw_good = jd_skills.get("good_to_have", [])
+        if raw_good and isinstance(raw_good[0], dict):
+            jd_good_to_have = [s["skill"] for s in raw_good]
+        else:
+            jd_good_to_have = raw_good
+
+    # Use HR experience criteria if provided, otherwise use JD
+    if hr_experience:
+        jd_min_years = hr_experience.get("minimumYears")
+        jd_max_years = None
+        seniority_map = {"junior": "junior", "mid": "mid", "senior": "senior"}
+        jd_seniority = seniority_map.get(hr_experience.get("seniorityLevel"))
+    else:
+        jd_experience = _as_dict(jd_data.get("experience", {}))
+        jd_min_years = jd_experience.get("min_years")
+        jd_max_years = jd_experience.get("max_years")
+        jd_seniority = _as_dict(jd_data.get("role_context", {})).get("seniority")
+
     has_tech = jd_data.get("has_technical_requirements", True)
     scoring_hints = _as_dict(jd_data.get("scoring_hints", {}))
-
-    # -- Override with screening criteria experience if provided ---
-    hr_experience = screening_criteria.get("experience", {})
-    if hr_experience:
-        if hr_experience.get("minimumYears") and not jd_min_years:
-            jd_min_years = hr_experience.get("minimumYears")
-        if hr_experience.get("seniorityLevel") and not jd_seniority:
-            seniority_map = {"junior": "junior", "mid": "mid", "senior": "senior"}
-            jd_seniority = seniority_map.get(hr_experience.get("seniorityLevel"))
 
     # -- Pull resume data ---------------------------------------
     resume_skills = resume_data.get("skills", {})

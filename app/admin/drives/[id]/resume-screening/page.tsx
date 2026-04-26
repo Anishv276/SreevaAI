@@ -31,6 +31,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
 import { ResumeReportHyring, buildHyringResumeViewModel } from "@/components/admin/candidate-profile/resume-report-hyring";
+import { ScreeningSettings, ScreeningConfig } from "@/components/create-drive/screening-settings";
 
 interface ResumeCandidate {
     id: string;
@@ -117,6 +118,8 @@ export default function ResumeScreeningDetailsPage({
     const [uploadPhase, setUploadPhase] = useState<"idle" | "uploading" | "processing" | "done" | "failed">("idle");
     const [uploadProgress, setUploadProgress] = useState({ processed: 0, total: 0 });
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<"results" | "settings">("results");
+    const [screeningCriteria, setScreeningCriteria] = useState<Record<string, any>>({});
     const uploadInputRef = useRef<HTMLInputElement>(null);
 
     const handleShortlist = async (candidateId: string) => {
@@ -203,6 +206,16 @@ export default function ResumeScreeningDetailsPage({
             if (driveRes.ok) {
                 const drive = await driveRes.json();
                 setDriveTitle(String(drive?.title || drive?.role || "Resume Screening"));
+                if (drive?.screeningCriteria) {
+                    try {
+                        const criteria = typeof drive.screeningCriteria === "string"
+                            ? JSON.parse(drive.screeningCriteria)
+                            : drive.screeningCriteria;
+                        setScreeningCriteria(criteria);
+                    } catch {
+                        setScreeningCriteria({});
+                    }
+                }
             }
 
             if (!res.ok) return;
@@ -228,6 +241,20 @@ export default function ResumeScreeningDetailsPage({
         else {
             setSortKey(key);
             setSortDir("desc");
+        }
+    };
+
+    const handleUpdateScreeningCriteria = async () => {
+        try {
+            const res = await fetch(`/api/drives/${driveId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ screeningCriteria: JSON.stringify(screeningCriteria) }),
+            });
+            if (!res.ok) throw new Error("Failed to update screening criteria");
+            toast.success("Screening criteria updated");
+        } catch (err) {
+            toast.error((err as Error).message);
         }
     };
 
@@ -401,9 +428,72 @@ export default function ResumeScreeningDetailsPage({
                 </div>
             </div>
 
+            {/* Tabs */}
+            <div className="bg-white border-b border-gray-200 px-8">
+                <div className="flex gap-8">
+                    <button
+                        onClick={() => setActiveTab("results")}
+                        className={cn(
+                            "py-4 px-1 border-b-2 font-medium text-sm transition-colors",
+                            activeTab === "results"
+                                ? "border-orange-600 text-orange-600"
+                                : "border-transparent text-gray-600 hover:text-gray-900"
+                        )}
+                    >
+                        Screening Results
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("settings")}
+                        className={cn(
+                            "py-4 px-1 border-b-2 font-medium text-sm transition-colors",
+                            activeTab === "settings"
+                                ? "border-orange-600 text-orange-600"
+                                : "border-transparent text-gray-600 hover:text-gray-900"
+                        )}
+                    >
+                        Screening Settings
+                    </button>
+                </div>
+            </div>
+
             {/* Main content */}
             <div className="max-w-full px-8 py-8">
-                {loading ? (
+                {activeTab === "settings" ? (
+                    <div className="bg-white rounded-lg border border-gray-200 p-8">
+                        <div className="mb-6">
+                            <h2 className="text-lg font-semibold text-gray-900 mb-2">Screening Settings</h2>
+                            <p className="text-sm text-gray-600">
+                                Configure AI screening criteria. These settings will be applied when you upload resumes.
+                            </p>
+                        </div>
+                        <ScreeningSettings
+                            config={{ threshold: 60, criteria: screeningCriteria }}
+                            setConfig={(cfg) => {
+                                if (typeof cfg === "function") {
+                                    setScreeningCriteria((prev) => cfg({ threshold: 60, criteria: prev }).criteria || {});
+                                } else {
+                                    setScreeningCriteria(cfg.criteria || {});
+                                }
+                            }}
+                            shortlistMode="automatic"
+                            setShortlistMode={() => {}}
+                        />
+                        <div className="mt-8 flex justify-end gap-3">
+                            <Button
+                                variant="outline"
+                                onClick={() => setActiveTab("results")}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleUpdateScreeningCriteria}
+                                className="bg-orange-600 hover:bg-orange-700 text-white"
+                            >
+                                Save Screening Criteria
+                            </Button>
+                        </div>
+                    </div>
+                ) : loading ? (
                     <div className="flex items-center justify-center py-20">
                         <Loader2 className="h-6 w-6 text-orange-500 animate-spin" />
                     </div>

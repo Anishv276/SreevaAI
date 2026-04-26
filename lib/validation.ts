@@ -69,6 +69,7 @@ export const createDriveSchema = z.object({
   registrationFields: z.array(z.any()).optional(),
   extractedDetails: z.record(z.string(), z.any()).optional(),
   screeningThreshold: z.coerce.number().int().optional(),
+  screeningCriteria: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
   status: z.enum(["ACTIVE", "CLOSED", "DISABLED"]).optional(),
   isPassportRequired: z.boolean().optional(),
   shortlistMode: z.enum(["automatic", "manual"]).optional(),

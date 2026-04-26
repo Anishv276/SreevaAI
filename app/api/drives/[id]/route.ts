@@ -140,7 +140,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.registrationFields !== undefined) updateData.registrationFields = JSON.stringify(data.registrationFields);
         
         if (data.screeningThreshold !== undefined) updateData.screeningThreshold = data.screeningThreshold;
-        
+        if ((data as any).screeningCriteria !== undefined) {
+            const criteria = (data as any).screeningCriteria;
+            updateData.screeningCriteria = typeof criteria === "string" ? criteria : JSON.stringify(criteria);
+        }
+
         // Add new interview fields to PATCH
         
         if (data.interviewLanguage !== undefined) updateData.interviewLanguage = data.interviewLanguage;
