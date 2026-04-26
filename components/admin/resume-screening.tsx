@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +9,7 @@ import {
     Upload, X, FileText, Zap, CheckCircle2, XCircle,
     AlertCircle, TrendingUp, TrendingDown, Minus,
     ChevronUp, ChevronDown, ArrowUpDown, Users, Target,
-    History, RefreshCw, ExternalLink,
+    History, RefreshCw, ExternalLink, ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
@@ -74,27 +75,35 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
                             : "Upload resumes to start AI screening"}
                     </p>
                 </div>
-                <Button
-                    onClick={() => setModalOpen(true)}
-                    className="h-10 px-5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold flex items-center gap-2 shadow-sm"
-                >
-                    <Upload className="h-4 w-4" />
-                    Upload Resumes
-                </Button>
+                <div className="flex items-center gap-3">
+                    {candidates.length > 0 && (
+                        <Link href={`/admin/drives/${driveId}/resume-screening`}>
+                            <Button className="h-10 px-5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold flex items-center gap-2 shadow-sm">
+                                View Details
+                                <ArrowRight className="h-4 w-4" />
+                            </Button>
+                        </Link>
+                    )}
+                    <Button
+                        onClick={() => setModalOpen(true)}
+                        className="h-10 px-5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold flex items-center gap-2 shadow-sm"
+                    >
+                        <Upload className="h-4 w-4" />
+                        Upload Resumes
+                    </Button>
+                </div>
             </div>
 
-            {/* Candidates table */}
+            {/* Empty state or quick summary */}
             {loadingData ? (
                 <div className="space-y-2">
-                    {[...Array(4)].map((_, i) => (
-                        <div key={i} className="h-14 rounded-xl bg-gray-100/60 animate-pulse" />
+                    {[...Array(3)].map((_, i) => (
+                        <div key={i} className="h-12 rounded-lg bg-gray-100/60 animate-pulse" />
                     ))}
                 </div>
             ) : candidates.length === 0 ? (
                 <EmptyState onUpload={() => setModalOpen(true)} />
-            ) : (
-                <CandidatesTable candidates={candidates} batches={batches} />
-            )}
+            ) : null}
 
             {/* Upload + progress modal */}
             <UploadModal
@@ -127,182 +136,6 @@ function EmptyState({ onUpload }: { onUpload: () => void }) {
     );
 }
 
-// ── Candidates table ──────────────────────────────────────────────────────────
-
-function CandidatesTable({ candidates, batches }: { candidates: ResumeCandidate[]; batches: ResumeBatch[] }) {
-    const [sortKey, setSortKey] = useState<SortKey>("aiScore");
-    const [sortDir, setSortDir] = useState<SortDir>("desc");
-    const [activeBatch, setActiveBatch] = useState<string>("all");
-
-    const toggleSort = (key: SortKey) => {
-        if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
-        else { setSortKey(key); setSortDir("desc"); }
-    };
-
-    const filtered = activeBatch === "all" ? candidates : candidates.filter(c => c.bulkBatchId === activeBatch);
-
-    const sorted = [...filtered].sort((a, b) => {
-        let av: any = sortKey === "aiScore" ? (a.aiScore ?? -1) : (a as any)[sortKey];
-        let bv: any = sortKey === "aiScore" ? (b.aiScore ?? -1) : (b as any)[sortKey];
-        if (typeof av === "string") av = av.toLowerCase();
-        if (typeof bv === "string") bv = bv.toLowerCase();
-        return sortDir === "asc" ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
-    });
-
-    const shortlisted = filtered.filter(c => c.resumeStatus?.toLowerCase() === "shortlisted").length;
-    const rejected = filtered.filter(c => c.resumeStatus?.toLowerCase() === "rejected").length;
-    const avgScore = filtered.length
-        ? Math.round(filtered.reduce((s, c) => s + (c.aiScore ?? 0), 0) / filtered.length)
-        : 0;
-
-    const SortIcon = ({ col }: { col: SortKey }) =>
-        sortKey !== col ? <ArrowUpDown className="h-3 w-3 opacity-30" /> :
-            sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />;
-
-    const scoreBadge = (s: number | null) => {
-        if (s === null) return "bg-gray-100 text-gray-400";
-        if (s >= 75) return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200";
-        if (s >= 50) return "bg-amber-50 text-amber-700 ring-1 ring-amber-200";
-        return "bg-red-50 text-red-600 ring-1 ring-red-200";
-    };
-
-    return (
-        <div className="space-y-4">
-            {/* Summary pills */}
-            <div className="flex items-center gap-3 flex-wrap">
-                {[
-                    { label: "Total", value: filtered.length, icon: Users, color: "text-gray-600", bg: "bg-gray-100" },
-                    { label: "Shortlisted", value: shortlisted, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50" },
-                    { label: "Rejected", value: rejected, icon: XCircle, color: "text-red-500", bg: "bg-red-50" },
-                    { label: "Avg Score", value: `${avgScore}%`, icon: Target, color: "text-orange-600", bg: "bg-orange-50" },
-                ].map(s => (
-                    <div key={s.label} className={cn("flex items-center gap-2 px-4 py-2 rounded-xl", s.bg)}>
-                        <s.icon className={cn("h-4 w-4", s.color)} />
-                        <span className={cn("text-sm font-black", s.color)}>{s.value}</span>
-                        <span className="text-xs font-bold text-gray-400">{s.label}</span>
-                    </div>
-                ))}
-
-                {/* Batch filter */}
-                {batches.length > 1 && (
-                    <div className="ml-auto flex items-center gap-2">
-                        <History className="h-3.5 w-3.5 text-gray-400" />
-                        <select
-                            value={activeBatch}
-                            onChange={e => setActiveBatch(e.target.value)}
-                            className="text-xs font-bold text-gray-600 bg-transparent border border-gray-200 rounded-lg px-2 py-1 focus:outline-none"
-                        >
-                            <option value="all">All batches</option>
-                            {batches.map((b, i) => (
-                                <option key={b.id} value={b.id}>
-                                    Batch {batches.length - i} · {new Date(b.createdAt).toLocaleDateString()}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                )}
-            </div>
-
-            {/* Table */}
-            <div className="rounded-2xl border border-gray-100 overflow-hidden bg-white shadow-sm">
-                <div className="overflow-auto">
-                    <table className="w-full text-sm">
-                        <thead className="bg-gray-50 border-b border-gray-100">
-                            <tr>
-                                <th className="px-5 py-3.5 text-left text-[10px] font-black uppercase tracking-widest text-gray-400 w-8">#</th>
-                                <th className="px-5 py-3.5 text-left">
-                                    <button onClick={() => toggleSort("fullName")} className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-gray-700">
-                                        Candidate <SortIcon col="fullName" />
-                                    </button>
-                                </th>
-                                <th className="px-5 py-3.5 text-left">
-                                    <button onClick={() => toggleSort("aiScore")} className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-gray-700">
-                                        Score <SortIcon col="aiScore" />
-                                    </button>
-                                </th>
-                                <th className="px-5 py-3.5 text-left">
-                                    <button onClick={() => toggleSort("resumeStatus")} className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-gray-700">
-                                        Decision <SortIcon col="resumeStatus" />
-                                    </button>
-                                </th>
-                                <th className="px-5 py-3.5 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">AI Reasoning</th>
-                                <th className="px-5 py-3.5 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">File</th>
-                                <th className="px-5 py-3.5 text-left text-[10px] font-black uppercase tracking-widest text-gray-400">Screened</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                            {sorted.map((c, i) => {
-                                const score = c.aiScore ?? null;
-                                const isShortlisted = c.resumeStatus?.toLowerCase() === "shortlisted";
-                                let reasoning = "";
-                                try {
-                                    const r = JSON.parse(c.aiReport || "{}");
-                                    reasoning = r.reasoning || r.summary || r.justification || "";
-                                } catch { }
-
-                                return (
-                                    <tr key={c.id} className="hover:bg-gray-50/70 transition-colors group">
-                                        <td className="px-5 py-4 text-xs font-bold text-gray-300 tabular-nums">{i + 1}</td>
-                                        <td className="px-5 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center shrink-0">
-                                                    <span className="text-[10px] font-black text-white">
-                                                        {c.fullName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)}
-                                                    </span>
-                                                </div>
-                                                <div className="min-w-0">
-                                                    <p className="font-bold text-gray-900 truncate max-w-[180px]">{c.fullName}</p>
-                                                    {c.email && <p className="text-xs text-gray-400 truncate max-w-[180px]">{c.email}</p>}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <span className={cn("text-sm font-black tabular-nums px-2.5 py-1 rounded-lg", scoreBadge(score))}>
-                                                    {score !== null ? `${score}%` : "—"}
-                                                </span>
-                                                {score !== null && (
-                                                    score >= 75 ? <TrendingUp className="h-3.5 w-3.5 text-emerald-500" /> :
-                                                        score >= 50 ? <Minus className="h-3.5 w-3.5 text-amber-400" /> :
-                                                            <TrendingDown className="h-3.5 w-3.5 text-red-400" />
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <span className={cn(
-                                                "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider",
-                                                isShortlisted
-                                                    ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-                                                    : "bg-red-50 text-red-600 ring-1 ring-red-200"
-                                            )}>
-                                                {isShortlisted
-                                                    ? <><CheckCircle2 className="h-3 w-3" /> Shortlisted</>
-                                                    : <><XCircle className="h-3 w-3" /> Rejected</>}
-                                            </span>
-                                        </td>
-                                        <td className="px-5 py-4 max-w-[240px]">
-                                            {reasoning
-                                                ? <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">{reasoning}</p>
-                                                : <span className="text-xs text-gray-300">—</span>}
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <span className="text-xs text-gray-400 font-medium truncate max-w-[120px] block">{c.fileName}</span>
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <span className="text-xs text-gray-400">
-                                                {new Date(c.createdAt).toLocaleDateString()}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    );
-}
 
 // ── Upload modal ──────────────────────────────────────────────────────────────
 

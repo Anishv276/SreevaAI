@@ -45,10 +45,10 @@ async function extractResume(
 }
 
 /**
- * Step 2 – Score the structured resume against the JD.
+ * Step 2 – Score the structured resume against the JD and screening criteria.
  * Calls: python scripts/extract_pdf.py <json_path> SCORE [model]
  * Input JSON: { resume: structuredData, jd: structuredJD,
- *               resume_raw_text, jd_raw_text, threshold }
+ *               resume_raw_text, jd_raw_text, threshold, screening_criteria }
  * Returns { data: scoreReport, usage }
  */
 async function scoreResume(
@@ -57,17 +57,21 @@ async function scoreResume(
     resumeRawText: string,
     jdRawText: string,
     threshold: number,
-    model: string
+    model: string,
+    screeningCriteria?: Record<string, any>
 ): Promise<{ data: Record<string, any>; usage: any }> {
     const tmpJson = join(tmpdir(), `score_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
     try {
-        const payload = {
+        const payload: any = {
             resume: structuredResume,
             jd: structuredJD,
             resume_raw_text: resumeRawText,
             jd_raw_text: jdRawText,
             threshold,
         };
+        if (screeningCriteria && Object.keys(screeningCriteria).length > 0) {
+            payload.screening_criteria = screeningCriteria;
+        }
         await writeFile(tmpJson, JSON.stringify(payload));
         const raw = await runPython(["scripts/extract_pdf.py", tmpJson, "SCORE", model]);
         const parsed = JSON.parse(raw);
@@ -190,6 +194,8 @@ async function processBatch(
         // Parse the drive's extracted JD once — reuse for every resume
         const structuredJD = safeJsonParse(drive.extractedDetails, {});
         const jdRawText: string = drive.description || "";
+        // Parse screening criteria
+        const screeningCriteria = safeJsonParse(drive.screeningCriteria, {});
 
         for (let i = 0; i < files.length; i += CHUNK_SIZE) {
             const chunk = files.slice(i, i + CHUNK_SIZE);
@@ -204,7 +210,8 @@ async function processBatch(
                         jdRawText,
                         threshold,
                         orgModel,
-                        drive.orgId!
+                        drive.orgId!,
+                        screeningCriteria
                     )
                 )
             );
@@ -256,7 +263,8 @@ async function processOneResume(
     jdRawText: string,
     threshold: number,
     model: string,
-    orgId: string
+    orgId: string,
+    screeningCriteria?: Record<string, any>
 ): Promise<void> {
     const tmpPdf = join(
         tmpdir(),
@@ -285,14 +293,15 @@ async function processOneResume(
             }).catch(() => {});
         }
 
-        // ── Step 2: Score against JD ──
+        // ── Step 2: Score against JD and screening criteria ──
         const { data: aiResult, usage: scoreUsage } = await scoreResume(
             structuredResume,
             structuredJD,
             resumeRawText,
             jdRawText,
             threshold,
-            model
+            model,
+            screeningCriteria
         );
 
         // Record scoring billing

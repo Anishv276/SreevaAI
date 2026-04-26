@@ -976,6 +976,8 @@ function CreateDriveForm() {
 
             screeningThreshold: weights?.threshold || 0,
 
+            screeningCriteria: JSON.stringify(weights?.criteria || {}),
+
             shortlistMode: shortlistMode,
 
             aiScreening: {
@@ -1238,6 +1240,8 @@ function CreateDriveForm() {
             extractedDetails: currentFormData.extractedDetails || {},
 
             screeningThreshold: weights?.threshold || 0,
+
+            screeningCriteria: JSON.stringify(weights?.criteria || {}),
 
             shortlistMode: shortlistMode,
 

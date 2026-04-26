@@ -355,7 +355,7 @@ def _as_dict(value):
     return {}
 
 
-def compute_score(jd_data, resume_data, threshold=70):
+def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     """
     Deterministic scoring engine. Same input = same score, every time.
     LLM never touches this function.
@@ -368,7 +368,10 @@ def compute_score(jd_data, resume_data, threshold=70):
       Domain fit          : 10 pts  (JD scoring hints, domain skills, non-tech roles)
 
     threshold: per-drive value from DB. Scores >= threshold = Shortlisted.
+    screening_criteria: optional HR-defined screening criteria from the form
     """
+    if screening_criteria is None:
+        screening_criteria = {}
 
     # -- Pull JD data -------------------------------------------
     jd_skills = jd_data.get("skills", {})
@@ -385,12 +388,40 @@ def compute_score(jd_data, resume_data, threshold=70):
     else:
         jd_good_to_have = raw_good
 
+    # -- Merge screening criteria skills if provided ---
+    hr_criteria_skills = screening_criteria.get("skills", {})
+    if hr_criteria_skills:
+        hr_required = hr_criteria_skills.get("required", [])
+        if hr_required and isinstance(hr_required[0], dict):
+            for s in hr_required:
+                skill_name = s.get("name", "")
+                if skill_name:
+                    weight = s.get("weight", "high") if s.get("weight") else "high"
+                    if not any(sk[0].lower() == skill_name.lower() for sk in jd_must_have):
+                        jd_must_have.append((skill_name, weight))
+
+        hr_nice = hr_criteria_skills.get("niceToHave", [])
+        if hr_nice:
+            for s in hr_nice:
+                skill_name = s.get("name", "") if isinstance(s, dict) else s
+                if skill_name and not any(sk.lower() == skill_name.lower() for sk in jd_good_to_have):
+                    jd_good_to_have.append(skill_name)
+
     jd_experience = _as_dict(jd_data.get("experience", {}))
     jd_min_years = jd_experience.get("min_years")
     jd_max_years = jd_experience.get("max_years")
     jd_seniority = _as_dict(jd_data.get("role_context", {})).get("seniority")
     has_tech = jd_data.get("has_technical_requirements", True)
     scoring_hints = _as_dict(jd_data.get("scoring_hints", {}))
+
+    # -- Override with screening criteria experience if provided ---
+    hr_experience = screening_criteria.get("experience", {})
+    if hr_experience:
+        if hr_experience.get("minimumYears") and not jd_min_years:
+            jd_min_years = hr_experience.get("minimumYears")
+        if hr_experience.get("seniorityLevel") and not jd_seniority:
+            seniority_map = {"junior": "junior", "mid": "mid", "senior": "senior"}
+            jd_seniority = seniority_map.get(hr_experience.get("seniorityLevel"))
 
     # -- Pull resume data ---------------------------------------
     resume_skills = resume_data.get("skills", {})
@@ -697,6 +728,67 @@ def compute_score(jd_data, resume_data, threshold=70):
     # -- 7. Hard rejection rules -------------------------------
     hard_rejected = False
     rejection_reasons = []
+
+    # Check screening criteria education requirements
+    hr_education = screening_criteria.get("education", {})
+    if hr_education:
+        required_degree = hr_education.get("degreeLevel")
+        if required_degree:
+            degree_hierarchy = {
+                "high_school": 1,
+                "bachelor": 2,
+                "master": 3,
+                "phd": 4
+            }
+            candidate_degree = resume_data.get("education", {}).get("highest_degree", "").lower()
+            if candidate_degree:
+                candidate_degree = candidate_degree.replace("'s", "").replace(" degree", "").strip()
+                if "bachelor" in candidate_degree or "b.s." in candidate_degree or "b.a." in candidate_degree:
+                    candidate_degree = "bachelor"
+                elif "master" in candidate_degree or "m.s." in candidate_degree:
+                    candidate_degree = "master"
+                elif "phd" in candidate_degree or "phd" in candidate_degree:
+                    candidate_degree = "phd"
+                elif "high school" in candidate_degree or "hs" in candidate_degree:
+                    candidate_degree = "high_school"
+
+                required_level = degree_hierarchy.get(required_degree, 0)
+                candidate_level = degree_hierarchy.get(candidate_degree, 0)
+                if candidate_level < required_level:
+                    hard_rejected = True
+                    rejection_reasons.append(
+                        f"Education requirement not met: requires {required_degree}, candidate has {candidate_degree}"
+                    )
+
+    # Check screening criteria location requirements
+    hr_location = screening_criteria.get("location", {})
+    if hr_location:
+        required_locations = hr_location.get("required", [])
+        remote_ok = hr_location.get("remoteOk", False)
+        work_permit_required = hr_location.get("workPermitRequired", False)
+
+        # If specific locations required and not remote OK, check location match
+        if required_locations and not remote_ok:
+            candidate_location = resume_data.get("location", {})
+            candidate_city = candidate_location.get("city", "")
+            candidate_country = candidate_location.get("country", "")
+
+            location_matches = any(
+                loc.lower() in (candidate_city.lower(), candidate_country.lower())
+                for loc in required_locations
+            )
+            if not location_matches:
+                hard_rejected = True
+                rejection_reasons.append(
+                    f"Location requirement not met: requires {', '.join(required_locations)}"
+                )
+
+        # Check work permit requirement
+        if work_permit_required:
+            candidate_permit = resume_data.get("work_authorization", "")
+            if not candidate_permit or "authorized" not in candidate_permit.lower():
+                hard_rejected = True
+                rejection_reasons.append("Work permit/authorization required but not found in resume")
 
     if jd_must_have:
         missing_ratio = len(missing_must) / len(jd_must_have)
@@ -1627,9 +1719,10 @@ Resume:
         jd_raw_text = raw.get("jd_raw_text", "")
         resume_raw_text = raw.get("resume_raw_text", "")
         threshold = int(raw.get("threshold", 70))
+        screening_criteria = raw.get("screening_criteria", {}) or {}
 
         # -- 1. DETERMINISTIC SCORING (Python) ----------------
-        score_result = compute_score(jd_data, resume_data, threshold)
+        score_result = compute_score(jd_data, resume_data, threshold, screening_criteria)
 
         # -- 2. HIGH-FIDELITY AI EVALUATION -------------------
         print(

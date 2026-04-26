@@ -146,6 +146,7 @@ model Drive {
   salary             String?
   skills             String?
   extractedDetails   String?       @default("{}")
+  screeningCriteria  String?       @default("{}")
   interviewLanguage  String?       @default("English")
   interviewTime      Int?
   proctoringLevel    String?       @default("Medium")

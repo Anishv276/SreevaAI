@@ -1,4 +1,4 @@
-ï»¿
+
 
 "use client";
 
@@ -478,7 +478,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                     </h1>
 
-                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name} Â· {formatOrgPlan(org?.plan) || "Enterprise"} Panel</p>
+                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name} · {formatOrgPlan(org?.plan) || "Enterprise"} Panel</p>
                                 </div>
 
                             </div>
@@ -739,7 +739,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                         <div className="flex items-center justify-between px-12 py-8 mt-4">
 
-                             <p className="text-gray-300 text-[10px] font-black uppercase tracking-[0.2em] italic">SHOWING {candidates.length} CANDIDATES Â· PAGE {page} OF {totalPages || 1}</p>
+                             <p className="text-gray-300 text-[10px] font-black uppercase tracking-[0.2em] italic">SHOWING {candidates.length} CANDIDATES · PAGE {page} OF {totalPages || 1}</p>
 
                              <div className="flex items-center gap-4">
 

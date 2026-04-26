@@ -20,7 +20,11 @@ import {
     Upload,
     Settings,
     Lock,
-    Rocket
+    Rocket,
+    Sparkles,
+    CalendarDays,
+    Target,
+    ArrowUpRight,
 } from "lucide-react";
 import {
     Select,
@@ -148,16 +152,16 @@ export default function DrivesPage() {
     };
 
     return (
-        <div className="space-y-8 pb-12 animate-in fade-in duration-700">
+        <div className="space-y-7 pb-10 animate-in fade-in duration-700">
             {/* Header */}
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-10">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between mb-8">
                 <div className="flex items-center gap-5 group">
-                    <div className="h-14 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)]" />
+                    <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)]" />
                     <div className="space-y-1">
-                        <h1 className="text-4xl font-bold text-gray-900 tracking-tight">Drives</h1>
+                        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 tracking-tight">Drives</h1>
                         <div className="flex items-center gap-3">
                             <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
-                            <p className="text-gray-400 font-bold text-[12px] uppercase tracking-widest">{pagination.total || 0} Total Campaigns</p>
+                            <p className="text-gray-400 font-bold text-[11px] uppercase tracking-widest">{pagination.total || 0} Total Campaigns</p>
                         </div>
                     </div>
                 </div>
@@ -190,13 +194,13 @@ export default function DrivesPage() {
             </div>
 
             {/* Filters */}
-            <div className="bg-white/40 backdrop-blur-xl p-3 rounded-[2rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)]">
+            <div className="bg-white/40 backdrop-blur-xl p-3 rounded-[1.75rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)]">
                 <div className="flex flex-col lg:flex-row items-center justify-between gap-6 w-full">
                     <div className="relative flex-1 max-w-2xl w-full group/search">
                         <Search className="absolute left-4 top-3.5 h-4 w-4 text-gray-400" />
                         <Input
                             placeholder="Search by role, department or title..."
-                            className="pl-11 h-12 border-transparent bg-white/60 rounded-2xl focus:bg-white focus:border-orange-200 focus:ring-8 focus:ring-orange-50/50 transition-all font-bold text-sm"
+                            className="pl-11 h-11 border-transparent bg-white/60 rounded-2xl focus:bg-white focus:border-orange-200 focus:ring-8 focus:ring-orange-50/50 transition-all font-bold text-sm"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
@@ -204,7 +208,7 @@ export default function DrivesPage() {
                     <div className="flex items-center gap-4 w-full md:w-auto">
                         <DateFilter value={timeline} onChange={setTimeline} />
                         <Select value={statusFilter} onValueChange={setStatusFilter}>
-                            <SelectTrigger className="h-12 min-w-[140px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-medium">
+                            <SelectTrigger className="h-11 min-w-[140px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-medium">
                                 <div className="flex items-center gap-2">
                                     <Filter className="h-4 w-4" />
                                     <SelectValue placeholder="Status" />
@@ -219,7 +223,7 @@ export default function DrivesPage() {
                         </Select>
 
                         <Select value={typeFilter} onValueChange={setTypeFilter}>
-                            <SelectTrigger className="h-12 min-w-[140px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-medium">
+                            <SelectTrigger className="h-11 min-w-[140px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-medium">
                                 <SelectValue placeholder="Job Type" />
                             </SelectTrigger>
                             <SelectContent className="rounded-2xl">
@@ -233,7 +237,7 @@ export default function DrivesPage() {
             </div>
 
             {/* Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 justify-items-start">
                 {isLoading ? (
                     <div className="col-span-full flex flex-col items-center justify-center py-24">
                         <Loader2 className="h-10 w-10 text-orange-500 animate-spin mb-3" />
@@ -274,40 +278,46 @@ export default function DrivesPage() {
                     jobs.map((drive) => {
                         const effectiveExpired = drive.deadline && new Date(drive.deadline) < new Date();
                         let statusLabel = "Active";
-                        let statusColor = "text-green-600";
                         let dotColor = "bg-green-500 animate-pulse";
+                        const applicants = Number(drive.applicants || 0);
+                        const createdAt = drive.createdAt ? new Date(drive.createdAt).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                        }) : "Unknown";
 
                         if (drive.status === "CLOSED") {
                             statusLabel = "Closed";
-                            statusColor = "text-red-600";
                             dotColor = "bg-red-500";
                         } else if (effectiveExpired) {
                             statusLabel = "Expired";
-                            statusColor = "text-orange-600";
                             dotColor = "bg-orange-500";
                         }
 
                         return (
                             <div
                                 key={drive.id}
-                                className="group cursor-pointer"
+                                className="group cursor-pointer w-full max-w-[400px]"
                             >
-                                <div className="h-full bg-white/50 backdrop-blur-xl rounded-2xl border border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.05)] hover:shadow-[0_12px_40px_rgba(0,0,0,0.1)] transition-all duration-300 overflow-hidden hover:border-white/80 flex flex-col">
+                                <div className="relative h-full overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-orange-200 hover:shadow-[0_20px_50px_rgba(15,23,42,0.12)] flex flex-col">
+                                    <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-400 via-amber-400 to-orange-500" />
+                                    <div className="absolute right-0 top-0 h-28 w-28 rounded-bl-full bg-gradient-to-br from-orange-50 to-transparent opacity-70" />
+
                                     {/* Card Header */}
-                                    <div className="p-6 border-b border-white/20">
-                                        <div className="flex items-start justify-between mb-4">
-                                            <div className="h-10 w-10 rounded-lg bg-orange-50/80 flex items-center justify-center text-orange-500 border border-orange-100/30 group-hover:scale-110 transition-transform">
+                                    <div className="relative p-5 pb-4">
+                                        <div className="mb-5 flex items-start justify-between gap-4">
+                                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-orange-100 bg-orange-50 text-orange-600 shadow-[0_6px_20px_rgba(249,115,22,0.12)] transition-transform group-hover:scale-105">
                                                 <Briefcase className="h-5 w-5" />
                                             </div>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="secondary" size="icon" className="h-8 w-8 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors opacity-0 group-hover:opacity-100">
+                                                    <Button variant="secondary" size="icon" className="h-9 w-9 rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:text-slate-700">
                                                         <MoreHorizontal className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="w-[200px] p-2 rounded-2xl bg-white/90 backdrop-blur-2xl border border-white/60 shadow-[0_20px_60px_rgba(0,0,0,0.1)]">
+                                                <DropdownMenuContent align="end" className="w-[220px] p-2 rounded-2xl bg-white/95 backdrop-blur-2xl border border-slate-200 shadow-[0_20px_60px_rgba(0,0,0,0.12)]">
                                                     <DropdownMenuItem
-                                                        className="rounded-xl py-2.5 px-3 focus:bg-gray-50 text-gray-700 font-medium text-[13px]"
+                                                        className="rounded-xl py-2.5 px-3 focus:bg-orange-50 text-slate-700 font-medium text-[13px]"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             router.push(`/admin/create-drive?id=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`);
@@ -316,7 +326,7 @@ export default function DrivesPage() {
                                                         <Edit className="h-4 w-4 mr-2" />
                                                         Edit Details
                                                     </DropdownMenuItem>
-                                                    <div className="h-px bg-gray-100 my-1.5 mx-2" />
+                                                    <div className="h-px bg-slate-100 my-1.5 mx-2" />
                                                     <DropdownMenuItem
                                                         className="rounded-xl py-2.5 px-3 focus:bg-red-50 text-red-600 font-medium text-[13px]"
                                                         onClick={(e) => {
@@ -332,57 +342,90 @@ export default function DrivesPage() {
                                             </DropdownMenu>
                                         </div>
 
-                                        <h3 className="text-[16px] font-bold text-gray-900 mb-2 truncate group-hover:text-[#F97316] transition-colors">{drive.title}</h3>
-                                        <div className="flex items-center gap-2">
-                                            <div className={cn("h-2 w-2 rounded-full", dotColor)} />
-                                            <span className={cn("text-[12px] font-bold uppercase tracking-wider", statusColor)}>{statusLabel}</span>
+                                        <h3 className="text-[17px] font-extrabold leading-snug tracking-tight text-slate-950 mb-2 line-clamp-2 group-hover:text-orange-600 transition-colors">
+                                            {drive.title}
+                                        </h3>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                                                <div className={cn("h-2 w-2 rounded-full", dotColor)} />
+                                                {statusLabel}
+                                            </span>
+                                            {effectiveExpired && drive.status !== "CLOSED" && (
+                                                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-amber-700">
+                                                    <Sparkles className="h-3.5 w-3.5" />
+                                                    Expiring
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
 
                                     {/* Card Body */}
-                                    <div className="p-6 space-y-4 flex-1">
-                                        <div className="space-y-2">
-                                            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Role</p>
-                                            <p className="text-[14px] font-medium text-gray-700">{drive.role || "Not specified"}</p>
+                                    <div className="relative px-5 pb-4 space-y-3.5 flex-1">
+                                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
+                                            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400 mb-2">Role</p>
+                                            <p className="text-[13px] font-semibold text-slate-800 leading-relaxed line-clamp-2">
+                                                {drive.role || "Not specified"}
+                                            </p>
                                         </div>
 
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="space-y-2">
-                                                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Candidates</p>
-                                                <p className="text-[18px] font-bold text-gray-900">{drive.applicants || 0}</p>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_2px_10px_rgba(15,23,42,0.03)]">
+                                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400 mb-2">
+                                                    <Users className="h-3.5 w-3.5 text-orange-500" />
+                                                    Candidates
+                                                </div>
+                                                <p className="text-[22px] font-black text-slate-950 leading-none">{applicants}</p>
                                             </div>
-                                            <div className="space-y-2">
-                                                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Deadline</p>
-                                                <p className="text-[13px] font-medium text-gray-700">{drive.deadline ? new Date(drive.deadline).toLocaleDateString() : "None"}</p>
+                                            <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_2px_10px_rgba(15,23,42,0.03)]">
+                                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400 mb-2">
+                                                    <CalendarDays className="h-3.5 w-3.5 text-orange-500" />
+                                                    Deadline
+                                                </div>
+                                                <p className="text-[14px] font-bold text-slate-800 leading-tight">
+                                                    {drive.deadline ? new Date(drive.deadline).toLocaleDateString() : "None"}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
+                                                    <Target className="h-3.5 w-3.5 text-orange-500" />
+                                                    Drive Snapshot
+                                                </div>
+                                                <span className="text-[11px] font-semibold text-slate-500">{createdAt}</span>
                                             </div>
                                         </div>
                                     </div>
 
                                     {/* Card Footer */}
-                                    <div className="p-6 border-t border-white/20 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <Button
-                                            size="sm"
-                                            className="flex-1 h-10 text-[12px] font-bold rounded-lg bg-[#F97316] hover:bg-orange-600 text-white uppercase tracking-wider gap-2"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                router.push(`/admin/drives/${drive.id}${orgId ? `?orgId=${orgId}` : ''}`);
-                                            }}
-                                        >
-                                            <Briefcase className="h-4 w-4" />
-                                            Details
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-10 px-3 text-[12px] font-bold rounded-lg border-gray-200 text-gray-700 uppercase tracking-wider gap-2"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                router.push(`/admin/candidates?driveId=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`);
-                                            }}
-                                        >
-                                            <Users className="h-4 w-4" />
-                                            View
-                                        </Button>
+                                    <div className="relative p-5 pt-0 mt-auto">
+                                        <div className="mb-3 h-px bg-gradient-to-r from-slate-200 via-slate-100 to-transparent" />
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <Button
+                                                size="sm"
+                                                className="h-10 rounded-xl bg-slate-950 text-white font-bold shadow-[0_10px_20px_rgba(15,23,42,0.14)] transition-all hover:bg-orange-600 hover:shadow-[0_14px_30px_rgba(249,115,22,0.22)]"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    router.push(`/admin/drives/${drive.id}${orgId ? `?orgId=${orgId}` : ''}`);
+                                                }}
+                                            >
+                                                View Details
+                                                <ArrowUpRight className="ml-2 h-4 w-4" />
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="h-10 rounded-xl border-slate-300 bg-white font-bold text-slate-700 shadow-sm transition-all hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    router.push(`/admin/candidates?driveId=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`);
+                                                }}
+                                            >
+                                                View
+                                                <Users className="ml-2 h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

@@ -993,7 +993,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                             {launchRecoveryMessage}
                                         </h3>
                                         <p className="mt-4 text-sm font-medium text-gray-500">
-                                            We‚Äôll return you to the hardware check screen in a moment.
+                                            Weíll return you to the hardware check screen in a moment.
                                         </p>
                                     </div>
                                 </motion.div>
@@ -1377,7 +1377,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                     {/* Strip the Deepgram note for display brevity if present */}
                                     {mouseViolationAlert.reason.split(" [Deepgram")[0]}
                                     {mouseViolationAlert.severity === "high" && (
-                                        <span className="ml-1 text-red-400">¬∑ Deepgram Nova-3 corroborated</span>
+                                        <span className="ml-1 text-red-400">∑ Deepgram Nova-3 corroborated</span>
                                     )}
                                 </p>
                             </div>
@@ -2482,7 +2482,7 @@ function InterviewRoomContent({
                                                             {group.isCandidate ? (candidateName || "Candidate") : "Ishitha"}
                                                         </span>
                                                         {!isGroupFinal && (
-                                                            <span className="text-[10px] text-zinc-600 animate-pulse">‚Ä¢‚Ä¢‚Ä¢</span>
+                                                            <span className="text-[10px] text-zinc-600 animate-pulse">ïïï</span>
                                                         )}
                                                     </div>
                                                     <StreamingText
@@ -2550,7 +2550,7 @@ function InterviewRoomContent({
 
                 {/* Middle: Transcript + End Interview Button */}
                 <div className="flex flex-col items-center gap-3 ">
-                    {/* Live transcript ‚Äî left-to-right fade, full sentence visible */}
+                    {/* Live transcript ó left-to-right fade, full sentence visible */}
                     <div className="hidden">
                         <AnimatePresence mode="wait">
                             {groupedTranscriptions.length > 0 && (() => {
@@ -2584,7 +2584,7 @@ function InterviewRoomContent({
                                             {text}
                                         </span>
                                         {!isFinal && (
-                                            <span className="text-zinc-600 animate-pulse shrink-0 text-[10px]">‚óè</span>
+                                            <span className="text-zinc-600 animate-pulse shrink-0 text-[10px]">?</span>
                                         )}
                                     </motion.div>
                                 );
