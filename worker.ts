@@ -444,7 +444,44 @@ const backupWorker = new Worker(
     try {
       // 1. Fetch data from core tables
       const users = await prisma.user.findMany();
-      const drives = await prisma.drive.findMany();
+      const drives = await prisma.drive.findMany({
+        select: {
+          id: true,
+          title: true,
+          role: true,
+          department: true,
+          description: true,
+          type: true,
+          screeningThreshold: true,
+          creatorId: true,
+          createdAt: true,
+          updatedAt: true,
+          positions: true,
+          workMode: true,
+          experience: true,
+          responsibilities: true,
+          requirements: true,
+          salary: true,
+          skills: true,
+          extractedDetails: true,
+          interviewLanguage: true,
+          interviewTime: true,
+          proctoringLevel: true,
+          interviewQuestions: true,
+          jdFileName: true,
+          jdPreviewUrl: true,
+          orgId: true,
+          shortlistMode: true,
+          location: true,
+          aiName: true,
+          cartesiaVoiceId: true,
+          sarvamVoice: true,
+          sarvamModel: true,
+          googleModel: true,
+          googleVoiceName: true,
+          ttsProvider: true,
+        },
+      });
       const applications = await prisma.application.findMany();
       const interviews = await prisma.interview.findMany();
 

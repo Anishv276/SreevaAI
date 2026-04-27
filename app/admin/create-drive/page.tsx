@@ -568,220 +568,124 @@ function CreateDriveForm() {
 
             if (res.ok) {
 
-                const responseData = await res.json();
+                const responseData = await res.json().catch(() => null);
+                if (!responseData) {
+                    console.error("Extraction error response:", {});
+                    setAnalysisError("Failed to extract JD details.");
+                    return;
+                }
 
                 const { data: extracted, text, url: r2Url } = responseData;
 
+                if (!extracted && !text && !r2Url) {
+                    console.error("Extraction error response:", responseData);
+                    setAnalysisError(responseData.error || "Failed to extract JD details.");
+                    return;
+                }
+
                 console.log("Analysis success:", extracted);
 
-                // Map the new structured schema to our form data
-
+                // Map extracted JD schema to form fields
                 setFormData((prev: any) => {
+                    const experience = extracted?.experience;
+                    const skills = extracted?.skills;
+                    const salary = extracted?.salary;
 
-                    const experience = extracted.experience;
-
-                    const skills = extracted.skills;
-
-                    const salary = extracted.salary;
-
-
-
-                    //  SKILLS MAPPING 
-
-                    // Extract 'skill' string from new object schema
-
-                    const mustHaveArr = Array.isArray(skills?.must_have)
-
-                        ? skills.must_have.map((s: any) => typeof s === 'object' ? s.skill : s)
-
+                    // Skills: must_have is [{skill, weight}], good_to_have is [string]
+                    const mustHaveArr: string[] = Array.isArray(skills?.must_have)
+                        ? skills.must_have.map((s: any) => typeof s === 'object' ? s.skill : s).filter(Boolean)
                         : [];
-
-                    const goodToHaveArr = Array.isArray(skills?.good_to_have)
-
-                        ? skills.good_to_have.map((s: any) => typeof s === 'object' ? s.skill : s)
-
+                    const goodToHaveArr: string[] = Array.isArray(skills?.good_to_have)
+                        ? skills.good_to_have.map((s: any) => typeof s === 'string' ? s : s?.skill).filter(Boolean)
                         : [];
-
                     const allSkills = [...mustHaveArr, ...goodToHaveArr]
-                        .filter(Boolean)
                         .map(s => s.startsWith("•") ? s : `• ${s}`)
                         .join("\n");
 
+                    // Description: use role_summary, fallback to raw extracted text
+                    const desc = extracted?.role_summary || text || prev.description;
 
-
-                    //  DESCRIPTION MAPPING 
-
-                    const desc = extracted.role_summary || extracted.summary || extracted.description || extracted.job_description || text || prev.description;
-
-
-
-                    //  EXPERIENCE MAPPING 
-
-                    // Convert numeric years to readable string
-
+                    // Experience: convert to readable string e.g. "2+" or "2–5"
                     const minExp = experience?.min_years;
-
                     const maxExp = experience?.max_years;
+                    const expText = typeof minExp === 'number'
+                        ? `${minExp}${maxExp ? `–${maxExp}` : "+"}`
+                        : prev.experience;
 
-                    let expText = prev.experience;
-
-                    if (typeof minExp === 'number') {
-
-                        expText = `${minExp}${maxExp ? `–${maxExp}` : "+"}`;
-
-                    }
-
-
-
-                    //  SALARY MAPPING 
-
-                    // Convert raw numbers (500000) back to LPA (5) for the UI if possible
-
-                    // Or just use a clean string. The user wants "{amount} {currency} LPA"
-
+                    // Salary: convert large INR numbers to LPA
                     const salaryMin = salary?.min;
-
                     const salaryMax = salary?.max;
-
                     const currency = salary?.currency || "INR";
-
                     let salaryText = prev.salary;
-
-
-
                     if (typeof salaryMin === 'number') {
-
-                        // Convert to LPA if it's a large number, or keep if already small
-
-                        const minLPA = salaryMin > 1000 ? (salaryMin / 100000).toFixed(1).replace(/\.0$/, "") : salaryMin;
-
-                        const maxLPA = salaryMax ? (salaryMax > 1000 ? (salaryMax / 100000).toFixed(1).replace(/\.0$/, "") : salaryMax) : null;
-
-                        salaryText = `${minLPA}${maxLPA ? `–${maxLPA}` : ""} LPA ${currency}`;
-
+                        const toLPA = (n: number) => n > 1000 ? (n / 100000).toFixed(1).replace(/\.0$/, "") : String(n);
+                        salaryText = `${toLPA(salaryMin)}${salaryMax ? `–${toLPA(salaryMax)}` : ""} LPA ${currency}`;
                     }
 
+                    // Responsibilities: flat string array from new schema
+                    const resp = Array.isArray(extracted?.responsibilities) && extracted.responsibilities.length > 0
+                        ? extracted.responsibilities.map((r: string) => r.startsWith("•") ? r : `• ${r}`).join("\n")
+                        : prev.responsibilities;
 
-
-                    //  RESPONSIBILITIES & REQUIREMENTS 
-                    // Use new 'responsibilities_flat' if available
-                    const respArr = extracted.responsibilities || [];
-                    const resp = Array.isArray(respArr)
-                        ? respArr.map((r: any) => {
-                            const s = typeof r === 'object' ? r.task : r;
-                            return s.startsWith("•") ? s : `• ${s}`;
-                        }).join("\n")
-                        : (typeof respArr === 'string' ? respArr : (prev.responsibilities || ""));
-
-                    //  REQUIREMENTS 
-                    // Use extracted requirements; synthesize from education + skills as robust fallback
-                    let reqArr: string[] = [];
-                    if (Array.isArray(extracted.requirements)) {
-                        reqArr = [...extracted.requirements];
-                    }
-                    // 1. Ensure Education is mentioned
-
-                    const eduReq = extracted.education?.required;
-
-                    if (eduReq && !reqArr.some(r => r.toLowerCase().includes(eduReq.toLowerCase().split(' ')[0]))) {
-
+                    // Requirements: flat string array + education fallback
+                    let reqArr: string[] = Array.isArray(extracted?.requirements) ? [...extracted.requirements] : [];
+                    const eduReq = extracted?.education?.required;
+                    if (eduReq && !reqArr.some(r => r.toLowerCase().includes(eduReq.toLowerCase().slice(0, 10)))) {
                         reqArr.unshift(eduReq);
-
                     }
-
-
-
-                    // 2. Ensure Experience is mentioned if not present
-
-                    if (typeof experience?.min_years === 'number' && !reqArr.some(r => r.includes(String(experience.min_years)) && r.toLowerCase().includes("year"))) {
-
-                        reqArr.push(`${experience.min_years}+ years of professional experience in ${extracted.job_title || 'relevant domain'}`);
-
+                    if (typeof minExp === 'number' && !reqArr.some(r => r.includes(String(minExp)) && r.toLowerCase().includes("year"))) {
+                        reqArr.push(`${minExp}+ years of experience in ${extracted?.job_title || 'relevant domain'}`);
                     }
-
-
-
-                    // 3. Add Deal Breakers as requirements
-
-                    if (Array.isArray(extracted.deal_breakers)) {
-
-                        extracted.deal_breakers.forEach((db: any) => {
-
-                            const cond = typeof db === 'object' ? db.condition : db;
-
-                            if (cond && !reqArr.includes(cond)) reqArr.push(cond);
-
-                        });
-
-                    }
-
-
-
-                    // 4. Fallback: Proficiency in core skills
-
-                    if (reqArr.length < 3 && mustHaveArr.length > 0) {
-
+                    if (reqArr.length < 2 && mustHaveArr.length > 0) {
                         mustHaveArr.slice(0, 3).forEach((s: string) => {
-
-                            const skillStr = `Deep proficiency in ${s}`;
-
-                            if (!reqArr.includes(skillStr)) reqArr.push(skillStr);
-
+                            const str = `Proficiency in ${s}`;
+                            if (!reqArr.includes(str)) reqArr.push(str);
                         });
-
                     }
-
-
-
                     const req = reqArr.length > 0
                         ? reqArr.map(r => r.startsWith("•") ? r : `• ${r}`).join("\n")
-                        : (prev.requirements || "");
-
-
+                        : prev.requirements;
 
                     return {
-
                         ...prev,
-
-                        title: `${extracted.job_title || prev.role || "New"} Recruitment Drive`,
-
-                        role: extracted.job_title || prev.role || "",
-
+                        title: `${extracted?.job_title || prev.role || "New"} Recruitment Drive`,
+                        role: extracted?.job_title || prev.role || "",
                         description: desc,
-
                         skills: allSkills || prev.skills,
-
                         salary: salaryText,
-
                         experience: expText,
-
-                        department: extracted.department || prev.department,
-
-                        workMode: extracted.work_type || prev.workMode,
-
-                        employmentType: extracted.employment_type || prev.employmentType,
-
+                        department: extracted?.department || prev.department,
+                        workMode: extracted?.work_type || prev.workMode,
+                        employmentType: extracted?.employment_type || prev.employmentType,
                         responsibilities: resp,
-
                         requirements: req,
-
                         extractedDetails: extracted,
-
-                        // Keep the R2 URL if available, otherwise keep the existing blob URL for in-session preview
-
                         jdPreviewUrl: r2Url || prev.jdPreviewUrl,
-
                     };
-
                 });
 
             } else {
 
-                const errData = await res.json();
+                const rawErrorText = await res.text().catch(() => "");
+                let errData: any = null;
+                if (rawErrorText.trim()) {
+                    try {
+                        errData = JSON.parse(rawErrorText);
+                    } catch {
+                        errData = { error: rawErrorText.trim() };
+                    }
+                }
 
-                console.error("Extraction error response:", errData);
+                if (errData && Object.keys(errData).length > 0) {
+                    console.warn("Extraction error response:", errData);
+                } else {
+                    console.warn("Extraction failed with empty response body:", {
+                        status: res.status,
+                        statusText: res.statusText,
+                    });
+                }
 
-                setAnalysisError(errData.error || "Failed to extract JD details.");
+                setAnalysisError(errData?.error || errData?.details || `Failed to extract JD details (${res.status})`);
 
             }
 

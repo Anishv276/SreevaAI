@@ -293,37 +293,50 @@ function UploadModal({
                 {/* PROCESSING */}
                 {phase === "processing" && (
                     <div className="py-8 space-y-6">
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="font-bold text-gray-600">Screening resumes</span>
-                                <span className="font-black text-gray-900 tabular-nums">{progress.processed} / {progress.total}</span>
-                            </div>
-                            <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-gradient-to-r from-orange-400 to-orange-600 rounded-full transition-all duration-500"
-                                    style={{ width: `${pct}%` }}
-                                />
-                            </div>
-                            <div className="flex justify-between text-xs text-gray-400 font-bold">
-                                <span>{pct}% complete</span>
-                                <span>{progress.total - progress.processed} remaining</span>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-3">
-                            {[
-                                { label: "Total", v: progress.total, c: "text-gray-800" },
-                                { label: "Done", v: progress.processed, c: "text-emerald-600" },
-                                { label: "Left", v: progress.total - progress.processed, c: "text-orange-500" },
-                            ].map(x => (
-                                <div key={x.label} className="text-center p-4 bg-gray-50 rounded-xl border border-gray-100">
-                                    <p className={cn("text-2xl font-black tabular-nums", x.c)}>{x.v}</p>
-                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider mt-1">{x.label}</p>
+                        <div className="flex flex-col items-center gap-6">
+                            {/* Pie Chart */}
+                            <div className="relative w-40 h-40">
+                                <svg viewBox="0 0 100 100" className="transform -rotate-90 w-full h-full">
+                                    <circle cx="50" cy="50" r="45" fill="none" stroke="#f3f4f6" strokeWidth="8" />
+                                    <circle
+                                        cx="50"
+                                        cy="50"
+                                        r="45"
+                                        fill="none"
+                                        stroke="url(#pieGradient)"
+                                        strokeWidth="8"
+                                        strokeDasharray={`${pct * 2.827} 282.7`}
+                                        strokeLinecap="round"
+                                    />
+                                    <defs>
+                                        <linearGradient id="pieGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" stopColor="#fb923c" />
+                                            <stop offset="100%" stopColor="#ea580c" />
+                                        </linearGradient>
+                                    </defs>
+                                </svg>
+                                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                    <p className="text-3xl font-black text-gray-900 tabular-nums">{pct}%</p>
+                                    <p className="text-xs font-bold text-gray-400">complete</p>
                                 </div>
-                            ))}
-                        </div>
+                            </div>
 
-                        <p className="text-center text-xs text-gray-400">AI is extracting and scoring each resume · Do not close this window</p>
+                            {/* Stats */}
+                            <div className="w-full grid grid-cols-3 gap-2">
+                                {[
+                                    { label: "Total", v: progress.total, c: "text-gray-800" },
+                                    { label: "Done", v: progress.processed, c: "text-emerald-600" },
+                                    { label: "Left", v: progress.total - progress.processed, c: "text-orange-500" },
+                                ].map(x => (
+                                    <div key={x.label} className="text-center p-3 bg-gray-50 rounded-lg border border-gray-100">
+                                        <p className={cn("text-xl font-black tabular-nums", x.c)}>{x.v}</p>
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">{x.label}</p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <p className="text-center text-xs text-gray-400">AI is extracting and scoring each resume · Do not close this window</p>
+                        </div>
                     </div>
                 )}
 

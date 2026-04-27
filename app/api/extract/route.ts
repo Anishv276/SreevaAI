@@ -63,16 +63,8 @@ export async function POST(request: Request) {
             sessionOrgId = null;
         }
         const orgId = explicitOrgId || sessionOrgId;
-        let orgOpenAIModel = "gpt-4o-mini";
-        if (orgId) {
-            const orgConfig = await prisma.organization.findUnique({
-                where: { id: orgId },
-                select: { llmProvider: true, llmModel: true },
-            });
-            if ((orgConfig?.llmProvider || "OPENAI") === "OPENAI" && orgConfig?.llmModel) {
-                orgOpenAIModel = orgConfig.llmModel;
-            }
-        }
+        const orgOpenAIModel = "gpt-5.4-mini"; // Strictly using gpt-5.4-mini, ignoring DB settings
+
 
         if (!file && !url) {
             return NextResponse.json({ error: "Missing file or URL" }, { status: 400 });
@@ -243,11 +235,23 @@ export async function POST(request: Request) {
         }
 
         if (exitCode !== 0) {
-            console.error("[EXTRACTION_FAILED]: Python script returned non-zero exit code", { exitCode, errorData });
+            console.error("[EXTRACTION_FAILED]: Python script returned non-zero exit code", { exitCode, stderr: errorData, stdout: outputData });
+            let pythonError = "Document processing failed.";
+            // Python emits JSON errors to either stdout or stderr
+            for (const raw of [outputData, errorData]) {
+                if (!raw?.trim()) continue;
+                try {
+                    const parsed = JSON.parse(raw.trim());
+                    if (parsed?.error) { pythonError = parsed.error; break; }
+                } catch {
+                    // not JSON — use as plain text fallback
+                    const last = raw.trim().split("\n").pop()?.trim();
+                    if (last) pythonError = last;
+                }
+            }
             return NextResponse.json({
-                error: "Document processing failed. The file format might be unsupported or corrupted.",
+                error: pythonError,
                 code: "EXTRACTION_PROCESS_ERROR",
-                details: errorData
             }, { status: 502 });
         }
 

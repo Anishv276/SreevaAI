@@ -6,6 +6,7 @@ import { spawn } from "child_process";
 import { tmpdir } from "os";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { safeJsonParse } from "@/lib/utils";
+import { generateId } from "@/lib/ids";
 
 const CHUNK_SIZE = 5;
 const pythonCmd = process.platform === "win32" ? "python" : "python3";
@@ -192,17 +193,9 @@ async function processBatch(
     let failedCount = 0;
 
     try {
-        // Resolve org LLM model
-        let orgModel = "gpt-4.1-mini";
-        if (drive.orgId) {
-            const org = await prisma.organization.findUnique({
-                where: { id: drive.orgId },
-                select: { llmProvider: true, llmModel: true },
-            });
-            if ((org?.llmProvider || "OPENAI") === "OPENAI" && org?.llmModel) {
-                orgModel = org.llmModel;
-            }
-        }
+        // Use strictly gpt-5.4-mini for all organizations
+        const orgModel = "gpt-5.4-mini";
+
 
         const threshold: number = Number(drive.screeningThreshold ?? 60);
         // Parse the drive's extracted JD once — reuse for every resume

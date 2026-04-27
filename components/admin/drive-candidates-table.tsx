@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,14 +15,9 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
 import {
     AlertCircle,
-    Briefcase,
-    Clock,
     Loader2,
     Mail,
-    Radio,
-    RefreshCw,
     Search,
-    ShieldCheck,
     Target,
     UserX,
     MoreHorizontal,
@@ -56,15 +50,11 @@ function normalizeStatusKey(value?: string) {
 }
 
 export function DriveCandidatesTable({ driveId }: { driveId: string }) {
-    const router = useRouter();
-    const { candidates, pagination, isLoading, error, fetchCandidates, clearError, stats } = useCandidates();
+    const { candidates, pagination, isLoading, error, fetchCandidates, clearError } = useCandidates();
     const { jobs } = useJobs();
     const [searchTerm, setSearchTerm] = useState("");
     const [resumeFilter, setResumeFilter] = useState("all");
-    const [interviewFilter, setInterviewFilter] = useState("all");
-    const [hiringFilter, setHiringFilter] = useState("all");
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
-    const [sendingInterviewLinkId, setSendingInterviewLinkId] = useState<string | null>(null);
 
     useEffect(() => {
         const handler = setTimeout(() => {
@@ -87,11 +77,11 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                 endDate = timeline.to;
             }
 
-            fetchCandidates(1, pagination.limit, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
+            fetchCandidates(1, pagination.limit, driveId, resumeFilter, undefined, undefined, startDate, endDate, searchTerm);
         }, 200);
 
         return () => clearTimeout(handler);
-    }, [driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, pagination.limit, fetchCandidates]);
+    }, [driveId, resumeFilter, timeline, searchTerm, pagination.limit, fetchCandidates]);
 
     const handlePageChange = (newPage: number) => {
         if (newPage < 1 || newPage > pagination.totalPages) return;
@@ -114,21 +104,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
             endDate = timeline.to;
         }
 
-        fetchCandidates(newPage, pagination.limit, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
-    };
-
-    const handleSendInterviewLink = async (candidate: { id: string; name: string; interviewStatus?: string }) => {
-        setSendingInterviewLinkId(candidate.id);
-        try {
-            const res = await fetch(`/api/candidates/${candidate.id}/send-interview-link`, { method: "POST" });
-            const data = await res.json();
-            if (res.ok) toast.success("Interview link resent - email delivered successfully");
-            else toast.error(data.error || "Failed to send interview link");
-        } catch {
-            toast.error("Failed to send interview link");
-        } finally {
-            setSendingInterviewLinkId(null);
-        }
+        fetchCandidates(newPage, pagination.limit, driveId, resumeFilter, undefined, undefined, startDate, endDate, searchTerm);
     };
 
     const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string; hiringStatus?: string }, successMsg: string) => {
@@ -140,7 +116,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
             });
             if (res.ok) {
                 toast.success(successMsg);
-                fetchCandidates(pagination.page, pagination.limit, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm);
+                fetchCandidates(pagination.page, pagination.limit, driveId, resumeFilter, undefined, undefined, undefined, undefined, searchTerm);
             } else {
                 toast.error("Failed to update status");
             }
@@ -167,18 +143,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                     </div>
                     <div className="flex items-center gap-4 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 no-scrollbar">
                         <DateFilter value={timeline} onChange={setTimeline} />
-                        <PremiumFilter
-                            value={interviewFilter}
-                            onChange={setInterviewFilter}
-                            icon={Radio}
-                            placeholder="Interview"
-                            options={[
-                                { value: "all", label: "All Interview" },
-                                { value: "pending", label: "Pending", colorClass: "text-amber-600" },
-                                { value: "inprogress", label: "In Progress", colorClass: "text-orange-600" },
-                                { value: "finished", label: "Completed", colorClass: "text-indigo-600" },
-                            ]}
-                        />
                         <PremiumFilter
                             value={resumeFilter}
                             onChange={setResumeFilter}
@@ -214,38 +178,32 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                         <TableHeader className="bg-gray-50/50">
                             <TableRow className="border-b border-gray-100 hover:bg-transparent">
                                 <TableHead className="w-[60px] pl-8 font-bold uppercase tracking-wider text-[11px] text-gray-500">#</TableHead>
-                                <TableHead className="w-[280px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 pl-4">Candidate</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Job Role</TableHead>
+                                <TableHead className="w-[320px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 pl-4">Candidate</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Score</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Status</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Decision</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Reports</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Resume Report</TableHead>
                                 <TableHead className="text-right pr-8 h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody className="[&_tr:last-child]:border-0">
                             {isLoading ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={5} className="py-12 text-center text-sm font-bold text-gray-400">
                                         Loading candidates...
                                     </TableCell>
                                 </TableRow>
                             ) : filteredCandidates.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={5} className="py-12 text-center text-sm font-bold text-gray-400">
                                         No candidates found for this drive
                                     </TableCell>
                                 </TableRow>
                             ) : (
                                 filteredCandidates.map((candidate: any, index: number) => {
-                                    const mainStatus = normalizeStatusKey(candidate.status) || "pending";
-                                    const mainStatusLabel = formatCandidateStatusLabel(candidate.status);
-                                    const interviewStage = normalizeStatusKey(candidate.interviewStatus) || "pending";
-                                    const interviewStageLabel = formatCandidateStatusLabel(candidate.interviewStatus);
-                                    const hiringDecision = normalizeStatusKey(candidate.hiringStatus) || "pending";
-                                    const hiringDecisionLabel = formatCandidateStatusLabel(candidate.hiringStatus);
-                                    const isHiredResult = hiringDecision === "hired";
-                                    const isNotHiredResult = hiringDecision === "not hired";
+                                    const statusValue = candidate.resumeStatus || candidate.status;
+                                    const statusKey = normalizeStatusKey(statusValue) || "pending";
+                                    const statusLabel = formatCandidateStatusLabel(statusValue);
+                                    const score = Number(candidate.score ?? candidate.aiScore ?? 0);
 
                                     return (
                                         <TableRow key={candidate.id} className="group border-b border-white/20 hover:bg-white/40 transition-all duration-500">
@@ -259,7 +217,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                             <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${candidate.name}`} />
                                                             <AvatarFallback>{candidate.name.substring(0, 2).toUpperCase()}</AvatarFallback>
                                                         </Avatar>
-                                                        <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-green-500" />
                                                     </div>
                                                     <div className="flex flex-col relative">
                                                         <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{candidate.name}</span>
@@ -267,67 +224,35 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                     </div>
                                                 </div>
                                             </TableCell>
-                                            <TableCell className="py-5">
-                                                <div className="flex flex-col">
-                                                    <span className="text-sm font-bold text-gray-700">{candidate.role}</span>
+
+                                            <TableCell className="py-5 text-center">
+                                                <div className="flex justify-center">
+                                                    <Badge className={cn(
+                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm",
+                                                        score >= 80 ? "bg-emerald-50 text-emerald-700" :
+                                                        score >= 50 ? "bg-amber-50 text-amber-700" :
+                                                        "bg-rose-50 text-rose-700"
+                                                    )}>
+                                                        {score ? `${score}%` : "No score"}
+                                                    </Badge>
                                                 </div>
                                             </TableCell>
-                                            <TableCell className="pt-3 pb-5 text-center align-top">
-                                                <div className="flex flex-col items-center gap-1.5">
-                                                    <div className="h-4 flex items-center justify-center">
-                                                        {candidate.score > 0 && (
-                                                            <div className={cn(
-                                                                "text-[11px] font-black tracking-tight",
-                                                                candidate.score >= 80 ? "text-emerald-600" :
-                                                                candidate.score >= 50 ? "text-amber-500" :
-                                                                "text-rose-500"
-                                                            )}>
-                                                                {candidate.score}%
-                                                            </div>
-                                                        )}
-                                                    </div>
+
+                                            <TableCell className="py-5 text-center">
+                                                <div className="flex justify-center items-center h-full">
                                                     <Badge variant="secondary" className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all",
-                                                        mainStatus === "rejected" ? "bg-rose-50 text-rose-700" :
-                                                            mainStatus === "shortlisted" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"
+                                                        statusKey === "rejected" ? "bg-rose-50 text-rose-700" :
+                                                        statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"
                                                     )}>
-                                                        {mainStatusLabel}
+                                                        {statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
                                                     </Badge>
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center">
-                                                <div className="flex justify-center items-center h-full">
-                                                    <Badge variant="outline" className={cn(
-                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-gray-100 shadow-sm transition-all",
-                                                        interviewStage === "completed" || interviewStage === "finished" ? "text-indigo-600 bg-indigo-50/20 shadow-none border-indigo-100" :
-                                                        interviewStage === "in progress" ? "text-blue-600 bg-blue-50/20 shadow-none border-blue-100" :
-                                                        interviewStage === "pending" ? "text-amber-600 bg-amber-50/20 shadow-none border-amber-100" : "text-gray-500 bg-gray-50"
-                                                    )}>
-                                                        {interviewStageLabel}
-                                                    </Badge>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="py-5 text-center">
-                                                <div className="flex justify-center items-center h-full">
-                                                    {isHiredResult ? (
-                                                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
-                                                            {hiringDecisionLabel}
-                                                        </Badge>
-                                                    ) : isNotHiredResult ? (
-                                                        <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
-                                                            {hiringDecisionLabel}
-                                                        </Badge>
-                                                    ) : (
-                                                        <Badge variant="outline" className="bg-slate-50/50 text-slate-400 border-slate-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest">
-                                                            {hiringDecisionLabel}
-                                                        </Badge>
-                                                    )}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="py-5 text-center">
-                                                <Link href={`/admin/candidates/${candidate.id}`}>
+                                                <Link href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`}>
                                                     <Button size="sm" variant="ghost" className="h-9 px-4 rounded-lg text-[#F97316] font-extrabold hover:bg-orange-50 transition-all mx-auto flex">
-                                                        View Reports
+                                                        View Resume Report
                                                     </Button>
                                                 </Link>
                                             </TableCell>
@@ -348,24 +273,9 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                             <UserX className="h-4 w-4 mr-2" />
                                                             Reject Candidate
                                                         </DropdownMenuItem>
-                                                        <DropdownMenuSeparator className="my-1 bg-gray-50" />
-                                                        <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Email</DropdownMenuLabel>
-                                                        <DropdownMenuItem onClick={() => handleSendInterviewLink({ id: candidate.id, name: candidate.name, interviewStatus: candidate.interviewStatus })} className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-blue-600 focus:bg-blue-50">
-                                                            <RefreshCw className="h-4 w-4 mr-2" />
-                                                            Send Interview Link
-                                                        </DropdownMenuItem>
                                                         <DropdownMenuItem onClick={() => window.location.href = `mailto:${candidate.email}`} className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-blue-600 focus:text-blue-700 focus:bg-blue-50">
                                                             <Mail className="h-4 w-4 mr-2" />
                                                             Send Mail
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuSeparator className="my-1 bg-gray-50" />
-                                                        <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Hire</DropdownMenuLabel>
-                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${candidate.name} hired - confirmation email sent`)} className="rounded-lg px-3 py-2 font-bold cursor-pointer text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50 transition-colors">
-                                                            Hire this person
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "not hired" }, `${candidate.name} marked as Not Hired - email sent`)} className="rounded-lg px-3 py-2 font-bold cursor-pointer text-gray-600 focus:text-gray-900 focus:bg-gray-50 transition-colors">
-                                                            <UserX className="h-4 w-4 mr-2" />
-                                                            Mark as not hired
                                                         </DropdownMenuItem>
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>

@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { FileText, Sparkles, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -44,7 +44,10 @@ function firstText(value: unknown, fallback = ""): string {
 
 export default function CandidateProfilePage() {
     const params = useParams<{ id: string }>();
+    const searchParams = useSearchParams();
     const id = typeof params?.id === "string" ? params.id : Array.isArray(params?.id) ? params.id[0] : "";
+    const reportMode = (searchParams.get("report") || "interview").toLowerCase();
+    const resumeBackHref = searchParams.get("back") || "/admin/candidates";
     const [candidate, setCandidate] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -236,6 +239,7 @@ export default function CandidateProfilePage() {
             },
             mounted,
             displayAvatar: candidatePhotoSrc,
+            backHref: resumeBackHref,
             hasAiReport: Boolean(candidate?.aiReport),
             hasResumeText: Boolean(candidate?.resumeText),
             matchScore: score,
@@ -283,6 +287,14 @@ export default function CandidateProfilePage() {
                     </div>
                     <p className="text-lg font-bold text-gray-900">{error || "Candidate not found"}</p>
                 </div>
+            </div>
+        );
+    }
+
+    if (reportMode === "resume") {
+        return (
+            <div className="min-h-screen bg-slate-50">
+                <ResumeReportHyring model={resumeReportModel} />
             </div>
         );
     }

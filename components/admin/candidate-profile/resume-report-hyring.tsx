@@ -128,6 +128,7 @@ export function buildHyringResumeViewModel(i: {
     drive?: { role?: string; title?: string };
     experienceYears?: number | null;
   };
+  backHref?: string;
   mounted: boolean;
   displayAvatar: string;
   hasAiReport: boolean;
@@ -327,7 +328,7 @@ export function buildHyringResumeViewModel(i: {
   }
 
   return {
-    backHref: "/admin/candidates",
+    backHref: i.backHref || "/admin/candidates",
     processing: !i.hasResumeText && !i.hasAiReport,
     fullName: c.fullName || "Candidate",
     displayAvatar: i.displayAvatar,

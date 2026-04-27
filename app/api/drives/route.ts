@@ -249,7 +249,6 @@ export async function POST(request: Request) {
                 extractedDetails: JSON.stringify(data.extractedDetails || {}),
                 jdFileName: data.jdFileName || null,
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
-                registrationFields: JSON.stringify(data.registrationFields || []),
                 screeningCriteria: JSON.stringify(mergedScreeningCriteria),
 
                 // Interview configuration
