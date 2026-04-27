@@ -396,7 +396,6 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
               className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-medium text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]"
             >
               <ArrowLeft className="h-4 w-4" />
-              Resume report
             </Link>
           </div>
         </div>

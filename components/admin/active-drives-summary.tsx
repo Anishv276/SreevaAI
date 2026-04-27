@@ -161,7 +161,7 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                                 visible: { opacity: 1, x: 0 },
                                             }}
                                             className="p-5 rounded-[2rem] bg-white border border-gray-50/50 hover:border-orange-100 hover:shadow-[0_15px_40px_rgba(0,0,0,0.03)] transition-all duration-500 cursor-pointer group"
-                                            onClick={() => router.push(`/admin/candidates?driveId=${drive.id}`)}
+                                            onClick={() => router.push(`/admin/candidates/drive/${drive.id}`)}
                                         >
                                             {/* Title row */}
                                             <div className="flex items-start justify-between gap-4 mb-4">

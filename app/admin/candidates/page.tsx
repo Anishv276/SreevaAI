@@ -506,16 +506,8 @@ export default function CandidatesPage() {
 
 
 
-    // Initialize role filter from URL if present
-
     useEffect(() => {
-
-        if (driveIdParam) {
-
-            setRoleFilter(driveIdParam);
-
-        }
-
+        setRoleFilter(driveIdParam || "all");
     }, [driveIdParam]);
 
 
@@ -564,7 +556,7 @@ export default function CandidatesPage() {
 
 
 
-            fetchCandidates(1, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, { shortlistOnly: true });
+            fetchCandidates(1, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
 
         }, 200); // 200ms Search Debounce
 
@@ -618,7 +610,7 @@ export default function CandidatesPage() {
 
 
 
-            fetchCandidates(newPage, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, { shortlistOnly: true });
+            fetchCandidates(newPage, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
 
         }
 
@@ -708,7 +700,7 @@ export default function CandidatesPage() {
 
 
 
-                fetchCandidates(pagination.page, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, { shortlistOnly: true });
+                fetchCandidates(pagination.page, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
 
             } else {
 
@@ -845,7 +837,7 @@ export default function CandidatesPage() {
 
 
 
-            fetchCandidates(pagination.page, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, { shortlistOnly: true });
+            fetchCandidates(pagination.page, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
 
             const msg = pendingAction === "hire" ? `${count} candidate(s) hired - emails sent`
 
@@ -912,7 +904,6 @@ export default function CandidatesPage() {
 
 
                 <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-
                     <Button
 
                         variant="outline"

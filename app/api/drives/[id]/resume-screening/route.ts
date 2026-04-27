@@ -348,7 +348,7 @@ async function processOneResume(
             "Unknown";
 
         // ── Persist ──
-        await prisma.resumeCandidate.create({
+        const screeningCandidate = await prisma.resumeCandidate.create({
             data: {
                 driveId,
                 bulkBatchId: batchId,
@@ -360,6 +360,23 @@ async function processOneResume(
                 aiScore: score,
                 aiReport: JSON.stringify(aiResult),
                 resumeStatus,
+            },
+        });
+
+        await prisma.application.create({
+            data: {
+                id: generateId("app", extractedName || file.name),
+                fullName: extractedName,
+                email: structuredResume?.email || "",
+                phone: structuredResume?.phone || "",
+                resumeUrl: `/api/drives/${driveId}/resume-screening/download?candidateId=${screeningCandidate.id}`,
+                aiScore: score,
+                aiReport: JSON.stringify(aiResult),
+                resumeText: resumeRawText,
+                driveId,
+                resumeStatus: resumeStatus.toLowerCase(),
+                interviewStatus: "pending",
+                hiringStatus: "pending",
             },
         });
 

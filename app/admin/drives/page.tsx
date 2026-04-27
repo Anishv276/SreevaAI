@@ -364,10 +364,10 @@ export default function DrivesPage() {
                                                 className="h-10 rounded-xl bg-slate-950 text-white font-bold shadow-[0_10px_20px_rgba(15,23,42,0.14)] transition-all hover:bg-orange-600 hover:shadow-[0_14px_30px_rgba(249,115,22,0.22)]"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    router.push(`/admin/drives/${drive.id}/resume-screening`);
+                                                    router.push(`/admin/candidates/drive/${encodeURIComponent(drive.id)}`);
                                                 }}
                                             >
-                                                View More
+                                                View Candidates
                                                 <ArrowUpRight className="ml-2 h-4 w-4" />
                                             </Button>
                                         </div>

@@ -19,7 +19,6 @@ export async function GET(request: Request) {
         const resumeStatus = searchParams.get("resumeStatus") || searchParams.get("status") || "all";
         const interviewStatus = searchParams.get("interviewStatus") || "all";
         const hiringStatus = searchParams.get("hiringStatus") || "all";
-        const shortlistOnly = searchParams.get("shortlistOnly") === "true";
         const page = parseInt(searchParams.get("page") || "1");
         const limit = parseInt(searchParams.get("limit") || "10");
         const offset = (page - 1) * limit;
@@ -85,18 +84,7 @@ export async function GET(request: Request) {
             }
         }
 
-        if (shortlistOnly) {
-            where.resumeStatus = {
-                in: [
-                    "shortlisted",
-                    "SHORTLISTED",
-                    "Shortlisted",
-                    "accepted",
-                    "ACCEPTED",
-                    "Accepted",
-                ],
-            };
-        } else if (resumeStatus && resumeStatus !== "all") {
+        if (resumeStatus && resumeStatus !== "all") {
             where.resumeStatus = { in: statusVariants(resumeStatus) };
         }
 
@@ -113,18 +101,6 @@ export async function GET(request: Request) {
                 { fullName: { contains: search, mode: "insensitive" } },
                 { email: { contains: search, mode: "insensitive" } },
                 { drive: { title: { contains: search, mode: "insensitive" } } }
-            ];
-        }
-
-        if (shortlistOnly) {
-            where.AND = [
-                ...(where.AND || []),
-                {
-                    NOT: [
-                        { resumeStatus: { in: ["rejected", "REJECTED", "Rejected"] } },
-                        { resumeStatus: { in: ["not shortlisted", "NOT SHORTLISTED", "Not Shortlisted"] } },
-                    ],
-                },
             ];
         }
 
@@ -191,6 +167,7 @@ export async function GET(request: Request) {
                 hiringStatus: app.hiringStatus,
                 experienceYears: app.experienceYears,
                 relevantYears: app.relevantYears,
+                date: new Date(app.createdAt).toLocaleDateString(),
             };
         });
 

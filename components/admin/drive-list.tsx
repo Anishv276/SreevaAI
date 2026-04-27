@@ -50,7 +50,7 @@ export function DriveList() {
                         <div
                             key={drive.id}
                             className="bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_12px_30px_rgba(0,0,0,0.06)] hover:border-orange-100 transition-all duration-300 group flex flex-col justify-between h-full cursor-pointer relative overflow-hidden"
-                            onClick={() => router.push(`/admin/candidates?driveId=${drive.id}`)}
+                            onClick={() => router.push(`/admin/candidates/drive/${drive.id}`)}
                         >
                             {/* Top Accent Line */}
                             <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-orange-400 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -87,7 +87,7 @@ export function DriveList() {
                                     className="w-full rounded-xl bg-gray-900 hover:bg-[#F97316] text-white font-bold h-10 shadow-sm transition-all group-hover:shadow-md"
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        router.push(`/admin/candidates?driveId=${drive.id}`);
+                                        router.push(`/admin/candidates/drive/${drive.id}`);
                                     }}
                                 >
                                     View Candidates <ChevronRight className="h-3.5 w-3.5 ml-1.5" />

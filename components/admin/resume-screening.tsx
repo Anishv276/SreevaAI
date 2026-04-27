@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +45,7 @@ type SortDir = "asc" | "desc";
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function ResumeScreening({ driveId, driveName }: { driveId: string; driveName: string }) {
+    const router = useRouter();
     const [modalOpen, setModalOpen] = useState(false);
     const [candidates, setCandidates] = useState<ResumeCandidate[]>([]);
     const [batches, setBatches] = useState<ResumeBatch[]>([]);
@@ -77,9 +79,9 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
                 </div>
                 <div className="flex items-center gap-3">
                     {candidates.length > 0 && (
-                        <Link href={`/admin/drives/${driveId}/resume-screening`}>
+                        <Link href={`/admin/candidates/drive/${encodeURIComponent(driveId)}`}>
                             <Button className="h-10 px-5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold flex items-center gap-2 shadow-sm">
-                                View Details
+                                View Candidates
                                 <ArrowRight className="h-4 w-4" />
                             </Button>
                         </Link>
@@ -111,7 +113,11 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
                 onClose={() => setModalOpen(false)}
                 driveId={driveId}
                 driveName={driveName}
-                onComplete={() => { setModalOpen(false); refresh(); }}
+                onComplete={() => {
+                    setModalOpen(false);
+                    refresh();
+                    router.push(`/admin/candidates/drive/${encodeURIComponent(driveId)}`);
+                }}
             />
         </div>
     );
