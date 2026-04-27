@@ -15,9 +15,11 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
 import {
     AlertCircle,
+    Eye,
     Loader2,
     Mail,
     Search,
+    ChevronDown,
     Target,
     UserX,
     MoreHorizontal,
@@ -28,7 +30,6 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuLabel,
-    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -55,6 +56,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     const [searchTerm, setSearchTerm] = useState("");
     const [resumeFilter, setResumeFilter] = useState("all");
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
+    const [scoreSort, setScoreSort] = useState<"default" | "score_desc" | "score_asc">("default");
 
     useEffect(() => {
         const handler = setTimeout(() => {
@@ -77,11 +79,11 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                 endDate = timeline.to;
             }
 
-            fetchCandidates(1, pagination.limit, driveId, resumeFilter, undefined, undefined, startDate, endDate, searchTerm);
+            fetchCandidates(1, pagination.limit, driveId, resumeFilter, undefined, undefined, startDate, endDate, searchTerm, scoreSort);
         }, 200);
 
         return () => clearTimeout(handler);
-    }, [driveId, resumeFilter, timeline, searchTerm, pagination.limit, fetchCandidates]);
+    }, [driveId, resumeFilter, timeline, searchTerm, pagination.limit, fetchCandidates, scoreSort]);
 
     const handlePageChange = (newPage: number) => {
         if (newPage < 1 || newPage > pagination.totalPages) return;
@@ -104,7 +106,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
             endDate = timeline.to;
         }
 
-        fetchCandidates(newPage, pagination.limit, driveId, resumeFilter, undefined, undefined, startDate, endDate, searchTerm);
+        fetchCandidates(newPage, pagination.limit, driveId, resumeFilter, undefined, undefined, startDate, endDate, searchTerm, scoreSort);
     };
 
     const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string; hiringStatus?: string }, successMsg: string) => {
@@ -116,7 +118,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
             });
             if (res.ok) {
                 toast.success(successMsg);
-                fetchCandidates(pagination.page, pagination.limit, driveId, resumeFilter, undefined, undefined, undefined, undefined, searchTerm);
+                fetchCandidates(pagination.page, pagination.limit, driveId, resumeFilter, undefined, undefined, undefined, undefined, searchTerm, scoreSort);
             } else {
                 toast.error("Failed to update status");
             }
@@ -179,7 +181,45 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                             <TableRow className="border-b border-gray-100 hover:bg-transparent">
                                 <TableHead className="w-[60px] pl-8 font-bold uppercase tracking-wider text-[11px] text-gray-500">#</TableHead>
                                 <TableHead className="w-[320px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 pl-4">Candidate</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Score</TableHead>
+                        <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                                <span>Score</span>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <button
+                                            type="button"
+                                            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-gray-400 hover:text-[#F97316] transition-colors"
+                                            aria-label="Sort score"
+                                        >
+                                            <ChevronDown className="h-3.5 w-3.5" />
+                                        </button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="center" className="w-48 p-2 rounded-xl shadow-xl border-gray-100 bg-white">
+                                        <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                            Sort by score
+                                        </DropdownMenuLabel>
+                                        <DropdownMenuItem
+                                            onClick={() => setScoreSort("default")}
+                                            className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors"
+                                        >
+                                            Normal
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            onClick={() => setScoreSort("score_desc")}
+                                            className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors"
+                                        >
+                                            Top scorers
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            onClick={() => setScoreSort("score_asc")}
+                                            className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors"
+                                        >
+                                            Lowest scorers
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            </div>
+                        </TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Resume</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Hiring</TableHead>
@@ -284,10 +324,13 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center">
-                                                <Link href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`}>
-                                                    <Button size="sm" variant="ghost" className="h-9 px-4 rounded-lg text-[#F97316] font-extrabold hover:bg-orange-50 transition-all mx-auto flex">
-                                                        View Resume Report
-                                                    </Button>
+                                                <Link
+                                                    href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`}
+                                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#F97316] transition-colors hover:bg-orange-50"
+                                                    title="Open resume report"
+                                                    aria-label="Open resume report"
+                                                >
+                                                    <Eye className="h-4 w-4" />
                                                 </Link>
                                             </TableCell>
                                             <TableCell className="py-5 pr-8 text-right">

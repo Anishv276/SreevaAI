@@ -74,6 +74,7 @@ interface CandidatesContextType {
         startDate?: string,
         endDate?: string,
         search?: string,
+        sort?: "default" | "score_desc" | "score_asc",
     ) => Promise<void>;
     clearError: () => void;
     bulkDeleteCandidates: (ids: string[]) => Promise<void>;
@@ -135,6 +136,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         startDate?: string,
         endDate?: string,
         search?: string,
+        sort?: "default" | "score_desc" | "score_asc",
     ) => {
         return [
             page,
@@ -146,6 +148,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             startDate || "none",
             endDate || "none",
             search || "",
+            sort || "default",
         ].join("|");
     };
 
@@ -159,9 +162,10 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         startDate?: string,
         endDate?: string,
         search?: string,
+        sort: "default" | "score_desc" | "score_asc" = "default",
         options?: { force?: boolean; background?: boolean }
     ) => {
-        const key = buildFetchKey(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search);
+        const key = buildFetchKey(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search, sort);
         const now = Date.now();
 
         const inFlight = inFlightRequestsRef.current.get(key);
@@ -234,6 +238,11 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 }
                 if (search && search.trim()) {
                     params.set("search", search.trim());
+                }
+                if (sort !== "default") {
+                    const [sortBy, sortDir] = sort.split("_");
+                    params.set("sortBy", sortBy);
+                    params.set("sortDir", sortDir);
                 }
 
                 const res = await fetchWithRetry(`/api/candidates?${params.toString()}`);
@@ -310,8 +319,9 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         startDate?: string,
         endDate?: string,
         search?: string,
+        sort?: "default" | "score_desc" | "score_asc",
     ) => {
-        await fetchCandidatesInternal(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search);
+        await fetchCandidatesInternal(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search, sort);
     }, [fetchCandidatesInternal]);
 
     const scheduleStreamRefresh = useCallback(() => {
@@ -323,7 +333,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             refreshTimerRef.current = null;
 
             const current = paginationRef.current;
-            void fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, undefined, undefined, { force: true, background: true });
+            void fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, undefined, undefined, "default", { force: true, background: true });
         }, STREAM_REFRESH_DEBOUNCE_MS);
     }, [fetchCandidatesInternal]);
 
@@ -450,7 +460,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
 
             // Refetch to ensure we have the correct paginated state
             const current = paginationRef.current;
-            await fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, undefined, undefined, { force: true });
+            await fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, undefined, undefined, "default", { force: true });
         } catch (error) {
             throw error;
         }
@@ -467,7 +477,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             if (response.ok) {
                 // Refetch to ensure we have the correct paginated state after deletion
                 const current = paginationRef.current;
-                await fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, undefined, undefined, { force: true });
+                await fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, undefined, undefined, "default", { force: true });
             } else {
                 throw new Error("Failed to bulk delete candidates");
             }

@@ -29,8 +29,11 @@ export function DriveResumeUploadModal({
     const [phase, setPhase] = useState<UploadPhase>("idle");
     const [progress, setProgress] = useState({ processed: 0, total: 0 });
     const [error, setError] = useState<string | null>(null);
+    const [displayPct, setDisplayPct] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const pctAnimRef = useRef<number | null>(null);
+    const displayPctRef = useRef(0);
 
     const clearPolling = () => {
         if (pollRef.current) {
@@ -39,8 +42,24 @@ export function DriveResumeUploadModal({
         }
     };
 
+    const clearPctAnimation = () => {
+        if (pctAnimRef.current !== null) {
+            cancelAnimationFrame(pctAnimRef.current);
+            pctAnimRef.current = null;
+        }
+    };
+
+    const syncDisplayPct = (value: number) => {
+        const next = Math.max(0, Math.min(100, value));
+        displayPctRef.current = next;
+        setDisplayPct(next);
+    };
+
     const reset = () => {
         clearPolling();
+        clearPctAnimation();
+        displayPctRef.current = 0;
+        setDisplayPct(0);
         setFiles([]);
         setPhase("idle");
         setProgress({ processed: 0, total: 0 });
@@ -132,7 +151,44 @@ export function DriveResumeUploadModal({
     const pct = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
     const donutR = 54;
     const donutC = 2 * Math.PI * donutR;
-    const donutDash = donutC * (pct / 100);
+    const donutDash = donutC * (displayPct / 100);
+
+    useEffect(() => {
+        clearPctAnimation();
+
+        if (phase !== "processing") {
+            syncDisplayPct(phase === "done" ? 100 : 0);
+            return;
+        }
+
+        const target = Math.max(0, Math.min(100, pct));
+        const start = displayPctRef.current;
+        const diff = target - start;
+        const duration = 850;
+        let raf = 0;
+        const startedAt = performance.now();
+
+        const tick = (now: number) => {
+            const elapsed = now - startedAt;
+            const progressRatio = Math.min(1, elapsed / duration);
+            const eased = 1 - Math.pow(1 - progressRatio, 3);
+            const next = Math.round(start + diff * eased);
+            displayPctRef.current = next;
+            setDisplayPct(next);
+
+            if (progressRatio < 1) {
+                raf = requestAnimationFrame(tick);
+            } else {
+                displayPctRef.current = target;
+                setDisplayPct(target);
+                pctAnimRef.current = null;
+            }
+        };
+
+        raf = requestAnimationFrame(tick);
+        pctAnimRef.current = raf;
+        return () => cancelAnimationFrame(raf);
+    }, [pct, phase]);
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
@@ -277,7 +333,7 @@ export function DriveResumeUploadModal({
                                         </defs>
                                     </svg>
                                     <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                        <p className="text-3xl font-black tabular-nums text-gray-900">{pct}%</p>
+                                        <p className="text-3xl font-black tabular-nums text-gray-900">{displayPct}%</p>
                                         <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">complete</p>
                                     </div>
                                 </div>

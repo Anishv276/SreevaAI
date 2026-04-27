@@ -22,6 +22,8 @@ export async function GET(request: Request) {
         const page = parseInt(searchParams.get("page") || "1");
         const limit = parseInt(searchParams.get("limit") || "10");
         const offset = (page - 1) * limit;
+        const sortBy = searchParams.get("sortBy") || "updatedAt";
+        const sortDir = searchParams.get("sortDir") === "asc" ? "asc" : "desc";
 
         const statusVariants = (value: string) => {
             const normalized = value.trim().toLowerCase().replace(/[_-]+/g, " ");
@@ -110,7 +112,13 @@ export async function GET(request: Request) {
                 include: {
                     drive: { select: { title: true, role: true } }
                 },
-                orderBy: { updatedAt: "desc" },
+                orderBy:
+                    sortBy === "score"
+                        ? [
+                            { aiScore: { sort: sortDir, nulls: "last" } },
+                            { updatedAt: "desc" }
+                        ]
+                        : { updatedAt: "desc" },
                 skip: offset,
                 take: limit,
             }),
