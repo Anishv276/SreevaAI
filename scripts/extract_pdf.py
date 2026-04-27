@@ -966,18 +966,19 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
 
 
 def generate_report_inline(
-    _jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client, report_model="gpt-5.4-mini"
+    _jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client, report_model="gpt-4o"
 ):
     """
-    LLM writes report with structured resume data already extracted.
-    Score and status are already locked - LLM cannot change them.
-    Model: gpt-4.5-mini for speed + quality.
-    Temperature: 0 for consistency.
+    Full-fidelity AI report generation using gpt-4o.
+    Score and status are LOCKED by the deterministic engine — LLM only writes human-readable analysis.
+    Every field the UI renders is produced here directly. No math fallbacks.
     """
 
     matched = score_result["skill_matching"]["matched_must"]
     missing = score_result["skill_matching"]["missing_must"]
+    partial = score_result["skill_matching"].get("partial_must", [])
     matched_good = score_result["skill_matching"]["matched_good"]
+    must_have_details = score_result["skill_matching"].get("must_have_details", [])
     status = score_result["status"]
     total = score_result["score"]
     breakdown = score_result["breakdown"]
@@ -985,227 +986,273 @@ def generate_report_inline(
     jd_min_years = score_result["jd_min_years"]
     exp_status = score_result["exp_status"]
 
-    # Build work history context for the LLM to annotate
     work_history_raw = resume_data.get("work_history", [])
-    work_history_str = json.dumps(work_history_raw, indent=2) if work_history_raw else "[]"
     core_claims_raw = resume_data.get("core_claims", [])
-    core_claims_str = json.dumps(core_claims_raw, indent=2) if core_claims_raw else "[]"
     skill_depth_raw = resume_data.get("skills", {}).get("skill_depth", [])
-    skill_depth_str = json.dumps(skill_depth_raw, indent=2) if skill_depth_raw else "[]"
     uncertain_areas_raw = resume_data.get("uncertain_areas", [])
-    uncertain_areas_str = json.dumps(uncertain_areas_raw, indent=2) if uncertain_areas_raw else "[]"
+    red_flags_raw = resume_data.get("red_flags", [])
+    projects_raw = resume_data.get("projects", [])
+    education_raw = resume_data.get("education", [])
+    domain_skills = resume_data.get("skills", {}).get("domain_skills", [])
+    candidate_name = resume_data.get("full_name", "the candidate")
 
-    prompt = f"""You are a senior technical recruiter writing a world-class candidate evaluation report.
+    # Serialise structured context for the prompt
+    wh_str = json.dumps(work_history_raw, indent=2) if work_history_raw else "[]"
+    claims_str = json.dumps(core_claims_raw, indent=2) if core_claims_raw else "[]"
+    depth_str = json.dumps(skill_depth_raw, indent=2) if skill_depth_raw else "[]"
+    uncertain_str = json.dumps(uncertain_areas_raw, indent=2) if uncertain_areas_raw else "[]"
+    flags_str = json.dumps(red_flags_raw, indent=2) if red_flags_raw else "[]"
+    projects_str = json.dumps(projects_raw, indent=2) if projects_raw else "[]"
+    edu_str = json.dumps(education_raw, indent=2) if education_raw else "[]"
+    domain_str = json.dumps(domain_skills) if domain_skills else "[]"
+    must_details_str = json.dumps(must_have_details, indent=2) if must_have_details else "[]"
+    partial_str = json.dumps(partial) if partial else "[]"
 
-The scoring engine has ALREADY computed the final score and status.
-Your ONLY job is to write the human-readable sections. You CANNOT change the score or status.
+    prompt = f"""You are a Principal Technical Recruiter and Talent Intelligence expert with 15+ years of experience at tier-1 companies. You write the most insightful, evidence-grounded candidate evaluation reports in the industry.
 
-=======================================
-LOCKED RESULTS - DO NOT CHANGE THESE
-=======================================
-Final Score     : {total}/100
-Status          : {status}
-Skills Score    : {breakdown["skills_score"]}/{breakdown["skills_max"]}
-Experience Score: {breakdown["exp_score"]}/{breakdown["exp_max"]}
-Good-to-have    : {breakdown["good_score"]}/{breakdown["good_max"]}
-Career Quality  : {breakdown["career_score"]}/{breakdown["career_max"]}
-Domain Fit      : {breakdown.get("domain_score", 0)}/{breakdown.get("domain_max", 10)}
+The deterministic scoring engine has ALREADY computed the final score and status. These are LOCKED.
+Your ONLY job: write deep, evidence-grounded human-readable analysis for every field below.
+You CANNOT change the score, status, or breakdown numbers.
 
-Must-have matched : {json.dumps(matched)}
-Must-have missing : {json.dumps(missing)}
-Good-to-have matched: {json.dumps(matched_good)}
-Experience status : {exp_status}
-  (Candidate: {candidate_years} yrs | Required: {jd_min_years} yrs)
-{f"Hard rejection reasons: {json.dumps(score_result['rejection_reasons'])}" if score_result["hard_rejected"] else ""}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LOCKED SCORING RESULTS (READ ONLY)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Candidate        : {candidate_name}
+Final Score      : {total}/100
+Status           : {status}
+Skills Score     : {breakdown["skills_score"]}/{breakdown["skills_max"]} pts
+Experience Score : {breakdown["exp_score"]}/{breakdown["exp_max"]} pts
+Good-to-have     : {breakdown["good_score"]}/{breakdown["good_max"]} pts
+Career Quality   : {breakdown["career_score"]}/{breakdown["career_max"]} pts
+Domain Fit       : {breakdown.get("domain_score", 0)}/{breakdown.get("domain_max", 10)} pts
 
-=======================================
-JOB DESCRIPTION RAW TEXT
-=======================================
-{jd_raw_text[:3000]}
+Must-have matched  : {json.dumps(matched)}
+Must-have partial  : {partial_str}
+Must-have missing  : {json.dumps(missing)}
+Good-to-have hits  : {json.dumps(matched_good)}
+Experience status  : {exp_status} (candidate: {candidate_years} yrs | required: {jd_min_years} yrs)
+{f"HARD REJECTION REASONS: {json.dumps(score_result['rejection_reasons'])}" if score_result["hard_rejected"] else "No hard rejection."}
 
-=======================================
+Per-skill match detail:
+{must_details_str}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+JOB DESCRIPTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{jd_raw_text[:3500]}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RESUME RAW TEXT
-=======================================
-{resume_raw_text[:4000]}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{resume_raw_text[:4500]}
 
-=======================================
-WORK HISTORY (structured - annotate each role)
-=======================================
-{work_history_str}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STRUCTURED RESUME DATA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WORK HISTORY:
+{wh_str}
 
-=======================================
-CLAIM SIGNALS (what the resume is asserting)
-=======================================
-{core_claims_str}
+PROJECTS:
+{projects_str}
 
-=======================================
-SKILL DEPTH SIGNALS (surface vs real depth)
-=======================================
-{skill_depth_str}
+EDUCATION:
+{edu_str}
 
-=======================================
-UNCERTAIN AREAS (what should be probed)
-=======================================
-{uncertain_areas_str}
+DOMAIN SKILLS:
+{domain_str}
 
-=======================================
-FIELD-BY-FIELD INSTRUCTIONS - READ EVERY LINE
-=======================================
+CORE CLAIMS (what the candidate asserts):
+{claims_str}
 
-1. recruiter_snapshot:
-   - EXACTLY 2-3 sentences. Start with the candidate's name if known, otherwise "This candidate".
-   - State what the person is actually capable of doing today.
-   - Name the deepest expertise areas, the strongest evidence, and the biggest gap in the same paragraph.
-   - Use company names, tools, projects, and measurable evidence. No vague adjectives.
-   - Prefer core_claims, ownership_level, and impact_strength over generic duties.
-   - This section should answer: "What can this candidate do, and what are they not ready for yet?"
+SKILL DEPTH SIGNALS:
+{depth_str}
 
-2. strengths (MUST return MINIMUM 3, MAXIMUM 5):
-   - Each strength must be a distinct, specific capability with hard evidence.
-   - "point": headline (e.g., "Proven Python backend at scale")
-   - "evidence": cite company, project, tool, or metric. Pattern: "At [Company], [built/led/shipped] [thing] using [tool] - [outcome or scale]."
-   - Prefer strengths that are supported by core_claims, owner roles, high impact_strength, or high skill_depth.
-   - FORBIDDEN: "strong communicator", "team player", "passionate", "has experience with"
+UNCERTAIN AREAS (needs interview probing):
+{uncertain_str}
 
-3. concerns (MUST return MINIMUM 3, MAXIMUM 5):
-   - Each concern must be a concrete, role-specific gap - not a vague statement.
-   - "point": the gap headline (e.g., "No enterprise AWS deployment experience")
-   - "missing_skills": list the exact skill names missing (use same normalized names as JD must-haves)
-   - "impact": explain precisely WHY this gap matters for THIS role. Name what they'd fail to do on day 1.
-   - Prefer concerns that are supported by uncertain_areas, contributor/unclear ownership, or low impact_strength.
-   - If the candidate is weak on the role, make the concern sharp enough that HR can see why they should not move forward.
+RED FLAGS DETECTED:
+{flags_str}
 
-4. work_history_annotated - ANNOTATE EVERY ROLE:
-   For EACH role in the WORK HISTORY section above, produce one entry:
-   - "company": exact company name from the resume
-   - "role": exact job title from the resume
-   - "start_date": formatted as "MMM YYYY" (e.g., "Jan 2022") - extract from resume text
-   - "end_date": "MMM YYYY" or "Present" if current
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FIELD INSTRUCTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. recruiter_snapshot (string)
+   - 2-3 sentences. Start with candidate name.
+   - Sentence 1: What can they do TODAY — name deepest skill, best evidence, strongest role.
+   - Sentence 2: How well do they match THIS specific role — reference must-haves matched/missed.
+   - Sentence 3: The single biggest gap or the single strongest differentiator.
+   - Use company names, tools, metrics. ZERO vague adjectives ("strong", "passionate", "skilled").
+
+2. decision_breakdown (array — one row PER must-have skill + experience + each good-to-have with a hit)
+   - "criteria": skill or requirement name
+   - "required": "Must-have" | "Good-to-have" | "Experience"
+   - "candidate_has": "Yes — [specific evidence]" | "Partial — [transferable skill]" | "No"
+   - "result": "pass" | "partial" | "fail"
+   - "note": 1 sharp sentence. For pass: what evidence. For partial: what transfers and what's missing. For fail: what day-1 impact this creates.
+
+3. strengths (3–5 items)
+   - "point": headline — specific capability, NOT a personality trait. E.g. "Owns full React/Node.js product stack independently"
+   - "evidence": "At [Company], [verb] [specific thing] using [tool] — [outcome/scale/metric]"
+   - Derive from: owner-level roles, high impact_strength, validated core_claims, high skill_depth
+   - BANNED words: communicator, team player, passionate, motivated, fast learner, detail-oriented
+
+4. concerns (3–5 items)
+   - "point": specific gap headline. E.g. "No production Kubernetes experience in a role requiring day-1 cluster ownership"
+   - "missing_skills": exact skill names from the JD must-have list
+   - "impact": "This matters because [specific thing they cannot do on day 1 without it]"
+   - Derive from: missing_must list, uncertain_areas, contributor/unclear ownership, low impact_strength roles
+
+5. fit_radar (object — all values 0–100, used directly in the radar chart)
+   - "essentials": % of must-have skills confirmed with evidence (not just listed). Base on must-have match depth.
+   - "experience": % experience fit. 100=meets/exceeds, 80=1yr short, 60=2yr short, 40=3yr short, 20=4+yr short.
+   - "domain": % domain/contextual fit. Rate how well their industry background, domain skills, and JD scoring hints align.
+   - "skills": % breadth of relevant technical skills confirmed across work history + projects (not just listed).
+   - "confidence": your overall evidence confidence. How much of their resume is backed by verifiable specifics vs vague claims? 100=everything evidenced, 50=mixed, 20=mostly vague.
+   Each value must be independently justified — do NOT copy the score breakdown numbers directly.
+
+6. skill_match_rows (array — 6–12 items, used in the "Skill signals" card)
+   For each confirmed technical skill (from matched_must + matched_good + strong tools):
+   - "name": canonical skill name
+   - "stars": 1–5 rating of depth/evidence quality
+     5 = multiple high-impact roles, metrics, owner-level; 4 = one strong role with evidence; 3 = used in work history but no clear outcomes; 2 = listed only or project-only; 1 = transferable/text mention only
+   - "evidence_note": 1 short phrase. E.g. "Led 3 production deployments at Acme" or "Personal project only"
+
+7. work_history_annotated (array — one entry PER role in WORK HISTORY)
+   - "company": exact name
+   - "role": exact title
+   - "start_date": "MMM YYYY"
+   - "end_date": "MMM YYYY" or "Present"
    - "duration_months": integer
-   - "is_current": true/false
-   - "company_type": classify as one of: "Product Startup", "Service Company", "Fortune 500", "MNC", "Agency", "Freelance/Contract", "Research/Academia", "Early Stage Startup", "Government/PSU"
-   - "recruiter_summary": 2-3 sentences. What did they actually BUILD or DO here? Name tools, scope, outcomes. Pattern: "Built X using Y for Z users/clients. Led/Contributed to [initiative]. Key outcome: [metric or impact]."
-   - "technologies_used": list of tech/tools actually used in this role (from resume context)
-   - "ownership_level": use owner / contributor / unclear based on verbs and outcomes.
-   - "impact_strength": use low / medium / high based on scale, metrics, and clarity of outcomes.
-   - "overlap_note": if this role's dates overlap with another role, flag it. Format: "Overlaps with [Company] by ~N months." Otherwise null.
+   - "is_current": boolean
+   - "company_type": "Product Startup" | "Service Company" | "Fortune 500" | "MNC" | "Agency" | "Freelance/Contract" | "Research/Academia" | "Early Stage Startup" | "Government/PSU"
+   - "recruiter_summary": 2-3 sentences — what did they BUILD or DO, what tools, what scope, what outcome
+   - "technologies_used": array of strings
+   - "ownership_level": "owner" | "contributor" | "unclear"
+   - "impact_strength": "high" | "medium" | "low"
+   - "overlap_note": "Overlaps with [Company] by ~N months" or null
 
-5. integrity_signals - DATE MATH & EVIDENCE:
-   - Calculate ALL role overlaps from start/end dates. Do NOT skip any.
-   - For each signal: "level" = Low/Medium/High, "label" = short title, "summary" = 1 line, "details" = specific evidence.
-   - Short tenures (<8 months) get a Low or Medium flag with context (intern/contract/layoff = Low; unexplained exit = Medium).
-   - If resume has no anomalies -> return ONE Low signal: {{ "level": "Low", "label": "No anomalies detected", "summary": "All dates consistent and verifiable", "details": "No gaps, overlaps, or title inflation identified." }}
+8. integrity_signals (array)
+   - Check ALL date ranges for overlaps and unexplained gaps (>6 months)
+   - "level": "Low" | "Medium" | "High"
+   - "label": short flag title
+   - "summary": 1-line description
+   - "details": specific dates and calculation
+   - If clean: [{{"level":"Low","label":"No anomalies","summary":"All dates consistent","details":"No overlaps, gaps, or inflation found."}}]
 
-6. suitability_analysis - HYPER-SPECIFIC:
-   - suggestions: 3-5 items. Each must name a SPECIFIC tool, platform, or project type.
-     BAD: "Learn cloud computing"
-     GOOD: "Get AWS Solutions Architect Associate certified - this role requires independent infra ownership"
-   - readiness_timeline: realistic range like "Immediately - strong match", "3-6 months", "6-12 months", "12-18 months"
-   - The output should help HR decide whether this candidate is worth moving to the next step or whether the gap is too large.
+9. suitability_analysis
+   - "suggestions": 3–5 SPECIFIC actionable items (name exact cert, tool, project type)
+     BAD: "Learn more about cloud" | GOOD: "Complete AWS SAA-C03 — role requires solo infra ownership on day 1"
+   - "readiness_timeline": one of: "Immediately — strong match" | "2–4 weeks onboarding" | "3–6 months upskilling" | "6–12 months" | "12–18 months" | "Not suitable for this role"
 
-7. candidate_potential:
-   - "for_this_role" must be Low / Medium / High.
-   - "reasoning" must explain what the candidate is capable of right now, not generic potential.
-   - This should read like a recruiter's one-line fit assessment.
+10. candidate_potential
+    - "for_this_role": "High" | "Medium" | "Low"
+    - "reasoning": 1 sentence. What they CAN do right now, not generic potential.
 
-8. seniority_alignment:
-   - candidate_level and jd_level: 0=Intern, 1=Junior, 2=Mid, 3=Senior, 4=Lead/Principal
-   - candidate_label and jd_label: human-readable e.g., "Mid-level", "Senior", "Lead"
+11. seniority_alignment
+    - "candidate_level": integer 0–4 (0=Intern, 1=Junior, 2=Mid, 3=Senior, 4=Lead/Principal)
+    - "jd_level": integer 0–4
+    - "candidate_label": human label e.g. "Mid-level (2–4 yrs)"
+    - "jd_label": human label e.g. "Senior (5+ yrs)"
 
-9. career_progression_details:
-   - pattern: e.g., "Linear Upward", "Cross-functional Pivot", "Lateral (same level)", "Declining", "Freelance/Portfolio"
-   - role_flow: one sentence describing the career arc (e.g., "SDE -> Senior SDE -> Tech Lead at increasing company sizes")
-   - company_types: comma-separated summary (e.g., "Early Stage Startup, Product Startup, MNC")
-   - tenure_avg: e.g., "14 months average" - calculate from actual durations
-   - pattern_note, company_note, tenure_note: one-line recruiter commentary on each dimension
+12. career_progression_details
+    - "pattern": "Linear Upward" | "Cross-functional Pivot" | "Lateral" | "Declining" | "Freelance/Portfolio" | "Early Career"
+    - "role_flow": one sentence arc e.g. "Intern → SDE → Senior SDE → Tech Lead across 3 product companies"
+    - "company_types": comma-separated e.g. "Early Stage Startup, Product Startup, MNC"
+    - "tenure_avg": e.g. "18 months average" — calculate from actual durations
+    - "pattern_note": 1-line recruiter read on progression quality
+    - "company_note": 1-line read on company tier and diversity
+    - "tenure_note": 1-line read on stability vs job-hopping risk
 
-10. decision_reason - THE SHARP LINE:
-   - EXACTLY 1 sentence. The single most decisive reason for the status verdict.
-   - If Shortlisted: "What clinches it." e.g., "5 of 6 must-haves confirmed with direct project evidence across 3 companies."
-   - If Borderline: "What tips it." e.g., "Strong Python depth but zero cloud deployment experience in a role that requires day-1 AWS ownership."
-   - If Rejected: "The hard stopper." e.g., "Missing 4 of 5 must-have skills with no transferable evidence across any role."
-   - No hedging. No softening. One precise, recruiter-grade sentence.
+13. experience_assessment
+    - "years": {candidate_years}
+    - "vs_required": "{candidate_years} yrs vs {jd_min_years} yrs required"
+    - "quality": rate the QUALITY of experience, not just years. E.g. "High — 3 owner-level roles with measurable outcomes"
+    - "relevance": rate how relevant the experience domain is to THIS specific JD. E.g. "Strong — 2 of 3 companies were in same vertical"
 
-11. ai_verdict:
-    - 3-5 sentences. This is the Expert Synthesis section for HR.
-    - Must combine: what the candidate can do, how well they match the must-have criteria, the deepest expertise signal, and whether they should move to the next step.
-    - Name companies and skills. Ground every claim in evidence from the resume.
-    - State clearly why shortlisted / why not shortlisted.
-    - If there is a clear role mismatch, say it plainly; if there is a strong fit, say what gives confidence.
-    - Explicitly call out any weakly supported claim or uncertain area that needs probing.
+14. project_relevance
+    - "rating": "High" | "Medium" | "Low"
+    - "reasoning": 1-2 sentences on whether projects demonstrate relevant depth or are just padding
 
-Return ONLY valid JSON in this EXACT schema (no markdown, no code fences):
+15. decision_reason (string — EXACTLY 1 sentence)
+    - The single most decisive reason for {status}.
+    - Shortlisted: what clinches it. Borderline: what tips it. Rejected: the hard stopper.
+    - No hedging. No softening. E.g. "5 of 6 must-haves confirmed across 3 owner-level roles with production metrics."
+
+16. ai_verdict (string — 3–5 sentences)
+    - Expert synthesis for HR. Combine: capability summary, must-have match quality, deepest evidence signal, recommendation.
+    - Name companies and skills. Every sentence grounded in resume evidence.
+    - State plainly why shortlisted OR why not.
+    - For borderline: state exactly what would push them to shortlisted.
+    - Call out any claim that needs interview verification.
+
+17. recruiter_snapshot is ALSO used as the "Screening summary" card bullets.
+    Write it so it naturally splits into 3 bullet-sized insights when split on ". " — each sentence should stand alone.
+
+18. interview_questions (5–7 items, role-specific, evidence-targeted)
+    - "question": the exact question to ask
+    - "intent": what competency or gap this probes
+    - "based_on": which resume claim or uncertainty triggered this question
+    - Prioritise: uncertain_areas, partial matches, owner claims that lack metrics, gaps between role title and actual evidence
+
+Return ONLY valid JSON matching this EXACT schema. No markdown. No code fences. No extra keys.
 
 {{
   "recruiter_snapshot": "string",
   "decision_breakdown": [
-    {{
-      "criteria": "string",
-      "required": "Must-have | Good-to-have | Experience",
-      "candidate_has": "Yes - with evidence | No | Partial",
-      "result": "pass | fail | partial",
-      "note": "string"
-    }}
+    {{"criteria":"string","required":"Must-have|Good-to-have|Experience","candidate_has":"string","result":"pass|partial|fail","note":"string"}}
   ],
   "strengths": [
-    {{ "point": "string", "evidence": "string" }}
+    {{"point":"string","evidence":"string"}}
   ],
   "concerns": [
-    {{ "point": "string", "missing_skills": ["string"], "impact": "string" }}
+    {{"point":"string","missing_skills":["string"],"impact":"string"}}
+  ],
+  "fit_radar": {{
+    "essentials": 0,
+    "experience": 0,
+    "domain": 0,
+    "skills": 0,
+    "confidence": 0
+  }},
+  "skill_match_rows": [
+    {{"name":"string","stars":0,"evidence_note":"string"}}
   ],
   "experience_assessment": {{
     "years": {candidate_years},
-    "vs_required": "{candidate_years} years vs {jd_min_years} years required",
+    "vs_required": "{candidate_years} yrs vs {jd_min_years} yrs required",
     "quality": "string",
     "relevance": "string"
   }},
   "work_history_annotated": [
     {{
-      "company": "string",
-      "role": "string",
-      "start_date": "string",
-      "end_date": "string",
-      "duration_months": 0,
-      "is_current": false,
-      "company_type": "string",
-      "recruiter_summary": "string",
-      "technologies_used": ["string"],
-      "overlap_note": "string | null"
+      "company":"string","role":"string","start_date":"string","end_date":"string",
+      "duration_months":0,"is_current":false,"company_type":"string",
+      "recruiter_summary":"string","technologies_used":["string"],
+      "ownership_level":"owner|contributor|unclear","impact_strength":"high|medium|low",
+      "overlap_note":"string|null"
     }}
   ],
-  "project_relevance": {{ "rating": "High | Medium | Low", "reasoning": "string" }},
+  "project_relevance": {{"rating":"High|Medium|Low","reasoning":"string"}},
   "integrity_signals": [
-    {{
-      "level": "Low | Medium | High",
-      "label": "string",
-      "summary": "string",
-      "details": "string"
-    }}
+    {{"level":"Low|Medium|High","label":"string","summary":"string","details":"string"}}
   ],
   "suitability_analysis": {{
     "suggestions": ["string"],
     "readiness_timeline": "string"
   }},
-  "candidate_potential": {{ "for_this_role": "Low | Medium | High", "reasoning": "string" }},
+  "candidate_potential": {{"for_this_role":"High|Medium|Low","reasoning":"string"}},
   "seniority_alignment": {{
-    "candidate_level": 0,
-    "jd_level": 0,
-    "candidate_label": "string",
-    "jd_label": "string"
+    "candidate_level":0,"jd_level":0,"candidate_label":"string","jd_label":"string"
   }},
   "career_progression_details": {{
-    "pattern": "string",
-    "role_flow": "string",
-    "company_types": "string",
-    "tenure_avg": "string",
-    "pattern_note": "string",
-    "company_note": "string",
-    "tenure_note": "string"
+    "pattern":"string","role_flow":"string","company_types":"string",
+    "tenure_avg":"string","pattern_note":"string","company_note":"string","tenure_note":"string"
   }},
   "decision_reason": "string",
   "ai_verdict": "string",
   "interview_questions": [
-    {{ "question": "string", "intent": "string", "based_on": "string" }}
+    {{"question":"string","intent":"string","based_on":"string"}}
   ]
 }}
 """
@@ -1217,30 +1264,15 @@ Return ONLY valid JSON in this EXACT schema (no markdown, no code fences):
             {
                 "role": "system",
                 "content": (
-                    # Transferable skills - credit non-obvious domain competencies
-                    "A Marketing analyst running A/B tests has statistical thinking. "
-                    "A banker automating reconciliation has process automation skills. Credit these when relevant. "
-
-                    # Evidence discipline - no vague adjectives, only concrete facts
-                    "EVIDENCE DISCIPLINE: Every strength, gap, and claim MUST cite a company name, tool name, "
-                    "project name, or metric. FORBIDDEN: 'strong communicator', 'team player', 'has experience with', "
-                    "'passionate', 'motivated'. "
-                    "REQUIRED pattern: 'At [Company], built [thing] using [tool] that [outcome]'. "
-
-                    # Tone standards - professional, respectful, constructive
-                    "TONE STANDARDS (NON-NEGOTIABLE): "
-                    "Write in professional, respectful, and constructive language at all times. "
-                    "If status is Rejected - be specific and factual about what is missing, but never dismissive or unkind. "
-                    "Frame gaps as 'requires development in X' or 'no evidence of Y found' - NOT as personal failures. "
-                    "If status is Borderline - explain PRECISELY what skills or experience would move them to Shortlisted. "
-                    "Every candidate, regardless of outcome, deserves a report that is fair, accurate, and professional. "
-
-                    # Bias prohibition
-                    "No hallucinations. No gender, age, nationality, or name-based bias. "
-                    "Do not infer personality, attitude, or cultural fit from resume alone. "
-
-                    # Output format
-                    "Output ONLY valid JSON. No markdown. No code fences. No extra text."
+                    "You are a Principal Technical Recruiter and Talent Intelligence expert. "
+                    "You produce world-class candidate evaluation reports used by hiring managers at top companies. "
+                    "EVIDENCE DISCIPLINE: Every strength, concern, and claim MUST cite company name, tool, project, or metric. "
+                    "FORBIDDEN words anywhere in output: 'strong communicator', 'team player', 'passionate', 'motivated', 'fast learner', 'detail-oriented', 'has experience with'. "
+                    "REQUIRED evidence pattern: 'At [Company], [built/led/owned] [specific thing] using [tool] — [outcome/scale/metric]'. "
+                    "TONE: Professional, factual, constructive. Rejected candidates get honest specific gaps, not unkind language. "
+                    "BIAS: Zero tolerance. No inference from name, nationality, gender, age, or education prestige alone. "
+                    "fit_radar values are YOUR independent analytical judgment — do not copy score breakdown numbers. "
+                    "Output ONLY valid JSON. No markdown. No code fences. No extra text outside the JSON object."
                 ),
             },
             {"role": "user", "content": prompt},

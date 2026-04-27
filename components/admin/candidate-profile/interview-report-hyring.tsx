@@ -570,7 +570,15 @@ export function SemicircleGauge({ value, fitLabel }: { value: number; fitLabel: 
   );
 }
 
-export function Donut({ pct, questions }: { pct: number; questions: number }) {
+export function Donut({
+  pct,
+  questions,
+  questionsLabel,
+}: {
+  pct: number;
+  questions: number;
+  questionsLabel?: string;
+}) {
   const p = Math.max(0, Math.min(100, pct));
   const c = 2 * Math.PI * 40;
   const dash = (p / 100) * c;
@@ -600,7 +608,9 @@ export function Donut({ pct, questions }: { pct: number; questions: number }) {
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
           <p className="text-[1.6rem] font-extrabold leading-none tracking-tight text-[#1A1D22] sm:text-[1.75rem]">{p}%</p>
-          <p className="mt-1.5 text-[11px] font-bold uppercase leading-tight text-[#5C6370]">{questions} questions</p>
+          <p className="mt-1.5 text-[11px] font-bold uppercase leading-tight text-[#5C6370]">
+            {questionsLabel || `${questions} questions`}
+          </p>
         </div>
       </div>
     </div>
@@ -723,14 +733,31 @@ export function CommunicationScoreCard({ comm }: { comm: HyringInterviewViewMode
   );
 }
 
-export function TechnicalScoreCard({ pct, questions, tag: _tag }: { pct: number; questions: number; tag: string }) {
+export function TechnicalScoreCard({
+  pct,
+  questions,
+  tag: _tag,
+  label = "Session score",
+  questionsLabel,
+  summary,
+  footerNote = "Weighted from answered items",
+}: {
+  pct: number;
+  questions: number;
+  tag: string;
+  label?: string;
+  questionsLabel?: string;
+  summary?: string;
+  footerNote?: string;
+}) {
   const p = Math.max(0, Math.min(100, pct));
   return (
     <div className="flex min-h-0 flex-1 flex-col justify-center gap-4 px-2 pb-3 pt-1 sm:px-3 sm:pb-4 sm:pt-2">
-      <Donut pct={p} questions={questions} />
+      <Donut pct={p} questions={questions} questionsLabel={questionsLabel} />
+      {summary ? <p className="px-2 text-center text-[12px] font-semibold leading-5 text-[#1A1D22]">{summary}</p> : null}
       <div className="px-0.5">
         <div className="mb-1.5 flex items-baseline justify-between gap-2">
-          <span className="text-[12px] font-semibold text-[#5C6370]">Session score</span>
+          <span className="text-[12px] font-semibold text-[#5C6370]">{label}</span>
           <span className="text-[13px] font-extrabold tabular-nums text-[#1A1D22]">{p}%</span>
         </div>
         <div className="h-3 w-full overflow-hidden rounded-full bg-[#E8EAED]">
@@ -739,7 +766,7 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag }: { pct: number;
             style={{ width: `${p}%` }}
           />
         </div>
-        <p className="mt-2 text-center text-[11px] font-medium text-[#6B7079]">Weighted from answered items</p>
+        <p className="mt-2 text-center text-[11px] font-medium text-[#6B7079]">{footerNote}</p>
       </div>
     </div>
   );

@@ -1,13 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
   Check,
-  ExternalLink,
-  FileText,
   Link2,
   Loader2,
   Sparkles,
@@ -16,41 +13,124 @@ import {
 import {
   HYRING_REPORT_CARD,
   HYRING_REPORT_PAGE_BG,
-  IntelMetricCard,
   SemicircleGauge,
   TechnicalScoreCard,
-  CommunicationScoreCard,
   fitLabelFromPct,
 } from "./interview-report-hyring";
-import type { HyringInterviewViewModel, IntelIconKey, IntelSignalRow } from "./interview-report-hyring";
+import type { IntelIconKey, IntelSignalRow } from "./interview-report-hyring";
 
 const card = HYRING_REPORT_CARD;
 const bgPage = HYRING_REPORT_PAGE_BG;
 
-type ResIntel = "rubric" | "document" | "flags";
+type RadarKey = "essentials" | "experience" | "domain" | "skills" | "confidence";
 
-function ResTabStrip({ value, onChange }: { value: ResIntel; onChange: (v: ResIntel) => void }) {
-  const base = "shrink-0 rounded-lg px-4 py-2.5 text-[10px] font-extrabold uppercase tracking-widest transition-colors";
-  const items: [ResIntel, string][] = [
-    ["rubric", "Rubric coverage"],
-    ["document", "Document check"],
-    ["flags", "Flags"],
-  ];
+const RESUME_RADAR_LABELS: { key: RadarKey; label: string }[] = [
+  { key: "essentials", label: "Essentials" },
+  { key: "experience", label: "Experience" },
+  { key: "domain", label: "Domain" },
+  { key: "skills", label: "Skills" },
+  { key: "confidence", label: "Confidence" },
+];
+
+function ResumeRadarPlot({
+  values,
+}: {
+  values: Record<RadarKey, number>;
+}) {
+  const n = RESUME_RADAR_LABELS.length;
+  const cx = 50;
+  const cy = 50;
+  const r = 32;
+  const rOuter = 42;
+  const angle = (i: number) => (-90 + (360 / n) * i) * (Math.PI / 180);
+  const clamp = (v: number) => Math.max(0, Math.min(100, v));
+  const pts = RESUME_RADAR_LABELS.map((def, i) => {
+    const t = (clamp(values[def.key]) / 100) * r;
+    return `${cx + t * Math.cos(angle(i))},${cy + t * Math.sin(angle(i))}`;
+  });
   return (
-    <div className="flex flex-wrap gap-2">
-      {items.map(([k, l]) => (
-        <button
-          type="button"
-          key={k}
-          onClick={() => onChange(k)}
-          className={cn(
-            base,
-            value === k ? "bg-neutral-900 text-white shadow-sm" : "bg-[#E8E8E8] text-neutral-900 hover:bg-[#DCDCDC]"
-          )}
-        >
-          {l}
-        </button>
-      ))}
+    <div className="w-full min-h-[230px] sm:min-h-[250px]">
+      <svg
+        viewBox="0 0 100 100"
+        className="h-full w-full overflow-visible"
+        preserveAspectRatio="xMidYMid meet"
+        aria-label="Resume fit radar"
+      >
+        <defs>
+          <linearGradient id="resumeRadarGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#1E6FD6" />
+            <stop offset="55%" stopColor="#F0A12A" />
+            <stop offset="100%" stopColor="#1E9D55" />
+          </linearGradient>
+        </defs>
+        {[0.25, 0.5, 0.75, 1].map((f) => (
+          <polygon
+            key={f}
+            points={RESUME_RADAR_LABELS.map((_, i) => {
+              const t = f * r;
+              return `${cx + t * Math.cos(angle(i))},${cy + t * Math.sin(angle(i))}`;
+            }).join(" ")}
+            fill="none"
+            stroke="#E5E7EB"
+            strokeWidth="0.45"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        {Array.from({ length: n }, (_, i) => (
+          <line
+            key={`resume-spoke-${i}`}
+            x1={cx}
+            y1={cy}
+            x2={cx + r * Math.cos(angle(i))}
+            y2={cy + r * Math.sin(angle(i))}
+            stroke="#E5E7EB"
+            strokeWidth="0.4"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        <polygon
+          points={pts.join(" ")}
+          fill="rgba(249,115,22,0.10)"
+          stroke="url(#resumeRadarGrad)"
+          strokeWidth="0.9"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+        {RESUME_RADAR_LABELS.map((def, i) => {
+          const ax = angle(i);
+          const ox = cx + rOuter * Math.cos(ax);
+          const oy = cy + rOuter * Math.sin(ax);
+          const pct = clamp(values[def.key]);
+          return (
+            <g key={def.key}>
+              <text
+                x={ox}
+                y={oy - 1.4}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontSize="2.15"
+                fontWeight="700"
+                fill="#4B5563"
+                style={{ fontFamily: "var(--font-inter, ui-sans-serif, system-ui, sans-serif)" }}
+              >
+                {def.label}
+              </text>
+              <text
+                x={ox}
+                y={oy + 2.4}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontSize="2.35"
+                fontWeight="800"
+                fill="#1A1D22"
+                style={{ fontFamily: "var(--font-inter, ui-sans-serif, system-ui, sans-serif)" }}
+              >
+                {pct}%
+              </text>
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
@@ -75,13 +155,18 @@ export type HyringResumeViewModel = {
     pipeline: string;
   };
   mustHave: { percent: number; nRequirements: number; tag: "GOOD" | "AVERAGE" | "WEAK" };
+  scoreBreakdown: {
+    essentials: number;
+    experience: number;
+    supplemental: number;
+    overall: number;
+  };
   comm5: { pronunciation: number; grammar: number; vocabulary: number; minimalFiller: number; fluency: number; tag: string };
+  fitRadar: { essentials: number; experience: number; domain: number; skills: number; confidence: number };
   aiBullets: string[];
   topStrengths: string[];
   topRisks: string[];
   rubricRows: IntelSignalRow[];
-  documentRows: IntelSignalRow[];
-  flagRows: IntelSignalRow[];
   skillMatchRows: { name: string; questions: number; stars: number }[];
   careerLines: { label: string; body: string; time: string }[];
   resumeUrl: string | null;
@@ -114,6 +199,17 @@ function toBullets(text: string, min = 3): string[] {
     "Scores are model estimates—treat as guidance with human review.",
     "Open the source resume when wording matters for compliance or level.",
   ];
+}
+
+function compactReadoutText(text: string, maxLen = 86) {
+  const clean = String(text || "")
+    .replace(/^flag:\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean) return "";
+  const splitAt = clean.search(/[;,]/);
+  const clipped = splitAt > 0 && splitAt <= 60 ? clean.slice(0, splitAt).trim() : clean;
+  return clipped.length > maxLen ? `${clipped.slice(0, maxLen - 3).trimEnd()}...` : clipped;
 }
 
 /**
@@ -173,6 +269,8 @@ export function buildHyringResumeViewModel(i: {
   const supA = gS + dS;
   const supB = gM + dM;
   const supPct = supB > 0 ? Math.min(100, Math.round((supA / supB) * 100)) : 0;
+  const skillsRadarPct = Math.min(100, Math.round((i.totalExtractedSkills / 12) * 100));
+  const confidencePct = Math.min(100, Math.round(i.matchScore));
 
   const nReq = Math.max(3, skM > 0 ? Math.min(20, Math.round(skM / 3)) : 5);
   const nRoles = Array.isArray(i.combinedWorkHistory) ? i.combinedWorkHistory.length : 0;
@@ -187,10 +285,17 @@ export function buildHyringResumeViewModel(i: {
     tag: tagFromPct(i.matchScore * 0.6 + mustPct * 0.2 + expPct * 0.2) === "GOOD" ? "STRONG" : "AVERAGE",
   };
 
+  const scoreBreakdown = {
+    essentials: mustPct,
+    experience: expPct,
+    supplemental: supPct,
+    overall: Math.min(100, Math.max(0, Math.round(i.matchScore))),
+  };
+
   const topStrengths = (() => {
-    const s = [...(i.strengthLines || [])].slice(0, 3);
+    const s = [...(i.strengthLines || [])].map((x) => compactReadoutText(x)).filter(Boolean).slice(0, 3);
     while (s.length < 3) {
-      const p = "Cross-check the rubric cards against your hiring bar for this requisition";
+      const p = "Cross-check against the hiring bar for this role";
       if (!s.includes(p)) s.push(p);
       else break;
     }
@@ -198,9 +303,12 @@ export function buildHyringResumeViewModel(i: {
   })();
 
   const topRisks = (() => {
-    const r = [...(i.weaknessLines || []), ...i.redFlagLines.map((x) => `Flag: ${x}`)].slice(0, 3);
+    const r = [...(i.weaknessLines || []), ...i.redFlagLines.map((x) => `Watchout: ${x}`)]
+      .map((x) => compactReadoutText(x))
+      .filter(Boolean)
+      .slice(0, 3);
     if (r.length === 0) {
-      r.push("No major automated blockers; still run normal comp and reference checks");
+      r.push("No major automated blockers; still run normal checks");
     }
     return r.slice(0, 3);
   })();
@@ -235,57 +343,6 @@ export function buildHyringResumeViewModel(i: {
       icon: "zap" as IntelIconKey,
     },
   ];
-
-  const hasResume = Boolean(c.resumeUrl || i.hasResumeText);
-  const documentRows: IntelSignalRow[] = [
-    {
-      id: "d1",
-      label: "Resume file on file",
-      badge: hasResume ? "Yes" : "No",
-      tone: hasResume ? "emerald" : "rose",
-      icon: "shield" as IntelIconKey,
-    },
-    {
-      id: "d2",
-      label: "AI report ready",
-      badge: i.hasAiReport ? "Yes" : "Pending",
-      tone: i.hasAiReport ? "emerald" : "amber",
-      icon: "search" as IntelIconKey,
-    },
-    {
-      id: "d3",
-      label: "Work history rows",
-      badge: String(nRoles),
-      tone: nRoles > 0 ? "emerald" : "slate",
-      icon: "git-branch" as IntelIconKey,
-    },
-    {
-      id: "d4",
-      label: "Education rows",
-      badge: String(nEdu),
-      tone: nEdu > 0 ? "emerald" : "slate",
-      icon: "user" as IntelIconKey,
-    },
-  ];
-
-  const flagRows: IntelSignalRow[] =
-    i.redFlagLines.length > 0
-      ? i.redFlagLines.slice(0, 6).map((line, idx) => ({
-          id: `f${idx}`,
-          label: line.length > 48 ? line.slice(0, 45) + "…" : line,
-          badge: "Review",
-          tone: "rose" as const,
-          icon: "alert" as IntelIconKey,
-        }))
-      : [
-          {
-            id: "f0",
-            label: "No automated red flags in the current parse",
-            badge: "Clear",
-            tone: "emerald",
-            icon: "shield" as IntelIconKey,
-          },
-        ];
 
   const skillMatchRows: HyringResumeViewModel["skillMatchRows"] = (() => {
     if (i.techSkillSample && i.techSkillSample.length) {
@@ -353,13 +410,19 @@ export function buildHyringResumeViewModel(i: {
       pipeline: i.interviewStageLabel,
     },
     mustHave: { percent: i.mustHaveBarPct, nRequirements: nReq, tag: tagFromPct(mustPct) },
+    scoreBreakdown,
     comm5,
+    fitRadar: {
+      essentials: mustPct,
+      experience: expPct,
+      domain: supPct,
+      skills: skillsRadarPct,
+      confidence: confidencePct,
+    },
     aiBullets: toBullets(i.summary),
     topStrengths,
     topRisks,
     rubricRows,
-    documentRows,
-    flagRows,
     skillMatchRows,
     careerLines,
     resumeUrl: c.resumeUrl || null,
@@ -372,7 +435,6 @@ export function buildHyringResumeViewModel(i: {
 type ResumeReportHyringProps = { model: HyringResumeViewModel };
 
 export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
-  const [intel, setIntel] = useState<ResIntel>("rubric");
   if (model.processing) {
     return (
       <div className={cn("w-full", bgPage)}>
@@ -401,35 +463,33 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
           </div>
         </div>
 
-        <div className={cn(card, "p-4 sm:p-6")}>
-          <div className="flex flex-col justify-between gap-6 lg:flex-row">
-            <div className="flex min-w-0 flex-1 gap-4 sm:gap-5">
-              <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border-2 border-white shadow">
-                {model.displayAvatar ? <img src={model.displayAvatar} alt="" className="h-full w-full object-cover" /> : null}
-              </div>
-              <div className="min-w-0">
-                <h2 className="text-2xl font-extrabold tracking-tight text-[#1A1D22] sm:text-3xl">{model.fullName}</h2>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <span className="rounded-md bg-[#F0F1F3] px-2.5 py-0.5 text-[11px] font-semibold text-[#3D434D]">{model.roleLabel}</span>
-                  <span className="rounded-md bg-[#F0F1F3] px-2.5 py-0.5 text-[11px] font-semibold text-[#3D434D]">
-                    {model.cityBadge}
-                  </span>
+        <div className={cn(card, "overflow-hidden p-0")}>
+          <div className="bg-gradient-to-br from-white via-white to-[#FFF4EC] px-4 py-5 sm:px-6">
+            <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
+              <div className="flex min-w-0 flex-1 gap-4 sm:gap-5">
+                <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-full border-2 border-white shadow-[0_10px_25px_rgba(0,0,0,0.08)] sm:h-28 sm:w-28">
+                  {model.displayAvatar ? <img src={model.displayAvatar} alt="" className="h-full w-full object-cover" /> : null}
                 </div>
-                <p className="mt-3 text-[12px] text-[#5C6370]">
-                  <span className="font-semibold text-[#1A1D22]">Applied</span> {model.appliedOn} ·
-                  <span className="ml-1 font-semibold">Pipeline</span> {model.stats.pipeline} ·
-                  <span className="ml-1 font-semibold">Location</span> {model.locationLine}
-                </p>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#F97316]">Resume screening</p>
+                  <h2 className="mt-1 text-2xl font-black tracking-tight text-[#1A1D22] sm:text-[2.5rem]">{model.fullName}</h2>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-[#F1F2F4] px-3 py-1 text-[11px] font-bold text-[#3D434D]">
+                      {model.roleLabel}
+                    </span>
+                    <span className="rounded-full bg-[#F1F2F4] px-3 py-1 text-[11px] font-bold text-[#3D434D]">
+                      {model.locationLine}
+                    </span>
+                  </div>
+                  <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-[#5C6370]">
+                    Score-first screening summary with the strongest signals surfaced up top. The gauge on the right is the quick read; the rest of the report explains why.
+                  </p>
+                </div>
               </div>
-            </div>
-            <div className="flex flex-col items-end gap-3 sm:flex-row sm:items-center">
-              <div
-                className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-[#B8974E] text-[8px] font-black uppercase text-[#8B6A1E]"
-                title="Sealed for review"
-              >
-                HYR
+              <div className="flex flex-col items-center gap-2 rounded-3xl bg-white/85 px-5 py-4 shadow-[0_10px_30px_rgba(17,24,39,0.06)] ring-1 ring-black/5 sm:min-w-[240px]">
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#6B7079]">Fit snapshot</p>
+                <SemicircleGauge value={model.fitPercent} fitLabel={model.fitLabel} />
               </div>
-              <SemicircleGauge value={model.fitPercent} fitLabel={model.fitLabel} />
             </div>
           </div>
         </div>
@@ -437,10 +497,10 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {(
             [
-              ["Total work experience (AI)", model.stats.workExp],
-              ["Roles in history", model.stats.rolesCount],
+              ["Experience", model.stats.workExp],
+              ["Career depth", model.stats.rolesCount],
               ["Education", model.stats.education],
-              ["Skills extracted", model.stats.skillsExtracted],
+              ["Matched skills", model.stats.skillsExtracted],
             ] as const
           ).map(([a, b]) => (
             <div key={String(a)} className={cn(card, "p-3 text-center sm:text-left")}>
@@ -467,41 +527,65 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className={cn(card, "flex flex-col overflow-hidden")}>
             <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-3">
-              <p className="text-sm font-extrabold text-[#1A1D22]">Must-have coverage</p>
-              <span className="rounded-md bg-[#E6F4EC] px-2.5 py-0.5 text-[9px] font-extrabold uppercase text-[#0D4D2E]">
-                {model.mustHave.tag}
+              <div className="min-w-0">
+                <p className="text-sm font-extrabold text-[#1A1D22]">Essential match</p>
+              </div>
+              <span
+                className={cn(
+                  "rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest",
+                  model.mustHave.tag === "GOOD"
+                    ? "bg-[#E6F4EC] text-[#0D4D2E]"
+                    : model.mustHave.tag === "AVERAGE"
+                      ? "bg-[#FFF4E8] text-[#B86A00]"
+                      : "bg-[#FDECEC] text-[#B42318]"
+                )}
+              >
+                {model.mustHave.tag === "GOOD" ? "Strong match" : model.mustHave.tag === "AVERAGE" ? "Moderate match" : "Needs review"}
               </span>
             </div>
             <TechnicalScoreCard
               pct={model.mustHave.percent}
               questions={model.mustHave.nRequirements}
               tag={model.mustHave.tag}
+              label="Resume essentials"
+              questionsLabel={`${model.mustHave.nRequirements} essentials`}
+              summary={`Matches roughly ${Math.max(0, Math.round((model.mustHave.percent / 100) * model.mustHave.nRequirements))} of ${model.mustHave.nRequirements} essential checks`}
+              footerNote="Weighted from required resume essentials"
             />
           </div>
           <div className={cn(card, "flex flex-col")}>
             <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-3">
-              <p className="text-sm font-extrabold text-[#1A1D22]">Rubric shape</p>
+              <div className="min-w-0">
+                <p className="text-sm font-extrabold text-[#1A1D22]">Fit radar</p>
+              </div>
               <span className="rounded-md bg-[#E0EDFF] px-2.5 py-0.5 text-[9px] font-extrabold uppercase text-[#0B5FFF]">
-                {model.comm5.tag}
+                {model.fitLabel}
               </span>
             </div>
-            <CommunicationScoreCard
-              comm={
-                {
-                  pronunciation: model.comm5.pronunciation,
-                  grammar: model.comm5.grammar,
-                  vocabulary: model.comm5.vocabulary,
-                  minimalFiller: model.comm5.minimalFiller,
-                  fluency: model.comm5.fluency,
-                  tag: model.comm5.tag,
-                } satisfies HyringInterviewViewModel["comm"]
-              }
-            />
+            <div className="flex flex-1 flex-col justify-between gap-3 px-3 py-4">
+              <ResumeRadarPlot values={model.fitRadar} />
+            </div>
           </div>
           <div className={cn(card, "p-4")}>
-            <div className="mb-3 flex items-center gap-2 text-[#0D4D2E]">
-              <Sparkles className="h-4 w-4" />
-              <p className="text-sm font-extrabold">AI summary</p>
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2 text-[#0D4D2E]">
+                <Sparkles className="h-4 w-4" />
+                <div>
+                  <p className="text-sm font-extrabold">Screening summary</p>
+                </div>
+              </div>
+              <span
+                className={cn(
+                  "shrink-0 rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest",
+                  model.fitPercent >= 80
+                    ? "bg-[#E6F4EC] text-[#0D4D2E]"
+                    : model.fitPercent >= 60
+                      ? "bg-[#FFF4E8] text-[#B86A00]"
+                      : "bg-[#FDECEC] text-[#B42318]"
+                )}
+              >
+                {model.fitPercent >= 80 ? "Strong fit" : model.fitPercent >= 60 ? "Review" : "Needs review"}
+              </span>
             </div>
             <ul className="space-y-2.5 text-[13px] leading-relaxed text-[#3D434D]">
               {model.aiBullets.map((b, j) => (
@@ -517,30 +601,29 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
         </div>
 
         <div className={cn(card, "p-4 sm:p-5")}>
-          <p className="mb-4 text-[10px] font-extrabold uppercase tracking-widest text-[#5C6370]">Hiring readout</p>
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8 lg:gap-10">
-            <div>
-              <p className="mb-3 text-[10px] font-extrabold uppercase tracking-widest text-[#0D4D2E]">Top strengths</p>
-              <ol className="m-0 list-none space-y-2.5 p-0" role="list" aria-label="Top strengths">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div className="md:border-r md:border-[#E8EAED] md:pr-5">
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#0D4D2E]">Strengths</p>
+              <ol className="mt-4 space-y-3" role="list" aria-label="Strengths">
                 {model.topStrengths.map((t, j) => (
-                  <li key={j} className="flex gap-2.5 text-[13px] leading-snug text-[#1A1D22]">
-                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#E6F4EC] text-[10px] font-extrabold text-[#0D4D2E]">
+                  <li key={j} className="flex items-start gap-3 text-[13px] leading-5 text-[#1A1D22]">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#E6F4EC] text-[9px] font-black text-[#0D4D2E]">
                       {j + 1}
                     </span>
-                    <span>{t}</span>
+                    <p>{t}</p>
                   </li>
                 ))}
               </ol>
             </div>
-            <div>
-              <p className="mb-3 text-[10px] font-extrabold uppercase tracking-widest text-[#9A3412]">Top risks</p>
-              <ol className="m-0 list-none space-y-2.5 p-0" role="list" aria-label="Top risks">
+            <div className="md:pl-5">
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#9A3412]">Risks</p>
+              <ol className="mt-4 space-y-3" role="list" aria-label="Risks">
                 {model.topRisks.map((t, j) => (
-                  <li key={j} className="flex gap-2.5 text-[13px] leading-snug text-[#1A1D22]">
-                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[10px] font-extrabold text-amber-900">
+                  <li key={j} className="flex items-start gap-3 text-[13px] leading-5 text-[#1A1D22]">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[9px] font-black text-amber-900">
                       {j + 1}
                     </span>
-                    <span>{t}</span>
+                    <p>{t}</p>
                   </li>
                 ))}
               </ol>
@@ -548,51 +631,49 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+        <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-12">
           <div className="lg:col-span-7">
-            <div className={cn(card, "space-y-4 p-4 sm:p-5")}>
-              <h3 className="text-base font-bold tracking-tight text-neutral-900">Resume intelligence</h3>
-              <ResTabStrip value={intel} onChange={setIntel} />
-              <div>
-                {intel === "rubric" && (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {model.rubricRows.map((row) => (
-                      <IntelMetricCard key={row.id} row={row} />
-                    ))}
+            <div className={cn(card, "flex h-[420px] min-h-0 min-w-0 flex-col overflow-hidden p-0")}>
+              <div className="border-b border-[#E8EAED] px-4 py-3">
+                <p className="text-sm font-extrabold">Career timeline</p>
+              </div>
+              <div className="flex-1 space-y-3 overflow-y-auto p-3">
+                {model.careerLines.map((line, k) => (
+                  <div
+                    key={k}
+                    className="flex gap-2 rounded-lg border border-[#E8EAED] bg-white p-2.5"
+                    role="presentation"
+                  >
+                    <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-[#0B5FFF]" />
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-[#6B7079]">Experience</span>
+                        <span className="text-[9px] text-[#8C9299]">{line.time}</span>
+                      </div>
+                      <p className="text-[12px] font-bold text-[#1A1D22]">{line.label}</p>
+                      <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-[#3D434D]">{line.body}</p>
+                    </div>
                   </div>
-                )}
-                {intel === "document" && (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {model.documentRows.map((row) => (
-                      <IntelMetricCard key={row.id} row={row} />
-                    ))}
-                  </div>
-                )}
-                {intel === "flags" && (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {model.flagRows.map((row) => (
-                      <IntelMetricCard key={row.id} row={row} />
-                    ))}
-                  </div>
-                )}
+                ))}
               </div>
             </div>
           </div>
           <div className="min-h-0 lg:col-span-5">
-            <div className={cn(card, "flex min-h-0 flex-col overflow-hidden p-0")}>
+            <div className={cn(card, "flex h-[420px] min-h-0 flex-col overflow-hidden p-0")}>
               <div className="border-b border-[#E8EAED] px-4 py-3">
                 <h3 className="text-sm font-extrabold text-[#1A1D22]">Skill signals</h3>
               </div>
-              <div className="max-h-[420px] space-y-2 overflow-y-auto p-3">
+              <div className="flex-1 space-y-2 overflow-y-auto p-3">
                 {model.skillMatchRows.map((s) => (
                   <div
                     key={s.name + s.questions}
-                    className="flex items-center justify-between border-b border-[#EEF0F3] py-2 last:border-0"
+                    className="flex items-center justify-between rounded-lg border border-[#EEF0F3] bg-white px-3 py-2.5"
                   >
-                    <p className="text-[12px] font-semibold text-[#1A1D22]">
-                      {s.name} <span className="text-[#6B7079]">(weight {s.questions})</span>
-                    </p>
-                    <div className="flex items-center gap-0.5">
+                    <div className="min-w-0 pr-3">
+                      <p className="truncate text-[12px] font-semibold text-[#1A1D22]">{s.name}</p>
+                      <p className="text-[10px] font-medium text-[#6B7079]">Matched skill signal</p>
+                    </div>
+                    <div className="flex items-center gap-0.5 shrink-0">
                       {Array.from({ length: 5 }).map((_, j) => (
                         <Star
                           key={j}
@@ -607,59 +688,15 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
           </div>
         </div>
 
-        <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className={cn(card, "flex min-h-0 min-w-0 flex-col p-0")}>
-            <div className="border-b border-[#E8EAED] px-4 py-3">
-              <p className="text-sm font-extrabold">Career timeline</p>
+        <div className="rounded-3xl border border-[#DDE1E5] bg-gradient-to-r from-[#EEF2FF] via-white to-[#FFF4EC] p-[1px] shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center justify-between gap-3 rounded-[calc(1.5rem-1px)] bg-white px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#5C6370]">Decision note</p>
+              <p className="mt-1 text-[12px] font-medium text-[#1A1D22]">{model.reviewStrip}</p>
             </div>
-            <div className="max-h-[420px] space-y-3 overflow-y-auto p-3">
-              {model.careerLines.map((line, k) => (
-                <div
-                  key={k}
-                  className="flex gap-2 rounded-lg border border-[#E8EAED] bg-white p-2.5"
-                  role="presentation"
-                >
-                  <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-[#0B5FFF]" />
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] font-bold text-[#6B7079]">Experience</span>
-                      <span className="text-[9px] text-[#8C9299]">{line.time}</span>
-                    </div>
-                    <p className="text-[12px] font-bold text-[#1A1D22]">{line.label}</p>
-                    <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-[#3D434D]">{line.body}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="min-h-0 min-w-0">
-            <div className={cn(card, "overflow-hidden p-0")}>
-              <div className="border-b border-[#E8EAED] bg-[#F7F8FA] px-4 py-8">
-                {model.resumeUrl ? (
-                  <a
-                    href={model.resumeUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mx-auto flex max-w-sm flex-col items-center gap-3 text-center"
-                  >
-                    <FileText className="h-10 w-10 text-[#0B5FFF]" />
-                    <p className="text-sm font-extrabold text-[#1A1D22]">Open resume source file</p>
-                    <span className="inline-flex items-center gap-1.5 text-[12px] font-bold text-[#0D4D2E]">
-                      View in new tab
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </span>
-                  </a>
-                ) : (
-                  <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 text-center text-[#6B7079]">
-                    <FileText className="h-8 w-8 opacity-50" />
-                    <p className="text-[12px] font-semibold">No resume URL in application record</p>
-                  </div>
-                )}
-              </div>
-              <div className="border-t border-amber-100 bg-amber-50/80 px-3 py-2 text-[12px] font-semibold text-amber-900">
-                {model.reviewStrip}
-              </div>
-            </div>
+            <span className="shrink-0 rounded-full bg-gradient-to-r from-[#0B5FFF] via-[#1E9D55] to-[#F0A12A] px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-white">
+              Final read
+            </span>
           </div>
         </div>
       </div>

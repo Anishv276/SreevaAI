@@ -233,7 +233,7 @@ export default function CandidateProfilePage() {
             candidate: {
                 fullName,
                 createdAt: candidate?.createdAt,
-                location: candidate?.resumeStatus || "Resume screening",
+                location: candidate?.location || candidate?.city || "—",
                 resumeUrl: candidate?.resumeUrl || null,
                 drive: { title: candidate?.drive?.title || candidate?.driveTitle || "Role N/A" },
             },
