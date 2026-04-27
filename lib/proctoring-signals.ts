@@ -89,6 +89,51 @@ export const DEFAULT_PROCTORING_SIGNALS: ProctoringSignalToggles = {
   complexity_latency_mismatch: true,
 };
 
+// GROWTH / PRO Plan Signals
+export const PRO_PLAN_SIGNALS: ProctoringSignalToggles = {
+  ...Object.fromEntries(MANAGED_PROCTORING_SIGNALS.map(s => [s, false])),
+  tab_switch: true,
+  fullscreen_exit: true,
+  camera_disabled: true,
+  microphone_disabled: true,
+  connection_lost: true,
+  connection_restored: true,
+  ownership_ambiguity: true,
+  example_evasion: true,
+  resume_claim_mismatch: true,
+  follow_up_collapse: true,
+  depth_decay: true,
+  latency_mismatch: true,
+  meta_question: true,
+} as ProctoringSignalToggles;
+
+// SCALE / BUSINESS / ENTERPRISE Plan Signals
+export const SCALE_PLAN_SIGNALS: ProctoringSignalToggles = {
+  ...PRO_PLAN_SIGNALS,
+  contradiction: true,
+  contradiction_resolved: true,
+  complexity_latency_mismatch: true,
+  strong_under_pressure: true,
+  ownership_clarified: true,
+  example_given: true,
+  mouse_erratic: true,
+  mouse_snap: true,
+  duplicate_ip: true,
+  face_absence: true,
+  multiple_faces: true,
+  gaze_violation: true,
+  head_pose_violation: true,
+  identity_mismatch: true,
+};
+
+export function getProctoringSignalsForPlan(planId: string): ProctoringSignalToggles {
+  const pid = planId.toUpperCase();
+  if (pid === "PRO") return { ...PRO_PLAN_SIGNALS };
+  if (pid === "BUSINESS" || pid === "ENTERPRISE") return { ...SCALE_PLAN_SIGNALS };
+  // Default for STARTER or unknown: nothing enabled as requested
+  return Object.fromEntries(MANAGED_PROCTORING_SIGNALS.map(s => [s, false])) as ProctoringSignalToggles;
+}
+
 function toBoolean(value: unknown, fallback: boolean): boolean {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {

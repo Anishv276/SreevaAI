@@ -1,8 +1,16 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import "plyr-react/plyr.css";
 import type { LucideIcon } from "lucide-react";
@@ -15,7 +23,6 @@ import {
   Check,
   Eye,
   GitBranch,
-  Link2,
   Play,
   Search,
   Shield,
@@ -23,6 +30,7 @@ import {
   Smile,
   Sparkles,
   Star,
+  ChevronDown,
   User,
   Zap,
 } from "lucide-react";
@@ -52,9 +60,10 @@ export type IntelSignalRow = {
   badge: string;
   tone: IntelBadgeTone;
   icon: IntelIconKey;
+  details?: string[];
 };
 
-type IntelId = "integrity" | "engagement" | "cognitive";
+type IntelId = "integrity" | "behavioral" | "cognitive";
 type QBadge = "FAIR" | "AVERAGE" | "STRONG" | "PENDING";
 
 export type HyringInterviewViewModel = {
@@ -62,10 +71,13 @@ export type HyringInterviewViewModel = {
   fullName: string;
   displayAvatar: string;
   roleLabel: string;
-  cityBadge: string;
-  locationLine: string;
   interviewedOn: string;
   totalTime: string;
+  questionsAsked: number;
+  skillsCovered: number;
+  proctoringFlags: number;
+  recommendation: string;
+  recommendationStars: number;
   fitPercent: number;
   fitLabel: string;
   stats: {
@@ -82,11 +94,12 @@ export type HyringInterviewViewModel = {
   engagementVibes: IntelSignalRow[];
   cognitiveInsights: IntelSignalRow[];
   integritySignals: IntelSignalRow[];
-  skills: { name: string; questions: number; stars: number }[];
+  skills: { name: string; stars: number; status: string; scoreLabel: string; evidence?: string }[];
   /** Ranked 1–3; derived in builder from scores, transcript, proctoring, skills. */
   topStrengths: string[];
   topRisks: string[];
-  transcript: { from: "ai" | "user"; text: string; time?: string; qBadge?: QBadge; bad?: boolean }[];
+  transcript: { from: "ai" | "user"; text: string; time?: string; qBadge?: QBadge; bad?: boolean; seekSeconds?: number; seekLabel?: string }[];
+  questionAnalysis: { id: number; question: string; answer: string; reasoning: string; score: string; qBadge: QBadge; bad: boolean }[];
   videoUrl: string | null;
   recordingDurationSec: number | null;
   snapshots: string[];
@@ -97,6 +110,13 @@ function formatDurationM(totalSeconds: number) {
   const m = Math.floor((totalSeconds || 0) * 0.0166666);
   const s = Math.floor((totalSeconds || 0) % 60);
   return `${m}:${s.toString().padStart(2, "0")} min`;
+}
+
+function formatClockTime(totalSeconds: number) {
+  const s = Math.max(0, Math.floor(totalSeconds || 0));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m.toString().padStart(2, "0")}:${rem.toString().padStart(2, "0")}`;
 }
 
 function scoreToBadge(scoreStr: string): { q: QBadge; bad: boolean } {
@@ -118,6 +138,13 @@ export function fitLabelFromPct(p: number) {
   if (p >= 60) return "MODERATE FIT";
   if (p >= 40) return "BORDERLINE FIT";
   return "LOW FIT";
+}
+
+function recommendationFromPct(p: number) {
+  if (p >= 80) return "Strong Hire";
+  if (p >= 60) return "Hire";
+  if (p >= 40) return "Review";
+  return "No Hire";
 }
 
 const INTEL_ICON_MAP: Record<IntelIconKey, LucideIcon> = {
@@ -164,22 +191,44 @@ function buildEngagementVibes(groups: { key: string; count: number }[]): IntelSi
       id: "posture",
       label: "Posture",
       icon: "user",
+      details: [
+        faceLike >= 3 ? `Posture leaned or shifted ${faceLike} times.` : faceLike >= 1 ? `Posture adjusted ${faceLike} time${faceLike === 1 ? "" : "s"}.` : "Posture stayed steady throughout the session.",
+        "This is a visual-session observation, not a standalone verdict.",
+      ],
       ...(faceLike >= 3
         ? { badge: "Leaning", tone: "rose" as const }
         : faceLike >= 1
           ? { badge: "Adjusting", tone: "amber" as const }
           : { badge: "Upright", tone: "emerald" as const }),
     },
-    { id: "facial", label: "Facial expressions", icon: "smile", badge: "Neutral", tone: "sky" },
+    {
+      id: "facial",
+      label: "Facial expressions",
+      icon: "smile",
+      badge: "Neutral",
+      tone: "sky",
+      details: ["No strong expression spikes were detected in the session.", "Useful as context only; not a decision signal by itself."],
+    },
     {
       id: "eye",
       label: "Eye contact",
       icon: "eye",
+      details: [
+        gazeC >= 1 ? `Eye contact drifted away from camera ${gazeC} time${gazeC === 1 ? "" : "s"}.` : "Eye contact remained steady during the interview.",
+        "Watch this together with other signals like tab switching and response quality.",
+      ],
       ...(gazeC >= 1
         ? { badge: "Occasional", tone: "amber" as const }
         : { badge: "Steady", tone: "emerald" as const }),
     },
-    { id: "attire", label: "Professional attire", icon: "shirt", badge: "Not assessed", tone: "slate" },
+    {
+      id: "attire",
+      label: "Professional attire",
+      icon: "shirt",
+      badge: "Not assessed",
+      tone: "slate",
+      details: ["Appearance is not scored automatically here.", "Kept as a contextual note only."],
+    },
   ];
 }
 
@@ -205,12 +254,12 @@ function buildCognitiveFromComm(
     (clarityN + toN(com.grammar, 50) + depthN + toN(com.fluency, 55)) / 4
   );
   return [
-    { id: "c1", label: "Clarity", icon: "activity", ...cognitiveLabel(clarityN) },
-    { id: "c2", label: "Confidence", icon: "zap", ...cognitiveLabel(confN) },
-    { id: "c3", label: "Enthusiasm", icon: "star", ...cognitiveLabel(entN) },
-    { id: "c4", label: "Depth of knowledge", icon: "search", ...cognitiveLabel(depthN) },
-    { id: "c5", label: "Problem solving", icon: "box", ...cognitiveLabel(probN) },
-    { id: "c6", label: "Logical thinking", icon: "git-branch", ...cognitiveLabel(logN) },
+    { id: "c1", label: "Clarity", icon: "activity", details: [`Clarity score: ${clarityN}/100.`, "Based on how clearly the candidate explained ideas."], ...cognitiveLabel(clarityN) },
+    { id: "c2", label: "Confidence", icon: "zap", details: [`Confidence score: ${confN}/100.`, "Based on tone, decisiveness, and answer stability."], ...cognitiveLabel(confN) },
+    { id: "c3", label: "Enthusiasm", icon: "star", details: [`Enthusiasm score: ${entN}/100.`, "Based on energy, engagement, and willingness to elaborate."], ...cognitiveLabel(entN) },
+    { id: "c4", label: "Depth of knowledge", icon: "search", details: [`Depth score: ${depthN}/100.`, "Based on how much supporting detail the answers contained."], ...cognitiveLabel(depthN) },
+    { id: "c5", label: "Problem solving", icon: "box", details: [`Problem solving score: ${probN}/100.`, "Based on reasoning quality across technical prompts."], ...cognitiveLabel(probN) },
+    { id: "c6", label: "Logical thinking", icon: "git-branch", details: [`Logical thinking score: ${logN}/100.`, "Based on structure, sequence, and consistency across responses."], ...cognitiveLabel(logN) },
   ];
 }
 
@@ -221,10 +270,13 @@ function buildIntegritySignals(rows: { key: string; label: string; value: string
     badge: r.value,
     tone: r.bad ? "rose" : "emerald",
     icon: r.bad ? "alert" : "shield",
+    details: [
+      `Observed ${r.value.toLowerCase()} for this signal.`,
+      r.bad ? "This was treated as a higher-risk integrity event." : "This was not treated as a high-risk integrity event.",
+    ],
   }));
 }
 
-const MAX_S_R = 3;
 
 function buildTopStrengthsRisks(args: {
   technicalPct: number;
@@ -247,86 +299,94 @@ function buildTopStrengthsRisks(args: {
   }
   const anyProctoringBad = args.proctoringRows.some((r) => r.bad);
   const topSkill = [...args.skills].sort((a, b) => b.stars - a.stars)[0];
+  const answerCount = Math.max(1, strongN + fairN);
 
-  const sCands: string[] = [];
-  if (args.fitPct >= 70) sCands.push("Strong overall fit score against the combined model for this requisition");
-  if (args.technicalPct >= 68) sCands.push("Technical performance is solid on the questions asked in this session");
-  if (args.techTag === "GOOD") sCands.push("Technical track sits in the “good” band for the role’s bar");
-  if (commAvg >= 64) sCands.push("Communication reads clear and consistent across the scored dimensions");
-  if (strongN >= 2) sCands.push("Multiple answers landed in the top score band");
-  if (!anyProctoringBad) sCands.push("No material integrity or environment flags on the automated review");
-  if (topSkill && topSkill.stars >= 4) sCands.push(`Stronger signal in ${topSkill.name} (skill ratings)`);
-  if (sCands.length < MAX_S_R && commAvg >= 55 && args.technicalPct >= 55) {
-    sCands.push("Balanced profile: neither comm nor technical clearly lags the other");
-  }
-  const seenS = new Set<string>();
   const topStrengths: string[] = [];
-  for (const x of sCands) {
-    if (seenS.has(x)) continue;
-    seenS.add(x);
-    topStrengths.push(x);
-    if (topStrengths.length >= MAX_S_R) break;
-  }
-  if (topStrengths.length === 0) {
-    topStrengths.push("Use the score cards and AI summary to align on a hiring narrative for this session");
-  }
-  while (topStrengths.length < MAX_S_R) {
-    const pad = "Cross-check the transcript and recording before a final call";
-    if (topStrengths.includes(pad)) break;
-    topStrengths.push(pad);
-    break;
-  }
-  if (topStrengths.length > MAX_S_R) topStrengths.length = MAX_S_R;
+  if (args.fitPct >= 80) topStrengths.push("Overall fit is strong for this role");
+  else if (args.fitPct >= 60) topStrengths.push("Overall fit is workable and worth advancing");
 
-  const rCands: string[] = [];
-  if (args.technicalPct < 50) rCands.push("Technical score is below a typical pass line—add a focus round or exercise if you advance");
-  if (args.techTag === "WEAK") rCands.push("Technical label is in the weak band; validate must-have skills in practice");
-  if (fairN >= 2) rCands.push("Several weaker per-answer scores; probe gaps in the next step");
-  if (anyProctoringBad) rCands.push("Proctoring or environment items need a human read before you rely on this session alone");
-  if (commAvg < 50) rCands.push("Communication metrics are soft for roles that are client- or write-heavy");
-  if (args.fitPct < 48) rCands.push("Overall fit score is on the low side for this requisition");
-  if (rCands.length < MAX_S_R && args.technicalPct < 60 && commAvg < 60) {
-    rCands.push("Both comm and technical sit mid or below; decide which gap you can support with onboarding");
+  if (args.technicalPct >= 70) topStrengths.push(`Technical answers are solid across ${answerCount} scored responses`);
+  else if (args.technicalPct >= 55) topStrengths.push("Technical signal is steady, with room for stronger depth");
+
+  if (commAvg >= 70) topStrengths.push("Communication is clear, structured, and easy to follow");
+  else if (commAvg >= 55) topStrengths.push("Communication is understandable and steady");
+
+  if (topSkill && topSkill.stars >= 4) topStrengths.push(`Best technical signal appears in ${topSkill.name}`);
+  if (strongN >= 2) topStrengths.push("Multiple answers landed in the top score band");
+  if (!anyProctoringBad) topStrengths.push("No material integrity or environment flags showed up in review");
+
+  if (topStrengths.length === 0) {
+    topStrengths.push("No clear strengths surfaced beyond the scored interview data");
   }
-  const seenR = new Set<string>();
+  topStrengths.length = Math.min(topStrengths.length, 3);
+
   const topRisks: string[] = [];
-  for (const x of rCands) {
-    if (seenR.has(x)) continue;
-    seenR.add(x);
-    topRisks.push(x);
-    if (topRisks.length >= MAX_S_R) break;
+  if (args.technicalPct < 50) topRisks.push("Technical depth is below a typical pass line");
+  if (args.techTag === "WEAK") topRisks.push("Technical signal sits in the weak band and should be validated in practice");
+  if (fairN >= 2) topRisks.push("Several answers scored weakly, so probe the gaps in the next round");
+  if (anyProctoringBad) topRisks.push("Proctoring or environment flags need a human read before relying on this session alone");
+  if (commAvg < 50) topRisks.push("Communication is soft for roles that need client-facing clarity or writing");
+  if (args.fitPct < 48) topRisks.push("Overall fit is on the low side for this requisition");
+  if (args.fitPct >= 60 && args.fitPct < 80 && args.technicalPct < 60) {
+    topRisks.push("Advancement is possible, but technical depth still needs a stronger proof point");
   }
+
   if (topRisks.length === 0) {
-    topRisks.push("No major automated risk flags; still run normal comp, level, and reference checks");
+    topRisks.push("No major automated risk flags surfaced in this session");
   }
-  while (topRisks.length < MAX_S_R) {
-    const pad = "Document why you are advancing (or not) for audit-friendly decisions";
-    if (topRisks.includes(pad)) break;
-    topRisks.push(pad);
-    break;
-  }
-  if (topRisks.length > MAX_S_R) topRisks.length = MAX_S_R;
+  topRisks.length = Math.min(topRisks.length, 3);
 
   return { topStrengths, topRisks };
 }
-
 export function IntelMetricCard({ row }: { row: IntelSignalRow }) {
   const Icon = INTEL_ICON_MAP[row.icon];
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200/90 bg-white px-4 py-3.5 shadow-[0_1px_0_rgba(0,0,0,0.04)]">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <Icon className="h-5 w-5 shrink-0 text-neutral-900" strokeWidth={1.5} />
-        <span className="min-w-0 text-[13px] font-semibold leading-snug text-neutral-900">{row.label}</span>
+    <DropdownMenu modal={false}>
+      <div className="flex items-center justify-between gap-3 rounded-[18px] border border-neutral-200/70 bg-white/80 px-4 py-3.5 shadow-[0_1px_0_rgba(0,0,0,0.03)] transition-all hover:border-neutral-200 hover:bg-white hover:shadow-[0_4px_16px_rgba(15,23,42,0.04)]">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <Icon className="h-5 w-5 shrink-0 text-neutral-900" strokeWidth={1.5} />
+          <span className="min-w-0 text-[13px] font-semibold leading-snug text-neutral-900">{row.label}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span
+            className={cn(
+              "shrink-0 rounded-md border px-2.5 py-1 text-[11px] font-semibold leading-none",
+              BADGE_PILL[row.tone]
+            )}
+          >
+            {row.badge}
+          </span>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-neutral-200/60 bg-white/80 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+              aria-label={`Show details for ${row.label}`}
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+        </div>
       </div>
-      <span
-        className={cn(
-          "shrink-0 rounded-md border px-2.5 py-1 text-[11px] font-semibold leading-none",
-          BADGE_PILL[row.tone]
-        )}
+      <DropdownMenuContent
+        align="end"
+        className="w-80 max-h-72 overflow-y-auto"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onFocusOutside={(event) => event.preventDefault()}
       >
-        {row.badge}
-      </span>
-    </div>
+        <DropdownMenuLabel className="px-3 pt-2 text-[11px] font-extrabold uppercase tracking-widest text-[#6B7079]">
+          What happened
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <div className="space-y-2 px-3 py-2">
+          {(row.details?.length ? row.details : [`${row.label} is currently marked as ${row.badge}.`, "No additional detail is attached to this signal."]).map((line, idx) => (
+            <p key={`${row.id}-${idx}`} className="text-[12px] leading-5 text-[#1A1D22]">
+              {line}
+            </p>
+          ))}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -378,27 +438,6 @@ export function buildHyringInterviewViewModel(i: {
     tag: String(scores.cefr_label || i.communicationStatus).toUpperCase() || "AVERAGE",
   };
 
-  const rawSummary = String(i.interviewReportSummary || i.interviewAiSummary || "").trim();
-  const aiBullets = (() => {
-    const s = rawSummary
-      .split(/[\n.!?]+/)
-      .map((x) => x.trim())
-      .filter(Boolean);
-    if (s.length >= 3) return s.slice(0, 3);
-    if (s.length > 0) {
-      return [
-        s[0],
-        s[1] || "Response structure stayed consistent under follow-up questions.",
-        s[2] || "Communication aligns with the stated CEFR band and transcript volume.",
-      ];
-    }
-    return [
-      "Responses reference concrete examples where the role requires depth.",
-      "Clarity and pacing support remote interview comprehension.",
-      "Use recording + integrity signals for final go/no-go.",
-    ];
-  })();
-
   const proctoringRows: HyringInterviewViewModel["proctoringRows"] = (i.groupedProctoringSignals || []).slice(0, 8).map((g) => ({
     key: g.key,
     label: g.label.replace(/\b\w/g, (ch) => ch.toUpperCase()),
@@ -418,27 +457,80 @@ export function buildHyringInterviewViewModel(i: {
   const cognitiveInsights = buildCognitiveFromComm(com, i.interviewScore, i.wordCount, technicalPct);
   const integritySignals = buildIntegritySignals(proctoringRows);
 
-  const skills: HyringInterviewViewModel["skills"] = (i.interviewReportSkills || []).map((s: any) => {
-    const name = String(s?.title || s?.skill || s?.name || "Skill");
-    const qn = Math.max(1, Number(s?.questions_asked || s?.questions || 1) || 1);
+  const normalizeSkillName = (value: string) =>
+    value
+      .replace(/\b(question|q\d+|round|interview|asked|asked about)\b/gi, "")
+      .replace(/[\-  :]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const isGenericSkillName = (value: string) => {
+    const v = value.toLowerCase();
+    return !v || /^question\s*\d+$/i.test(value) || v.length < 3 || v.includes("interview") || v === "skill";
+  };
+  const skillMap = new Map<string, { name: string; stars: number; status: string; scoreLabel: string; evidence?: string }>();
+  const addSkill = (name: string, stars: number, status: string, scoreLabel: string, evidence?: string) => {
+    const clean = normalizeSkillName(name);
+    if (isGenericSkillName(clean)) return;
+    const existing = skillMap.get(clean.toLowerCase());
+    if (!existing) {
+      skillMap.set(clean.toLowerCase(), { name: clean, stars, status, scoreLabel, evidence });
+      return;
+    }
+    existing.stars = Math.max(existing.stars, stars);
+    existing.status = existing.status || status;
+    existing.scoreLabel = existing.scoreLabel || scoreLabel;
+    existing.evidence = existing.evidence || evidence;
+  };
+  (i.interviewReportSkills || []).forEach((s: any) => {
+    const name = String(s?.skill || s?.title || s?.name || "").trim();
     const sn = parseFloat(String(s?.score || "").replace(/[^\d.]/g, ""));
-    const stars = Number.isFinite(sn) ? Math.max(0, Math.min(5, Math.round(sn / 20))) : 3;
-    return { name, questions: qn, stars };
+    const stars = Number.isFinite(sn) ? Math.max(0, Math.min(5, Math.round(sn / 2))) : Math.max(1, Math.min(5, Math.round((technicalPct / 100) * 5)));
+    const status = String(s?.status || "").trim();
+    const scoreLabel = String(s?.score || "").trim();
+    const evidence = String(s?.evidence || "").trim();
+    if (name) addSkill(name, stars, status || "NOT TESTED", scoreLabel || "—", evidence || undefined);
   });
+  const skillSourceRows = Array.isArray(i.interviewQaRows) && i.interviewQaRows.length ? i.interviewQaRows : i.interviewSessionRows || [];
+  skillSourceRows.forEach((row: any) => {
+    const name = String(row?.skill || row?.title || "").trim();
+    if (!name) return;
+    const score = parseFloat(String(row?.score || "").replace(/[^\d.]/g, ""));
+    const stars = Number.isFinite(score) ? Math.max(0, Math.min(5, Math.round(score / 2))) : 3;
+    const status = String(row?.status || row?.reasoning || "NOT TESTED").trim();
+    const scoreLabel = String(row?.score || "—").trim();
+    addSkill(name, stars, status, scoreLabel, String(row?.evidence || "").trim() || undefined);
+  });
+  const skills = Array.from(skillMap.values());
   if (skills.length === 0) {
-    skills.push({ name: "Role fit (JD)", questions: questionsAsked, stars: Math.max(1, Math.min(5, Math.round((technicalPct / 100) * 5))) });
+    skills.push({
+      name: "Role fit (JD)",
+      stars: Math.max(1, Math.min(5, Math.round((technicalPct / 100) * 5))),
+      status: "NOT TESTED",
+      scoreLabel: "—",
+    });
   }
-
   const transcript: HyringInterviewViewModel["transcript"] = [];
+  const questionAnalysis: HyringInterviewViewModel["questionAnalysis"] = [];
   const rows = i.interviewQaRows?.length ? i.interviewQaRows : i.interviewSessionRows;
   (rows as any[]).forEach((row, idx) => {
     const q = String(row?.question || row?.title || "").trim() || `Question ${idx + 1}`;
     const a = String(row?.answer || row?.reasoning || "").trim();
-    const { q: b, bad } = scoreToBadge(String(row?.score || ""));
+    const reasoning = String(row?.reasoning || row?.analysis_reasoning || row?.answer || "").trim();
+    const score = String(row?.score || "--").trim();
+    const { q: b, bad } = scoreToBadge(score);
     transcript.push({ from: "ai", text: q, time: `Q${idx + 1}` });
     if (a) {
       transcript.push({ from: "user", text: a, time: "Reply", qBadge: b, bad });
     }
+    questionAnalysis.push({
+      id: idx,
+      question: q,
+      answer: a || "—",
+      reasoning: reasoning || "No reasoning was returned for this question.",
+      score,
+      qBadge: b,
+      bad,
+    });
   });
   if (transcript.length === 0 && i.interviewTranscript) {
     i.interviewTranscript.split(/\n+/).slice(0, 24).forEach((line) => {
@@ -475,6 +567,11 @@ export function buildHyringInterviewViewModel(i: {
     return Math.min(100, Math.round((i.combinedScore / 10) * 100));
   })();
 
+  const commAvg = Math.round(
+    (comm.pronunciation + comm.grammar + comm.vocabulary + comm.minimalFiller + comm.fluency) / 5
+  );
+  const flagCount = proctoringRows.filter((row) => row.bad).length;
+  const fitText = fitPct >= 80 ? "strong fit" : fitPct >= 60 ? "moderate fit" : fitPct >= 40 ? "borderline fit" : "low fit";
   const { topStrengths, topRisks } = buildTopStrengthsRisks({
     technicalPct,
     techTag,
@@ -484,16 +581,42 @@ export function buildHyringInterviewViewModel(i: {
     transcript,
     skills,
   });
+  const proctoringText =
+    flagCount > 0
+      ? `${flagCount} proctoring flag${flagCount === 1 ? "" : "s"} were recorded and should be reviewed.`
+      : "No meaningful proctoring flags were recorded.";
+  const perfectText =
+    commAvg >= 70
+      ? "he is strongest at keeping communication clear and structured"
+      : technicalPct >= 70
+        ? "he is strongest at handling core technical questions"
+        : "he is strongest at staying engaged and answering in a relevant way";
+  const laggingText =
+    technicalPct < 70
+      ? "he still needs deeper technical evidence before a final call"
+      : commAvg < 70
+        ? "his communication still needs more polish and fluency"
+        : flagCount > 0
+          ? "the session needs a human review because of the proctoring flags"
+          : "there is limited risk, but more role-specific evidence would make the call safer";
+  const aiBullets = [
+    `1. How is he: overall, this interview reads as a ${fitText} for the ${String(c.drive?.role || c.drive?.title || "role").trim()}.`,
+    `2. What he is perfect at: ${perfectText}.`,
+    `3. What is lagging: ${laggingText}${flagCount > 0 ? ` (${proctoringText})` : ""}.`,
+  ];
 
   return {
     backHref: i.backHref || "/admin/candidates",
     fullName: c.fullName || "Candidate",
     displayAvatar: i.displayAvatar,
     roleLabel: String(c.drive?.role || c.drive?.title || "Product designer").trim() || "Role",
-    cityBadge: String(c.location || "Location").split(",")[0].trim() || "—",
-    locationLine: c.location || "—",
     interviewedOn,
     totalTime,
+    questionsAsked,
+    skillsCovered: skills.length,
+    proctoringFlags: proctoringRows.filter((row) => row.bad).length,
+    recommendation: recommendationFromPct(fitPct),
+    recommendationStars: Math.max(1, Math.min(5, Math.round(fitPct / 20))),
     fitPercent: fitPct,
     fitLabel: fitLabelFromPct(fitPct),
     stats: {
@@ -517,7 +640,16 @@ export function buildHyringInterviewViewModel(i: {
     skills,
     topStrengths,
     topRisks,
-    transcript,
+    transcript: (() => {
+      const duration = i.recordingDurationSec || 0;
+      if (!duration || transcript.length === 0) return transcript;
+      const lastIndex = Math.max(1, transcript.length - 1);
+      return transcript.map((line, idx) => {
+        const seekSeconds = Math.max(0, Math.min(duration, Math.round((idx / lastIndex) * duration)));
+        return { ...line, seekSeconds, seekLabel: formatClockTime(seekSeconds) };
+      });
+    })(),
+    questionAnalysis,
     videoUrl: i.interviewRecordingUrl || null,
     recordingDurationSec: i.recordingDurationSec,
     snapshots: (() => {
@@ -726,10 +858,250 @@ export function CommunicationScoreCard({ comm }: { comm: HyringInterviewViewMode
   const avg = Math.round(
     COMM_LABELS.reduce((s, { key }) => s + Math.max(0, Math.min(100, Number(comm[key]) || 0)), 0) / COMM_LABELS.length
   );
+  const ranked = COMM_LABELS.map(({ key, label }) => ({
+    key,
+    label,
+    value: Math.max(0, Math.min(100, Number(comm[key]) || 0)),
+  })).sort((a, b) => b.value - a.value);
+  const strongest = ranked[0];
+  const weakest = ranked[ranked.length - 1];
+  const strongestText = strongest ? strongest.label : "—";
+  const weakestText = weakest ? weakest.label : "—";
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 px-2 pb-3 pt-1 sm:px-3 sm:pb-4">
       <Radar5Plot values={comm} />
-      <p className="text-center text-[11px] font-medium tabular-nums text-neutral-500">Average {avg} / 100</p>
+      <div className="space-y-1.5 text-center">
+        <p className="text-[11px] font-semibold tabular-nums text-neutral-600">Average {avg} / 100</p>
+        <p className="text-[11px] text-[#6B7079]">
+          Strongest: <span className="font-semibold text-[#1A1D22]">{strongestText}</span> · Needs work:{" "}
+          <span className="font-semibold text-[#1A1D22]">{weakestText}</span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function CommunicationScoreCardDonut({ comm }: { comm: HyringInterviewViewModel["comm"] }) {
+  const metrics = [
+    {
+      key: "clarity",
+      label: "Clarity",
+      color: "#6366F1",
+      value: Math.round((Number(comm.pronunciation) + Number(comm.grammar)) / 2),
+    },
+    {
+      key: "fluency",
+      label: "Fluency",
+      color: "#F59E0B",
+      value: Math.round(Number(comm.fluency)),
+    },
+    {
+      key: "grammar",
+      label: "Grammar",
+      color: "#10B981",
+      value: Math.round(Number(comm.grammar)),
+    },
+    {
+      key: "depth",
+      label: "Depth",
+      color: "#F43F5E",
+      value: Math.round((Number(comm.vocabulary) + (100 - Number(comm.minimalFiller))) / 2),
+    },
+  ].map((metric) => ({ ...metric, value: Math.max(0, Math.min(100, metric.value)) }));
+  const avg = Math.round(metrics.reduce((sum, metric) => sum + metric.value, 0) / metrics.length);
+  const total = Math.max(1, metrics.reduce((sum, metric) => sum + metric.value, 0));
+  const ranked = [...metrics].sort((a, b) => b.value - a.value);
+  const strongest = ranked[0];
+  const weakest = ranked[ranked.length - 1];
+
+  let cursor = 0;
+  const segments = metrics.map((metric) => {
+    const start = cursor;
+    cursor += (metric.value / total) * 100;
+    return `${metric.color} ${start}% ${cursor}%`;
+  });
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-2 pb-3 pt-1 sm:px-3 sm:pb-4 sm:pt-2">
+      <div className="w-full max-w-[320px]">
+        <div className="relative mx-auto mt-6 aspect-square w-full max-w-[188px]">
+          <div className="absolute inset-0 rounded-full" style={{ background: `conic-gradient(${segments.join(", ")})` }} />
+          <div className="absolute inset-[22%] rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(232,234,237,1)]" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-[40px] font-extrabold leading-none tracking-tight text-[#1A1D22]">{avg}</div>
+              <div className="mt-1 text-[10px] font-extrabold uppercase tracking-[0.28em] text-[#9CA3AF]">
+                Overall
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 px-2">
+          {metrics.map((metric) => (
+            <div key={metric.key} className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: metric.color }} />
+                <span className="text-[11px] font-extrabold uppercase tracking-widest text-[#5C6370]">
+                  {metric.label}
+                </span>
+              </div>
+              <span className="text-[12px] font-extrabold tabular-nums text-[#1A1D22]">{metric.value}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 space-y-1 text-center">
+          <p className="text-[11px] font-semibold tabular-nums text-neutral-600">Average {avg} / 100</p>
+          <p className="text-[11px] leading-5 text-[#6B7079]">
+            Strongest: <span className="font-semibold text-[#1A1D22]">{strongest?.label || "—"}</span> · Needs work:{" "}
+            <span className="font-semibold text-[#1A1D22]">{weakest?.label || "—"}</span>
+          </p>
+          <p className="text-[10px] font-medium leading-5 text-[#8A919F]">
+            Communication is strongest in {strongest?.label?.toLowerCase() || "clarity"} and can improve in{" "}
+            {weakest?.label?.toLowerCase() || "depth"}.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function CommunicationScoreCardDonutLive({ comm }: { comm: HyringInterviewViewModel["comm"] }) {
+  const metrics = [
+    {
+      key: "clarity",
+      label: "Clarity",
+      color: "#6366F1",
+      value: Math.round((Number(comm.pronunciation) + Number(comm.grammar)) / 2),
+    },
+    {
+      key: "fluency",
+      label: "Fluency",
+      color: "#F59E0B",
+      value: Math.round(Number(comm.fluency)),
+    },
+    {
+      key: "grammar",
+      label: "Grammar",
+      color: "#10B981",
+      value: Math.round(Number(comm.grammar)),
+    },
+    {
+      key: "depth",
+      label: "Depth",
+      color: "#F43F5E",
+      value: Math.round((Number(comm.vocabulary) + (100 - Number(comm.minimalFiller))) / 2),
+    },
+  ].map((metric) => ({ ...metric, value: Math.max(0, Math.min(100, metric.value)) }));
+
+  const avg = Math.round(metrics.reduce((sum, metric) => sum + metric.value, 0) / metrics.length);
+  const total = Math.max(1, metrics.reduce((sum, metric) => sum + metric.value, 0));
+  const ranked = [...metrics].sort((a, b) => b.value - a.value);
+  const strongest = ranked[0];
+  const weakest = ranked[ranked.length - 1];
+  const [activeMetric, setActiveMetric] = useState<string | null>(null);
+  const donutRef = useRef<HTMLDivElement | null>(null);
+
+  let cursor = 0;
+  const segments = metrics.map((metric) => {
+    const start = cursor;
+    cursor += (metric.value / total) * 100;
+    return { ...metric, start, end: cursor };
+  });
+  const active = segments.find((segment) => segment.key === activeMetric) || null;
+  const centerScore = active ? active.value : avg;
+  const summaryText = active ? `${active.label} is live at ${active.value}/100.` : "Hover any color to reflect that metric.";
+
+  const setMetricFromPointer = (clientX: number, clientY: number) => {
+    const el = donutRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const dx = clientX - (rect.left + rect.width / 2);
+    const dy = clientY - (rect.top + rect.height / 2);
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const outerRadius = Math.min(rect.width, rect.height) / 2;
+    const innerRadius = outerRadius * 0.42;
+    if (distance < innerRadius || distance > outerRadius) {
+      setActiveMetric(null);
+      return;
+    }
+    const angle = ((Math.atan2(dy, dx) * 180) / Math.PI + 450) % 360;
+    const pct = (angle / 360) * 100;
+    const found = segments.find((segment) => pct >= segment.start && pct < segment.end) || segments[0];
+    setActiveMetric(found?.key || null);
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-2 pb-3 pt-1 sm:px-3 sm:pb-4 sm:pt-2">
+      <div className="w-full max-w-[320px]">
+        <div
+          ref={donutRef}
+          className="relative mx-auto mt-4 aspect-square w-full max-w-[160px] transition-transform duration-300 ease-out hover:scale-[1.04]"
+          onPointerMove={(event) => setMetricFromPointer(event.clientX, event.clientY)}
+          onPointerLeave={() => setActiveMetric(null)}
+        >
+          <div
+            className={cn(
+              "absolute inset-0 rounded-full transition-all duration-300",
+              active ? "shadow-[0_0_0_1px_rgba(0,0,0,0.02),0_0_30px_rgba(11,95,255,0.14)]" : "shadow-none"
+            )}
+            style={{
+              background: `conic-gradient(${segments.map((segment) => `${segment.color} ${segment.start}% ${segment.end}%`).join(", ")})`,
+              transform: active ? "scale(1.01)" : "scale(1)",
+            }}
+          />
+          <div className="absolute inset-[24%] rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(232,234,237,1)]" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center transition-all duration-300">
+              <div className={cn("font-extrabold leading-none tracking-tight text-[#1A1D22] transition-all duration-300", active ? "text-[28px]" : "text-[36px]")}>
+                {centerScore}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 px-2">
+          {segments.map((metric) => {
+            const isActive = activeMetric === metric.key;
+            return (
+              <button
+                key={metric.key}
+                type="button"
+                onMouseEnter={() => setActiveMetric(metric.key)}
+                onFocus={() => setActiveMetric(metric.key)}
+                onMouseLeave={() => setActiveMetric(null)}
+                className="flex items-center justify-between gap-2 rounded-md outline-none transition-transform duration-300 hover:-translate-y-0.5"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={cn(
+                      "h-2.5 w-2.5 shrink-0 rounded-full transition-all duration-300",
+                      isActive ? "scale-125 shadow-[0_0_0_6px_rgba(255,255,255,0.9)]" : "scale-100"
+                    )}
+                    style={{ backgroundColor: metric.color }}
+                  />
+                  <span className={cn("text-[11px] font-extrabold uppercase tracking-widest transition-colors duration-300", isActive ? "text-[#1A1D22]" : "text-[#5C6370]")}>
+                    {metric.label}
+                  </span>
+                </div>
+                <span className={cn("text-[12px] font-extrabold tabular-nums transition-all duration-300", isActive ? "text-[#0B5FFF] scale-110" : "text-[#1A1D22]")}>
+                  {metric.value}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 space-y-1 text-center">
+          <p className="text-[11px] font-semibold tabular-nums text-neutral-600">Average {avg} / 100</p>
+          <p className="text-[11px] leading-5 text-[#6B7079]">
+            Strongest: <span className="font-semibold text-[#1A1D22]">{strongest?.label || "—"}</span> · Needs work:{" "}
+            <span className="font-semibold text-[#1A1D22]">{weakest?.label || "—"}</span>
+          </p>
+          <p className="text-[10px] font-medium leading-5 text-[#8A919F]">{summaryText}</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -773,6 +1145,138 @@ export function TechnicalScoreCard({
   );
 }
 
+function QuestionAnalysisCard({
+  transcript,
+  questions,
+}: {
+  transcript: HyringInterviewViewModel["transcript"];
+  questions: HyringInterviewViewModel["questionAnalysis"];
+}) {
+  const playerRef = useRef<any>(null);
+  return (
+    <div className={cn(card, "flex h-full min-h-0 min-w-0 flex-col overflow-hidden p-0")}>
+      <div className="border-b border-[#E8EAED] px-4 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-extrabold text-[#1A1D22]">Conversation review</p>
+          <span className="rounded-md bg-[#F3F4F6] px-2 py-1 text-[10px] font-bold text-[#6B7079]">
+            {questions.length} total
+          </span>
+        </div>
+      </div>
+
+      <Tabs defaultValue="transcript" className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="border-b border-[#E8EAED] px-3 py-3">
+          <TabsList className="h-auto w-full justify-start gap-2 rounded-none bg-transparent p-0">
+            <TabsTrigger
+              value="transcript"
+              className="rounded-full border border-transparent bg-[#F3F4F6] px-4 py-2 text-[10px] font-extrabold uppercase tracking-widest text-[#5C6370] data-[state=active]:border-[#C9E2FF] data-[state=active]:bg-[#F4F8FF] data-[state=active]:text-[#0B5FFF]"
+            >
+              Transcript
+            </TabsTrigger>
+            <TabsTrigger
+              value="analysis"
+              className="rounded-full border border-transparent bg-[#F3F4F6] px-4 py-2 text-[10px] font-extrabold uppercase tracking-widest text-[#5C6370] data-[state=active]:border-[#C9E2FF] data-[state=active]:bg-[#F4F8FF] data-[state=active]:text-[#0B5FFF]"
+            >
+              Question analysis
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="transcript" className="mt-0 flex h-full min-h-0 flex-1 overflow-hidden">
+          <div
+            className="flex h-full min-h-0 flex-1 flex-col space-y-3 overflow-y-scroll p-3 pr-2 overscroll-contain"
+            style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}
+          >
+            {transcript.map((line, i) => {
+              const isUser = line.from === "user";
+              return (
+                <div
+                  key={i}
+                  className={cn("flex gap-2 rounded-lg border p-2.5", isUser ? "border-[#C9E2FF] bg-[#F4F8FF]" : "border-[#E8EAED] bg-white")}
+                  role="presentation"
+                >
+                  {isUser ? <User className="mt-0.5 h-4 w-4 shrink-0 text-[#0B5FFF]" /> : <Bot className="mt-0.5 h-4 w-4 shrink-0 text-[#0D4D2E]" />}
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-[#6B7079]">{isUser ? "Candidate" : "AI"}</span>
+                      {line.qBadge && (
+                        <span
+                          className={cn(
+                            "rounded border px-1.5 py-0.5 text-[8px] font-extrabold uppercase",
+                            line.qBadge === "AVERAGE" && "border-amber-200 bg-amber-50 text-amber-800",
+                            line.qBadge === "STRONG" && "border-emerald-200 bg-emerald-50 text-emerald-800",
+                            (line.qBadge === "FAIR" || line.qBadge === "PENDING") && "border-blue-200 bg-blue-50 text-blue-800"
+                          )}
+                        >
+                          {line.qBadge}
+                        </span>
+                      )}
+                      {line.bad && <span className="text-red-500">🚩</span>}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (typeof line.seekSeconds === "number" && playerRef.current?.plyr) {
+                            playerRef.current.plyr.currentTime = line.seekSeconds;
+                            void playerRef.current.plyr.play?.();
+                          }
+                        }}
+                        className="text-[9px] font-semibold text-[#6B7079] hover:text-[#0B5FFF]"
+                      >
+                        {line.seekLabel || line.time}
+                      </button>
+                    </div>
+                    <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-[#1A1D22]">{line.text}</p>
+                    {isUser && <Play className="mt-1 h-3.5 w-3.5 text-[#0B5FFF] opacity-60" />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="analysis" className="mt-0 flex h-full min-h-0 flex-1 overflow-hidden">
+          <div
+            className="flex h-full min-h-0 flex-1 flex-col gap-3 overflow-y-scroll p-3 pr-2 overscroll-contain"
+            style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}
+          >
+            {questions.length > 0 ? (
+              questions.map((item, idx) => (
+                <div key={`${item.id}-${item.question}`} className="rounded-2xl border border-[#E8EAED] bg-white p-3.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Q{idx + 1}</p>
+                      <p className="mt-1 text-[13px] font-bold leading-5 text-[#1A1D22]">{item.question}</p>
+                    </div>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded border px-2 py-1 text-[9px] font-extrabold uppercase",
+                        item.qBadge === "AVERAGE" && "border-amber-200 bg-amber-50 text-amber-800",
+                        item.qBadge === "STRONG" && "border-emerald-200 bg-emerald-50 text-emerald-800",
+                        (item.qBadge === "FAIR" || item.qBadge === "PENDING") && "border-blue-200 bg-blue-50 text-blue-800"
+                      )}
+                    >
+                      {item.score}
+                    </span>
+                  </div>
+                  <div className="mt-3 rounded-xl bg-[#FAFBFC] p-3">
+                    <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Reasoning</p>
+                    <p className="mt-1 text-[11px] leading-5 text-[#1A1D22]">{item.reasoning}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[#E8EAED] bg-[#FAFBFC] px-4 text-center text-[12px] font-medium text-[#6B7079]">
+                No question analysis available yet.
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+      </Tabs>
+    </div>
+  );
+}
+
 function TabStrip({ value, onChange }: { value: IntelId; onChange: (v: IntelId) => void }) {
   const base = "shrink-0 rounded-lg px-4 py-2.5 text-[10px] font-extrabold uppercase tracking-widest transition-colors";
   return (
@@ -780,7 +1284,7 @@ function TabStrip({ value, onChange }: { value: IntelId; onChange: (v: IntelId) 
       {(
         [
           ["integrity", "Integrity signals"],
-          ["engagement", "Engagement vibes"],
+          ["behavioral", "Behavioral signals"],
           ["cognitive", "Cognitive insights"],
         ] as [IntelId, string][]
       ).map(([k, l]) => (
@@ -816,6 +1320,10 @@ export function InterviewReportHyring({
   headerActions?: ReactNode;
 }) {
   const [intel, setIntel] = useState<IntelId>("integrity");
+  const topTechnicalSkill = [...model.skills].sort((a, b) => b.stars - a.stars).find((s) => s.stars > 0);
+  const technicalSummary = topTechnicalSkill
+    ? `Top skill: ${topTechnicalSkill.name}`
+    : "Based on answered technical questions";
   return (
     <div className={cn("w-full", bgPage)}>
       <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 pt-2 sm:px-6">
@@ -835,7 +1343,7 @@ export function InterviewReportHyring({
         )}
 
         <div className={cn(card, "p-4 sm:p-6")}>
-          <div className="flex flex-col justify-between gap-6 lg:flex-row">
+          <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
             <div className="flex min-w-0 flex-1 gap-4 sm:gap-5">
               <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border-2 border-white shadow">
                 {model.displayAvatar ? (
@@ -848,48 +1356,49 @@ export function InterviewReportHyring({
                   <span className="rounded-md bg-[#F0F1F3] px-2.5 py-0.5 text-[11px] font-semibold text-[#3D434D]">
                     {model.roleLabel}
                   </span>
-                  <span className="rounded-md bg-[#F0F1F3] px-2.5 py-0.5 text-[11px] font-semibold text-[#3D434D]">
-                    {model.cityBadge}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-[#5C6370]">
+                  <span>
+                    <span className="font-semibold text-[#1A1D22]">Interview date</span> {model.interviewedOn}
+                  </span>
+                  <span className="hidden text-[#D3D7DD] sm:inline">•</span>
+                  <span>
+                    <span className="font-semibold text-[#1A1D22]">Total time</span> {model.totalTime}
                   </span>
                 </div>
-                <p className="mt-3 text-[12px] text-[#5C6370]">
-                  <span className="font-semibold text-[#1A1D22]">Interviewed on</span> {model.interviewedOn} ·
-                  <span className="ml-1 font-semibold">Total time</span> {model.totalTime} ·
-                  <span className="ml-1 font-semibold">Location</span> {model.locationLine}
-                </p>
               </div>
             </div>
-            <div className="flex flex-col items-end gap-3 sm:flex-row sm:items-center">
-              <div
-                className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-[#B8974E] text-[8px] font-black uppercase text-[#8B6A1E]"
-                title="Sealed for review"
-              >
-                HYR
-              </div>
+            <div className="shrink-0">
               <SemicircleGauge value={model.fitPercent} fitLabel={model.fitLabel} />
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {[
-            ["Total work experience", model.stats.workExp],
-            ["Current hourly salary", model.stats.currentHourly],
-            ["Expected hourly salary", model.stats.expectedHourly],
-            ["Expected joining date", model.stats.expectedJoining],
-          ].map(([a, b]) => (
-            <div key={String(a)} className={cn(card, "p-3 text-center sm:text-left")}>
-              <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">{a}</p>
-              <p className="mt-1 text-sm font-extrabold text-[#1A1D22]">{b}</p>
-            </div>
-          ))}
-          <div className={cn(card, "flex flex-col items-center justify-center p-3 sm:items-stretch sm:text-left")}>
-            <p className="text-center text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079] sm:text-left">Candidate feedback</p>
-            <div className="mt-1 flex items-center justify-center gap-0.5 sm:justify-start">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className={cn(card, "p-3 text-center sm:text-left")}>
+            <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Questions asked</p>
+            <p className="mt-1 text-sm font-extrabold text-[#1A1D22]">{model.questionsAsked}</p>
+          </div>
+          <div className={cn(card, "p-3 text-center sm:text-left")}>
+            <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Skills covered</p>
+            <p className="mt-1 text-sm font-extrabold text-[#1A1D22]">{model.skillsCovered}</p>
+          </div>
+          <div className={cn(card, "p-3 text-center sm:text-left")}>
+            <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Proctoring flags</p>
+            <p className={cn("mt-1 text-sm font-extrabold", model.proctoringFlags > 0 ? "text-rose-600" : "text-emerald-700")}>
+              {model.proctoringFlags}
+            </p>
+          </div>
+          <div className={cn(card, "p-3 text-center sm:text-left")}>
+            <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Recommendation</p>
+            <div className="mt-1 flex items-center gap-0.5">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Star
                   key={i}
-                  className={cn("h-4 w-4", i + 1 <= model.stats.feedbackStars - 0.1 ? "fill-amber-400 text-amber-500" : "text-[#DDE1E5]")}
+                  className={cn(
+                    "h-4 w-4",
+                    i < model.recommendationStars ? "fill-amber-400 text-amber-500" : "text-[#DDE1E5]"
+                  )}
                 />
               ))}
             </div>
@@ -904,7 +1413,14 @@ export function InterviewReportHyring({
                 {model.technical.tag}
               </span>
             </div>
-            <TechnicalScoreCard pct={model.technical.percent} questions={model.technical.questions} tag={model.technical.tag} />
+            <TechnicalScoreCard
+              pct={model.technical.percent}
+              questions={model.technical.questions}
+              tag={model.technical.tag}
+              questionsLabel={`${model.technical.questions} QUESTIONS`}
+              summary={technicalSummary}
+              footerNote="Weighted from answered items"
+            />
           </div>
           <div className={cn(card, "flex flex-col")}>
             <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-3">
@@ -913,7 +1429,7 @@ export function InterviewReportHyring({
                 {model.comm.tag}
               </span>
             </div>
-            <CommunicationScoreCard comm={model.comm} />
+            <CommunicationScoreCardDonutLive comm={model.comm} />
           </div>
           <div className={cn(card, "p-4")}>
             <div className="mb-3 flex items-center gap-2 text-[#0D4D2E]">
@@ -967,49 +1483,65 @@ export function InterviewReportHyring({
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
           <div className="lg:col-span-7">
-            <div className={cn(card, "space-y-4 p-4 sm:p-5")}>
-            <h3 className="text-base font-bold tracking-tight text-neutral-900">Interview intelligence</h3>
-            <TabStrip value={intel} onChange={setIntel} />
-            <div>
-              {intel === "integrity" && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {model.integritySignals.map((row) => (
-                    <IntelMetricCard key={row.id} row={row} />
-                  ))}
+            <div className={cn(card, "flex min-h-0 flex-col overflow-hidden p-4 sm:p-5 lg:max-h-[420px]")}>
+              <h3 className="text-base font-bold tracking-tight text-neutral-900">Interview intelligence</h3>
+              <div className="mt-4">
+                <TabStrip value={intel} onChange={setIntel} />
+              </div>
+              <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div
+                  className="min-h-0 flex-1 overflow-y-auto pr-2 overscroll-contain"
+                  style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}
+                >
+                  {intel === "integrity" && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {model.integritySignals.map((row) => (
+                        <IntelMetricCard key={row.id} row={row} />
+                      ))}
+                    </div>
+                  )}
+                  {intel === "behavioral" && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {model.engagementVibes.map((row) => (
+                        <IntelMetricCard key={row.id} row={row} />
+                      ))}
+                    </div>
+                  )}
+                  {intel === "cognitive" && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {model.cognitiveInsights.map((row) => (
+                        <IntelMetricCard key={row.id} row={row} />
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-              {intel === "engagement" && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {model.engagementVibes.map((row) => (
-                    <IntelMetricCard key={row.id} row={row} />
-                  ))}
-                </div>
-              )}
-              {intel === "cognitive" && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {model.cognitiveInsights.map((row) => (
-                    <IntelMetricCard key={row.id} row={row} />
-                  ))}
-                </div>
-              )}
-            </div>
+              </div>
+              <div className="mt-3 border-t border-[#EEF0F3] pt-2 text-[10px] font-semibold uppercase tracking-widest text-[#6B7079]">
+                Scroll to review all signals
+              </div>
             </div>
           </div>
           <div className="min-h-0 lg:col-span-5">
             <div className={cn(card, "flex min-h-0 flex-col overflow-hidden p-0")}>
-              <div className="border-b border-[#E8EAED] px-4 py-3">
+              <div className="sticky top-0 z-10 border-b border-[#E8EAED] bg-white px-4 py-3">
                 <h3 className="text-sm font-extrabold text-[#1A1D22]">Skill ratings</h3>
               </div>
-              <div className="max-h-[420px] space-y-2 overflow-y-auto p-3">
+              <div
+                className="max-h-[320px] space-y-2 overflow-y-auto p-3 pr-2 overscroll-contain"
+                style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}
+              >
                 {model.skills.map((s) => (
                   <div
-                    key={s.name + s.questions}
+                    key={`${s.name}-${s.status}-${s.scoreLabel}`}
                     className="flex items-center justify-between border-b border-[#EEF0F3] py-2 last:border-0"
                   >
-                    <p className="text-[12px] font-semibold text-[#1A1D22]">
-                      {s.name} <span className="text-[#6B7079]">({s.questions} questions)</span>
-                    </p>
-                    <div className="flex items-center gap-0.5">
+                    <div className="min-w-0 pr-3">
+                      <p className="text-[12px] font-semibold text-[#1A1D22]">{s.name}</p>
+                      <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-[#6B7079]">
+                        {s.status} {s.scoreLabel !== "—" ? `• ${s.scoreLabel}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-0.5">
                       {Array.from({ length: 5 }).map((_, i) => (
                         <Star
                           key={i}
@@ -1020,57 +1552,30 @@ export function InterviewReportHyring({
                   </div>
                 ))}
               </div>
+              <div className="border-t border-[#EEF0F3] px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-[#6B7079]">
+                Scroll to review all skills
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className={cn(card, "flex min-h-0 min-w-0 flex-col p-0")}>
-            <div className="border-b border-[#E8EAED] px-4 py-3">
-              <p className="text-sm font-extrabold">Transcript</p>
-            </div>
-            <div className="max-h-[420px] space-y-3 overflow-y-auto p-3">
-              {model.transcript.map((line, i) => {
-                const isUser = line.from === "user";
-                return (
-                  <div
-                    key={i}
-                    className={cn("flex gap-2 rounded-lg border p-2.5", isUser ? "border-[#C9E2FF] bg-[#F4F8FF]" : "border-[#E8EAED] bg-white")}
-                    role="presentation"
-                  >
-                    {isUser ? <User className="mt-0.5 h-4 w-4 shrink-0 text-[#0B5FFF]" /> : <Bot className="mt-0.5 h-4 w-4 shrink-0 text-[#0D4D2E]" />}
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
-                        <span className="text-[10px] font-bold text-[#6B7079]">{isUser ? "Candidate" : "AI"}</span>
-                        {line.qBadge && (
-                          <span
-                            className={cn(
-                              "rounded border px-1.5 py-0.5 text-[8px] font-extrabold uppercase",
-                              line.qBadge === "AVERAGE" && "border-amber-200 bg-amber-50 text-amber-800",
-                              line.qBadge === "STRONG" && "border-emerald-200 bg-emerald-50 text-emerald-800",
-                              (line.qBadge === "FAIR" || line.qBadge === "PENDING") && "border-blue-200 bg-blue-50 text-blue-800"
-                            )}
-                          >
-                            {line.qBadge}
-                          </span>
-                        )}
-                        {line.bad && <span className="text-red-500">🚩</span>}
-                        <span className="text-[9px] text-[#8C9299]">{line.time}</span>
-                      </div>
-                      <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-[#1A1D22]">{line.text}</p>
-                      {isUser && <Play className="mt-1 h-3.5 w-3.5 text-[#0B5FFF] opacity-60" />}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+        <div className="grid min-h-0 grid-cols-1 gap-4 xl:h-[560px] xl:grid-cols-2 xl:items-stretch">
+          <div className="min-h-0 min-w-0 h-full">
+            <QuestionAnalysisCard transcript={model.transcript} questions={model.questionAnalysis} />
           </div>
-          <div className="min-h-0 min-w-0">
-            <div className={cn(card, "overflow-hidden p-0")}>
-              <div className="aspect-video w-full border-b border-[#E8EAED] bg-black">
+          <div className="min-h-0 min-w-0 h-full">
+            <div className={cn(card, "flex h-full min-h-0 flex-col overflow-hidden p-0")}>
+              <div className="border-b border-[#E8EAED] px-4 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-extrabold text-[#1A1D22]">Recording</p>
+                  <span className="rounded-md bg-[#F3F4F6] px-2 py-1 text-[10px] font-bold text-[#6B7079]">
+                    {model.totalTime}
+                  </span>
+                </div>
+              </div>
+              <div className="aspect-video w-full bg-black">
                 {model.videoUrl ? (
                   <Plyr
-                    key={model.videoUrl}
                     source={{ type: "video", sources: [{ src: model.videoUrl, type: "video/mp4" }] }}
                     options={{ duration: model.recordingDurationSec || undefined }}
                   />
@@ -1079,6 +1584,12 @@ export function InterviewReportHyring({
                     Video not available
                   </div>
                 )}
+              </div>
+              <div className="border-b border-[#E8EAED] px-4 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-extrabold text-[#1A1D22]">Snapshots</p>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#6B7079]">4 most recent</span>
+                </div>
               </div>
               {model.snapshots.length > 0 && (
                 <div className="grid grid-cols-4 gap-1 p-2">
@@ -1089,12 +1600,13 @@ export function InterviewReportHyring({
                   ))}
                 </div>
               )}
-              <div className="border-t border-amber-100 bg-amber-50/80 px-3 py-2 text-[12px] font-semibold text-amber-900">
+              <div className="mt-auto border-t border-amber-100 bg-amber-50/80 px-3 py-2 text-[12px] font-semibold text-amber-900">
                 {model.proctoringHeadline}
               </div>
             </div>
           </div>
         </div>
+
       </div>
     </div>
   );

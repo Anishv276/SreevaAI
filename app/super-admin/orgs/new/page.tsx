@@ -7,7 +7,7 @@ import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "@/components/ui/toast-custom";
 import { CARTESIA_VOICES, DEFAULT_GOOGLE_TTS_MODEL, GOOGLE_TTS_MODELS, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS } from "@/lib/org-plans";
-import { DEFAULT_PROCTORING_SIGNALS } from "@/lib/proctoring-signals";
+import { DEFAULT_PROCTORING_SIGNALS, getProctoringSignalsForPlan } from "@/lib/proctoring-signals";
 import { cn } from "@/lib/utils";
 
 // Premium Custom Select Component
@@ -130,7 +130,7 @@ export default function NewOrgPage() {
         maxActiveDrives: 0,
         maxTeamMembers: 0,
         creditsTotal: 100,
-        proctoringSignals: { ...DEFAULT_PROCTORING_SIGNALS },
+        proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
         adminName: "",
         adminEmail: "",
         adminPassword: "",
@@ -465,7 +465,10 @@ export default function NewOrgPage() {
                                     <button
                                         key={plan.id}
                                         type="button"
-                                        onClick={() => setForm(prev => ({ ...prev, plan: plan.id }))}
+                                        onClick={() => {
+                                            const signals = getProctoringSignalsForPlan(plan.id);
+                                            setForm(prev => ({ ...prev, plan: plan.id, proctoringSignals: signals }));
+                                        }}
                                         className={cn(
                                             "relative flex items-center justify-between p-4 rounded-xl border transition-all text-left group overflow-hidden shadow-sm",
                                             form.plan === plan.id

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
@@ -9,6 +10,11 @@ import {
   Loader2,
   Sparkles,
   Star,
+  Shield,
+  Box,
+  Globe,
+  Zap,
+  Activity,
 } from "lucide-react";
 import {
   HYRING_REPORT_CARD,
@@ -32,104 +38,149 @@ const RESUME_RADAR_LABELS: { key: RadarKey; label: string }[] = [
   { key: "confidence", label: "Confidence" },
 ];
 
-function ResumeRadarPlot({
-  values,
-}: {
-  values: Record<RadarKey, number>;
-}) {
+function ResumeRadarPlot({ values }: { values: Record<RadarKey, number> }) {
+  const [hoveredKey, setHoveredKey] = useState<RadarKey | null>(null);
   const n = RESUME_RADAR_LABELS.length;
   const cx = 50;
   const cy = 50;
   const r = 32;
   const rOuter = 42;
   const angle = (i: number) => (-90 + (360 / n) * i) * (Math.PI / 180);
-  const clamp = (v: number) => Math.max(0, Math.min(100, v));
+  const clamp = (v: number) => Math.max(10, Math.min(100, v));
+
   const pts = RESUME_RADAR_LABELS.map((def, i) => {
     const t = (clamp(values[def.key]) / 100) * r;
     return `${cx + t * Math.cos(angle(i))},${cy + t * Math.sin(angle(i))}`;
   });
+
   return (
-    <div className="w-full min-h-[230px] sm:min-h-[250px]">
+    <div className="relative w-full min-h-[250px] sm:min-h-[270px]">
       <svg
         viewBox="0 0 100 100"
         className="h-full w-full overflow-visible"
         preserveAspectRatio="xMidYMid meet"
-        aria-label="Resume fit radar"
       >
         <defs>
-          <linearGradient id="resumeRadarGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient id="fitRadarGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#1E6FD6" stopOpacity="0.2" />
+            <stop offset="100%" stopColor="#1E9D55" stopOpacity="0.2" />
+          </linearGradient>
+          <linearGradient id="fitRadarStrokeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#1E6FD6" />
             <stop offset="55%" stopColor="#F0A12A" />
             <stop offset="100%" stopColor="#1E9D55" />
           </linearGradient>
         </defs>
+
+        {/* Radar Rings */}
         {[0.25, 0.5, 0.75, 1].map((f) => (
-          <polygon
+          <circle
             key={f}
-            points={RESUME_RADAR_LABELS.map((_, i) => {
-              const t = f * r;
-              return `${cx + t * Math.cos(angle(i))},${cy + t * Math.sin(angle(i))}`;
-            }).join(" ")}
+            cx={cx}
+            cy={cy}
+            r={f * r}
             fill="none"
             stroke="#E5E7EB"
-            strokeWidth="0.45"
-            vectorEffect="non-scaling-stroke"
+            strokeWidth="0.5"
           />
         ))}
-        {Array.from({ length: n }, (_, i) => (
+
+        {/* Radar Axes */}
+        {RESUME_RADAR_LABELS.map((def, i) => (
           <line
-            key={`resume-spoke-${i}`}
+            key={def.key}
             x1={cx}
             y1={cy}
             x2={cx + r * Math.cos(angle(i))}
             y2={cy + r * Math.sin(angle(i))}
-            stroke="#E5E7EB"
-            strokeWidth="0.4"
-            vectorEffect="non-scaling-stroke"
+            stroke={hoveredKey === def.key ? "url(#fitRadarStrokeGrad)" : "#E5E7EB"}
+            strokeWidth={hoveredKey === def.key ? "0.8" : "0.4"}
           />
         ))}
+
+        {/* Data Shape */}
         <polygon
           points={pts.join(" ")}
-          fill="rgba(249,115,22,0.10)"
-          stroke="url(#resumeRadarGrad)"
-          strokeWidth="0.9"
+          fill="url(#fitRadarGradient)"
+          stroke="url(#fitRadarStrokeGrad)"
+          strokeWidth="1.2"
           strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
         />
+
+        {/* Interaction Points & Labels */}
         {RESUME_RADAR_LABELS.map((def, i) => {
           const ax = angle(i);
+          const t = (clamp(values[def.key]) / 100) * r;
+          const nodeX = cx + t * Math.cos(ax);
+          const nodeY = cy + t * Math.sin(ax);
           const ox = cx + rOuter * Math.cos(ax);
           const oy = cy + rOuter * Math.sin(ax);
-          const pct = clamp(values[def.key]);
+          const pct = Math.round(values[def.key]);
+          
           return (
-            <g key={def.key}>
+            <g 
+              key={def.key}
+              onMouseEnter={() => setHoveredKey(def.key)}
+              onMouseLeave={() => setHoveredKey(null)}
+              style={{ cursor: "pointer" }}
+            >
+              {/* Hit Area */}
+              <circle cx={ox} cy={oy} r="10" fill="none" pointerEvents="all" />
+              
               <text
                 x={ox}
-                y={oy - 1.4}
+                y={oy - 1.5}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                fontSize="2.15"
-                fontWeight="700"
-                fill="#4B5563"
-                style={{ fontFamily: "var(--font-inter, ui-sans-serif, system-ui, sans-serif)" }}
+                fontSize={hoveredKey === def.key ? "2.8" : "2.4"}
+                fontWeight={hoveredKey === def.key ? "900" : "700"}
+                fill={hoveredKey === def.key ? "#111827" : "#4B5563"}
               >
-                {def.label}
+                {def.label.toUpperCase()}
               </text>
               <text
                 x={ox}
-                y={oy + 2.4}
+                y={oy + 2.5}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                fontSize="2.35"
-                fontWeight="800"
-                fill="#1A1D22"
-                style={{ fontFamily: "var(--font-inter, ui-sans-serif, system-ui, sans-serif)" }}
+                fontSize={hoveredKey === def.key ? "3.8" : "3.2"}
+                fontWeight="900"
+                fill={hoveredKey === def.key ? "url(#fitRadarStrokeGrad)" : "#111827"}
               >
                 {pct}%
               </text>
+
+              {hoveredKey === def.key && (
+                <circle
+                  cx={nodeX}
+                  cy={nodeY}
+                  r="2"
+                  fill="white"
+                  stroke="url(#fitRadarStrokeGrad)"
+                  strokeWidth="0.8"
+                />
+              )}
             </g>
           );
         })}
+
+        {/* Central Display */}
+        {hoveredKey && (
+          <g style={{ pointerEvents: "none" }}>
+            <circle cx={cx} cy={cy} r="6" fill="white" />
+            <text
+              x={cx}
+              y={cy}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize="4"
+              fontWeight="900"
+              fill="url(#fitRadarStrokeGrad)"
+            >
+              {Math.round(values[hoveredKey])}%
+            </text>
+          </g>
+        )}
       </svg>
     </div>
   );
@@ -415,12 +466,12 @@ export function buildHyringResumeViewModel(i: {
     fullName: c.fullName || "Candidate",
     displayAvatar: i.displayAvatar,
     roleLabel: String(c.drive?.role || c.drive?.title || "Requisition").trim() || "Role",
-    cityBadge: String(c.location || "Location").split(",")[0].trim() || "—",
-    locationLine: c.location || "—",
+    cityBadge: String(c.location || "Location").split(",")[0].trim() || " ",
+    locationLine: c.location || " ",
     appliedOn:
       c.createdAt && i.mounted
         ? new Date(c.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-        : "—",
+        : " ",
     parseMeta: i.hasAiReport ? "AI report ready" : i.hasResumeText ? "Text extracted" : "Awaiting document",
     fitPercent: Math.min(100, Math.max(0, Math.round(i.matchScore))),
     fitLabel: fitLabelFromPct(i.matchScore),
@@ -428,8 +479,8 @@ export function buildHyringResumeViewModel(i: {
       workExp:
         typeof c.experienceYears === "number" && Number.isFinite(c.experienceYears) && c.experienceYears >= 0
           ? `${c.experienceYears} yrs`
-          : "—",
-      rolesCount: nRoles > 0 ? String(nRoles) : "—",
+          : " ",
+      rolesCount: nRoles > 0 ? String(nRoles) : " ",
       skillsExtracted: String(i.totalExtractedSkills),
       pipeline: i.interviewStageLabel,
     },
@@ -453,19 +504,40 @@ export function buildHyringResumeViewModel(i: {
           ? "SHORTLISTED"
           : "BORDERLINE";
       const reason = i.decisionReason || i.primaryGapText || "Review strengths and risks before deciding.";
-      return `${verdict} — ${reason}`;
+      return `${verdict} ${reason}`;
     })(),
     feedbackStars: i.matchScore >= 80 ? 5 : i.matchScore >= 65 ? 4 : i.matchScore >= 50 ? 3 : i.matchScore >= 35 ? 2 : 1,
   };
 }
 
-type ResumeReportHyringProps = { model: HyringResumeViewModel };
+type ResumeReportHyringProps = { model: HyringResumeViewModel; onBack?: () => void };
 
-export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
+export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
+  const BackButton = () => {
+    const className = "mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-medium text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]";
+    if (onBack) {
+      return (
+        <button type="button" onClick={onBack} className={className}>
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+      );
+    }
+    return (
+      <Link href={model.backHref} className={className}>
+        <ArrowLeft className="h-4 w-4" />
+      </Link>
+    );
+  };
+
   if (model.processing) {
     return (
       <div className={cn("w-full", bgPage)}>
         <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 sm:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DDE1E5] pb-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <BackButton />
+            </div>
+          </div>
           <div className={cn(card, "flex flex-col items-center gap-4 p-12 text-center")}>
             <Loader2 className="h-10 w-10 animate-spin text-[#1E9D55]" />
             <p className="text-sm font-extrabold text-[#1A1D22]">Extracting &amp; scoring resume</p>
@@ -479,14 +551,12 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
   return (
     <div className={cn("w-full", bgPage)}>
       <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 sm:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DDE1E5] pb-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <Link
-              href={model.backHref}
-              className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-medium text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#DDE1E5] pb-4">
+          <div className="flex items-center gap-4">
+            <BackButton />
+            <div>
+              <h1 className="text-xl font-black tracking-tight text-[#1A1D22]">Resume Screening</h1>
+            </div>
           </div>
         </div>
 
@@ -498,8 +568,7 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
                   {model.displayAvatar ? <img src={model.displayAvatar} alt="" className="h-full w-full object-cover" /> : null}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#F97316]">Resume screening</p>
-                  <h2 className="mt-1 text-2xl font-black tracking-tight text-[#1A1D22] sm:text-[2.5rem]">{model.fullName}</h2>
+                  <h2 className="text-2xl font-black tracking-tight text-[#1A1D22] sm:text-[2.5rem]">{model.fullName}</h2>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-[#F1F2F4] px-3 py-1 text-[11px] font-bold text-[#3D434D]">
                       {model.roleLabel}
@@ -508,9 +577,6 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
                       {model.locationLine}
                     </span>
                   </div>
-                  <p className="mt-3 max-w-2xl text-sm font-medium leading-6 text-[#5C6370]">
-                    Score-first screening summary with the strongest signals surfaced up top. The gauge on the right is the quick read; the rest of the report explains why.
-                  </p>
                 </div>
               </div>
               <div className="flex flex-col items-center gap-2 rounded-3xl bg-white/85 px-5 py-4 shadow-[0_10px_30px_rgba(17,24,39,0.06)] ring-1 ring-black/5 sm:min-w-[240px]">
@@ -521,7 +587,7 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {(
             [
               ["Experience", model.stats.workExp],
@@ -529,7 +595,7 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
               ["Matched skills", model.stats.skillsExtracted],
             ] as const
           ).map(([a, b]) => (
-            <div key={String(a)} className={cn(card, "p-3 text-center sm:text-left")}>
+            <div key={String(a)} className={cn(card, "flex flex-col justify-center p-3 text-center sm:text-left")}>
               <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">{a}</p>
               <p className="mt-1 text-sm font-extrabold text-[#1A1D22]">{b}</p>
             </div>
@@ -581,9 +647,9 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
           </div>
           <div className={cn(card, "flex flex-col")}>
             <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-sm font-extrabold text-[#1A1D22]">Fit radar</p>
-              </div>
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold text-[#1A1D22]">Fit radar</p>
+            </div>
               <span className="rounded-md bg-[#E0EDFF] px-2.5 py-0.5 text-[9px] font-extrabold uppercase text-[#0B5FFF]">
                 {model.fitLabel}
               </span>

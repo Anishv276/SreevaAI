@@ -7,7 +7,7 @@ import { generateId } from "@/lib/ids";
 import { validatePasswordStrength } from "@/lib/validation";
 import { sendSuperAdminGmailEmail } from "@/lib/google-auth";
 import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
-import { DEFAULT_PROCTORING_SIGNALS, normalizeProctoringSignals } from "@/lib/proctoring-signals";
+import { DEFAULT_PROCTORING_SIGNALS, getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 
 // GET /api/super-admin/orgs - list organizations with stats, pagination, and search
@@ -325,7 +325,7 @@ export async function POST(request: Request) {
                 plan: normalizeOrgPlan(plan) || DEFAULT_ORG_PLAN,
                 maxActiveDrives: Math.max(0, Number(maxActiveDrives ?? 0) || 0),
                 maxTeamMembers: Math.max(0, Number(maxTeamMembers ?? 0) || 0),
-                proctoringSignals: normalizeProctoringSignals(proctoringSignals || DEFAULT_PROCTORING_SIGNALS),
+                proctoringSignals: normalizeProctoringSignals(proctoringSignals || getProctoringSignalsForPlan(plan || DEFAULT_ORG_PLAN)),
                 logoUrl: logoUrl || null,
                 usageMetrics: {},
                 location: location || null,

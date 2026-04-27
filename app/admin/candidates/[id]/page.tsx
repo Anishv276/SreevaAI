@@ -386,7 +386,7 @@ export default function CandidateProfilePage() {
                 <DialogContent className="w-[95vw] max-w-[95vw] max-h-[95vh] overflow-hidden border-0 bg-transparent p-0 shadow-none">
                     <div className="h-[95vh] overflow-y-auto">
                         {candidate?.fullName && (candidate?.aiReport || candidate?.resumeText) ? (
-                            <ResumeReportHyring model={resumeReportModel} />
+                            <ResumeReportHyring model={resumeReportModel} onBack={() => setResumeReportOpen(false)} />
                         ) : (
                             <div className="flex h-full items-center justify-center rounded-2xl bg-white p-8 text-center shadow-lg">
                                 <div>
