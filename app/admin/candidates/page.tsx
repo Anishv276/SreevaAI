@@ -904,14 +904,6 @@ export default function CandidatesPage() {
 
 
                 <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-                    <Link
-                        href="/admin/drives"
-                        className="inline-flex h-12 items-center gap-2 rounded-2xl border border-gray-200 bg-white px-6 text-sm font-bold text-gray-600 shadow-sm transition-all hover:border-gray-300 hover:bg-gray-50 hover:shadow-none"
-                    >
-                        <ChevronLeft className="h-4 w-4" />
-                        Back to Drives
-                    </Link>
-
                     <Button
 
                         variant="outline"

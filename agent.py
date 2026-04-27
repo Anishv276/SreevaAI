@@ -2763,7 +2763,7 @@ def _toggle_bool(value: Any, default: bool = True) -> bool:
 
 
 def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
-    parsed: dict[str, Any] = {}
+    parsed: dict[str, Any] | None = None
     if isinstance(raw_signals, dict):
         parsed = raw_signals
     elif isinstance(raw_signals, str):
@@ -2772,10 +2772,15 @@ def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
             if isinstance(maybe_obj, dict):
                 parsed = maybe_obj
         except Exception:
-            parsed = {}
+            parsed = None
 
+    if parsed is None:
+        # No signals configured at all (null DB value) — default everything ON
+        return {key: True for key in _EVALUATION_SIGNAL_KEYS}
+
+    # Signals object exists — missing keys default OFF (explicit disable is respected)
     return {
-        key: _toggle_bool(parsed.get(key), True)
+        key: _toggle_bool(parsed.get(key), False)
         for key in _EVALUATION_SIGNAL_KEYS
     }
 
