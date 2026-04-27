@@ -122,6 +122,7 @@ export function StatusPill({ status }: { status: InterviewStatus }) {
     "in-progress": { bg: ORANGE_SOFT, fg: ORANGE_DEEP, label: "In progress" },
     "no-show": { bg: DANGER_SOFT, fg: DANGER, label: "No-show" },
     abandoned: { bg: WARN_SOFT, fg: WARN, label: "Abandoned" },
+    pending: { bg: LINE_2, fg: INK_2, label: "Pending" },
   };
   const s = map[status] ?? map.completed;
   return (

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "./internal/billing-icons";
 import { BuyCreditsModal } from "./internal/buy-credits-modal";
 import { Eyebrow, Fact, RingStat } from "./internal/billing-primitives";
-import { HistoryTable, INTERVIEW_HISTORY, RowDetailPanel } from "./internal/billing-history";
+import { HistoryTable } from "./internal/billing-history";
 import { injectBillingAnimStyles } from "./internal/inject-styles";
 import { INK, LINE, LINE_2, MUTED, ORANGE } from "./internal/tokens";
 import type { CreditPack, InterviewRow } from "./internal/types";
@@ -56,7 +56,9 @@ export function BillingContent() {
   const [creditsLoading, setCreditsLoading] = React.useState(true);
   const [creditsError, setCreditsError] = React.useState<string | null>(null);
   const [buyOpen, setBuyOpen] = React.useState(false);
-  const [openRow, setOpenRow] = React.useState<InterviewRow | null>(null);
+  const [historyRows, setHistoryRows] = React.useState<InterviewRow[]>([]);
+  const [historyLoading, setHistoryLoading] = React.useState(true);
+  const [historyError, setHistoryError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     injectBillingAnimStyles();
@@ -95,6 +97,37 @@ export function BillingContent() {
     };
   }, []);
 
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const loadHistory = async () => {
+      try {
+        setHistoryLoading(true);
+        setHistoryError(null);
+        const res = await fetch("/api/admin/billing/history", { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error(`Failed to load history (${res.status})`);
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        setHistoryRows(Array.isArray(data.rows) ? data.rows : []);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("[BillingContent] Failed to load history:", error);
+        setHistoryError("Unable to load live billing history.");
+        setHistoryRows([]);
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    };
+
+    loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const remaining = Math.max(0, credits.total - credits.used);
   const minsRemaining = Math.round(remaining);
   const usedPct = credits.total > 0 ? (credits.used / credits.total) * 100 : 0;
@@ -113,7 +146,6 @@ export function BillingContent() {
   return (
     <>
       <BuyCreditsModal open={buyOpen} onClose={() => setBuyOpen(false)} onPurchase={onPurchase} />
-      <RowDetailPanel row={openRow} onClose={() => setOpenRow(null)} />
 
       <div style={{ maxWidth: 1080, margin: "0 auto", padding: "40px 32px 56px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 40 }}>
@@ -308,7 +340,10 @@ export function BillingContent() {
         </div>
 
         <div style={{ marginTop: 24 }}>
-          <HistoryTable rows={INTERVIEW_HISTORY} onRowClick={setOpenRow} />
+          {historyError ? (
+            <div style={{ marginBottom: 10, fontSize: 12.5, color: "#B45309" }}>{historyError}</div>
+          ) : null}
+          <HistoryTable rows={historyRows} loading={historyLoading} />
         </div>
 
         <div style={{ marginTop: 24 }}>

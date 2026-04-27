@@ -193,8 +193,8 @@ async function processBatch(
     let failedCount = 0;
 
     try {
-        // Use strictly gpt-5.4-mini for all organizations
-        const orgModel = "gpt-5.4-mini";
+        const orgModel = "gpt-5.4-mini";     // extraction step
+        const reportModel = "gpt-4o";         // scoring/report step (gpt-4o, no override)
 
 
         const threshold: number = Number(drive.screeningThreshold ?? 60);
@@ -219,6 +219,7 @@ async function processBatch(
                         jdRawText,
                         threshold,
                         orgModel,
+                        reportModel,
                         drive.orgId!,
                         screeningCriteria
                     )
@@ -272,8 +273,9 @@ async function processOneResume(
     jdRawText: string,
     threshold: number,
     model: string,
+    reportModel: string,
     orgId: string,
-        screeningCriteria?: Record<string, any>
+    screeningCriteria?: Record<string, any>
 ): Promise<void> {
     const tmpPdf = join(
         tmpdir(),
@@ -309,7 +311,7 @@ async function processOneResume(
             resumeRawText,
             jdRawText,
             threshold,
-            model,
+            reportModel,
             screeningCriteria
         );
 

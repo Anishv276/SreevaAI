@@ -167,7 +167,7 @@ export type HyringResumeViewModel = {
   topStrengths: string[];
   topRisks: string[];
   rubricRows: IntelSignalRow[];
-  skillMatchRows: { name: string; questions: number; stars: number }[];
+  skillMatchRows: { name: string; questions: number; stars: number; evidenceNote?: string }[];
   careerLines: { label: string; body: string; time: string }[];
   resumeUrl: string | null;
   hasStructuredResume: boolean;
@@ -252,6 +252,12 @@ export function buildHyringResumeViewModel(i: {
   totalExtractedSkills: number;
   mustHaveBarPct: number;
   techSkillSample: string[];
+  // AI-direct fields from gpt-4o report
+  aiRadar?: { essentials?: number; experience?: number; domain?: number; skills?: number; confidence?: number } | null;
+  aiSkillRows?: { name: string; stars: number; evidence_note?: string }[] | null;
+  readinessTimeline?: string | null;
+  candidatePotential?: string | null;
+  decisionReason?: string | null;
 }): HyringResumeViewModel {
   const c = i.candidate;
   const b = i.breakdown;
@@ -264,31 +270,44 @@ export function buildHyringResumeViewModel(i: {
   const dM = Math.max(1, Number(b?.domain_max ?? 10));
   const dS = Number(b?.domain_score ?? 0);
 
+  // Math fallbacks — only used when AI radar not present
   const mustPct = Math.min(100, Math.round((skS / skM) * 100));
   const expPct = Math.min(100, Math.round((exS / exM) * 100));
-  const supA = gS + dS;
-  const supB = gM + dM;
-  const supPct = supB > 0 ? Math.min(100, Math.round((supA / supB) * 100)) : 0;
-  const skillsRadarPct = Math.min(100, Math.round((i.totalExtractedSkills / 12) * 100));
-  const confidencePct = Math.min(100, Math.round(i.matchScore));
+  const supPct = (gM + dM) > 0 ? Math.min(100, Math.round(((gS + dS) / (gM + dM)) * 100)) : 0;
 
   const nReq = Math.max(3, skM > 0 ? Math.min(20, Math.round(skM / 3)) : 5);
   const nRoles = Array.isArray(i.combinedWorkHistory) ? i.combinedWorkHistory.length : 0;
   const nEdu = Array.isArray(i.educationList) ? i.educationList.length : 0;
 
+  // Use AI radar when present, fall back to math
+  const ar = i.aiRadar;
+  const clamp = (v: unknown, fb: number) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.min(100, Math.max(0, Math.round(n))) : fb;
+  };
+  const fitRadar = {
+    essentials: clamp(ar?.essentials, mustPct),
+    experience: clamp(ar?.experience, expPct),
+    domain: clamp(ar?.domain, supPct),
+    skills: clamp(ar?.skills, Math.min(100, Math.round((i.totalExtractedSkills / 12) * 100))),
+    confidence: clamp(ar?.confidence, Math.min(100, Math.round(i.matchScore))),
+  };
+
+  // comm5 repurposed for score breakdown display — use AI confidence where available
   const comm5 = {
-    pronunciation: mustPct,
-    grammar: expPct,
-    vocabulary: supPct,
-    minimalFiller: Math.min(100, 55 + (i.matchScore >= 60 ? 20 : 0)),
-    fluency: Math.min(100, 50 + Math.round((i.totalExtractedSkills / 8) * 5)),
-    tag: tagFromPct(i.matchScore * 0.6 + mustPct * 0.2 + expPct * 0.2) === "GOOD" ? "STRONG" : "AVERAGE",
+    pronunciation: fitRadar.essentials,
+    grammar: fitRadar.experience,
+    vocabulary: fitRadar.domain,
+    minimalFiller: fitRadar.skills,
+    fluency: fitRadar.confidence,
+    tag: i.candidatePotential === "High" ? "STRONG" : i.candidatePotential === "Low" ? "WEAK" :
+      tagFromPct(i.matchScore * 0.6 + mustPct * 0.2 + expPct * 0.2) === "GOOD" ? "STRONG" : "AVERAGE",
   };
 
   const scoreBreakdown = {
-    essentials: mustPct,
-    experience: expPct,
-    supplemental: supPct,
+    essentials: fitRadar.essentials,
+    experience: fitRadar.experience,
+    supplemental: fitRadar.domain,
     overall: Math.min(100, Math.max(0, Math.round(i.matchScore))),
   };
 
@@ -307,9 +326,7 @@ export function buildHyringResumeViewModel(i: {
       .map((x) => compactReadoutText(x))
       .filter(Boolean)
       .slice(0, 3);
-    if (r.length === 0) {
-      r.push("No major automated blockers; still run normal checks");
-    }
+    if (r.length === 0) r.push("No major automated blockers; still run normal checks");
     return r.slice(0, 3);
   })();
 
@@ -344,7 +361,16 @@ export function buildHyringResumeViewModel(i: {
     },
   ];
 
+  // AI skill rows take full priority — math fallback only when absent
   const skillMatchRows: HyringResumeViewModel["skillMatchRows"] = (() => {
+    if (i.aiSkillRows && i.aiSkillRows.length > 0) {
+      return i.aiSkillRows.slice(0, 12).map((r) => ({
+        name: r.name,
+        questions: 1,
+        stars: Math.min(5, Math.max(1, r.stars)),
+        evidenceNote: r.evidence_note,
+      }));
+    }
     if (i.techSkillSample && i.techSkillSample.length) {
       return i.techSkillSample.slice(0, 10).map((name, j) => ({
         name,
@@ -371,9 +397,7 @@ export function buildHyringResumeViewModel(i: {
   let careerLines: HyringResumeViewModel["careerLines"] = history.slice(0, 8).map((r, idx) => {
     const when = [r.start_date || r.start_year, r.is_current ? "Present" : r.end_date || r.end_year].filter(Boolean).join(" — ");
     const label = `${r.role || "Role"} @ ${r.company || "—"}`;
-    const body = String(
-      r.recruiter_summary || "No summary for this block yet."
-    );
+    const body = String(r.recruiter_summary || "No summary for this block yet.");
     return { label, body, time: when || `Block ${idx + 1}` };
   });
   if (careerLines.length === 0) {
@@ -390,9 +414,7 @@ export function buildHyringResumeViewModel(i: {
     fullName: c.fullName || "Candidate",
     displayAvatar: i.displayAvatar,
     roleLabel: String(c.drive?.role || c.drive?.title || "Requisition").trim() || "Role",
-    cityBadge: String(c.location || "Location")
-      .split(",")[0]
-      .trim() || "—",
+    cityBadge: String(c.location || "Location").split(",")[0].trim() || "—",
     locationLine: c.location || "—",
     appliedOn:
       c.createdAt && i.mounted
@@ -412,13 +434,7 @@ export function buildHyringResumeViewModel(i: {
     mustHave: { percent: i.mustHaveBarPct, nRequirements: nReq, tag: tagFromPct(mustPct) },
     scoreBreakdown,
     comm5,
-    fitRadar: {
-      essentials: mustPct,
-      experience: expPct,
-      domain: supPct,
-      skills: skillsRadarPct,
-      confidence: confidencePct,
-    },
+    fitRadar,
     aiBullets: toBullets(i.summary),
     topStrengths,
     topRisks,
@@ -427,7 +443,8 @@ export function buildHyringResumeViewModel(i: {
     careerLines,
     resumeUrl: c.resumeUrl || null,
     hasStructuredResume: nRoles > 0 || i.totalExtractedSkills > 0,
-    reviewStrip: i.primaryGapText || "No single gap called out; read strengths and risks in context.",
+    // AI decision_reason is the sharpest single-line verdict — prefer it for the decision strip
+    reviewStrip: i.decisionReason || i.primaryGapText || "No single gap called out; read strengths and risks in context.",
     feedbackStars: i.matchScore >= 80 ? 5 : i.matchScore >= 60 ? 4 : i.matchScore >= 40 ? 3 : 2,
   };
 }
@@ -452,11 +469,11 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
   return (
     <div className={cn("w-full", bgPage)}>
       <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 sm:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DDE1E5] pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DDE1E5] pb-3">
           <div className="flex flex-wrap items-center gap-3">
             <Link
               href={model.backHref}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-medium text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]"
+              className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-medium text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]"
             >
               <ArrowLeft className="h-4 w-4" />
             </Link>
@@ -671,7 +688,7 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
                   >
                     <div className="min-w-0 pr-3">
                       <p className="truncate text-[12px] font-semibold text-[#1A1D22]">{s.name}</p>
-                      <p className="text-[10px] font-medium text-[#6B7079]">Matched skill signal</p>
+                      <p className="truncate text-[10px] font-medium text-[#6B7079]">{s.evidenceNote || "Matched skill signal"}</p>
                     </div>
                     <div className="flex items-center gap-0.5 shrink-0">
                       {Array.from({ length: 5 }).map((_, j) => (

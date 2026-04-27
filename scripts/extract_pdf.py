@@ -1630,7 +1630,7 @@ if __name__ == "__main__":
                     "usage": data.get(
                         "usage",
                         {
-                            "model": "gpt-4.1-mini",
+                            "model": "gpt-5.4-mini",
                             "inputTokens": 0,
                             "outputTokens": 0,
                             "cachedInputTokens": 0,

@@ -1,18 +1,13 @@
-export type InterviewStatus = "completed" | "in-progress" | "no-show" | "abandoned";
+export type InterviewStatus = "completed" | "in-progress" | "no-show" | "abandoned" | "pending";
 
 export type InterviewRow = {
   id: string;
   candidate: string;
   role: string;
-  interviewer: string;
-  type: string;
   durationSec: number;
   credits: number;
   status: InterviewStatus;
   date: string;
-  cost: number;
-  recording: boolean;
-  transcript: boolean;
 };
 
 export type CreditPack = {

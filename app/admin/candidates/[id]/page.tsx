@@ -199,8 +199,22 @@ export default function CandidateProfilePage() {
     const resumeReportModel = useMemo(() => {
         const report = resumeReportData || {};
         const fullName = candidate?.fullName || "Candidate";
-        const strengths = toTextList(report.strengths || report.core_claims || report.decision_breakdown || []);
-        const concerns = toTextList(report.concerns || report.gaps || report.rejection_reasons || report.uncertain_areas || []);
+        // strengths: [{point, evidence}] — combine both so evidence shows in the card
+        const strengths = (() => {
+            const raw = report.strengths || report.core_claims || report.decision_breakdown || [];
+            if (Array.isArray(raw) && raw.length && typeof raw[0] === "object" && raw[0]?.point) {
+                return raw.map((s: any) => s.evidence ? `${s.point} — ${s.evidence}` : s.point).filter(Boolean);
+            }
+            return toTextList(raw);
+        })();
+        // concerns: [{point, impact}] — combine both so impact reason shows
+        const concerns = (() => {
+            const raw = report.concerns || report.gaps || report.rejection_reasons || report.uncertain_areas || [];
+            if (Array.isArray(raw) && raw.length && typeof raw[0] === "object" && raw[0]?.point) {
+                return raw.map((s: any) => s.impact ? `${s.point} — ${s.impact}` : s.point).filter(Boolean);
+            }
+            return toTextList(raw);
+        })();
         const integrityLines = toTextList(report.integrity_signals || report.red_flags || []);
         const workHistory = Array.isArray(report.work_history_annotated)
             ? report.work_history_annotated
@@ -229,6 +243,13 @@ export default function CandidateProfilePage() {
             firstText(report.recruiter_snapshot) ||
             "No top gap listed yet.";
 
+        // AI-direct fields from gpt-4o report
+        const aiRadar = report.fit_radar || null;
+        const aiSkillRows = Array.isArray(report.skill_match_rows) ? report.skill_match_rows : null;
+        const readinessTimeline = report.suitability_analysis?.readiness_timeline || null;
+        const candidatePotential = report.candidate_potential?.for_this_role || null;
+        const decisionReason = typeof report.decision_reason === "string" ? report.decision_reason : null;
+
         return buildHyringResumeViewModel({
             candidate: {
                 fullName,
@@ -256,6 +277,11 @@ export default function CandidateProfilePage() {
             totalExtractedSkills: skillDepth.length + coreClaims.length + workHistory.length,
             mustHaveBarPct,
             techSkillSample: skillDepth.slice(0, 14),
+            aiRadar,
+            aiSkillRows,
+            readinessTimeline,
+            candidatePotential,
+            decisionReason,
         });
     }, [candidate, candidatePhotoSrc, mounted, resumeReportData]);
 
