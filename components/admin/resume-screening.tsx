@@ -204,7 +204,7 @@ function UploadModal({
                         setPhase("failed"); setError("Processing failed. Try again.");
                     }
                 } catch { /* ignore */ }
-            }, 1200);
+            }, 5000);
         } catch (err) {
             setPhase("failed"); setError((err as Error).message);
             toast.error((err as Error).message);

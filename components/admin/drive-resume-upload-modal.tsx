@@ -120,7 +120,7 @@ export function DriveResumeUploadModal({
                 } catch {
                     // Ignore transient poll issues and keep trying.
                 }
-            }, 1200);
+            }, 5000);
         } catch (err) {
             const message = err instanceof Error ? err.message : "Upload failed";
             setPhase("failed");
