@@ -230,6 +230,20 @@ export default function CandidateProfilePage() {
             breakdown?.skills_max && Number(breakdown.skills_max) > 0
                 ? Math.min(100, Math.round((Number(breakdown.skills_score) / Number(breakdown.skills_max)) * 100))
                 : Math.min(100, Math.max(0, Math.round(score)));
+        // Experience years: prefer scored result, fall back to AI assessment
+        const experienceYears: number | null = (() => {
+            const v = report.candidate_years ?? report.experience_assessment?.years ?? null;
+            const n = Number(v);
+            return Number.isFinite(n) && n >= 0 ? n : null;
+        })();
+        // Matched skills count: prefer scoring engine's matched list length
+        const matchedSkillsCount = (() => {
+            const sm = report.skill_matching;
+            if (sm) {
+                return (sm.matched_must?.length || 0) + (sm.matched_good?.length || 0);
+            }
+            return skillDepth.length + coreClaims.length + workHistory.length;
+        })();
         const summary =
             firstText(report.recruiter_snapshot) ||
             firstText(report.decision_reason) ||
@@ -257,6 +271,7 @@ export default function CandidateProfilePage() {
                 location: candidate?.location || candidate?.city || "—",
                 resumeUrl: candidate?.resumeUrl || null,
                 drive: { title: candidate?.drive?.title || candidate?.driveTitle || "Role N/A" },
+                experienceYears,
             },
             mounted,
             displayAvatar: candidatePhotoSrc,
@@ -274,7 +289,7 @@ export default function CandidateProfilePage() {
             breakdown,
             combinedWorkHistory: workHistory,
             educationList,
-            totalExtractedSkills: skillDepth.length + coreClaims.length + workHistory.length,
+            totalExtractedSkills: matchedSkillsCount,
             mustHaveBarPct,
             techSkillSample: skillDepth.slice(0, 14),
             aiRadar,

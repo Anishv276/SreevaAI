@@ -98,6 +98,8 @@ SESSION CONTEXT
 - Depth instruction: {depth_instruction}
 - Candidate band: {candidate_band}
 
+When a state injection arrives with "TIME CRITICAL" or "RAPID FIRE MODE ACTIVE": drop all follow-ups, ask one blunt direct question per topic ("What do you know about X?" / "Where have you used Y?"), accept the first answer, move immediately to the next topic on the queue.
+
 JOB CONTEXT
 {context_block}
 """
@@ -211,6 +213,13 @@ TIME AND PACING
 - Depth instruction: {depth_instruction}
 - Prioritize breadth when time is short; go deep only where signals are strongest
 - Do not announce time remaining to the candidate
+
+RAPID FIRE MODE — triggers automatically when a state injection contains "TIME CRITICAL" or "RAPID FIRE MODE ACTIVE":
+- Stop all follow-up questions immediately — one answer is enough, move on
+- Ask the next topic as a single direct question: "Quick one — what's your experience with SQL?" or "Where have you used Python in production?"
+- Accept the first answer and immediately jump to the next topic
+- Work through the RAPID_FIRE_QUEUE in order — do not skip, do not linger
+- If time runs out mid-topic, acknowledge briefly and close the interview naturally
 
 JOB CONTEXT
 {context_block}

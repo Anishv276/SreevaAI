@@ -13,15 +13,24 @@ const pythonCmd = process.platform === "win32" ? "python" : "python3";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function runPython(args: string[]): Promise<string> {
+function runPython(args: string[], timeoutMs = 180000): Promise<string> {
     return new Promise((resolve, reject) => {
         let out = "", err = "";
         const p = spawn(pythonCmd, args);
+        const timer = setTimeout(() => {
+            p.kill();
+            reject(new Error(`python timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
         p.stdout.on("data", (d) => (out += d.toString()));
         p.stderr.on("data", (d) => (err += d.toString()));
         p.on("close", (code) => {
+            clearTimeout(timer);
             if (code !== 0) reject(new Error(err || `python exited ${code}`));
             else resolve(out);
+        });
+        p.on("error", (error) => {
+            clearTimeout(timer);
+            reject(error);
         });
     });
 }

@@ -166,55 +166,67 @@ export default function DriveCandidatesPage() {
     };
 
     return (
-        <div className="space-y-8 pb-12 animate-in fade-in duration-700">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex items-center gap-4">
-                    <div className="h-14 w-1.5 rounded-full bg-gradient-to-b from-[#F97316] to-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.35)]" />
-                    <div className="space-y-1">
-                        <div className="flex items-center gap-3 flex-wrap">
-                            <h1 className="text-4xl font-black tracking-tighter text-gray-900">{drive?.title || "Drive Candidates"}</h1>
-                            <Badge className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#F97316]">
+        <div className="space-y-3 pb-6 animate-in fade-in duration-700" style={{ zoom: 0.7, transformOrigin: "top center" }}>
+            <section className="rounded-xl border border-gray-200 bg-white px-3 py-3 shadow-sm sm:px-4">
+                <div className="flex flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0 space-y-2.5">
+                        <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-400">
+                            <Badge className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#F97316] shadow-none">
                                 Drive Candidates
                             </Badge>
+                            <span>{drive?.department || "Recruitment"}</span>
                         </div>
-                        <div className="flex items-center gap-3 text-sm font-medium text-gray-500">
-                            <Briefcase className="h-4 w-4 text-[#F97316]" />
-                            <span>{drive?.department || "Recruitment"} - {drive?.role || "Open Role"}</span>
-                            <span className="h-1 w-1 rounded-full bg-gray-300" />
-                            <span>{drive?.applicants ?? 0} candidates</span>
+                        <div className="space-y-1">
+                            <h1 className="truncate text-lg font-bold tracking-tight text-gray-900 sm:text-xl">
+                                {drive?.title || "Drive Candidates"}
+                            </h1>
+                            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-500">
+                                <span className="inline-flex items-center gap-1.5">
+                                    <Briefcase className="h-3.5 w-3.5 text-[#F97316]" />
+                                    {drive?.role || "Open Role"}
+                                </span>
+                                <span className="hidden sm:inline">•</span>
+                                <span>
+                                    {drive?.applicants ?? 0} candidate{(drive?.applicants ?? 0) === 1 ? "" : "s"}
+                                </span>
+                                <span className="hidden sm:inline">•</span>
+                                <span className="text-emerald-600">Screening ready</span>
+                            </p>
                         </div>
                     </div>
-                </div>
 
-                <div className="flex items-center gap-3 flex-wrap">
-                    <Button
-                        onClick={() => setUploadOpen(true)}
-                        className="h-12 rounded-2xl bg-[#F97316] px-5 font-bold text-white shadow-lg hover:bg-orange-600"
-                    >
-                        <Upload className="mr-2 h-4 w-4" />
-                        Upload Resume
-                    </Button>
-                    <Link href="/admin/drives">
-                        <Button variant="outline" className="h-12 rounded-2xl border-white/40 bg-white/40 px-5 font-bold text-gray-600 backdrop-blur-md shadow-sm">
-                            <ArrowLeft className="mr-2 h-4 w-4" />
+                    <div className="flex flex-wrap gap-2 lg:justify-end">
+                        <button
+                            onClick={() => setUploadOpen(true)}
+                            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#F97316] px-3.5 text-sm font-semibold text-white shadow-none transition-colors hover:bg-orange-600 hover:shadow-none"
+                        >
+                            <Upload className="h-4 w-4" />
+                            Upload
+                        </button>
+                        <Link
+                            href={`/admin/create-drive?id=${driveId}`}
+                            className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 text-sm font-semibold text-gray-700 shadow-none transition-colors hover:border-gray-300 hover:bg-gray-50 hover:shadow-none"
+                        >
+                            <Edit3 className="h-4 w-4" />
+                            Edit
+                        </Link>
+                        <Link
+                            href="/admin/drives"
+                            className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 text-sm font-semibold text-gray-600 shadow-none transition-colors hover:border-gray-300 hover:bg-gray-50 hover:shadow-none"
+                        >
+                            <ArrowLeft className="h-4 w-4" />
                             Back to Drives
-                        </Button>
-                    </Link>
-                    <Link href={`/admin/create-drive?id=${driveId}`}>
-                        <Button className="h-12 rounded-2xl bg-gray-900 px-5 font-bold text-white shadow-lg transition-all hover:bg-[#F97316]">
-                            <Edit3 className="mr-2 h-4 w-4" />
-                            Edit Drive
-                        </Button>
-                    </Link>
+                        </Link>
+                    </div>
                 </div>
-            </div>
+            </section>
 
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                <TabsList className="h-12 rounded-2xl border border-white/40 bg-white/60 p-1 shadow-sm">
-                    <TabsTrigger value="candidates" className="h-10 rounded-2xl px-4 text-sm font-bold data-[state=active]:bg-[#F97316] data-[state=active]:text-white">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+                <TabsList className="h-9 rounded-lg border border-gray-200 bg-white p-1 shadow-none">
+                    <TabsTrigger value="candidates" className="h-7.5 rounded-md px-3 text-sm font-semibold text-gray-500 data-[state=active]:bg-[#F97316] data-[state=active]:text-white">
                         Candidates
                     </TabsTrigger>
-                    <TabsTrigger value="screening" className="h-10 rounded-2xl px-4 text-sm font-bold data-[state=active]:bg-[#F97316] data-[state=active]:text-white">
+                    <TabsTrigger value="screening" className="h-7.5 rounded-md px-3 text-sm font-semibold text-gray-500 data-[state=active]:bg-[#F97316] data-[state=active]:text-white">
                         Screening Settings
                     </TabsTrigger>
                 </TabsList>
@@ -225,11 +237,11 @@ export default function DriveCandidatesPage() {
 
                 <TabsContent value="screening" className="mt-0">
                     <div className="space-y-8">
-                        <div className="rounded-[2rem] border border-white/40 bg-white/60 p-6 shadow-[0_8px_32px_rgba(0,0,0,0.04)] backdrop-blur-xl">
+                        <div className="rounded-[2rem] border border-white/40 bg-white/60 p-5 shadow-[0_8px_24px_rgba(15,23,42,0.03)] backdrop-blur-xl">
                             <div className="mb-4 flex items-start justify-between gap-4">
                                 <div>
                                     <p className="text-[10px] font-black uppercase tracking-[0.28em] text-gray-400">Screening settings</p>
-                                    <h2 className="mt-1 text-2xl font-black tracking-tight text-gray-900">Configure AI screening criteria</h2>
+                                    <h2 className="mt-1 text-xl font-black tracking-tight text-gray-900">Configure AI screening criteria</h2>
                                     <p className="mt-2 text-sm text-gray-500 font-medium">
                                         These values are stored in the Drive screening criteria JSON and used for resume scoring.
                                     </p>
@@ -289,7 +301,6 @@ export default function DriveCandidatesPage() {
                                 </Button>
                             </div>
                         </div>
-
                     </div>
                 </TabsContent>
             </Tabs>

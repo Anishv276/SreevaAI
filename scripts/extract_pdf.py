@@ -1514,8 +1514,9 @@ Resume:
                 "rejection_reasons": score_result["rejection_reasons"],
                 "candidate_years": score_result["candidate_years"],
                 "jd_min_years": score_result["jd_min_years"],
-                # Include raw work_history from resume as fallback for older UI reads
+                # Raw resume fields as fallback for UI reads (overridden by **report where gpt-4o produces them)
                 "work_history": resume_data.get("work_history", []),
+                "education": resume_data.get("education", []),
                 "core_claims": resume_data.get("core_claims", []),
                 "uncertain_areas": resume_data.get("uncertain_areas", []),
                 "skill_depth": resume_data.get("skills", {}).get("skill_depth", []),

@@ -3140,6 +3140,7 @@ async def generate_interview_state_summary(
     org_id: Optional[str] = None,
     turn_count: int = 0,
     total_turns_expected: int = 20,
+    seconds_remaining: Optional[float] = None,
     llm_model: str = LLM_MODEL,
 ) -> str:
     """
@@ -3156,6 +3157,19 @@ async def generate_interview_state_summary(
     transcript_text = "\n".join(transcript_lines[-40:])
 
     pct_done = int((turn_count / max(total_turns_expected, 1)) * 100)
+
+    mins_remaining = int(seconds_remaining // 60) if seconds_remaining is not None else None
+    time_critical = seconds_remaining is not None and seconds_remaining <= 300  # ≤5 min
+
+    time_critical_instruction = ""
+    if time_critical:
+        time_critical_instruction = (
+            "\n\nTIME CRITICAL OVERRIDE: Less than 5 minutes remain on the clock. "
+            "You MUST say 'TIME CRITICAL - RAPID FIRE MODE'. "
+            "List every UNTOUCHED or THIN topic as a rapid-fire queue in the format: "
+            "'RAPID_FIRE_QUEUE: [topic1] | [topic2] | [topic3]'. "
+            "Ishita must ask one direct question per topic with no follow-ups — move the moment she gets any answer."
+        )
 
     try:
         completion = await asyncio.wait_for(
@@ -3189,6 +3203,7 @@ async def generate_interview_state_summary(
                             "[SPECIFIC] = named a real project/tool/company OR gave a number; "
                             "[DEEP] = named specifics AND explained reasoning, tradeoff, or failure. "
                             "Output on its own line: 'ANSWER_DEPTH: [SURFACE|SPECIFIC|DEEP]'"
+                            f"{time_critical_instruction}"
                         ),
                     },
                     {
@@ -3196,8 +3211,9 @@ async def generate_interview_state_summary(
                         "content": (
                             f"MANDATORY AREAS:\n{questions_list}\n\n"
                             f"CANDIDATE: {candidate_name} | ROLE: {job_title}\n"
-                            f"INTERVIEW PROGRESS: ~{pct_done}% done (turn {turn_count})\n\n"
-                            f"RECENT TRANSCRIPT (last 40 lines, for coverage/pace):\n{transcript_text}\n\n"
+                            f"INTERVIEW PROGRESS: ~{pct_done}% done (turn {turn_count})"
+                            + (f" | TIME REMAINING: {mins_remaining} min" if mins_remaining is not None else "")
+                            + f"\n\nRECENT TRANSCRIPT (last 40 lines, for coverage/pace):\n{transcript_text}\n\n"
                             f"LAST 12 LINES (for stuck detection):\n{chr(10).join(last_lines)}"
                         ),
                     },
@@ -5099,12 +5115,15 @@ async def entrypoint(ctx: JobContext):
                     q_list_snap = session_context.questions_list
                     # Estimate total expected turns from time limit (avg ~2 turns/min)
                     expected_total = max(time_limit_mins * 2, 10)
+                    # Compute wall-clock seconds remaining at snapshot time
+                    _elapsed = time.time() - session_start_time if session_start_time else 0
+                    _secs_remaining = max(0.0, time_limit_mins * 60 - _elapsed)
 
                     mode_snap = current_interview_mode
 
                     async def _inject_state(
                         snap=lines_snap, q_list=q_list_snap, t=current_turn, exp=expected_total,
-                        mode=mode_snap
+                        mode=mode_snap, secs_rem=_secs_remaining
                     ):
                         nonlocal environment_risk, integrity_risk, depth_risk, suspicion_score, current_interview_mode
                         try:
@@ -5117,6 +5136,7 @@ async def entrypoint(ctx: JobContext):
                                 org_id=org_id,
                                 turn_count=t,
                                 total_turns_expected=exp,
+                                seconds_remaining=secs_rem,
                                 llm_model=analysis_model,
                             )
                             if state:
@@ -5164,6 +5184,17 @@ async def entrypoint(ctx: JobContext):
                                             "score_delta": 0,
                                             "score_after": suspicion_score,
                                         })
+                                        logger.info(f"[PROCTOR] pace_critical turn={t}")
+
+                                    if "TIME CRITICAL" in state or secs_rem <= 300:
+                                        proctoring_events.append({
+                                            "event": "time_critical_rapid_fire",
+                                            "turn": t,
+                                            "seconds_remaining": secs_rem,
+                                            "score_delta": 0,
+                                            "score_after": suspicion_score,
+                                        })
+                                        logger.info(f"[PROCTOR] time_critical_rapid_fire turn={t} secs_rem={secs_rem:.0f}")
 
                                     # --- Determine interview mode from proctoring risk only ---
                                     mode_risk_score = compose_mode_risk_score(
@@ -5209,10 +5240,18 @@ async def entrypoint(ctx: JobContext):
                                             except (ValueError, AttributeError):
                                                 pass
 
+                                    mins_left = int(secs_rem // 60)
+                                    secs_left = int(secs_rem % 60)
+                                    time_flag = (
+                                        f"TIME CRITICAL — {mins_left}m {secs_left}s remaining. RAPID FIRE MODE ACTIVE."
+                                        if secs_rem <= 300
+                                        else f"TIME REMAINING: {mins_left}m {secs_left}s"
+                                    )
                                     injection_text = (
                                         f"[INTERVIEW STATE UPDATE - Turn {t}]\n"
                                         f"ISHITA_MODE: {current_interview_mode.upper()}\n"
                                         f"COMPOSITE_RISK: {suspicion_score}\n"
+                                        f"{time_flag}\n"
                                         f"{state}\n"
                                         "Use this to guide your next 3-4 exchanges. "
                                         "Do not reference this note aloud."

@@ -869,7 +869,7 @@ export default function CandidatesPage() {
 
     return (
 
-        <div className="space-y-10 pb-12 animate-in fade-in duration-700 font-sans">
+        <div className="space-y-8 pb-10 animate-in fade-in duration-700 font-sans" style={{ zoom: 0.7, transformOrigin: "top center" }}>
 
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-2">
 
@@ -904,6 +904,14 @@ export default function CandidatesPage() {
 
 
                 <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+                    <Link
+                        href="/admin/drives"
+                        className="inline-flex h-12 items-center gap-2 rounded-2xl border border-gray-200 bg-white px-6 text-sm font-bold text-gray-600 shadow-sm transition-all hover:border-gray-300 hover:bg-gray-50 hover:shadow-none"
+                    >
+                        <ChevronLeft className="h-4 w-4" />
+                        Back to Drives
+                    </Link>
+
                     <Button
 
                         variant="outline"

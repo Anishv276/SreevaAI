@@ -33,6 +33,7 @@ export function DriveResumeUploadModal({
     const inputRef = useRef<HTMLInputElement>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const pctAnimRef = useRef<number | null>(null);
+    const indeterminateRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const displayPctRef = useRef(0);
 
     const clearPolling = () => {
@@ -49,6 +50,13 @@ export function DriveResumeUploadModal({
         }
     };
 
+    const clearIndeterminate = () => {
+        if (indeterminateRef.current) {
+            clearInterval(indeterminateRef.current);
+            indeterminateRef.current = null;
+        }
+    };
+
     const syncDisplayPct = (value: number) => {
         const next = Math.max(0, Math.min(100, value));
         displayPctRef.current = next;
@@ -58,6 +66,7 @@ export function DriveResumeUploadModal({
     const reset = () => {
         clearPolling();
         clearPctAnimation();
+        clearIndeterminate();
         displayPctRef.current = 0;
         setDisplayPct(0);
         setFiles([]);
@@ -108,6 +117,7 @@ export function DriveResumeUploadModal({
             const { batchId, totalCount } = await res.json();
             setProgress({ processed: 0, total: totalCount || files.length });
             setPhase("processing");
+            syncDisplayPct(6);
 
             clearPolling();
             pollRef.current = setInterval(async () => {
@@ -139,7 +149,7 @@ export function DriveResumeUploadModal({
                 } catch {
                     // Ignore transient poll issues and keep trying.
                 }
-            }, 5000);
+            }, 2500);
         } catch (err) {
             const message = err instanceof Error ? err.message : "Upload failed";
             setPhase("failed");
@@ -155,6 +165,7 @@ export function DriveResumeUploadModal({
 
     useEffect(() => {
         clearPctAnimation();
+        clearIndeterminate();
 
         if (phase !== "processing") {
             syncDisplayPct(phase === "done" ? 100 : 0);
@@ -164,6 +175,18 @@ export function DriveResumeUploadModal({
         const target = Math.max(0, Math.min(100, pct));
         const start = displayPctRef.current;
         const diff = target - start;
+
+        if (target === 0) {
+            indeterminateRef.current = setInterval(() => {
+                setDisplayPct((current) => {
+                    const next = current < 92 ? current + 1 : current;
+                    displayPctRef.current = next;
+                    return next;
+                });
+            }, 700);
+            return () => clearIndeterminate();
+        }
+
         const duration = 850;
         let raf = 0;
         const startedAt = performance.now();
@@ -337,6 +360,26 @@ export function DriveResumeUploadModal({
                                         <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">complete</p>
                                     </div>
                                 </div>
+                                <div className="w-full max-w-sm space-y-2">
+                                    <div className="h-2 overflow-hidden rounded-full bg-white/80">
+                                        <div
+                                            className={cn(
+                                                "h-full rounded-full bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600 transition-[width] duration-500",
+                                                phase === "processing" && progress.processed === 0 && "animate-pulse"
+                                            )}
+                                            style={{ width: `${Math.max(displayPct, phase === "processing" && progress.processed === 0 ? 8 : 0)}%` }}
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.22em] text-gray-400">
+                                        <span>{progress.processed} of {progress.total || files.length}</span>
+                                        <span>{displayPct}%</span>
+                                    </div>
+                                </div>
+                                {phase === "processing" && progress.processed === 0 && (
+                                    <p className="text-[10px] font-black uppercase tracking-[0.24em] text-orange-500">
+                                        Extracting and scoring the first resume
+                                    </p>
+                                )}
                                 <p className="text-center text-sm font-medium text-gray-500">
                                     We are extracting, scoring, and saving these resumes into Candidates.
                                 </p>

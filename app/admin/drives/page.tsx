@@ -350,7 +350,7 @@ export default function DrivesPage() {
                                                     <Target className="h-3.5 w-3.5 text-orange-500" />
                                                     Drive Snapshot
                                                 </div>
-                                                <span className="text-[11px] font-semibold text-slate-500">Bulk Upload</span>
+                                                
                                             </div>
                                         </div>
                                     </div>

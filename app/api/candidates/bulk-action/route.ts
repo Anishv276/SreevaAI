@@ -27,7 +27,7 @@ export async function POST(request: Request) {
                 fullName: true,
                 email: true,
                 resumeUrl: true,
-                drive: { select: { id: true, title: true, orgId: true, slug: true } },
+                drive: { select: { id: true, title: true, orgId: true } },
             },
         });
 

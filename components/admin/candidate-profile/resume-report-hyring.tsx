@@ -150,7 +150,6 @@ export type HyringResumeViewModel = {
   stats: {
     workExp: string;
     rolesCount: string;
-    education: string;
     skillsExtracted: string;
     pipeline: string;
   };
@@ -182,8 +181,10 @@ function tagFromPct(p: number): "GOOD" | "AVERAGE" | "WEAK" {
 }
 
 function toBullets(text: string, min = 3): string[] {
+  // Split on sentence boundaries but NOT on dots inside domain names, numbers, or abbreviations
+  // e.g. "24/7.ai", "OpenAI", "U.S." should not be split
   const s = String(text || "")
-    .split(/[\n.!?]+/)
+    .split(/[.!?]+(?=\s+[A-Z])/g)
     .map((x) => x.trim())
     .filter(Boolean);
   if (s.length >= min) return s.slice(0, min);
@@ -312,7 +313,7 @@ export function buildHyringResumeViewModel(i: {
   };
 
   const topStrengths = (() => {
-    const s = [...(i.strengthLines || [])].map((x) => compactReadoutText(x)).filter(Boolean).slice(0, 3);
+    const s = [...(i.strengthLines || [])].map((x) => compactReadoutText(x, 200)).filter(Boolean).slice(0, 3);
     while (s.length < 3) {
       const p = "Cross-check against the hiring bar for this role";
       if (!s.includes(p)) s.push(p);
@@ -323,7 +324,7 @@ export function buildHyringResumeViewModel(i: {
 
   const topRisks = (() => {
     const r = [...(i.weaknessLines || []), ...i.redFlagLines.map((x) => `Watchout: ${x}`)]
-      .map((x) => compactReadoutText(x))
+      .map((x) => compactReadoutText(x, 200))
       .filter(Boolean)
       .slice(0, 3);
     if (r.length === 0) r.push("No major automated blockers; still run normal checks");
@@ -425,9 +426,10 @@ export function buildHyringResumeViewModel(i: {
     fitLabel: fitLabelFromPct(i.matchScore),
     stats: {
       workExp:
-        typeof c.experienceYears === "number" && Number.isFinite(c.experienceYears) ? `${c.experienceYears} yrs` : "—",
-      rolesCount: String(nRoles),
-      education: nEdu ? `${nEdu} inst.` : "—",
+        typeof c.experienceYears === "number" && Number.isFinite(c.experienceYears) && c.experienceYears >= 0
+          ? `${c.experienceYears} yrs`
+          : "—",
+      rolesCount: nRoles > 0 ? String(nRoles) : "—",
       skillsExtracted: String(i.totalExtractedSkills),
       pipeline: i.interviewStageLabel,
     },
@@ -443,9 +445,17 @@ export function buildHyringResumeViewModel(i: {
     careerLines,
     resumeUrl: c.resumeUrl || null,
     hasStructuredResume: nRoles > 0 || i.totalExtractedSkills > 0,
-    // AI decision_reason is the sharpest single-line verdict — prefer it for the decision strip
-    reviewStrip: i.decisionReason || i.primaryGapText || "No single gap called out; read strengths and risks in context.",
-    feedbackStars: i.matchScore >= 80 ? 5 : i.matchScore >= 60 ? 4 : i.matchScore >= 40 ? 3 : 2,
+    reviewStrip: (() => {
+      const status = i.normalizedStatus?.toUpperCase();
+      const verdict = status === "REJECTED" || status === "rejected"
+        ? "REJECTED"
+        : status === "SHORTLISTED" || status === "shortlisted"
+          ? "SHORTLISTED"
+          : "BORDERLINE";
+      const reason = i.decisionReason || i.primaryGapText || "Review strengths and risks before deciding.";
+      return `${verdict} — ${reason}`;
+    })(),
+    feedbackStars: i.matchScore >= 80 ? 5 : i.matchScore >= 65 ? 4 : i.matchScore >= 50 ? 3 : i.matchScore >= 35 ? 2 : 1,
   };
 }
 
@@ -516,7 +526,6 @@ export function ResumeReportHyring({ model }: ResumeReportHyringProps) {
             [
               ["Experience", model.stats.workExp],
               ["Career depth", model.stats.rolesCount],
-              ["Education", model.stats.education],
               ["Matched skills", model.stats.skillsExtracted],
             ] as const
           ).map(([a, b]) => (
