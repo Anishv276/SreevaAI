@@ -121,7 +121,7 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
             iconBg: "bg-orange-100/50 text-[#F97316]",
         },
         {
-            label: "Applications",
+            label: "Uploaded",
             value: s.totalCandidates,
             subtext: `+${s.applicationsToday} today`,
             icon: Users,

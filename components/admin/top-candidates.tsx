@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Loader2, ChevronRight } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { ErrorState } from "./error-state";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -63,11 +63,11 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
                 const data = await res.json();
                 if (!signal?.aborted) setCandidates(data.candidates ?? []);
             } else {
-                if (!signal?.aborted) setError("Talent synchronization failed.");
+                if (!signal?.aborted) setError("Talent sync failed.");
             }
-        } catch (err: any) {
-            if (err.name !== "AbortError") {
-                setError("Network connectivity issue.");
+        } catch (err: unknown) {
+            if (!(err instanceof DOMException && err.name === "AbortError")) {
+                setError("Talent stream unavailable.");
             }
         } finally {
             if (!signal?.aborted) setLoading(false);

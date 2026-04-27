@@ -93,7 +93,7 @@ export async function GET(req: Request) {
 
         const activities: ActivityItem[] = [];
 
-        // Group new applications by drive + time window (10-min buckets)
+        // Group new uploads by drive + time window (10-min buckets)
         const appsByDriveBucket: Record<string, { count: number; drive: string; time: Date }> = {};
         for (const app of recentApplications) {
             const bucket = Math.floor(app.createdAt.getTime() / (10 * 60 * 1000));
@@ -108,7 +108,7 @@ export async function GET(req: Request) {
             activities.push({
                 id: `app_${key}`,
                 type: "application",
-                action: `${val.count} new application${val.count > 1 ? "s" : ""}`,
+                action: `${val.count} new upload${val.count > 1 ? "s" : ""}`,
                 drive: val.drive,
                 time: timeAgo(val.time),
                 timestamp: val.time.getTime(),
@@ -168,8 +168,11 @@ export async function GET(req: Request) {
 
         const feed = activities.slice(0, 20);
         return NextResponse.json({ feed });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Activity feed error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : "Failed to fetch activity feed" },
+            { status: 500 }
+        );
     }
 }

@@ -3,6 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { getRangeStart } from "@/lib/date-utils";
 
+function normalizeStatus(value: unknown) {
+    if (typeof value !== "string") return "";
+    return value.trim().toLowerCase();
+}
+
 export async function GET(req: Request) {
     try {
         const session = await getSession();
@@ -36,34 +41,23 @@ export async function GET(req: Request) {
                         status: true,
                     },
                 },
-                structuredResume: true,
             },
             orderBy: { aiScore: "desc" },
             take: 6,
         });
 
         const candidates = applications.map((app) => {
-            // Extract resume score from structuredResume JSON if available
-            let resumeScore: number | null = null;
-            try {
-                const sr = typeof app.structuredResume === "string"
-                    ? JSON.parse(app.structuredResume)
-                    : app.structuredResume;
-                resumeScore = sr?.resumeScore ?? sr?.resume_score ?? null;
-            } catch { /* ignore */ }
-
             // Derive display status
             const statusMap: Record<string, string> = {
-                Shortlisted: "Shortlisted",
-                SHORTLISTED: "Shortlisted",
-                Hired: "Hired",
-                HIRED: "Hired",
-                Rejected: "Rejected",
-                REJECTED: "Rejected",
-                PENDING: "Pending",
+                shortlisted: "Shortlisted",
+                hired: "Hired",
+                rejected: "Rejected",
+                pending: "Pending",
             };
-            const compositeStatus = app.hiringStatus !== 'pending' ? app.hiringStatus : app.resumeStatus;
-            const displayStatus = statusMap[compositeStatus] ?? statusMap[compositeStatus.toUpperCase()] ?? "Reviewing";
+            const compositeStatus =
+                normalizeStatus(app.hiringStatus) ||
+                normalizeStatus(app.resumeStatus);
+            const displayStatus = statusMap[compositeStatus] ?? "Reviewing";
 
             // Initials from name
             const initials = (app.fullName || "")
@@ -75,20 +69,23 @@ export async function GET(req: Request) {
 
             return {
                 id: app.id,
-                name: app.fullName,
+                name: app.fullName || "Unnamed Candidate",
                 initials,
                 role: app.drive.role || app.drive.title,
                 department: app.drive.department,
                 driveTitle: app.drive.title,
                 interviewScore: app.aiScore,
-                resumeScore,
+                resumeScore: null,
                 status: displayStatus,
             };
         });
 
         return NextResponse.json({ candidates });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Top candidates error:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : "Failed to fetch top candidates" },
+            { status: 500 }
+        );
     }
 }

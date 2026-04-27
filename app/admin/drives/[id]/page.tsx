@@ -11,6 +11,7 @@ import {
     Loader2,
     Upload,
     Settings,
+    Pencil,
 } from "lucide-react";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
@@ -92,73 +93,92 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-white via-gray-50/50 to-gray-100/50">
+        <div className="min-h-screen bg-slate-50">
             {/* Header */}
-            <div className="border-b border-white/20 bg-white/40 backdrop-blur-xl sticky top-0 z-50">
-                <div className="max-w-7xl mx-auto px-6 py-6 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <button
-                            onClick={() => router.back()}
-                            className="h-10 w-10 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors border border-gray-100"
-                        >
-                            <ArrowLeft className="h-5 w-5" />
-                        </button>
-                        <div className="flex items-center gap-4">
-                            <div className="h-12 w-12 rounded-xl bg-orange-50 flex items-center justify-center text-orange-500 border border-orange-100">
-                                <Briefcase className="h-6 w-6" />
-                            </div>
-                            <div>
-                                <h1 className="text-2xl font-bold text-gray-900">{drive.title}</h1>
-                                <p className="text-sm text-gray-500">{drive.role || "Job Description"}</p>
+            <div className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl">
+                <div className="max-w-7xl mx-auto px-6 py-5">
+                    <div className="flex flex-col gap-4">
+                        <div className="flex items-start gap-4">
+                            <button
+                                onClick={() => router.back()}
+                                className="mt-1 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                            >
+                                <ArrowLeft className="h-5 w-5" />
+                            </button>
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.24em] text-slate-400">
+                                    <Briefcase className="h-3.5 w-3.5 text-[#F97316]" />
+                                    Drive Candidates
+                                </div>
+                                <h1 className="mt-2 text-[clamp(2rem,4vw,3.75rem)] font-black leading-[0.95] tracking-tight text-slate-950">
+                                    {drive.title}
+                                </h1>
+                                <p className="mt-3 max-w-2xl text-sm font-medium text-slate-500">
+                                    {drive.role || "Job Description"}
+                                </p>
                             </div>
                         </div>
-                    </div>
 
+                        <div className="flex flex-wrap items-center gap-3 pt-1">
+                            <button
+                                onClick={() => router.back()}
+                                className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                            >
+                                <ArrowLeft className="h-4 w-4" />
+                                Back
+                            </button>
+                            <button
+                                onClick={() => setActiveTab("upload")}
+                                className={cn(
+                                    "inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition-colors",
+                                    activeTab === "upload"
+                                        ? "bg-slate-950 text-white shadow-sm"
+                                        : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                                )}
+                            >
+                                <Upload className="h-4 w-4" />
+                                Upload Resumes
+                            </button>
+                            <button
+                                onClick={() => setActiveTab("settings")}
+                                className={cn(
+                                    "inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition-colors",
+                                    activeTab === "settings"
+                                        ? "bg-slate-950 text-white shadow-sm"
+                                        : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                                )}
+                            >
+                                <Settings className="h-4 w-4" />
+                                Screening Settings
+                            </button>
+                            <button
+                                onClick={() => router.push("/admin/drives")}
+                                className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                            >
+                                <Pencil className="h-4 w-4" />
+                                Edit Drive
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             {/* Main Content */}
-            <div className="max-w-7xl mx-auto px-6 py-12">
-                {/* Tabs */}
-                <div className="flex border-b border-white/20 bg-white/40 backdrop-blur-xl rounded-t-3xl px-8 mb-0">
-                    <button
-                        onClick={() => setActiveTab("upload")}
-                        className={cn(
-                            "px-6 py-5 font-bold text-sm uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2",
-                            activeTab === "upload"
-                                ? "border-[#F97316] text-[#F97316]"
-                                : "border-transparent text-gray-500 hover:text-gray-700"
-                        )}
-                    >
-                        <Upload className="h-4 w-4" />
-                        Bulk Upload
-                    </button>
-                    <button
-                        onClick={() => setActiveTab("settings")}
-                        className={cn(
-                            "px-6 py-5 font-bold text-sm uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2",
-                            activeTab === "settings"
-                                ? "border-[#F97316] text-[#F97316]"
-                                : "border-transparent text-gray-500 hover:text-gray-700"
-                        )}
-                    >
-                        <Settings className="h-4 w-4" />
-                        Screening Criteria
-                    </button>
-                </div>
-
+            <div className="max-w-7xl mx-auto px-6 py-8">
                 {/* Tab Content */}
-                <div className="bg-white/60 backdrop-blur-xl rounded-b-3xl border border-white/20 border-t-0 p-8 shadow-[0_8px_32px_rgba(0,0,0,0.03)]">
+                <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
                     {activeTab === "upload" ? (
-                        <ResumeScreening
-                            driveId={driveId}
-                            driveName={drive?.title || ""}
-                        />
+                        <div className="p-6">
+                            <ResumeScreening
+                                driveId={driveId}
+                                driveName={drive?.title || ""}
+                            />
+                        </div>
                     ) : (
-                        <div className="space-y-8">
-                            <div>
-                                <h2 className="text-xl font-bold text-gray-900 mb-2">Screening Criteria</h2>
-                                <p className="text-gray-600">Configure AI screening criteria. The system will automatically score and rank candidates based on these settings.</p>
+                        <div className="space-y-6 p-6 md:p-8">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
+                                <h2 className="text-xl font-bold text-slate-950">Screening Criteria</h2>
+                                <p className="mt-1 text-sm text-slate-500">Configure AI screening criteria. The system will automatically score and rank candidates based on these settings.</p>
                             </div>
                             <ScreeningSettings
                                 config={{ threshold: screeningThreshold, criteria: screeningCriteria }}
@@ -176,7 +196,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                 setShortlistMode={setShortlistMode}
                             />
 
-                            <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100">
+                            <div className="flex items-center justify-end gap-3 border-t border-slate-200 pt-4">
                                 <Button
                                     variant="outline"
                                     onClick={() => {
@@ -205,7 +225,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                 </Button>
                                 <Button
                                     onClick={handleSaveScreeningCriteria}
-                                    className="bg-orange-600 hover:bg-orange-700 text-white"
+                                    className="bg-slate-950 text-white hover:bg-slate-800"
                                 >
                                     Save Screening Criteria
                                 </Button>

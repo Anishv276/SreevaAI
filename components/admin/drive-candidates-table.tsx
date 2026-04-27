@@ -16,6 +16,7 @@ import { toast } from "@/components/ui/toast-custom";
 import {
     AlertCircle,
     Eye,
+    FileText,
     Loader2,
     Mail,
     Search,
@@ -23,6 +24,7 @@ import {
     Target,
     UserX,
     MoreHorizontal,
+    Lock,
     XCircle,
 } from "lucide-react";
 import {
@@ -224,19 +226,20 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Hiring</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Resume Report</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview Report</TableHead>
                                 <TableHead className="text-right pr-8 h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody className="[&_tr:last-child]:border-0">
                             {isLoading ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={9} className="py-12 text-center text-sm font-bold text-gray-400">
                                         Loading candidates...
                                     </TableCell>
                                 </TableRow>
                             ) : filteredCandidates.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={8} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={9} className="py-12 text-center text-sm font-bold text-gray-400">
                                         No candidates found for this drive
                                     </TableCell>
                                 </TableRow>
@@ -332,6 +335,26 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                 >
                                                     <Eye className="h-4 w-4" />
                                                 </Link>
+                                            </TableCell>
+                                            <TableCell className="py-5 text-center">
+                                                {interviewStatusKey === "pending" ? (
+                                                    <span
+                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-300"
+                                                        title="Interview report is locked until the interview happens"
+                                                        aria-label="Interview report locked"
+                                                    >
+                                                        <Lock className="h-4 w-4" />
+                                                    </span>
+                                                ) : (
+                                                    <Link
+                                                        href={`/admin/candidates/${candidate.id}?back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`}
+                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#0D4D2E] transition-colors hover:bg-emerald-50"
+                                                        title="Open interview report"
+                                                        aria-label="Open interview report"
+                                                    >
+                                                        <FileText className="h-4 w-4" />
+                                                    </Link>
+                                                )}
                                             </TableCell>
                                             <TableCell className="py-5 pr-8 text-right">
                                                 <DropdownMenu>

@@ -47,7 +47,7 @@ export default function CandidateProfilePage() {
     const searchParams = useSearchParams();
     const id = typeof params?.id === "string" ? params.id : Array.isArray(params?.id) ? params.id[0] : "";
     const reportMode = (searchParams.get("report") || "interview").toLowerCase();
-    const resumeBackHref = searchParams.get("back") || "/admin/candidates";
+    const backHref = searchParams.get("back") || "/admin/candidates";
     const [candidate, setCandidate] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -260,7 +260,7 @@ export default function CandidateProfilePage() {
             },
             mounted,
             displayAvatar: candidatePhotoSrc,
-            backHref: resumeBackHref,
+            backHref,
             hasAiReport: Boolean(candidate?.aiReport),
             hasResumeText: Boolean(candidate?.resumeText),
             matchScore: score,
@@ -342,6 +342,7 @@ export default function CandidateProfilePage() {
                     </Button>
                 }
                 model={buildHyringInterviewViewModel({
+                    backHref,
                     candidate,
                     mounted,
                     displayAvatar: candidatePhotoSrc,

@@ -173,97 +173,96 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
         <button
             type="button"
             onClick={() => setExpandedSection(expanded ? null : title.toLowerCase())}
-            className="flex items-center justify-between w-full p-4 bg-gradient-to-r from-orange-50 to-transparent hover:from-orange-100 rounded-xl transition-all"
+            className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 transition-colors hover:bg-slate-100"
         >
             <div className="flex items-center gap-3">
-                <div className="p-2 bg-orange-100 rounded-lg">
-                    <Icon className="h-5 w-5 text-orange-600" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-500 shadow-sm ring-1 ring-slate-200">
+                    <Icon className="h-4 w-4" />
                 </div>
-                <span className="font-bold text-gray-900">{title}</span>
+                <span className="text-sm font-semibold text-slate-900">{title}</span>
             </div>
-            <ChevronDown className={cn("h-5 w-5 text-gray-400 transition-transform", expanded && "rotate-180")} />
+            <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", expanded && "rotate-180")} />
         </button>
     );
 
     return (
-        <div className="space-y-6 animate-in-up duration-500 max-w-4xl mx-auto">
+        <div className="mx-auto max-w-5xl space-y-6">
             {/* AI Resume Screening Section */}
             <section className="space-y-4">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <span className="h-6 w-1 rounded-full bg-[#F97316]" />
-                        <div>
-                            <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest flex items-center gap-2">
-                                <Brain className="h-4 w-4 text-[#F97316]" />
-                                AI Resume Screening
-                            </p>
-                        </div>
+                <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm">
+                        <Brain className="h-4 w-4" />
+                    </div>
+                    <div>
+                        <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-slate-900">
+                            <Sparkles className="h-4 w-4 text-slate-500" />
+                            AI Resume Screening
+                        </p>
+                        <p className="text-xs text-slate-500">Set the core pass threshold for automated resume scoring.</p>
                     </div>
                 </div>
 
-                <div className="pl-4 space-y-6 animate-in-fade">
-                    <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                            <div className="space-y-0.5">
-                                <p className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                                    <Sparkles className="h-3.5 w-3.5 text-[#F97316]" />
-                                    Match Threshold
-                                </p>
-                                <p className="text-[12px] text-gray-500 font-medium italic">
-                                    Minimum AI score required to pass initial screening.
-                                </p>
-                            </div>
-                            <div className="flex items-baseline gap-1 text-[#F97316]">
-                                <span className="text-3xl font-black tracking-tighter">{threshold}</span>
-                                <span className="text-sm font-bold">%</span>
-                            </div>
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                            <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                <Sparkles className="h-4 w-4 text-slate-500" />
+                                Match Threshold
+                            </p>
+                            <p className="text-xs font-medium text-slate-500">
+                                Minimum AI score required to pass initial screening.
+                            </p>
                         </div>
-                        
-                        <div className="px-1">
-                            <Slider
-                                value={[threshold]}
-                                onValueChange={([v]) => setConfig({ threshold: v })}
-                                max={100}
-                                min={1}
-                                step={1}
-                                className="cursor-pointer"
-                            />
-                            <div className="flex justify-between w-full mt-2 text-[10px] font-bold text-gray-300 uppercase tracking-widest">
-                                <span>Selective</span>
-                                <span>Balanced</span>
-                                <span>Strict</span>
-                            </div>
+                        <div className="flex items-baseline gap-1 text-slate-950">
+                            <span className="text-3xl font-black tracking-tight">{threshold}</span>
+                            <span className="text-sm font-semibold text-slate-500">%</span>
+                        </div>
+                    </div>
+
+                    <div className="mt-5 px-1">
+                        <Slider
+                            value={[threshold]}
+                            onValueChange={([v]) => setConfig({ threshold: v })}
+                            max={100}
+                            min={1}
+                            step={1}
+                            className="cursor-pointer"
+                        />
+                        <div className="mt-2 flex w-full justify-between text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                            <span>Selective</span>
+                            <span>Balanced</span>
+                            <span>Strict</span>
                         </div>
                     </div>
                 </div>
             </section>
 
             {/* Screening Criteria Section */}
-            <section className="space-y-4 pt-4 border-t border-gray-50">
-                <div className="flex items-center gap-3 mb-2">
-                    <span className="h-6 w-1 rounded-full bg-orange-500" />
-                    <h2 className="text-sm font-bold text-gray-900 uppercase tracking-widest">Screening Criteria</h2>
+            <section className="space-y-4 pt-2">
+                <div className="flex items-center gap-3">
+                    <span className="h-5 w-1 rounded-full bg-slate-900" />
+                    <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-900">Screening Criteria</h2>
                 </div>
 
                 {/* Skills Section */}
-                <div className="space-y-3 bg-white rounded-xl border border-gray-100">
+                <div className="space-y-3 rounded-3xl border border-slate-200 bg-white shadow-sm">
                     <SectionHeader icon={Star} title="Skills" expanded={expandedSection === "skills"} />
                     {expandedSection === "skills" && (
-                        <div className="px-4 pb-4 space-y-4 border-t border-gray-100">
+                        <div className="space-y-4 border-t border-slate-200 px-4 pb-4 pt-4">
                             {/* Required Skills */}
                             <div className="space-y-2">
-                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide">Required Skills</label>
+                                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Required Skills</label>
                                 <div className="space-y-2">
                                     {(criteria.skills?.required || []).map((skill, i) => (
-                                        <div key={i} className="flex items-center gap-2 p-2 bg-gradient-to-r from-orange-50 to-transparent rounded-lg group">
+                                        <div key={i} className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                                             <div className="flex-1 min-w-0">
-                                                <p className="font-semibold text-gray-900 truncate">{skill.name}</p>
-                                                <p className="text-xs text-gray-500">{skill.proficiency || "intermediate"}</p>
+                                                <p className="truncate font-medium text-slate-900">{skill.name}</p>
+                                                <p className="text-xs text-slate-500">{skill.proficiency || "intermediate"}</p>
                                             </div>
                                             <button
                                                 type="button"
                                                 onClick={() => removeRequiredSkill(i)}
-                                                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 rounded transition-all"
+                                                className="rounded-md p-1 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
                                             >
                                                 <X className="h-4 w-4 text-red-500" />
                                             </button>
@@ -277,20 +276,20 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                         onChange={(e) => setNewSkill(e.target.value)}
                                         onKeyPress={(e) => e.key === "Enter" && addRequiredSkill()}
                                         placeholder="Add skill (e.g., React, Python, AWS)"
-                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
                                     />
                                     <button
                                         type="button"
                                         onClick={addRequiredSkill}
-                                        className="p-2 bg-orange-100 hover:bg-orange-200 rounded-lg transition-colors"
+                                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                                     >
-                                        <Plus className="h-4 w-4 text-orange-600" />
+                                        <Plus className="h-4 w-4" />
                                     </button>
                                 </div>
                                 <select
                                     value={newSkillProficiency}
                                     onChange={(e) => setNewSkillProficiency(e.target.value)}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs bg-white"
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
                                 >
                                     <option value="">Proficiency level</option>
                                     <option value="beginner">Beginner</option>
@@ -301,18 +300,18 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                             </div>
 
                             {/* Nice-to-have Skills */}
-                            <div className="space-y-2 pt-3 border-t border-gray-100">
-                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide">Nice-to-have Skills</label>
+                            <div className="space-y-2 border-t border-slate-200 pt-4">
+                                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Nice-to-have Skills</label>
                                 <div className="space-y-2">
                                     {(criteria.skills?.niceToHave || []).map((skill, i) => (
-                                        <div key={i} className="flex items-center gap-2 p-2 bg-gradient-to-r from-blue-50 to-transparent rounded-lg group">
+                                        <div key={i} className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
                                             <div className="flex-1">
-                                                <p className="font-semibold text-gray-900">{skill.name}</p>
+                                                <p className="font-medium text-slate-900">{skill.name}</p>
                                             </div>
                                             <button
                                                 type="button"
                                                 onClick={() => removeNiceSkill(i)}
-                                                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 rounded transition-all"
+                                                className="rounded-md p-1 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
                                             >
                                                 <X className="h-4 w-4 text-red-500" />
                                             </button>
@@ -326,14 +325,14 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                         onChange={(e) => setNewNiceSkill(e.target.value)}
                                         onKeyPress={(e) => e.key === "Enter" && addNiceSkill()}
                                         placeholder="Add nice-to-have skill"
-                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
                                     />
                                     <button
                                         type="button"
                                         onClick={addNiceSkill}
-                                        className="p-2 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
+                                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                                     >
-                                        <Plus className="h-4 w-4 text-blue-600" />
+                                        <Plus className="h-4 w-4" />
                                     </button>
                                 </div>
                             </div>
@@ -342,13 +341,13 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                 </div>
 
                 {/* Experience Section */}
-                <div className="space-y-3 bg-white rounded-xl border border-gray-100">
+                <div className="space-y-3 rounded-3xl border border-slate-200 bg-white shadow-sm">
                     <SectionHeader icon={Briefcase} title="Experience" expanded={expandedSection === "experience"} />
                     {expandedSection === "experience" && (
-                        <div className="px-4 pb-4 space-y-4 border-t border-gray-100">
+                        <div className="space-y-4 border-t border-slate-200 px-4 pb-4 pt-4">
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">Minimum Years</label>
+                                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Minimum Years</label>
                                     <input
                                         type="number"
                                         min="0"
@@ -358,17 +357,17 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                             experience: { ...criteria.experience, minimumYears: parseInt(e.target.value) || undefined }
                                         })}
                                         placeholder="e.g., 5"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">Seniority Level</label>
+                                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Seniority Level</label>
                                     <select
                                         value={criteria.experience?.seniorityLevel || ""}
                                         onChange={(e) => updateCriteria({
                                             experience: { ...criteria.experience, seniorityLevel: e.target.value as any }
                                         })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
                                     >
                                         <option value="">Select level</option>
                                         {SENIORITY_LEVELS.map(level => (
@@ -378,7 +377,7 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">Preferred Domain</label>
+                                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Preferred Domain</label>
                                 <input
                                     type="text"
                                     value={criteria.experience?.preferredDomain || ""}
@@ -386,7 +385,7 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                         experience: { ...criteria.experience, preferredDomain: e.target.value }
                                     })}
                                     placeholder="e.g., Backend Development, Full-stack, Frontend"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
                                 />
                             </div>
                         </div>
@@ -394,19 +393,19 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                 </div>
 
                 {/* Education Section */}
-                <div className="space-y-3 bg-white rounded-xl border border-gray-100">
+                <div className="space-y-3 rounded-3xl border border-slate-200 bg-white shadow-sm">
                     <SectionHeader icon={BookOpen} title="Education" expanded={expandedSection === "education"} />
                     {expandedSection === "education" && (
-                        <div className="px-4 pb-4 space-y-4 border-t border-gray-100">
+                        <div className="space-y-4 border-t border-slate-200 px-4 pb-4 pt-4">
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">Degree Level</label>
+                                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Degree Level</label>
                                     <select
                                         value={criteria.education?.degreeLevel || ""}
                                         onChange={(e) => updateCriteria({
                                             education: { ...criteria.education, degreeLevel: e.target.value as any }
                                         })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
                                     >
                                         <option value="">Select degree</option>
                                         {DEGREE_LEVELS.map(degree => (
@@ -415,7 +414,7 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">Field of Study</label>
+                                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Field of Study</label>
                                     <input
                                         type="text"
                                         value={criteria.education?.fieldOfStudy?.join(", ") || ""}
@@ -423,22 +422,22 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                             education: { ...criteria.education, fieldOfStudy: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }
                                         })}
                                         placeholder="e.g., Computer Science, Engineering"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
                                     />
                                 </div>
                             </div>
 
                             {/* Required Certifications */}
-                            <div className="space-y-2 pt-3 border-t border-gray-100">
-                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide">Required Certifications</label>
+                            <div className="space-y-2 border-t border-slate-200 pt-4">
+                                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Required Certifications</label>
                                 <div className="space-y-2">
                                     {(criteria.education?.requiredCertifications || []).map((cert, i) => (
-                                        <div key={i} className="flex items-center gap-2 p-2 bg-gradient-to-r from-orange-50 to-transparent rounded-lg group">
-                                            <p className="flex-1 font-semibold text-gray-900">{cert}</p>
+                                        <div key={i} className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                            <p className="flex-1 font-medium text-slate-900">{cert}</p>
                                             <button
                                                 type="button"
                                                 onClick={() => removeCertification(i)}
-                                                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 rounded transition-all"
+                                                className="rounded-md p-1 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
                                             >
                                                 <X className="h-4 w-4 text-red-500" />
                                             </button>
@@ -452,29 +451,29 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                         onChange={(e) => setNewCert(e.target.value)}
                                         onKeyPress={(e) => e.key === "Enter" && addCertification()}
                                         placeholder="Add certification"
-                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
                                     />
                                     <button
                                         type="button"
                                         onClick={addCertification}
-                                        className="p-2 bg-orange-100 hover:bg-orange-200 rounded-lg transition-colors"
+                                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                                     >
-                                        <Plus className="h-4 w-4 text-orange-600" />
+                                        <Plus className="h-4 w-4" />
                                     </button>
                                 </div>
                             </div>
 
                             {/* Nice-to-have Certifications */}
-                            <div className="space-y-2 pt-3 border-t border-gray-100">
-                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide">Nice-to-have Certifications</label>
+                            <div className="space-y-2 border-t border-slate-200 pt-4">
+                                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Nice-to-have Certifications</label>
                                 <div className="space-y-2">
                                     {(criteria.education?.niceToHaveCertifications || []).map((cert, i) => (
-                                        <div key={i} className="flex items-center gap-2 p-2 bg-gradient-to-r from-blue-50 to-transparent rounded-lg group">
-                                            <p className="flex-1 font-semibold text-gray-900">{cert}</p>
+                                        <div key={i} className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                            <p className="flex-1 font-medium text-slate-900">{cert}</p>
                                             <button
                                                 type="button"
                                                 onClick={() => removeNiceCertification(i)}
-                                                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-red-100 rounded transition-all"
+                                                className="rounded-md p-1 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
                                             >
                                                 <X className="h-4 w-4 text-red-500" />
                                             </button>
@@ -488,14 +487,14 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                         onChange={(e) => setNewNiceCert(e.target.value)}
                                         onKeyPress={(e) => e.key === "Enter" && addNiceCertification()}
                                         placeholder="Add nice-to-have certification"
-                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
                                     />
                                     <button
                                         type="button"
                                         onClick={addNiceCertification}
-                                        className="p-2 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
+                                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                                     >
-                                        <Plus className="h-4 w-4 text-blue-600" />
+                                        <Plus className="h-4 w-4" />
                                     </button>
                                 </div>
                             </div>
@@ -504,23 +503,23 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                 </div>
 
                 {/* Location Section */}
-                <div className="space-y-3 bg-white rounded-xl border border-gray-100">
+                <div className="space-y-3 rounded-3xl border border-slate-200 bg-white shadow-sm">
                     <SectionHeader icon={MapPin} title="Location" expanded={expandedSection === "location"} />
                     {expandedSection === "location" && (
-                        <div className="px-4 pb-4 space-y-4 border-t border-gray-100">
+                        <div className="space-y-4 border-t border-slate-200 px-4 pb-4 pt-4">
                             {/* Preferred Locations */}
                             <div className="space-y-2">
-                                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide">Preferred Locations</label>
+                                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Preferred Locations</label>
                                 <div className="flex flex-wrap gap-2 mb-3">
                                     {(criteria.location?.required || []).map((location, i) => (
-                                        <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-100 rounded-full group hover:bg-orange-200 transition-colors">
-                                            <span className="text-sm font-semibold text-orange-900">{location}</span>
+                                        <div key={i} className="group flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 transition-colors hover:bg-slate-100">
+                                            <span className="text-sm font-medium text-slate-800">{location}</span>
                                             <button
                                                 type="button"
                                                 onClick={() => removeLocation(i)}
-                                                className="p-0.5 hover:bg-orange-300 rounded-full transition-colors"
+                                                className="rounded-full p-0.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700"
                                             >
-                                                <X className="h-3 w-3 text-orange-700" />
+                                                <X className="h-3 w-3" />
                                             </button>
                                         </div>
                                     ))}
@@ -533,15 +532,15 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                             onChange={(e) => setNewLocation(e.target.value)}
                                             onKeyPress={(e) => e.key === "Enter" && addLocation()}
                                             placeholder="Type country or city"
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
                                         />
                                     </div>
                                     <button
                                         type="button"
                                         onClick={addLocation}
-                                        className="p-2 bg-orange-100 hover:bg-orange-200 rounded-lg transition-colors"
+                                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                                     >
-                                        <Plus className="h-4 w-4 text-orange-600" />
+                                        <Plus className="h-4 w-4" />
                                     </button>
                                 </div>
                                 <div className="grid grid-cols-3 gap-2">
@@ -559,10 +558,10 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                                 }
                                             }}
                                             className={cn(
-                                                "px-2 py-1 rounded text-xs font-semibold transition-colors",
+                                                "rounded-lg px-2 py-1 text-xs font-semibold transition-colors",
                                                 (criteria.location?.required || []).includes(country)
-                                                    ? "bg-orange-500 text-white"
-                                                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                                    ? "bg-slate-950 text-white"
+                                                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                                             )}
                                         >
                                             {country}
@@ -572,8 +571,8 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                             </div>
 
                             {/* Work Permit & Remote */}
-                            <div className="space-y-3 pt-3 border-t border-gray-100">
-                                <label className="flex items-center gap-3 cursor-pointer p-2 hover:bg-gray-50 rounded-lg transition-colors">
+                            <div className="space-y-3 border-t border-slate-200 pt-4">
+                                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 transition-colors hover:bg-slate-100">
                                     <input
                                         type="checkbox"
                                         checked={criteria.location?.remoteOk ?? true}
@@ -582,9 +581,9 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                         })}
                                         className="w-4 h-4 rounded cursor-pointer"
                                     />
-                                    <span className="text-sm font-semibold text-gray-900">Remote work is acceptable</span>
+                                    <span className="text-sm font-medium text-slate-900">Remote work is acceptable</span>
                                 </label>
-                                <label className="flex items-center gap-3 cursor-pointer p-2 hover:bg-gray-50 rounded-lg transition-colors">
+                                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 transition-colors hover:bg-slate-100">
                                     <input
                                         type="checkbox"
                                         checked={criteria.location?.workPermitRequired ?? false}
@@ -593,38 +592,38 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                         })}
                                         className="w-4 h-4 rounded cursor-pointer"
                                     />
-                                    <span className="text-sm font-semibold text-gray-900">Work permit required</span>
+                                    <span className="text-sm font-medium text-slate-900">Work permit required</span>
                                 </label>
                             </div>
                         </div>
                     )}
                 </div>
 
-                <p className="text-xs text-gray-500 px-4 py-2">These criteria will be used by AI to score and rank resumes</p>
+                <p className="px-1 text-xs text-slate-500">These criteria will be used by AI to score and rank resumes</p>
             </section>
 
             {/* Shortlist Mode Section */}
-            <section className="space-y-6 pt-4 border-t border-gray-50">
+            <section className="space-y-5 pt-2">
                 <div className="flex items-center gap-3">
-                    <span className="h-6 w-1 rounded-full bg-[#F97316]" />
+                    <span className="h-5 w-1 rounded-full bg-slate-900" />
                     <div>
-                        <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest flex items-center gap-2">
-                            <Zap className="h-4 w-4 text-[#F97316]" />
+                        <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-slate-900">
+                            <Zap className="h-4 w-4 text-slate-500" />
                             Shortlist Mode
                         </p>
                     </div>
                 </div>
 
-                <div className="pl-4 space-y-4">
-                    <div className="flex p-1 bg-gray-100 rounded-lg w-fit">
+                <div className="space-y-4">
+                    <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
                         <button
                             type="button"
                             onClick={() => setShortlistMode("automatic")}
                             className={cn(
-                                "px-6 py-2 rounded-lg text-sm font-black transition-all duration-200",
+                                "rounded-xl px-5 py-2 text-sm font-semibold transition-colors duration-200",
                                 shortlistMode === "automatic"
-                                    ? "bg-white text-gray-900 shadow-sm"
-                                    : "text-gray-400 hover:text-gray-600"
+                                    ? "bg-slate-950 text-white shadow-sm"
+                                    : "text-slate-500 hover:text-slate-800"
                             )}
                         >
                             Automatic
@@ -633,16 +632,16 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                             type="button"
                             onClick={() => setShortlistMode("manual")}
                             className={cn(
-                                "px-6 py-2 rounded-lg text-sm font-black transition-all duration-200",
+                                "rounded-xl px-5 py-2 text-sm font-semibold transition-colors duration-200",
                                 shortlistMode === "manual"
-                                    ? "bg-white text-gray-900 shadow-sm"
-                                    : "text-gray-400 hover:text-gray-600"
+                                    ? "bg-slate-950 text-white shadow-sm"
+                                    : "text-slate-500 hover:text-slate-800"
                             )}
                         >
                             Manual
                         </button>
                     </div>
-                    <p className="text-[12px] text-gray-400 font-medium leading-relaxed max-w-md italic">
+                    <p className="max-w-md text-xs leading-relaxed text-slate-500">
                         {shortlistMode === "automatic" 
                             ? "AI will auto-send interview links to matching candidates immediately."
                             : "You will manually review and approve candidates before any invitations are sent."

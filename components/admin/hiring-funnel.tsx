@@ -35,7 +35,7 @@ function rangeLabel(range: DateRange) {
 }
 
 const STAGES = [
-    { key: "applied",      label: "Applied",      color: "#3B82F6", darkColor: "#2563EB" },
+    { key: "uploaded",     label: "Uploaded",     color: "#3B82F6", darkColor: "#2563EB" },
     { key: "shortlisted",  label: "Shortlisted",   color: "#15803D", darkColor: "#166534" },
     { key: "invited",      label: "Invited",       color: "#1D4ED8", darkColor: "#1E40AF" },
     { key: "interviewed",  label: "Interviewed",   color: "#16A34A", darkColor: "#15803D" },
@@ -81,7 +81,7 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
     };
 
     const stages = data ? [
-        { key: "applied",     label: "Applied",     value: data.totalCandidates },
+        { key: "uploaded",    label: "Uploaded",    value: data.totalCandidates },
         { key: "shortlisted", label: "Shortlisted",  value: data.shortlisted },
         { key: "invited",     label: "Invited",      value: data.invited },
         { key: "interviewed", label: "Interviewed",  value: data.interviewed },

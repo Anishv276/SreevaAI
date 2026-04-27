@@ -331,6 +331,7 @@ export function IntelMetricCard({ row }: { row: IntelSignalRow }) {
 }
 
 export function buildHyringInterviewViewModel(i: {
+  backHref?: string;
   candidate: { fullName?: string; createdAt?: string; location?: string; passportUrl?: string; interview?: any; assessment?: any; drive?: { role?: string; title?: string } };
   mounted: boolean;
   displayAvatar: string;
@@ -485,7 +486,7 @@ export function buildHyringInterviewViewModel(i: {
   });
 
   return {
-    backHref: "/admin/candidates",
+    backHref: i.backHref || "/admin/candidates",
     fullName: c.fullName || "Candidate",
     displayAvatar: i.displayAvatar,
     roleLabel: String(c.drive?.role || c.drive?.title || "Product designer").trim() || "Role",
