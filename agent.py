@@ -4822,13 +4822,18 @@ async def entrypoint(ctx: JobContext):
                         _last_depth_decay_turn, _depth_decay_ever_fired
                     try:
                         # Step 1: Extract claims and check consistency (before quality eval)
-                        new_claims = await extract_claims(
-                            candidate_answer=answer,
-                            turn=turn,
-                            client=_oai_eval_client,
-                            org_id=org_id,
-                            llm_model=analysis_model,
-                        )
+                        # Only runs when contradiction signal is enabled — adds 1 LLM call/turn
+                        _contradiction_enabled = bool(evaluation_signal_toggles.get("contradiction", False))
+                        if _contradiction_enabled:
+                            new_claims = await extract_claims(
+                                candidate_answer=answer,
+                                turn=turn,
+                                client=_oai_eval_client,
+                                org_id=org_id,
+                                llm_model=analysis_model,
+                            )
+                        else:
+                            new_claims = []
                         contradiction_alert: Optional[dict] = None
                         for claim in new_claims:
                             claim_type = str(claim.get("type", "") or "").strip()
@@ -4979,9 +4984,9 @@ async def entrypoint(ctx: JobContext):
                                 td["quality"]["clarity"] + td["quality"]["depth"] +
                                 td["quality"]["specificity"] + td["quality"]["grounding"]
                             ) / 4.0
-                            contradiction_enabled = bool(evaluation_signal_toggles.get("contradiction", True))
+                            contradiction_enabled = bool(evaluation_signal_toggles.get("contradiction", False))
                             contradiction_resolved_enabled = bool(
-                                evaluation_signal_toggles.get("contradiction_resolved", True)
+                                evaluation_signal_toggles.get("contradiction_resolved", False)
                             )
                             if contradiction_enabled:
                                 _contradiction_state, contradiction_state_event = advance_contradiction_state(
@@ -5030,7 +5035,7 @@ async def entrypoint(ctx: JobContext):
                         old_v = _sanitize_claim_value(evidence.get("oldValue", ""))
                         new_v = _sanitize_claim_value(evidence.get("newValue", ""))
                         claim_t = re.sub(r"[^\w\s]", "", contradiction_summary["contradictionType"].replace("_", " ")).strip() or "contradiction"
-                        if contradiction_summary["active"] and bool(evaluation_signal_toggles.get("contradiction", True)):
+                        if contradiction_summary["active"] and bool(evaluation_signal_toggles.get("contradiction", False)):
                             directive = (
                                 f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                                 f"DECISION: CONTRADICTION {contradiction_summary['status'].upper()}\n"
