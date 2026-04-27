@@ -130,6 +130,9 @@ export function DriveResumeUploadModal({
     };
 
     const pct = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
+    const donutR = 54;
+    const donutC = 2 * Math.PI * donutR;
+    const donutDash = donutC * (pct / 100);
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
@@ -247,20 +250,41 @@ export function DriveResumeUploadModal({
 
                 {phase === "processing" && (
                     <div className="space-y-5 py-3">
-                        <div className="rounded-3xl border border-orange-100 bg-orange-50/50 p-5">
-                            <div className="mb-3 flex items-center justify-between">
+                        <div className="rounded-3xl border border-orange-100 bg-orange-50/50 p-6">
+                            <div className="mb-5 flex items-center justify-between">
                                 <span className="text-xs font-black uppercase tracking-widest text-orange-600">Processing</span>
                                 <span className="text-sm font-black tabular-nums text-gray-900">{progress.processed} / {progress.total}</span>
                             </div>
-                            <div className="h-3 overflow-hidden rounded-full bg-white">
-                                <div
-                                    className="h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-400 transition-all duration-500"
-                                    style={{ width: `${pct}%` }}
-                                />
+                            <div className="flex flex-col items-center gap-4">
+                                <div className="relative h-40 w-40">
+                                    <svg viewBox="0 0 140 140" className="h-full w-full -rotate-90">
+                                        <circle cx="70" cy="70" r={donutR} fill="none" stroke="#fff" strokeWidth="14" opacity="0.9" />
+                                        <circle
+                                            cx="70"
+                                            cy="70"
+                                            r={donutR}
+                                            fill="none"
+                                            stroke="url(#resumeProgressGradient)"
+                                            strokeWidth="14"
+                                            strokeDasharray={`${donutDash} ${donutC}`}
+                                            strokeLinecap="round"
+                                        />
+                                        <defs>
+                                            <linearGradient id="resumeProgressGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                <stop offset="0%" stopColor="#fb923c" />
+                                                <stop offset="100%" stopColor="#ea580c" />
+                                            </linearGradient>
+                                        </defs>
+                                    </svg>
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                        <p className="text-3xl font-black tabular-nums text-gray-900">{pct}%</p>
+                                        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">complete</p>
+                                    </div>
+                                </div>
+                                <p className="text-center text-sm font-medium text-gray-500">
+                                    We are extracting, scoring, and saving these resumes into Candidates.
+                                </p>
                             </div>
-                            <p className="mt-3 text-sm font-medium text-gray-500">
-                                We are extracting, scoring, and saving these resumes into Candidates.
-                            </p>
                         </div>
                     </div>
                 )}

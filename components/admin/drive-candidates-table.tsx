@@ -180,7 +180,9 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                 <TableHead className="w-[60px] pl-8 font-bold uppercase tracking-wider text-[11px] text-gray-500">#</TableHead>
                                 <TableHead className="w-[320px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 pl-4">Candidate</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Score</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Status</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Resume</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview</TableHead>
+                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Hiring</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Resume Report</TableHead>
                                 <TableHead className="text-right pr-8 h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Actions</TableHead>
                             </TableRow>
@@ -188,13 +190,13 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                         <TableBody className="[&_tr:last-child]:border-0">
                             {isLoading ? (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={8} className="py-12 text-center text-sm font-bold text-gray-400">
                                         Loading candidates...
                                     </TableCell>
                                 </TableRow>
                             ) : filteredCandidates.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={8} className="py-12 text-center text-sm font-bold text-gray-400">
                                         No candidates found for this drive
                                     </TableCell>
                                 </TableRow>
@@ -203,6 +205,12 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                     const statusValue = candidate.resumeStatus || candidate.status;
                                     const statusKey = normalizeStatusKey(statusValue) || "pending";
                                     const statusLabel = formatCandidateStatusLabel(statusValue);
+                                    const interviewStatusValue = candidate.interviewStatus;
+                                    const interviewStatusKey = normalizeStatusKey(interviewStatusValue) || "pending";
+                                    const interviewStatusLabel = formatCandidateStatusLabel(interviewStatusValue);
+                                    const hiringStatusValue = candidate.hiringStatus;
+                                    const hiringStatusKey = normalizeStatusKey(hiringStatusValue) || "pending";
+                                    const hiringStatusLabel = formatCandidateStatusLabel(hiringStatusValue);
                                     const score = Number(candidate.score ?? candidate.aiScore ?? 0);
 
                                     return (
@@ -246,6 +254,32 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                         statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"
                                                     )}>
                                                         {statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
+                                                    </Badge>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="py-5 text-center">
+                                                <div className="flex justify-center items-center h-full">
+                                                    <Badge variant="secondary" className={cn(
+                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all",
+                                                        interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "bg-indigo-50 text-indigo-700" :
+                                                        interviewStatusKey === "in progress" ? "bg-blue-50 text-blue-700" :
+                                                        interviewStatusKey === "pending" ? "bg-slate-50 text-slate-500" :
+                                                        "bg-amber-50 text-amber-700"
+                                                    )}>
+                                                        {interviewStatusLabel}
+                                                    </Badge>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="py-5 text-center">
+                                                <div className="flex justify-center items-center h-full">
+                                                    <Badge variant="secondary" className={cn(
+                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all",
+                                                        hiringStatusKey === "hired" ? "bg-emerald-50 text-emerald-700" :
+                                                        hiringStatusKey === "not hired" ? "bg-rose-50 text-rose-700" :
+                                                        hiringStatusKey === "not shortlisted" ? "bg-amber-50 text-amber-700" :
+                                                        "bg-slate-50 text-slate-500"
+                                                    )}>
+                                                        {hiringStatusLabel}
                                                     </Badge>
                                                 </div>
                                             </TableCell>
