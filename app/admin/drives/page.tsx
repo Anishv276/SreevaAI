@@ -142,7 +142,7 @@ export default function DrivesPage() {
     };
 
     return (
-        <div className="space-y-7 pb-10 animate-in fade-in duration-700">
+        <div className="space-y-7 pb-10 animate-in fade-in duration-700" style={{ zoom: 0.78, transformOrigin: "top center" }}>
             {/* Header */}
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between mb-8">
                 <div className="flex items-center gap-5 group">

@@ -834,7 +834,7 @@ export default function SettingsPage() {
 
     return (
 
-        <>
+        <div style={{ zoom: 0.72, transformOrigin: "top center" }}>
 
             <div className="space-y-8 pb-16">
 
@@ -1737,7 +1737,7 @@ export default function SettingsPage() {
                     </div>
                 )}
             </div>
-        </>
+        </div>
 
     );
 

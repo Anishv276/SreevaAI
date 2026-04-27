@@ -25,7 +25,7 @@ export default function DashboardPage() {
     const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount);
 
     return (
-        <div className="space-y-8 pb-12">
+        <div className="space-y-8 pb-12" style={{ zoom: 0.88, transformOrigin: "top center" }}>
             <div className="animate-fade-slide flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
                 <div className="group flex items-center gap-5">
                     <div className="h-14 w-1.5 rounded-full bg-gradient-to-b from-[#F97316] to-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.5)] transition-all duration-500 group-hover:h-16 group-hover:shadow-[0_0_25px_rgba(249,115,22,0.6)]" />

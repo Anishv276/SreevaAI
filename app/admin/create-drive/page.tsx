@@ -77,11 +77,13 @@ export default function CreateDrivePage() {
 
     return (
 
-        <Suspense fallback={<div>Loading...</div>}>
+        <div style={{ zoom: 0.75, transformOrigin: "top center" }}>
+            <Suspense fallback={<div>Loading...</div>}>
 
-            <CreateDriveForm />
+                <CreateDriveForm />
 
-        </Suspense>
+            </Suspense>
+        </div>
 
     );
 
@@ -1163,9 +1165,10 @@ function CreateDriveForm() {
 
         return (
 
-            <div className="max-w-4xl mx-auto py-12 space-y-12 animate-in-fade">
+            <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center px-4 py-8">
+                <div className="max-w-4xl mx-auto w-full space-y-12 animate-in-fade">
 
-                <div className="text-center space-y-4">
+                <div className="flex flex-col items-center text-center space-y-4">
 
                     <h1 className="text-4xl font-black text-gray-900 tracking-tight">How would you like to start?</h1>
 
@@ -1175,7 +1178,7 @@ function CreateDriveForm() {
 
 
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
 
                     {/* Manual Option */}
 
@@ -1289,8 +1292,9 @@ function CreateDriveForm() {
 
                     </button>
 
-                </div>
+                    </div>
 
+                </div>
             </div>
 
         );

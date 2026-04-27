@@ -159,7 +159,7 @@ export async function GET(request: Request) {
         });
 
         if (candidates.length > 0) {
-            console.log("[candidates] first row keys:", Object.keys(candidates[0]));
+
         }
 
         const formattedCandidates = (candidates as any[]).map((app: any) => {

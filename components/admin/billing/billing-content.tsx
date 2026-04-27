@@ -147,7 +147,7 @@ export function BillingContent() {
     <>
       <BuyCreditsModal open={buyOpen} onClose={() => setBuyOpen(false)} onPurchase={onPurchase} />
 
-      <div style={{ maxWidth: 1080, margin: "0 auto", padding: "40px 32px 56px" }}>
+      <div style={{ maxWidth: "100%", margin: "0 auto", padding: "40px 4% 56px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 40 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
