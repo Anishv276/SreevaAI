@@ -344,14 +344,14 @@ export default function DrivesPage() {
                                             </div>
                                         </div>
 
-                                        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+
                                             <div className="flex items-center justify-between gap-3">
                                                 <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
                                                     <Target className="h-3.5 w-3.5 text-orange-500" />
-                                                    Drive Snapshot
+
                                                 </div>
                                                 
-                                            </div>
+   
                                         </div>
                                     </div>
 

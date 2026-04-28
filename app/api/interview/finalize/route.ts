@@ -127,8 +127,20 @@ async function persistInterviewUpdateRaw(params: {
   transcript?: string;
   interviewStatus?: string;
   interviewTurns?: unknown;
+  snapshots?: string[];
+  recordingCompletedAt?: Date;
+  recordingDurationSec?: number;
 }) {
-  const { applicationId, recordingUrl, transcript, interviewStatus, interviewTurns } = params;
+  const { 
+    applicationId, 
+    recordingUrl, 
+    transcript, 
+    interviewStatus, 
+    interviewTurns,
+    snapshots,
+    recordingCompletedAt,
+    recordingDurationSec 
+  } = params;
   const finalStatus = interviewStatus || "COMPLETED";
 
   const app = await prisma.application.findUnique({
@@ -140,8 +152,8 @@ async function persistInterviewUpdateRaw(params: {
 
   await prisma.$executeRawUnsafe(
     `
-    INSERT INTO "Interview" (id, "applicationId", "accessToken", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "interviewTurns", "completedAt", "createdAt", "updatedAt")
-    VALUES ($1, $2, $3, COALESCE($4::text, 'COMPLETED'), $5, CASE WHEN $5::text IS NOT NULL THEN NOW() ELSE NULL END, $6, COALESCE($7::jsonb, '[]'::jsonb), CASE WHEN COALESCE($4::text, 'COMPLETED') = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
+    INSERT INTO "Interview" (id, "applicationId", "accessToken", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "interviewTurns", "snapshots", "recordingCompletedAt", "recordingDurationSec", "completedAt", "createdAt", "updatedAt")
+    VALUES ($1, $2, $3, COALESCE($4::text, 'COMPLETED'), $5, CASE WHEN $5::text IS NOT NULL THEN NOW() ELSE NULL END, $6, COALESCE($7::jsonb, '[]'::jsonb), $8, $9, $10, CASE WHEN COALESCE($4::text, 'COMPLETED') = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
     ON CONFLICT ("applicationId")
     DO UPDATE SET
       status = COALESCE($4::text, 'COMPLETED'),
@@ -149,6 +161,9 @@ async function persistInterviewUpdateRaw(params: {
       "interviewRecordedAt" = CASE WHEN $5::text IS NOT NULL THEN NOW() ELSE "Interview"."interviewRecordedAt" END,
       "interviewTranscript" = COALESCE($6::text, "Interview"."interviewTranscript"),
       "interviewTurns" = COALESCE($7::jsonb, "Interview"."interviewTurns"),
+      "snapshots" = COALESCE($8, "Interview"."snapshots"),
+      "recordingCompletedAt" = COALESCE($9, "Interview"."recordingCompletedAt"),
+      "recordingDurationSec" = COALESCE($10, "Interview"."recordingDurationSec"),
       "completedAt" = CASE WHEN COALESCE($4::text, 'COMPLETED') = 'COMPLETED' THEN NOW() ELSE "Interview"."completedAt" END,
       "updatedAt" = NOW()
     `,
@@ -159,6 +174,9 @@ async function persistInterviewUpdateRaw(params: {
     recordingUrl || null,
     transcript || null,
     JSON.stringify(interviewTurns ?? []),
+    snapshots || [],
+    recordingCompletedAt || null,
+    recordingDurationSec || null
   );
 }
 
@@ -212,7 +230,18 @@ export async function POST(req: Request) {
       );
     }
 
-    const { applicationId, interviewToken, recordingUrl, transcript, interviewStatus, appStatus, duration } = result.data;
+    const { 
+      applicationId, 
+      interviewToken, 
+      recordingUrl, 
+      transcript, 
+      interviewStatus, 
+      appStatus, 
+      duration,
+      snapshots,
+      recordingCompletedAt,
+      recordingDurationSec
+    } = result.data;
     const requireInterviewToken = isInterviewTokenRequired();
 
     // -- AUTHENTICATION --------------------------------
@@ -223,7 +252,7 @@ export async function POST(req: Request) {
     if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid finalization token" }, { status: 401 });
     }
-    
+
     const transcriptRaw = transcript;
     const finalTranscript = transcriptRaw?.trim();
     const interviewTurns = finalTranscript ? buildInterviewTurns(finalTranscript) : [];
@@ -237,6 +266,9 @@ export async function POST(req: Request) {
       transcript: finalTranscript,
       interviewStatus,
       interviewTurns,
+      snapshots,
+      recordingCompletedAt,
+      recordingDurationSec: finalDuration ?? recordingDurationSec,
     });
 
     // Duration: use client-sent value, else compute from startedAt
@@ -288,7 +320,6 @@ export async function POST(req: Request) {
         select: {
           fullName: true,
           resumeText: true,
-          structuredResume: true,
           aiReport: true,
           drive: {
             select: {
@@ -305,6 +336,7 @@ export async function POST(req: Request) {
               proctoringEvents: true,
               interviewDuration: true,
               interviewTranscript: true,
+              interviewReport: true,
             },
           },
         },
@@ -323,9 +355,7 @@ export async function POST(req: Request) {
             }
           })();
 
-        const structuredResume = app.structuredResume
-          ? safeJsonParse(app.structuredResume, {})
-          : {};
+        const structuredResume = {};
         const driveDetails = app.drive?.extractedDetails
           ? safeJsonParse(app.drive.extractedDetails, {})
           : {};
@@ -343,8 +373,10 @@ export async function POST(req: Request) {
           ? app.interview?.proctoringEvents
           : [];
 
-        if (transcriptForReport) {
-          const report = await generateInterviewReport({
+        // Use existing report from DB if available; otherwise generate new one using GPT-4o
+        let report = app.interview?.interviewReport as any;
+        if (!report && transcriptForReport) {
+          report = await generateInterviewReport({
             transcript: transcriptForReport,
             resumeText,
             jdText,
@@ -356,7 +388,7 @@ export async function POST(req: Request) {
           });
 
           const turnRows = normalizeReportTurns(interviewTurns.length > 0 ? interviewTurns : buildInterviewTurns(transcriptForReport));
-          if (!Array.isArray(report.qa_blocks) || report.qa_blocks.length === 0) {
+          if (!Array.isArray(report?.qa_blocks) || report.qa_blocks.length === 0) {
             report.qa_blocks = turnRows.map((row) => ({
               q: row.q,
               title: row.question,
@@ -371,48 +403,48 @@ export async function POST(req: Request) {
           await persistInterviewReportRaw({
             applicationId,
             interviewReport: report,
-            aiSummary: report.recording?.summary || report.verdict?.summary || null,
-          });
-          await persistStrategicVerdictRaw({
-            applicationId,
-            strategicVerdict: report.strategic_verdict || {
-              decision:
-                report.verdict?.recommendation === "Strong Yes" || report.verdict?.recommendation === "Yes"
-                  ? "Hire"
-                  : report.verdict?.recommendation === "No"
-                    ? "Do Not Hire"
-                    : "Maybe",
-              summary: report.verdict?.summary || "",
-              rationale: report.verdict?.recommendation_reason ? [report.verdict.recommendation_reason] : [],
-              next_actions: [],
-            },
+            aiSummary: report?.recording?.summary || report?.verdict?.summary || null,
           });
         }
+        await persistStrategicVerdictRaw({
+          applicationId,
+          strategicVerdict: report?.strategic_verdict || {
+            decision:
+              report?.verdict?.recommendation === "Strong Yes" || report?.verdict?.recommendation === "Yes"
+                ? "Hire"
+                : report?.verdict?.recommendation === "No"
+                  ? "Do Not Hire"
+                  : "Maybe",
+            summary: report?.verdict?.summary || "",
+            rationale: report?.verdict?.recommendation_reason ? [report.verdict.recommendation_reason] : [],
+            next_actions: [],
+          },
+        });
       }
     } catch (reportError) {
       console.error("[INTERVIEW FINALIZE] Failed to generate interview report", reportError);
     }
 
-    let jobId: string | number | undefined;
-    try {
-      const job = await interviewFinalizationQueue.add(
-        "finalize-interview",
-        { applicationId, recordingUrl, transcript: finalTranscript, interviewStatus, appStatus },
-                {
-                  attempts: 3,
-                  backoff: { type: "exponential", delay: 1000 },
-                  removeOnComplete: true,
-                  removeOnFail: 200,
-                }
-              );
-      jobId = job.id;
-    } catch (e) {
-      console.warn("[INTERVIEW FINALIZE] Queue unavailable, persisted synchronously", e);
-    }
-
-    return NextResponse.json({ success: true, persisted: true, queued: !!jobId, jobId });
-  } catch (error) {
-    console.error("[INTERVIEW FINALIZE QUEUE ERROR]", error);
-    return NextResponse.json({ error: "Failed to finalize interview" }, { status: 500 });
+  let jobId: string | number | undefined;
+  try {
+    const job = await interviewFinalizationQueue.add(
+      "finalize-interview",
+      { applicationId, recordingUrl, transcript: finalTranscript, interviewStatus, appStatus },
+      {
+        attempts: 3,
+        backoff: { type: "exponential", delay: 1000 },
+        removeOnComplete: true,
+        removeOnFail: 200,
+      }
+    );
+    jobId = job.id;
+  } catch (e) {
+    console.warn("[INTERVIEW FINALIZE] Queue unavailable, persisted synchronously", e);
   }
+
+  return NextResponse.json({ success: true, persisted: true, queued: !!jobId, jobId });
+} catch (error) {
+  console.error("[INTERVIEW FINALIZE QUEUE ERROR]", error);
+  return NextResponse.json({ error: "Failed to finalize interview" }, { status: 500 });
+}
 }

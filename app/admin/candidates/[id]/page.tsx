@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { FileText, Sparkles, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { InterviewReportHyring, buildHyringInterviewViewModel } from "@/components/admin/candidate-profile/interview-report-hyring";
 import { ResumeReportHyring, buildHyringResumeViewModel } from "@/components/admin/candidate-profile/resume-report-hyring";
 
@@ -144,6 +144,8 @@ export default function CandidateProfilePage() {
     const interviewReportScores = interviewReportData?.scores || {};
     const interviewReportRecording = interviewReportData?.recording || {};
     const interviewReportCommunication = interviewReportData?.communication || {};
+    const interviewReportCognitiveInsights = interviewReportData?.cognitive_insights || {};
+    const interviewReportBehavioralAnalysis = interviewReportData?.behavioral_analysis || {};
     const interviewReportSkills = Array.isArray(interviewReportData?.skills_proof) ? interviewReportData.skills_proof : [];
     const interviewReportSummary = interviewReportRecording.summary || interviewReportData?.verdict?.summary || interviewAiSummary || "";
     const groupedProctoringSignals = Array.isArray(candidate?.interview?.proctoringEvents)
@@ -172,7 +174,17 @@ export default function CandidateProfilePage() {
         }))
         : [];
 
-    const interviewQaRows = interviewSessionRows;
+    // Use AI-generated qa_blocks for question analysis
+    const aiQaBlocks = Array.isArray(interviewReportData?.qa_blocks) ? interviewReportData.qa_blocks : [];
+    const interviewQaRows = aiQaBlocks.length > 0
+        ? aiQaBlocks.map((block: any, i: number) => ({
+            q: Number(block?.q || i + 1),
+            question: String(block?.title || "Question " + (i + 1)).trim(),
+            answer: "",
+            score: String(block?.score || "--"),
+            reasoning: String(block?.verdict || "").trim(),
+          }))
+        : interviewSessionRows;
     const wordCount = interviewTranscript ? interviewTranscript.split(/\s+/).filter(Boolean).length : 0;
     const interviewScore = Number(candidate?.interview?.candidateRating || 0) || 0;
     const combinedScore = Math.max(0, Math.min(10, interviewScore));
@@ -377,6 +389,8 @@ export default function CandidateProfilePage() {
                     interviewReportScores,
                     interviewReportRecording,
                     interviewReportCommunication,
+                    interviewReportCognitiveInsights,
+                    interviewReportBehavioralAnalysis,
                     interviewReportSkills,
                     interviewSessionRows,
                     interviewQaRows,
@@ -397,6 +411,7 @@ export default function CandidateProfilePage() {
 
             <Dialog open={resumeReportOpen} onOpenChange={setResumeReportOpen}>
                 <DialogContent className="w-[95vw] max-w-[95vw] max-h-[95vh] overflow-hidden border-0 bg-transparent p-0 shadow-none">
+                    <DialogTitle className="sr-only">Resume Report</DialogTitle>
                     <div className="h-[95vh] overflow-y-auto">
                         {candidate?.fullName && (candidate?.aiReport || candidate?.resumeText) ? (
                             <ResumeReportHyring model={resumeReportModel} onBack={() => setResumeReportOpen(false)} />

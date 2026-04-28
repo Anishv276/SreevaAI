@@ -154,6 +154,9 @@ export const interviewFinalizeSchema = z.object({
   recordingUrl: z.string().optional(),
   transcript: z.string().optional(),
   duration: z.coerce.number().optional(),
+  snapshots: z.array(z.string()).optional(),
+  recordingCompletedAt: z.preprocess((val) => (typeof val === 'string' && val ? new Date(val) : val), z.date().optional()),
+  recordingDurationSec: z.coerce.number().optional(),
 });
 
 export const proctoringEventsSchema = z.object({

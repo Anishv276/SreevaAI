@@ -1635,100 +1635,35 @@ export default function CandidatesPage() {
 
                                                         </DropdownMenuTrigger>
 
-                                                        <DropdownMenuContent align="end" className="w-64 p-2 rounded-xl shadow-xl border-gray-100 bg-white">
-
-                                                            {/* Shortlist Group */}
-
-                                                            <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Shortlist</DropdownMenuLabel>
-
-                                                            <DropdownMenuItem
-
-                                                                onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${candidate.name} shortlisted`)}
-
-                                                                className="rounded-lg px-3 py-2 font-bold text-emerald-600 cursor-pointer focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
-
-                                                            >
-
-                                                                <Target className="h-4 w-4 mr-2" />
-
-                                                                Shortlist Candidate
-
-                                                            </DropdownMenuItem>
-
-                                                            <DropdownMenuItem
-
-                                                                onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${candidate.name} rejected`)}
-
-                                                                className="rounded-lg px-3 py-2 font-bold text-rose-600 cursor-pointer focus:text-rose-700 focus:bg-rose-50 transition-colors"
-
-                                                            >
-
-                                                                <UserX className="h-4 w-4 mr-2" />
-
-                                                                Reject Candidate
-
-                                                            </DropdownMenuItem>
-
-
-
-                                                            <DropdownMenuSeparator className="my-1 bg-gray-50" />
-
-
-
+                                                        <DropdownMenuContent align="end" className="w-64 p-2 rounded-xl shadow-xl border-gray-100 bg-white">                                                            {/* Actions menu without Shortlist and Reject */}
                                                             {/* Email Group */}
-
                                                             <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Email</DropdownMenuLabel>
-
                                                             <DropdownMenuItem
-
                                                                 onClick={() => setInterviewLinkCandidate({ id: candidate.id, name: candidate.name, interviewStatus: candidate.interviewStatus })}
-
                                                                 disabled={sendingInterviewLinkId === candidate.id || isSuspended}
-
                                                                 className={cn("rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors", isSuspended ? "text-gray-400 opacity-70" : "text-blue-600 focus:bg-blue-50")}
-
                                                             >
-
                                                                 {isSuspended ? <Lock className="h-4 w-4 mr-2" /> : <RefreshCw className={cn("h-4 w-4 mr-2", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
-
                                                                 {sendingInterviewLinkId === candidate.id ? "Sending..." : "Send Interview Link"}
-
                                                             </DropdownMenuItem>
-
                                                             <DropdownMenuItem
-
                                                                 onClick={() => setEmailCandidate({ id: candidate.id, name: candidate.name, email: candidate.email, role: candidate.role })}
-
                                                                 className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-blue-600 focus:text-blue-700 focus:bg-blue-50"
-
                                                             >
-
                                                                 <Mail className="h-4 w-4 mr-2" />
-
                                                                 Send Mail
-
                                                             </DropdownMenuItem>
-
-
 
                                                             <DropdownMenuSeparator className="my-1 bg-gray-50" />
-
-
 
                                                             {/* Hire Group */}
-
                                                             <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Hire</DropdownMenuLabel>
-
                                                             <DropdownMenuItem
-
                                                                 onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${candidate.name} hired - confirmation email sent`)}
-
                                                                 className="rounded-lg px-3 py-2 font-bold cursor-pointer text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
-
                                                             >
-
+                                                                <Award className="h-4 w-4 mr-2" />
                                                                 Hire this person
-
                                                             </DropdownMenuItem>
 
                                                             <DropdownMenuItem

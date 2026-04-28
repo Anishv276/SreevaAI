@@ -3,7 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Building2, Briefcase, Filter, Search, Loader2 } from "lucide-react";
-import { JobCard } from "@/components/careers/job-card";
+// Missing JobCard replaced inline
 
 export default function OrgDrivesPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
@@ -19,10 +19,10 @@ export default function OrgDrivesPage({ params }: { params: Promise<{ id: string
                     fetch(`/api/super-admin/orgs/${id}`),
                     fetch(`/api/drives?orgId=${id}`)
                 ]);
-                
+
                 const orgData = await orgRes.json();
                 const drivesData = await drivesRes.json();
-                
+
                 setOrg(orgData);
                 setDrives(drivesData);
             } catch (err) {
@@ -46,8 +46,8 @@ export default function OrgDrivesPage({ params }: { params: Promise<{ id: string
         <div className="p-8 lg:p-12 space-y-12 animate-fade-slide">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
                 <div className="space-y-4">
-                    <button 
-                        onClick={() => router.back()} 
+                    <button
+                        onClick={() => router.back()}
                         className="group flex items-center gap-2 text-gray-400 hover:text-gray-900 text-[10px] font-black uppercase tracking-[0.2em] mb-4 transition-all"
                     >
                         <ArrowLeft className="h-3 w-3 group-hover:-translate-x-1 transition-transform" />
@@ -75,12 +75,13 @@ export default function OrgDrivesPage({ params }: { params: Promise<{ id: string
                     {drives.map((drive) => (
                         <div key={drive.id} className="relative group">
                             {/* Simple container for the JobCard to match admin style */}
-                             <div className="pointer-events-none">
-                                <JobCard job={drive} />
-                             </div>
-                             <div className="absolute top-4 right-4 text-[9px] font-black uppercase tracking-widest px-3 py-1 bg-white/90 backdrop-blur border rounded-full text-gray-900 shadow-sm opacity-60">
+                                <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                    <h3 className="font-bold text-gray-900">{drive.title}</h3>
+                                    <p className="text-sm text-gray-500">{drive.location || 'Remote'}</p>
+                                </div>
+                            <div className="absolute top-4 right-4 text-[9px] font-black uppercase tracking-widest px-3 py-1 bg-white/90 backdrop-blur border rounded-full text-gray-900 shadow-sm opacity-60">
                                 {drive.status}
-                             </div>
+                            </div>
                         </div>
                     ))}
                 </div>

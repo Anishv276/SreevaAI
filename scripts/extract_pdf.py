@@ -1494,6 +1494,7 @@ Resume:
             flush=True,
         )
         try:
+            # Resume reports MUST use GPT-4o only — no fallback to mini
             report, report_usage = generate_report_inline(
                 jd_data,
                 resume_data,
@@ -1501,7 +1502,7 @@ Resume:
                 resume_raw_text,
                 score_result,
                 client,
-                report_model=llm_model_override or "gpt-5.4-mini",
+                report_model=llm_model_override or "gpt-4o",
             )
             # -- 3. ASSEMBLE FINAL OUTPUT -----------------------
             final_data = {
@@ -1526,7 +1527,7 @@ Resume:
             }
             return {"data": final_data, "usage": report_usage}
         except Exception as e:
-            # Fallback reasoning if detailed report fails
+            # Fallback reasoning if detailed report fails (still use GPT-4o)
             return {
                 "data": {
                     **score_result,
@@ -1534,7 +1535,7 @@ Resume:
                     "ai_verdict": f"Status: {score_result['status']}. Score: {score_result['score']}.",
                 },
                 "usage": {
-                    "model": llm_model_override or "gpt-5.4-mini",
+                    "model": "gpt-4o",
                     "inputTokens": 0,
                     "outputTokens": 0,
                     "cachedInputTokens": 0,
@@ -1631,7 +1632,7 @@ if __name__ == "__main__":
                     "usage": data.get(
                         "usage",
                         {
-                            "model": "gpt-5.4-mini",
+                            "model": "gpt-4o",
                             "inputTokens": 0,
                             "outputTokens": 0,
                             "cachedInputTokens": 0,

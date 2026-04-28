@@ -1178,7 +1178,7 @@ function CreateDriveForm() {
 
 
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
 
                     {/* Manual Option */}
 
@@ -1207,46 +1207,6 @@ function CreateDriveForm() {
                         <div className="absolute bottom-6 right-6 h-10 w-10 rounded-full border border-gray-100 flex items-center justify-center text-gray-300 group-hover:bg-[#F97316] group-hover:text-white group-hover:border-transparent transition-all duration-500">
 
                             <ChevronRight className="h-5 w-5" />
-
-                        </div>
-
-                    </button>
-
-
-
-                    {/* AI Assistant Option */}
-
-                    <button
-
-                        onClick={() => router.push("/admin/create-drive/ai-chat")}
-
-                        className="group relative flex flex-col items-center gap-6 p-8 sm:p-10 rounded-[2.5rem] bg-white border-2 border-gray-100 hover:border-[#F97316] transition-all duration-500 hover:shadow-[0_20px_50px_rgba(249,115,22,0.12)] hover:-translate-y-2"
-
-                    >
-
-                        <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-3xl bg-orange-50 flex items-center justify-center text-[#F97316] group-hover:scale-110 transition-all duration-500">
-
-                            <Bot className="h-8 w-8 sm:h-10 sm:w-10" />
-
-                        </div>
-
-                        <div className="space-y-2 text-center">
-
-                            <h3 className="text-xl sm:text-2xl font-bold text-gray-900 group-hover:text-[#F97316] transition-colors">JD Assistant</h3>
-
-                            <p className="text-gray-500 text-[13px] sm:text-sm leading-relaxed">Design your Job Description instantly through a pro AI chat creator.</p>
-
-                        </div>
-
-                        <div className="absolute bottom-6 right-6 h-10 w-10 rounded-full border border-gray-100 flex items-center justify-center text-gray-300 group-hover:bg-[#F97316] group-hover:text-white group-hover:border-transparent transition-all duration-500">
-
-                            <ChevronRight className="h-5 w-5" />
-
-                        </div>
-
-                        <div className="absolute -top-3 -right-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-lg">
-
-                            Popular
 
                         </div>
 

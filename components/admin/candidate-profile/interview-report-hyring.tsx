@@ -94,6 +94,7 @@ export type HyringInterviewViewModel = {
   engagementVibes: IntelSignalRow[];
   cognitiveInsights: IntelSignalRow[];
   integritySignals: IntelSignalRow[];
+  behavioralAnalysis: Record<string, any>;
   skills: { name: string; stars: number; status: string; scoreLabel: string; evidence?: string }[];
   /** Ranked 1–3; derived in builder from scores, transcript, proctoring, skills. */
   topStrengths: string[];
@@ -233,7 +234,7 @@ function buildEngagementVibes(groups: { key: string; count: number }[]): IntelSi
 }
 
 function buildCognitiveFromComm(
-  com: Record<string, unknown>,
+  cogInsights: Record<string, unknown>,
   interviewScore: number,
   wordCount: number,
   technicalPct: number
@@ -242,24 +243,61 @@ function buildCognitiveFromComm(
     const n = Number(v);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : fb;
   };
-  const clarityN = toN(com.clarity, 60);
-  const confN = toN((com as { confidence?: number }).confidence, Math.min(100, Math.round((interviewScore / 10) * 100)));
-  const entN = toN(
-    (com as { enthusiasm?: number }).enthusiasm,
-    Math.min(100, 42 + Math.min(30, wordCount / 25))
-  );
-  const depthN = toN(com.depth, 62);
-  const probN = technicalPct;
-  const logN = Math.round(
-    (clarityN + toN(com.grammar, 50) + depthN + toN(com.fluency, 55)) / 4
-  );
+
+  // Real cognitive insights from AI report (GPT-4o analyzed the transcript)
+  const clarityN = toN(cogInsights.clarity, 60);
+  const depthN = toN(cogInsights.depth_of_knowledge, 62);
+  const probN = toN(cogInsights.problem_solving, technicalPct);
+  const logN = toN(cogInsights.logical_thinking, 65);
+  const cogSummary = String(cogInsights.summary || "").trim();
+
   return [
-    { id: "c1", label: "Clarity", icon: "activity", details: [`Clarity score: ${clarityN}/100.`, "Based on how clearly the candidate explained ideas."], ...cognitiveLabel(clarityN) },
-    { id: "c2", label: "Confidence", icon: "zap", details: [`Confidence score: ${confN}/100.`, "Based on tone, decisiveness, and answer stability."], ...cognitiveLabel(confN) },
-    { id: "c3", label: "Enthusiasm", icon: "star", details: [`Enthusiasm score: ${entN}/100.`, "Based on energy, engagement, and willingness to elaborate."], ...cognitiveLabel(entN) },
-    { id: "c4", label: "Depth of knowledge", icon: "search", details: [`Depth score: ${depthN}/100.`, "Based on how much supporting detail the answers contained."], ...cognitiveLabel(depthN) },
-    { id: "c5", label: "Problem solving", icon: "box", details: [`Problem solving score: ${probN}/100.`, "Based on reasoning quality across technical prompts."], ...cognitiveLabel(probN) },
-    { id: "c6", label: "Logical thinking", icon: "git-branch", details: [`Logical thinking score: ${logN}/100.`, "Based on structure, sequence, and consistency across responses."], ...cognitiveLabel(logN) },
+    {
+      id: "c1",
+      label: "Clarity",
+      icon: "activity",
+      details: [`Clarity score: ${clarityN}/100.`, "How clearly the candidate articulated and expressed ideas across all answers."],
+      ...cognitiveLabel(clarityN)
+    },
+    {
+      id: "c2",
+      label: "Confidence",
+      icon: "zap",
+      details: [`Confidence score: ${logN}/100.`, "Assertiveness, decisiveness, and certainty demonstrated in responses."],
+      ...cognitiveLabel(logN)
+    },
+    {
+      id: "c3",
+      label: "Fluency",
+      icon: "star",
+      details: [`Fluency score: ${depthN}/100.`, "Smooth delivery and coherent expression of thoughts."],
+      ...cognitiveLabel(depthN)
+    },
+    {
+      id: "c4",
+      label: "Depth of knowledge",
+      icon: "search",
+      details: [`Depth score: ${depthN}/100.`, "Level of technical understanding and detail demonstrated in interview answers."],
+      ...cognitiveLabel(depthN)
+    },
+    {
+      id: "c5",
+      label: "Problem solving",
+      icon: "box",
+      details: [`Problem solving score: ${probN}/100.`, "Quality of approach to technical challenges — methodology, reasoning, consideration of edge cases."],
+      ...cognitiveLabel(probN)
+    },
+    {
+      id: "c6",
+      label: "Logical thinking",
+      icon: "git-branch",
+      details: [
+        `Logical thinking score: ${logN}/100.`,
+        "Structure, coherence, and consistency of reasoning across all responses.",
+        cogSummary ? `Overall: ${cogSummary}` : undefined
+      ].filter(Boolean),
+      ...cognitiveLabel(logN)
+    },
   ];
 }
 
@@ -390,6 +428,50 @@ export function IntelMetricCard({ row }: { row: IntelSignalRow }) {
   );
 }
 
+function SkillRatingsContainer({ skills }: { skills: { name: string; stars: number; status: string; scoreLabel: string; evidence?: string }[] }) {
+  const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
+
+  return (
+    <div
+      className="max-h-[320px] space-y-2 overflow-y-auto p-3 pr-2 overscroll-contain"
+      style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}
+    >
+      {skills.map((s) => (
+        <div
+          key={`${s.name}-${s.status}-${s.scoreLabel}`}
+          className="border-b border-[#EEF0F3] py-2 last:border-0"
+        >
+          <button
+            onClick={() => setExpandedSkill(expandedSkill === s.name ? null : s.name)}
+            className="w-full flex items-center justify-between hover:bg-[#F9FAFB] rounded px-1 transition-colors"
+          >
+            <div className="min-w-0 pr-3 text-left">
+              <p className="text-[12px] font-semibold text-[#1A1D22]">{s.name}</p>
+              <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-[#6B7079]">
+                {s.status} {s.scoreLabel !== "—" ? `• ${s.scoreLabel}` : ""}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Star
+                  key={i}
+                  className={cn("h-3.5 w-3.5", i < s.stars ? "fill-[#1E9D55] text-[#1E9D55]" : "text-[#DDE1E5]")}
+                />
+              ))}
+            </div>
+          </button>
+          {expandedSkill === s.name && s.evidence && (
+            <div className="mt-2 ml-1 text-[11px] text-[#475467] bg-[#F9FAFB] rounded px-2 py-1.5 border-l-2 border-[#1E9D55]">
+              <p className="font-semibold text-[#6B7079] mb-1">Evidence:</p>
+              <p className="leading-relaxed">{s.evidence}</p>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function buildHyringInterviewViewModel(i: {
   backHref?: string;
   candidate: { fullName?: string; createdAt?: string; location?: string; passportUrl?: string; interview?: any; assessment?: any; drive?: { role?: string; title?: string } };
@@ -398,6 +480,8 @@ export function buildHyringInterviewViewModel(i: {
   interviewReportScores: Record<string, any>;
   interviewReportRecording: Record<string, any>;
   interviewReportCommunication: Record<string, any>;
+  interviewReportCognitiveInsights: Record<string, any>;
+  interviewReportBehavioralAnalysis: Record<string, any>;
   interviewReportSkills: any[];
   interviewSessionRows: { q: number; question: string; answer: string; score: string; reasoning?: string }[];
   interviewQaRows: any[];
@@ -416,6 +500,8 @@ export function buildHyringInterviewViewModel(i: {
 }): HyringInterviewViewModel {
   const c = i.candidate;
   const com = i.interviewReportCommunication || {};
+  const cogInsights = i.interviewReportCognitiveInsights || {};
+  const behavAnalysis = i.interviewReportBehavioralAnalysis || {};
   const scores = i.interviewReportScores || {};
   const toPct = (v: unknown, fallback: number) => {
     const n = Number(v);
@@ -500,7 +586,7 @@ export function buildHyringInterviewViewModel(i: {
       derivedComm ? derivedComm.confidenceScore : 50,
     ),
     minimalFiller: toPct(
-      com.filler ?? com.minimal_filler,
+      com.fluency ?? com.filler ?? com.minimal_filler,
       derivedComm ? derivedComm.fluencyScore : 50,
     ),
     fluency: toPct(
@@ -527,7 +613,7 @@ export function buildHyringInterviewViewModel(i: {
   }
 
   const engagementVibes = buildEngagementVibes(i.groupedProctoringSignals || []);
-  const cognitiveInsights = buildCognitiveFromComm(com, i.interviewScore, i.wordCount, technicalPct);
+  const cognitiveInsights = buildCognitiveFromComm(cogInsights, i.interviewScore, i.wordCount, technicalPct);
   const integritySignals = buildIntegritySignals(proctoringRows);
 
   const normalizeSkillName = (value: string) =>
@@ -756,6 +842,7 @@ export function buildHyringInterviewViewModel(i: {
     engagementVibes,
     cognitiveInsights,
     integritySignals,
+    behavioralAnalysis: behavAnalysis,
     skills,
     topStrengths,
     topRisks,
@@ -1620,10 +1707,49 @@ export function InterviewReportHyring({
                     </div>
                   )}
                   {intel === "behavioral" && (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      {model.engagementVibes.map((row) => (
-                        <IntelMetricCard key={row.id} row={row} />
-                      ))}
+                    <div className="space-y-4">
+                      {model.behavioralAnalysis && Object.entries(model.behavioralAnalysis).map(([key, value]) => {
+                        if (key === "summary") {
+                          return (
+                            <div key={key} className="rounded-lg bg-blue-50 p-3 border border-blue-200">
+                              <p className="text-[12px] font-semibold text-blue-900 mb-1">Overall Assessment</p>
+                              <p className="text-[13px] leading-relaxed text-blue-800">{value}</p>
+                            </div>
+                          );
+                        }
+                        if (key === "overview") {
+                          return (
+                            <div key={key} className="rounded-lg bg-gray-50 p-3 border border-gray-200">
+                              <p className="text-[13px] leading-relaxed text-gray-700">{value}</p>
+                            </div>
+                          );
+                        }
+                        if (Array.isArray(value) && value.length > 0) {
+                          const labels: Record<string, string> = {
+                            engagement_signals: "Engagement Signals",
+                            consistency_signals: "Consistency & Resume Alignment",
+                            communication_patterns: "Communication Patterns",
+                            confidence_indicators: "Confidence Indicators",
+                            integrity_flags: "Integrity Flags & Red Flags",
+                            strengths_observed: "Behavioral Strengths",
+                            concerns_noted: "Behavioral Concerns"
+                          };
+                          return (
+                            <div key={key}>
+                              <p className="text-[11px] font-extrabold uppercase tracking-widest text-[#6B7079] mb-2">{labels[key]}</p>
+                              <ul className="space-y-1.5">
+                                {value.map((bullet: string, idx: number) => (
+                                  <li key={idx} className="flex gap-2.5 text-[13px] leading-snug text-[#1A1D22]">
+                                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1E9D55]" />
+                                    <span>{bullet}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })}
                     </div>
                   )}
                   {intel === "cognitive" && (
@@ -1645,32 +1771,7 @@ export function InterviewReportHyring({
               <div className="sticky top-0 z-10 border-b border-[#E8EAED] bg-white px-4 py-3">
                 <h3 className="text-sm font-extrabold text-[#1A1D22]">Skill ratings</h3>
               </div>
-              <div
-                className="max-h-[320px] space-y-2 overflow-y-auto p-3 pr-2 overscroll-contain"
-                style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}
-              >
-                {model.skills.map((s) => (
-                  <div
-                    key={`${s.name}-${s.status}-${s.scoreLabel}`}
-                    className="flex items-center justify-between border-b border-[#EEF0F3] py-2 last:border-0"
-                  >
-                    <div className="min-w-0 pr-3">
-                      <p className="text-[12px] font-semibold text-[#1A1D22]">{s.name}</p>
-                      <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-[#6B7079]">
-                        {s.status} {s.scoreLabel !== "—" ? `• ${s.scoreLabel}` : ""}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-0.5">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <Star
-                          key={i}
-                          className={cn("h-3.5 w-3.5", i < s.stars ? "fill-[#1E9D55] text-[#1E9D55]" : "text-[#DDE1E5]")}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <SkillRatingsContainer skills={model.skills} />
               <div className="border-t border-[#EEF0F3] px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-[#6B7079]">
                 Scroll to review all skills
               </div>

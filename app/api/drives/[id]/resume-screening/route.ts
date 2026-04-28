@@ -202,8 +202,8 @@ async function processBatch(
     let failedCount = 0;
 
     try {
-        const orgModel = "gpt-5.4-mini";     // extraction step
-        const reportModel = "gpt-4o";         // scoring/report step (gpt-4o, no override)
+        // Resume reports MUST use GPT-4o only — no other model allowed
+        const reportModel = "gpt-4o";
 
 
         const threshold: number = Number(drive.screeningThreshold ?? 60);
@@ -227,7 +227,6 @@ async function processBatch(
                         structuredJD,
                         jdRawText,
                         threshold,
-                        orgModel,
                         reportModel,
                         drive.orgId!,
                         screeningCriteria
@@ -281,7 +280,6 @@ async function processOneResume(
     structuredJD: Record<string, any>,
     jdRawText: string,
     threshold: number,
-    model: string,
     reportModel: string,
     orgId: string,
     screeningCriteria?: Record<string, any>
