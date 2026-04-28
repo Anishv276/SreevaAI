@@ -42,6 +42,8 @@ from agent_profile_context import (
     build_candidate_context_ready_message,
     build_candidate_summary,
     build_coverage_checklist,
+    build_fast_opening_context,
+    build_interview_pivot_directive,
     build_jd_summary,
     build_live_prompt_context,
     build_role_layer,
@@ -804,6 +806,16 @@ async def entrypoint(ctx: JobContext):
 
     chat_ctx = llm.ChatContext()
     chat_ctx.add_message(role="system", content=system_prompt)
+
+    # Inject warmup directive: first 2 turns are conversational, then pivot to interview
+    warmup_context = build_fast_opening_context()
+    chat_ctx.add_message(role="system", content=warmup_context)
+
+    pivot_directive = build_interview_pivot_directive()
+    chat_ctx.add_message(role="system", content=pivot_directive)
+
+    logger.info("[OPENING] Conversational warmup + interview pivot directives injected")
+
     ctx.proc.userdata["candidate_band_context"] = session_context
 
     async def attach_brief_when_ready():

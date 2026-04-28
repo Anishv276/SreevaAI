@@ -1,4 +1,4 @@
-import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
+import { AccessToken } from "livekit-server-sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
@@ -439,34 +439,42 @@ export async function POST(req: NextRequest) {
         const wsUrl    = toWsUrl(rawUrl);
         const roomName = "interview_" + applicationId;
 
-        try {
-            const host         = toHttpUrl(rawUrl);
-            const roomClient   = new RoomServiceClient(host, apiKey, apiSecret);
-            const dispatchClient = new AgentDispatchClient(host, apiKey, apiSecret);
-
+        // Best-effort warmup only. Do not block token issuance if LiveKit room
+        // creation or agent dispatch fails, because the client can still join
+        // the interview room with the JWT below.
+        void (async () => {
             try {
-                const roomMetadata = JSON.stringify({
-                    applicationId,
-                    extractedDetails: application.drive.extractedDetails || "{}",
-                    structuredResume: application.structuredResume       || "{}",
-                    aiReport:         application.aiReport               || "{}",
-                });
-                await roomClient.createRoom({
-                    name:             roomName,
-                    emptyTimeout:     10 * 60,
-                    departureTimeout: 60,
-                    metadata:         roomMetadata,
-                });
-            } catch (roomErr) {
-                const msg = roomErr instanceof Error ? roomErr.message.toLowerCase() : "";
-                if (!msg.includes("already exists")) throw roomErr;
-            }
+                const host = toHttpUrl(rawUrl);
+                const roomClient = new (await import("livekit-server-sdk")).RoomServiceClient(host, apiKey, apiSecret);
+                const dispatchClient = new (await import("livekit-server-sdk")).AgentDispatchClient(host, apiKey, apiSecret);
 
-            const now2           = Date.now();
-            const lastDispatchAt = dispatchByRoom.get(roomName) || 0;
-            const inDebounceWin  = now2 - lastDispatchAt < DISPATCH_DEBOUNCE_MS;
+                try {
+                    const roomMetadata = JSON.stringify({
+                        applicationId,
+                        extractedDetails: application.drive.extractedDetails || "{}",
+                        structuredResume: application.structuredResume || "{}",
+                        aiReport: application.aiReport || "{}",
+                    });
+                    await roomClient.createRoom({
+                        name: roomName,
+                        emptyTimeout: 10 * 60,
+                        departureTimeout: 60,
+                        metadata: roomMetadata,
+                    });
+                } catch (roomErr) {
+                    const msg = roomErr instanceof Error ? roomErr.message.toLowerCase() : "";
+                    if (!msg.includes("already exists")) {
+                        console.error("LiveKit room warmup warning:", roomErr);
+                    }
+                }
 
-            if (!inDebounceWin) {
+                const now2 = Date.now();
+                const lastDispatchAt = dispatchByRoom.get(roomName) || 0;
+                const inDebounceWin = now2 - lastDispatchAt < DISPATCH_DEBOUNCE_MS;
+                if (inDebounceWin) {
+                    return;
+                }
+
                 try {
                     const dispatchMetadata = JSON.stringify({
                         applicationId,
@@ -481,18 +489,14 @@ export async function POST(req: NextRequest) {
                     dispatchByRoom.set(roomName, now2);
                 } catch (dispatchErr) {
                     const msg = dispatchErr instanceof Error ? dispatchErr.message.toLowerCase() : "";
-                    if (!msg.includes("already") && !msg.includes("exists")) throw dispatchErr;
+                    if (!msg.includes("already") && !msg.includes("exists")) {
+                        console.error("Agent dispatch warning:", dispatchErr);
+                    }
                 }
-            } else {
-                console.log(
-                    `[InterviewToken] Skipping duplicate agent dispatch for ${roomName} ` +
-                    `(inDebounceWindow=${inDebounceWin})`
-                );
+            } catch (warmupErr) {
+                console.error("LiveKit warmup warning:", warmupErr);
             }
-        } catch (dispatchErr) {
-            console.error("Agent dispatch error:", dispatchErr);
-            return NextResponse.json({ error: "AI interviewer could not be started" }, { status: 500 });
-        }
+        })();
 
         // -- ISSUE CANDIDATE JWT TOKEN ---------------------------------------
         const ttlSeconds = Math.max(3600, durationSeconds + 1800);

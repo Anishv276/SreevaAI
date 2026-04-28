@@ -968,6 +968,53 @@ def extract_smart_opening_question(brief_text: str) -> str:
     return ""
 
 
+def build_fast_opening_context() -> str:
+    """
+    Return instruction for first 2 conversational turns (no structured interview yet).
+    These are warmup questions to build rapport - sound human, not robotic.
+    """
+    return (
+        "[FIRST TWO TURNS — CONVERSATIONAL WARMUP]\n"
+        "Turn 1: Warm greeting like you're catching up with someone you haven't talked to in a while.\n"
+        "  Examples:\n"
+        "  - 'Hey! Thanks so much for taking the time to chat with me today. How are you doing? How's everything been going on your end?'\n"
+        "  - 'Good to finally connect with you! I've been looking forward to this. How's your week been treating you so far?'\n"
+        "  - 'Thanks for jumping on the call, I really appreciate it. Just want to make sure everything is working well on your end — audio and video all good?'\n"
+        "  - 'Hey, how's it going? I'm really excited to learn more about you and your background. You doing alright?'\n\n"
+        "Turn 2: One natural icebreaker that feels like genuine curiosity, not reading from an interview form.\n"
+        "  Examples:\n"
+        "  - 'So I'm based here in [city], and I always like to get to know people — where are you calling in from? Are you from there originally or did you move around?'\n"
+        "  - 'I'm always curious about people's journeys — what actually got you interested in [field/role type] in the first place? Was it something specific that drew you to it?'\n"
+        "  - 'I see you've been in tech for a while now, which is awesome. But I'm curious — what's really drawn you to backend engineering? Like, what keeps you excited about the work?'\n"
+        "  - 'Have you had a chance to work with [company/tech] before in your previous roles, or would this be your first real deep dive into it?'\n\n"
+        "Key: You're having a natural conversation. You're interested in them as a person, not just scanning their resume.\n"
+        "Keep it warm and genuine. Let them do most of the talking. You're making them feel comfortable and heard.\n"
+        "Do NOT ask about their skills, projects, or what they did at work yet. That comes next.\n\n"
+        "After turn 2, transition smoothly and naturally into the real conversation: 'Alright, well that makes sense. Let me dig into your background and what you've actually been building.'"
+    )
+
+
+def build_interview_pivot_directive() -> str:
+    """
+    Return instruction to pivot from warmup to structured interview.
+    Fires after turn 2 - should sound natural, not a robot shifting gears.
+    """
+    return (
+        "[INTERVIEW PIVOT - AFTER TURN 2]\n"
+        "You've warmed them up over the first two turns. Now transition into the real conversation naturally, like the discussion is just evolving.\n\n"
+        "Use a conversational bridge like a real recruiter would — something that feels like a natural next step:\n"
+        "  - 'Alright, that's awesome. So I'd really love to dig into your background and understand what you've been working on. Walk me through a project you worked on recently that you felt really good about.'\n"
+        "  - 'Cool, I appreciate that. So let me ask you about your actual experience — I see you're currently at [Company]. What's been your main focus there? Like, what have you been building or leading?'\n"
+        "  - 'Got it, that makes sense. So I want to learn more about what you've actually built and what you're good at. Tell me about a project or initiative you worked on that really showcases your skills.'\n"
+        "  - 'That's really helpful. So let me shift gears a bit here — I want to understand your hands-on experience. Walk me through your day-to-day work at [Company] — like, what does a typical week look like for you?'\n"
+        "  - 'Awesome, thanks for sharing that. So let me dive into your experience a bit more. I noticed you have background in [skill/tech]. Tell me about a time you actually used that in production and what that looked like.'\n\n"
+        "Important: NO robotic 'let's dive into the interview' or 'now let's talk about your skills' phrasing.\n"
+        "Instead, naturally flow into your FIRST REAL QUESTION that's grounded in their actual resume and experience.\n"
+        "Make it feel like you're having a conversation that's deepening naturally, not like you're switching modes or reading from a script.\n\n"
+        "Then continue: ask one clear question at a time, listen to their answer, react to what they actually said, and follow up where it makes sense."
+    )
+
+
 def build_candidate_context_ready_message(
     *,
     context: CandidateBandContext,

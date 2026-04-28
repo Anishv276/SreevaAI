@@ -1,4 +1,4 @@
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isInterviewReopenAllowed, isInterviewTokenRequired } from "@/lib/interview-access";
@@ -38,8 +38,80 @@ export async function POST(
         }
         // -------------------------------------------------
 
+        const application = await prisma.application.findUnique({
+            where: { id: applicationId },
+            include: {
+                drive: {
+                    select: {
+                        interviewTime: true,
+                        role: true,
+                        title: true,
+                    },
+                },
+            },
+        });
+
+        if (!application) {
+            return NextResponse.json({ error: "Application not found" }, { status: 404 });
+        }
+
+        const driveDurationMins = application.drive?.interviewTime;
+        if (typeof driveDurationMins !== "number" || !Number.isFinite(driveDurationMins) || driveDurationMins <= 0) {
+            return NextResponse.json({ error: "Drive interview duration is not configured" }, { status: 400 });
+        }
+
         const roomName = `interview_${applicationId}`;
         const participantIdentity = `candidate_${applicationId}`;
+        const durationSeconds = Math.floor(driveDurationMins * 60);
+        const serverUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL;
+        const agentName = process.env.LIVEKIT_AGENT_NAME || "ai_interviewer";
+
+        // Best-effort warmup. We do not block token issuance on worker/room prep.
+        void (async () => {
+            try {
+                const apiKey = process.env.LIVEKIT_API_KEY;
+                const apiSecret = process.env.LIVEKIT_API_SECRET;
+                const rawUrl = process.env.LIVEKIT_URL;
+                if (!apiKey || !apiSecret || !rawUrl) return;
+
+                // Strip any WebSocket or HTTP prefix and force HTTPS for the server SDK
+                const host = `https://${rawUrl.trim().replace(/^(wss?|https?):\/\//, "")}`;
+
+                const roomClient = new RoomServiceClient(host, apiKey, apiSecret);
+                const dispatchClient = new AgentDispatchClient(host, apiKey, apiSecret);
+
+                try {
+                    await roomClient.createRoom({
+                        name: roomName,
+                        emptyTimeout: 10 * 60,
+                        departureTimeout: 60,
+                    });
+                } catch (roomErr) {
+                    const msg = roomErr instanceof Error ? roomErr.message.toLowerCase() : "";
+                    if (!msg.includes("already exists")) {
+                        console.warn("Interview room warmup warning:", roomErr);
+                    }
+                }
+
+                try {
+                    await dispatchClient.createDispatch(roomName, agentName, {
+                        metadata: JSON.stringify({
+                            applicationId,
+                            candidateName: application.fullName,
+                            roleLabel: application.drive?.role || application.drive?.title || "Interview",
+                            timeLimitMins: driveDurationMins,
+                        }),
+                    });
+                } catch (dispatchErr) {
+                    const msg = dispatchErr instanceof Error ? dispatchErr.message.toLowerCase() : "";
+                    if (!msg.includes("already") && !msg.includes("exists")) {
+                        console.warn("Interview dispatch warning:", dispatchErr);
+                    }
+                }
+            } catch (warmupErr) {
+                console.warn("Interview warmup warning:", warmupErr);
+            }
+        })();
 
         const at = new AccessToken(
             process.env.LIVEKIT_API_KEY,
@@ -60,7 +132,10 @@ export async function POST(
 
         return NextResponse.json({
             token: await at.toJwt(),
-            url: process.env.LIVEKIT_URL,
+            url: serverUrl,
+            duration: durationSeconds,
+            roleLabel: application.drive?.role || application.drive?.title || "Interview",
+            candidateName: application.fullName,
         });
     } catch (error) {
         console.error("LiveKit token error:", error);
