@@ -88,7 +88,7 @@ export type HyringInterviewViewModel = {
     feedbackStars: number;
   };
   technical: { percent: number; questions: number; tag: "GOOD" | "AVERAGE" | "WEAK" };
-  comm: { pronunciation: number; grammar: number; vocabulary: number; minimalFiller: number; fluency: number; tag: string };
+  comm: { pronunciation: number; grammar: number; vocabulary: number; minimalFiller: number; fluency: number; tag: string; commSummary: string };
   aiBullets: string[];
   proctoringRows: { key: string; label: string; value: string; bad: boolean }[];
   engagementVibes: IntelSignalRow[];
@@ -429,13 +429,86 @@ export function buildHyringInterviewViewModel(i: {
   const questionsAsked = Math.max(1, i.interviewSessionRows.length || 1);
   const techTag: "GOOD" | "AVERAGE" | "WEAK" = technicalPct >= 70 ? "GOOD" : technicalPct >= 45 ? "AVERAGE" : "WEAK";
 
+  // Derive communication scores from actual transcript when AI report values are missing.
+  // Avoids word-count math fallbacks which are inaccurate.
+  const derivedComm = (() => {
+    const answers = i.interviewSessionRows.map((r) => r.answer).filter(Boolean);
+    if (answers.length === 0) return null;
+
+    const fullText = answers.join(" ");
+    const words = fullText.split(/\s+/).filter(Boolean);
+    const totalWords = words.length;
+    if (totalWords < 10) return null;
+
+    // Filler word ratio — penalise but don't hammer natural speech
+    const fillerMatches = fullText.match(/\b(um|uh|like|you know|basically|literally|right\?|sort of|kind of|i mean)\b/gi) || [];
+    const fillerRatio = fillerMatches.length / totalWords; // 0–1
+
+    // Sentence count from actual punctuation in text
+    const sentences = fullText.split(/[.!?]+/).map((s) => s.trim()).filter((s) => s.length > 4);
+    const avgWordsPerSentence = sentences.length > 0 ? totalWords / sentences.length : totalWords;
+
+    // Vocabulary richness: unique words / total words (Type-Token Ratio capped)
+    const uniqueWords = new Set(words.map((w) => w.toLowerCase().replace(/[^a-z]/g, ""))).size;
+    const ttr = uniqueWords / totalWords; // 0–1, higher = richer
+
+    // Confidence signals: count hedging phrases
+    const hedgeMatches = fullText.match(/\b(maybe|i think|i guess|not sure|i believe|probably|might|could be|i suppose)\b/gi) || [];
+    const hedgeRatio = hedgeMatches.length / Math.max(1, sentences.length); // per sentence
+
+    // --- Score each dimension 0–100 ---
+
+    // Clarity: how well ideas form into full sentences (penalise very short or very long rambling)
+    const sentenceLenScore = avgWordsPerSentence >= 8 && avgWordsPerSentence <= 30
+      ? 100
+      : avgWordsPerSentence < 4
+        ? 45
+        : avgWordsPerSentence > 45
+          ? 60
+          : 75;
+    const clarityScore = Math.round(sentenceLenScore * (1 - fillerRatio * 0.4));
+
+    // Grammar: penalise fragment-heavy or overly broken answers (proxy via sentence integrity)
+    const fragmentRatio = sentences.filter((s) => s.split(/\s+/).length < 4).length / Math.max(1, sentences.length);
+    const grammarScore = Math.round(Math.max(35, 90 - fragmentRatio * 50 - fillerRatio * 30));
+
+    // Fluency: smooth delivery — low fillers = high fluency
+    const fluencyScore = Math.round(Math.max(30, Math.min(95, 100 - fillerRatio * 200)));
+
+    // Vocabulary: type-token ratio mapped to 0–100, capped at 85 (natural ceiling)
+    const vocabScore = Math.round(Math.min(85, Math.max(30, ttr * 150)));
+
+    // Confidence: fewer hedges = more confident
+    const confidenceScore = Math.round(Math.max(30, Math.min(90, 85 - hedgeRatio * 20)));
+
+    return { clarityScore, grammarScore, fluencyScore, vocabScore, confidenceScore };
+  })();
+
   const comm = {
-    pronunciation: toPct(com.pronunciation ?? com.clarity, 55 + Math.min(30, i.wordCount / 40)),
-    grammar: toPct(com.grammar, 50 + Math.min(40, i.wordCount / 35)),
-    vocabulary: toPct(com.vocabulary ?? com.depth, 52 + Math.min(30, i.wordCount / 45)),
-    minimalFiller: toPct(com.filler ?? com.minimal_filler, 60),
-    fluency: toPct(com.fluency, 48 + Math.min(35, i.wordCount / 30)),
+    // Clarity — from AI report, else derived from transcript, else reasonable mid-point
+    pronunciation: toPct(
+      com.pronunciation ?? com.clarity,
+      derivedComm ? derivedComm.clarityScore : 50,
+    ),
+    grammar: toPct(
+      com.grammar,
+      derivedComm ? derivedComm.grammarScore : 50,
+    ),
+    // vocabulary slot is displayed as "Confidence" on the card
+    vocabulary: toPct(
+      com.confidence ?? com.vocabulary ?? com.depth,
+      derivedComm ? derivedComm.confidenceScore : 50,
+    ),
+    minimalFiller: toPct(
+      com.filler ?? com.minimal_filler,
+      derivedComm ? derivedComm.fluencyScore : 50,
+    ),
+    fluency: toPct(
+      com.fluency,
+      derivedComm ? derivedComm.fluencyScore : 50,
+    ),
     tag: String(scores.cefr_label || i.communicationStatus).toUpperCase() || "AVERAGE",
+    commSummary: String(com.summary || "").trim(),
   };
 
   const proctoringRows: HyringInterviewViewModel["proctoringRows"] = (i.groupedProctoringSignals || []).slice(0, 8).map((g) => ({
@@ -887,7 +960,7 @@ export function CommunicationScoreCardDonut({ comm }: { comm: HyringInterviewVie
       key: "clarity",
       label: "Clarity",
       color: "#6366F1",
-      value: Math.round((Number(comm.pronunciation) + Number(comm.grammar)) / 2),
+      value: Math.round(Number(comm.pronunciation)),
     },
     {
       key: "fluency",
@@ -902,10 +975,10 @@ export function CommunicationScoreCardDonut({ comm }: { comm: HyringInterviewVie
       value: Math.round(Number(comm.grammar)),
     },
     {
-      key: "depth",
-      label: "Depth",
+      key: "confidence",
+      label: "Confidence",
       color: "#F43F5E",
-      value: Math.round((Number(comm.vocabulary) + (100 - Number(comm.minimalFiller))) / 2),
+      value: Math.round(Number(comm.vocabulary)),
     },
   ].map((metric) => ({ ...metric, value: Math.max(0, Math.min(100, metric.value)) }));
   const avg = Math.round(metrics.reduce((sum, metric) => sum + metric.value, 0) / metrics.length);
@@ -959,7 +1032,7 @@ export function CommunicationScoreCardDonut({ comm }: { comm: HyringInterviewVie
           </p>
           <p className="text-[10px] font-medium leading-5 text-[#8A919F]">
             Communication is strongest in {strongest?.label?.toLowerCase() || "clarity"} and can improve in{" "}
-            {weakest?.label?.toLowerCase() || "depth"}.
+            {weakest?.label?.toLowerCase() || "confidence"}.
           </p>
         </div>
       </div>
@@ -973,7 +1046,7 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: HyringIntervie
       key: "clarity",
       label: "Clarity",
       color: "#6366F1",
-      value: Math.round((Number(comm.pronunciation) + Number(comm.grammar)) / 2),
+      value: Math.round(Number(comm.pronunciation)),
     },
     {
       key: "fluency",
@@ -988,10 +1061,10 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: HyringIntervie
       value: Math.round(Number(comm.grammar)),
     },
     {
-      key: "depth",
-      label: "Depth",
+      key: "confidence",
+      label: "Confidence",
       color: "#F43F5E",
-      value: Math.round((Number(comm.vocabulary) + (100 - Number(comm.minimalFiller))) / 2),
+      value: Math.round(Number(comm.vocabulary)),
     },
   ].map((metric) => ({ ...metric, value: Math.max(0, Math.min(100, metric.value)) }));
 
@@ -1011,7 +1084,7 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: HyringIntervie
   });
   const active = segments.find((segment) => segment.key === activeMetric) || null;
   const centerScore = active ? active.value : avg;
-  const summaryText = active ? `${active.label} is live at ${active.value}/100.` : "Hover any color to reflect that metric.";
+  const summaryText = active ? `${active.label} is live at ${active.value}/100.` : comm.commSummary || "Hover any color to reflect that metric.";
 
   const setMetricFromPointer = (clientX: number, clientY: number) => {
     const el = donutRef.current;

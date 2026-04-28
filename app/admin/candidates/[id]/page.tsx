@@ -178,7 +178,20 @@ export default function CandidateProfilePage() {
     const combinedScore = Math.max(0, Math.min(10, interviewScore));
     const proctoringVerdictSummary = String(interviewReportData?.integrity?.summary || "").trim() || "No proctoring summary available.";
     const recordingDurationSec = typeof candidate?.interview?.interviewDuration === "number" ? candidate.interview.interviewDuration : null;
-    const communicationStatus = !interviewTranscript ? "Pending" : wordCount >= 800 ? "Strong" : wordCount >= 250 ? "Average" : "Limited";
+    const communicationStatus = (() => {
+        const cefrLabel = interviewReportData?.scores?.cefr_label;
+        if (cefrLabel) return String(cefrLabel);
+        const commData = interviewReportData?.communication || {};
+        const commValues = [commData.pronunciation, commData.clarity, commData.grammar, commData.fluency, commData.vocabulary, commData.depth].map(Number).filter((n) => Number.isFinite(n) && n > 0);
+        if (commValues.length > 0) {
+            const avg = commValues.reduce((a, b) => a + b, 0) / commValues.length;
+            if (avg >= 70) return "Strong";
+            if (avg >= 45) return "Average";
+            return "Limited";
+        }
+        if (!interviewTranscript) return "Pending";
+        return wordCount >= 800 ? "Strong" : wordCount >= 250 ? "Average" : "Limited";
+    })();
     const candidatePhotoSrc = (() => {
         const snapshot = Array.isArray(candidate?.interview?.snapshots)
             ? candidate.interview.snapshots.find((src: unknown) => typeof src === "string" && src.trim())

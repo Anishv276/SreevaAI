@@ -72,6 +72,13 @@ OUTPUT SCHEMA (JSON):
   "recording": {
     "summary": "1-2 sentence summary of the interview audio/video performance"
   },
+  "communication": {
+    "pronunciation": number (0-100, how clearly and understandably the candidate spoke — accent is fine as long as it is easy to understand),
+    "grammar": number (0-100, sentence structure and grammatical correctness — do not penalise minor natural speech errors),
+    "fluency": number (0-100, smooth conversational flow — minor fillers like 'um' and 'uh' are normal, only penalise if they heavily disrupt understanding),
+    "confidence": number (0-100, how assertive and certain the candidate sounded — penalise heavy hedging like 'I think maybe' or 'I'm not sure but'),
+    "summary": "One sentence describing overall communication quality based on what was actually said in the interview"
+  },
   "verdict": {
     "summary": "Detailed overall summary of the candidate's performance (200-300 words)",
     "recommendation": "Strong Yes" | "Yes" | "Maybe" | "No",
@@ -102,6 +109,7 @@ Guidelines:
 2. Recommendation: Use "Strong Yes" only for exceptional candidates. Use "No" for clear failures.
 3. Integrity: Factor in proctoring events (tab switching, face detection issues).
 4. Logic: Ensure the rationale directly cites evidence from the transcript.
+5. Communication: Score based ONLY on what the candidate actually said in the transcript. Do not penalise accents, natural pauses, or occasional fillers. The goal is whether HR can easily understand this person and whether communication issues affected answer quality.
 `;
 
   try {
