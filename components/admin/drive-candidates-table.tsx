@@ -445,9 +445,9 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
 
             <div className="group relative bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_24px_rgba(15,23,42,0.03)] overflow-hidden transition-all duration-700 hover:shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
                 <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-400/0 via-[#F97316]/40 to-orange-400/0" />
-                <div className="relative w-full overflow-auto">
+                <div className="relative w-full overflow-auto max-h-[65vh]">
                     <Table>
-                        <TableHeader className="bg-gray-50/50">
+                        <TableHeader className="bg-gray-50/50 sticky top-0 z-10 backdrop-blur-md">
                             <TableRow className="border-b border-gray-100 hover:bg-transparent">
                                 {isSelectionMode && (
                                     <TableHead className="w-[56px] pl-6 font-bold uppercase tracking-wider text-[11px] text-gray-500">

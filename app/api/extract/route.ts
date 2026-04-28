@@ -281,7 +281,7 @@ export async function POST(request: Request) {
                     orgId,
                     feature,
                     usage: {
-                        model: result.usage.model || "gpt-4o-mini",
+                        model: result.usage.model || "gpt-5.4-mini",
                         inputTokens: result.usage.inputTokens || 0,
                         outputTokens: result.usage.outputTokens || 0,
                         cachedInputTokens: result.usage.cachedInputTokens || 0,

@@ -275,7 +275,21 @@ export function DriveResumeUploadModal({
                                             <p className="text-3xl font-black text-gray-900 tabular-nums leading-none">{files.length}</p>
                                             <p className="text-xs font-bold uppercase tracking-widest text-gray-400">PDF files selected</p>
                                         </div>
-                                        <FileText className="h-10 w-10 text-orange-500" />
+                                        <div className="flex items-center gap-3">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    inputRef.current?.click();
+                                                }}
+                                                className="h-9 rounded-xl border-orange-200 bg-orange-50 text-xs font-bold text-orange-600 hover:bg-orange-100 transition-colors"
+                                            >
+                                                + Add More
+                                            </Button>
+                                            <FileText className="h-10 w-10 text-orange-500" />
+                                        </div>
                                     </div>
                                     <div className="max-h-32 overflow-auto space-y-2 rounded-2xl border border-orange-100 bg-white/80 p-3">
                                         {files.map((file) => (

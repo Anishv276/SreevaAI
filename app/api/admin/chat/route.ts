@@ -475,7 +475,6 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
           const limit = Math.min(args.limit ?? 20, 50);
           let driveId = args.driveId;
 
-          // If driveId not given, find by name
           if (!driveId && args.driveName) {
             const drive = await prisma.drive.findFirst({
               where: { orgId, title: { contains: args.driveName, mode: "insensitive" } },
@@ -491,16 +490,16 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
               select: {
                 id: true, fullName: true, email: true,
                 aiScore: true, resumeStatus: true, hiringStatus: true,
-                interviewStatus: true, experienceYears: true,
-                createdAt: true, resumeUrl: true, structuredResume: true,
+                interviewStatus: true,
+                createdAt: true, resumeUrl: true,
                 drive: { select: { title: true } },
               },
               orderBy: { aiScore: "desc" },
               take: limit,
             });
-            result = JSON.stringify(candidates.map((c: (typeof candidates)[number]) => ({
+            result = JSON.stringify(candidates.map((c: any) => ({
               ...c,
-              parsedResume: parseStructuredResume(c.structuredResume),
+              parsedResume: null,
               structuredResume: undefined,
             })));
           }
@@ -514,16 +513,16 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             select: {
               id: true, fullName: true, email: true,
               aiScore: true, resumeStatus: true, hiringStatus: true,
-              interviewStatus: true, experienceYears: true,
-              createdAt: true, resumeUrl: true, structuredResume: true,
+              interviewStatus: true,
+              createdAt: true, resumeUrl: true,
               drive: { select: { title: true } },
             },
             orderBy: { aiScore: "desc" },
             take: Math.min(args.limit ?? 10, 25),
           });
-          result = JSON.stringify(candidates.map((c: (typeof candidates)[number]) => ({
+          result = JSON.stringify(candidates.map((c: any) => ({
             ...c,
-            parsedResume: parseStructuredResume(c.structuredResume),
+            parsedResume: null,
             structuredResume: undefined,
           })));
 
@@ -538,16 +537,16 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             select: {
               id: true, fullName: true, email: true,
               aiScore: true, resumeStatus: true, hiringStatus: true,
-              interviewStatus: true, experienceYears: true,
-              createdAt: true, resumeUrl: true, structuredResume: true,
+              interviewStatus: true,
+              createdAt: true, resumeUrl: true,
               drive: { select: { title: true } },
             },
             orderBy: { createdAt: "desc" },
             take: Math.min(args.limit ?? 20, 50),
           });
-          result = JSON.stringify(candidates.map((c: (typeof candidates)[number]) => ({
+          result = JSON.stringify(candidates.map((c: any) => ({
             ...c,
-            parsedResume: parseStructuredResume(c.structuredResume),
+            parsedResume: null,
             structuredResume: undefined,
           })));
 
@@ -561,62 +560,60 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             select: {
               id: true, fullName: true, email: true, phone: true,
               aiScore: true, resumeStatus: true, hiringStatus: true,
-              interviewStatus: true, experienceYears: true,
-              createdAt: true, resumeUrl: true, structuredResume: true,
+              interviewStatus: true,
+              createdAt: true, resumeUrl: true,
               drive: { select: { title: true } },
               interview: { select: { status: true, aiSummary: true, completedAt: true } },
             },
             orderBy: { createdAt: "desc" },
             take: 10,
           });
-          result = JSON.stringify(candidates.map((c: (typeof candidates)[number]) => ({
+          result = JSON.stringify(candidates.map((c: any) => ({
             ...c,
-            parsedResume: parseStructuredResume(c.structuredResume),
+            parsedResume: null,
             structuredResume: undefined,
           })));
 
         // -- search_candidates_by_skill -------------------------------------
         } else if (fn === "search_candidates_by_skill") {
-          // Search in structuredResume JSON using Postgres ILIKE on text column
           const skill = args.skill?.trim() ?? "";
           const candidates = await prisma.application.findMany({
             where: {
               drive: { orgId },
-              structuredResume: { contains: skill, mode: "insensitive" },
-              resumeStatus: "SHORTLISTED", // Only shortlisted are worth surfacing
+              resumeText: { contains: skill, mode: "insensitive" },
+              resumeStatus: "SHORTLISTED",
             },
             select: {
               id: true, fullName: true, email: true,
               aiScore: true, resumeStatus: true, hiringStatus: true,
-              interviewStatus: true, experienceYears: true,
-              createdAt: true, resumeUrl: true, structuredResume: true,
+              interviewStatus: true,
+              createdAt: true, resumeUrl: true,
               drive: { select: { title: true } },
             },
             orderBy: { aiScore: "desc" },
             take: Math.min(args.limit ?? 10, 25),
           });
 
-          // If no shortlisted results, search all
           const allCandidates = candidates.length > 0 ? candidates :
             await prisma.application.findMany({
               where: {
                 drive: { orgId },
-                structuredResume: { contains: skill, mode: "insensitive" },
+                resumeText: { contains: skill, mode: "insensitive" },
               },
               select: {
                 id: true, fullName: true, email: true,
                 aiScore: true, resumeStatus: true, hiringStatus: true,
-                interviewStatus: true, experienceYears: true,
-                createdAt: true, resumeUrl: true, structuredResume: true,
+                interviewStatus: true,
+                createdAt: true, resumeUrl: true,
                 drive: { select: { title: true } },
               },
               orderBy: { aiScore: "desc" },
               take: Math.min(args.limit ?? 10, 25),
             });
 
-          result = JSON.stringify(allCandidates.map((c: (typeof allCandidates)[number]) => ({
+          result = JSON.stringify(allCandidates.map((c: any) => ({
             ...c,
-            parsedResume: parseStructuredResume(c.structuredResume),
+            parsedResume: null,
             structuredResume: undefined,
           })));
 
@@ -628,8 +625,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
               id: true, fullName: true, email: true, phone: true,
               aiScore: true, aiReport: true,
               resumeStatus: true, hiringStatus: true, interviewStatus: true,
-              experienceYears: true, createdAt: true, resumeUrl: true,
-              structuredResume: true,
+              createdAt: true, resumeUrl: true,
               drive: { select: { title: true, orgId: true, screeningThreshold: true } },
               interview: {
                 select: { status: true, aiSummary: true, completedAt: true, interviewDuration: true },
@@ -656,7 +652,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             result = JSON.stringify({
               ...candidate,
               aiReport: reportSummary,
-              parsedResume: parseStructuredResume(candidate.structuredResume),
+              parsedResume: null,
               structuredResume: undefined,
             });
           }

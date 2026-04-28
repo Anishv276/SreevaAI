@@ -75,19 +75,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         let aiResult: any = { score: 0, status: "Pending", reasoning: "Processing failed" };
 
         const pythonCmd = process.platform === "win32" ? "python" : "python3";
-        let orgOpenAIModel = "gpt-4o-mini";
-        if (application.drive.orgId) {
-            const orgConfig = await prisma.organization.findUnique({
-                where: { id: application.drive.orgId },
-                select: { llmProvider: true, llmModel: true },
-            });
-            if ((orgConfig?.llmProvider || "OPENAI") === "OPENAI" && orgConfig?.llmModel) {
-                orgOpenAIModel = orgConfig.llmModel;
-            }
-        }
+        const reportModel = "gpt-4o";
         console.log(`[AI RE-SCAN] Executing for ${application.email} | threshold=${threshold}`);
 
-        const pythonProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempInputPath, "SCORE", orgOpenAIModel]);
+        const pythonProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempInputPath, "SCORE", reportModel]);
 
         let outputData = "";
         let errorData = "";
@@ -111,7 +102,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 orgId: application.drive.orgId,
                 feature: "resumeReport",
                 usage: {
-                    model: parsed.usage.model || "gpt-4o",
+                    model: parsed.usage.model || reportModel,
                     inputTokens: parsed.usage.inputTokens || 0,
                     outputTokens: parsed.usage.outputTokens || 0,
                     cachedInputTokens: parsed.usage.cachedInputTokens || 0,

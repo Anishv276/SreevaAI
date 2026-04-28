@@ -64,7 +64,7 @@ import {
 
 import { useEffect, useRef } from "react";
 
-import { RecruiterAssistant } from "@/components/admin/RecruiterAssistant";
+
 
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 
@@ -1842,7 +1842,7 @@ export default function CandidatesPage() {
 
             {/* AI Assistant */}
 
-            <RecruiterAssistant />
+
 
 
 

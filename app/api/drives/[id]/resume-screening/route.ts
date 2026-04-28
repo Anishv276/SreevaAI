@@ -295,7 +295,7 @@ async function processOneResume(
 
         // ── Step 1: Extract resume text + structured data ──
         const { text: resumeRawText, data: structuredResume, usage: extractUsage } =
-            await extractResume(tmpPdf, model);
+            await extractResume(tmpPdf, reportModel);
 
         // Record extraction billing
         if (extractUsage?.inputTokens || extractUsage?.outputTokens) {
@@ -303,7 +303,7 @@ async function processOneResume(
                 orgId,
                 feature: "resumeExtraction",
                 usage: {
-                    model: extractUsage.model || model,
+                    model: extractUsage.model || reportModel,
                     inputTokens: extractUsage.inputTokens || 0,
                     outputTokens: extractUsage.outputTokens || 0,
                     cachedInputTokens: extractUsage.cachedInputTokens || 0,
@@ -328,7 +328,7 @@ async function processOneResume(
                 orgId,
                 feature: "resumeReport",
                 usage: {
-                    model: scoreUsage.model || model,
+                    model: scoreUsage.model || reportModel,
                     inputTokens: scoreUsage.inputTokens || 0,
                     outputTokens: scoreUsage.outputTokens || 0,
                     cachedInputTokens: scoreUsage.cachedInputTokens || 0,

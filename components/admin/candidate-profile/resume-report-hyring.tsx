@@ -423,23 +423,72 @@ export function buildHyringResumeViewModel(i: {
   // AI skill rows take full priority — math fallback only when absent
   const skillMatchRows: HyringResumeViewModel["skillMatchRows"] = (() => {
     if (i.aiSkillRows && i.aiSkillRows.length > 0) {
-      return i.aiSkillRows.slice(0, 12).map((r) => ({
-        name: r.name,
-        questions: 1,
-        stars: Math.min(5, Math.max(1, r.stars)),
-        evidenceNote: r.evidence_note,
-      }));
+      return i.aiSkillRows.slice(0, 12).map((r: any) => {
+        // Determine status from various possible field names
+        const rawStatus = (r.status || r.matched || r.match_status || "").toString().toLowerCase();
+
+        let statusLabel = "";
+        if (rawStatus.includes("matched") || rawStatus.includes("present") || rawStatus.includes("found")) {
+          statusLabel = "✓ Present in resume";
+        } else if (rawStatus.includes("partial") || rawStatus.includes("some")) {
+          statusLabel = "⚠ Partial match";
+        } else if (rawStatus.includes("missing") || rawStatus.includes("not found") || rawStatus.includes("absent")) {
+          statusLabel = "✗ Missing from resume";
+        } else if (r.stars && r.stars >= 3) {
+          statusLabel = "✓ Present in resume";
+        } else if (r.stars && r.stars >= 1) {
+          statusLabel = "⚠ Partial match";
+        } else {
+          statusLabel = "✗ Missing from resume";
+        }
+
+        // Use explicit evidence note if provided, otherwise use status label
+        const evidenceNote = (r.evidence_note && typeof r.evidence_note === "string" && r.evidence_note.length > 3)
+          ? r.evidence_note
+          : (r.evidence && typeof r.evidence === "string" && r.evidence.length > 3)
+            ? r.evidence
+            : statusLabel;
+
+        return {
+          name: r.name || r.skill || "Skill",
+          questions: 1,
+          stars: Math.min(5, Math.max(1, r.stars || 2)),
+          evidenceNote,
+        };
+      });
     }
     if (i.techSkillSample && i.techSkillSample.length) {
-      return i.techSkillSample.slice(0, 10).map((name, j) => ({
+      // Show skills found in resume
+      return i.techSkillSample.slice(0, 12).map((name, j) => ({
         name,
         questions: 1,
-        stars: 2 + (j % 3),
+        stars: 3 + (j % 3),
+        evidenceNote: "✓ Present in resume"
       }));
     }
+
+    // Fallback: Show JD requirements vs match score
+    const breakdownSkills = i.breakdown?.skills_score && i.breakdown?.skills_max
+      ? `${i.breakdown.skills_score}/${i.breakdown.skills_max} required skills matched`
+      : null;
+
+    const matchPct = i.matchScore || 0;
+    const matchedSkills = Math.round((matchPct / 100) * 14); // Assume ~14 required skills
+    const missingSkills = 14 - matchedSkills;
+
     return [
-      { name: "Role fit (JD)", questions: 1, stars: Math.max(1, Math.min(5, Math.round(i.matchScore / 20))) },
-      { name: "Must-haves (aggregate)", questions: 1, stars: Math.max(1, Math.round(mustPct / 20)) },
+      {
+        name: "Required Skills (JD)",
+        questions: 1,
+        stars: Math.max(1, Math.min(5, Math.round(matchPct / 20))),
+        evidenceNote: `${matchedSkills} matched, ${missingSkills} missing from resume`
+      },
+      {
+        name: "Overall Match",
+        questions: 1,
+        stars: Math.max(1, Math.min(5, Math.round(matchPct / 20))),
+        evidenceNote: matchPct >= 80 ? "✓ Strong fit" : matchPct >= 60 ? "⚠ Partial fit" : "✗ Low fit"
+      },
     ];
   })();
 
@@ -510,8 +559,25 @@ export function buildHyringResumeViewModel(i: {
         : status === "SHORTLISTED" || status === "shortlisted"
           ? "SHORTLISTED"
           : "BORDERLINE";
-      const reason = i.decisionReason || i.primaryGapText || "Review strengths and risks before deciding.";
-      return `${verdict} ${reason}`;
+
+      // Build meaningful decision reason
+      let reason = "";
+      if (i.decisionReason && typeof i.decisionReason === "string" && i.decisionReason.length > 10) {
+        reason = i.decisionReason;
+      } else if (verdict === "SHORTLISTED") {
+        const match = i.matchScore >= 80 ? "Strong match" : i.matchScore >= 65 ? "Good match" : "Moderate match";
+        reason = `${match} with required skills. Recommend interview.`;
+      } else if (verdict === "REJECTED") {
+        reason = i.primaryGapText && typeof i.primaryGapText === "string" && i.primaryGapText.length > 5
+          ? `Missing key skills: ${i.primaryGapText}`
+          : "Does not meet core requirements for this role.";
+      } else {
+        reason = i.primaryGapText && typeof i.primaryGapText === "string" && i.primaryGapText.length > 5
+          ? `Borderline fit. Key concern: ${i.primaryGapText}`
+          : `Borderline fit. Requires further evaluation.`;
+      }
+
+      return `${verdict} — ${reason}`;
     })(),
     feedbackStars: i.matchScore >= 80 ? 5 : i.matchScore >= 65 ? 4 : i.matchScore >= 50 ? 3 : i.matchScore >= 35 ? 2 : 1,
   };

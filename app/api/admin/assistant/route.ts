@@ -242,13 +242,9 @@ async function searchCandidates(message: string, orgId: string) {
         };
     }
     
-    const where: any = { drive: { orgId } };
-    
-    // For skill search like "n8n" - search in resume skills, summary, and drive
     if (skill || name) {
         const searchTerm = (skill || name)!.toLowerCase();
         
-        // Get all candidates and filter locally (Prisma JSON filtering is limited)
         const allCandidates = await prisma.application.findMany({
             where: { drive: { orgId } },
             take: 50,
@@ -261,31 +257,17 @@ async function searchCandidates(message: string, orgId: string) {
                 resumeStatus: true,
                 hiringStatus: true,
                 createdAt: true,
-                structuredResume: true,
+                resumeText: true,
                 drive: { select: { title: true } }
             }
         });
         
-        // Filter candidates who have the skill in their resume
         const filtered = allCandidates.filter((c: any) => {
-            const resume = c.structuredResume ? (typeof c.structuredResume === 'string' ? JSON.parse(c.structuredResume) : c.structuredResume) : null;
-            if (!resume) return false;
-            
-            // Check skills array
-            const skills = resume.skills || [];
-            if (skills.some((s: string) => s.toLowerCase().includes(searchTerm) || searchTerm.includes(s.toLowerCase()))) return true;
-            
-            // Check summary
-            const summary = (resume.summary || '').toLowerCase();
-            if (summary.includes(searchTerm)) return true;
-            
-            // Check work experience
-            const workExp = resume.workExperience || [];
-            if (workExp.some((w: any) => (w.title || '').toLowerCase().includes(searchTerm) || (w.description || '').toLowerCase().includes(searchTerm))) return true;
-            
-            // Check drive title too
+            const resumeRaw = c.resumeText?.toLowerCase() || "";
+            if (resumeRaw.includes(searchTerm)) return true;
+            if (c.fullName.toLowerCase().includes(searchTerm)) return true;
+            if (c.email.toLowerCase().includes(searchTerm)) return true;
             if (c.drive.title.toLowerCase().includes(searchTerm)) return true;
-
             return false;
         });
         
@@ -306,7 +288,7 @@ async function searchCandidates(message: string, orgId: string) {
     }
     
     const candidates = await prisma.application.findMany({
-        where,
+        where: { drive: { orgId } },
         take: 10,
         orderBy: { createdAt: 'desc' },
         select: {
@@ -577,7 +559,7 @@ async function summarizeCandidate(message: string, orgId: string, history: any[]
     
     try {
         if (candidate.aiReport) aiReport = JSON.parse(candidate.aiReport);
-        if (candidate.structuredResume) resumeData = JSON.parse(candidate.structuredResume);
+        if ((candidate as any).structuredResume) resumeData = JSON.parse((candidate as any).structuredResume);
     } catch (e) {}
     
     const skills = resumeData?.skills || [];
