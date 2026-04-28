@@ -336,7 +336,7 @@ export default function LandingPage() {
 <div className="text-display font-black text-primary mb-1">94</div>
 <div className="text-caption font-bold text-outline mb-4">OVERALL SCORE</div>
 <div className="inline-flex px-4 py-2 bg-green-100 text-green-700 rounded-full font-bold text-caption items-center gap-2">
-<span className="material-symbols-outlined text-sm" style={{fontVariationSettings: ''FILL' 1'}}>recommend</span>
+<span className="material-symbols-outlined text-sm" style={{fontVariationSettings: "'FILL' 1"}}>recommend</span>
                                 STRONG HIRE
                             </div>
 </div>

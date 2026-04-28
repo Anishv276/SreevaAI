@@ -672,11 +672,57 @@ export function buildHyringInterviewViewModel(i: {
         : flagCount > 0
           ? "the session needs a human review because of the proctoring flags"
           : "there is limited risk, but more role-specific evidence would make the call safer";
-  const aiBullets = [
-    `1. How is he: overall, this interview reads as a ${fitText} for the ${String(c.drive?.role || c.drive?.title || "role").trim()}.`,
-    `2. What he is perfect at: ${perfectText}.`,
-    `3. What is lagging: ${laggingText}${flagCount > 0 ? ` (${proctoringText})` : ""}.`,
-  ];
+  const roleName = String(c.drive?.role || c.drive?.title || "role").trim();
+  const candidateFirstName = String(c.fullName || "The candidate").split(" ")[0];
+  const topSkillName = skills[0]?.name || null;
+  const topSkillScore = skills[0]?.scoreLabel || null;
+
+  const aiBullets: string[] = [];
+
+  // Overall performance
+  aiBullets.push(
+    fitPct >= 80
+      ? `Overall a strong fit for ${roleName} — technical and communication signals both hold up.`
+      : fitPct >= 60
+        ? `Moderate fit for ${roleName} — solid baseline but some gaps need validation.`
+        : fitPct >= 40
+          ? `Borderline fit for ${roleName} — shows potential but core areas need deeper probing.`
+          : `Low fit for ${roleName} based on this session — technical depth and clarity fell short.`
+  );
+
+  // Strongest area from live data
+  if (topSkillName && topSkillScore) {
+    aiBullets.push(`Strongest demonstrated skill: ${topSkillName} (${topSkillScore}) — answered with the most depth and clarity.`);
+  } else if (commAvg >= 70) {
+    aiBullets.push(`Communication was the clearest positive signal — structured, easy to follow, and confident throughout.`);
+  } else if (technicalPct >= 65) {
+    aiBullets.push(`Technical answers were the strongest area — showed solid working knowledge across the questions asked.`);
+  }
+
+  // Communication signal
+  if (commAvg >= 70) {
+    aiBullets.push(`Communication quality is strong — ${candidateFirstName} speaks clearly, uses appropriate vocabulary, and holds confidence.`);
+  } else if (commAvg >= 50) {
+    aiBullets.push(`Communication is acceptable but uneven — ideas come through, though fluency and confidence have room to improve.`);
+  } else {
+    aiBullets.push(`Communication needs work — clarity and confidence scored below average, which may affect role fit for client-facing work.`);
+  }
+
+  // Technical signal
+  if (technicalPct >= 70) {
+    aiBullets.push(`Technical knowledge is solid — scored ${technicalPct}% across ${questionsAsked} question${questionsAsked === 1 ? "" : "s"}, with no major gaps flagged.`);
+  } else if (technicalPct >= 45) {
+    aiBullets.push(`Technical depth is partial — scored ${technicalPct}% across ${questionsAsked} question${questionsAsked === 1 ? "" : "s"}; follow-up on weak areas is recommended.`);
+  } else {
+    aiBullets.push(`Technical performance was weak — scored ${technicalPct}% and several answers lacked enough depth for this role.`);
+  }
+
+  // Proctoring / integrity
+  if (flagCount > 0) {
+    aiBullets.push(`${flagCount} proctoring flag${flagCount === 1 ? "" : "s"} detected during the session — a human review of this recording is recommended before making a decision.`);
+  } else {
+    aiBullets.push(`No integrity or environment issues detected — session ran cleanly with no proctoring flags.`);
+  }
 
   return {
     backHref: i.backHref || "/admin/candidates",
@@ -1507,17 +1553,15 @@ export function InterviewReportHyring({
             <CommunicationScoreCardDonutLive comm={model.comm} />
           </div>
           <div className={cn(card, "p-4")}>
-            <div className="mb-3 flex items-center gap-2 text-[#0D4D2E]">
-              <Sparkles className="h-4 w-4" />
-              <p className="text-sm font-extrabold">AI summary</p>
+            <div className="mb-3 flex items-center gap-1.5 text-[#0D4D2E]">
+              <Sparkles className="h-3.5 w-3.5" />
+              <p className="text-[10px] font-extrabold uppercase tracking-widest">AI Summary</p>
             </div>
-            <ul className="space-y-2.5 text-[13px] leading-relaxed text-[#3D434D]">
+            <ul className="space-y-2 text-[13px] leading-relaxed text-[#3D434D]">
               {model.aiBullets.map((b, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#E6F4EC] text-[#1E9D55]">
-                    <Check className="h-2.5 w-2.5" />
-                  </span>
-                  {b}
+                <li key={i} className="flex gap-2.5">
+                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1E9D55]" />
+                  <span>{b}</span>
                 </li>
               ))}
             </ul>
