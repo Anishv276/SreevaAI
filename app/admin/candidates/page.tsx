@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, RefreshCw, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, CheckSquare, Square, Send, Loader2, Lock } from "lucide-react";
+import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, RefreshCw, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, CheckSquare, Square, Send, Loader2, Lock, FileText, Eye } from "lucide-react";
 
 import Link from "next/link";
 
@@ -1272,7 +1272,7 @@ export default function CandidatesPage() {
 
                 <div className="relative w-full overflow-auto">
 
-                    <Table>
+                    <Table className="table-fixed">
 
                         <TableHeader className="bg-gray-50/50">
 
@@ -1296,19 +1296,21 @@ export default function CandidatesPage() {
 
                                 )}
 
-                                <TableHead className={cn("w-[280px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500", !isSelectionMode && "pl-4")}>Candidate</TableHead>
+                                <TableHead className={cn("w-[240px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500", !isSelectionMode && "pl-3")}>Candidate</TableHead>
 
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Job Role</TableHead>
+                                <TableHead className="w-[220px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Job Role</TableHead>
 
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Status</TableHead>
+                                <TableHead className="w-[120px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Status</TableHead>
 
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview</TableHead>
+                                <TableHead className="w-[120px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview</TableHead>
 
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Decision</TableHead>
+                                <TableHead className="w-[120px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Decision</TableHead>
 
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Reports</TableHead>
+                                <TableHead className="w-[90px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Resume Report</TableHead>
 
-                                <TableHead className="text-right pr-8 h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Actions</TableHead>
+                                <TableHead className="w-[110px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview Report</TableHead>
+
+                                <TableHead className="w-[88px] text-right pr-8 h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Actions</TableHead>
 
                             </TableRow>
 
@@ -1320,7 +1322,7 @@ export default function CandidatesPage() {
 
                                 <TableRow>
 
-                                    <TableCell colSpan={isSelectionMode ? 9 : 8} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-12 text-center text-sm font-bold text-gray-400">
 
                                         Loading candidates...
 
@@ -1332,7 +1334,7 @@ export default function CandidatesPage() {
 
                                 <TableRow>
 
-                                    <TableCell colSpan={isSelectionMode ? 9 : 8} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-12 text-center text-sm font-bold text-gray-400">
 
                                         No candidates found for selected filters
 
@@ -1403,9 +1405,9 @@ export default function CandidatesPage() {
 
                                             )}
 
-                                            <TableCell className={cn("py-5", !isSelectionMode && "pl-4")}>
+                                            <TableCell className={cn("py-5", !isSelectionMode && "pl-3")}>
 
-                                                <div className="flex items-center gap-4">
+                                                <div className="flex items-center gap-3">
 
                                                     <div className="relative group/avatar">
 
@@ -1433,9 +1435,9 @@ export default function CandidatesPage() {
 
                                             </TableCell>
 
-                                            <TableCell className="py-5">
+                                            <TableCell className="py-5 w-[220px]">
 
-                                                <div className="flex flex-col">
+                                                <div className="flex flex-col max-w-[220px]">
 
                                                     <span className="text-sm font-bold text-gray-700">{candidate.role}</span>
 
@@ -1573,29 +1575,48 @@ export default function CandidatesPage() {
 
                                             </TableCell>
 
-                                            <TableCell className="py-5 text-center">
-
-                                                <Link
-                                                    href={orgIdParam ? `/admin/candidates/${candidate.id}?orgId=${encodeURIComponent(orgIdParam)}` : `/admin/candidates/${candidate.id}`}
-                                                    onClick={(e) => isSelectionMode && e.stopPropagation()}
-                                                >
-
-                                                    <Button
-
-                                                        size="sm"
-
-                                                        variant="ghost"
-
-                                                        className="h-9 px-4 rounded-lg text-[#F97316] font-extrabold hover:bg-orange-50 transition-all mx-auto flex"
-
+                                            <TableCell className="py-5 text-center w-[90px]" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex items-center justify-center">
+                                                    <Link
+                                                        href={
+                                                            orgIdParam
+                                                                ? `/admin/candidates/${candidate.id}?report=resume&orgId=${encodeURIComponent(orgIdParam)}`
+                                                                : `/admin/candidates/${candidate.id}?report=resume`
+                                                        }
+                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#F97316] transition-colors hover:bg-orange-50"
+                                                        title="Open resume report"
+                                                        aria-label="Open resume report"
                                                     >
+                                                        <Eye className="h-4 w-4" />
+                                                    </Link>
+                                                </div>
+                                            </TableCell>
 
-                                                        View Reports
-
-                                                    </Button>
-
-                                                </Link>
-
+                                            <TableCell className="py-5 text-center w-[110px]" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex items-center justify-center">
+                                                    {interviewStage === "pending" ? (
+                                                        <span
+                                                            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-300"
+                                                            title="Interview report is locked until the interview happens"
+                                                            aria-label="Interview report locked"
+                                                        >
+                                                            <Lock className="h-4 w-4" />
+                                                        </span>
+                                                    ) : (
+                                                        <Link
+                                                            href={
+                                                                orgIdParam
+                                                                    ? `/admin/candidates/${candidate.id}?orgId=${encodeURIComponent(orgIdParam)}`
+                                                                    : `/admin/candidates/${candidate.id}`
+                                                            }
+                                                            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#0D4D2E] transition-colors hover:bg-emerald-50"
+                                                            title="Open interview report"
+                                                            aria-label="Open interview report"
+                                                        >
+                                                            <FileText className="h-4 w-4" />
+                                                        </Link>
+                                                    )}
+                                                </div>
                                             </TableCell>
 
                                             <TableCell className="py-5 pr-8 text-right">

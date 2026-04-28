@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
@@ -26,7 +27,14 @@ import {
 import type { IntelIconKey, IntelSignalRow } from "./interview-report-hyring";
 
 const card = HYRING_REPORT_CARD;
-const bgPage = HYRING_REPORT_PAGE_BG;
+const bgPage = "bg-white relative overflow-hidden";
+
+const MeshGradient = () => (
+  <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden opacity-30">
+    <div className="absolute -left-[10%] -top-[10%] h-[600px] w-[600px] rounded-full bg-gray-100 blur-[100px]" />
+    <div className="absolute -right-[5%] top-[10%] h-[500px] w-[500px] rounded-full bg-slate-50 blur-[80px]" />
+  </div>
+);
 
 type RadarKey = "essentials" | "experience" | "domain" | "skills" | "confidence";
 
@@ -62,13 +70,12 @@ function ResumeRadarPlot({ values }: { values: Record<RadarKey, number> }) {
       >
         <defs>
           <linearGradient id="fitRadarGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#1E6FD6" stopOpacity="0.2" />
-            <stop offset="100%" stopColor="#1E9D55" stopOpacity="0.2" />
+            <stop offset="0%" stopColor="#1E9D55" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="#F0A12A" stopOpacity="0.15" />
           </linearGradient>
           <linearGradient id="fitRadarStrokeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#1E6FD6" />
-            <stop offset="55%" stopColor="#F0A12A" />
-            <stop offset="100%" stopColor="#1E9D55" />
+            <stop offset="0%" stopColor="#1E9D55" />
+            <stop offset="100%" stopColor="#F0A12A" />
           </linearGradient>
         </defs>
 
@@ -248,7 +255,7 @@ function toBullets(text: string, min = 3): string[] {
   }
   return [
     "Document review focuses on must-haves, experience depth, and supplemental fit to this JD.",
-    "Scores are model estimates—treat as guidance with human review.",
+    "Scores are model estimates, treat as guidance with human review.",
     "Open the source resume when wording matters for compliance or level.",
   ];
 }
@@ -447,8 +454,8 @@ export function buildHyringResumeViewModel(i: {
     recruiter_summary?: string;
   }>;
   let careerLines: HyringResumeViewModel["careerLines"] = history.slice(0, 8).map((r, idx) => {
-    const when = [r.start_date || r.start_year, r.is_current ? "Present" : r.end_date || r.end_year].filter(Boolean).join(" — ");
-    const label = `${r.role || "Role"} @ ${r.company || "—"}`;
+    const when = [r.start_date || r.start_year, r.is_current ? "Present" : r.end_date || r.end_year].filter(Boolean).join(" ");
+    const label = `${r.role || "Role"} @ ${r.company || " "}`;
     const body = String(r.recruiter_summary || "No summary for this block yet.");
     return { label, body, time: when || `Block ${idx + 1}` };
   });
@@ -456,7 +463,7 @@ export function buildHyringResumeViewModel(i: {
     careerLines.push({
       label: "No work history in structured data",
       body: "Once parsing completes, roles appear here in timeline form.",
-      time: "—",
+      time: " ",
     });
   }
 
@@ -465,13 +472,13 @@ export function buildHyringResumeViewModel(i: {
     processing: !i.hasResumeText && !i.hasAiReport,
     fullName: c.fullName || "Candidate",
     displayAvatar: i.displayAvatar,
-    roleLabel: String(c.drive?.role || c.drive?.title || "Requisition").trim() || "Role",
-    cityBadge: String(c.location || "Location").split(",")[0].trim() || " ",
-    locationLine: c.location || " ",
+    roleLabel: String(c.drive?.role || c.drive?.title || "Requisition").replace(/[-—]/g, " ").trim() || "Role",
+    cityBadge: String(c.location || "Location").replace(/[-—]/g, " ").split(",")[0].trim() || "",
+    locationLine: (c.location || "").replace(/[-—]/g, " ").trim() || "",
     appliedOn:
       c.createdAt && i.mounted
         ? new Date(c.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-        : " ",
+        : "",
     parseMeta: i.hasAiReport ? "AI report ready" : i.hasResumeText ? "Text extracted" : "Awaiting document",
     fitPercent: Math.min(100, Math.max(0, Math.round(i.matchScore))),
     fitLabel: fitLabelFromPct(i.matchScore),
@@ -549,8 +556,15 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
   }
 
   return (
-    <div className={cn("w-full", bgPage)}>
-      <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 sm:px-6">
+    <div className={cn("w-full transition-colors duration-500", bgPage)}>
+      <MeshGradient />
+      
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.4 }}
+        className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 pt-16 sm:px-6 sm:pt-20"
+      >
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#DDE1E5] pb-4">
           <div className="flex items-center gap-4">
             <BackButton />
@@ -560,11 +574,16 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
           </div>
         </div>
 
-        <div className={cn(card, "overflow-hidden p-0")}>
-          <div className="bg-gradient-to-br from-white via-white to-[#FFF4EC] px-4 py-5 sm:px-6">
+        {/* Candidate Header Card */}
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={cn(card, "overflow-hidden border-none bg-white p-0 shadow-[0_4px_20px_rgba(0,0,0,0.03)]")}
+        >
+          <div className="bg-gradient-to-br from-white via-white to-[#FFF4EC]/30 px-4 py-5 sm:px-6">
             <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
               <div className="flex min-w-0 flex-1 gap-4 sm:gap-5">
-                <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-full border-2 border-white shadow-[0_10px_25px_rgba(0,0,0,0.08)] sm:h-28 sm:w-28">
+                <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-full border-4 border-white shadow-lg sm:h-28 sm:w-28">
                   {model.displayAvatar ? <img src={model.displayAvatar} alt="" className="h-full w-full object-cover" /> : null}
                 </div>
                 <div className="min-w-0">
@@ -573,20 +592,23 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                     <span className="rounded-full bg-[#F1F2F4] px-3 py-1 text-[11px] font-bold text-[#3D434D]">
                       {model.roleLabel}
                     </span>
-                    <span className="rounded-full bg-[#F1F2F4] px-3 py-1 text-[11px] font-bold text-[#3D434D]">
-                      {model.locationLine}
-                    </span>
+                    {model.locationLine && (
+                      <span className="rounded-full bg-[#F1F2F4] px-3 py-1 text-[11px] font-bold text-[#3D434D]">
+                        {model.locationLine}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
-              <div className="flex flex-col items-center gap-2 rounded-3xl bg-white/85 px-5 py-4 shadow-[0_10px_30px_rgba(17,24,39,0.06)] ring-1 ring-black/5 sm:min-w-[240px]">
+              <div className="flex flex-col items-center gap-2 rounded-3xl bg-white px-6 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.04)] ring-1 ring-black/5 sm:min-w-[260px]">
                 <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#6B7079]">Fit snapshot</p>
                 <SemicircleGauge value={model.fitPercent} fitLabel={model.fitLabel} />
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
 
+        {/* Quick Stats Grid */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {(
             [
@@ -595,12 +617,15 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
               ["Matched skills", model.stats.skillsExtracted],
             ] as const
           ).map(([a, b]) => (
-            <div key={String(a)} className={cn(card, "flex flex-col justify-center p-3 text-center sm:text-left")}>
+            <div 
+              key={String(a)} 
+              className={cn(card, "flex flex-col justify-center border-none bg-white p-4 shadow-sm transition-all hover:shadow-md sm:text-left")}
+            >
               <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">{a}</p>
               <p className="mt-1 text-sm font-extrabold text-[#1A1D22]">{b}</p>
             </div>
           ))}
-          <div className={cn(card, "flex flex-col items-center justify-center p-3 sm:items-stretch sm:text-left")}>
+          <div className={cn(card, "flex flex-col items-center justify-center border-none bg-white p-4 shadow-sm transition-all hover:shadow-md sm:items-stretch sm:text-left")}>
             <p className="text-center text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079] sm:text-left">Match feedback</p>
             <div className="mt-1 flex items-center justify-center gap-0.5 sm:justify-start">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -616,15 +641,16 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
           </div>
         </div>
 
+        {/* Main Analysis Sections */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className={cn(card, "flex flex-col overflow-hidden")}>
-            <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-3">
+          <div className={cn(card, "flex flex-col overflow-hidden border-none bg-white shadow-md")}>
+            <div className="flex items-center justify-between border-b border-[#E8EAED]/50 px-4 py-3">
               <div className="min-w-0">
                 <p className="text-sm font-extrabold text-[#1A1D22]">Essential match</p>
               </div>
               <span
                 className={cn(
-                  "rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest",
+                  "rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest shadow-sm",
                   model.mustHave.tag === "GOOD"
                     ? "bg-[#E6F4EC] text-[#0D4D2E]"
                     : model.mustHave.tag === "AVERAGE"
@@ -645,12 +671,13 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
               footerNote="Weighted from required resume essentials"
             />
           </div>
-          <div className={cn(card, "flex flex-col")}>
-            <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-3">
-            <div className="min-w-0">
-              <p className="text-sm font-extrabold text-[#1A1D22]">Fit radar</p>
-            </div>
-              <span className="rounded-md bg-[#E0EDFF] px-2.5 py-0.5 text-[9px] font-extrabold uppercase text-[#0B5FFF]">
+
+          <div className={cn(card, "flex flex-col border-none bg-white shadow-md")}>
+            <div className="flex items-center justify-between border-b border-[#E8EAED]/50 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-extrabold text-[#1A1D22]">Fit radar</p>
+              </div>
+              <span className="rounded-md bg-[#F1F2F4] px-2.5 py-0.5 text-[9px] font-extrabold uppercase text-[#1A1D22] shadow-sm">
                 {model.fitLabel}
               </span>
             </div>
@@ -658,7 +685,8 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
               <ResumeRadarPlot values={model.fitRadar} />
             </div>
           </div>
-          <div className={cn(card, "p-4")}>
+
+          <div className={cn(card, "border-none bg-white p-4 shadow-md")}>
             <div className="mb-3 flex items-start justify-between gap-3">
               <div className="flex items-center gap-2 text-[#0D4D2E]">
                 <Sparkles className="h-4 w-4" />
@@ -668,7 +696,7 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
               </div>
               <span
                 className={cn(
-                  "shrink-0 rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest",
+                  "shrink-0 rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest shadow-sm",
                   model.fitPercent >= 80
                     ? "bg-[#E6F4EC] text-[#0D4D2E]"
                     : model.fitPercent >= 60
@@ -682,7 +710,7 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
             <ul className="space-y-2.5 text-[13px] leading-relaxed text-[#3D434D]">
               {model.aiBullets.map((b, j) => (
                 <li key={j} className="flex gap-2">
-                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#E6F4EC] text-[#1E9D55]">
+                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#E6F4EC] text-[#1E9D55] shadow-sm">
                     <Check className="h-2.5 w-2.5" />
                   </span>
                   {b}
@@ -692,14 +720,15 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
           </div>
         </div>
 
-        <div className={cn(card, "p-4 sm:p-5")}>
+        {/* Strengths & Risks */}
+        <div className={cn(card, "border-none bg-white p-4 shadow-md sm:p-5")}>
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-            <div className="md:border-r md:border-[#E8EAED] md:pr-5">
+            <div className="md:border-r md:border-[#E8EAED]/50 md:pr-5">
               <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#0D4D2E]">Strengths</p>
-              <ol className="mt-4 space-y-3" role="list" aria-label="Strengths">
+              <ol className="mt-4 space-y-3" role="list">
                 {model.topStrengths.map((t, j) => (
                   <li key={j} className="flex items-start gap-3 text-[13px] leading-5 text-[#1A1D22]">
-                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#E6F4EC] text-[9px] font-black text-[#0D4D2E]">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#E6F4EC] text-[9px] font-black text-[#0D4D2E] shadow-sm">
                       {j + 1}
                     </span>
                     <p>{t}</p>
@@ -709,10 +738,10 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
             </div>
             <div className="md:pl-5">
               <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#9A3412]">Risks</p>
-              <ol className="mt-4 space-y-3" role="list" aria-label="Risks">
+              <ol className="mt-4 space-y-3" role="list">
                 {model.topRisks.map((t, j) => (
                   <li key={j} className="flex items-start gap-3 text-[13px] leading-5 text-[#1A1D22]">
-                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[9px] font-black text-amber-900">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[9px] font-black text-amber-900 shadow-sm">
                       {j + 1}
                     </span>
                     <p>{t}</p>
@@ -723,20 +752,20 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
           </div>
         </div>
 
+        {/* Detailed Lists */}
         <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-12">
           <div className="lg:col-span-7">
-            <div className={cn(card, "flex h-[420px] min-h-0 min-w-0 flex-col overflow-hidden p-0")}>
-              <div className="border-b border-[#E8EAED] px-4 py-3">
+            <div className={cn(card, "flex h-[420px] min-h-0 min-w-0 flex-col overflow-hidden border-none bg-white p-0 shadow-md")}>
+              <div className="border-b border-[#E8EAED]/50 px-4 py-3 bg-gray-50">
                 <p className="text-sm font-extrabold">Career timeline</p>
               </div>
               <div className="flex-1 space-y-3 overflow-y-auto p-3">
                 {model.careerLines.map((line, k) => (
                   <div
                     key={k}
-                    className="flex gap-2 rounded-lg border border-[#E8EAED] bg-white p-2.5"
-                    role="presentation"
+                    className="flex gap-2 rounded-lg border border-[#E8EAED]/50 bg-white p-2.5 transition-colors hover:bg-slate-50"
                   >
-                    <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-[#0B5FFF]" />
+                    <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-black" />
                     <div className="min-w-0 flex-1">
                       <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
                         <span className="text-[10px] font-bold text-[#6B7079]">Experience</span>
@@ -751,15 +780,15 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
             </div>
           </div>
           <div className="min-h-0 lg:col-span-5">
-            <div className={cn(card, "flex h-[420px] min-h-0 flex-col overflow-hidden p-0")}>
-              <div className="border-b border-[#E8EAED] px-4 py-3">
+            <div className={cn(card, "flex h-[420px] min-h-0 flex-col overflow-hidden border-none bg-white p-0 shadow-md")}>
+              <div className="border-b border-[#E8EAED]/50 px-4 py-3 bg-gray-50">
                 <h3 className="text-sm font-extrabold text-[#1A1D22]">Skill signals</h3>
               </div>
               <div className="flex-1 space-y-2 overflow-y-auto p-3">
-                {model.skillMatchRows.map((s) => (
+                {model.skillMatchRows.map((s, j) => (
                   <div
-                    key={s.name + s.questions}
-                    className="flex items-center justify-between rounded-lg border border-[#EEF0F3] bg-white px-3 py-2.5"
+                    key={`${s.name}-${s.questions}-${j}`}
+                    className="flex items-center justify-between rounded-lg border border-[#EEF0F3]/50 bg-white px-3 py-2.5 transition-colors hover:bg-slate-50"
                   >
                     <div className="min-w-0 pr-3">
                       <p className="truncate text-[12px] font-semibold text-[#1A1D22]">{s.name}</p>
@@ -780,18 +809,19 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-[#DDE1E5] bg-gradient-to-r from-[#EEF2FF] via-white to-[#FFF4EC] p-[1px] shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-          <div className="flex items-center justify-between gap-3 rounded-[calc(1.5rem-1px)] bg-white px-4 py-3">
+        {/* Decision Section */}
+        <div className="rounded-3xl border border-[#DDE1E5] bg-gradient-to-r from-gray-100 via-white to-gray-50 p-[1px] shadow-lg">
+          <div className="flex items-center justify-between gap-3 rounded-[calc(1.5rem-1px)] bg-white px-5 py-4">
             <div className="min-w-0">
               <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#5C6370]">Decision note</p>
               <p className="mt-1 text-[12px] font-medium text-[#1A1D22]">{model.reviewStrip}</p>
             </div>
-            <span className="shrink-0 rounded-full bg-gradient-to-r from-[#0B5FFF] via-[#1E9D55] to-[#F0A12A] px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-white">
+            <span className="shrink-0 rounded-full bg-black px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.24em] text-white shadow-md">
               Final read
             </span>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

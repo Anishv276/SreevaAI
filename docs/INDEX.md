@@ -25,6 +25,8 @@ Explore each phase of the recruitment lifecycle in detail:
     *   Fullscreen interview environment with real-time monitoring.
 8.  **[Phase 8: AI Review & Comprehensive Reporting](./08_grading_reporting.md)**
     *   Structured AI analysis and final hiring reporting.
+9.  **[Agent Module Map](./09_agent_module_map.md)**
+    *   Plain-English guide to the Python agent files and what each one does.
 
 ## 🛠 Core Internal Tools
 - **Worker System**: Managed in `worker.ts`, handling all heavy lifting from scoring to grading.
