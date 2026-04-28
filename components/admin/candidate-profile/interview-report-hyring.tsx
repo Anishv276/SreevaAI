@@ -1127,7 +1127,9 @@ export function TechnicalScoreCard({
   return (
     <div className="flex min-h-0 flex-1 flex-col justify-center gap-4 px-2 pb-3 pt-1 sm:px-3 sm:pb-4 sm:pt-2">
       <Donut pct={p} questions={questions} questionsLabel={questionsLabel} />
-      {summary ? <p className="px-2 text-center text-[12px] font-semibold leading-5 text-[#1A1D22]">{summary}</p> : null}
+      {summary ? (
+        <p className="px-2 text-center text-[11px] font-medium leading-4 text-[#5C6370]">{summary}</p>
+      ) : null}
       <div className="px-0.5">
         <div className="mb-1.5 flex items-baseline justify-between gap-2">
           <span className="text-[12px] font-semibold text-[#5C6370]">{label}</span>
@@ -1322,8 +1324,8 @@ export function InterviewReportHyring({
   const [intel, setIntel] = useState<IntelId>("integrity");
   const topTechnicalSkill = [...model.skills].sort((a, b) => b.stars - a.stars).find((s) => s.stars > 0);
   const technicalSummary = topTechnicalSkill
-    ? `Top skill: ${topTechnicalSkill.name}`
-    : "Based on answered technical questions";
+    ? `${topTechnicalSkill.name}: ${topTechnicalSkill.scoreLabel}`
+    : "—";
   return (
     <div className={cn("w-full", bgPage)}>
       <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 pt-2 sm:px-6">
@@ -1417,9 +1419,9 @@ export function InterviewReportHyring({
               pct={model.technical.percent}
               questions={model.technical.questions}
               tag={model.technical.tag}
-              questionsLabel={`${model.technical.questions} QUESTIONS`}
+              questionsLabel={`${model.technical.questions} Questions`}
               summary={technicalSummary}
-              footerNote="Weighted from answered items"
+              footerNote="From interview answers"
             />
           </div>
           <div className={cn(card, "flex flex-col")}>
