@@ -12,6 +12,7 @@ import { motion } from "framer-motion";
 export default function SuperAdminDashboard() {
     const [mounted, setMounted] = useState(false);
     const [orgs, setOrgs] = useState<any[]>([]);
+    const [stats, setStats] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -22,6 +23,7 @@ export default function SuperAdminDashboard() {
                 if (res.ok) {
                     const data = await res.json();
                     setOrgs(data.orgs);
+                    setStats(data.stats);
                 }
             } catch (err) {
                 console.error("Failed to fetch recent orgs", err);
@@ -144,18 +146,18 @@ export default function SuperAdminDashboard() {
                 </section>
 
                 <section className="animate-fade-slide [animation-delay:200ms]">
-                    <OrgInterviewPieChart />
+                    <OrgInterviewPieChart stats={stats?.orgInterviewStats || []} loading={loading} />
                 </section>
             </div>
 
             {/* Row 3: Credit Analytics */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <section className="animate-fade-slide [animation-delay:300ms]">
-                    <OrgCreditPieChart />
+                    <OrgCreditPieChart stats={stats?.orgCreditStats || []} loading={loading} />
                 </section>
 
                 <section className="animate-fade-slide [animation-delay:400ms]">
-                    <OrgCreditBarGraph />
+                    <OrgCreditBarGraph stats={stats?.orgCreditStats || []} loading={loading} />
                 </section>
             </div>
 

@@ -71,7 +71,7 @@ async function withDistributedLock<T>(
     ttlMs: number,
     fn: () => Promise<T>
 ): Promise<T> {
-    const { default: redis } = await import("./queue");
+    const { default: redis } = await import("./redis");
     const lockValue = Date.now().toString();
     
     // Acquire lock

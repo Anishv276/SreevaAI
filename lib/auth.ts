@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import redis from "./redis";
 
 function getJwtSecret(): string {
     const secret = process.env.JWT_SECRET?.trim();
@@ -56,6 +57,10 @@ export async function createSession(user: SessionUser): Promise<string> {
 
 export async function verifySession(token: string): Promise<SessionUser | null> {
     try {
+        if (redis) {
+            const isBlacklisted = await redis.get(`blacklist:${token}`);
+            if (isBlacklisted) return null;
+        }
         const { payload } = await jwtVerify(token, getSecretKey());
         return payload as unknown as SessionUser;
     } catch {

@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -14,9 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
-
 // ── Types ────────────────────────────────────────────────────────────────────
-
 interface ResumeCandidate {
     id: string;
     fullName: string;
@@ -28,7 +25,6 @@ interface ResumeCandidate {
     createdAt: string;
     bulkBatchId: string;
 }
-
 interface ResumeBatch {
     id: string;
     status: string;
@@ -38,19 +34,15 @@ interface ResumeBatch {
     createdAt: string;
     completedAt?: string;
 }
-
 type SortKey = "aiScore" | "fullName" | "resumeStatus";
 type SortDir = "asc" | "desc";
-
 // ── Main export ───────────────────────────────────────────────────────────────
-
 export function ResumeScreening({ driveId, driveName }: { driveId: string; driveName: string }) {
     const router = useRouter();
     const [modalOpen, setModalOpen] = useState(false);
     const [candidates, setCandidates] = useState<ResumeCandidate[]>([]);
     const [batches, setBatches] = useState<ResumeBatch[]>([]);
     const [loadingData, setLoadingData] = useState(true);
-
     const refresh = useCallback(async () => {
         try {
             const res = await fetch(`/api/drives/${driveId}/resume-screening`);
@@ -62,9 +54,7 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
             setLoadingData(false);
         }
     }, [driveId]);
-
     useEffect(() => { refresh(); }, [refresh]);
-
     return (
         <div className="space-y-6">
             {/* Header row */}
@@ -95,7 +85,6 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
                     </Button>
                 </div>
             </div>
-
             {/* Empty state or quick summary */}
             {loadingData ? (
                 <div className="space-y-2">
@@ -106,7 +95,6 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
             ) : candidates.length === 0 ? (
                 <EmptyState onUpload={() => setModalOpen(true)} />
             ) : null}
-
             {/* Upload + progress modal */}
             <UploadModal
                 open={modalOpen}
@@ -122,9 +110,7 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
         </div>
     );
 }
-
 // ── Empty state ───────────────────────────────────────────────────────────────
-
 function EmptyState({ onUpload }: { onUpload: () => void }) {
     return (
         <div
@@ -141,10 +127,7 @@ function EmptyState({ onUpload }: { onUpload: () => void }) {
         </div>
     );
 }
-
-
 // ── Upload modal ──────────────────────────────────────────────────────────────
-
 function UploadModal({
     open, onClose, driveId, driveName, onComplete,
 }: {
@@ -159,24 +142,20 @@ function UploadModal({
     const [error, setError] = useState<string | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const pollRef = useRef<NodeJS.Timeout | null>(null);
-
     const reset = () => {
         setFiles([]); setPhase("idle");
         setProgress({ processed: 0, total: 0 }); setError(null);
         if (pollRef.current) clearInterval(pollRef.current);
     };
-
     const handleClose = () => {
         if (phase === "processing" && !window.confirm("Screening is running. Close anyway?")) return;
         reset(); onClose();
     };
-
     const onDrop = (e: React.DragEvent) => {
         e.preventDefault(); setIsDragging(false);
         const dropped = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith(".pdf"));
         setFiles(prev => [...prev, ...dropped]);
     };
-
     const startScreening = async () => {
         if (!files.length) return;
         setPhase("uploading"); setError(null);
@@ -188,7 +167,6 @@ function UploadModal({
             const { batchId, totalCount } = await res.json();
             setProgress({ processed: 0, total: totalCount });
             setPhase("processing");
-
             pollRef.current = setInterval(async () => {
                 try {
                     const pr = await fetch(`/api/drives/${driveId}/resume-screening?batchId=${batchId}`);
@@ -210,9 +188,7 @@ function UploadModal({
             toast.error((err as Error).message);
         }
     };
-
     const pct = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
-
     return (
         <Dialog open={open} onOpenChange={handleClose}>
             <DialogContent className="max-w-lg">
@@ -223,7 +199,6 @@ function UploadModal({
                     </DialogTitle>
                     <p className="text-sm text-gray-400">{driveName}</p>
                 </DialogHeader>
-
                 {/* IDLE / UPLOADING */}
                 {(phase === "idle" || phase === "uploading") && (
                     <div className="space-y-5 py-3">
@@ -241,7 +216,6 @@ function UploadModal({
                             )}
                         >
                             <input ref={inputRef} type="file" multiple accept=".pdf" onChange={e => { setFiles(prev => [...prev, ...Array.from(e.target.files || [])]); e.target.value = ""; }} className="hidden" />
-
                             {files.length === 0 ? (
                                 <div className="text-center">
                                     <div className="w-12 h-12 rounded-2xl bg-orange-100 flex items-center justify-center mx-auto mb-3">
@@ -268,14 +242,12 @@ function UploadModal({
                                 </div>
                             )}
                         </div>
-
                         {error && (
                             <div className="flex gap-2 p-3 bg-red-50 border border-red-200 rounded-xl">
                                 <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
                                 <p className="text-sm text-red-700">{error}</p>
                             </div>
                         )}
-
                         <div className="flex items-center justify-end gap-3 pt-1 border-t border-gray-100">
                             <Button variant="ghost" onClick={handleClose} className="rounded-xl font-bold text-gray-500">Cancel</Button>
                             <Button
@@ -289,7 +261,6 @@ function UploadModal({
                         </div>
                     </div>
                 )}
-
                 {/* PROCESSING */}
                 {phase === "processing" && (
                     <div className="py-8 space-y-6">
@@ -320,7 +291,6 @@ function UploadModal({
                                     <p className="text-xs font-bold text-gray-400">complete</p>
                                 </div>
                             </div>
-
                             {/* Stats */}
                             <div className="w-full grid grid-cols-3 gap-2">
                                 {[
@@ -334,12 +304,10 @@ function UploadModal({
                                     </div>
                                 ))}
                             </div>
-
                             <p className="text-center text-xs text-gray-400">AI is extracting and scoring each resume · Do not close this window</p>
                         </div>
                     </div>
                 )}
-
                 {/* DONE */}
                 {phase === "done" && (
                     <div className="py-8 text-center space-y-3">
@@ -350,7 +318,6 @@ function UploadModal({
                         <p className="text-sm text-gray-400">{progress.total} resumes screened. Closing…</p>
                     </div>
                 )}
-
                 {/* FAILED */}
                 {phase === "failed" && (
                     <div className="py-8 text-center space-y-4">

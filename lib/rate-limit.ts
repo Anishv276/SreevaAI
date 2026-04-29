@@ -1,4 +1,4 @@
-import redis from "@/lib/queue";
+import redis from "@/lib/redis";
 
 export async function isRateLimited(key: string, limit: number, windowSeconds: number) {
   const limiter = new RateLimiter(key, limit, windowSeconds);

@@ -1958,37 +1958,27 @@ async def entrypoint(ctx: JobContext):
         else:
             logger.debug("[NUDGE] Inactivity clock cleared")
 
-    @session.on("user_speech_started")
-    def on_user_speech_started():
+    @session.on("user_state_changed")
+    def on_user_state_changed(event):
         nonlocal is_candidate_speaking
-        is_candidate_speaking = True
-        # User started speaking: clear inactivity window immediately.
-        reset_inactivity_clock(start_waiting=False)
+        if event.new_state == "speaking":
+            is_candidate_speaking = True
+            reset_inactivity_clock(start_waiting=False)
+        elif event.new_state == "listening":
+            is_candidate_speaking = False
 
-    @session.on("user_speech_committed")
-    def on_user_speech_committed(_msg):
-        nonlocal is_candidate_speaking
-        is_candidate_speaking = False
-        # Candidate spoke — new question cycle, reset nudge flags.
-        reset_inactivity_clock(start_waiting=False, preserve_nudge_flags=False)
-
-    @session.on("agent_speech_started")
-    def on_agent_speech_started():
-        nonlocal is_agent_speaking
-        is_agent_speaking = True
-        # AI is speaking: do not count inactivity against candidate.
-        reset_inactivity_clock(start_waiting=False)
-
-    @session.on("agent_speech_committed")
-    def on_agent_speech_committed(_msg):
+    @session.on("agent_state_changed")
+    def on_agent_state_changed(event):
         nonlocal is_agent_speaking, first_agent_turn_committed_at
-        is_agent_speaking = False
-        if first_agent_turn_committed_at is None:
-            first_agent_turn_committed_at = time.monotonic()
-        # Preserve nudge flags so a nudge firing doesn't re-arm itself.
-        # Only a real new question from Ishita should reset them (handled in user_speech_committed).
-        reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=True)
-        logger.debug("[NUDGE] AI finished speaking; starting inactivity countdown")
+        if event.new_state == "speaking":
+            is_agent_speaking = True
+            reset_inactivity_clock(start_waiting=False)
+        elif event.new_state == "listening":
+            is_agent_speaking = False
+            if first_agent_turn_committed_at is None:
+                first_agent_turn_committed_at = time.monotonic()
+            reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=True)
+            logger.debug("[NUDGE] AI finished speaking; starting inactivity countdown")
 
     # Wait for participant to join so we have their identity for tracking.
     # Keep waiting during hardware check and handle room-disconnect gracefully.

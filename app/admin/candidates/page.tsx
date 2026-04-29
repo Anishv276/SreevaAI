@@ -865,10 +865,36 @@ export default function CandidatesPage() {
 
     };
 
+    const handleBulkSendEmail = async (
+        emailType: "screening" | "hiring",
+        targetAction?: "shortlist" | "reject" | "hire" | "nothired"
+    ) => {
+        if (selectedIds.size === 0) return;
+        setIsBulkLoading(true);
+        try {
+            const res = await fetch("/api/candidates/bulk-email", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ids: Array.from(selectedIds), emailType, targetAction }),
+            });
+            const data = await res.json().catch(() => null);
+            if (res.ok) {
+                toast.success(data?.message || "Emails sent");
+                setSelectedIds(new Set());
+                setIsSelectionMode(false);
+                return;
+            }
+            toast.error(data?.error || "Failed to send emails");
+        } catch {
+            toast.error("Failed to send emails");
+        } finally {
+            setIsBulkLoading(false);
+        }
+    };
+
 
 
     return (
-
         <div className="space-y-8 pb-10 animate-in fade-in duration-700 font-sans" style={{ zoom: 0.7, transformOrigin: "top center" }}>
 
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-2">
@@ -1028,99 +1054,105 @@ export default function CandidatesPage() {
 
             {isSelectionMode && (
 
-                <div className="flex items-center gap-3 flex-wrap p-4 bg-white/60 backdrop-blur-xl rounded-2xl border border-white/40 shadow-sm">
+                <div className="rounded-2xl border border-gray-200 bg-white/60 backdrop-blur-xl p-4 shadow-sm space-y-3">
 
-                    <button
+                    {/* Selection header row */}
+                    <div className="flex flex-wrap items-center gap-3">
 
-                        onClick={toggleSelectAll}
+                        <button
 
-                        className="flex items-center gap-2 text-[12px] font-black uppercase tracking-widest text-gray-500 hover:text-[#F97316] transition-colors"
+                            onClick={toggleSelectAll}
 
-                    >
+                            className="flex items-center gap-2 text-[12px] font-black uppercase tracking-widest text-gray-500 hover:text-[#F97316] transition-colors"
 
-                        {selectedIds.size === filteredCandidates.length && filteredCandidates.length > 0
+                        >
 
-                            ? <><Square className="h-4 w-4" /> Deselect All</>
+                            {selectedIds.size === filteredCandidates.length && filteredCandidates.length > 0
 
-                            : <><CheckSquare className="h-4 w-4" /> Select All</>
+                                ? <><Square className="h-4 w-4" /> Deselect All</>
 
-                        }
+                                : <><CheckSquare className="h-4 w-4" /> Select All</>
 
-                    </button>
+                            }
 
-                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">
+                        </button>
 
-                        {selectedIds.size} selected
+                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">
 
-                    </span>
+                            {selectedIds.size} selected
+
+                        </span>
+
+                    </div>
 
                     {selectedIds.size > 0 && (
 
-                        <>
+                        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
 
-                            <div className="h-4 w-px bg-gray-200 mx-1" />
-
-                            
-
-                            {/* Hiring Status Group */}
-
-                            <div className="flex items-center gap-2 px-1">
-
-                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest mr-1">Hiring Status:</span>
-
-                                <Button
-
-                                    size="sm"
-
-                                    onClick={() => handleBulkAction("hire")}
-
-                                    className="h-9 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
-
-                                >
-
-                                    Hire
-
-                                </Button>
-
-                                <Button
-
-                                    size="sm"
-
-                                    onClick={() => handleBulkAction("not_hired")}
-
-                                    className="h-9 px-4 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
-
-                                >
-
-                                    <UserX className="h-3.5 w-3.5" /> Not Hired
-
-                                </Button>
-
+                            {/* Group 1: Shortlist */}
+                            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 px-3 py-2.5">
+                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-emerald-600 mb-2">Shortlist</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button size="sm" onClick={() => handleBulkAction("shortlist")} className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
+                                        Shortlist
+                                    </Button>
+                                    <Button size="sm" onClick={() => handleBulkAction("reject")} className="h-8 px-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
+                                        <UserX className="h-3.5 w-3.5" /> Reject
+                                    </Button>
+                                    <Button size="sm" onClick={() => handleBulkSendEmail("screening")} disabled={isBulkLoading} title="Send appropriate email (shortlisted/rejected) based on current status" className="h-8 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
+                                        <Mail className="h-3.5 w-3.5" /> Send Email
+                                    </Button>
+                                </div>
                             </div>
 
+                            {/* Group 2: Hire */}
+                            <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 px-3 py-2.5">
+                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-indigo-600 mb-2">Hire</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button size="sm" onClick={() => handleBulkAction("hire")} className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
+                                        Hire
+                                    </Button>
+                                    <Button size="sm" onClick={() => handleBulkAction("not_hired")} className="h-8 px-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
+                                        <UserX className="h-3.5 w-3.5" /> Not Hired
+                                    </Button>
+                                    <Button size="sm" onClick={() => handleBulkSendEmail("hiring")} disabled={isBulkLoading} title="Send appropriate email (hired/not hired) based on current status" className="h-8 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
+                                        <Mail className="h-3.5 w-3.5" /> Send Email
+                                    </Button>
+                                </div>
+                            </div>
 
+                            {/* Group 3: Interview Link */}
+                            <div className="rounded-2xl border border-orange-100 bg-orange-50/40 px-3 py-2.5">
+                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 mb-2">Interview Link</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button size="sm" onClick={async () => {
+                                        if (selectedIds.size === 0) return;
+                                        setIsBulkLoading(true);
+                                        try {
+                                            const results = await Promise.allSettled(Array.from(selectedIds).map(id => fetch(`/api/candidates/${id}/send-interview-link`, { method: "POST" })));
+                                            const failed = results.filter(r => r.status === "rejected").length;
+                                            const succeeded = results.length - failed;
+                                            if (succeeded > 0) toast.success(`Interview link sent to ${succeeded} candidate(s)`);
+                                            if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
+                                        } catch { toast.error("Failed to send interview links"); }
+                                        finally { setIsBulkLoading(false); }
+                                    }} disabled={isBulkLoading} className="h-8 px-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
+                                        <Send className="h-3.5 w-3.5" /> Resend Link
+                                    </Button>
+                                </div>
+                            </div>
 
-                            <div className="h-4 w-px bg-gray-200 ml-auto" />
+                            {/* Group 4: Remove */}
+                            <div className="rounded-2xl border border-red-100 bg-red-50/40 px-3 py-2.5">
+                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-red-500 mb-2">Remove</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button size="sm" variant="outline" onClick={() => handleBulkAction("delete")} className="h-8 px-3 rounded-xl border-red-200 text-red-600 hover:bg-red-50 font-bold text-xs flex items-center gap-1.5">
+                                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                                    </Button>
+                                </div>
+                            </div>
 
-                            
-
-                            <Button
-
-                                size="sm"
-
-                                variant="outline"
-
-                                onClick={() => handleBulkAction("delete")}
-
-                                className="h-9 px-4 rounded-xl border-red-200 text-red-600 hover:bg-red-50 font-bold text-xs flex items-center gap-1.5"
-
-                            >
-
-                                <Trash2 className="h-3.5 w-3.5" /> Delete
-
-                            </Button>
-
-                        </>
+                        </div>
 
                     )}
 

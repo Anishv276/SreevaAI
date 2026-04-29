@@ -320,14 +320,14 @@ const worker = new Worker('resume-processing', async (job) => {
     // 2. Update DB
     const exists = await prisma.application.findUnique({
       where: { id: applicationId },
-      select: { id: true, experienceYears: true }
+      select: { id: true }
     });
     if (!exists) {
       console.warn(`[JOB] Application ${applicationId} no longer exists. Skipping update.`);
       return;
     }
 
-    const resolvedExperienceYears = exists.experienceYears;
+    
 
     await prisma.application.update({
       where: { id: applicationId },
@@ -335,7 +335,7 @@ const worker = new Worker('resume-processing', async (job) => {
         resumeStatus: resumeStatus,
         aiScore: currentScore,
         aiReport: JSON.stringify(aiResult),
-        ...(resolvedExperienceYears != null && { experienceYears: resolvedExperienceYears }),
+        
         ...(resumeStatus === "REJECTED" && {
           interviewStatus: "Not Qualified",
           hiringStatus: "Not Shortlisted",

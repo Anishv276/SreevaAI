@@ -295,7 +295,7 @@ function buildCognitiveFromComm(
         `Logical thinking score: ${logN}/100.`,
         "Structure, coherence, and consistency of reasoning across all responses.",
         cogSummary ? `Overall: ${cogSummary}` : undefined
-      ].filter(Boolean),
+      ].filter(Boolean) as string[],
       ...cognitiveLabel(logN)
     },
   ];
@@ -408,7 +408,6 @@ export function IntelMetricCard({ row }: { row: IntelSignalRow }) {
       <DropdownMenuContent
         align="end"
         className="w-80 max-h-72 overflow-y-auto"
-        onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
         onFocusOutside={(event) => event.preventDefault()}
       >

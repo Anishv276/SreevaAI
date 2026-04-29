@@ -45,7 +45,7 @@ model Organization {
   googleEmail          String?
   googleRefreshToken   String?
   googleTokenExpiresAt DateTime?
-  customDomain         String?
+
   drives               Drive[]
   invites              OrgInvite[]
   users                User[]
@@ -62,7 +62,7 @@ model SuperAdmin {
   googleEmail          String?
   googleRefreshToken   String?
   googleTokenExpiresAt DateTime?
-  customDomain         String?
+
   verificationTokens   VerificationToken[]
 }
 
@@ -133,7 +133,7 @@ model Drive {
   description        String
   department         String
   type               String        @default("Full-time")
-  screeningThreshold Int           @default(60)
+  screeningThreshold Int           @default(0)
   creatorId          String
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
@@ -155,6 +155,7 @@ model Drive {
   orgId              String?
   shortlistMode      String        @default("automatic")
   location           String?
+  status             String        @default("ACTIVE")
   aiName             String?       @default("Ishitha")
   cartesiaVoiceId    String?       @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
   sarvamVoice        String?       @default("shubh")
@@ -239,10 +240,7 @@ model VerificationToken {
   @@index([token, superAdminId])
 }
 
-model ProcessedWebhook {
-  id          String   @id
-  processedAt DateTime @default(now())
-}
+
 
 model ResumeCandidate {
   id              String    @id @default(cuid())
@@ -281,4 +279,3 @@ model ResumeBatch {
 
   @@index([driveId, status])
 }
-

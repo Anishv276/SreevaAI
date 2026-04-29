@@ -57,14 +57,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     }, []);
 
-    // Initial check on mount
+    // Initial check on mount & Listen for multi-tab logout
     useEffect(() => {
         refreshUser();
-    }, [refreshUser]);
+
+        const handleStorageChange = (e: StorageEvent) => {
+            if (e.key === "logout-event") {
+                setUser(null);
+                router.push("/");
+                router.refresh();
+            }
+        };
+
+        window.addEventListener("storage", handleStorageChange);
+        return () => window.removeEventListener("storage", handleStorageChange);
+    }, [refreshUser, router]);
 
     const logout = async () => {
         // Clear local state first for instant UI response
         setUser(null);
+        
+        // Trigger multi-tab logout
+        localStorage.setItem("logout-event", Date.now().toString());
         
         try {
             await fetch("/api/auth/logout", { method: "POST" });

@@ -57,9 +57,6 @@ import {
     ExternalLink
 
 } from "lucide-react";
-
-import { JobCard } from "@/components/careers/job-card";
-
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
@@ -478,7 +475,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                     </h1>
 
-                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name} · {formatOrgPlan(org?.plan) || "Enterprise"} Panel</p>
+                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name} ï¿½ {formatOrgPlan(org?.plan) || "Enterprise"} Panel</p>
                                 </div>
 
                             </div>
@@ -607,7 +604,17 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                             <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
 
-                                {drives.map((drive) => <JobCard key={drive.id} job={drive} />)}
+                                {drives.map((drive) => (
+                                    <div key={drive.id} className="relative group">
+                                        <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                            <h3 className="font-bold text-gray-900">{drive.title}</h3>
+                                            <p className="text-sm text-gray-500">{(drive as any).location || 'Remote'}</p>
+                                        </div>
+                                        <div className="absolute top-4 right-4 text-[9px] font-black uppercase tracking-widest px-3 py-1 bg-white/90 backdrop-blur border rounded-full text-gray-900 shadow-sm opacity-60">
+                                            {(drive as any).status}
+                                        </div>
+                                    </div>
+                                ))}
 
                             </div>
 
@@ -739,7 +746,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                         <div className="flex items-center justify-between px-12 py-8 mt-4">
 
-                             <p className="text-gray-300 text-[10px] font-black uppercase tracking-[0.2em] italic">SHOWING {candidates.length} CANDIDATES · PAGE {page} OF {totalPages || 1}</p>
+                             <p className="text-gray-300 text-[10px] font-black uppercase tracking-[0.2em] italic">SHOWING {candidates.length} CANDIDATES ï¿½ PAGE {page} OF {totalPages || 1}</p>
 
                              <div className="flex items-center gap-4">
 

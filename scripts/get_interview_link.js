@@ -44,17 +44,18 @@ async function main() {
         
         // Find a drive to attach to
         let drive = await prisma.drive.findFirst({
-            where: { status: 'ACTIVE' }
+            where: { status: 'ACTIVE' },
+            select: { id: true }
         });
 
         if (!drive) {
-            drive = await prisma.drive.findFirst();
+            drive = await prisma.drive.findFirst({ select: { id: true } });
         }
 
         if (!drive) {
             // Create a dummy drive if none exist
-            const org = await prisma.organization.findFirst();
-            const user = await prisma.user.findFirst();
+            const org = await prisma.organization.findFirst({ select: { id: true } });
+            const user = await prisma.user.findFirst({ select: { id: true } });
             
             if (!org || !user) {
                 console.error("Cannot create test application: No Organization or User found in DB to link to.");
@@ -70,7 +71,8 @@ async function main() {
                     creatorId: user.id,
                     orgId: org.id,
                     status: 'ACTIVE'
-                }
+                },
+                select: { id: true }
             });
         }
 

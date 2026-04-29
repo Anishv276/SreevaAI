@@ -62,7 +62,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const screeningCriteria = safeJsonParse((application.drive as any).screeningCriteria, {});
         const threshold = Number((screeningCriteria as any)?.threshold ?? application.drive.screeningThreshold ?? 0);
         const scoringInput = {
-            resume: safeJsonParse(application.structuredResume, {}),
+            resume: safeJsonParse((application as any).structuredResume, {}),
             jd: safeJsonParse(application.drive.extractedDetails, {}),
             resume_raw_text: resumeText,
             jd_raw_text: application.drive.description || "",

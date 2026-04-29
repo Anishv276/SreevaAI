@@ -452,7 +452,7 @@ export async function POST(req: NextRequest) {
                     const roomMetadata = JSON.stringify({
                         applicationId,
                         extractedDetails: application.drive.extractedDetails || "{}",
-                        structuredResume: application.structuredResume || "{}",
+                        structuredResume: (application as any).structuredResume || "{}",
                         aiReport: application.aiReport || "{}",
                     });
                     await roomClient.createRoom({

@@ -21,6 +21,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
         }
 
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
+        }
+
         const normalizedEmail = email.toLowerCase().trim();
 
         // -- RATE LIMITING -----------------------------------

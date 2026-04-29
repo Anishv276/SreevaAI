@@ -1,5 +1,4 @@
 ﻿"use client";
-
 import { useState } from "react";
 import { Plus, Trash2, Award, ExternalLink, Upload, FileCheck, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { PremiumMonthPicker } from "./premium-date-picker";
-
 interface CertificationItem {
     id: string;
     name: string;
@@ -19,12 +17,10 @@ interface CertificationItem {
     fileName?: string;
     isUploading?: boolean;
 }
-
 interface CertificationInfoProps {
     value: CertificationItem[];
     onChange: (value: CertificationItem[]) => void;
 }
-
 export function CertificationInfo({ value, onChange }: CertificationInfoProps) {
     const addCertification = () => {
         const newItem: CertificationItem = {
@@ -37,18 +33,14 @@ export function CertificationInfo({ value, onChange }: CertificationInfoProps) {
         };
         onChange([...value, newItem]);
     };
-
     const removeCertification = (id: string) => {
         onChange(value.filter(item => item.id !== id));
     };
-
     const updateCertification = (id: string, updates: Partial<CertificationItem>) => {
         onChange(value.map(item => item.id === id ? { ...item, ...updates } : item));
     };
-
     const handleFileUpload = async (id: string, file: File) => {
         updateCertification(id, { isUploading: true });
-        
         try {
             const presignedRes = await fetch("/api/upload/presigned", {
                 method: "POST",
@@ -59,19 +51,14 @@ export function CertificationInfo({ value, onChange }: CertificationInfoProps) {
                     type: "CERTIFICATION"
                 })
             });
-
             if (!presignedRes.ok) throw new Error("Failed to get upload URL");
-            
             const { uploadUrl, publicUrl } = await presignedRes.json();
-
             const uploadRes = await fetch(uploadUrl, {
                 method: "PUT",
                 headers: { "Content-Type": file.type },
                 body: file
             });
-
             if (!uploadRes.ok) throw new Error("Upload failed");
-
             updateCertification(id, {
                 fileName: file.name,
                 fileUrl: publicUrl,
@@ -83,9 +70,7 @@ export function CertificationInfo({ value, onChange }: CertificationInfoProps) {
             alert("Failed to upload certification. Please try again.");
         }
     };
-
     const inputClass = "h-12 rounded-2xl border-gray-100 bg-gray-50/30 px-4 text-sm font-medium transition-all focus:bg-white focus:border-[#F97316] focus:ring-4 focus:ring-orange-500/10 placeholder:text-gray-300";
-
     return (
         <div className="space-y-10 animate-in-fade">
             <div className="space-y-6">
@@ -111,7 +96,6 @@ export function CertificationInfo({ value, onChange }: CertificationInfoProps) {
                                 >
                                     <Trash2 className="h-5 w-5" />
                                 </button>
-                                
                                 <div className="grid gap-8 md:grid-cols-2 mt-2">
                                     <div className="space-y-3">
                                         <Label className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">Certification Name *</Label>
@@ -135,7 +119,6 @@ export function CertificationInfo({ value, onChange }: CertificationInfoProps) {
                                         />
                                     </div>
                                 </div>
-
                                 <div className="grid gap-8 md:grid-cols-2 mt-8">
                                     <PremiumMonthPicker 
                                         label="Issue Month"
@@ -156,7 +139,6 @@ export function CertificationInfo({ value, onChange }: CertificationInfoProps) {
                                         </div>
                                     </div>
                                 </div>
-
                                 <div className="mt-8">
                                     <Label className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1 mb-3 block">Upload Certificate / Badge</Label>
                                     {!item.fileName ? (
@@ -205,7 +187,6 @@ export function CertificationInfo({ value, onChange }: CertificationInfoProps) {
                                 </div>
                             </div>
                         ))}
-                        
                         <Button 
                             variant="ghost" 
                             onClick={addCertification}
@@ -219,4 +200,3 @@ export function CertificationInfo({ value, onChange }: CertificationInfoProps) {
         </div>
     );
 }
-

@@ -172,7 +172,7 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
     const SectionHeader = ({ icon: Icon, title, expanded }: { icon: any; title: string; expanded: boolean }) => (
         <button
             type="button"
-            onClick={() => setExpandedSection(expanded ? null : title.toLowerCase())}
+            onClick={() => setExpandedSection(expanded ? "" : title.toLowerCase())}
             className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 transition-colors hover:bg-slate-100"
         >
             <div className="flex items-center gap-3">

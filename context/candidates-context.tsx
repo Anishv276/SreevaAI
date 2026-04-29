@@ -12,6 +12,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 
 export type Candidate = {
     id: string;
+    fullName?: string;
     name: string;
     email: string;
     phone: string;
@@ -258,7 +259,8 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 const mappedCandidates = Array.isArray(rawCandidates)
                     ? rawCandidates.map((c: any) => ({
                         id: c.id.toString(),
-                        name: c.name || c.fullName || "Unknown Candidate",
+                        fullName: c.fullName || c.name || "Unknown Candidate",
+                        name: c.fullName || c.name || "Unknown Candidate",
                         email: c.email || "",
                         phone: c.phone || "",
                         location: c.location || "-",

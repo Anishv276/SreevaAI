@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -42,7 +41,6 @@ import {
     DropdownMenuLabel,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
 function formatCandidateStatusLabel(value?: string) {
     const normalized = String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
     if (!normalized) return "Pending";
@@ -55,11 +53,9 @@ function formatCandidateStatusLabel(value?: string) {
     if (normalized === "not qualified") return "Not Qualified";
     return normalized.replace(/\b\w/g, (ch) => ch.toUpperCase());
 }
-
 function normalizeStatusKey(value?: string) {
     return String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
 }
-
 export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     const { candidates, pagination, isLoading, error, fetchCandidates, clearError } = useCandidates();
     const { jobs } = useJobs();
@@ -74,12 +70,10 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [isBulkLoading, setIsBulkLoading] = useState(false);
-
     useEffect(() => {
         const handler = setTimeout(() => {
             let startDate: string | undefined;
             let endDate: string | undefined;
-
             if (timeline.type === "today") {
                 startDate = new Date().toISOString().split("T")[0];
                 endDate = startDate;
@@ -95,16 +89,12 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                 startDate = timeline.from;
                 endDate = timeline.to;
             }
-
             fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort);
         }, 200);
-
         return () => clearTimeout(handler);
     }, [driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, pageSize, fetchCandidates, scoreSort]);
-
     const handlePageChange = (newPage: number) => {
         if (newPage < 1 || newPage > pagination.totalPages) return;
-
         let startDate: string | undefined;
         let endDate: string | undefined;
         if (timeline.type === "today") {
@@ -122,10 +112,8 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
             startDate = timeline.from;
             endDate = timeline.to;
         }
-
         fetchCandidates(newPage, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort);
     };
-
     const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string; hiringStatus?: string }, successMsg: string) => {
         try {
             const res = await fetch(`/api/candidates/${applicationId}`, {
@@ -143,7 +131,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
             toast.error("Failed to update status");
         }
     };
-
     const handleSendInterviewLink = async (candidate: { id: string; name: string; interviewStatus?: string }) => {
         try {
             setSendingInterviewLinkId(candidate.id);
@@ -151,13 +138,11 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                 method: "POST",
             });
             const data = await res.json().catch(() => null);
-
             if (res.ok) {
                 toast.success(data?.message || `Interview link sent to ${candidate.name}`);
                 fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
                 return;
             }
-
             toast.error(data?.error || "Failed to send interview link");
         } catch {
             toast.error("Failed to send interview link");
@@ -165,12 +150,10 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
             setSendingInterviewLinkId(null);
         }
     };
-
     const filteredCandidates = candidates;
     const selectedCount = selectedIds.size;
     const selectedOnPage = filteredCandidates.filter((candidate: any) => selectedIds.has(candidate.id));
     const isAllSelected = filteredCandidates.length > 0 && selectedOnPage.length === filteredCandidates.length;
-
     const toggleSelectAll = () => {
         setSelectedIds((prev) => {
             const next = new Set(prev);
@@ -182,7 +165,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
             return next;
         });
     };
-
     const toggleSelected = (id: string) => {
         setSelectedIds((prev) => {
             const next = new Set(prev);
@@ -191,12 +173,10 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
             return next;
         });
     };
-
     const clearSelection = () => {
         setSelectedIds(new Set());
         setIsSelectionMode(false);
     };
-
     const handleBulkStatus = async (action: "hire" | "not_hired" | "reject" | "shortlist" | "delete") => {
         if (!selectedCount) return;
         try {
@@ -220,7 +200,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
             setIsBulkLoading(false);
         }
     };
-
     const handleBulkSendInterviewLink = async () => {
         if (!selectedCount) return;
         try {
@@ -232,12 +211,8 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
             );
             const failed = results.filter((result) => result.status === "rejected").length;
             const succeeded = results.length - failed;
-            if (succeeded > 0) {
-                toast.success(`Interview link sent to ${succeeded} candidate(s)`);
-            }
-            if (failed > 0) {
-                toast.error(`Failed to send interview link to ${failed} candidate(s)`);
-            }
+            if (succeeded > 0) toast.success(`Interview link sent to ${succeeded} candidate(s)`);
+            if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
             clearSelection();
             fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
         } catch {
@@ -246,9 +221,33 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
             setIsBulkLoading(false);
         }
     };
-
+    const handleBulkSendEmail = async (
+        emailType: "screening" | "hiring",
+        targetAction?: "shortlist" | "reject" | "hire" | "nothired"
+    ) => {
+        if (!selectedCount) return;
+        try {
+            setIsBulkLoading(true);
+            const res = await fetch("/api/candidates/bulk-email", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ids: Array.from(selectedIds), emailType, targetAction }),
+            });
+            const data = await res.json().catch(() => null);
+            if (res.ok) {
+                toast.success(data?.message || "Emails sent");
+                clearSelection();
+                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
+                return;
+            }
+            toast.error(data?.error || "Failed to send emails");
+        } catch {
+            toast.error("Failed to send emails");
+        } finally {
+            setIsBulkLoading(false);
+        }
+    };
     const driveTitle = jobs.find((job) => job.id === driveId)?.title || "Drive";
-
     return (
         <div className="space-y-4">
             <div className="rounded-[1.75rem] border border-white/40 bg-white/50 p-2.5 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.03)]">
@@ -320,9 +319,9 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                     </div>
                 </div>
             </div>
-
             {isSelectionMode && (
-                <div className="grid gap-2.5 rounded-2xl border border-gray-200 bg-white/80 p-3.5 shadow-none lg:grid-cols-[minmax(220px,1fr)_auto] lg:items-center">
+                <div className="rounded-2xl border border-gray-200 bg-white/80 p-3.5 shadow-none space-y-3">
+                    {/* Selection header */}
                     <div className="flex flex-wrap items-center gap-2.5">
                         <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2">
                             {isAllSelected ? <Square className="h-4 w-4 text-gray-700" /> : <CheckSquare className="h-4 w-4 text-gray-700" />}
@@ -330,7 +329,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                 {selectedCount} selected
                             </span>
                         </div>
-
                         <button
                             type="button"
                             onClick={toggleSelectAll}
@@ -339,7 +337,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                             {isAllSelected ? <Square className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
                             {isAllSelected ? "Deselect" : "Select All"}
                         </button>
-
                         <Button
                             size="sm"
                             variant="ghost"
@@ -351,86 +348,105 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                     </div>
 
                     {selectedCount > 0 && (
-                        <div className="flex flex-col gap-2.5">
-                            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                                <div className="rounded-2xl border border-white/70 bg-white/80 px-3 py-2">
-                                    <p className="text-[9px] font-black uppercase tracking-[0.22em] text-gray-400">Decision</p>
-                                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                                        <Button
-                                            size="sm"
-                                            onClick={() => handleBulkStatus("shortlist")}
-                                            disabled={isBulkLoading}
-                                            className="h-8.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
-                                        >
-                                            <Target className="h-3.5 w-3.5" />
-                                            Shortlist
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            onClick={() => handleBulkStatus("reject")}
-                                            disabled={isBulkLoading}
-                                            className="h-9 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
-                                        >
-                                            <UserX className="h-3.5 w-3.5" />
-                                            Reject
-                                        </Button>
-                                    </div>
+                        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                            {/* Group 1: Shortlist */}
+                            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 px-3 py-2.5">
+                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-emerald-600 mb-2">Shortlist</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button
+                                        size="sm"
+                                        onClick={() => handleBulkStatus("shortlist")}
+                                        disabled={isBulkLoading}
+                                        className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                    >
+                                        <Target className="h-3.5 w-3.5" /> Shortlist
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => handleBulkStatus("reject")}
+                                        disabled={isBulkLoading}
+                                        className="h-8 px-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                    >
+                                        <UserX className="h-3.5 w-3.5" /> Reject
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => handleBulkSendEmail("screening")}
+                                        disabled={isBulkLoading}
+                                        title="Send appropriate email (shortlisted/rejected) based on current status"
+                                        className="h-8 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                    >
+                                        <Mail className="h-3.5 w-3.5" /> Send Email
+                                    </Button>
                                 </div>
+                            </div>
 
-                                <div className="rounded-2xl border border-white/70 bg-white/80 px-3 py-2">
-                                    <p className="text-[9px] font-black uppercase tracking-[0.22em] text-gray-400">Hiring</p>
-                                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                                        <Button
-                                            size="sm"
-                                            onClick={() => handleBulkStatus("hire")}
-                                            disabled={isBulkLoading}
-                                            className="h-8.5 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
-                                        >
-                                            <BadgeCheck className="h-3.5 w-3.5" />
-                                            Hire
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            onClick={() => handleBulkStatus("not_hired")}
-                                            disabled={isBulkLoading}
-                                            className="h-8.5 px-3.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
-                                        >
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                            Not Hired
-                                        </Button>
-                                    </div>
+                            {/* Group 2: Hiring */}
+                            <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 px-3 py-2.5">
+                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-indigo-600 mb-2">Hire</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button
+                                        size="sm"
+                                        onClick={() => handleBulkStatus("hire")}
+                                        disabled={isBulkLoading}
+                                        className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                    >
+                                        <BadgeCheck className="h-3.5 w-3.5" /> Hire
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => handleBulkStatus("not_hired")}
+                                        disabled={isBulkLoading}
+                                        className="h-8 px-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                    >
+                                        <UserX className="h-3.5 w-3.5" /> Not Hired
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => handleBulkSendEmail("hiring")}
+                                        disabled={isBulkLoading}
+                                        title="Send appropriate email (hired/not hired) based on current status"
+                                        className="h-8 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                    >
+                                        <Mail className="h-3.5 w-3.5" /> Send Email
+                                    </Button>
                                 </div>
+                            </div>
 
-                                <div className="rounded-2xl border border-white/70 bg-white/80 px-3 py-2">
-                                    <p className="text-[9px] font-black uppercase tracking-[0.22em] text-gray-400">Resend & Delete</p>
-                                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                                        <Button
-                                            size="sm"
-                                            onClick={handleBulkSendInterviewLink}
-                                            disabled={isBulkLoading}
-                                            className="h-9 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
-                                        >
-                                            <RefreshCw className="h-3.5 w-3.5" />
-                                            Resend
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => handleBulkStatus("delete")}
-                                            disabled={isBulkLoading}
-                                            className="h-8.5 px-3.5 rounded-xl border-red-200 text-red-600 font-bold text-xs flex items-center gap-1.5 hover:bg-red-50"
-                                        >
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                            Delete
-                                        </Button>
-                                    </div>
+                            {/* Group 3: Interview */}
+                            <div className="rounded-2xl border border-orange-100 bg-orange-50/40 px-3 py-2.5">
+                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 mb-2">Interview Link</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button
+                                        size="sm"
+                                        onClick={handleBulkSendInterviewLink}
+                                        disabled={isBulkLoading}
+                                        className="h-8 px-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                    >
+                                        <RefreshCw className="h-3.5 w-3.5" /> Resend Link
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* Group 4: Delete */}
+                            <div className="rounded-2xl border border-red-100 bg-red-50/40 px-3 py-2.5">
+                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-red-500 mb-2">Remove</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleBulkStatus("delete")}
+                                        disabled={isBulkLoading}
+                                        className="h-8 px-3 rounded-xl border-red-200 text-red-600 font-bold text-xs flex items-center gap-1.5 hover:bg-red-50"
+                                    >
+                                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                                    </Button>
                                 </div>
                             </div>
                         </div>
                     )}
                 </div>
             )}
-
             {error && (
                 <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-center justify-between animate-in slide-in-from-top-4">
                     <div className="flex items-center gap-3">
@@ -442,7 +458,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                     </button>
                 </div>
             )}
-
             <div className="group relative bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_24px_rgba(15,23,42,0.03)] overflow-hidden transition-all duration-700 hover:shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
                 <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-400/0 via-[#F97316]/40 to-orange-400/0" />
                 <div className="relative w-full overflow-auto max-h-[65vh]">
@@ -525,6 +540,8 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                 </TableRow>
                             ) : (
                                 filteredCandidates.map((candidate: any, index: number) => {
+                                    const displayName = candidate.fullName || candidate.name || "Unknown Candidate";
+                                    const displayEmail = candidate.email || "";
                                     const statusValue = candidate.resumeStatus || candidate.status;
                                     const statusKey = normalizeStatusKey(statusValue) || "pending";
                                     const statusLabel = formatCandidateStatusLabel(statusValue);
@@ -542,7 +559,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                         interviewStatusKey === "finished" ||
                                         statusKey === "shortlisted" ||
                                         hiringStatusKey === "hired";
-
                                     return (
                                         <TableRow
                                             key={candidate.id}
@@ -559,7 +575,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                             onClick={(e) => e.stopPropagation()}
                                                             checked={selectedIds.has(candidate.id)}
                                                             onCheckedChange={() => toggleSelected(candidate.id)}
-                                                            aria-label={`Select ${candidate.name}`}
+                                                            aria-label={`Select ${displayName}`}
                                                         />
                                                 </TableCell>
                                             )}
@@ -570,17 +586,16 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                 <div className="flex items-center gap-4">
                                                     <div className="relative group/avatar">
                                                         <Avatar className="h-11 w-11 border-2 border-white shadow-sm ring-1 ring-gray-100 group-hover/avatar:scale-105 transition-transform duration-300">
-                                                            <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${candidate.name}`} />
-                                                            <AvatarFallback>{candidate.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                                                            <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${displayName}`} />
+                                                            <AvatarFallback>{displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
                                                         </Avatar>
                                                     </div>
                                                     <div className="flex flex-col relative">
-                                                        <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{candidate.name}</span>
-                                                        <span className="text-[11px] text-gray-400 font-bold mt-0.5">{candidate.email}</span>
+                                                        <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{displayName}</span>
+                                                        <span className="text-[11px] text-gray-400 font-bold mt-0.5">{displayEmail}</span>
                                                     </div>
                                                 </div>
                                             </TableCell>
-
                                             <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
                                                 <div className="flex justify-center">
                                                     <Badge className={cn(
@@ -593,7 +608,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                     </Badge>
                                                 </div>
                                             </TableCell>
-
                                             <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
                                                 <div className="flex justify-center items-center h-full">
                                                     <Badge variant="secondary" className={cn(
@@ -671,7 +685,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                     <DropdownMenuContent align="end" className="w-64 p-2 rounded-xl shadow-xl border-gray-100 bg-white">
                                                         <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Interview</DropdownMenuLabel>
                                                         <DropdownMenuItem
-                                                            onClick={() => handleSendInterviewLink({ id: candidate.id, name: candidate.name, interviewStatus: candidate.interviewStatus })}
+                                                            onClick={() => handleSendInterviewLink({ id: candidate.id, name: displayName, interviewStatus: candidate.interviewStatus })}
                                                             disabled={sendingInterviewLinkId === candidate.id || !canResendInterview}
                                                             className={cn(
                                                                 "rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors",
@@ -685,13 +699,12 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                             <RefreshCw className={cn("h-4 w-4 mr-2", sendingInterviewLinkId === candidate.id && "animate-spin")} />
                                                             {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Interview Link"}
                                                         </DropdownMenuItem>
-
                                                         <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Shortlist</DropdownMenuLabel>
-                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${candidate.name} shortlisted`)} className="rounded-lg px-3 py-2 font-bold text-emerald-600 cursor-pointer focus:text-emerald-700 focus:bg-emerald-50 transition-colors">
+                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${displayName} shortlisted`)} className="rounded-lg px-3 py-2 font-bold text-emerald-600 cursor-pointer focus:text-emerald-700 focus:bg-emerald-50 transition-colors">
                                                             <Target className="h-4 w-4 mr-2" />
                                                             Shortlist Candidate
                                                         </DropdownMenuItem>
-                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${candidate.name} rejected`)} className="rounded-lg px-3 py-2 font-bold text-rose-600 cursor-pointer focus:text-rose-700 focus:bg-rose-50 transition-colors">
+                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${displayName} rejected`)} className="rounded-lg px-3 py-2 font-bold text-rose-600 cursor-pointer focus:text-rose-700 focus:bg-rose-50 transition-colors">
                                                             <UserX className="h-4 w-4 mr-2" />
                                                             Reject Candidate
                                                         </DropdownMenuItem>
@@ -699,10 +712,9 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                             <Mail className="h-4 w-4 mr-2" />
                                                             Send Mail
                                                         </DropdownMenuItem>
-
                                                         <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Hire</DropdownMenuLabel>
                                                         <DropdownMenuItem
-                                                            onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${candidate.name} hired - confirmation email sent`)}
+                                                            onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${displayName} hired - confirmation email sent`)}
                                                             className="rounded-lg px-3 py-2 font-bold cursor-pointer text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
                                                         >
                                                             <BadgeCheck className="h-4 w-4 mr-2" />
@@ -713,7 +725,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                                 try {
                                                                     const res = await fetch(`/api/candidates/${candidate.id}`, { method: "DELETE" });
                                                                     if (res.ok) {
-                                                                        toast.success(`${candidate.name} deleted`);
+                                                                        toast.success(`${displayName} deleted`);
                                                                         fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
                                                                     } else {
                                                                         const data = await res.json().catch(() => null);
@@ -739,7 +751,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                     </Table>
                 </div>
             </div>
-
             <div className="flex flex-col gap-4 border-t border-white/20 bg-white/20 px-4 py-5 backdrop-blur-xl rounded-2xl lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-wrap items-center gap-3">
                     <p className="text-[13px] font-medium text-gray-500">

@@ -64,6 +64,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             }, { status: 400 });
         }
 
+        if (!application.email) {
+            return NextResponse.json({ error: "Candidate email is missing" }, { status: 400 });
+        }
+
         const newToken = uuidv4();
         const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
 

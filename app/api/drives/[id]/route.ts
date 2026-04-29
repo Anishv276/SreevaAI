@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
-        
+
         const drive = await prisma.drive.findFirst({
             where: {
                 id
@@ -52,7 +52,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 googleVoiceName: true,
                 ttsProvider: true,
                 organization: {
-                    select: { 
+                    select: {
                         status: true,
                         name: true,
                         logoUrl: true,
@@ -97,9 +97,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         });
     } catch (error: any) {
         console.error("[GET_DRIVE_ERROR]:", error);
-        return NextResponse.json({ 
-            error: "Failed to fetch drive", 
-            details: error.message 
+        return NextResponse.json({
+            error: "Failed to fetch drive",
+            details: error.message
         }, { status: 500 });
     }
 }
@@ -154,7 +154,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         }
 
         const updateData: any = {};
-        
+
         if (data.title !== undefined) updateData.title = data.title;
         if (data.description !== undefined) updateData.description = data.description;
         if (data.role !== undefined) updateData.role = data.role;
@@ -174,10 +174,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.jdPreviewUrl !== undefined) {
             updateData.jdPreviewUrl = data.jdPreviewUrl?.startsWith("blob:") ? undefined : data.jdPreviewUrl;
         }
-        
+
         if (data.registrationFields !== undefined) updateData.registrationFields = JSON.stringify(data.registrationFields);
-        
+
         if (data.screeningThreshold !== undefined || (data as any).screeningCriteria !== undefined || (data as any).shortlistMode !== undefined) {
+            if (data.screeningThreshold !== undefined) updateData.screeningThreshold = data.screeningThreshold;
+
             const rawCriteria = (data as any).screeningCriteria;
             const parsedCriteria = typeof rawCriteria === "string"
                 ? safeJsonParse(rawCriteria, {})
@@ -191,7 +193,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         }
 
         // Add new interview fields to PATCH
-        
+
         if (data.interviewLanguage !== undefined) updateData.interviewLanguage = data.interviewLanguage;
         if (data.interviewTime !== undefined) updateData.interviewTime = data.interviewTime;
         if (data.interviewAntiCheat !== undefined) updateData.proctoringLevel = data.interviewAntiCheat;
@@ -212,7 +214,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             })
         );
         if (data.aiName !== undefined) updateData.aiName = data.aiName;
-        
+
 
         if (Object.keys(updateData).length === 0) {
             return NextResponse.json(
@@ -235,7 +237,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             stack: error.stack,
             code: error.code
         });
-        return NextResponse.json({ 
+        return NextResponse.json({
             error: "Failed to update drive",
             details: error.message,
             code: error.code
@@ -258,7 +260,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
                     applications: {
                         select: {
                             resumeUrl: true,
-                            passportUrl: true,
+
                             interview: {
                                 select: {
                                     interviewRecordingUrl: true,
@@ -275,7 +277,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
                 if (driveWithApps.jdPreviewUrl) urls.push(driveWithApps.jdPreviewUrl);
                 for (const app of driveWithApps.applications) {
                     if (app.resumeUrl) urls.push(app.resumeUrl);
-                    if (app.passportUrl) urls.push(app.passportUrl);
                     if (app.interview?.interviewRecordingUrl) urls.push(app.interview.interviewRecordingUrl);
                     if (app.interview?.snapshots?.length) urls.push(...app.interview.snapshots);
                 }

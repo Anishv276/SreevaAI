@@ -250,16 +250,17 @@ export async function POST(request: Request) {
                 jdFileName: data.jdFileName || null,
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
                 screeningCriteria: JSON.stringify(mergedScreeningCriteria),
+                screeningThreshold: data.screeningThreshold ?? 60,
 
                 // Interview configuration
                 interviewLanguage: data.interviewLanguage || "English",
                 interviewTime: data.interviewTime ?? null,
                 proctoringLevel: data.interviewAntiCheat || "Medium",
                 interviewQuestions: data.interviewQuestions ? JSON.stringify(data.interviewQuestions) : "[]",
-                
+
                 aiName: data.aiName || "Ishitha",
-                
-                isPassportRequired: data.isPassportRequired || false,
+
+
 
                 orgId: (session as any).orgId,
                 creatorId: (session as any).userId,
@@ -313,7 +314,6 @@ export async function DELETE(request: Request) {
                     applications: {
                         select: {
                             resumeUrl: true,
-                            passportUrl: true,
                             interview: {
                                 select: {
                                     interviewRecordingUrl: true,
@@ -330,7 +330,7 @@ export async function DELETE(request: Request) {
                 if (drive.jdPreviewUrl) urls.push(drive.jdPreviewUrl);
                 for (const app of drive.applications) {
                     if (app.resumeUrl) urls.push(app.resumeUrl);
-                    if (app.passportUrl) urls.push(app.passportUrl);
+
                     if (app.interview?.interviewRecordingUrl) urls.push(app.interview.interviewRecordingUrl);
                     if (app.interview?.snapshots?.length) urls.push(...app.interview.snapshots);
                 }

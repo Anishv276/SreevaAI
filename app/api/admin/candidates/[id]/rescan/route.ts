@@ -67,7 +67,7 @@ export async function POST(
         const screeningCriteria = safeJsonParse((drive as any).screeningCriteria, {});
         const threshold = Number((screeningCriteria as any)?.threshold ?? drive.screeningThreshold ?? 0);
         const scoringInput = {
-            resume: safeJsonParse(application.structuredResume, {}),
+            resume: safeJsonParse((application as any).structuredResume, {}),
             jd: safeJsonParse(drive.extractedDetails, {}),
             resume_raw_text: resumeText,
             jd_raw_text: jdText,

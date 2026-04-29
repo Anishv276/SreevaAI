@@ -305,7 +305,7 @@ export async function DELETE(
         // 3. Get all applications and their files
         const applications = await prisma.application.findMany({
             where: { driveId: { in: driveIds } },
-            select: { id: true, resumeUrl: true, passportUrl: true }
+            select: { id: true, resumeUrl: true }
         });
         const appIds = applications.map((app: (typeof applications)[number]) => app.id);
 
@@ -324,7 +324,6 @@ export async function DELETE(
         drives.forEach(d => { if (d.jdPreviewUrl) fileUrlsToDelete.push(d.jdPreviewUrl); });
         applications.forEach(app => {
             if (app.resumeUrl) fileUrlsToDelete.push(app.resumeUrl);
-            if (app.passportUrl) fileUrlsToDelete.push(app.passportUrl);
         });
         interviews.forEach(intv => {
             if (intv.interviewRecordingUrl) fileUrlsToDelete.push(intv.interviewRecordingUrl);
@@ -345,21 +344,52 @@ export async function DELETE(
         // -- STEP 3: DATABASE CLEANUP (Cascading) ---------------------------
         
         await prisma.$transaction(async (tx) => {
+            // 1. Delete Support Tickets
+            await tx.supportTicket.deleteMany({
+                where: {
+                    OR: [
+                        { interview: { application: { drive: { orgId: id } } } },
+                        { applicationId: { in: appIds } }
+                    ]
+                }
+            });
+
+            // 2. Delete Interviews
             await tx.interview.deleteMany({
                 where: { application: { drive: { orgId: id } } }
             });
+
+            // 3. Delete Applications
             await tx.application.deleteMany({
                 where: { drive: { orgId: id } }
             });
+
+            // 4. Delete Resume Candidates
+            await tx.resumeCandidate.deleteMany({
+                where: { drive: { orgId: id } }
+            });
+
+            // 5. Delete Resume Batches
+            await tx.resumeBatch.deleteMany({
+                where: { drive: { orgId: id } }
+            });
+
+            // 6. Delete Drives
             await tx.drive.deleteMany({
                 where: { orgId: id }
             });
+
+            // 7. Delete Org Invites
             await tx.orgInvite.deleteMany({
                 where: { orgId: id }
             });
+
+            // 8. Delete Users
             await tx.user.deleteMany({
                 where: { orgId: id }
             });
+
+            // 9. Delete Organization
             await tx.organization.delete({
                 where: { id }
             });

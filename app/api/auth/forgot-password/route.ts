@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendSuperAdminGmailEmail, sendGmailEmail } from "@/lib/google-auth";
+import { isRateLimited } from "@/lib/ratelimit";
 
 export async function POST(request: Request) {
     try {
@@ -11,6 +12,13 @@ export async function POST(request: Request) {
         }
 
         const normalizedEmail = email.toLowerCase().trim();
+
+        const isLimited = await isRateLimited(`otp:${normalizedEmail}`, 1, 30);
+        if (isLimited) {
+            return NextResponse.json({ 
+                error: "Please wait 30 seconds before requesting another code." 
+            }, { status: 429 });
+        }
 
         // 1. Identify Identity (SuperAdmin or OrgAdmin)
         const superAdminRecord = await prisma.superAdmin.findUnique({

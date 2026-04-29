@@ -77,10 +77,10 @@ export default function OrgDrivesPage({ params }: { params: Promise<{ id: string
                             {/* Simple container for the JobCard to match admin style */}
                                 <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
                                     <h3 className="font-bold text-gray-900">{drive.title}</h3>
-                                    <p className="text-sm text-gray-500">{drive.location || 'Remote'}</p>
+                                    <p className="text-sm text-gray-500">{(drive as any).location || 'Remote'}</p>
                                 </div>
                             <div className="absolute top-4 right-4 text-[9px] font-black uppercase tracking-widest px-3 py-1 bg-white/90 backdrop-blur border rounded-full text-gray-900 shadow-sm opacity-60">
-                                {drive.status}
+                                {(drive as any).status}
                             </div>
                         </div>
                     ))}

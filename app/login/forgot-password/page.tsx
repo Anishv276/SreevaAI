@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -42,10 +42,18 @@ function ForgotPasswordContent() {
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
+    const [resendTimer, setResendTimer] = useState(0);
+
+    useEffect(() => {
+        if (resendTimer > 0) {
+            const timer = setTimeout(() => setResendTimer(resendTimer - 1), 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [resendTimer]);
 
     // Step 1: Send OTP
-    const handleSendOTP = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSendOTP = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
         setLoading(true);
         try {
             const res = await fetch("/api/auth/forgot-password", {
@@ -60,6 +68,7 @@ function ForgotPasswordContent() {
             }
             toast.success("Security code sent to your email");
             setStep("OTP");
+            setResendTimer(30);
         } catch {
             toast.error("Connectivity error. Try again.");
         } finally {
@@ -238,28 +247,46 @@ function ForgotPasswordContent() {
                                         </button>
                                     </div>
 
-                                    <div className="flex justify-between gap-2 px-2">
-                                        {[...Array(6)].map((_, i) => (
-                                            <div
-                                                key={i}
-                                                className={cn(
-                                                    "w-12 h-14 rounded-xl border-2 flex items-center justify-center text-xl font-black transition-all",
-                                                    otp[i] ? "border-[#F97316] bg-white text-[#F97316] shadow-[0_8px_20px_rgba(249,115,22,0.15)]" : "border-gray-100 bg-gray-50 text-gray-200"
-                                                )}
-                                            >
-                                                {otp[i] || "0"}
-                                            </div>
-                                        ))}
+                                    <div className="relative h-14">
+                                        <div className="flex justify-between gap-2 px-2 absolute inset-0 pointer-events-none">
+                                            {[...Array(6)].map((_, i) => (
+                                                <div
+                                                    key={i}
+                                                    className={cn(
+                                                        "w-12 h-14 rounded-xl border-2 flex items-center justify-center text-xl font-black transition-all",
+                                                        otp[i] ? "border-[#F97316] bg-white text-[#F97316] shadow-[0_8px_20px_rgba(249,115,22,0.15)]" : "border-gray-100 bg-gray-50 text-gray-200"
+                                                    )}
+                                                >
+                                                    {otp[i] || "0"}
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            maxLength={6}
+                                            value={otp}
+                                            onChange={e => setOtp(e.target.value.replace(/[^0-9]/g, ""))}
+                                            className="absolute inset-0 opacity-0 cursor-text text-center focus:outline-none tracking-[2em]"
+                                        />
                                     </div>
 
-                                    <input
-                                        autoFocus
-                                        type="text"
-                                        maxLength={6}
-                                        value={otp}
-                                        onChange={e => setOtp(e.target.value.replace(/[^0-9]/g, ""))}
-                                        className="absolute inset-0 opacity-0 cursor-default"
-                                    />
+                                    <div className="text-center mt-4">
+                                        {resendTimer > 0 ? (
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                                                Resend code in <span className="text-[#F97316] font-black">{resendTimer}s</span>
+                                            </p>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSendOTP()}
+                                                className="text-[10px] font-black text-[#F97316] uppercase tracking-widest hover:underline"
+                                            >
+                                                Resend Code
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                                 
                                 <button

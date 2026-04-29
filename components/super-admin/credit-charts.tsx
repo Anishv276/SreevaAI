@@ -11,27 +11,8 @@ interface OrgCreditStat {
     creditsUsed: number;
 }
 
-export function OrgCreditPieChart() {
-    const [stats, setStats] = useState<OrgCreditStat[]>([]);
-    const [loading, setLoading] = useState(true);
+export function OrgCreditPieChart({ stats = [], loading = false }: { stats?: OrgCreditStat[], loading?: boolean }) {
     const [activeIndex, setActiveIndex] = useState<number | null>(null);
-
-    useEffect(() => {
-        const fetchStats = async () => {
-            try {
-                const res = await fetch("/api/super-admin/orgs?limit=1");
-                if (res.ok) {
-                    const data = await res.json();
-                    setStats(data.stats.orgCreditStats || []);
-                }
-            } catch (err) {
-                console.error("Chart fetch failed", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchStats();
-    }, []);
 
     const totalUsed = stats.reduce((acc, curr) => acc + curr.creditsUsed, 0);
 
@@ -132,26 +113,7 @@ export function OrgCreditPieChart() {
     );
 }
 
-export function OrgCreditBarGraph() {
-    const [stats, setStats] = useState<OrgCreditStat[]>([]);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        const fetchStats = async () => {
-            try {
-                const res = await fetch("/api/super-admin/orgs?limit=1");
-                if (res.ok) {
-                    const data = await res.json();
-                    setStats(data.stats.orgCreditStats || []);
-                }
-            } catch (err) {
-                console.error("Chart fetch failed", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchStats();
-    }, []);
+export function OrgCreditBarGraph({ stats = [], loading = false }: { stats?: OrgCreditStat[], loading?: boolean }) {
 
     return (
         <div className="bg-white border border-gray-100 rounded-[2.5rem] p-8 shadow-sm h-full flex flex-col group hover:shadow-[0_20px_60px_rgba(0,0,0,0.04)] transition-all duration-500">
@@ -229,27 +191,8 @@ interface OrgInterviewStat {
     count: number;
 }
 
-export function OrgInterviewPieChart() {
-    const [stats, setStats] = useState<OrgInterviewStat[]>([]);
-    const [loading, setLoading] = useState(true);
+export function OrgInterviewPieChart({ stats = [], loading = false }: { stats?: OrgInterviewStat[], loading?: boolean }) {
     const [activeIndex, setActiveIndex] = useState<number | null>(null);
-
-    useEffect(() => {
-        const fetchStats = async () => {
-            try {
-                const res = await fetch("/api/super-admin/orgs?limit=1");
-                if (res.ok) {
-                    const data = await res.json();
-                    setStats(data.stats.orgInterviewStats || []);
-                }
-            } catch (err) {
-                console.error("Chart fetch failed", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchStats();
-    }, []);
 
     const totalInterviews = stats.reduce((acc, curr) => acc + curr.count, 0);
 

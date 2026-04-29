@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { resumeQueue } from "@/lib/queue";
 import { bulkDeleteCandidatesSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
 import { deleteCandidateEmbeddings } from "@/lib/pinecone";
@@ -166,6 +165,7 @@ export async function GET(request: Request) {
             return {
                 id: app.id,
                 driveId: app.driveId,
+                fullName: app.fullName,
                 name: app.fullName,
                 email: app.email,
                 role: app.drive?.role || app.drive?.title || "Unknown Role",
@@ -276,6 +276,7 @@ export async function DELETE(request: Request) {
         }
 
         try {
+            const { resumeQueue } = await import("@/lib/queue");
             const waitingResume = await resumeQueue.getJobs(['waiting', 'delayed', 'active']);
             for (const job of waitingResume) {
                 if (validIds.includes(job.data.applicationId)) {

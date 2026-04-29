@@ -1,40 +1,5 @@
 import { Queue } from 'bullmq';
-import IORedis from 'ioredis';
-
-const REDIS_URL = process.env.REDIS_URL;
-
-if (!REDIS_URL && process.env.NODE_ENV === 'production') {
-  console.error("CRITICAL: REDIS_URL is not defined. Background processing (BullMQ) will be disabled.");
-}
-
-/**
- * Shared IORedis connection for BullMQ.
- * - lazyConnect: true  -> don't connect until first command, so Next.js won't
- *                         hard-crash at startup if Redis isn't ready yet.
- * - retryStrategy     -> keeps retrying with back-off instead of throwing.
- * - maxRetriesPerRequest: null -> required by BullMQ.
- */
-function createRedisConnection(): IORedis {
-  return new IORedis(REDIS_URL || 'redis://localhost:6379', {
-    maxRetriesPerRequest: null,
-    lazyConnect: true,
-    retryStrategy: (times: number) => Math.min(times * 500, 10_000), // max 10s between retries
-    enableReadyCheck: false,
-  });
-}
-
-// Singleton connection to prevent leaking connections in Next.js HMR/Dev mode
-let redisConnection: IORedis;
-
-if (process.env.NODE_ENV === 'production') {
-  redisConnection = createRedisConnection();
-} else {
-  // Avoid creating multiple connections during hot-reloads in development
-  if (!(global as any)._redisConnection) {
-    (global as any)._redisConnection = createRedisConnection();
-  }
-  redisConnection = (global as any)._redisConnection;
-}
+import redisConnection from "./redis";
 
 /**
  * QUEUE DEFINITIONS
