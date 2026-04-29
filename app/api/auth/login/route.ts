@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { createSession, normalizeRole } from "@/lib/auth";
-import { isRateLimited } from "@/lib/ratelimit";
+import { isRateLimited } from "@/lib/rate-limit";
 
 type SuperAdminDelegate = {
     findUnique: (args: { where: { email: string } }) => Promise<{

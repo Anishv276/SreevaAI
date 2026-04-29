@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
-import { isRateLimited } from "@/lib/ratelimit";
+import { isRateLimited } from "@/lib/rate-limit";
+import { invalidateUserSessions } from "@/lib/auth";
 
 export async function POST(request: Request) {
     try {
@@ -56,6 +57,7 @@ export async function POST(request: Request) {
             });
             if (updatedUser.count > 0) {
                 isValidOtp = true;
+                await invalidateUserSessions(user.id);
                 
                 if (superAdmin) {
                     await prisma.superAdmin.update({
@@ -76,6 +78,7 @@ export async function POST(request: Request) {
             });
             if (deletedToken.count > 0) {
                 isValidOtp = true;
+                await invalidateUserSessions(superAdmin.id);
                 
                 await prisma.superAdmin.update({
                     where: { id: superAdmin.id },

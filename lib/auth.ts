@@ -7,9 +7,12 @@ function getJwtSecret(): string {
     const secret = process.env.JWT_SECRET?.trim();
     if (secret) return secret;
 
-    throw new Error(
-        "JWT_SECRET is required. Please set a strong secret in your .env file."
-    );
+    if (process.env.NODE_ENV === "production") {
+        throw new Error(
+            "JWT_SECRET is required in production environments. Please set it in your environment."
+        );
+    }
+    return "development-jwt-fallback-secret-keep-secure";
 }
 
 function getSecretKey() {
@@ -62,9 +65,24 @@ export async function verifySession(token: string): Promise<SessionUser | null> 
             if (isBlacklisted) return null;
         }
         const { payload } = await jwtVerify(token, getSecretKey());
-        return payload as unknown as SessionUser;
+        const sessionUser = payload as unknown as any;
+
+        if (redis && sessionUser?.userId) {
+            const lastPwdChange = await redis.get(`auth:pwd_change:${sessionUser.userId}`);
+            if (lastPwdChange && sessionUser.iat && sessionUser.iat * 1000 < Number(lastPwdChange)) {
+                return null;
+            }
+        }
+
+        return sessionUser as unknown as SessionUser;
     } catch {
         return null;
+    }
+}
+
+export async function invalidateUserSessions(userId: string) {
+    if (redis) {
+        await redis.set(`auth:pwd_change:${userId}`, Date.now().toString());
     }
 }
 

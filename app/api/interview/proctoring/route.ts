@@ -5,7 +5,7 @@ import { generateId } from "@/lib/ids";
 import { getProctoringCategory, normalizeProctoringEvents, type ProctoringEvent } from "@/lib/proctoring";
 import { DEFAULT_PROCTORING_SIGNALS, isProctoringSignalEnabled, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { z } from "zod";
-import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { isInterviewTokenRequired, isInterviewReopenAllowed } from "@/lib/interview-access";
 
 export const runtime = "nodejs";
 
@@ -51,13 +51,23 @@ export async function POST(req: Request) {
     const { applicationId, interviewToken } = result.data;
     const requireInterviewToken = isInterviewTokenRequired();
 
-    // -- AUTHENTICATION --------------------------------
+    // -- AUTHENTICATION & LIFECYCLE --------------------
     const authCheck = await prisma.interview.findUnique({
       where: { applicationId },
-      select: { accessToken: true }
+      select: { accessToken: true, status: true, expiresAt: true }
     });
     if (requireInterviewToken && (!authCheck || authCheck.accessToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid security token" }, { status: 401 });
+    }
+
+    const allowReopen = isInterviewReopenAllowed();
+
+    if (!allowReopen && authCheck && (authCheck.status === "COMPLETED" || authCheck.status === "FAILED")) {
+      return NextResponse.json({ error: "Access Denied: Interview already finalized" }, { status: 403 });
+    }
+
+    if (!allowReopen && authCheck && authCheck.expiresAt && authCheck.expiresAt < new Date()) {
+      return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
     }
 
     const requestedEvents = normalizeProctoringEvents(result.data.events);

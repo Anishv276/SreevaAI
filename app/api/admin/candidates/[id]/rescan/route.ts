@@ -34,6 +34,7 @@ export async function POST(
                         shortlistMode: true,
                         extractedDetails: true,
                         orgId: true,
+                        screeningCriteria: true,
                     }
                 }
             }
@@ -52,7 +53,7 @@ export async function POST(
             }, { status: 400 });
         }
 
-        let resumeText = (application as any).resumeText || "";
+        let resumeText = application.resumeText || "";
         if (!resumeText && application.aiReport) {
             try {
                 const report = JSON.parse(application.aiReport);
@@ -64,10 +65,18 @@ export async function POST(
             return NextResponse.json({ error: "No resume text found to scan. Please re-upload resume." }, { status: 400 });
         }
 
-        const screeningCriteria = safeJsonParse((drive as any).screeningCriteria, {});
-        const threshold = Number((screeningCriteria as any)?.threshold ?? drive.screeningThreshold ?? 0);
+        let structuredResume = {};
+        if (application.aiReport) {
+            try {
+                const report = JSON.parse(application.aiReport);
+                structuredResume = report.data || report || {};
+            } catch (e) {}
+        }
+
+        const screeningCriteria = safeJsonParse<any>(drive.screeningCriteria, {});
+        const threshold = Number(screeningCriteria?.threshold ?? drive.screeningThreshold ?? 0);
         const scoringInput = {
-            resume: safeJsonParse((application as any).structuredResume, {}),
+            resume: structuredResume,
             jd: safeJsonParse(drive.extractedDetails, {}),
             resume_raw_text: resumeText,
             jd_raw_text: jdText,

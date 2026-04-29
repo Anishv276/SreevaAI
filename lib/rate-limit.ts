@@ -1,9 +1,39 @@
 import redis from "@/lib/redis";
 
-export async function isRateLimited(key: string, limit: number, windowSeconds: number) {
-  const limiter = new RateLimiter(key, limit, windowSeconds);
-  const { success } = await limiter.check('global');
-  return !success;
+/**
+ * Basic Redis-based Rate Limiter.
+ * Counts requests within a sliding window.
+ */
+export async function isRateLimited(key: string, limit: number, windowSeconds: number): Promise<boolean> {
+    if (!redis) return false; // Fail open if Redis is down
+
+    const now = Date.now();
+    const windowStart = now - (windowSeconds * 1000);
+    const redisKey = `ratelimit:${key}`;
+
+    try {
+        const multi = redis.multi();
+        
+        // Remove old entries
+        multi.zremrangebyscore(redisKey, 0, windowStart);
+        // Add new entry with random suffix to ensure unique members in the sorted set
+        multi.zadd(redisKey, now, `${now}-${Math.random()}`);
+        // Count entries in window
+        multi.zcard(redisKey);
+        // Set expiry on the whole key
+        multi.expire(redisKey, windowSeconds + 1);
+
+        const results = await multi.exec();
+        if (!results) return false;
+
+        // Results is an array of responses: [ [err, result], [err, result], ... ]
+        // multi.zcard is the 3rd operation (index 2).
+        const count = results[2][1] as number;
+        return count > limit;
+    } catch (error) {
+        console.error("Rate Limiter Error:", error);
+        return false; // Fail open
+    }
 }
 
 export class RateLimiter {
@@ -17,33 +47,14 @@ export class RateLimiter {
     this.windowSeconds = windowSeconds;
   }
 
-  /**
-   * Checks if the identifier is within the rate limit.
-   * Returns an object indicating success and remaining attempts.
-   */
   async check(identifier: string): Promise<{ success: boolean; remaining: number; reset: number }> {
-    const key = `ratelimit:${this.keyPrefix}:${identifier}`;
-    
-    // Increment the count in Redis
-    const currentCount = await redis.incr(key);
+    const isLimited = await isRateLimited(`${this.keyPrefix}:${identifier}`, this.limitCount, this.windowSeconds);
+    const remaining = isLimited ? 0 : 1;
+    const reset = Date.now() + (this.windowSeconds * 1000);
 
-    // If this is the first hit, set an expiry for the window
-    if (currentCount === 1) {
-      await redis.expire(key, this.windowSeconds);
-    }
-
-    const remaining = Math.max(0, this.limitCount - currentCount);
-    const ttl = await redis.ttl(key);
-    const reset = Date.now() + (ttl > 0 ? ttl * 1000 : this.windowSeconds * 1000);
-
-    if (currentCount > this.limitCount) {
-      return { success: false, remaining, reset };
-    }
-
-    return { success: true, remaining, reset };
+    return { success: !isLimited, remaining, reset };
   }
 }
 
-// Pre-defined limiters
-export const submissionLimiter = new RateLimiter('submission', 2000, 3600); // 2,000 per hour
-export const extractionLimiter = new RateLimiter('extraction', 10000, 3600); // 10,000 per hour
+export const submissionLimiter = new RateLimiter('submission', 2000, 3600);
+export const extractionLimiter = new RateLimiter('extraction', 10000, 3600);

@@ -5,6 +5,13 @@ import { getSession } from "@/lib/auth";
 import { deleteCandidateEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 
+/**
+ * GET handler to fetch and filter candidates for a specific drive.
+ * Supports various query filters like status variants, date ranges, and sorting rules.
+ * 
+ * @param {Request} request - The standard incoming Next.js API request wrapper.
+ * @returns {Promise<NextResponse>} Structured collection of candidate entities.
+ */
 export async function GET(request: Request) {
     try {
         const session = await getSession();
@@ -28,6 +35,7 @@ export async function GET(request: Request) {
             const normalized = value.trim().toLowerCase().replace(/[_-]+/g, " ");
             switch (normalized) {
                 case "shortlisted":
+                case "accepted":
                     return ["shortlisted", "SHORTLISTED", "Shortlisted", "accepted", "ACCEPTED", "Accepted"];
                 case "rejected":
                     return ["rejected", "REJECTED", "Rejected"];
@@ -202,6 +210,13 @@ export async function GET(request: Request) {
     }
 }
 
+/**
+ * DELETE handler to purge candidate records in bulk.
+ * Safeguards integrity constraints across external search clusters.
+ * 
+ * @param {Request} request - The standard incoming payload payload.
+ * @returns {Promise<NextResponse>} Summary of operation success.
+ */
 export async function DELETE(request: Request) {
     try {
         const session = await getSession();

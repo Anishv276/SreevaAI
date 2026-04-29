@@ -12,12 +12,16 @@ import {
     CheckCircle2,
     ChevronDown,
     CirclePlay,
+    XCircle,
     Clock3,
     Code2,
     Download,
     FileText,
+    FileUp,
     Globe2,
     Mail,
+    Mic,
+    FileBarChart,
     Phone,
     Play,
     Repeat2,
@@ -29,6 +33,7 @@ import {
     Zap,
     type LucideIcon,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 type Session = {
     role?: string;
@@ -39,19 +44,19 @@ const problemCards = [
         icon: Clock3,
         title: "Extremely Slow",
         description: "Weeks spent on initial phone screens that could have been avoided with better data.",
-        iconClassName: "bg-red-50 text-red-500",
+        iconClassName: "bg-red-50 text-red-500 border border-red-100",
     },
     {
         icon: Scale,
         title: "Highly Inconsistent",
         description: "Subjective interviewing leads to biased hiring and poor diversity outcomes.",
-        iconClassName: "bg-orange-50 text-orange-500",
+        iconClassName: "bg-orange-50 text-orange-500 border border-orange-100",
     },
     {
         icon: FileText,
         title: "Resume Deception",
         description: "Keywords on paper do not always translate to actual skills during the job.",
-        iconClassName: "bg-blue-50 text-blue-500",
+        iconClassName: "bg-blue-50 text-blue-500 border border-blue-100",
     },
 ];
 
@@ -95,19 +100,24 @@ const featureCards: Array<{
 const workflowSteps = [
     {
         title: "JD Upload",
-        description: "Upload your JD or paste the link. AI builds the map.",
+        description: "Simply upload your job description. AI learns the requirements instantly.",
+        icon: FileUp,
     },
     {
         title: "AI Plan",
-        description: "Sreeva designs the adaptive questioning path.",
+        description: "Sreeva generates a custom, multi-stage adaptive interview plan.",
+        icon: Brain,
     },
     {
-        title: "Interview",
-        description: "Candidate interacts with conversational AI.",
+        title: "Adaptive Interview",
+        description: "Candidates interview anytime. AI adapts to their live responses.",
+        icon: Mic,
+        highlighted: true,
     },
     {
         title: "Decision Report",
-        description: "You get a score, recording, and hire/pass recommendation.",
+        description: "Get a stack-ranked list of top candidates with deep analysis.",
+        icon: FileBarChart,
     },
 ];
 
@@ -166,6 +176,24 @@ const pricingPlans = [
         cta: "Talk to Us",
         featured: false,
     },
+];
+
+const featureComparison = [
+    { feature: "Drives", starter: "1", growth: "5", scale: "10+", business: "Unlimited" },
+    { feature: "AI Voices", starter: "3", growth: "10+", scale: "20+", business: "Unlimited" },
+    { feature: "Adaptive AI Interview", starter: "Yes", growth: "Yes", scale: "Yes", business: "Yes" },
+    { feature: "Resume + JD Based Questions", starter: "Yes", growth: "Yes", scale: "Yes", business: "Yes" },
+    { feature: "Smart Follow-ups", starter: "Yes", growth: "Yes", scale: "Yes", business: "Yes" },
+    { feature: "AI Evaluation Report", starter: "Yes", growth: "Yes", scale: "Yes", business: "Yes" },
+    { feature: "Recording + Playback", starter: "7 days", growth: "14 days", scale: "30 days", business: "Custom" },
+    { feature: "Multilingual", starter: "—", growth: "Yes", scale: "Yes", business: "Yes" },
+    { feature: "Pre-qualifying Questions", starter: "Yes", growth: "Yes", scale: "Yes", business: "Yes" },
+    { feature: "AI Proctoring", starter: "—", growth: "Basic", scale: "Advanced", business: "Advanced" },
+    { feature: "Analytics Dashboard", starter: "—", growth: "Yes", scale: "Yes", business: "Yes" },
+    { feature: "Team Members", starter: "1", growth: "3", scale: "10", business: "Custom" },
+    { feature: "ATS Integration", starter: "—", growth: "—", scale: "Yes", business: "Yes" },
+    { feature: "Custom Branding", starter: "—", growth: "Yes", scale: "Yes", business: "Yes" },
+    { feature: "Support", starter: "Email", growth: "Priority", scale: "Priority", business: "Dedicated" }
 ];
 
 const faqs = [
@@ -231,6 +259,7 @@ function SectionHeading({
 
 export default function Home() {
     const [session, setSession] = useState<Session | null>(null);
+    const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
 
     useEffect(() => {
         const checkAuth = async () => {
@@ -254,10 +283,11 @@ export default function Home() {
 
     return (
         <div className="min-h-screen overflow-x-hidden bg-surface text-on-surface selection:bg-primary-fixed selection:text-on-primary-container">
-            <header className="fixed top-0 z-50 h-20 w-full border-b border-orange-100/40 bg-white/85 shadow-sm backdrop-blur-md">
+            <header className="absolute top-0 z-50 h-20 w-full">
                 <div className="mx-auto flex h-full max-w-[1320px] items-center justify-between px-6">
-                    <Link href="/" className="font-display text-2xl font-black tracking-tighter text-orange-600">
-                        Sreeva AI
+                    <Link href="/" className="flex items-center gap-3 font-display text-2xl font-black tracking-tighter text-orange-600">
+                        <img src="/Logo.png" alt="Sreeva AI Logo" className="h-14 w-14 object-contain" />
+                        <span className="leading-none">Sreeva AI</span>
                     </Link>
 
                     <nav className="hidden items-center gap-8 text-sm font-medium tracking-tight md:flex">
@@ -304,12 +334,10 @@ export default function Home() {
                             </div>
                             <div className="space-y-5">
                                 <h1 className="font-display text-h1 leading-tight text-on-background md:text-display">
-                                    Adaptive AI interviews that screen candidates{" "}
-                                    <span className="text-primary">before</span> your team spends time
+                                    Adaptive AI interviews that <span className="text-primary">screen for you</span>
                                 </h1>
                                 <p className="max-w-lg text-body-lg text-on-surface-variant">
-                                    Recruiters chase resumes. Engineers repeat basic checks. Candidates still reach
-                                    interviews without proof. Sreeva validates real skill depth before human rounds begin.
+                                    Skip the manual first round. Sreeva conducts autonomous technical checks so your team only interviews top talent.
                                 </p>
                             </div>
                             <div className="flex flex-col gap-4 sm:flex-row">
@@ -447,19 +475,31 @@ export default function Home() {
                         description="Recruiters chase resumes. Engineers repeat basic checks. Candidates still reach interviews without proof."
                     />
                     <div className="mx-auto grid max-w-[1320px] gap-8 px-6 md:grid-cols-3">
-                        {problemCards.map((card) => (
-                            <div key={card.title} className="bento-card space-y-4 p-8 text-center">
+                        {problemCards.map((card, index) => (
+                            <motion.div
+                                key={card.title}
+                                initial={{ opacity: 0, y: 50 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true, margin: "-100px" }}
+                                transition={{ duration: 0.5, delay: index * 0.1 }}
+                                className="bento-card space-y-4 p-8 text-center"
+                            >
                                 <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl ${card.iconClassName}`}>
                                     <card.icon className="h-8 w-8" />
                                 </div>
                                 <h3 className="text-xl font-bold">{card.title}</h3>
                                 <p className="text-on-surface-variant">{card.description}</p>
-                            </div>
+                            </motion.div>
                         ))}
                     </div>
                 </section>
 
                 <section id="product" className="mx-auto max-w-[1320px] px-6 py-24">
+                    <SectionHeading
+                        title="Everything you need to calibrate talent"
+                        eyebrow="PRODUCT"
+                        description="Our platform adapts to every role, ensuring objective and deep technical verification."
+                    />
                     <div className="grid auto-rows-[200px] grid-cols-12 gap-6">
                         <div className="bento-card col-span-12 row-span-2 flex flex-col justify-between p-4 lg:col-span-6">
                             <div>
@@ -570,172 +610,137 @@ export default function Home() {
                             </div>
                         </div>
 
-                        {featureCards.map((feature) => (
-                            <div key={feature.title} className="bento-card col-span-12 flex flex-col gap-2 p-6 md:col-span-4">
+                        {featureCards.map((feature, index) => (
+                            <motion.div
+                                key={feature.title}
+                                initial={{ opacity: 0, y: 50 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true, margin: "-100px" }}
+                                transition={{ duration: 0.5, delay: index * 0.1 }}
+                                className="bento-card col-span-12 flex flex-col gap-2 p-6 md:col-span-4"
+                            >
                                 <feature.icon className="h-6 w-6 text-primary" />
                                 <h4 className="font-bold">{feature.title}</h4>
                                 <p className="text-caption text-on-surface-variant">{feature.description}</p>
-                            </div>
+                            </motion.div>
                         ))}
                     </div>
                 </section>
 
                 <section className="bg-surface py-24">
                     <div className="mx-auto max-w-[1320px] px-6">
-                        <h2 className="mb-16 text-center font-display text-h2">The Sreeva Workflow</h2>
+                        <SectionHeading
+                            title="The Intelligent Workflow"
+                            eyebrow="PROCESS"
+                            description="How we streamline your talent assessment from start to finish."
+                        />
                         <div className="relative flex flex-col items-center gap-8 md:flex-row md:gap-4">
                             {workflowSteps.map((step, index) => (
-                                <div key={step.title} className="relative z-10 flex-1 space-y-4 text-center">
-                                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border-4 border-primary bg-white text-xl font-bold shadow-lg">
-                                        {index + 1}
+                                <motion.div
+                                    key={step.title}
+                                    initial={{ opacity: 0, y: 50 }}
+                                    whileInView={{ opacity: 1, y: 0 }}
+                                    viewport={{ once: true, margin: "-100px" }}
+                                    transition={{ duration: 0.5, delay: index * 0.1 }}
+                                    className="relative z-10 flex-1 space-y-4 text-center"
+                                >
+                                    <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full border shadow-md transition-all duration-300 ${step.highlighted ? "bg-[#ff6a00] border-[#ff6a00] text-white shadow-lg shadow-[#ff6a00]/30" : "bg-white border-orange-100 text-orange-600 shadow-sm"}`}>
+                                        <step.icon className="h-6 w-6" />
                                     </div>
-                                    <h3 className="font-bold">{step.title}</h3>
-                                    <p className="text-caption text-outline">{step.description}</p>
+                                    <h3 className="font-bold text-lg">{step.title}</h3>
+                                    <p className="text-caption text-on-surface-variant max-w-[250px] mx-auto">{step.description}</p>
                                     {index < workflowSteps.length - 1 && (
-                                        <div className="absolute left-[calc(50%+32px)] top-8 hidden h-0.5 w-[calc(100%-64px)] bg-primary/20 md:block" />
+                                        <div className="absolute left-[calc(50%+32px)] top-8 hidden h-0.5 w-[calc(100%-64px)] bg-orange-100 md:block" />
                                     )}
-                                </div>
+                                </motion.div>
                             ))}
                         </div>
                     </div>
                 </section>
 
                 <section className="mx-auto max-w-[1320px] px-6 py-24">
+                    <SectionHeading
+                        title="Upgrade from messy manual checks"
+                        eyebrow="COMPARISON"
+                        description="Traditional screening is subjective and slow. Sreeva AI is objective, fast, and highly predictive."
+                    />
                     <div className="grid gap-8 md:grid-cols-2">
-                        <div className="bento-card border-slate-200 bg-slate-50 p-10">
-                            <h3 className="mb-6 flex items-center gap-2 font-display text-h3 font-bold">
-                                <AlertTriangle className="h-6 w-6 text-slate-400" />
-                                Manual Screening
-                            </h3>
-                            <div className="space-y-4 opacity-60">
-                                <div className="flex gap-3 rounded-lg border border-slate-200 bg-white p-3">
-                                    <div className="h-10 w-10 rounded-full bg-slate-100" />
-                                    <div className="flex-1 space-y-2">
-                                        <div className="h-3 w-1/3 rounded bg-slate-200" />
-                                        <div className="h-12 w-full rounded bg-slate-100" />
-                                    </div>
-                                </div>
-                                <div className="rounded-xl border-2 border-dashed border-slate-200 p-4 text-center text-caption italic">
-                                    &quot;I think they were good? My notes are messy...&quot;
-                                </div>
-                                <div className="flex items-center justify-between rounded-lg bg-red-50 px-4 py-2 text-caption font-bold text-red-700">
-                                    <span>TIME TO DECISION</span>
-                                    <span>4-7 DAYS</span>
-                                </div>
+                        <div className="bento-card border-slate-200 bg-slate-50 p-10 flex flex-col justify-between">
+                            <div>
+                                <h3 className="mb-8 flex items-center gap-3 font-display text-2xl font-bold text-slate-800">
+                                    <AlertTriangle className="h-6 w-6 text-slate-400" />
+                                    Manual Screening
+                                </h3>
+                                <ul className="space-y-6">
+                                    <li className="flex gap-4">
+                                        <XCircle className="h-6 w-6 text-red-500 shrink-0 mt-0.5" />
+                                        <div>
+                                            <div className="font-bold text-slate-800">4-7 Days Wait Time</div>
+                                            <p className="text-sm text-slate-500 mt-1">Schedules stretch over weeks, creating costly engineering bottlenecks.</p>
+                                        </div>
+                                    </li>
+                                    <li className="flex gap-4">
+                                        <XCircle className="h-6 w-6 text-red-500 shrink-0 mt-0.5" />
+                                        <div>
+                                            <div className="font-bold text-slate-800">Subjective Note-Taking</div>
+                                            <p className="text-sm text-slate-500 mt-1">Interviews rely on gut feeling and inconsistent manual notes.</p>
+                                        </div>
+                                    </li>
+                                    <li className="flex gap-4">
+                                        <XCircle className="h-6 w-6 text-red-500 shrink-0 mt-0.5" />
+                                        <div>
+                                            <div className="font-bold text-slate-800">High Fraud Potential</div>
+                                            <p className="text-sm text-slate-500 mt-1">Impossible to properly verify identity or screen for background aids.</p>
+                                        </div>
+                                    </li>
+                                </ul>
+                            </div>
+                            <div className="mt-8 flex items-center justify-between rounded-xl bg-red-50/50 border border-red-100 px-4 py-3 text-caption font-bold text-red-700">
+                                <span>TIME TO DECISION</span>
+                                <span>4-7 DAYS</span>
                             </div>
                         </div>
 
-                        <div className="bento-card border-primary/30 p-10 ring-4 ring-primary/5">
-                            <h3 className="mb-6 flex items-center gap-2 font-display text-h3 font-bold text-primary">
-                                <Zap className="h-6 w-6" />
-                                Sreeva AI
-                            </h3>
-                            <div className="space-y-4">
-                                <div className="flex gap-3 rounded-lg border border-primary-fixed bg-white p-3 shadow-sm">
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-fixed text-primary">
-                                        <Check className="h-5 w-5" />
-                                    </div>
-                                    <div className="flex-1 space-y-2">
-                                        <div className="h-3 w-1/2 rounded bg-primary/20" />
-                                        <div className="h-12 w-full rounded bg-primary/5" />
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-4 rounded-xl bg-primary-fixed/30 p-4">
-                                    <div className="text-h2 font-black text-primary">92%</div>
-                                    <div className="text-caption font-bold leading-tight">PREDICTIVE<br />ACCURACY</div>
-                                </div>
-                                <div className="flex items-center justify-between rounded-lg bg-green-50 px-4 py-2 text-caption font-bold text-green-700">
-                                    <span>TIME TO DECISION</span>
-                                    <span>15 MINUTES</span>
-                                </div>
+                        <div className="rounded-3xl bg-neutral-950 p-10 text-white border border-neutral-800/50 shadow-2xl relative overflow-hidden flex flex-col justify-between">
+                            <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-orange-600/10 blur-3xl pointer-events-none" />
+                            
+                            <div className="relative z-10">
+                                <h3 className="mb-8 flex items-center gap-3 font-display text-2xl font-bold text-orange-500">
+                                    <Zap className="h-6 w-6 fill-orange-500/10" />
+                                    Sreeva AI
+                                </h3>
+                                <ul className="space-y-6">
+                                    <li className="flex gap-4">
+                                        <CheckCircle2 className="h-6 w-6 text-orange-500 shrink-0 mt-0.5" />
+                                        <div>
+                                            <div className="font-bold text-neutral-100">15 Minutes Flat</div>
+                                            <p className="text-sm text-neutral-400 mt-1">Assessments run autonomously on-demand, generating instant shortlists.</p>
+                                        </div>
+                                    </li>
+                                    <li className="flex gap-4">
+                                        <CheckCircle2 className="h-6 w-6 text-orange-500 shrink-0 mt-0.5" />
+                                        <div>
+                                            <div className="font-bold text-neutral-100">92% Predictive Accuracy</div>
+                                            <p className="text-sm text-neutral-400 mt-1">Standardized metrics and dynamic skill indexing grade with zero bias.</p>
+                                        </div>
+                                    </li>
+                                    <li className="flex gap-4">
+                                        <CheckCircle2 className="h-6 w-6 text-orange-500 shrink-0 mt-0.5" />
+                                        <div>
+                                            <div className="font-bold text-neutral-100">Deep Proctoring</div>
+                                            <p className="text-sm text-neutral-400 mt-1">Tab tracking, gaze detection, and live proctor logs guard test validity.</p>
+                                        </div>
+                                    </li>
+                                </ul>
                             </div>
-                        </div>
-                    </div>
-                </section>
-
-                <section id="report" className="overflow-hidden bg-surface-container-low py-24">
-                    <div className="mx-auto max-w-[1320px] px-6">
-                        <SectionHeading
-                            title="The Most Detailed Report Ever"
-                            description="Every interview generates a comprehensive dossier."
-                        />
-                        <div className="bento-card mx-auto max-w-5xl overflow-hidden bg-white p-0 shadow-2xl">
-                            <div className="flex items-center justify-between border-b bg-surface p-6">
-                                <div className="flex items-center gap-4">
-                                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary-container text-xl font-bold text-white">
-                                        S
-                                    </div>
-                                    <div>
-                                        <h4 className="text-lg font-bold">Interview Report #8291</h4>
-                                        <p className="text-caption">Role: Senior Frontend Engineer</p>
-                                    </div>
-                                </div>
-                                <button className="secondary-btn hidden items-center gap-2 px-4 py-2 text-label-sm font-bold sm:flex">
-                                    <Download className="h-4 w-4" />
-                                    Export PDF
-                                </button>
-                            </div>
-
-                            <div className="grid grid-cols-12 gap-8 p-8">
-                                <div className="col-span-12 space-y-8 md:col-span-4">
-                                    <div className="rounded-2xl border bg-surface p-6 text-center">
-                                        <div className="mb-1 text-display font-black text-primary">94</div>
-                                        <div className="mb-4 text-caption font-bold text-outline">OVERALL SCORE</div>
-                                        <div className="inline-flex items-center gap-2 rounded-full bg-green-100 px-4 py-2 text-caption font-bold text-green-700">
-                                            <CheckCircle2 className="h-4 w-4" />
-                                            STRONG HIRE
-                                        </div>
-                                    </div>
-                                    <div className="space-y-4">
-                                        <h5 className="text-sm font-bold uppercase tracking-wider text-outline">
-                                            Proctoring Signals
-                                        </h5>
-                                        {["Identity Verified", "Tab Switching", "Background Audio"].map((signal, index) => (
-                                            <div key={signal} className="flex items-center justify-between text-caption">
-                                                <span className="flex items-center gap-2">
-                                                    <Check className="h-4 w-4 text-green-500" />
-                                                    {signal}
-                                                </span>
-                                                <span className="font-bold text-green-600">
-                                                    {index === 0 ? "Safe" : index === 1 ? "None" : "Clean"}
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="col-span-12 space-y-8 md:col-span-8">
-                                    <div>
-                                        <h5 className="mb-4 text-sm font-bold uppercase tracking-wider text-outline">
-                                            Skills Proficiency
-                                        </h5>
-                                        <div className="grid gap-6 sm:grid-cols-2">
-                                            {reportSkills.map(([skill, label, width]) => (
-                                                <div key={skill} className="space-y-2">
-                                                    <div className="flex justify-between text-caption font-bold">
-                                                        <span>{skill}</span>
-                                                        <span>{label}</span>
-                                                    </div>
-                                                    <div className="h-2 rounded-full bg-surface-variant">
-                                                        <div className="h-full rounded-full bg-primary" style={{ width }} />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="rounded-2xl border bg-surface p-6">
-                                        <h5 className="mb-4 text-sm font-bold uppercase tracking-wider text-outline">
-                                            Recording Timeline
-                                        </h5>
-                                        <div className="flex h-24 items-center justify-center rounded-lg border-2 border-dashed bg-surface-container">
-                                            <Play className="h-10 w-10 text-outline opacity-30" />
-                                        </div>
-                                    </div>
-                                </div>
+                            <div className="relative z-10 mt-8 flex items-center justify-between rounded-xl bg-orange-600/10 border border-orange-500/20 px-4 py-3 text-caption font-bold text-orange-400">
+                                <span>TIME TO DECISION</span>
+                                <span>15 MINUTES</span>
                             </div>
                         </div>
                     </div>
                 </section>
+
 
                 <section id="pricing" className="mx-auto max-w-[1320px] px-6 py-24">
                     <SectionHeading
@@ -743,9 +748,13 @@ export default function Home() {
                         description="Start with one role, then scale adaptive interviews across teams once signal quality is proven."
                     />
                     <div className="grid gap-6 md:grid-cols-4">
-                        {pricingPlans.map((plan) => (
-                            <div
+                        {pricingPlans.map((plan, index) => (
+                            <motion.div
                                 key={plan.name}
+                                initial={{ opacity: 0, y: 50 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true, margin: "-100px" }}
+                                transition={{ duration: 0.5, delay: index * 0.1 }}
                                 className={`bento-card flex flex-col p-8 ${plan.featured ? "z-10 scale-[1.02] border-primary shadow-xl ring-4 ring-primary/10 md:scale-105" : ""}`}
                             >
                                 {plan.featured && (
@@ -770,120 +779,99 @@ export default function Home() {
                                 >
                                     {plan.cta}
                                 </Link>
-                            </div>
+                            </motion.div>
                         ))}
+                    </div>
+
+                    <div className="mt-20 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
+                        <div className="bg-slate-50 px-6 py-4 font-bold text-slate-800">⚙️ Detailed Feature Comparison</div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="border-b border-slate-100 bg-slate-50/50">
+                                        <th className="p-4 font-bold text-sm text-slate-600">Feature</th>
+                                        <th className="p-4 font-bold text-sm text-slate-600 text-center">Starter</th>
+                                        <th className="p-4 font-bold text-sm text-slate-600 text-center bg-orange-50/20 text-orange-600">Growth</th>
+                                        <th className="p-4 font-bold text-sm text-slate-600 text-center">Scale</th>
+                                        <th className="p-4 font-bold text-sm text-slate-600 text-center">Business</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {featureComparison.map((row, index) => (
+                                        <tr key={row.feature} className={`border-b border-slate-50 hover:bg-slate-50/30 transition-colors ${index % 2 === 0 ? "bg-white" : "bg-slate-50/10"}`}>
+                                            <td className="p-4 text-sm font-semibold text-slate-800">{row.feature}</td>
+                                            <td className="p-4 text-sm text-center text-slate-600">{row.starter === "Yes" ? <Check className="mx-auto h-4 w-4 text-primary" /> : row.starter}</td>
+                                            <td className="p-4 text-sm text-center font-bold text-orange-600 bg-orange-50/10">{row.growth === "Yes" ? <Check className="mx-auto h-4 w-4 text-orange-600" /> : row.growth}</td>
+                                            <td className="p-4 text-sm text-center text-slate-600">{row.scale === "Yes" ? <Check className="mx-auto h-4 w-4 text-primary" /> : row.scale}</td>
+                                            <td className="p-4 text-sm text-center text-slate-600">{row.business === "Yes" ? <Check className="mx-auto h-4 w-4 text-primary" /> : row.business}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </section>
 
                 <section id="resources" className="bg-surface-container-low py-24">
                     <div className="mx-auto max-w-[1320px] px-6">
-                        <h2 className="mb-16 text-center font-display text-h2">Frequently Asked Questions</h2>
-                        <div className="grid gap-8 md:grid-cols-2">
-                            {faqs.map((faq) => (
-                                <div key={faq.question} className="bento-card p-6">
-                                    <h4 className="mb-2 flex items-center justify-between font-bold">
-                                        {faq.question}
-                                        <ChevronDown className="h-5 w-5 text-outline" />
-                                    </h4>
-                                    <p className="text-caption text-on-surface-variant">{faq.answer}</p>
-                                </div>
-                            ))}
+                        <SectionHeading
+                            title="Frequently Asked Questions"
+                            eyebrow="FAQ"
+                            description="Got questions? We've got answers."
+                        />
+                        <div className="mx-auto max-w-3xl space-y-4">
+                            {faqs.map((faq, index) => {
+                                const isOpen = openFaqIndex === index;
+                                return (
+                                    <motion.div
+                                        key={faq.question}
+                                        initial={{ opacity: 0, y: 30 }}
+                                        whileInView={{ opacity: 1, y: 0 }}
+                                        viewport={{ once: true, margin: "-100px" }}
+                                        transition={{ duration: 0.5, delay: index * 0.1 }}
+                                        className="bento-card p-6 cursor-pointer select-none"
+                                        onClick={() => setOpenFaqIndex(isOpen ? null : index)}
+                                    >
+                                        <h4 className="flex items-center justify-between font-bold text-base">
+                                            {faq.question}
+                                            <ChevronDown className={`h-5 w-5 text-outline transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
+                                        </h4>
+                                        <AnimatePresence initial={false}>
+                                            {isOpen && (
+                                                <motion.div
+                                                    initial="collapsed"
+                                                    animate="open"
+                                                    exit="collapsed"
+                                                    variants={{
+                                                        open: { opacity: 1, height: "auto", marginTop: 12 },
+                                                        collapsed: { opacity: 0, height: 0, marginTop: 0 }
+                                                    }}
+                                                    transition={{ duration: 0.3, ease: "easeInOut" }}
+                                                    className="overflow-hidden text-sm text-on-surface-variant leading-relaxed"
+                                                >
+                                                    {faq.answer}
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </motion.div>
+                                );
+                            })}
                         </div>
                     </div>
                 </section>
 
-                <section id="contact" className="mx-auto max-w-[1320px] px-6 py-24">
-                    <div className="flex flex-col gap-16 lg:flex-row">
-                        <div className="space-y-6 lg:w-1/2">
-                            <h2 className="font-display text-h2">Ready to stop wasting interview time?</h2>
-                            <p className="text-body-lg text-outline">
-                                Share one open role. We will show how Sreeva screens candidates before your team joins the process.
-                            </p>
-                            <div className="bento-card !bg-primary-container p-8 text-on-primary">
-                                <div className="mb-6 flex items-center gap-4">
-                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20">
-                                        <Phone className="h-5 w-5" />
-                                    </div>
-                                    <div>
-                                        <div className="font-bold">Book a Strategy Call</div>
-                                        <div className="text-caption opacity-80">Free 15-min consultation</div>
-                                    </div>
-                                </div>
-                                <p className="text-sm italic leading-relaxed">
-                                    &quot;Sreeva reduced our technical screening time by 75% in the first month alone.&quot;
-                                </p>
-                                <div className="mt-5 grid gap-3 text-caption sm:grid-cols-3">
-                                    <div className="rounded-xl bg-white/15 p-3">
-                                        <div className="text-lg font-black">75%</div>
-                                        <div className="opacity-80">less screening time</div>
-                                    </div>
-                                    <div className="rounded-xl bg-white/15 p-3">
-                                        <div className="text-lg font-black">18m</div>
-                                        <div className="opacity-80">avg AI interview</div>
-                                    </div>
-                                    <div className="rounded-xl bg-white/15 p-3">
-                                        <div className="text-lg font-black">24h</div>
-                                        <div className="opacity-80">shortlist ready</div>
-                                    </div>
-                                </div>
-                                <div className="mt-5 flex items-center gap-3">
-                                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/25 text-sm font-black">
-                                        TS
-                                    </div>
-                                    <span className="text-caption font-bold">- CTO, TechFlow Systems</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="lg:w-1/2">
-                            <form className="bento-card space-y-6 border-primary-fixed p-8 shadow-xl">
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                    <label className="space-y-2">
-                                        <span className="text-caption font-bold uppercase tracking-wider text-outline">
-                                            Full Name
-                                        </span>
-                                        <input
-                                            className="w-full rounded-xl border border-surface-variant bg-surface p-3 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-                                            placeholder="Jane Doe"
-                                            type="text"
-                                        />
-                                    </label>
-                                    <label className="space-y-2">
-                                        <span className="text-caption font-bold uppercase tracking-wider text-outline">
-                                            Company Email
-                                        </span>
-                                        <input
-                                            className="w-full rounded-xl border border-surface-variant bg-surface p-3 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-                                            placeholder="jane@company.com"
-                                            type="email"
-                                        />
-                                    </label>
-                                </div>
-                                <label className="block space-y-2">
-                                    <span className="text-caption font-bold uppercase tracking-wider text-outline">
-                                        Monthly Hiring Volume
-                                    </span>
-                                    <select className="w-full rounded-xl border border-surface-variant bg-surface p-3 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20">
-                                        <option>1-5 candidates</option>
-                                        <option>5-20 candidates</option>
-                                        <option>20-50 candidates</option>
-                                        <option>50+ candidates</option>
-                                    </select>
-                                </label>
-                                <label className="block space-y-2">
-                                    <span className="text-caption font-bold uppercase tracking-wider text-outline">
-                                        How can we help?
-                                    </span>
-                                    <textarea
-                                        className="h-32 w-full rounded-xl border border-surface-variant bg-surface p-3 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-                                        placeholder="Tell us about your current screening process..."
-                                    />
-                                </label>
-                                <button className="primary-btn w-full py-4 text-lg font-bold" type="submit">
-                                    Send Message
-                                </button>
-                            </form>
-                        </div>
+                <section id="contact" className="mx-auto max-w-[850px] px-6 py-24">
+                    <SectionHeading
+                        title="Ready to stop wasting interview time?"
+                        eyebrow="GET STARTED"
+                        description="Share one open role. We will show how Sreeva screens candidates before your team joins the process."
+                    />
+                    <div className="bento-card overflow-hidden border-primary-fixed shadow-xl h-[650px] mt-12">
+                        <iframe
+                            src="https://cal.com/vamsivk/30min"
+                            className="w-full h-full border-0"
+                            title="Book a meeting with Sreeva AI"
+                        />
                     </div>
                 </section>
             </main>
@@ -891,7 +879,10 @@ export default function Home() {
             <footer className="w-full border-t border-slate-100 bg-white py-12">
                 <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-8 px-6 md:grid-cols-4 lg:grid-cols-6">
                     <div className="col-span-2">
-                        <div className="mb-4 text-xl font-bold text-slate-900">Sreeva AI</div>
+                        <div className="mb-4 flex items-center gap-3 text-xl font-bold text-slate-900">
+                            <img src="/Logo.png" alt="Sreeva AI Logo" className="h-12 w-12 object-contain" />
+                            <span className="leading-none">Sreeva AI</span>
+                        </div>
                         <p className="mb-6 max-w-xs text-sm text-slate-500">
                             Building the future of talent assessment through adaptive artificial intelligence.
                         </p>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { getSession, invalidateUserSessions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { validatePasswordStrength } from "@/lib/validation";
 
@@ -112,6 +112,7 @@ export async function PATCH(request: Request) {
             }
 
             updateData.password = await bcrypt.hash(newPassword, 10);
+            await invalidateUserSessions(session.userId);
         }
 
         if (Object.keys(updateData).length === 0) return NextResponse.json({ message: "No changes provided" });

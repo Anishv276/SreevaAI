@@ -5,9 +5,18 @@ import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
 import { safeJsonParse } from "@/lib/utils";
+import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * GET handler to fetch the metadata for a specific recruitment drive.
+ *
+ * @param {Request} request - The standard incoming API request wrapper.
+ * @param {Object} context - URL route mapping parameters.
+ * @param {Promise<{id: string}>} context.params - Async parameter identifier tuple.
+ * @returns {Promise<NextResponse>} Complete drive configuration or 404 error state.
+ */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
@@ -104,9 +113,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 }
 
+/**
+ * PATCH handler to update metadata details for a specific recruitment drive.
+ *
+ * @param {Request} request - The standard incoming API request wrapper.
+ * @param {Object} context - URL route mapping parameters.
+ * @param {Promise<{id: string}>} context.params - Async parameter identifier tuple.
+ * @returns {Promise<NextResponse>} Success confirmation payload.
+ */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
     let driveId: string = "";
     try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
         const { id } = await params;
         driveId = id;
 
@@ -141,6 +161,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         const existingDrive = await prisma.drive.findUnique({
             where: { id: driveId },
             select: {
+                orgId: true,
                 ttsProvider: true,
                 cartesiaVoiceId: true,
                 sarvamVoice: true,
@@ -151,6 +172,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
         if (!existingDrive) {
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        }
+
+        const isSuperAdmin = session.role === "SUPER_ADMIN";
+        if (!isSuperAdmin && existingDrive.orgId !== session.orgId) {
+            return NextResponse.json({ error: "Access Denied: Ownership required to modify drive" }, { status: 403 });
         }
 
         const updateData: any = {};
@@ -247,8 +273,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
+        const session = await getSession();
+        if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
         const { id } = await params;
         const driveId = id;
+
+        const drive = await prisma.drive.findUnique({
+            where: { id: driveId },
+            select: { orgId: true }
+        });
+
+        if (!drive) {
+            return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        }
+
+        const isSuperAdmin = session.role === "SUPER_ADMIN";
+        if (!isSuperAdmin && drive.orgId !== session.orgId) {
+            return NextResponse.json({ error: "Access Denied: Ownership required to remove drive" }, { status: 403 });
+        }
 
         // -- STORAGE CLEANUP: Purge JD & Resumes from R2 ----------
         try {

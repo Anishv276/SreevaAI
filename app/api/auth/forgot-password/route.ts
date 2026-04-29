@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendSuperAdminGmailEmail, sendGmailEmail } from "@/lib/google-auth";
-import { isRateLimited } from "@/lib/ratelimit";
+import { isRateLimited } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
     try {

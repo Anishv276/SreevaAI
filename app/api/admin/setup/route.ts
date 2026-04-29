@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession, createSession, isAdminRole } from "@/lib/auth";
+import { getSession, createSession, isAdminRole, invalidateUserSessions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { validatePasswordStrength } from "@/lib/validation";
 
@@ -51,6 +51,7 @@ export async function POST(req: Request) {
                     where: { id: session.userId },
                     data: { password: hashedPassword }
                 });
+                await invalidateUserSessions(session.userId);
                 break;
             }
 
@@ -105,6 +106,7 @@ export async function POST(req: Request) {
                         }
 
                         userUpdate.password = await bcrypt.hash(passwords.next, 10);
+                        await invalidateUserSessions(session.userId);
                     }
 
                     await tx.user.update({

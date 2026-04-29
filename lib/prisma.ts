@@ -33,7 +33,7 @@ const extendedPrisma = basePrisma.$extends({
     },
 })
 
-export const prisma = extendedPrisma as unknown as PrismaClient
+export const prisma = extendedPrisma;
 
 if (process.env.NODE_ENV !== 'production') {
     globalForPrisma.prisma = basePrisma

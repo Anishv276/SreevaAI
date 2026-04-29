@@ -411,33 +411,8 @@ async def entrypoint(ctx: JobContext):
         return task
 
     def append_transcript_line(speaker: str, text: str) -> None:
-        # Strip SSML-like tags (e.g., <emotion />, <prosody>) from the transcript
-        text = re.sub(r"<[^>]+>", "", text).strip()
-
-        clean = " ".join(text.split()).strip()
-        if not clean:
-            return
-        line = f"{speaker}: {clean}"
-
-        if not transcript_lines:
-            transcript_lines.append(line)
-            logger.debug(f"Transcript: {line}")
-            return
-
-        prev = transcript_lines[-1]
-        if prev == line:
-            return
-
-        same_speaker_prefix = f"{speaker}: "
-        if prev.startswith(same_speaker_prefix):
-            prev_text = prev[len(same_speaker_prefix) :]
-            if clean.startswith(prev_text) or prev_text.startswith(clean):
-                # Replace evolving duplicate fragments with the longer final line.
-                transcript_lines[-1] = line if len(clean) >= len(prev_text) else prev
-                return
-
-        transcript_lines.append(line)
-        logger.debug(f"Transcript: {line}")
+        from agent_runtime_helpers import append_transcript_line as _atl
+        _atl(transcript_lines, speaker, text)
 
     # Room name is available before connecting - derive app_id early so we can
     # fire the DB fetch in parallel with the room connect handshake.
@@ -533,19 +508,10 @@ async def entrypoint(ctx: JobContext):
                 await asyncio.sleep(2)
         return RuntimeError("Failed to connect after 3 attempts")
 
-    connect_task = asyncio.create_task(connect_with_retry())
-    context_task = asyncio.create_task(get_interview_context(app_id))
-    connect_result, context_result = await asyncio.gather(
-        connect_task,
-        context_task,
-        return_exceptions=True,
-    )
-
-    if isinstance(connect_result, Exception):
-        raise connect_result
-
-    if isinstance(context_result, Exception):
-        logger.error(f"Failed to load interview context from DB: {context_result}")
+    try:
+        context_result = await get_interview_context(app_id)
+    except Exception as e:
+        logger.error(f"Failed to load interview context from DB: {e}")
         return
 
     if not isinstance(context_result, dict):
@@ -553,6 +519,10 @@ async def entrypoint(ctx: JobContext):
         return
 
     context: dict[str, Any] = context_result
+
+    connect_result = await connect_with_retry()
+    if isinstance(connect_result, Exception):
+        raise connect_result
     evaluation_signal_toggles = _extract_evaluation_signal_toggles(
         context.get("proctoringSignals")
     )
@@ -868,14 +838,13 @@ async def entrypoint(ctx: JobContext):
 
     google_mode = org_tts_provider == "GOOGLE"
     if google_mode:
-        if org_google_voice_name is None:
-            raise RuntimeError("DB config missing googleVoiceName for GOOGLE")
+        voice_to_use = org_google_voice_name or DEFAULT_GOOGLE_VOICE_NAME
         logger.info(
-            f"[TTS] Using Google Gemini realtime runtime — voice={org_google_voice_name}"
+            f"[TTS] Using Google Gemini realtime runtime — voice={voice_to_use}"
         )
         llm_plugin = build_google_realtime_llm(
             model=str(org_google_model or DEFAULT_GOOGLE_TTS_MODEL),
-            voice_name=org_google_voice_name,
+            voice_name=voice_to_use,
             language=lang_codes["stt"],
         )
         turn_detector = "realtime_llm"
@@ -1505,10 +1474,15 @@ async def entrypoint(ctx: JobContext):
                             )
                         except asyncio.TimeoutError:
                             logger.warning(
-                                "[EVAL] run_turn_evaluation timed out (>6s) turn=%d — skipping directive injection",
+                                "[EVAL] run_turn_evaluation timed out (>6s) turn=%d — using safe fallback evaluation",
                                 turn,
                             )
-                            return
+                            td = {
+                                "decision": {"action": "PROBE"},
+                                "quality": {"clarity": 5.0, "depth": 5.0, "specificity": 5.0, "grounding": 5.0},
+                                "signal_events": [],
+                            }
+                            directive = "\nContinue with standard conversational depth."
 
                         action = td["decision"]["action"]
                         signal_events = td.get("signal_events", [])
@@ -1909,7 +1883,7 @@ async def entrypoint(ctx: JobContext):
                     spawn_background_task(_inject_state(), f"inject_state_turn_{current_turn}")
 
             # --- Periodic auto-save every 5 turns to prevent data loss ---
-            if len(transcript_lines) > 0 and len(transcript_lines) % 5 == 0:
+            if len(transcript_lines) > 0:
                 start_t = session_start_time
                 lines_snapshot = list(transcript_lines)
                 app_id_snap = app_id
@@ -1918,7 +1892,7 @@ async def entrypoint(ctx: JobContext):
                     try:
                         await persist_transcript(app_id_snap, lines_snapshot, start_t)
                         logger.info(
-                            f"[TRANSCRIPT] Periodic auto-save at {len(lines_snapshot)} lines"
+                            f"[TRANSCRIPT] Turn auto-save at {len(lines_snapshot)} lines"
                         )
                     except Exception as save_err:
                         logger.warning(f"[TRANSCRIPT] Periodic save failed: {save_err}")

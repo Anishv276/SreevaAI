@@ -90,7 +90,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                 endDate = timeline.to;
             }
             fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort);
-        }, 200);
+        }, 500);
         return () => clearTimeout(handler);
     }, [driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, pageSize, fetchCandidates, scoreSort]);
     const handlePageChange = (newPage: number) => {
@@ -178,7 +178,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
         setIsSelectionMode(false);
     };
     const handleBulkStatus = async (action: "hire" | "not_hired" | "reject" | "shortlist" | "delete") => {
-        if (!selectedCount) return;
+        if (!selectedCount || isBulkLoading) return;
         try {
             setIsBulkLoading(true);
             const res = await fetch("/api/candidates/bulk-action", {
@@ -201,7 +201,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
         }
     };
     const handleBulkSendInterviewLink = async () => {
-        if (!selectedCount) return;
+        if (!selectedCount || isBulkLoading) return;
         try {
             setIsBulkLoading(true);
             const results = await Promise.allSettled(
@@ -225,7 +225,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
         emailType: "screening" | "hiring",
         targetAction?: "shortlist" | "reject" | "hire" | "nothired"
     ) => {
-        if (!selectedCount) return;
+        if (!selectedCount || isBulkLoading) return;
         try {
             setIsBulkLoading(true);
             const res = await fetch("/api/candidates/bulk-email", {

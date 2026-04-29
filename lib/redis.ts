@@ -3,7 +3,7 @@ import IORedis from "ioredis";
 const REDIS_URL = process.env.REDIS_URL;
 
 if (!REDIS_URL && process.env.NODE_ENV === "production") {
-  console.error("CRITICAL: REDIS_URL is not defined. Redis-backed features will be disabled.");
+  throw new Error("CRITICAL ERROR: REDIS_URL is required in production environments.");
 }
 
 function createRedisConnection(): IORedis {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { getSession, invalidateUserSessions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { validatePasswordStrength } from "@/lib/validation";
 
@@ -77,6 +77,8 @@ export async function POST(
             where: { id: primaryAdmin.id },
             data: { password: hashedPassword },
         });
+
+        await invalidateUserSessions(primaryAdmin.id);
 
         return NextResponse.json({
             success: true,

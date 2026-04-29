@@ -31,6 +31,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         shortlistMode: true,
                         extractedDetails: true,
                         orgId: true,
+                        screeningCriteria: true,
                     }
                 }
             }
@@ -45,7 +46,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
 
         // 2. Get resume text
-        let resumeText = (application as any).resumeText || "";
+        let resumeText = application.resumeText || "";
 
         if (!resumeText && application.aiReport) {
             try {
@@ -58,11 +59,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: "No resume text found to scan. Please re-upload resume." }, { status: 400 });
         }
 
-        // 3. Build scoring input - pass threshold so Python's report reflects what we decided
-        const screeningCriteria = safeJsonParse((application.drive as any).screeningCriteria, {});
-        const threshold = Number((screeningCriteria as any)?.threshold ?? application.drive.screeningThreshold ?? 0);
+        let structuredResume = {};
+        if (application.aiReport) {
+            try {
+                const report = JSON.parse(application.aiReport);
+                structuredResume = report.data || report || {};
+            } catch (e) {}
+        }
+
+        const screeningCriteria = safeJsonParse<any>(application.drive.screeningCriteria, {});
+        const threshold = Number(screeningCriteria?.threshold ?? application.drive.screeningThreshold ?? 0);
         const scoringInput = {
-            resume: safeJsonParse((application as any).structuredResume, {}),
+            resume: structuredResume,
             jd: safeJsonParse(application.drive.extractedDetails, {}),
             resume_raw_text: resumeText,
             jd_raw_text: application.drive.description || "",
@@ -131,7 +139,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         });
 
         // 6. Email & interview invite (only in automatic mode)
-        const isAutomatic = (((screeningCriteria as any)?.shortlistMode) || (application.drive as any).shortlistMode || "automatic") === "automatic";
+        const isAutomatic = (screeningCriteria?.shortlistMode || application.drive.shortlistMode || "automatic") === "automatic";
 
         if (resumeStatus === "SHORTLISTED") {
                 const interview = await (prisma as any).interview.upsert({
