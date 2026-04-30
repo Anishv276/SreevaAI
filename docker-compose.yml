@@ -5,8 +5,8 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        NEXT_PUBLIC_LIVEKIT_URL: "wss://new-wi7dgqfb.livekit.cloud"
-        # NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com" # Self-hosted (commented)
+        # NEXT_PUBLIC_LIVEKIT_URL: "wss://new-wi7dgqfb.livekit.cloud" # LiveKit Cloud (commented for now)
+        NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreeva.ai" # Deployment cloud
         NEXT_PUBLIC_APP_URL: "https://www.sreevaai.com"
     container_name: hr-frontend
     networks:
@@ -82,7 +82,7 @@ services:
   #     - "7881:7881"
   #   labels:
   #     - "traefik.enable=true"
-  #     - "traefik.http.routers.livekit.rule=Host(`lk.sreevaai.com`)"
+  #     - "traefik.http.routers.livekit.rule=Host(`lk.sreeva.ai`)"
   #     - "traefik.http.routers.livekit.entrypoints=websecure"
   #     - "traefik.http.routers.livekit.tls=true"
   #     - "traefik.http.routers.livekit.tls.certresolver=mytlschallenge"
