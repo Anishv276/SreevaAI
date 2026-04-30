@@ -52,8 +52,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 jdPreviewUrl: true,
                 orgId: true,
                 shortlistMode: true,
-                inviteScheduleDays: true,
-                screeningCriteria: true,
                 location: true,
                 aiName: true,
                 cartesiaVoiceId: true,
@@ -88,8 +86,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
         const screeningThreshold = Number((drive as any).screeningThreshold ?? 60);
         const shortlistMode = (drive as any).shortlistMode || "automatic";
-        const inviteScheduleDays = Number((drive as any).inviteScheduleDays ?? 1);
-        const screeningCriteria = (drive as any).screeningCriteria || JSON.stringify({
+        const inviteScheduleDays = 1;
+        const screeningCriteria = JSON.stringify({
             threshold: screeningThreshold,
             shortlistMode,
             inviteScheduleDays,

@@ -310,9 +310,9 @@ function CandidateStatsRow() {
 
         { label: "Rejected", value: stats.rejected, icon: UserX, color: "text-rose-600", bg: "bg-rose-50" },
 
-        { label: "Live", value: stats.interviewRunning, icon: Radio, color: "text-orange-600", bg: "bg-orange-50", pulse: stats.interviewRunning > 0 },
+        { label: "Live", value: stats.interviewRunning, icon: Radio, color: "text-gray-900", bg: "bg-gray-100", pulse: stats.interviewRunning > 0 },
 
-        { label: "Pending", value: stats.interviewPending, icon: Clock, color: "text-amber-600", bg: "bg-amber-50" },
+        { label: "Pending", value: stats.interviewPending, icon: Clock, color: "text-gray-500", bg: "bg-gray-50" },
 
         { label: "Completed", value: stats.interviewCompleted, icon: ShieldCheck, color: "text-indigo-600", bg: "bg-indigo-50" },
 
@@ -402,9 +402,9 @@ function CandidateStatsRow() {
 
                                 <span className="flex h-2 w-2 relative">
 
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gray-400 opacity-75"></span>
 
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-gray-500"></span>
 
                                 </span>
 
@@ -1090,40 +1090,40 @@ export default function CandidatesPage() {
                         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
 
                             {/* Group 1: Shortlist */}
-                            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 px-3 py-2.5">
-                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-emerald-600 mb-2">Shortlist</p>
+                            <div className="rounded-2xl border border-gray-100 bg-gray-50/40 px-3 py-2.5">
+                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-gray-500 mb-2">Shortlist</p>
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <Button size="sm" onClick={() => handleBulkAction("shortlist")} className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
+                                    <Button size="sm" onClick={() => handleBulkAction("shortlist")} className="h-8 px-3 rounded-xl bg-white border border-gray-200 text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
                                         Shortlist
                                     </Button>
                                     <Button size="sm" onClick={() => handleBulkAction("reject")} className="h-8 px-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
                                         <UserX className="h-3.5 w-3.5" /> Reject
                                     </Button>
-                                    <Button size="sm" onClick={() => handleBulkSendEmail("screening")} disabled={isBulkLoading} title="Send appropriate email (shortlisted/rejected) based on current status" className="h-8 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
+                                    <Button size="sm" onClick={() => handleBulkSendEmail("screening")} disabled={isBulkLoading} title="Send appropriate email (shortlisted/rejected) based on current status" className="h-8 px-3 rounded-xl bg-white border border-gray-200 text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
                                         <Mail className="h-3.5 w-3.5" /> Send Email
                                     </Button>
                                 </div>
                             </div>
 
                             {/* Group 2: Hire */}
-                            <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 px-3 py-2.5">
-                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-indigo-600 mb-2">Hire</p>
+                            <div className="rounded-2xl border border-gray-100 bg-gray-50/40 px-3 py-2.5">
+                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-gray-500 mb-2">Hire</p>
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <Button size="sm" onClick={() => handleBulkAction("hire")} className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
+                                    <Button size="sm" onClick={() => handleBulkAction("hire")} className="h-8 px-3 rounded-xl bg-white border border-gray-200 text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
                                         Hire
                                     </Button>
                                     <Button size="sm" onClick={() => handleBulkAction("not_hired")} className="h-8 px-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
                                         <UserX className="h-3.5 w-3.5" /> Not Hired
                                     </Button>
-                                    <Button size="sm" onClick={() => handleBulkSendEmail("hiring")} disabled={isBulkLoading} title="Send appropriate email (hired/not hired) based on current status" className="h-8 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
+                                    <Button size="sm" onClick={() => handleBulkSendEmail("hiring")} disabled={isBulkLoading} title="Send appropriate email (hired/not hired) based on current status" className="h-8 px-3 rounded-xl bg-white border border-gray-200 text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
                                         <Mail className="h-3.5 w-3.5" /> Send Email
                                     </Button>
                                 </div>
                             </div>
 
                             {/* Group 3: Interview Link */}
-                            <div className="rounded-2xl border border-orange-100 bg-orange-50/40 px-3 py-2.5">
-                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 mb-2">Interview Link</p>
+                            <div className="rounded-2xl border border-gray-100 bg-gray-50/40 px-3 py-2.5">
+                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-gray-500 mb-2">Interview Link</p>
                                 <div className="flex flex-wrap items-center gap-2">
                                     <Button size="sm" onClick={async () => {
                                         if (selectedIds.size === 0) return;
@@ -1136,7 +1136,7 @@ export default function CandidatesPage() {
                                             if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
                                         } catch { toast.error("Failed to send interview links"); }
                                         finally { setIsBulkLoading(false); }
-                                    }} disabled={isBulkLoading} className="h-8 px-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
+                                    }} disabled={isBulkLoading} className="h-8 px-3 rounded-xl bg-white border border-gray-200 text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
                                         <Send className="h-3.5 w-3.5" /> Resend Link
                                     </Button>
                                 </div>
@@ -1214,13 +1214,13 @@ export default function CandidatesPage() {
 
                         <div className="relative flex-1 max-w-2xl w-full group/search">
 
-                            <Search className="absolute left-4 top-3.5 h-4 w-4 text-gray-400 group-focus-within/search:text-[#F97316] transition-colors" />
+                            <Search className="absolute left-4 top-3.5 h-4 w-4 text-gray-400 group-focus-within/search:text-black transition-colors" />
 
                             <Input
 
                                 placeholder="Search by name, role, or email..."
 
-                                className="pl-11 h-12 border-transparent bg-white/60 rounded-2xl focus:bg-white focus:border-orange-200 focus:ring-8 focus:ring-orange-50/50 transition-all font-bold text-sm shadow-inner"
+                                className="pl-11 h-12 border-transparent bg-white/60 rounded-2xl focus:bg-white focus:border-gray-200 focus:ring-8 focus:ring-gray-50/50 transition-all font-bold text-sm shadow-inner"
 
                                 value={searchTerm}
 
@@ -1409,7 +1409,7 @@ export default function CandidatesPage() {
 
                                                 isSelectionMode && "cursor-pointer",
 
-                                                selectedIds.has(candidate.id) && "bg-orange-50/30"
+                                                selectedIds.has(candidate.id) && "bg-gray-100/50"
 
                                             )}
 
@@ -1457,7 +1457,7 @@ export default function CandidatesPage() {
 
                                                         <div className="flex flex-col relative">
 
-                                                            <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{candidate.name}</span>
+                                                            <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-black transition-colors">{candidate.name}</span>
 
                                                             <span className="text-[11px] text-gray-400 font-bold mt-0.5">{candidate.email}</span>
 
@@ -1512,17 +1512,10 @@ export default function CandidatesPage() {
                                                     </div>
 
                                                     <Badge variant="secondary" className={cn(
-
-                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all",
-
-                                                        mainStatus === 'rejected' ? 'bg-rose-50 text-rose-700' :
-
-                                                            mainStatus === 'shortlisted' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'
-
+                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border border-gray-100 shadow-sm transition-all",
+                                                        mainStatus === 'rejected' ? 'bg-rose-50 text-rose-700 border-rose-100' : 'bg-white text-gray-700'
                                                     )}>
-
                                                         {mainStatusLabel}
-
                                                     </Badge>
 
                                                 </div>
@@ -1533,32 +1526,14 @@ export default function CandidatesPage() {
 
                                                 <div className="flex justify-center items-center h-full">
 
-                                                    <Badge variant="outline" className={cn(
-
-                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-gray-100 shadow-sm transition-all",
-
-                                                        interviewStage === 'completed' || interviewStage === 'finished' ? 'text-indigo-600 bg-indigo-50/20 shadow-none border-indigo-100' :
-
-                                                            interviewStage === 'in progress' ? 'text-blue-600 bg-blue-50/20 shadow-none border-blue-100' :
-
-                                                                interviewStage === 'pending' ? 'text-amber-600 bg-amber-50/20 shadow-none border-amber-100' : 'text-gray-500 bg-gray-50'
-
-                                                    )}>
-
+                                                    <Badge variant="outline" className="rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-gray-100 bg-white text-gray-700 shadow-sm transition-all">
                                                         {interviewStageLabel.length > 20 ? (
-
                                                             <span title={interviewStageLabel}>
-
                                                                 {interviewStageLabel.substring(0, 17)}...
-
                                                             </span>
-
                                                         ) : (
-
                                                             interviewStageLabel
-
                                                         )}
-
                                                     </Badge>
 
                                                 </div>
@@ -1570,37 +1545,21 @@ export default function CandidatesPage() {
                                                 <div className="flex justify-center items-center h-full">
 
                                                     {isHiredResult ? (
-
-                                                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
-
+                                                        <Badge className="bg-white text-gray-700 border-gray-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
                                                             {hiringDecisionLabel}
-
                                                         </Badge>
-
                                                     ) : isNotHiredResult ? (
-
-                                                        <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
-
+                                                        <Badge variant="outline" className="bg-white text-gray-700 border-gray-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
                                                             {hiringDecisionLabel}
-
                                                         </Badge>
-
                                                     ) : hiringDecision === 'not shortlisted' ? (
-
                                                         <Badge variant="outline" className="bg-rose-50 text-rose-600 border-rose-200 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
-
                                                             {hiringDecisionLabel}
-
                                                         </Badge>
-
                                                     ) : (
-
-                                                        <Badge variant="outline" className="bg-slate-50/50 text-slate-400 border-slate-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest">
-
+                                                        <Badge variant="outline" className="bg-white text-gray-400 border-gray-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest">
                                                             {hiringDecisionLabel}
-
                                                         </Badge>
-
                                                     )}
 
                                                 </div>
@@ -1673,14 +1632,14 @@ export default function CandidatesPage() {
                                                             <DropdownMenuItem
                                                                 onClick={() => setInterviewLinkCandidate({ id: candidate.id, name: candidate.name, interviewStatus: candidate.interviewStatus })}
                                                                 disabled={sendingInterviewLinkId === candidate.id || isSuspended}
-                                                                className={cn("rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors", isSuspended ? "text-gray-400 opacity-70" : "text-blue-600 focus:bg-blue-50")}
+                                                                className={cn("rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors", isSuspended ? "text-gray-400 opacity-70" : "text-gray-700 focus:bg-gray-50")}
                                                             >
                                                                 {isSuspended ? <Lock className="h-4 w-4 mr-2" /> : <RefreshCw className={cn("h-4 w-4 mr-2", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
                                                                 {sendingInterviewLinkId === candidate.id ? "Sending..." : "Send Interview Link"}
                                                             </DropdownMenuItem>
                                                             <DropdownMenuItem
                                                                 onClick={() => setEmailCandidate({ id: candidate.id, name: candidate.name, email: candidate.email, role: candidate.role })}
-                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-blue-600 focus:text-blue-700 focus:bg-blue-50"
+                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-gray-700 focus:text-gray-900 focus:bg-gray-50"
                                                             >
                                                                 <Mail className="h-4 w-4 mr-2" />
                                                                 Send Mail
@@ -1692,24 +1651,18 @@ export default function CandidatesPage() {
                                                             <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Hire</DropdownMenuLabel>
                                                             <DropdownMenuItem
                                                                 onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${candidate.name} hired - confirmation email sent`)}
-                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
+                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer text-gray-700 focus:text-gray-900 focus:bg-gray-50 transition-colors"
                                                             >
                                                                 <Award className="h-4 w-4 mr-2" />
                                                                 Hire this person
                                                             </DropdownMenuItem>
 
                                                             <DropdownMenuItem
-
                                                                 onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "not hired" }, `${candidate.name} marked as Not Hired - email sent`)}
-
                                                                 className="rounded-lg px-3 py-2 font-bold cursor-pointer text-gray-600 focus:text-gray-900 focus:bg-gray-50 transition-colors"
-
                                                             >
-
                                                                 <UserX className="h-4 w-4 mr-2" />
-
                                                                 Mark as not hired
-
                                                             </DropdownMenuItem>
 
                                                         </DropdownMenuContent>

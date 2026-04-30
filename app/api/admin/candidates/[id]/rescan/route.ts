@@ -34,7 +34,6 @@ export async function POST(
                         shortlistMode: true,
                         extractedDetails: true,
                         orgId: true,
-                        screeningCriteria: true,
                     }
                 }
             }
@@ -73,8 +72,7 @@ export async function POST(
             } catch (e) {}
         }
 
-        const screeningCriteria = safeJsonParse<any>(drive.screeningCriteria, {});
-        const threshold = Number(screeningCriteria?.threshold ?? drive.screeningThreshold ?? 0);
+        const threshold = Number(drive.screeningThreshold ?? 0);
         const scoringInput = {
             resume: structuredResume,
             jd: safeJsonParse(drive.extractedDetails, {}),

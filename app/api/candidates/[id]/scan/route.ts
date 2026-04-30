@@ -31,7 +31,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         shortlistMode: true,
                         extractedDetails: true,
                         orgId: true,
-                        screeningCriteria: true,
                     }
                 }
             }
@@ -67,8 +66,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             } catch (e) {}
         }
 
-        const screeningCriteria = safeJsonParse<any>(application.drive.screeningCriteria, {});
-        const threshold = Number(screeningCriteria?.threshold ?? application.drive.screeningThreshold ?? 0);
+        const threshold = Number(application.drive.screeningThreshold ?? 0);
         const scoringInput = {
             resume: structuredResume,
             jd: safeJsonParse(application.drive.extractedDetails, {}),
@@ -139,7 +137,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         });
 
         // 6. Email & interview invite (only in automatic mode)
-        const isAutomatic = (screeningCriteria?.shortlistMode || application.drive.shortlistMode || "automatic") === "automatic";
+        const isAutomatic = (application.drive.shortlistMode || "automatic") === "automatic";
 
         if (resumeStatus === "SHORTLISTED") {
                 const interview = await (prisma as any).interview.upsert({

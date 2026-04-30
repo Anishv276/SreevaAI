@@ -95,8 +95,6 @@ export async function GET(request: Request) {
                     jdPreviewUrl: true,
                     orgId: true,
                     shortlistMode: true,
-                    inviteScheduleDays: true,
-                    screeningCriteria: true,
                     location: true,
                     aiName: true,
                     cartesiaVoiceId: true,
@@ -116,8 +114,8 @@ export async function GET(request: Request) {
         const formattedDrives = drives.map((drive: any) => {
             const screeningThreshold = Number(drive.screeningThreshold ?? 60);
             const shortlistMode = drive.shortlistMode || "automatic";
-            const inviteScheduleDays = Number(drive.inviteScheduleDays ?? 1);
-            const screeningCriteria = drive.screeningCriteria || JSON.stringify({
+            const inviteScheduleDays = 1;
+            const screeningCriteria = JSON.stringify({
                 threshold: screeningThreshold,
                 shortlistMode,
                 inviteScheduleDays,

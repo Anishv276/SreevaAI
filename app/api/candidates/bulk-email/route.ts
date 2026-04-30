@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { generateId } from "@/lib/ids";
 import { invitationDeliveryQueue } from "@/lib/queue";
-import { safeJsonParse } from "@/lib/utils";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -44,14 +43,8 @@ function resolveAction(
 
 function getDriveScheduleDays(drive: {
     inviteScheduleDays?: number | null;
-    screeningCriteria?: string | Record<string, any> | null;
 }) {
-    const parsedCriteria = typeof drive.screeningCriteria === "string"
-        ? safeJsonParse(drive.screeningCriteria, {})
-        : (drive.screeningCriteria || {});
-
-    const fromJson = Number((parsedCriteria as any)?.inviteScheduleDays ?? 1) || 1;
-    return Number(drive.inviteScheduleDays ?? fromJson ?? 1) || 1;
+    return Number(drive.inviteScheduleDays ?? 1) || 1;
 }
 
 export async function POST(request: Request) {
@@ -92,8 +85,6 @@ export async function POST(request: Request) {
                         title: true,
                         orgId: true,
                         status: true,
-                        inviteScheduleDays: true,
-                        screeningCriteria: true,
                     },
                 },
             },
