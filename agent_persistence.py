@@ -963,6 +963,133 @@ async def generate_interview_summary(
         logger.error(f"[SUMMARY] Generation failed for {app_id}: {e}")
 
 
+async def generate_interview_report(
+    app_id: str,
+    transcript_lines: list,
+    answer_scores: list[dict],
+    job_title: str,
+    proctoring_data: Optional[dict] = None,
+    org_id: Optional[str] = None,
+    llm_model: str = LLM_MODEL,
+):
+    """Generate structured interview report with scores, skills, and behavioral analysis."""
+    is_google_model = str(llm_model).lower().startswith("gemini")
+    if not transcript_lines or not DATABASE_URL:
+        logger.warning("[REPORT] Skipping: missing transcript or DATABASE_URL")
+        return
+    if not is_google_model and not os.environ.get("OPENAI_API_KEY"):
+        logger.warning("[REPORT] Skipping: missing OPENAI_API_KEY for non-Google report")
+        return
+
+    try:
+        client = build_google_analysis_client() if is_google_model else AsyncOpenAI()
+        transcript_text = "\n".join(transcript_lines)
+        transcript_text = truncate_to_tokens(transcript_text, 3000)
+
+        # Calculate technical score from answer scores
+        technical_score = 0
+        if answer_scores:
+            avg_overall = sum(s.get("overall", 5) for s in answer_scores) / len(answer_scores)
+            technical_score = int(min(100, max(0, avg_overall * 10)))
+        else:
+            technical_score = 0
+
+        logger.info(f"[REPORT] Generating report for {app_id}, technical_score={technical_score}...")
+
+        # Generate skills and strengths analysis
+        completion = await client.chat.completions.create(
+            model=llm_model,
+            temperature=0.2,
+            max_tokens=1500,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        f"You are analyzing a technical interview for the '{job_title}' role. "
+                        "Extract structured insights from the transcript:\n\n"
+                        "1. SKILLS_COVERED: List 3-5 key skills this candidate demonstrated (e.g., 'Operations Management', 'CRM Systems', 'Data Analysis')\n"
+                        "2. SKILL_RATINGS: For each skill, rate 1-10 based on answer quality\n"
+                        "3. STRENGTHS: List 3-5 specific strengths with evidence from transcript\n"
+                        "4. QA_BLOCKS: Provide reasoning for question quality\n\n"
+                        "OUTPUT FORMAT (valid JSON):\n"
+                        "{\n"
+                        '  "skills_covered": ["skill1", "skill2", "skill3"],\n'
+                        '  "skill_ratings": {"skill1": 7, "skill2": 5, "skill3": 6},\n'
+                        '  "top_strengths": ["strength1", "strength2", "strength3"],\n'
+                        '  "qa_blocks": [\n'
+                        "    {\"q\": 1, \"title\": \"Question 1\", \"verdict\": \"Answer was clear with examples\", \"score\": 8},\n"
+                        "    {\"q\": 2, \"title\": \"Question 2\", \"verdict\": \"Vague answer lacking specifics\", \"score\": 4}\n"
+                        "  ]\n"
+                        "}"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Interview Transcript for {job_title} role:\n{transcript_text}",
+                },
+            ],
+        )
+        await persist_org_manual_billing_usage(org_id, "interview", _extract_openai_completion_usage(completion))
+
+        raw_report = completion.choices[0].message.content or "{}"
+        try:
+            report_data = json.loads(raw_report.strip())
+        except json.JSONDecodeError:
+            logger.warning(f"[REPORT] Failed to parse report JSON for {app_id}")
+            report_data = {
+                "skills_covered": [],
+                "skill_ratings": {},
+                "top_strengths": [],
+                "qa_blocks": []
+            }
+
+        # Merge scores data
+        if answer_scores:
+            qa_blocks = []
+            for i, score in enumerate(answer_scores, 1):
+                qa_blocks.append({
+                    "q": i,
+                    "title": f"Question {i}",
+                    "score": int(score.get("overall", 5)),
+                    "verdict": f"Clarity: {score.get('clarity', 5)}/10, Depth: {score.get('depth', 5)}/10"
+                })
+            report_data["qa_blocks"] = qa_blocks
+
+        # Build final report
+        final_report = {
+            "technical_score": technical_score,
+            "scores": {
+                "technical": technical_score,
+                "communication": int(sum(s.get("clarity", 5) for s in answer_scores) / max(len(answer_scores), 1) * 10) if answer_scores else 0,
+            },
+            "skills_proof": report_data.get("skills_covered", []),
+            "skill_ratings": report_data.get("skill_ratings", {}),
+            "top_strengths": report_data.get("top_strengths", []),
+            "qa_blocks": report_data.get("qa_blocks", []),
+            "verdict": {
+                "summary": f"Candidate demonstrated {len(report_data.get('skills_covered', []))} key skills with overall technical score of {technical_score}%."
+            },
+        }
+
+        # Save to database
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE "Interview"
+                SET "interviewReport" = $1
+                WHERE "applicationId" = $2
+                """,
+                json.dumps(final_report),
+                app_id,
+            )
+
+        logger.info(f"[REPORT] Generated report for {app_id}: score={technical_score}, skills={len(report_data.get('skills_covered', []))}")
+
+    except Exception as e:
+        logger.error(f"[REPORT] Generation failed for {app_id}: {e}", exc_info=True)
+
+
 async def generate_interview_state_summary(
     transcript_lines: list,
     questions_list: str,

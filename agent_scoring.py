@@ -53,11 +53,11 @@ async def score_answer_quality(
                             '  "concerns": ["list", "of", "observed", "weaknesses"]\n'
                             '}\n\n'
                             "SCORING GUIDE:\n"
-                            "clarity (0-10): How easy to understand?\n"
-                            "  0-2: Rambling, incoherent, hard to follow\n"
-                            "  3-5: Somewhat clear but could be more direct\n"
-                            "  6-8: Clear and well-structured\n"
-                            "  9-10: Crystal clear, perfectly articulated\n\n"
+                            "clarity (0-10): How easy to understand? Penalize fragmentation, run-ons, poor grammar.\n"
+                            "  0-2: Rambling, incoherent, hard to follow, fragmented sentences, poor grammar\n"
+                            "  3-5: Somewhat clear but has run-ons, fragment issues, or could be more direct\n"
+                            "  6-8: Clear and well-structured, mostly correct grammar\n"
+                            "  9-10: Crystal clear, perfectly articulated, excellent grammar and structure\n\n"
                             "depth (0-10): How much reasoning/thinking shown?\n"
                             "  0-2: Surface-level, pure facts\n"
                             "  3-5: Some reasoning, but shallow\n"

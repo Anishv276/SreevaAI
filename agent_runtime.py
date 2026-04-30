@@ -187,6 +187,7 @@ def prewarm(proc: JobProcess):
 from agent_persistence import (
     _extract_openai_completion_usage,
     flush_pending_manual_billing,
+    generate_interview_report,
     generate_interview_state_summary,
     generate_interview_summary,
     get_db_pool,
@@ -2463,6 +2464,34 @@ async def entrypoint(ctx: JobContext):
             logger.warning(f"[SUMMARY] Timed out for {app_id}; skipped after 8s")
         except Exception as e:
             logger.error(f"[SUMMARY] Failed post-interview for {app_id}: {e}")
+
+        # Generate structured interview report (scores, skills, strengths)
+        try:
+            await asyncio.wait_for(
+                generate_interview_report(
+                    app_id,
+                    transcript_lines,
+                    answer_scores,
+                    job_title,
+                    proctoring_data={
+                        "role_category": session_context.role_category,
+                        "candidate_band": session_context.candidate_band,
+                        "suspicion_score": suspicion_score,
+                        "current_mode": current_interview_mode,
+                        "events": proctoring_events,
+                        "contradictions": _contradictions_found,
+                        "claim_index": _claim_index,
+                        "contradiction_state": _contradiction_state,
+                    },
+                    org_id=org_id,
+                    llm_model=analysis_model,
+                ),
+                timeout=10,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"[REPORT] Timed out for {app_id}; skipped after 10s")
+        except Exception as e:
+            logger.error(f"[REPORT] Failed post-interview for {app_id}: {e}")
 
     # Sync with dashboard: Application COMPLETED
     if finished_task.done():

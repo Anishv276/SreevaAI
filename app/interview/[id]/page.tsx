@@ -5645,7 +5645,7 @@ function CompletionView({ id, interviewToken }: { id: string; interviewToken: st
 
                             </div>
 
-                            <h2 className="text-3xl font-bold text-gray-900 tracking-tight mb-3">Thank you for submitting</h2>
+                            <h2 className="text-3xl font-bold text-gray-900 tracking-tight mb-3">Thank you</h2>
 
                             <p className="text-gray-500 font-medium text-base mb-10 leading-relaxed">
 
@@ -5655,17 +5655,9 @@ function CompletionView({ id, interviewToken }: { id: string; interviewToken: st
 
                             </p>
 
-                            <Button
-
-                                onClick={() => window.location.href = "/careers"}
-
-                                className="h-14 px-10 rounded-xl bg-gray-900 text-white font-bold hover:bg-black transition-all shadow-sm text-xs uppercase tracking-widest"
-
-                            >
-
-                                Return to Careers
-
-                            </Button>
+                            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                                Your feedback has been submitted.
+                            </p>
 
                         </div>
 
