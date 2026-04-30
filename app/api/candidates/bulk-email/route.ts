@@ -161,7 +161,7 @@ export async function POST(request: Request) {
                     : 0;
                 const scheduledAt = new Date(Date.now() + dayOffset * DAY_MS);
                 const delay = Math.max(0, scheduledAt.getTime() - Date.now());
-                const jobId = `invitation:${app.id}:${action}:${scheduledAt.toISOString()}`;
+                const jobId = `invitation_${app.id}_${action}_${scheduledAt.getTime()}`;
 
                 if (action === "shortlist") {
                     await (prisma.interview as any).upsert({
