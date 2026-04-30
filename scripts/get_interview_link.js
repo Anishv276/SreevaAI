@@ -107,7 +107,7 @@ async function main() {
         }
 
         console.log(`\nInterview Link for ${app.fullName}:`);
-        console.log(`http://localhost:3000/interview/${app.id}`);
+        console.log(`https://sreevaai.com/interview/${app.id}`);
     } else {
         console.log("No candidates found or could be created.");
     }

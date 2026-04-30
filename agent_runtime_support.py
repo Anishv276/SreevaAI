@@ -143,7 +143,7 @@ AGENT_NAME = os.environ.get("LIVEKIT_AGENT_NAME", "ai_interviewer")
 APP_BASE_URL = (
     os.environ.get("APP_URL")
     or os.environ.get("NEXT_PUBLIC_APP_URL")
-    or "http://localhost:3000"
+    or "https://sreevaai.com"
 ).rstrip("/")
 
 _DB_POOL: Any = None

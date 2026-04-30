@@ -39,7 +39,7 @@ async function main() {
     console.log(`📧 Email: ${user.email}`);
     console.log(`🔐 Role: ${user.role}`);
     console.log(`🏢 Org ID: ${user.orgId}`);
-    console.log(`\n👉 You can now log in at http://localhost:3000/login\n`);
+    console.log(`\n👉 You can now log in at https://sreevaai.com/login\n`);
 }
 
 main()

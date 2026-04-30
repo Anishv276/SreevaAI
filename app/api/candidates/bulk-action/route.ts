@@ -79,7 +79,7 @@ export async function POST(request: Request) {
                         status: "PENDING",
                     },
                 });
-                const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${app.id}`;
+                const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com"}/interview/${app.id}`;
                 const interviewLink = isInterviewTokenRequired()
                     ? `${interviewBase}?token=${interview.accessToken}`
                     : interviewBase;

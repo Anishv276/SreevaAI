@@ -13,7 +13,7 @@ async function main() {
     return;
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com";
   const link = `${baseUrl}/interview/${interview.applicationId}?token=${interview.accessToken}`;
   console.log("TEST_LINK_START");
   console.log(link);

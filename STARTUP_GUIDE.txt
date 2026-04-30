@@ -13,5 +13,5 @@ Follow these steps in order every time you start your development environment:
 
 --------------------------------------------------
 Redis Cloud: redis-13015.crce179.ap-south-1-1.ec2.cloud.redislabs.com:13015
-Your Web Dashboard is running on: http://localhost:3000
+Your Web Dashboard is running on: https://sreevaai.com
 --------------------------------------------------

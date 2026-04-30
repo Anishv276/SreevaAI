@@ -14,7 +14,7 @@ async function main() {
     });
 
     if (app) {
-        console.log(`Interview Link for ${app.fullName}: http://localhost:3000/interview/${app.id}`);
+        console.log(`Interview Link for ${app.fullName}: https://sreevaai.com/interview/${app.id}`);
     } else {
         console.log(`Candidate "${name}" not found.`);
     }

@@ -347,7 +347,7 @@ const worker = new Worker('resume-processing', async (job) => {
 
     console.log(`[SUCCESS] Candidate ${applicantEmail} scored ${currentScore}. Status: ${resumeStatus}`);
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
     try {
         const syncToken = process.env.WORKER_SYNC_TOKEN?.trim() || process.env.JWT_SECRET?.trim();
         const syncRes = await fetch(`${appUrl}/api/admin/candidates/${applicationId}/sync`, {
@@ -383,7 +383,7 @@ const worker = new Worker('resume-processing', async (job) => {
         },
       });
 
-      const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/interview/${applicationId}?token=${interview.accessToken}`;
+      const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com'}/interview/${applicationId}?token=${interview.accessToken}`;
 
       const emailResult = await sendApplicationStatusEmail({
         email: applicantEmail,
@@ -527,7 +527,7 @@ const invitationDeliveryWorker = new Worker(
         });
       }
 
-      const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${applicationId}`;
+      const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com"}/interview/${applicationId}`;
       interviewLink = isInterviewTokenRequired()
         ? `${interviewBase}?token=${newToken}`
         : interviewBase;

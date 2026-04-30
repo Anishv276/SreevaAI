@@ -13,7 +13,7 @@ async function main() {
     return;
   }
 
-  const interviewLink = `http://localhost:3000/interview/${latestApplication.id}${latestApplication.interview ? `?token=${latestApplication.interview.accessToken}` : ''}`;
+  const interviewLink = `https://sreevaai.com/interview/${latestApplication.id}${latestApplication.interview ? `?token=${latestApplication.interview.accessToken}` : ''}`;
   
   console.log("--- LATEST CANDIDATE ---");
   console.log(`Name: ${latestApplication.fullName}`);

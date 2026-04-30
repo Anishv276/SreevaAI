@@ -94,7 +94,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             });
         }
 
-        const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${applicationId}`;
+        const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com"}/interview/${applicationId}`;
         const interviewLink = isInterviewTokenRequired()
             ? `${interviewBase}?token=${newToken}`
             : interviewBase;

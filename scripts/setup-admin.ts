@@ -45,7 +45,7 @@ async function main() {
     console.log(`\n✅ SUCCESS: Super Admin Account is Ready!`);
     console.log(`📧 Email: ${superAdmin.email}`);
     console.log(`🔐 Role: ${user.role}`);
-    console.log(`\n👉 You can now log in at http://localhost:3000/login\n`);
+    console.log(`\n👉 You can now log in at https://sreevaai.com/login\n`);
 }
 
 main()

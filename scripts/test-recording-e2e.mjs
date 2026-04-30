@@ -20,7 +20,7 @@ import { fileURLToPath } from "url";
 // ---------------------------------------------------------------------------
 // Config – adjust BASE_URL if you're running behind a tunnel / different port
 // ---------------------------------------------------------------------------
-const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3000";
+const BASE_URL = process.env.TEST_BASE_URL || "https://sreevaai.com";
 const RECORDING_ENDPOINT = `${BASE_URL}/api/interview/recording`;
 
 const prisma = new PrismaClient();

@@ -165,7 +165,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
             if (isAutomatic) {
                 const { sendApplicationStatusEmail } = await import("@/lib/mail");
-                const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${id}`;
+                const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com"}/interview/${id}`;
                 const interviewLink = isInterviewTokenRequired()
                     ? `${interviewBase}?token=${interview.accessToken}`
                     : interviewBase;

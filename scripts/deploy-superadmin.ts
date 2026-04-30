@@ -78,7 +78,7 @@ async function main() {
     console.log(`\n✅ SUCCESS: Super Admin Credentials Migrated!`);
     console.log(`📧 Email: ${newEmail}`);
     console.log(`🔐 Password: ${password} (stored securely as hash)`);
-    console.log(`\n👉 You can now log in at your deployment URL or localhost:3000/login\n`);
+    console.log(`\n👉 You can now log in at your deployment URL or https://sreevaai.com/login\n`);
 }
 
 main()
