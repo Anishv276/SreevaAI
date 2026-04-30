@@ -13,6 +13,9 @@ services:
       - traefik-proxy
     env_file:
       - .env
+    environment:
+      LIVEKIT_URL: "wss://lk.sreeva.ai"
+      NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreeva.ai"
     restart: always
     dns:
       - 8.8.8.8
@@ -36,6 +39,9 @@ services:
     command: npm run worker
     env_file:
       - .env
+    environment:
+      LIVEKIT_URL: "wss://lk.sreeva.ai"
+      NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreeva.ai"
     restart: always
     depends_on:
       - redis
@@ -55,12 +61,13 @@ services:
       - traefik-proxy
     env_file:
       - .env
+    environment:
+      LIVEKIT_URL: "wss://lk.sreeva.ai"
     restart: always
     dns:
       - 8.8.8.8
       - 8.8.4.4
     depends_on:
-      - livekit
       - redis
 
   # LiveKit Server (Self-Hosted)

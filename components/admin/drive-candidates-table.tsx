@@ -478,6 +478,12 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                 )}
                                 <TableHead className="w-[60px] pl-8 font-bold uppercase tracking-wider text-[11px] text-gray-500">#</TableHead>
                                 <TableHead className="w-[320px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 pl-4">Candidate</TableHead>
+                                <TableHead className="w-[220px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">
+                                    <div className="flex items-center justify-center gap-1">
+                                        <span>Drive ID</span>
+                                        <span className="text-[9px] font-black tracking-[0.18em] text-gray-400">DEBUG</span>
+                                    </div>
+                                </TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">
                                     <div className="flex items-center justify-center gap-1">
                                         <span>Score</span>
@@ -528,13 +534,13 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                         <TableBody className="[&_tr:last-child]:border-0">
                             {isLoading ? (
                                 <TableRow>
-                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={isSelectionMode ? 11 : 10} className="py-12 text-center text-sm font-bold text-gray-400">
                                         Loading candidates...
                                     </TableCell>
                                 </TableRow>
                             ) : filteredCandidates.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={isSelectionMode ? 11 : 10} className="py-12 text-center text-sm font-bold text-gray-400">
                                         No candidates found for this drive
                                     </TableCell>
                                 </TableRow>
@@ -594,6 +600,26 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                         <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{displayName}</span>
                                                         <span className="text-[11px] text-gray-400 font-bold mt-0.5">{displayEmail}</span>
                                                     </div>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex flex-col items-center gap-1">
+                                                    <span
+                                                        className={cn(
+                                                            "max-w-[190px] truncate rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] border",
+                                                            candidate.driveId === driveId
+                                                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                                                : "border-rose-200 bg-rose-50 text-rose-700"
+                                                        )}
+                                                        title={candidate.driveId || "No drive id"}
+                                                    >
+                                                        {candidate.driveId || "missing"}
+                                                    </span>
+                                                    {candidate.driveId !== driveId && (
+                                                        <span className="text-[9px] font-black uppercase tracking-[0.18em] text-rose-500">
+                                                            mismatch
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
