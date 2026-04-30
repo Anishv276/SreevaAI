@@ -8,6 +8,7 @@ import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { safeJsonParse } from "@/lib/utils";
+import { parseDriveScreeningSettings } from "@/lib/screening-criteria";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -29,6 +30,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         description: true,
                         screeningThreshold: true,
                         shortlistMode: true,
+                        screeningCriteria: true,
                         extractedDetails: true,
                         orgId: true,
                     }
@@ -66,13 +68,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             } catch (e) {}
         }
 
-        const threshold = Number(application.drive.screeningThreshold ?? 0);
+        const screeningSettings = parseDriveScreeningSettings(
+            application.drive.screeningCriteria,
+            Number(application.drive.screeningThreshold ?? 0),
+            (application.drive.shortlistMode as "automatic" | "manual") || "automatic",
+            1
+        );
+        const threshold = Number(screeningSettings.threshold ?? application.drive.screeningThreshold ?? 0);
         const scoringInput = {
             resume: structuredResume,
             jd: safeJsonParse(application.drive.extractedDetails, {}),
             resume_raw_text: resumeText,
             jd_raw_text: application.drive.description || "",
             threshold,
+            screening_criteria: screeningSettings.criteria,
         };
 
         const tempInputPath = join(tmpdir(), `rescan_${Date.now()}.json`);
@@ -101,17 +110,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         await unlink(tempInputPath).catch(() => {});
 
-        const parsed = JSON.parse(outputData);
-        aiResult = parsed.data || parsed;
-        if (application.drive.orgId && parsed?.usage) {
+        const scoreResult = JSON.parse(outputData);
+        aiResult = scoreResult.data || scoreResult;
+        if (application.drive.orgId && scoreResult?.usage) {
             await recordOrgBillingUsage({
                 orgId: application.drive.orgId,
                 feature: "resumeReport",
                 usage: {
-                    model: parsed.usage.model || reportModel,
-                    inputTokens: parsed.usage.inputTokens || 0,
-                    outputTokens: parsed.usage.outputTokens || 0,
-                    cachedInputTokens: parsed.usage.cachedInputTokens || 0,
+                    model: scoreResult.usage.model || reportModel,
+                    inputTokens: scoreResult.usage.inputTokens || 0,
+                    outputTokens: scoreResult.usage.outputTokens || 0,
+                    cachedInputTokens: scoreResult.usage.cachedInputTokens || 0,
                 },
             });
         }

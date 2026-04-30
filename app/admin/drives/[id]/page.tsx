@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
 import { Button } from "@/components/ui/button";
 import { ScreeningSettings } from "@/components/create-drive/screening-settings";
+import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import {
     ArrowLeft,
     Briefcase,
@@ -16,37 +17,6 @@ import {
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import { ResumeScreening } from "@/components/admin/resume-screening";
-
-function parseScreeningSettings(
-    rawCriteria: unknown,
-    fallbackThreshold: number,
-    fallbackShortlistMode: "automatic" | "manual",
-    fallbackInviteScheduleDays: number,
-) {
-    let parsed: Record<string, any> = {};
-
-    if (typeof rawCriteria === "string") {
-        try {
-            parsed = JSON.parse(rawCriteria);
-        } catch {
-            parsed = {};
-        }
-    } else if (rawCriteria && typeof rawCriteria === "object") {
-        parsed = rawCriteria as Record<string, any>;
-    }
-
-    const threshold = Number(parsed.threshold ?? fallbackThreshold ?? 60);
-    const shortlistMode = (parsed.shortlistMode as "automatic" | "manual") || fallbackShortlistMode || "automatic";
-    const inviteScheduleDays = Number(parsed.inviteScheduleDays ?? fallbackInviteScheduleDays ?? 1);
-    const { threshold: _threshold, shortlistMode: _shortlistMode, inviteScheduleDays: _inviteScheduleDays, criteria: innerCriteria, ...rest } = parsed || {};
-
-    return {
-        threshold,
-        shortlistMode,
-        inviteScheduleDays,
-        criteria: (innerCriteria && typeof innerCriteria === "object") ? innerCriteria : rest,
-    };
-}
 
 export default function DriveDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const router = useRouter();
@@ -65,7 +35,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
         const currentDrive = drive as any;
         if (!currentDrive) return;
 
-        const parsed = parseScreeningSettings(
+        const parsed = parseDriveScreeningSettings(
             currentDrive.screeningCriteria,
             Number(currentDrive.screeningThreshold ?? 60),
             (currentDrive.shortlistMode as "automatic" | "manual") || "automatic",
@@ -90,11 +60,12 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
+                    screeningThreshold,
                     screeningCriteria: JSON.stringify({
                         threshold: screeningThreshold,
                         shortlistMode,
                         inviteScheduleDays,
-                        criteria: screeningCriteria,
+                        criteria: sanitizeScreeningCriteria(screeningCriteria),
                     }),
                     inviteScheduleDays,
                 }),
@@ -194,7 +165,18 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                 {/* Tab Content */}
                 <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
                     {activeTab === "upload" ? (
-                        <div className="p-6">
+                        <div className="space-y-4 p-6">
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
+                                <span className="font-semibold">Before starting screening, adjust screening settings first.</span>{" "}
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab("settings")}
+                                    className="font-bold underline underline-offset-2"
+                                >
+                                    Click here
+                                </button>{" "}
+                                to open the screening settings.
+                            </div>
                             <ResumeScreening
                                 driveId={driveId}
                                 driveName={drive?.title || ""}
@@ -229,7 +211,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                     variant="outline"
                                     onClick={() => {
                                         const currentDrive = drive as any;
-                                        const next = parseScreeningSettings(
+                                        const next = parseDriveScreeningSettings(
                                             currentDrive?.screeningCriteria,
                                             Number(currentDrive?.screeningThreshold ?? 60),
                                             (currentDrive?.shortlistMode as "automatic" | "manual") || "automatic",

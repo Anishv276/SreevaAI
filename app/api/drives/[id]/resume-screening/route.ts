@@ -7,6 +7,7 @@ import { tmpdir } from "os";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { safeJsonParse } from "@/lib/utils";
 import { generateId } from "@/lib/ids";
+import { parseDriveScreeningSettings } from "@/lib/screening-criteria";
 
 const CHUNK_SIZE = 5;
 const pythonCmd = process.platform === "win32" ? "python" : "python3";
@@ -118,6 +119,7 @@ export async function POST(
                 description: true,
                 screeningThreshold: true,
                 shortlistMode: true,
+                screeningCriteria: true,
                 extractedDetails: true,
                 orgId: true,
                 organization: {
@@ -206,14 +208,17 @@ async function processBatch(
         const reportModel = "gpt-4o";
 
 
-        const threshold: number = Number(drive.screeningThreshold ?? 60);
+        const parsed = parseDriveScreeningSettings(
+            drive.screeningCriteria,
+            Number(drive.screeningThreshold ?? 60),
+            (drive.shortlistMode as "automatic" | "manual") || "automatic",
+            1
+        );
+        const threshold: number = Number(parsed.threshold ?? drive.screeningThreshold ?? 60);
         // Parse the drive's extracted JD once — reuse for every resume
         const structuredJD = safeJsonParse(drive.extractedDetails, {});
         const jdRawText: string = drive.description || "";
-        const screeningCriteria = {
-            threshold,
-            shortlistMode: drive.shortlistMode || "automatic",
-        };
+        const screeningCriteria = parsed.criteria;
 
         for (let i = 0; i < files.length; i += CHUNK_SIZE) {
             const chunk = files.slice(i, i + CHUNK_SIZE);

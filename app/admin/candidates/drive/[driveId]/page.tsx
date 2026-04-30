@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { DriveCandidatesTable } from "@/components/admin/drive-candidates-table";
 import { DriveResumeUploadModal } from "@/components/admin/drive-resume-upload-modal";
 import { ScreeningSettings } from "@/components/create-drive/screening-settings";
+import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import { toast } from "@/components/ui/toast-custom";
 
 interface DriveDetails {
@@ -37,37 +38,6 @@ interface DriveDetails {
     extractedDetails?: Record<string, unknown> | string | null;
     jdPreviewUrl?: string | null;
     screeningCriteria?: Record<string, any> | string | null;
-}
-
-function parseScreeningSettings(
-    rawCriteria: unknown,
-    fallbackThreshold: number,
-    fallbackShortlistMode: "automatic" | "manual",
-    fallbackInviteScheduleDays: number,
-) {
-    let parsed: Record<string, any> = {};
-
-    if (typeof rawCriteria === "string") {
-        try {
-            parsed = JSON.parse(rawCriteria);
-        } catch {
-            parsed = {};
-        }
-    } else if (rawCriteria && typeof rawCriteria === "object") {
-        parsed = rawCriteria as Record<string, any>;
-    }
-
-    const threshold = Number(parsed.threshold ?? fallbackThreshold ?? 60);
-    const shortlistMode = (parsed.shortlistMode as "automatic" | "manual") || fallbackShortlistMode || "automatic";
-    const inviteScheduleDays = Number(parsed.inviteScheduleDays ?? fallbackInviteScheduleDays ?? 1);
-    const { threshold: _threshold, shortlistMode: _shortlistMode, inviteScheduleDays: _inviteScheduleDays, criteria: innerCriteria, ...rest } = parsed || {};
-
-    return {
-        threshold,
-        shortlistMode,
-        inviteScheduleDays,
-        criteria: (innerCriteria && typeof innerCriteria === "object") ? innerCriteria : rest,
-    };
 }
 
 export default function DriveCandidatesPage() {
@@ -122,7 +92,7 @@ export default function DriveCandidatesPage() {
                     screeningCriteria: data.screeningCriteria || null,
                 });
 
-                const parsed = parseScreeningSettings(
+                const parsed = parseDriveScreeningSettings(
                     data.screeningCriteria,
                     Number(data.screeningThreshold ?? 60),
                     (data.shortlistMode as "automatic" | "manual") || "automatic",
@@ -172,11 +142,12 @@ export default function DriveCandidatesPage() {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
+                    screeningThreshold,
                     screeningCriteria: JSON.stringify({
                         threshold: screeningThreshold,
                         shortlistMode,
                         inviteScheduleDays,
-                        criteria: screeningCriteria,
+                        criteria: sanitizeScreeningCriteria(screeningCriteria),
                     }),
                     inviteScheduleDays,
                 }),
@@ -249,6 +220,20 @@ export default function DriveCandidatesPage() {
                 </div>
             </section>
 
+            {activeTab !== "screening" && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
+                    <span className="font-semibold">Before starting screening, adjust screening settings first.</span>{" "}
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab("screening")}
+                        className="font-bold underline underline-offset-2"
+                    >
+                        Click here
+                    </button>{" "}
+                    to open the screening settings.
+                </div>
+            )}
+
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
                 <TabsList className="h-9 rounded-lg border border-gray-200 bg-white p-1 shadow-none">
                     <TabsTrigger value="candidates" className="h-7.5 rounded-md px-3 text-sm font-semibold text-gray-500 data-[state=active]:bg-[#F97316] data-[state=active]:text-white">
@@ -315,7 +300,7 @@ export default function DriveCandidatesPage() {
                                                 parsed = rawCriteria;
                                             }
                                         }
-                                        const next = parseScreeningSettings(
+                                        const next = parseDriveScreeningSettings(
                                             parsed,
                                             Number(current?.screeningThreshold ?? 60),
                                             (current?.shortlistMode as "automatic" | "manual") || "automatic",

@@ -1,32 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
-import { Brain, Sparkles, Zap, Hand, Plus, X, ChevronDown, Star, MapPin, BookOpen, Briefcase, Clock3 } from "lucide-react";
+import { Brain, ChevronDown, Plus, Sparkles, Star, Zap, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-export interface ScreeningCriteria {
-    skills?: {
-        required?: Array<{ name: string; proficiency?: string; weight?: number }>;
-        niceToHave?: Array<{ name: string; weight?: number }>;
-    };
-    experience?: {
-        minimumYears?: number;
-        seniorityLevel?: "junior" | "mid" | "senior";
-        preferredDomain?: string;
-    };
-    education?: {
-        degreeLevel?: "high_school" | "bachelor" | "master" | "phd";
-        fieldOfStudy?: string[];
-        requiredCertifications?: string[];
-        niceToHaveCertifications?: string[];
-    };
-    location?: {
-        required?: string[];
-        workPermitRequired?: boolean;
-        remoteOk?: boolean;
-    };
-}
+import type { ScreeningCriteria } from "@/lib/screening-criteria";
 
 export interface ScreeningConfig {
     threshold: number;
@@ -41,179 +20,170 @@ interface ScreeningSettingsProps {
     setShortlistMode: (v: "automatic" | "manual") => void;
 }
 
-const PROFICIENCY_LEVELS = [
-    { value: "beginner", label: "Beginner" },
-    { value: "intermediate", label: "Intermediate" },
-    { value: "advanced", label: "Advanced" },
-    { value: "expert", label: "Expert" },
-];
-
-const DEGREE_LEVELS = [
-    { value: "high_school", label: "High School" },
-    { value: "bachelor", label: "Bachelor's Degree" },
-    { value: "master", label: "Master's Degree" },
-    { value: "phd", label: "PhD" },
-];
-
-const SENIORITY_LEVELS = [
-    { value: "junior", label: "Junior (0-3 years)" },
-    { value: "mid", label: "Mid-level (3-7 years)" },
-    { value: "senior", label: "Senior (7+ years)" },
-];
-
-const COMMON_COUNTRIES = ["India", "USA", "UK", "Canada", "Australia", "Germany", "Singapore"];
+type SkillItem = { name: string; weight?: number };
+type CustomCheckItem = { text: string; required?: boolean };
 
 export function ScreeningSettings({ config, setConfig, shortlistMode, setShortlistMode }: ScreeningSettingsProps) {
     const threshold = config?.threshold ?? 60;
     const criteria = config?.criteria ?? {};
     const inviteScheduleDays = config?.inviteScheduleDays ?? 1;
-    const [expandedSection, setExpandedSection] = useState<string>("skills");
+    const [expandedSection, setExpandedSection] = useState<"skills" | "custom" | null>("skills");
     const [newSkill, setNewSkill] = useState("");
-    const [newSkillProficiency, setNewSkillProficiency] = useState("intermediate");
-    const [newNiceSkill, setNewNiceSkill] = useState("");
-    const [newCert, setNewCert] = useState("");
-    const [newNiceCert, setNewNiceCert] = useState("");
-    const [newLocation, setNewLocation] = useState("");
+    const [newSkillMustHave, setNewSkillMustHave] = useState(true);
+    const [newCustomCheck, setNewCustomCheck] = useState("");
+    const [newCustomCheckMustHave, setNewCustomCheckMustHave] = useState(true);
 
     const updateCriteria = (updates: Partial<ScreeningCriteria>) => {
-        setConfig(prev => ({
+        setConfig((prev) => ({
             ...prev,
-            criteria: { ...prev.criteria, ...updates }
+            criteria: {
+                ...(prev.criteria || {}),
+                ...updates,
+            },
         }));
     };
 
-    const addRequiredSkill = () => {
-        if (!newSkill.trim()) return;
-        const current = criteria.skills?.required || [];
+    const addSkill = () => {
+        const label = newSkill.trim();
+        if (!label) return;
+
+        const currentRequired = criteria.skills?.required || [];
+        const currentNice = criteria.skills?.niceToHave || [];
+        const skill: SkillItem = { name: label, weight: newSkillMustHave ? 8 : 4 };
+
         updateCriteria({
-            skills: {
-                ...criteria.skills,
-                required: [...current, { name: newSkill.trim(), proficiency: newSkillProficiency, weight: 8 }]
-            }
+            skills: newSkillMustHave
+                ? {
+                    ...criteria.skills,
+                    required: [...currentRequired, skill],
+                }
+                : {
+                    ...criteria.skills,
+                    niceToHave: [...currentNice, skill],
+                },
         });
+
         setNewSkill("");
-        setNewSkillProficiency("intermediate");
+        setNewSkillMustHave(true);
     };
 
-    const removeRequiredSkill = (index: number) => {
-        const current = criteria.skills?.required || [];
-        updateCriteria({
-            skills: { ...criteria.skills, required: current.filter((_, i) => i !== index) }
-        });
-    };
+    const removeSkill = (kind: "required" | "niceToHave", index: number) => {
+        if (kind === "required") {
+            const current = criteria.skills?.required || [];
+            updateCriteria({ skills: { ...criteria.skills, required: current.filter((_, i) => i !== index) } });
+            return;
+        }
 
-    const addNiceSkill = () => {
-        if (!newNiceSkill.trim()) return;
         const current = criteria.skills?.niceToHave || [];
-        updateCriteria({
-            skills: {
-                ...criteria.skills,
-                niceToHave: [...current, { name: newNiceSkill.trim(), weight: 4 }]
-            }
-        });
-        setNewNiceSkill("");
+        updateCriteria({ skills: { ...criteria.skills, niceToHave: current.filter((_, i) => i !== index) } });
     };
 
-    const removeNiceSkill = (index: number) => {
-        const current = criteria.skills?.niceToHave || [];
-        updateCriteria({
-            skills: { ...criteria.skills, niceToHave: current.filter((_, i) => i !== index) }
-        });
-    };
+    const setSkillRequired = (kind: "required" | "niceToHave", index: number, required: boolean) => {
+        const currentRequired = criteria.skills?.required || [];
+        const currentNice = criteria.skills?.niceToHave || [];
 
-    const addCertification = () => {
-        if (!newCert.trim()) return;
-        const current = criteria.education?.requiredCertifications || [];
-        updateCriteria({
-            education: { ...criteria.education, requiredCertifications: [...current, newCert.trim()] }
-        });
-        setNewCert("");
-    };
-
-    const removeCertification = (index: number) => {
-        const current = criteria.education?.requiredCertifications || [];
-        updateCriteria({
-            education: { ...criteria.education, requiredCertifications: current.filter((_, i) => i !== index) }
-        });
-    };
-
-    const addNiceCertification = () => {
-        if (!newNiceCert.trim()) return;
-        const current = criteria.education?.niceToHaveCertifications || [];
-        updateCriteria({
-            education: { ...criteria.education, niceToHaveCertifications: [...current, newNiceCert.trim()] }
-        });
-        setNewNiceCert("");
-    };
-
-    const removeNiceCertification = (index: number) => {
-        const current = criteria.education?.niceToHaveCertifications || [];
-        updateCriteria({
-            education: { ...criteria.education, niceToHaveCertifications: current.filter((_, i) => i !== index) }
-        });
-    };
-
-    const addLocation = () => {
-        if (!newLocation.trim()) return;
-        const current = criteria.location?.required || [];
-        if (!current.includes(newLocation.trim())) {
+        if (kind === "required" && !required) {
+            const moved = currentRequired[index];
+            if (!moved) return;
             updateCriteria({
-                location: { ...criteria.location, required: [...current, newLocation.trim()] }
+                skills: {
+                    ...criteria.skills,
+                    required: currentRequired.filter((_, i) => i !== index),
+                    niceToHave: [...currentNice, { name: moved.name, weight: 4 }],
+                },
+            });
+            return;
+        }
+
+        if (kind === "niceToHave" && required) {
+            const moved = currentNice[index];
+            if (!moved) return;
+            updateCriteria({
+                skills: {
+                    ...criteria.skills,
+                    required: [...currentRequired, { name: moved.name, weight: 8 }],
+                    niceToHave: currentNice.filter((_, i) => i !== index),
+                },
             });
         }
-        setNewLocation("");
     };
 
-    const removeLocation = (index: number) => {
-        const current = criteria.location?.required || [];
+    const addCustomCheck = () => {
+        const text = newCustomCheck.trim();
+        if (!text) return;
+
+        const current = criteria.customChecks || [];
+        const next: CustomCheckItem = { text, required: newCustomCheckMustHave };
+
         updateCriteria({
-            location: { ...criteria.location, required: current.filter((_, i) => i !== index) }
+            customChecks: [...current, next],
+        });
+
+        setNewCustomCheck("");
+        setNewCustomCheckMustHave(true);
+    };
+
+    const removeCustomCheck = (index: number) => {
+        const current = criteria.customChecks || [];
+        updateCriteria({
+            customChecks: current.filter((_, i) => i !== index),
         });
     };
 
-    const SectionHeader = ({ icon: Icon, title, expanded }: { icon: any; title: string; expanded: boolean }) => (
+    const toggleCustomCheckRequired = (index: number, required: boolean) => {
+        const current = criteria.customChecks || [];
+        updateCriteria({
+            customChecks: current.map((item, i) => (i === index ? { ...item, required } : item)),
+        });
+    };
+
+    const SectionHeader = ({ title, expanded }: { title: string; expanded: boolean }) => (
         <button
             type="button"
-            onClick={() => setExpandedSection(expanded ? "" : title.toLowerCase())}
-            className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 transition-colors hover:bg-slate-100"
+            onClick={() => setExpandedSection(expanded ? null : (title.toLowerCase() as "skills" | "custom"))}
+            className="flex w-full items-center justify-between rounded-3xl border border-slate-200/80 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-4 py-4 text-left transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-sm"
         >
             <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-slate-500 shadow-sm ring-1 ring-slate-200">
-                    <Icon className="h-4 w-4" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
+                    {title === "Skills" ? <Star className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
                 </div>
-                <span className="text-sm font-semibold text-slate-900">{title}</span>
+                <div>
+                    <span className="text-sm font-semibold text-slate-900">{title}</span>
+                    <p className="text-xs text-slate-500">
+                        {title === "Skills"
+                            ? "Mark an item as must-have when it is essential."
+                            : "Add client-specific screening checks for scoring."}
+                    </p>
+                </div>
             </div>
             <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", expanded && "rotate-180")} />
         </button>
     );
 
     return (
-        <div className="mx-auto max-w-5xl space-y-6">
-            {/* AI Resume Screening Section */}
-            <section className="space-y-4">
+        <div className="mx-auto max-w-5xl space-y-8">
+            <section className="space-y-5 rounded-3xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/60 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)] md:p-6">
                 <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
                         <Brain className="h-4 w-4" />
                     </div>
                     <div>
                         <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-slate-900">
-                            <Sparkles className="h-4 w-4 text-slate-500" />
+                            <Sparkles className="h-4 w-4 text-orange-500" />
                             AI Resume Screening
                         </p>
-                        <p className="text-xs text-slate-500">Set the core pass threshold for automated resume scoring.</p>
+                        <p className="text-xs text-slate-500">Set the pass threshold for automated resume scoring.</p>
                     </div>
                 </div>
 
-                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm">
                     <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
                             <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                <Sparkles className="h-4 w-4 text-slate-500" />
+                                <Sparkles className="h-4 w-4 text-orange-500" />
                                 Match Threshold
                             </p>
-                            <p className="text-xs font-medium text-slate-500">
-                                Minimum AI score required to pass initial screening.
-                            </p>
+                            <p className="text-xs font-medium text-slate-500">Minimum AI score required to pass initial screening.</p>
                         </div>
                         <div className="flex items-baseline gap-1 text-slate-950">
                             <span className="text-3xl font-black tracking-tight">{threshold}</span>
@@ -224,7 +194,7 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                     <div className="mt-5 px-1">
                         <Slider
                             value={[threshold]}
-                            onValueChange={([v]) => setConfig(prev => ({ ...prev, threshold: v }))}
+                            onValueChange={([v]) => setConfig((prev) => ({ ...prev, threshold: v }))}
                             max={100}
                             min={1}
                             step={1}
@@ -239,31 +209,28 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                 </div>
             </section>
 
-            {/* Invitation Timing Section */}
-            <section className="space-y-4">
+            <section className="space-y-5 rounded-3xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/60 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)] md:p-6">
                 <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm">
-                        <Clock3 className="h-4 w-4" />
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
+                        <Zap className="h-4 w-4" />
                     </div>
                     <div>
                         <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-slate-900">
-                            <Sparkles className="h-4 w-4 text-slate-500" />
+                            <Sparkles className="h-4 w-4 text-orange-500" />
                             Invitation Timing
                         </p>
                         <p className="text-xs text-slate-500">Choose how many days to spread shortlisted invitations across.</p>
                     </div>
                 </div>
 
-                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm">
                     <div className="flex items-center justify-between gap-4">
                         <div className="space-y-1">
                             <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                <Clock3 className="h-4 w-4 text-slate-500" />
+                                <Zap className="h-4 w-4 text-orange-500" />
                                 Spread invitations over
                             </p>
-                            <p className="text-xs font-medium text-slate-500">
-                                Recruiters can drip interview invites instead of sending every shortlisted email at once.
-                            </p>
+                            <p className="text-xs font-medium text-slate-500">Recruiters can drip interview invites instead of sending every shortlisted email at once.</p>
                         </div>
                         <div className="flex items-baseline gap-1 text-slate-950">
                             <span className="text-3xl font-black tracking-tight">{inviteScheduleDays}</span>
@@ -274,7 +241,7 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                     <div className="mt-5 px-1">
                         <Slider
                             value={[inviteScheduleDays]}
-                            onValueChange={([v]) => setConfig(prev => ({ ...prev, inviteScheduleDays: v }))}
+                            onValueChange={([v]) => setConfig((prev) => ({ ...prev, inviteScheduleDays: v }))}
                             max={30}
                             min={1}
                             step={1}
@@ -284,378 +251,185 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                 </div>
             </section>
 
-            {/* Screening Criteria Section */}
-            <section className="space-y-4 pt-2">
+            <section className="space-y-5 pt-1">
                 <div className="flex items-center gap-3">
                     <span className="h-5 w-1 rounded-full bg-slate-900" />
-                    <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-900">Screening Criteria</h2>
+                    <div>
+                        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-900">Screening Criteria</h2>
+                        <p className="text-xs text-slate-500">Only skills and custom checks are used for resume scoring in this drive.</p>
+                    </div>
                 </div>
 
-                {/* Skills Section */}
-                <div className="space-y-3 rounded-3xl border border-slate-200 bg-white shadow-sm">
-                    <SectionHeader icon={Star} title="Skills" expanded={expandedSection === "skills"} />
+                <div className="space-y-3 rounded-3xl border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
+                    <SectionHeader title="Skills" expanded={expandedSection === "skills"} />
                     {expandedSection === "skills" && (
-                        <div className="space-y-4 border-t border-slate-200 px-4 pb-4 pt-4">
-                            {/* Required Skills */}
+                        <div className="space-y-5 border-t border-slate-200/80 px-4 pb-4 pt-4">
+                            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3 text-xs leading-relaxed text-slate-500">
+                                Add each skill once and mark it as must-have when it is essential for scoring.
+                            </div>
+
                             <div className="space-y-2">
-                                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Required Skills</label>
                                 <div className="space-y-2">
                                     {(criteria.skills?.required || []).map((skill, i) => (
-                                        <div key={i} className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                        <div
+                                            key={`required-${i}`}
+                                            className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-gradient-to-r from-white to-slate-50 px-4 py-3 transition-all hover:border-slate-300 hover:shadow-sm"
+                                        >
+                                            <Checkbox
+                                                checked
+                                                onCheckedChange={(checked) => setSkillRequired("required", i, Boolean(checked))}
+                                            />
                                             <div className="flex-1 min-w-0">
-                                                <p className="truncate font-medium text-slate-900">{skill.name}</p>
-                                                <p className="text-xs text-slate-500">{skill.proficiency || "intermediate"}</p>
+                                                <p className="truncate text-sm font-semibold text-slate-900">{skill.name}</p>
+                                                <p className="text-xs text-slate-500">Must-have skill</p>
                                             </div>
                                             <button
                                                 type="button"
-                                                onClick={() => removeRequiredSkill(i)}
+                                                onClick={() => removeSkill("required", i)}
                                                 className="rounded-md p-1 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
                                             >
-                                                <X className="h-4 w-4 text-red-500" />
+                                                <X className="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    {(criteria.skills?.niceToHave || []).map((skill, i) => (
+                                        <div
+                                            key={`nice-${i}`}
+                                            className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 transition-all hover:border-slate-300 hover:shadow-sm"
+                                        >
+                                            <Checkbox
+                                                checked={false}
+                                                onCheckedChange={(checked) => setSkillRequired("niceToHave", i, Boolean(checked))}
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="truncate text-sm font-semibold text-slate-900">{skill.name}</p>
+                                                <p className="text-xs text-slate-500">Optional skill</p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeSkill("niceToHave", i)}
+                                                className="rounded-md p-1 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+                                            >
+                                                <X className="h-4 w-4" />
                                             </button>
                                         </div>
                                     ))}
                                 </div>
-                                <div className="flex gap-2">
+                            </div>
+
+                            <div className="space-y-3 border-t border-slate-200/80 pt-4">
+                                <div className="flex items-center justify-between gap-3">
+                                    <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Add Skill</label>
+                                    <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                        Skills only
+                                    </span>
+                                </div>
+                                <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
                                     <input
                                         type="text"
                                         value={newSkill}
                                         onChange={(e) => setNewSkill(e.target.value)}
-                                        onKeyPress={(e) => e.key === "Enter" && addRequiredSkill()}
-                                        placeholder="Add skill (e.g., React, Python, AWS)"
-                                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
+                                        onKeyDown={(e) => e.key === "Enter" && addSkill()}
+                                        placeholder="Add skill (e.g. React, Python, AWS)"
+                                        className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-slate-300 focus:ring-4 focus:ring-orange-100"
                                     />
+                                    <label className="flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700">
+                                        <Checkbox
+                                            checked={newSkillMustHave}
+                                            onCheckedChange={(checked) => setNewSkillMustHave(Boolean(checked))}
+                                        />
+                                        Must-have
+                                    </label>
                                     <button
                                         type="button"
-                                        onClick={addRequiredSkill}
-                                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                                        onClick={addSkill}
+                                        className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-900 bg-slate-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
                                     >
                                         <Plus className="h-4 w-4" />
+                                        Add
                                     </button>
                                 </div>
-                                <select
-                                    value={newSkillProficiency}
-                                    onChange={(e) => setNewSkillProficiency(e.target.value)}
-                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
-                                >
-                                    <option value="">Proficiency level</option>
-                                    <option value="beginner">Beginner</option>
-                                    <option value="intermediate">Intermediate</option>
-                                    <option value="advanced">Advanced</option>
-                                    <option value="expert">Expert</option>
-                                </select>
                             </div>
+                        </div>
+                    )}
+                </div>
 
-                            {/* Nice-to-have Skills */}
-                            <div className="space-y-2 border-t border-slate-200 pt-4">
-                                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Nice-to-have Skills</label>
+                <div className="space-y-3 rounded-3xl border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
+                    <SectionHeader title="Custom" expanded={expandedSection === "custom"} />
+                    {expandedSection === "custom" && (
+                        <div className="space-y-5 border-t border-slate-200/80 px-4 pb-4 pt-4">
+                            <div className="space-y-2">
+                                <p className="text-xs text-slate-500">
+                                    Add client-specific rules like domain fit, portfolio links, certifications, or team setup.
+                                </p>
                                 <div className="space-y-2">
-                                    {(criteria.skills?.niceToHave || []).map((skill, i) => (
-                                        <div key={i} className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                                            <div className="flex-1">
-                                                <p className="font-medium text-slate-900">{skill.name}</p>
+                                    {(criteria.customChecks || []).map((item, i) => (
+                                        <div
+                                            key={`custom-${i}`}
+                                            className="group flex items-start gap-3 rounded-2xl border border-slate-200 bg-gradient-to-r from-white to-slate-50 px-4 py-3 transition-all hover:border-slate-300 hover:shadow-sm"
+                                        >
+                                            <Checkbox
+                                                checked={Boolean(item.required)}
+                                                onCheckedChange={(checked) => toggleCustomCheckRequired(i, Boolean(checked))}
+                                                className="mt-0.5"
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-semibold text-slate-900">{item.text}</p>
+                                                <p className="text-xs text-slate-500">
+                                                    {item.required ? "Must-have custom check" : "Optional custom check"}
+                                                </p>
                                             </div>
                                             <button
                                                 type="button"
-                                                onClick={() => removeNiceSkill(i)}
+                                                onClick={() => removeCustomCheck(i)}
                                                 className="rounded-md p-1 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
                                             >
-                                                <X className="h-4 w-4 text-red-500" />
+                                                <X className="h-4 w-4" />
                                             </button>
                                         </div>
                                     ))}
                                 </div>
-                                <div className="flex gap-2">
+                            </div>
+
+                            <div className="space-y-3 border-t border-slate-200/80 pt-4">
+                                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Add Custom Check</label>
+                                <div className="grid gap-2 md:grid-cols-[1fr_auto_auto]">
                                     <input
                                         type="text"
-                                        value={newNiceSkill}
-                                        onChange={(e) => setNewNiceSkill(e.target.value)}
-                                        onKeyPress={(e) => e.key === "Enter" && addNiceSkill()}
-                                        placeholder="Add nice-to-have skill"
-                                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
+                                        value={newCustomCheck}
+                                        onChange={(e) => setNewCustomCheck(e.target.value)}
+                                        onKeyDown={(e) => e.key === "Enter" && addCustomCheck()}
+                                        placeholder="Add custom rule (e.g. Worked on B2B SaaS)"
+                                        className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-slate-300 focus:ring-4 focus:ring-orange-100"
                                     />
-                                    <button
-                                        type="button"
-                                        onClick={addNiceSkill}
-                                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
-                                    >
-                                        <Plus className="h-4 w-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Experience Section */}
-                <div className="space-y-3 rounded-3xl border border-slate-200 bg-white shadow-sm">
-                    <SectionHeader icon={Briefcase} title="Experience" expanded={expandedSection === "experience"} />
-                    {expandedSection === "experience" && (
-                        <div className="space-y-4 border-t border-slate-200 px-4 pb-4 pt-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Minimum Years</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        max="50"
-                                        value={criteria.experience?.minimumYears || ""}
-                                        onChange={(e) => updateCriteria({
-                                            experience: { ...criteria.experience, minimumYears: parseInt(e.target.value) || undefined }
-                                        })}
-                                        placeholder="e.g., 5"
-                                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Seniority Level</label>
-                                    <select
-                                        value={criteria.experience?.seniorityLevel || ""}
-                                        onChange={(e) => updateCriteria({
-                                            experience: { ...criteria.experience, seniorityLevel: e.target.value as any }
-                                        })}
-                                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
-                                    >
-                                        <option value="">Select level</option>
-                                        {SENIORITY_LEVELS.map(level => (
-                                            <option key={level.value} value={level.value}>{level.label}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Preferred Domain</label>
-                                <input
-                                    type="text"
-                                    value={criteria.experience?.preferredDomain || ""}
-                                    onChange={(e) => updateCriteria({
-                                        experience: { ...criteria.experience, preferredDomain: e.target.value }
-                                    })}
-                                    placeholder="e.g., Backend Development, Full-stack, Frontend"
-                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
-                                />
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Education Section */}
-                <div className="space-y-3 rounded-3xl border border-slate-200 bg-white shadow-sm">
-                    <SectionHeader icon={BookOpen} title="Education" expanded={expandedSection === "education"} />
-                    {expandedSection === "education" && (
-                        <div className="space-y-4 border-t border-slate-200 px-4 pb-4 pt-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Degree Level</label>
-                                    <select
-                                        value={criteria.education?.degreeLevel || ""}
-                                        onChange={(e) => updateCriteria({
-                                            education: { ...criteria.education, degreeLevel: e.target.value as any }
-                                        })}
-                                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
-                                    >
-                                        <option value="">Select degree</option>
-                                        {DEGREE_LEVELS.map(degree => (
-                                            <option key={degree.value} value={degree.value}>{degree.label}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Field of Study</label>
-                                    <input
-                                        type="text"
-                                        value={criteria.education?.fieldOfStudy?.join(", ") || ""}
-                                        onChange={(e) => updateCriteria({
-                                            education: { ...criteria.education, fieldOfStudy: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }
-                                        })}
-                                        placeholder="e.g., Computer Science, Engineering"
-                                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Required Certifications */}
-                            <div className="space-y-2 border-t border-slate-200 pt-4">
-                                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Required Certifications</label>
-                                <div className="space-y-2">
-                                    {(criteria.education?.requiredCertifications || []).map((cert, i) => (
-                                        <div key={i} className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                                            <p className="flex-1 font-medium text-slate-900">{cert}</p>
-                                            <button
-                                                type="button"
-                                                onClick={() => removeCertification(i)}
-                                                className="rounded-md p-1 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
-                                            >
-                                                <X className="h-4 w-4 text-red-500" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        value={newCert}
-                                        onChange={(e) => setNewCert(e.target.value)}
-                                        onKeyPress={(e) => e.key === "Enter" && addCertification()}
-                                        placeholder="Add certification"
-                                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={addCertification}
-                                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
-                                    >
-                                        <Plus className="h-4 w-4" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Nice-to-have Certifications */}
-                            <div className="space-y-2 border-t border-slate-200 pt-4">
-                                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Nice-to-have Certifications</label>
-                                <div className="space-y-2">
-                                    {(criteria.education?.niceToHaveCertifications || []).map((cert, i) => (
-                                        <div key={i} className="group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                                            <p className="flex-1 font-medium text-slate-900">{cert}</p>
-                                            <button
-                                                type="button"
-                                                onClick={() => removeNiceCertification(i)}
-                                                className="rounded-md p-1 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
-                                            >
-                                                <X className="h-4 w-4 text-red-500" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        value={newNiceCert}
-                                        onChange={(e) => setNewNiceCert(e.target.value)}
-                                        onKeyPress={(e) => e.key === "Enter" && addNiceCertification()}
-                                        placeholder="Add nice-to-have certification"
-                                        className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={addNiceCertification}
-                                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
-                                    >
-                                        <Plus className="h-4 w-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Location Section */}
-                <div className="space-y-3 rounded-3xl border border-slate-200 bg-white shadow-sm">
-                    <SectionHeader icon={MapPin} title="Location" expanded={expandedSection === "location"} />
-                    {expandedSection === "location" && (
-                        <div className="space-y-4 border-t border-slate-200 px-4 pb-4 pt-4">
-                            {/* Preferred Locations */}
-                            <div className="space-y-2">
-                                <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Preferred Locations</label>
-                                <div className="flex flex-wrap gap-2 mb-3">
-                                    {(criteria.location?.required || []).map((location, i) => (
-                                        <div key={i} className="group flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 transition-colors hover:bg-slate-100">
-                                            <span className="text-sm font-medium text-slate-800">{location}</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => removeLocation(i)}
-                                                className="rounded-full p-0.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700"
-                                            >
-                                                <X className="h-3 w-3" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="flex gap-2">
-                                    <div className="flex-1 relative">
-                                        <input
-                                            type="text"
-                                            value={newLocation}
-                                            onChange={(e) => setNewLocation(e.target.value)}
-                                            onKeyPress={(e) => e.key === "Enter" && addLocation()}
-                                            placeholder="Type country or city"
-                                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 focus:ring-4 focus:ring-slate-100"
+                                    <label className="flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700">
+                                        <Checkbox
+                                            checked={newCustomCheckMustHave}
+                                            onCheckedChange={(checked) => setNewCustomCheckMustHave(Boolean(checked))}
                                         />
-                                    </div>
+                                        Must-have
+                                    </label>
                                     <button
                                         type="button"
-                                        onClick={addLocation}
-                                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                                        onClick={addCustomCheck}
+                                        className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-900 bg-slate-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
                                     >
                                         <Plus className="h-4 w-4" />
+                                        Add
                                     </button>
                                 </div>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {COMMON_COUNTRIES.map(country => (
-                                        <button
-                                            key={country}
-                                            type="button"
-                                            onClick={() => {
-                                                setNewLocation(country);
-                                                const current = criteria.location?.required || [];
-                                                if (!current.includes(country)) {
-                                                    updateCriteria({
-                                                        location: { ...criteria.location, required: [...current, country] }
-                                                    });
-                                                }
-                                            }}
-                                            className={cn(
-                                                "rounded-lg px-2 py-1 text-xs font-semibold transition-colors",
-                                                (criteria.location?.required || []).includes(country)
-                                                    ? "bg-slate-950 text-white"
-                                                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                                            )}
-                                        >
-                                            {country}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Work Permit & Remote */}
-                            <div className="space-y-3 border-t border-slate-200 pt-4">
-                                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 transition-colors hover:bg-slate-100">
-                                    <input
-                                        type="checkbox"
-                                        checked={criteria.location?.remoteOk ?? true}
-                                        onChange={(e) => updateCriteria({
-                                            location: { ...criteria.location, remoteOk: e.target.checked }
-                                        })}
-                                        className="w-4 h-4 rounded cursor-pointer"
-                                    />
-                                    <span className="text-sm font-medium text-slate-900">Remote work is acceptable</span>
-                                </label>
-                                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 transition-colors hover:bg-slate-100">
-                                    <input
-                                        type="checkbox"
-                                        checked={criteria.location?.workPermitRequired ?? false}
-                                        onChange={(e) => updateCriteria({
-                                            location: { ...criteria.location, workPermitRequired: e.target.checked }
-                                        })}
-                                        className="w-4 h-4 rounded cursor-pointer"
-                                    />
-                                    <span className="text-sm font-medium text-slate-900">Work permit required</span>
-                                </label>
                             </div>
                         </div>
                     )}
                 </div>
-
-                <p className="px-1 text-xs text-slate-500">These criteria will be used by AI to score and rank resumes</p>
             </section>
 
-            {/* Shortlist Mode Section */}
-            <section className="space-y-5 pt-2">
+            <section className="space-y-5 rounded-3xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/60 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)] md:p-6">
                 <div className="flex items-center gap-3">
                     <span className="h-5 w-1 rounded-full bg-slate-900" />
                     <div>
                         <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-slate-900">
-                            <Zap className="h-4 w-4 text-slate-500" />
+                            <Zap className="h-4 w-4 text-orange-500" />
                             Shortlist Mode
                         </p>
                     </div>
@@ -689,7 +463,7 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                         </button>
                     </div>
                     <p className="max-w-md text-xs leading-relaxed text-slate-500">
-                        {shortlistMode === "automatic" 
+                        {shortlistMode === "automatic"
                             ? "AI will auto-send interview links to matching candidates immediately."
                             : "You will manually review and approve candidates before any invitations are sent."
                         }
@@ -699,4 +473,3 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
         </div>
     );
 }
-

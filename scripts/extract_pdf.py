@@ -447,6 +447,27 @@ def _skill_match_level(norm_skill, resume_normalized, skill_evidence_map, resume
     if norm_skill and len(norm_skill) >= 3 and norm_skill in resume_raw_text:
         return "text_hit", 0.40
     return "none", 0.0
+def _custom_check_match(check_text, resume_normalized, resume_raw_text):
+    normalized = re.sub(r"[^a-z0-9]+", " ", str(check_text or "").lower()).strip()
+    if not normalized:
+        return "none", 0.0
+    if normalized in resume_raw_text:
+        return "full", 1.0
+    tokens = [tok for tok in normalized.split() if len(tok) > 2]
+    if not tokens:
+        return "none", 0.0
+    hits = 0
+    for tok in tokens:
+        if tok in resume_raw_text or normalize_skill(tok) in resume_normalized:
+            hits += 1
+    ratio = hits / len(tokens)
+    if ratio >= 0.8:
+        return "full", 1.0
+    if ratio >= 0.5:
+        return "partial", 0.6
+    if ratio > 0:
+        return "mentioned", 0.3
+    return "none", 0.0
 def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     """
     Deterministic scoring engine. Same input = same score, every time.
@@ -477,7 +498,7 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
         screening_criteria = {}
     # ── 0. Resolve skill/experience requirements (HR criteria overrides JD) ─
     hr_criteria_skills = screening_criteria.get("skills", {})
-    hr_experience = screening_criteria.get("experience", {})
+    hr_custom_checks = screening_criteria.get("customChecks", []) or screening_criteria.get("custom_checks", [])
     if hr_criteria_skills:
         hr_required = hr_criteria_skills.get("required", [])
         if hr_required and isinstance(hr_required[0], dict):
@@ -498,17 +519,10 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
             jd_good_to_have = [s["skill"] for s in raw_good]
         else:
             jd_good_to_have = raw_good
-    if hr_experience:
-        jd_min_years = hr_experience.get("minimumYears")
-        jd_max_years = None
-        jd_seniority = {"junior": "junior", "mid": "mid", "senior": "senior"}.get(
-            hr_experience.get("seniorityLevel")
-        )
-    else:
-        jd_experience = _as_dict(jd_data.get("experience", {}))
-        jd_min_years = jd_experience.get("min_years")
-        jd_max_years = jd_experience.get("max_years")
-        jd_seniority = _as_dict(jd_data.get("role_context", {})).get("seniority")
+    jd_experience = _as_dict(jd_data.get("experience", {}))
+    jd_min_years = jd_experience.get("min_years")
+    jd_max_years = jd_experience.get("max_years")
+    jd_seniority = _as_dict(jd_data.get("role_context", {})).get("seniority")
     has_tech = jd_data.get("has_technical_requirements", True)
     scoring_hints = _as_dict(jd_data.get("scoring_hints", {}))
     # ── 1. Build resume skill pool ──────────────────────────────────────────
@@ -606,6 +620,36 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
             missing_must.append(skill)
             match_status = "not_found"
         must_have_details.append({"name": skill, "weight": weight, "status": match_status, "match_level": level})
+    custom_required_hits = []
+    custom_required_missing = []
+    custom_optional_hits = []
+    custom_optional_total = 0
+    custom_required_total = 0
+    for item in hr_custom_checks:
+        if isinstance(item, dict):
+            check_text = str(item.get("text") or item.get("label") or item.get("name") or "").strip()
+            required = bool(item.get("required"))
+        else:
+            check_text = str(item).strip()
+            required = False
+        if not check_text:
+            continue
+        level, multiplier = _custom_check_match(check_text, resume_normalized, resume_raw_text_corpus)
+        if required:
+            custom_required_total += 1
+            total_weight += 2
+            if level in ("full", "partial", "mentioned"):
+                custom_required_hits.append(check_text)
+                matched_weight += 2 * multiplier
+                must_have_details.append({"name": f"Custom: {check_text}", "weight": "high", "status": "found" if level == "full" else "mentioned", "match_level": level})
+            else:
+                custom_required_missing.append(check_text)
+                missing_must.append(f"Custom: {check_text}")
+                must_have_details.append({"name": f"Custom: {check_text}", "weight": "high", "status": "not_found", "match_level": level})
+        else:
+            custom_optional_total += 1
+            if level != "none":
+                custom_optional_hits.append(check_text)
     if total_weight > 0:
         skills_score = round((matched_weight / total_weight) * 45)
     elif not has_tech:
@@ -722,9 +766,6 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
             career_score -= 3
         elif sev == "medium":
             career_score -= 1
-    jd_edu = _as_dict(jd_data.get("education", {}))
-    if jd_edu.get("required") and not resume_data.get("education"):
-        career_score -= 2
     career_score = max(0, min(10, career_score))
     # ── 6. Domain fit (10 pts) ─────────────────────────────────────────────
     domain_score = 5
@@ -738,18 +779,13 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     for red in (scoring_hints.get("red_flags_to_watch", []) or []):
         if red and red.lower() in resume_raw_text_corpus:
             domain_score = max(0, domain_score - 2)
-    if not has_tech:
-        jd_bg = (jd_experience.get("preferred_background", "") or "").lower() if not hr_experience else ""
-        if jd_bg:
-            dm = sum(1 for s in domain_skills if s and (normalize_skill(s) in resume_normalized or s.lower() in jd_bg))
-            if dm >= 3:
-                domain_score = min(10, domain_score + 2)
-            elif dm >= 1:
-                domain_score = min(10, domain_score + 1)
     jd_kw_set = {normalize_skill(k) for k in (jd_data.get("keywords", []) or []) if k}
     domain_kw_hits = sum(1 for s in domain_skills if s and normalize_skill(s) in jd_kw_set)
     if domain_kw_hits >= 3:
         domain_score = min(10, domain_score + 1)
+    if custom_optional_total > 0:
+        optional_ratio = len(custom_optional_hits) / custom_optional_total
+        domain_score = min(10, domain_score + round(optional_ratio * 2))
     domain_score = max(0, min(10, domain_score))
     # ── 7. Final score ─────────────────────────────────────────────────────
     total = min(100, max(0, skills_score + exp_score + good_score + career_score + domain_score))
@@ -757,46 +793,15 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     # Applied ONLY for fundamental mismatches. Err on the side of keeping candidates.
     hard_rejected = False
     rejection_reasons = []
-    # Education gate
-    hr_education = screening_criteria.get("education", {})
-    if hr_education:
-        required_degree = hr_education.get("degreeLevel")
-        if required_degree:
-            degree_rank = {"high_school": 1, "bachelor": 2, "master": 3, "phd": 4}
-            cand_edu_list = resume_data.get("education") or []
-            cand_str = ""
-            if cand_edu_list and isinstance(cand_edu_list[0], dict):
-                cand_str = (cand_edu_list[0].get("degree", "") or "").lower()
-            if cand_str:
-                if any(x in cand_str for x in ["phd", "doctorate"]):
-                    cand_bucket = "phd"
-                elif any(x in cand_str for x in ["master", "m.s.", "m.tech", "mba", "msc"]):
-                    cand_bucket = "master"
-                elif any(x in cand_str for x in ["bachelor", "b.s.", "b.e.", "b.tech", "b.a.", "bsc"]):
-                    cand_bucket = "bachelor"
-                else:
-                    cand_bucket = "high_school"
-                if degree_rank.get(cand_bucket, 0) < degree_rank.get(required_degree, 0):
-                    hard_rejected = True
-                    rejection_reasons.append(f"Education: requires {required_degree}, candidate has {cand_bucket}")
-    # Location gate
-    hr_location = screening_criteria.get("location", {})
-    if hr_location:
-        req_locs = hr_location.get("required", [])
-        if req_locs and not hr_location.get("remoteOk", False):
-            cand_loc = resume_data.get("location") or {}
-            cand_city = (cand_loc.get("city", "") or "").lower()
-            cand_country = (cand_loc.get("country", "") or "").lower()
-            cand_state = (cand_loc.get("state", "") or "").lower()
-            if (cand_city or cand_country) and not any(loc.lower() in (cand_city, cand_country, cand_state) for loc in req_locs):
-                hard_rejected = True
-                rejection_reasons.append(f"Location: requires {', '.join(req_locs)}, candidate in {cand_city or cand_country}")
     # Must-have gate: only reject if >70% have ZERO evidence (transferable counts, not zero)
     if jd_must_have:
         truly_missing = len(missing_must)
         if truly_missing / len(jd_must_have) > 0.70:
             hard_rejected = True
             rejection_reasons.append(f"Missing {truly_missing}/{len(jd_must_have)} must-have skills with no evidence")
+    if custom_required_total > 0 and len(custom_required_missing) / custom_required_total > 0.70:
+        hard_rejected = True
+        rejection_reasons.append(f"Missing {len(custom_required_missing)}/{custom_required_total} required custom checks")
     # Experience gate: only if gap is extreme (>=4 years under minimum)
     if exp_status == "significantly_below" and jd_min_years and candidate_years is not None:
         if (jd_min_years - candidate_years) >= 4:
@@ -843,7 +848,7 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
         "jd_min_years": jd_min_years,
     }
 def generate_report_inline(
-    _jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client, report_model="gpt-4o"
+    _jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client, report_model="gpt-4o", screening_criteria=None
 ):
     """
     Full-fidelity AI report generation using gpt-4o.
@@ -881,6 +886,7 @@ def generate_report_inline(
     domain_str = json.dumps(domain_skills) if domain_skills else "[]"
     must_details_str = json.dumps(must_have_details, indent=2) if must_have_details else "[]"
     partial_str = json.dumps(partial) if partial else "[]"
+    screening_criteria_str = json.dumps(screening_criteria or {}, indent=2) if screening_criteria else "{}"
     prompt = f"""You are a Principal Technical Recruiter and Talent Intelligence expert with 15+ years of experience at tier-1 companies. You write the most insightful, evidence-grounded candidate evaluation reports in the industry.
 The deterministic scoring engine has ALREADY computed the final score and status. These are LOCKED.
 Your ONLY job: write deep, evidence-grounded human-readable analysis for every field below.
@@ -923,6 +929,8 @@ EDUCATION:
 {edu_str}
 DOMAIN SKILLS:
 {domain_str}
+SCREENING CRITERIA:
+{screening_criteria_str}
 CORE CLAIMS (what the candidate asserts):
 {claims_str}
 SKILL DEPTH SIGNALS:
@@ -1313,6 +1321,7 @@ Resume:
                 score_result,
                 client,
                 report_model=llm_model_override or "gpt-4o",
+                screening_criteria=screening_criteria,
             )
             # -- 3. ASSEMBLE FINAL OUTPUT -----------------------
             final_data = {
