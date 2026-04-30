@@ -42,20 +42,20 @@ type Session = {
 const problemCards = [
     {
         icon: Clock3,
-        title: "Extremely Slow",
-        description: "Weeks spent on initial phone screens that could have been avoided with better data.",
+        title: "The Time Trap",
+        description: "Senior engineers spend 2-4 hours per hire on basic screens. Every hour they spend interviewing is an hour they aren't building.",
         iconClassName: "bg-red-50 text-red-500 border border-red-100",
     },
     {
         icon: Scale,
-        title: "Highly Inconsistent",
-        description: "Subjective interviewing leads to biased hiring and poor diversity outcomes.",
+        title: "The Inconsistency Tax",
+        description: "Gut-feel assessments create shifting standards. Candidates face different bars depending on who happens to interview them.",
         iconClassName: "bg-orange-50 text-orange-500 border border-orange-100",
     },
     {
         icon: FileText,
-        title: "Resume Deception",
-        description: "Keywords on paper do not always translate to actual skills during the job.",
+        title: "The Resume-Reality Gap",
+        description: "Resumes are marketing documents. You don't know what you're hiring until they're in the interview—which is too late to filter at scale.",
         iconClassName: "bg-blue-50 text-blue-500 border border-blue-100",
     },
 ];
@@ -99,24 +99,24 @@ const featureCards: Array<{
 
 const workflowSteps = [
     {
-        title: "JD Upload",
-        description: "Simply upload your job description. AI learns the requirements instantly.",
+        title: "Upload & Context",
+        description: "You provide the job description. SreevaAI learns exactly what matters: not just buzzwords, but the reasoning, trade-offs, and depth required.",
         icon: FileUp,
     },
     {
-        title: "AI Plan",
-        description: "Sreeva generates a custom, multi-stage adaptive interview plan.",
+        title: "Adaptive Design",
+        description: "The system designs a dynamic questioning path. If a candidate claims mastery, the system digs into complexity, not surface-level syntax.",
         icon: Brain,
     },
     {
-        title: "Adaptive Interview",
-        description: "Candidates interview anytime. AI adapts to their live responses.",
+        title: "Intelligent Questioning",
+        description: "SreevaAI listens for depth, ownership, and authenticity. Vague answers trigger follow-ups. The system asks the questions your best interviewer would ask.",
         icon: Mic,
         highlighted: true,
     },
     {
-        title: "Decision Report",
-        description: "Get a stack-ranked list of top candidates with deep analysis.",
+        title: "Hiring Signal",
+        description: "Within 60 seconds, you get a comprehensive report with reasoning depth analysis, authenticity flags, and hire/maybe/reject recommendations.",
         icon: FileBarChart,
     },
 ];
@@ -329,50 +329,26 @@ export default function Home() {
             <main className="pt-20">
                 <section className="mx-auto max-w-[1320px] overflow-hidden px-6 pb-24 pt-12 sm:pt-20">
                     <div className="flex flex-col items-center gap-16 lg:flex-row">
-                        <div className="space-y-8 lg:w-1/2">
+                        <div className="space-y-8 lg:w-3/5">
                             <div className="space-y-5">
                                 <h1 className="font-display text-h1 leading-tight text-on-background md:text-display">
-                                    Adaptive AI interviews that <span className="text-primary">screen for you</span>
+                                    Hire the <span className="text-primary">top 1%</span> with AI Precision
                                 </h1>
-                                <p className="max-w-lg text-body-lg text-on-surface-variant">
-                                    Skip the manual first round. Sreeva conducts autonomous technical checks so your team only interviews top talent.
-                                </p>
+                                <div className="space-y-3">
+                                    <p className="max-w-lg text-body-lg text-on-surface-variant">
+                                        SreevaAI reads resumes, understands job requirements, and asks intelligent follow-up questions in real-time. Know who's genuinely qualified before your team spends a single hour.
+                                    </p>
+                                </div>
                             </div>
                             <div className="flex flex-col gap-4 sm:flex-row">
                                 <Link href={ctaHref} target={!session ? "_blank" : undefined} rel={!session ? "noreferrer" : undefined} className="primary-btn inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-bold">
                                     {session ? "Open Dashboard" : "Book Demo"}
                                     <ArrowRight className="h-5 w-5" />
                                 </Link>
-                                <a href="#contact" className="secondary-btn inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-bold text-on-surface">
-                                    <CirclePlay className="h-5 w-5" />
-                                    View Calendar
-                                </a>
-                            </div>
-                            <div className="grid max-w-xl grid-cols-3 overflow-hidden rounded-3xl border border-outline-variant bg-white shadow-[0_16px_40px_rgba(232,93,4,0.06)]">
-                                {heroMetrics.map((metric) => (
-                                    <div key={metric.label} className="border-r border-outline-variant p-4 last:border-r-0">
-                                        <div className="font-display text-xl font-black text-primary">{metric.value}</div>
-                                        <div className="mt-1 text-[11px] font-semibold leading-snug text-outline">
-                                            {metric.label}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="flex flex-col gap-4 pt-8">
-                                <p className="text-caption font-bold uppercase tracking-widest text-outline">
-                                    Trusted by hiring teams replacing first-round screens
-                                </p>
-                                <div className="flex flex-wrap gap-4 opacity-45 grayscale sm:gap-6">
-                                    {["SaaS teams", "Agencies", "Campus hiring", "Engineering orgs"].map((segment) => (
-                                        <div key={segment} className="rounded-lg bg-on-background/10 px-5 py-2 text-sm font-black text-on-background">
-                                            {segment}
-                                        </div>
-                                    ))}
-                                </div>
                             </div>
                         </div>
 
-                        <div className="relative w-full lg:w-1/2">
+                        <div className="relative w-full lg:w-2/5">
                             <div className="bento-card relative z-10 bg-surface-container-lowest p-4 shadow-2xl">
                                 <div className="mb-4 flex items-center justify-between rounded-2xl bg-surface p-3">
                                     <div className="flex items-center gap-2">
@@ -469,8 +445,8 @@ export default function Home() {
 
                 <section id="solutions" className="bg-surface-container-low py-24">
                     <SectionHeading
-                        title="First-round screening burns too much senior time."
-                        description="Recruiters chase resumes. Engineers repeat basic checks. Candidates still reach interviews without proof."
+                        title="Your hiring process has a credibility problem."
+                        description="You can't tell who's genuinely qualified from a resume. Using engineers for every screen is too expensive, while recruiters alone often lack accuracy. The result? Unqualified candidates waste hours in your final interview panels."
                     />
                     <div className="mx-auto grid max-w-[1320px] gap-8 px-6 md:grid-cols-3">
                         {problemCards.map((card, index) => (
@@ -658,82 +634,44 @@ export default function Home() {
 
                 <section className="mx-auto max-w-[1320px] px-6 py-24">
                     <SectionHeading
-                        title="Upgrade from messy manual checks"
+                        title="Intelligent screening that gets smarter with every answer."
                         eyebrow="COMPARISON"
-                        description="Traditional screening is subjective and slow. Sreeva AI is objective, fast, and highly predictive."
+                        description="Sreeva AI doesn't just automate screening—it improves the quality of hiring signals."
                     />
-                    <div className="grid gap-8 md:grid-cols-2">
-                        <div className="bento-card border-slate-200 bg-slate-50 p-10 flex flex-col justify-between">
-                            <div>
-                                <h3 className="mb-8 flex items-center gap-3 font-display text-2xl font-bold text-slate-800">
-                                    <AlertTriangle className="h-6 w-6 text-slate-400" />
-                                    Manual Screening
-                                </h3>
-                                <ul className="space-y-6">
-                                    <li className="flex gap-4">
-                                        <XCircle className="h-6 w-6 text-red-500 shrink-0 mt-0.5" />
-                                        <div>
-                                            <div className="font-bold text-slate-800">4-7 Days Wait Time</div>
-                                            <p className="text-sm text-slate-500 mt-1">Schedules stretch over weeks, creating costly engineering bottlenecks.</p>
-                                        </div>
-                                    </li>
-                                    <li className="flex gap-4">
-                                        <XCircle className="h-6 w-6 text-red-500 shrink-0 mt-0.5" />
-                                        <div>
-                                            <div className="font-bold text-slate-800">Subjective Note-Taking</div>
-                                            <p className="text-sm text-slate-500 mt-1">Interviews rely on gut feeling and inconsistent manual notes.</p>
-                                        </div>
-                                    </li>
-                                    <li className="flex gap-4">
-                                        <XCircle className="h-6 w-6 text-red-500 shrink-0 mt-0.5" />
-                                        <div>
-                                            <div className="font-bold text-slate-800">High Fraud Potential</div>
-                                            <p className="text-sm text-slate-500 mt-1">Impossible to properly verify identity or screen for background aids.</p>
-                                        </div>
-                                    </li>
-                                </ul>
-                            </div>
-                            <div className="mt-8 flex items-center justify-between rounded-xl bg-red-50/50 border border-red-100 px-4 py-3 text-caption font-bold text-red-700">
-                                <span>TIME TO DECISION</span>
-                                <span>4-7 DAYS</span>
-                            </div>
-                        </div>
 
-                        <div className="rounded-3xl bg-neutral-950 p-10 text-white border border-neutral-800/50 shadow-2xl relative overflow-hidden flex flex-col justify-between">
-                            <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-orange-600/10 blur-3xl pointer-events-none" />
-
-                            <div className="relative z-10">
-                                <h3 className="mb-8 flex items-center gap-3 font-display text-2xl font-bold text-orange-500">
-                                    <Zap className="h-6 w-6 fill-orange-500/10" />
-                                    Sreeva AI
-                                </h3>
-                                <ul className="space-y-6">
-                                    <li className="flex gap-4">
-                                        <CheckCircle2 className="h-6 w-6 text-orange-500 shrink-0 mt-0.5" />
-                                        <div>
-                                            <div className="font-bold text-neutral-100">15 Minutes Flat</div>
-                                            <p className="text-sm text-neutral-400 mt-1">Assessments run autonomously on-demand, generating instant shortlists.</p>
-                                        </div>
-                                    </li>
-                                    <li className="flex gap-4">
-                                        <CheckCircle2 className="h-6 w-6 text-orange-500 shrink-0 mt-0.5" />
-                                        <div>
-                                            <div className="font-bold text-neutral-100">92% Predictive Accuracy</div>
-                                            <p className="text-sm text-neutral-400 mt-1">Standardized metrics and dynamic skill indexing grade with zero bias.</p>
-                                        </div>
-                                    </li>
-                                    <li className="flex gap-4">
-                                        <CheckCircle2 className="h-6 w-6 text-orange-500 shrink-0 mt-0.5" />
-                                        <div>
-                                            <div className="font-bold text-neutral-100">Deep Proctoring</div>
-                                            <p className="text-sm text-neutral-400 mt-1">Tab tracking, gaze detection, and live proctor logs guard test validity.</p>
-                                        </div>
-                                    </li>
-                                </ul>
-                            </div>
-                            <div className="relative z-10 mt-8 flex items-center justify-between rounded-xl bg-orange-600/10 border border-orange-500/20 px-4 py-3 text-caption font-bold text-orange-400">
-                                <span>TIME TO DECISION</span>
-                                <span>15 MINUTES</span>
+                    <div className="mx-auto max-w-[1200px]">
+                        <div className="bento-card overflow-hidden bg-white shadow-xl">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead>
+                                        <tr className="border-b border-slate-100 bg-slate-50/50">
+                                            <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">Aspect</th>
+                                            <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">Traditional Screening</th>
+                                            <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-orange-600">Sreeva AI</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {[
+                                            { label: "Screening Method", traditional: "Subjective resume review + gut feel", sreeva: "Objective resume parsing + live skill validation" },
+                                            { label: "Interviewer Bias", traditional: "High (varies by who's available)", sreeva: "Zero (consistent, data-driven)" },
+                                            { label: "Question Depth", traditional: "Surface-level scripted questions", sreeva: "Adaptive questioning that tests reasoning" },
+                                            { label: "Time to Decision", traditional: "4-7 days (scheduling, notes, debrief)", sreeva: "60 seconds (instant report)" },
+                                            { label: "Evidence Quality", traditional: '"Seemed knowledgeable"', sreeva: "Specific quotes + confidence scores" },
+                                            { label: "Consistency", traditional: "Every candidate different assessment", sreeva: "Standardized metrics across all candidates" }
+                                        ].map((row, i) => (
+                                            <tr key={i} className="group transition-colors hover:bg-slate-50/30">
+                                                <td className="px-6 py-4 text-sm font-bold text-slate-900 whitespace-nowrap">{row.label}</td>
+                                                <td className="px-6 py-4 text-sm text-slate-500 whitespace-nowrap">{row.traditional}</td>
+                                                <td className="px-6 py-4 text-sm font-medium text-slate-900 bg-orange-50/30 whitespace-nowrap">
+                                                    <div className="flex items-center gap-2">
+                                                        <CheckCircle2 className="h-4 w-4 text-orange-600 shrink-0" />
+                                                        {row.sreeva}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -863,7 +801,7 @@ export default function Home() {
                         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-orange-500/5 blur-[120px] rounded-full" />
                         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/5 blur-[120px] rounded-full" />
                     </div>
-                    
+
                     <div className="relative z-10 mx-auto max-w-[1320px] px-6">
                         <div className="text-center mb-16">
                             <SectionHeading
@@ -872,7 +810,7 @@ export default function Home() {
                                 description="Schedule a 30-minute walkthrough to see how Sreeva AI can transform your recruitment pipeline."
                             />
                         </div>
-                        
+
                         <div className="mx-auto max-w-[1000px] bg-white rounded-[32px] border border-slate-200/60 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] overflow-hidden min-h-[700px]">
                             <iframe
                                 src="https://cal.com/vamsivk/30min?embed=true"
@@ -910,8 +848,8 @@ export default function Home() {
                             <ul className="space-y-2 text-sm text-slate-500">
                                 {group.links.map((item) => (
                                     <li key={item}>
-                                        <Link 
-                                            className="underline-offset-4 hover:text-orange-600 hover:underline" 
+                                        <Link
+                                            className="underline-offset-4 hover:text-orange-600 hover:underline"
                                             href={item === "Terms of Service" ? "/terms" : item === "Privacy Policy" ? "/privacy" : "#"}
                                         >
                                             {item}

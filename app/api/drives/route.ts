@@ -10,7 +10,6 @@ import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { getOrgCreditStatus } from "@/lib/credits";
 import { isDriveCreationLocked } from "@/lib/drive-limits";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
-import { safeJsonParse } from "@/lib/utils";
 
 export async function GET(request: Request) {
     try {
@@ -64,7 +63,7 @@ export async function GET(request: Request) {
         }
 
         const [drives, total] = await Promise.all([
-            prisma.drive.findMany({
+            (prisma.drive as any).findMany({
                 where,
                 orderBy: { createdAt: "desc" },
                 skip,
@@ -96,6 +95,8 @@ export async function GET(request: Request) {
                     jdPreviewUrl: true,
                     orgId: true,
                     shortlistMode: true,
+                    inviteScheduleDays: true,
+                    screeningCriteria: true,
                     location: true,
                     aiName: true,
                     cartesiaVoiceId: true,
@@ -115,17 +116,21 @@ export async function GET(request: Request) {
         const formattedDrives = drives.map((drive: any) => {
             const screeningThreshold = Number(drive.screeningThreshold ?? 60);
             const shortlistMode = drive.shortlistMode || "automatic";
+            const inviteScheduleDays = Number(drive.inviteScheduleDays ?? 1);
+            const screeningCriteria = drive.screeningCriteria || JSON.stringify({
+                threshold: screeningThreshold,
+                shortlistMode,
+                inviteScheduleDays,
+                criteria: {},
+            });
 
             return {
                 ...drive,
                 applicants: drive._count?.applications || 0,
                 screeningThreshold,
                 shortlistMode,
-                screeningCriteria: JSON.stringify({
-                    threshold: screeningThreshold,
-                    shortlistMode,
-                    criteria: {},
-                }),
+                inviteScheduleDays,
+                screeningCriteria,
                 aiScreening: {
                     enabled: (drive as any).aiScreeningEnabled
                 },
@@ -226,11 +231,13 @@ export async function POST(request: Request) {
             ...(screeningCriteria && typeof screeningCriteria === "object" ? screeningCriteria : {}),
             ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
             ...(data.shortlistMode !== undefined ? { shortlistMode: data.shortlistMode } : {}),
+            ...(data.inviteScheduleDays !== undefined ? { inviteScheduleDays: data.inviteScheduleDays } : {}),
         };
+        const inviteScheduleDays = data.inviteScheduleDays ?? 1;
 
         const driveId = generateId("drv", data.title);
 
-        const drive = await prisma.drive.create({
+        const drive = await (prisma.drive as any).create({
             data: {
                 id: driveId,
                 title: data.title,
@@ -251,6 +258,7 @@ export async function POST(request: Request) {
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
                 screeningCriteria: JSON.stringify(mergedScreeningCriteria),
                 screeningThreshold: data.screeningThreshold ?? 60,
+                inviteScheduleDays,
 
                 // Interview configuration
                 interviewLanguage: data.interviewLanguage || "English",
@@ -265,7 +273,7 @@ export async function POST(request: Request) {
                 orgId: (session as any).orgId,
                 creatorId: (session as any).userId,
                 ...aiConfig,
-            },
+            } as any,
         });
 
         return NextResponse.json(drive);

@@ -1,9 +1,58 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { sendApplicationStatusEmail } from "@/lib/mail";
 import { generateId } from "@/lib/ids";
-import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { invitationDeliveryQueue } from "@/lib/queue";
+import { safeJsonParse } from "@/lib/utils";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+type BulkEmailAction = "shortlist" | "reject" | "hire" | "nothired" | null;
+
+function resolveAction(
+    app: {
+        resumeStatus: string | null;
+        hiringStatus: string | null;
+    },
+    emailType: "screening" | "hiring",
+    targetAction?: "shortlist" | "reject" | "hire" | "nothired",
+): BulkEmailAction {
+    if (targetAction) {
+        return targetAction;
+    }
+
+    const resumeStatus = (app.resumeStatus || "").toLowerCase().trim();
+    const hiringStatus = (app.hiringStatus || "").toLowerCase().trim();
+
+    if (emailType === "hiring") {
+        if (hiringStatus === "hired" || hiringStatus === "hire") return "hire";
+        if (
+            hiringStatus === "not hired" ||
+            hiringStatus === "nothired" ||
+            hiringStatus === "not shortlisted" ||
+            hiringStatus === "rejected"
+        ) {
+            return "nothired";
+        }
+        return null;
+    }
+
+    if (resumeStatus === "shortlisted" || resumeStatus === "shortlist") return "shortlist";
+    if (resumeStatus === "rejected" || resumeStatus === "reject") return "reject";
+    return null;
+}
+
+function getDriveScheduleDays(drive: {
+    inviteScheduleDays?: number | null;
+    screeningCriteria?: string | Record<string, any> | null;
+}) {
+    const parsedCriteria = typeof drive.screeningCriteria === "string"
+        ? safeJsonParse(drive.screeningCriteria, {})
+        : (drive.screeningCriteria || {});
+
+    const fromJson = Number((parsedCriteria as any)?.inviteScheduleDays ?? 1) || 1;
+    return Number(drive.inviteScheduleDays ?? fromJson ?? 1) || 1;
+}
 
 export async function POST(request: Request) {
     try {
@@ -17,17 +66,19 @@ export async function POST(request: Request) {
             ids,
             emailType = "screening",
             targetAction,
+            scheduleDays,
         }: {
             ids: string[];
             emailType?: "screening" | "hiring";
             targetAction?: "shortlist" | "reject" | "hire" | "nothired";
+            scheduleDays?: number;
         } = await request.json();
 
         if (!ids?.length) {
             return NextResponse.json({ error: "ids are required" }, { status: 400 });
         }
 
-        const applications = await prisma.application.findMany({
+        const applications = await (prisma.application as any).findMany({
             where: { id: { in: ids }, drive: { orgId } },
             select: {
                 id: true,
@@ -35,8 +86,16 @@ export async function POST(request: Request) {
                 email: true,
                 resumeStatus: true,
                 hiringStatus: true,
-                drive: { select: { id: true, title: true, orgId: true } },
-                interview: { select: { accessToken: true } },
+                drive: {
+                    select: {
+                        id: true,
+                        title: true,
+                        orgId: true,
+                        status: true,
+                        inviteScheduleDays: true,
+                        screeningCriteria: true,
+                    },
+                },
             },
         });
 
@@ -44,145 +103,124 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "No matching candidates found" }, { status: 404 });
         }
 
-        const careersUrl = process.env.NEXT_PUBLIC_APP_URL
-            ? `${process.env.NEXT_PUBLIC_APP_URL}/careers`
-            : "https://sreeva.ai/careers";
+        const orderMap = new Map(ids.map((id, index) => [id, index]));
+        const orderedApplications = [...applications].sort(
+            (a, b) => (orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER)
+        );
 
-        let sent = 0;
-        let skipped = 0;
+        const plannedDeliveries: Array<{
+            app: (typeof orderedApplications)[number];
+            action: Exclude<BulkEmailAction, null>;
+            scheduleDays: number;
+        }> = [];
         const skipReasons: string[] = [];
 
-        await Promise.allSettled(
-            applications.map(async (app: (typeof applications)[number]) => {
-                try {
-                    if (!app.email) {
-                        console.warn(`[bulk-email] Skipping ${app.id} — no email address`);
-                        skipped++;
-                        skipReasons.push(`${app.fullName || app.id}: Missing email address`);
-                        return;
-                    }
+        for (const app of orderedApplications) {
+            if (!app.email) {
+                console.warn(`[bulk-email] Skipping ${app.id} - no email address`);
+                skipReasons.push(`${app.fullName || app.id}: Missing email address`);
+                continue;
+            }
 
-                    const resumeStatus = (app.resumeStatus || "").toLowerCase().trim();
-                    const hiringStatus = (app.hiringStatus || "").toLowerCase().trim();
+            if (app.drive?.status && app.drive.status !== "ACTIVE") {
+                console.warn(`[bulk-email] Skipping ${app.id} - drive is ${app.drive.status}`);
+                skipReasons.push(`${app.fullName || app.email}: Drive is ${app.drive.status.toLowerCase()}.`);
+                continue;
+            }
 
-                    let action: "shortlist" | "reject" | "hire" | "nothired" | null = null;
+            const action = resolveAction(app, emailType, targetAction);
+            if (!action) {
+                console.warn(`[bulk-email] Skipping ${app.id} - resolved action is empty.`);
+                const currentStatus = emailType === "hiring"
+                    ? `Hiring: ${app.hiringStatus || "None"}`
+                    : `Resume: ${app.resumeStatus || "None"}`;
+                skipReasons.push(`${app.fullName || app.email}: Cannot send email for status '${currentStatus}'. Please shortlist/reject first.`);
+                continue;
+            }
 
-                    // 1. If explicit targetAction provided from frontend, use it
-                    if (targetAction) {
-                        action = targetAction;
-                    } 
-                    // 2. Otherwise route based on internal DB status
-                    else if (emailType === "hiring") {
-                        if (hiringStatus === "hired" || hiringStatus === "hire") {
-                            action = "hire";
-                        } else if (
-                            hiringStatus === "not hired" ||
-                            hiringStatus === "nothired" ||
-                            hiringStatus === "not shortlisted" ||
-                            hiringStatus === "rejected"
-                        ) {
-                            action = "nothired";
-                        }
-                    } else {
-                        // screening
-                        if (resumeStatus === "shortlisted" || resumeStatus === "shortlist") {
-                            action = "shortlist";
-                        } else if (resumeStatus === "rejected" || resumeStatus === "reject") {
-                            action = "reject";
-                        }
-                    }
+            const driveScheduleDays = getDriveScheduleDays(app.drive || {});
+            const effectiveScheduleDays = emailType === "screening"
+                ? Math.max(1, Number(scheduleDays ?? driveScheduleDays ?? 1))
+                : 1;
 
-                    if (!action) {
-                        console.warn(`[bulk-email] Skipping ${app.id} — resolved action is empty.`);
-                        skipped++;
-                        const currentStatus = emailType === "hiring" ? `Hiring: ${app.hiringStatus || 'None'}` : `Resume: ${app.resumeStatus || 'None'}`;
-                        skipReasons.push(`${app.fullName || app.email}: Cannot send email for status '${currentStatus}'. Please shortlist/reject first.`);
-                        return;
-                    }
+            plannedDeliveries.push({
+                app,
+                action,
+                scheduleDays: effectiveScheduleDays,
+            });
+        }
 
-                    if (action === "shortlist") {
-                        const interview = await (prisma as any).interview.upsert({
-                            where: { applicationId: app.id },
-                            update: {
-                                expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-                                status: "PENDING",
-                            },
-                            create: {
-                                id: generateId("int", app.fullName || app.id),
-                                applicationId: app.id,
-                                expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-                                status: "PENDING",
-                            },
-                        });
-                        const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${app.id}`;
-                        const interviewLink = isInterviewTokenRequired()
-                            ? `${interviewBase}?token=${interview.accessToken}`
-                            : interviewBase;
-                        await sendApplicationStatusEmail({
-                            email: app.email,
-                            fullName: app.fullName,
-                            jobTitle: app.drive.title,
-                            orgId: app.drive.orgId ?? undefined,
-                            status: "SHORTLISTED",
-                            score: 0,
-                            interviewLink,
-                        });
-                        sent++;
+        if (!plannedDeliveries.length) {
+            const firstReason = skipReasons[0] || "No eligible candidates";
+            return NextResponse.json({
+                error: "No emails could be queued",
+                reasons: skipReasons,
+                message: firstReason,
+                queued: 0,
+                skipped: skipReasons.length,
+            }, { status: 400 });
+        }
 
-                    } else if (action === "reject") {
-                        await sendApplicationStatusEmail({
-                            email: app.email,
-                            fullName: app.fullName,
-                            jobTitle: app.drive.title,
-                            orgId: app.drive.orgId ?? undefined,
-                            status: "REJECTED",
-                            score: 0,
-                            interviewLink: careersUrl,
-                        });
-                        sent++;
+        let queued = 0;
 
-                    } else if (action === "hire") {
-                        await sendApplicationStatusEmail({
-                            email: app.email,
-                            fullName: app.fullName,
-                            jobTitle: app.drive.title,
-                            orgId: app.drive.orgId ?? undefined,
-                            status: "Hired",
-                            score: 0,
-                        });
-                        sent++;
+        await Promise.all(
+            plannedDeliveries.map(async ({ app, action, scheduleDays }, index) => {
+                const dayOffset = emailType === "screening"
+                    ? Math.floor((index * scheduleDays) / plannedDeliveries.length)
+                    : 0;
+                const scheduledAt = new Date(Date.now() + dayOffset * DAY_MS);
+                const delay = Math.max(0, scheduledAt.getTime() - Date.now());
+                const jobId = `invitation:${app.id}:${action}:${scheduledAt.toISOString()}`;
 
-                    } else if (action === "nothired") {
-                        await sendApplicationStatusEmail({
-                            email: app.email,
-                            fullName: app.fullName,
-                            jobTitle: app.drive.title,
-                            orgId: app.drive.orgId ?? undefined,
-                            status: "REJECTED",
-                            score: 0,
-                            interviewLink: careersUrl,
-                        });
-                        sent++;
-                    }
-
-                } catch (err) {
-                    const msg = err instanceof Error ? err.message : String(err);
-                    console.error(`[bulk-email] Failed for ${app.id}:`, msg);
-                    skipped++;
-                    skipReasons.push(`${app.fullName || app.email}: ${msg}`);
+                if (action === "shortlist") {
+                    await (prisma.interview as any).upsert({
+                        where: { applicationId: app.id },
+                        update: {
+                            scheduledAt,
+                            status: "PENDING",
+                        },
+                        create: {
+                            id: generateId("int", app.fullName || app.id),
+                            applicationId: app.id,
+                            scheduledAt,
+                            status: "PENDING",
+                        },
+                    });
                 }
+
+                await invitationDeliveryQueue.add(
+                    "deliver-invitation",
+                    {
+                        applicationId: app.id,
+                        action,
+                        emailType,
+                        scheduledAt: scheduledAt.toISOString(),
+                    },
+                    {
+                        jobId,
+                        delay,
+                    }
+                );
+
+                queued += 1;
             })
         );
 
-        let msg = `Emails sent to ${sent} candidate${sent !== 1 ? "s" : ""}`;
-        if (skipped > 0) {
-            const firstReason = skipReasons[0] || "Unknown status condition";
-            msg = `Emails sent: ${sent}, skipped: ${skipped} (${firstReason})`;
-        }
+        const delayed = plannedDeliveries.filter((item, index) => emailType === "screening" && Math.floor((index * item.scheduleDays) / plannedDeliveries.length) > 0).length;
+        const immediate = queued - delayed;
+        const message = delayed > 0
+            ? `Queued ${queued} email${queued !== 1 ? "s" : ""} (${immediate} immediate, ${delayed} scheduled).`
+            : `Queued ${queued} email${queued !== 1 ? "s" : ""}.`;
 
-        return NextResponse.json({ message: msg, sent, skipped, reasons: skipReasons });
+        return NextResponse.json({
+            message,
+            queued,
+            sent: queued,
+            skipped: skipReasons.length,
+            reasons: skipReasons,
+        });
     } catch (error) {
         console.error("[bulk-email] error:", error);
-        return NextResponse.json({ error: "Failed to send emails" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to queue emails" }, { status: 500 });
     }
 }

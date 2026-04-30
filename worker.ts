@@ -4,10 +4,12 @@ import { join } from 'path';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
 import { writeFile, unlink } from 'fs/promises';
+import { randomUUID } from 'crypto';
 import { prisma } from './lib/prisma';
 import * as dotenv from 'dotenv';
 import { putObject } from "./lib/s3";
 import { generateId } from "./lib/ids";
+import { isInterviewTokenRequired } from "./lib/interview-access";
 
 // Load environment variables
 dotenv.config();
@@ -239,7 +241,7 @@ const worker = new Worker('resume-processing', async (job) => {
     let aiResult: { score: number; status: string; reasoning: string; hard_rejected?: boolean } = { score: 0, status: "Pending", reasoning: "No resume data" };
 
     // Always read the latest drive settings from DB (never trust queued snapshot).
-    const latestDrive = await prisma.drive.findUnique({
+    const latestDrive = await (prisma.drive as any).findUnique({
       where: { id: drive.id },
       select: {
         title: true,
@@ -432,6 +434,149 @@ worker.on('failed', (job, err) => {
   console.log(`[FATAL] Job ${job?.id} failed permanently: ${err.message}`);
 });
 
+const invitationDeliveryWorker = new Worker(
+  "invitation-delivery-queue",
+  async (job) => {
+    const {
+      applicationId,
+      action,
+      emailType,
+      scheduledAt,
+    }: {
+      applicationId?: string;
+      action?: "shortlist" | "reject" | "hire" | "nothired";
+      emailType?: "screening" | "hiring";
+      scheduledAt?: string;
+    } = job.data || {};
+
+    if (!applicationId || !action) {
+      throw new Error("Missing applicationId or action in invitation-delivery-queue job");
+    }
+
+    const application = await prisma.application.findUnique({
+      where: { id: applicationId },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        aiScore: true,
+        drive: {
+          select: {
+            id: true,
+            title: true,
+            orgId: true,
+            status: true,
+          },
+        },
+        interview: {
+          select: {
+            id: true,
+            accessToken: true,
+          },
+        },
+      },
+    });
+
+    if (!application) {
+      console.warn(`[Invitation Worker] Application ${applicationId} no longer exists. Skipping.`);
+      return { skipped: true, reason: "missing_application" };
+    }
+
+    if (!application.email) {
+      console.warn(`[Invitation Worker] Application ${applicationId} has no email address. Skipping.`);
+      return { skipped: true, reason: "missing_email" };
+    }
+
+    if (application.drive?.status && application.drive.status !== "ACTIVE") {
+      console.warn(`[Invitation Worker] Drive ${application.drive.id} is ${application.drive.status}. Skipping.`);
+      return { skipped: true, reason: "drive_inactive" };
+    }
+
+    const now = new Date();
+    const scheduledDate = scheduledAt ? new Date(scheduledAt) : now;
+    let interviewLink: string | undefined;
+
+    if (action === "shortlist") {
+      const newToken = randomUUID();
+      const expiresAt = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+
+      if (application.interview) {
+        await (prisma.interview as any).update({
+          where: { id: application.interview.id },
+          data: {
+            accessToken: newToken,
+            scheduledAt: scheduledDate,
+            inviteSentAt: now,
+            expiresAt,
+            status: "PENDING",
+            startedAt: null,
+            completedAt: null,
+          },
+        });
+      } else {
+        await (prisma.interview as any).create({
+          data: {
+            id: generateId("int", application.fullName || applicationId),
+            applicationId,
+            accessToken: newToken,
+            scheduledAt: scheduledDate,
+            inviteSentAt: now,
+            expiresAt,
+            status: "PENDING",
+          },
+        });
+      }
+
+      const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/interview/${applicationId}`;
+      interviewLink = isInterviewTokenRequired()
+        ? `${interviewBase}?token=${newToken}`
+        : interviewBase;
+    }
+
+    const { sendApplicationStatusEmail } = await import('./lib/mail');
+
+    const emailStatus = action === "shortlist"
+      ? "SHORTLISTED"
+      : action === "hire"
+        ? "Hired"
+        : "REJECTED";
+
+    const mailResult = await sendApplicationStatusEmail({
+      email: application.email,
+      fullName: application.fullName || "Candidate",
+      jobTitle: application.drive?.title || "Unknown Role",
+      orgId: application.drive?.orgId ?? undefined,
+      status: emailStatus,
+      score: application.aiScore || 0,
+      interviewLink,
+    });
+
+    if (!mailResult.success) {
+      const reason =
+        typeof mailResult.error === "string"
+          ? mailResult.error
+          : (mailResult.error as any)?.message || "Unknown email delivery error";
+      throw new Error(reason);
+    }
+
+    console.log(`[Invitation Worker] Delivered ${action} email for ${applicationId}`);
+    return { success: true };
+  },
+  {
+    connection: redisConnection,
+    concurrency: 3,
+    lockDuration: 5 * 60 * 1000,
+    stalledInterval: 5 * 60 * 1000,
+    maxStalledCount: 1,
+    removeOnComplete: { count: 0 },
+    removeOnFail: { count: 10 },
+  }
+);
+
+invitationDeliveryWorker.on("failed", (job, err) => {
+  console.log(`[FATAL] Invitation Delivery Job ${job?.id} failed permanently: ${err.message}`);
+});
+
 /**
  * ðŸ’¾ DATABASE BACKUP WORKER (Phase 5 - Persistent Backups to R2)
  * Runs daily at midnight to export core hiring data.
@@ -444,7 +589,7 @@ const backupWorker = new Worker(
     try {
       // 1. Fetch data from core tables
       const users = await prisma.user.findMany();
-      const drives = await prisma.drive.findMany({
+      const drives = await (prisma.drive as any).findMany({
         select: {
           id: true,
           title: true,
@@ -480,6 +625,7 @@ const backupWorker = new Worker(
           googleModel: true,
           googleVoiceName: true,
           ttsProvider: true,
+          inviteScheduleDays: true,
         },
       });
       const applications = await prisma.application.findMany();

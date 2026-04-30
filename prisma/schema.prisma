@@ -134,6 +134,7 @@ model Drive {
   department         String
   type               String        @default("Full-time")
   screeningThreshold Int           @default(0)
+  inviteScheduleDays Int           @default(1)
   creatorId          String
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
@@ -199,6 +200,8 @@ model Interview {
   id                    String      @id
   applicationId         String      @unique
   accessToken           String      @unique @default(uuid())
+  scheduledAt           DateTime?
+  inviteSentAt          DateTime?
   expiresAt             DateTime?
   status                String      @default("PENDING")
   startedAt             DateTime?

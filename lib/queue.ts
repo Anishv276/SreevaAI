@@ -23,6 +23,12 @@ export const emailQueue = new Queue('email-delivery', {
   defaultJobOptions
 });
 
+// 2b. Handles delayed interview invitation delivery
+export const invitationDeliveryQueue = new Queue('invitation-delivery-queue', {
+  connection: redisConnection,
+  defaultJobOptions
+});
+
 // 3. Handles async interview recording/transcript persistence
 export const interviewFinalizationQueue = new Queue('interview-finalization', {
   connection: redisConnection,

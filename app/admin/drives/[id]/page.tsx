@@ -17,6 +17,37 @@ import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import { ResumeScreening } from "@/components/admin/resume-screening";
 
+function parseScreeningSettings(
+    rawCriteria: unknown,
+    fallbackThreshold: number,
+    fallbackShortlistMode: "automatic" | "manual",
+    fallbackInviteScheduleDays: number,
+) {
+    let parsed: Record<string, any> = {};
+
+    if (typeof rawCriteria === "string") {
+        try {
+            parsed = JSON.parse(rawCriteria);
+        } catch {
+            parsed = {};
+        }
+    } else if (rawCriteria && typeof rawCriteria === "object") {
+        parsed = rawCriteria as Record<string, any>;
+    }
+
+    const threshold = Number(parsed.threshold ?? fallbackThreshold ?? 60);
+    const shortlistMode = (parsed.shortlistMode as "automatic" | "manual") || fallbackShortlistMode || "automatic";
+    const inviteScheduleDays = Number(parsed.inviteScheduleDays ?? fallbackInviteScheduleDays ?? 1);
+    const { threshold: _threshold, shortlistMode: _shortlistMode, inviteScheduleDays: _inviteScheduleDays, criteria: innerCriteria, ...rest } = parsed || {};
+
+    return {
+        threshold,
+        shortlistMode,
+        inviteScheduleDays,
+        criteria: (innerCriteria && typeof innerCriteria === "object") ? innerCriteria : rest,
+    };
+}
+
 export default function DriveDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const router = useRouter();
     const { id: driveId } = use(params);
@@ -26,6 +57,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
     const [screeningThreshold, setScreeningThreshold] = useState(60);
     const [screeningCriteria, setScreeningCriteria] = useState<Record<string, any>>({});
     const [shortlistMode, setShortlistMode] = useState<"automatic" | "manual">("automatic");
+    const [inviteScheduleDays, setInviteScheduleDays] = useState(1);
 
     const drive = jobs.find(j => j.id === driveId);
 
@@ -33,25 +65,17 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
         const currentDrive = drive as any;
         if (!currentDrive) return;
 
-        const rawCriteria = currentDrive.screeningCriteria;
-        let parsed: Record<string, any> = {};
-        if (!rawCriteria) {
-            parsed = {};
-        } else if (typeof rawCriteria === "string") {
-            try {
-                parsed = JSON.parse(rawCriteria);
-            } catch {
-                parsed = {};
-            }
-        } else {
-            parsed = rawCriteria;
-        }
+        const parsed = parseScreeningSettings(
+            currentDrive.screeningCriteria,
+            Number(currentDrive.screeningThreshold ?? 60),
+            (currentDrive.shortlistMode as "automatic" | "manual") || "automatic",
+            Number(currentDrive.inviteScheduleDays ?? 1),
+        );
 
-        setScreeningThreshold(Number(parsed.threshold ?? currentDrive.screeningThreshold ?? 60));
-        setShortlistMode((parsed.shortlistMode as "automatic" | "manual") || (currentDrive.shortlistMode as "automatic" | "manual") || "automatic");
-
-        const { threshold: _threshold, shortlistMode: _shortlistMode, criteria: innerCriteria, ...rest } = parsed || {};
-        setScreeningCriteria((innerCriteria && typeof innerCriteria === "object") ? innerCriteria : rest);
+        setScreeningThreshold(parsed.threshold);
+        setShortlistMode(parsed.shortlistMode);
+        setInviteScheduleDays(parsed.inviteScheduleDays);
+        setScreeningCriteria(parsed.criteria as Record<string, any>);
     }, [drive]);
 
     useEffect(() => {
@@ -69,8 +93,10 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                     screeningCriteria: JSON.stringify({
                         threshold: screeningThreshold,
                         shortlistMode,
+                        inviteScheduleDays,
                         criteria: screeningCriteria,
                     }),
+                    inviteScheduleDays,
                 }),
             });
 
@@ -181,15 +207,17 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                 <p className="mt-1 text-sm text-slate-500">Configure AI screening criteria. The system will automatically score and rank candidates based on these settings.</p>
                             </div>
                             <ScreeningSettings
-                                config={{ threshold: screeningThreshold, criteria: screeningCriteria }}
+                                config={{ threshold: screeningThreshold, criteria: screeningCriteria, inviteScheduleDays }}
                                 setConfig={(cfg) => {
                                     if (typeof cfg === "function") {
-                                        const next = cfg({ threshold: screeningThreshold, criteria: screeningCriteria });
+                                        const next = cfg({ threshold: screeningThreshold, criteria: screeningCriteria, inviteScheduleDays });
                                         setScreeningThreshold(next.threshold ?? 60);
                                         setScreeningCriteria(next.criteria || {});
+                                        setInviteScheduleDays(Number(next.inviteScheduleDays ?? 1));
                                     } else {
                                         setScreeningThreshold(cfg.threshold ?? 60);
                                         setScreeningCriteria(cfg.criteria || {});
+                                        setInviteScheduleDays(Number(cfg.inviteScheduleDays ?? 1));
                                     }
                                 }}
                                 shortlistMode={shortlistMode}
@@ -201,24 +229,16 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                     variant="outline"
                                     onClick={() => {
                                         const currentDrive = drive as any;
-                                setScreeningThreshold(Number(currentDrive?.screeningThreshold ?? 60));
-                                const rawCriteria = currentDrive?.screeningCriteria;
-                                        let parsed: Record<string, any> = {};
-                                        if (!rawCriteria) {
-                                            parsed = {};
-                                        } else if (typeof rawCriteria === "string") {
-                                            try {
-                                                parsed = JSON.parse(rawCriteria);
-                                            } catch {
-                                                parsed = {};
-                                            }
-                                        } else {
-                                            parsed = rawCriteria;
-                                        }
-                                        setScreeningThreshold(Number(parsed.threshold ?? currentDrive?.screeningThreshold ?? 60));
-                                        setShortlistMode((parsed.shortlistMode as "automatic" | "manual") || (currentDrive?.shortlistMode as "automatic" | "manual") || "automatic");
-                                        const { threshold: _threshold, shortlistMode: _shortlistMode, criteria: innerCriteria, ...rest } = parsed || {};
-                                        setScreeningCriteria((innerCriteria && typeof innerCriteria === "object") ? innerCriteria : rest);
+                                        const next = parseScreeningSettings(
+                                            currentDrive?.screeningCriteria,
+                                            Number(currentDrive?.screeningThreshold ?? 60),
+                                            (currentDrive?.shortlistMode as "automatic" | "manual") || "automatic",
+                                            Number(currentDrive?.inviteScheduleDays ?? 1),
+                                        );
+                                        setScreeningThreshold(next.threshold);
+                                        setShortlistMode(next.shortlistMode);
+                                        setInviteScheduleDays(next.inviteScheduleDays);
+                                        setScreeningCriteria(next.criteria as Record<string, any>);
                                     }}
                                 >
                                     Reset

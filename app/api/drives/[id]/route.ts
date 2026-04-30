@@ -21,7 +21,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     try {
         const { id } = await params;
 
-        const drive = await prisma.drive.findFirst({
+        const drive = await (prisma.drive as any).findFirst({
             where: {
                 id
             },
@@ -52,6 +52,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 jdPreviewUrl: true,
                 orgId: true,
                 shortlistMode: true,
+                inviteScheduleDays: true,
+                screeningCriteria: true,
                 location: true,
                 aiName: true,
                 cartesiaVoiceId: true,
@@ -86,17 +88,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
         const screeningThreshold = Number((drive as any).screeningThreshold ?? 60);
         const shortlistMode = (drive as any).shortlistMode || "automatic";
+        const inviteScheduleDays = Number((drive as any).inviteScheduleDays ?? 1);
+        const screeningCriteria = (drive as any).screeningCriteria || JSON.stringify({
+            threshold: screeningThreshold,
+            shortlistMode,
+            inviteScheduleDays,
+            criteria: {},
+        });
 
         return NextResponse.json({
             ...drive,
             orgId: (drive as any).orgId,
             screeningThreshold,
             shortlistMode,
-            screeningCriteria: JSON.stringify({
-                threshold: screeningThreshold,
-                shortlistMode,
-                criteria: {},
-            }),
+            inviteScheduleDays,
+            screeningCriteria,
             applicants: (drive as any)._count?.applications || 0,
             aiScreening: {
                 enabled: true,
@@ -158,7 +164,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
         const data = result.data;
         const positions = data.positions !== undefined ? data.positions : undefined;
-        const existingDrive = await prisma.drive.findUnique({
+        const existingDrive = await (prisma.drive as any).findUnique({
             where: { id: driveId },
             select: {
                 orgId: true,
@@ -203,7 +209,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
         if (data.registrationFields !== undefined) updateData.registrationFields = JSON.stringify(data.registrationFields);
 
-        if (data.screeningThreshold !== undefined || (data as any).screeningCriteria !== undefined || (data as any).shortlistMode !== undefined) {
+        if (data.screeningThreshold !== undefined || (data as any).screeningCriteria !== undefined || (data as any).shortlistMode !== undefined || data.inviteScheduleDays !== undefined) {
             if (data.screeningThreshold !== undefined) updateData.screeningThreshold = data.screeningThreshold;
 
             const rawCriteria = (data as any).screeningCriteria;
@@ -214,9 +220,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 ...(parsedCriteria && typeof parsedCriteria === "object" ? parsedCriteria : {}),
                 ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
                 ...((data as any).shortlistMode !== undefined ? { shortlistMode: (data as any).shortlistMode } : {}),
+                ...(data.inviteScheduleDays !== undefined ? { inviteScheduleDays: data.inviteScheduleDays } : {}),
             };
             updateData.screeningCriteria = JSON.stringify(mergedCriteria);
         }
+        if (data.inviteScheduleDays !== undefined) updateData.inviteScheduleDays = data.inviteScheduleDays;
 
         // Add new interview fields to PATCH
 
@@ -250,9 +258,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         }
 
 
-        const updated = await prisma.drive.update({
+        const updated = await (prisma.drive as any).update({
             where: { id: driveId },
-            data: updateData,
+            data: updateData as any,
         });
 
         return NextResponse.json(updated);

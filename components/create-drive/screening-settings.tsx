@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Slider } from "@/components/ui/slider";
-import { Brain, Sparkles, Zap, Hand, Plus, X, ChevronDown, Star, MapPin, BookOpen, Briefcase } from "lucide-react";
+import { Brain, Sparkles, Zap, Hand, Plus, X, ChevronDown, Star, MapPin, BookOpen, Briefcase, Clock3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface ScreeningCriteria {
@@ -31,6 +31,7 @@ export interface ScreeningCriteria {
 export interface ScreeningConfig {
     threshold: number;
     criteria?: ScreeningCriteria;
+    inviteScheduleDays?: number;
 }
 
 interface ScreeningSettingsProps {
@@ -65,6 +66,7 @@ const COMMON_COUNTRIES = ["India", "USA", "UK", "Canada", "Australia", "Germany"
 export function ScreeningSettings({ config, setConfig, shortlistMode, setShortlistMode }: ScreeningSettingsProps) {
     const threshold = config?.threshold ?? 60;
     const criteria = config?.criteria ?? {};
+    const inviteScheduleDays = config?.inviteScheduleDays ?? 1;
     const [expandedSection, setExpandedSection] = useState<string>("skills");
     const [newSkill, setNewSkill] = useState("");
     const [newSkillProficiency, setNewSkillProficiency] = useState("intermediate");
@@ -222,7 +224,7 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                     <div className="mt-5 px-1">
                         <Slider
                             value={[threshold]}
-                            onValueChange={([v]) => setConfig({ threshold: v })}
+                            onValueChange={([v]) => setConfig(prev => ({ ...prev, threshold: v }))}
                             max={100}
                             min={1}
                             step={1}
@@ -233,6 +235,51 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                             <span>Balanced</span>
                             <span>Strict</span>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Invitation Timing Section */}
+            <section className="space-y-4">
+                <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm">
+                        <Clock3 className="h-4 w-4" />
+                    </div>
+                    <div>
+                        <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-slate-900">
+                            <Sparkles className="h-4 w-4 text-slate-500" />
+                            Invitation Timing
+                        </p>
+                        <p className="text-xs text-slate-500">Choose how many days to spread shortlisted invitations across.</p>
+                    </div>
+                </div>
+
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                            <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                                <Clock3 className="h-4 w-4 text-slate-500" />
+                                Spread invitations over
+                            </p>
+                            <p className="text-xs font-medium text-slate-500">
+                                Recruiters can drip interview invites instead of sending every shortlisted email at once.
+                            </p>
+                        </div>
+                        <div className="flex items-baseline gap-1 text-slate-950">
+                            <span className="text-3xl font-black tracking-tight">{inviteScheduleDays}</span>
+                            <span className="text-sm font-semibold text-slate-500">day{inviteScheduleDays === 1 ? "" : "s"}</span>
+                        </div>
+                    </div>
+
+                    <div className="mt-5 px-1">
+                        <Slider
+                            value={[inviteScheduleDays]}
+                            onValueChange={([v]) => setConfig(prev => ({ ...prev, inviteScheduleDays: v }))}
+                            max={30}
+                            min={1}
+                            step={1}
+                            className="cursor-pointer"
+                        />
                     </div>
                 </div>
             </section>
