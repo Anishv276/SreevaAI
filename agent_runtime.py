@@ -2057,7 +2057,7 @@ async def entrypoint(ctx: JobContext):
             "English": (
                 f"Hey {candidate_first_name or candidate_name}, welcome! Really glad you could make it today. "
                 f"I'm {ai_name}, and I'll be having a conversation with you about the {job_title} role. "
-                f"How are you doing? How's the day been so far?"
+                f"How are you doing today, and how's the day been so far?"
             ),
         }
         welcome_text = WELCOME_MESSAGES.get(
@@ -2065,7 +2065,7 @@ async def entrypoint(ctx: JobContext):
             (
                 f"Hey {candidate_first_name or candidate_name}, welcome and thanks for joining today. "
                 f"I'm {ai_name}, and I'll be speaking with you about the {job_title} role. "
-                f"Before we dive in - how are you doing? Ready to get started?"
+                f"Before we dive in - how are you doing today, and are you ready to get started?"
             ),
         )
 
