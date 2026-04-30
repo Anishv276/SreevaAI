@@ -379,8 +379,8 @@ function buildTopStrengthsRisks(args: {
 export function IntelMetricCard({ row }: { row: IntelSignalRow }) {
   const Icon = INTEL_ICON_MAP[row.icon];
   return (
-    <DropdownMenu modal={false}>
-      <div className="flex items-center justify-between gap-3 rounded-[18px] border border-neutral-200/70 bg-white/80 px-4 py-3.5 shadow-[0_1px_0_rgba(0,0,0,0.03)] transition-all hover:border-neutral-200 hover:bg-white hover:shadow-[0_4px_16px_rgba(15,23,42,0.04)]">
+    <DropdownMenu>
+      <div className="flex items-center justify-between gap-3 rounded-[18px] border border-neutral-200/70 bg-white px-4 py-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-all hover:border-neutral-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <Icon className="h-5 w-5 shrink-0 text-neutral-900" strokeWidth={1.5} />
           <span className="min-w-0 text-[13px] font-semibold leading-snug text-neutral-900">{row.label}</span>
@@ -397,7 +397,7 @@ export function IntelMetricCard({ row }: { row: IntelSignalRow }) {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-neutral-200/60 bg-white/80 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-neutral-200/60 bg-white text-neutral-500 transition-colors hover:bg-neutral-50 hover:text-neutral-900"
               aria-label={`Show details for ${row.label}`}
             >
               <ChevronDown className="h-4 w-4" />
@@ -407,17 +407,18 @@ export function IntelMetricCard({ row }: { row: IntelSignalRow }) {
       </div>
       <DropdownMenuContent
         align="end"
-        className="w-80 max-h-72 overflow-y-auto"
-        onCloseAutoFocus={(event) => event.preventDefault()}
-        onFocusOutside={(event) => event.preventDefault()}
+        sideOffset={8}
+        className="w-72 max-h-80 overflow-y-auto bg-white p-0 shadow-2xl border-neutral-200"
       >
-        <DropdownMenuLabel className="px-3 pt-2 text-[11px] font-extrabold uppercase tracking-widest text-[#6B7079]">
-          What happened
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <div className="space-y-2 px-3 py-2">
+        <div className="px-4 pt-4 pb-2">
+          <DropdownMenuLabel className="p-0 text-[10px] font-bold uppercase tracking-[0.1em] text-neutral-500">
+            What happened
+          </DropdownMenuLabel>
+        </div>
+        <DropdownMenuSeparator className="bg-neutral-100" />
+        <div className="space-y-3 px-4 py-4">
           {(row.details?.length ? row.details : [`${row.label} is currently marked as ${row.badge}.`, "No additional detail is attached to this signal."]).map((line, idx) => (
-            <p key={`${row.id}-${idx}`} className="text-[12px] leading-5 text-[#1A1D22]">
+            <p key={`${row.id}-${idx}`} className="text-[12.5px] leading-relaxed text-neutral-700">
               {line}
             </p>
           ))}
