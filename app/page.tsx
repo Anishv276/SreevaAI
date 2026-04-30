@@ -65,37 +65,37 @@ const featureCards: Array<{
     title: string;
     description: string;
 }> = [
-    {
-        icon: Code2,
-        title: "Resume Intelligence",
-        description: "Extracts hidden nuances, not just keywords, to map potential.",
-    },
-    {
-        icon: Repeat2,
-        title: "Smart Follow-ups",
-        description: "AI probes reasoning depth like a senior hiring lead.",
-    },
-    {
-        icon: ShieldCheck,
-        title: "Proctoring",
-        description: "Anti-cheating signals and tab-switching alerts keep interviews honest.",
-    },
-    {
-        icon: Video,
-        title: "Video Analysis",
-        description: "Analyze non-verbal cues and communication clarity scores.",
-    },
-    {
-        icon: Bot,
-        title: "Skill Proof",
-        description: "Live coding environments embedded directly in the interview.",
-    },
-    {
-        icon: Users,
-        title: "Team Review",
-        description: "Share snippets of the interview with hiring managers instantly.",
-    },
-];
+        {
+            icon: Code2,
+            title: "Resume Intelligence",
+            description: "Extracts hidden nuances, not just keywords, to map potential.",
+        },
+        {
+            icon: Repeat2,
+            title: "Smart Follow-ups",
+            description: "AI probes reasoning depth like a senior hiring lead.",
+        },
+        {
+            icon: ShieldCheck,
+            title: "Proctoring",
+            description: "Anti-cheating signals and tab-switching alerts keep interviews honest.",
+        },
+        {
+            icon: Video,
+            title: "Video Analysis",
+            description: "Analyze non-verbal cues and communication clarity scores.",
+        },
+        {
+            icon: Bot,
+            title: "Skill Proof",
+            description: "Live coding environments embedded directly in the interview.",
+        },
+        {
+            icon: Users,
+            title: "Team Review",
+            description: "Share snippets of the interview with hiring managers instantly.",
+        },
+    ];
 
 const workflowSteps = [
     {
@@ -153,45 +153,47 @@ const pricingPlans = [
         featured: false,
     },
     {
-        name: "Professional",
+        name: "Pro",
         price: "$299",
         suffix: "/mo",
-        features: ["100 interviews included", "Price per interview: $2.99", "Topup: $3.5/interview"],
+        features: ["100 interviews included", "Price per interview: $2.99", "Topup: $3.5/interview", "Ask Sreeva AI"],
         cta: "Book Demo",
         featured: true,
     },
     {
-        name: "Agency",
+        name: "Scale",
         price: "$699",
         suffix: "/mo",
-        features: ["300 interviews included", "Price per interview: $2.33", "Topup: $2.8/interview"],
+        features: ["300 interviews included", "Price per interview: $2.33", "Topup: $2.8/interview", "Ask Sreeva AI"],
         cta: "Book Demo",
         featured: false,
     },
     {
-        name: "Business",
+        name: "Enterprise",
         price: "Custom",
         suffix: "",
-        features: ["600+ interviews", "Price per interview: Custom", "Topup: Included (no extra charges)"],
+        features: ["600+ interviews", "Price per interview: Custom", "Topup: Included (no extra charges)", "Ask Sreeva AI"],
         cta: "Talk to Us",
         featured: false,
     },
 ];
 
 const featureComparison = [
-    { feature: "Drives", starter: "1", growth: "5", scale: "10+", business: "Unlimited" },
-    { feature: "AI Voices", starter: "3", growth: "10+", scale: "20+", business: "Unlimited" },
-    { feature: "Adaptive AI Interview", starter: "Yes", growth: "Yes", scale: "Yes", business: "Yes" },
-    { feature: "Resume + JD Based Questions", starter: "Yes", growth: "Yes", scale: "Yes", business: "Yes" },
-    { feature: "Smart Follow-ups", starter: "Yes", growth: "Yes", scale: "Yes", business: "Yes" },
-    { feature: "AI Evaluation Report", starter: "Yes", growth: "Yes", scale: "Yes", business: "Yes" },
-    { feature: "Recording + Playback", starter: "7 days", growth: "14 days", scale: "30 days", business: "Custom" },
-    { feature: "Multilingual", starter: "—", growth: "Yes", scale: "Yes", business: "Yes" },
-    { feature: "Pre-qualifying Questions", starter: "Yes", growth: "Yes", scale: "Yes", business: "Yes" },
-    { feature: "AI Proctoring", starter: "—", growth: "Basic", scale: "Advanced", business: "Advanced" },
-    { feature: "Team Members", starter: "1", growth: "3", scale: "10", business: "Custom" },
-    { feature: "Custom Branding", starter: "—", growth: "Yes", scale: "Yes", business: "Yes" },
-    { feature: "Support", starter: "Email", growth: "Priority", scale: "Priority", business: "Dedicated" }
+    { feature: "Pre-qualifying Questions", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
+    { feature: "Drives", starter: "1", pro: "5", scale: "10+", enterprise: "Unlimited" },
+    { feature: "AI Voices", starter: "3", pro: "10+", scale: "20+", enterprise: "Unlimited" },
+    { feature: "Interview Duration", starter: "20 min", pro: "20 min", scale: "20 min", enterprise: "Custom" },
+    { feature: "Ask Sreeva AI", starter: "—", pro: "Yes", scale: "Yes", enterprise: "Yes" },
+    { feature: "Adaptive AI Interview", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
+    { feature: "Resume + JD Based Questions", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
+    { feature: "Smart Follow-ups", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
+    { feature: "AI Evaluation Report", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
+    { feature: "AI Proctoring", starter: "—", pro: "Basic", scale: "Advanced", enterprise: "Advanced" },
+    { feature: "Multilingual", starter: "—", pro: "Yes", scale: "Yes", enterprise: "Yes" },
+    { feature: "Team Members", starter: "1", pro: "3", scale: "10", enterprise: "Custom" },
+    { feature: "Custom Branding", starter: "—", pro: "Yes", scale: "Yes", enterprise: "Yes" },
+    { feature: "Recording + Playback", starter: "7 days", pro: "14 days", scale: "30 days", enterprise: "Custom" },
+    { feature: "Support", starter: "Email", pro: "Priority", scale: "Priority", enterprise: "Dedicated" }
 ];
 
 const faqs = [
@@ -328,10 +330,6 @@ export default function Home() {
                 <section className="mx-auto max-w-[1320px] overflow-hidden px-6 pb-24 pt-12 sm:pt-20">
                     <div className="flex flex-col items-center gap-16 lg:flex-row">
                         <div className="space-y-8 lg:w-1/2">
-                            <div className="inline-flex items-center gap-2 rounded-full bg-primary-fixed px-3 py-1 text-label-sm font-medium text-on-primary-container">
-                                <Sparkles className="h-4 w-4" />
-                                Introducing v2.4 Adaptive Assessment
-                            </div>
                             <div className="space-y-5">
                                 <h1 className="font-display text-h1 leading-tight text-on-background md:text-display">
                                     Adaptive AI interviews that <span className="text-primary">screen for you</span>
@@ -703,7 +701,7 @@ export default function Home() {
 
                         <div className="rounded-3xl bg-neutral-950 p-10 text-white border border-neutral-800/50 shadow-2xl relative overflow-hidden flex flex-col justify-between">
                             <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-orange-600/10 blur-3xl pointer-events-none" />
-                            
+
                             <div className="relative z-10">
                                 <h3 className="mb-8 flex items-center gap-3 font-display text-2xl font-bold text-orange-500">
                                     <Zap className="h-6 w-6 fill-orange-500/10" />
@@ -791,9 +789,9 @@ export default function Home() {
                                     <tr className="border-b border-slate-100 bg-slate-50/50">
                                         <th className="p-4 font-bold text-sm text-slate-600">Feature</th>
                                         <th className="p-4 font-bold text-sm text-slate-600 text-center">Starter</th>
-                                        <th className="p-4 font-bold text-sm text-slate-600 text-center bg-orange-50/20 text-orange-600">Professional</th>
-                                        <th className="p-4 font-bold text-sm text-slate-600 text-center">Agency</th>
-                                        <th className="p-4 font-bold text-sm text-slate-600 text-center">Business</th>
+                                        <th className="p-4 font-bold text-sm text-slate-600 text-center bg-orange-50/20 text-orange-600">Pro</th>
+                                        <th className="p-4 font-bold text-sm text-slate-600 text-center">Scale</th>
+                                        <th className="p-4 font-bold text-sm text-slate-600 text-center">Enterprise</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -801,9 +799,9 @@ export default function Home() {
                                         <tr key={row.feature} className={`border-b border-slate-50 hover:bg-slate-50/30 transition-colors ${index % 2 === 0 ? "bg-white" : "bg-slate-50/10"}`}>
                                             <td className="p-4 text-sm font-semibold text-slate-800">{row.feature}</td>
                                             <td className="p-4 text-sm text-center text-slate-600">{row.starter === "Yes" ? <Check className="mx-auto h-4 w-4 text-primary" /> : row.starter}</td>
-                                            <td className="p-4 text-sm text-center font-bold text-orange-600 bg-orange-50/10">{row.growth === "Yes" ? <Check className="mx-auto h-4 w-4 text-orange-600" /> : row.growth}</td>
+                                            <td className="p-4 text-sm text-center font-bold text-orange-600 bg-orange-50/10">{row.pro === "Yes" ? <Check className="mx-auto h-4 w-4 text-orange-600" /> : row.pro}</td>
                                             <td className="p-4 text-sm text-center text-slate-600">{row.scale === "Yes" ? <Check className="mx-auto h-4 w-4 text-primary" /> : row.scale}</td>
-                                            <td className="p-4 text-sm text-center text-slate-600">{row.business === "Yes" ? <Check className="mx-auto h-4 w-4 text-primary" /> : row.business}</td>
+                                            <td className="p-4 text-sm text-center text-slate-600">{row.enterprise === "Yes" ? <Check className="mx-auto h-4 w-4 text-primary" /> : row.enterprise}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -860,23 +858,33 @@ export default function Home() {
                     </div>
                 </section>
 
-                <section id="contact" className="mx-auto max-w-[850px] px-6 py-24">
-                    <SectionHeading
-                        title="Ready to stop wasting interview time?"
-                        eyebrow="GET STARTED"
-                        description="Share one open role. We will show how Sreeva screens candidates before your team joins the process."
-                    />
-                    <div className="bento-card overflow-hidden border-primary-fixed shadow-xl h-[650px] mt-12">
-                        <iframe
-                            src="https://cal.com/vamsivk/30min"
-                            className="w-full h-full border-0"
-                            title="Book a meeting with Sreeva AI"
-                        />
+                <section id="contact" className="relative py-24 overflow-hidden bg-slate-50/50">
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full max-w-[1320px] pointer-events-none">
+                        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-orange-500/5 blur-[120px] rounded-full" />
+                        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/5 blur-[120px] rounded-full" />
+                    </div>
+                    
+                    <div className="relative z-10 mx-auto max-w-[1320px] px-6">
+                        <div className="text-center mb-16">
+                            <SectionHeading
+                                title="Experience the future of hiring"
+                                eyebrow="LIVE DEMO"
+                                description="Schedule a 30-minute walkthrough to see how Sreeva AI can transform your recruitment pipeline."
+                            />
+                        </div>
+                        
+                        <div className="mx-auto max-w-[1000px] bg-white rounded-[32px] border border-slate-200/60 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] overflow-hidden min-h-[700px]">
+                            <iframe
+                                src="https://cal.com/vamsivk/30min?embed=true"
+                                className="w-full min-h-[700px] border-0"
+                                title="Book a meeting with Sreeva AI"
+                            />
+                        </div>
                     </div>
                 </section>
             </main>
 
-            <footer className="w-full border-t border-slate-100 bg-white py-12">
+            <footer id="footer" className="w-full border-t border-slate-100 bg-white py-12">
                 <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-8 px-6 md:grid-cols-4 lg:grid-cols-6">
                     <div className="col-span-2">
                         <div className="mb-4 flex items-center gap-3 text-xl font-bold text-slate-900">
@@ -902,9 +910,12 @@ export default function Home() {
                             <ul className="space-y-2 text-sm text-slate-500">
                                 {group.links.map((item) => (
                                     <li key={item}>
-                                        <a className="underline-offset-4 hover:text-orange-600 hover:underline" href="#">
+                                        <Link 
+                                            className="underline-offset-4 hover:text-orange-600 hover:underline" 
+                                            href={item === "Terms of Service" ? "/terms" : item === "Privacy Policy" ? "/privacy" : "#"}
+                                        >
                                             {item}
-                                        </a>
+                                        </Link>
                                     </li>
                                 ))}
                             </ul>

@@ -250,9 +250,9 @@
   font-feature-settings: "ss01", "cv01";
 }
 
-/* Smooth Scrolling */
+/* Smooth Scrolling removed to prevent navigation scroll artifacts */
 html {
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 @utility scrollbar-hide {
