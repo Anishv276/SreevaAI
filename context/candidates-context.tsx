@@ -49,6 +49,19 @@ interface Pagination {
     totalPages: number;
 }
 
+type CandidateFetchParams = {
+    page: number;
+    limit: number;
+    driveId?: string;
+    resumeStatus?: string;
+    interviewStatus?: string;
+    hiringStatus?: string;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
+    sort?: "default" | "score_desc" | "score_asc";
+};
+
 export interface CandidateStats {
     shortlisted: number;
     rejected: number;
@@ -118,6 +131,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     const hasFetchedAdminDataRef = useRef(false);
     const lastFetchRef = useRef<{ key: string; at: number } | null>(null);
     const inFlightRequestsRef = useRef<Map<string, Promise<void>>>(new Map());
+    const lastFetchParamsRef = useRef<CandidateFetchParams | null>(null);
 
     useEffect(() => {
         setIsHydrated(true);
@@ -166,6 +180,18 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         sort: "default" | "score_desc" | "score_asc" = "default",
         options?: { force?: boolean; background?: boolean }
     ) => {
+        const currentFetchParams: CandidateFetchParams = {
+            page,
+            limit,
+            driveId,
+            resumeStatus,
+            interviewStatus,
+            hiringStatus,
+            startDate,
+            endDate,
+            search,
+            sort,
+        };
         const key = buildFetchKey(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search, sort);
         const now = Date.now();
 
@@ -292,6 +318,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
 
                 hasFetchedAdminDataRef.current = true;
                 lastFetchRef.current = { key, at: Date.now() };
+                lastFetchParamsRef.current = currentFetchParams;
             } catch (error: any) {
                 console.error("Failed to fetch candidates:", error);
                 setError(error.message || "An unexpected error occurred during data synchronization.");
@@ -335,7 +362,20 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             refreshTimerRef.current = null;
 
             const current = paginationRef.current;
-            void fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, undefined, undefined, "default", { force: true, background: true });
+            const lastParams = lastFetchParamsRef.current;
+            void fetchCandidatesInternal(
+                lastParams?.page ?? current.page,
+                lastParams?.limit ?? current.limit,
+                lastParams?.driveId,
+                lastParams?.resumeStatus,
+                lastParams?.interviewStatus,
+                lastParams?.hiringStatus,
+                lastParams?.startDate,
+                lastParams?.endDate,
+                lastParams?.search,
+                lastParams?.sort ?? "default",
+                { force: true, background: true }
+            );
         }, STREAM_REFRESH_DEBOUNCE_MS);
     }, [fetchCandidatesInternal]);
 
@@ -462,7 +502,20 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
 
             // Refetch to ensure we have the correct paginated state
             const current = paginationRef.current;
-            await fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, undefined, undefined, "default", { force: true });
+            const lastParams = lastFetchParamsRef.current;
+            await fetchCandidatesInternal(
+                lastParams?.page ?? current.page,
+                lastParams?.limit ?? current.limit,
+                lastParams?.driveId,
+                lastParams?.resumeStatus,
+                lastParams?.interviewStatus,
+                lastParams?.hiringStatus,
+                lastParams?.startDate,
+                lastParams?.endDate,
+                lastParams?.search,
+                lastParams?.sort ?? "default",
+                { force: true }
+            );
         } catch (error) {
             throw error;
         }
@@ -479,7 +532,20 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             if (response.ok) {
                 // Refetch to ensure we have the correct paginated state after deletion
                 const current = paginationRef.current;
-                await fetchCandidatesInternal(current.page, current.limit, undefined, undefined, undefined, undefined, undefined, undefined, undefined, "default", { force: true });
+                const lastParams = lastFetchParamsRef.current;
+                await fetchCandidatesInternal(
+                    lastParams?.page ?? current.page,
+                    lastParams?.limit ?? current.limit,
+                    lastParams?.driveId,
+                    lastParams?.resumeStatus,
+                    lastParams?.interviewStatus,
+                    lastParams?.hiringStatus,
+                    lastParams?.startDate,
+                    lastParams?.endDate,
+                    lastParams?.search,
+                    lastParams?.sort ?? "default",
+                    { force: true }
+                );
             } else {
                 throw new Error("Failed to bulk delete candidates");
             }
