@@ -146,33 +146,33 @@ const heroMetrics = [
 const pricingPlans = [
     {
         name: "Starter",
-        price: "$0",
+        price: "$99",
         suffix: "/mo",
-        features: ["5 interviews/mo", "Basic AI reports", "1 admin seat"],
-        cta: "Get Started",
+        features: ["30 interviews included", "Price per interview: $3.30", "Topup: $4.5/interview"],
+        cta: "Book Demo",
         featured: false,
     },
     {
-        name: "Growth",
-        price: "$499",
+        name: "Professional",
+        price: "$299",
         suffix: "/mo",
-        features: ["50 interviews/mo", "Advanced skills proof", "5 admin seats", "ATS integrations"],
-        cta: "Try Growth",
+        features: ["100 interviews included", "Price per interview: $2.99", "Topup: $3.5/interview"],
+        cta: "Book Demo",
         featured: true,
     },
     {
-        name: "Scale",
-        price: "$1,299",
+        name: "Agency",
+        price: "$699",
         suffix: "/mo",
-        features: ["200 interviews/mo", "White-labeled portal", "Unlimited seats", "Priority support"],
-        cta: "Contact Sales",
+        features: ["300 interviews included", "Price per interview: $2.33", "Topup: $2.8/interview"],
+        cta: "Book Demo",
         featured: false,
     },
     {
         name: "Business",
         price: "Custom",
         suffix: "",
-        features: ["Unlimited interviews", "Custom AI calibration", "SSO & enterprise security"],
+        features: ["600+ interviews", "Price per interview: Custom", "Topup: Included (no extra charges)"],
         cta: "Talk to Us",
         featured: false,
     },
@@ -189,9 +189,7 @@ const featureComparison = [
     { feature: "Multilingual", starter: "—", growth: "Yes", scale: "Yes", business: "Yes" },
     { feature: "Pre-qualifying Questions", starter: "Yes", growth: "Yes", scale: "Yes", business: "Yes" },
     { feature: "AI Proctoring", starter: "—", growth: "Basic", scale: "Advanced", business: "Advanced" },
-    { feature: "Analytics Dashboard", starter: "—", growth: "Yes", scale: "Yes", business: "Yes" },
     { feature: "Team Members", starter: "1", growth: "3", scale: "10", business: "Custom" },
-    { feature: "ATS Integration", starter: "—", growth: "—", scale: "Yes", business: "Yes" },
     { feature: "Custom Branding", starter: "—", growth: "Yes", scale: "Yes", business: "Yes" },
     { feature: "Support", starter: "Email", growth: "Priority", scale: "Priority", business: "Dedicated" }
 ];
@@ -278,14 +276,14 @@ export default function Home() {
     }, []);
 
     const dashboardHref = session?.role === "SUPER_ADMIN" ? "/super-admin" : "/admin";
-    const ctaHref = session ? dashboardHref : "/login";
-    const ctaLabel = session ? "Dashboard" : "Get Started";
+    const ctaHref = session ? dashboardHref : "https://cal.com/vamsivk/30min";
+    const ctaLabel = session ? "Dashboard" : "Book Demo";
 
     return (
         <div className="min-h-screen overflow-x-hidden bg-surface text-on-surface selection:bg-primary-fixed selection:text-on-primary-container">
-            <header className="absolute top-0 z-50 h-20 w-full">
+            <header className="fixed top-0 left-0 right-0 z-50 h-20 bg-white/80 backdrop-blur-md border-b border-slate-100/50">
                 <div className="mx-auto flex h-full max-w-[1320px] items-center justify-between px-6">
-                    <Link href="/" className="flex items-center gap-3 font-display text-2xl font-black tracking-tighter text-orange-600">
+                    <Link href="/" className="flex items-center gap-3 font-display text-2xl font-black tracking-tighter text-slate-900">
                         <img src="/Logo.png" alt="Sreeva AI Logo" className="h-14 w-14 object-contain" />
                         <span className="leading-none">Sreeva AI</span>
                     </Link>
@@ -309,13 +307,15 @@ export default function Home() {
                         {!session && (
                             <Link
                                 href="/login"
-                                className="hidden rounded-lg px-4 py-2 font-medium text-slate-600 transition-all hover:bg-orange-50 sm:block"
+                                className="rounded-lg px-4 py-2 font-medium text-slate-600 transition-all hover:bg-orange-50"
                             >
                                 Login
                             </Link>
                         )}
                         <Link
                             href={ctaHref}
+                            target={!session ? "_blank" : undefined}
+                            rel={!session ? "noreferrer" : undefined}
                             className="primary-btn scale-95 px-5 py-2.5 text-sm font-bold active:scale-90 sm:px-6"
                         >
                             {ctaLabel}
@@ -341,13 +341,13 @@ export default function Home() {
                                 </p>
                             </div>
                             <div className="flex flex-col gap-4 sm:flex-row">
-                                <Link href={ctaHref} className="primary-btn inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-bold">
-                                    {session ? "Open Dashboard" : "Start Free Trial"}
+                                <Link href={ctaHref} target={!session ? "_blank" : undefined} rel={!session ? "noreferrer" : undefined} className="primary-btn inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-bold">
+                                    {session ? "Open Dashboard" : "Book Demo"}
                                     <ArrowRight className="h-5 w-5" />
                                 </Link>
-                                <a href="#report" className="secondary-btn inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-bold text-on-surface">
+                                <a href="#contact" className="secondary-btn inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-bold text-on-surface">
                                     <CirclePlay className="h-5 w-5" />
-                                    View Sample Report
+                                    View Calendar
                                 </a>
                             </div>
                             <div className="grid max-w-xl grid-cols-3 overflow-hidden rounded-3xl border border-outline-variant bg-white shadow-[0_16px_40px_rgba(232,93,4,0.06)]">
@@ -747,7 +747,7 @@ export default function Home() {
                         title="Plans for every hiring stage"
                         description="Start with one role, then scale adaptive interviews across teams once signal quality is proven."
                     />
-                    <div className="grid gap-6 md:grid-cols-4">
+                    <div className="grid gap-6 md:grid-cols-4 items-stretch">
                         {pricingPlans.map((plan, index) => (
                             <motion.div
                                 key={plan.name}
@@ -755,10 +755,10 @@ export default function Home() {
                                 whileInView={{ opacity: 1, y: 0 }}
                                 viewport={{ once: true, margin: "-100px" }}
                                 transition={{ duration: 0.5, delay: index * 0.1 }}
-                                className={`bento-card flex flex-col p-8 ${plan.featured ? "z-10 scale-[1.02] border-primary shadow-xl ring-4 ring-primary/10 md:scale-105" : ""}`}
+                                className={`bento-card relative flex flex-col justify-between p-8 pt-12 ${plan.featured ? "z-10 border-orange-500 shadow-xl ring-4 ring-orange-500/10" : ""}`}
                             >
                                 {plan.featured && (
-                                    <div className="mb-2 text-caption font-bold uppercase text-primary">MOST POPULAR</div>
+                                    <div className="absolute top-4 left-8 text-caption font-bold uppercase text-orange-500">MOST POPULAR</div>
                                 )}
                                 <h3 className="mb-2 text-xl font-bold">{plan.name}</h3>
                                 <div className="mb-4 text-h3 font-black">
@@ -791,8 +791,8 @@ export default function Home() {
                                     <tr className="border-b border-slate-100 bg-slate-50/50">
                                         <th className="p-4 font-bold text-sm text-slate-600">Feature</th>
                                         <th className="p-4 font-bold text-sm text-slate-600 text-center">Starter</th>
-                                        <th className="p-4 font-bold text-sm text-slate-600 text-center bg-orange-50/20 text-orange-600">Growth</th>
-                                        <th className="p-4 font-bold text-sm text-slate-600 text-center">Scale</th>
+                                        <th className="p-4 font-bold text-sm text-slate-600 text-center bg-orange-50/20 text-orange-600">Professional</th>
+                                        <th className="p-4 font-bold text-sm text-slate-600 text-center">Agency</th>
                                         <th className="p-4 font-bold text-sm text-slate-600 text-center">Business</th>
                                     </tr>
                                 </thead>
