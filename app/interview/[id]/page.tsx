@@ -5143,7 +5143,7 @@ function InterviewRoomContent({
 
                 {/* Right: Interaction Status */}
 
-                <div className="absolute bottom-[16rem] left-1/2 -translate-x-1/2 z-[70] w-full max-w-3xl px-6 pointer-events-none">
+                <div className="absolute bottom-[16rem] left-1/2 -translate-x-1/2 z-[70] w-[min(96vw,80rem)] max-w-none px-4 pointer-events-none">
 
                     <AnimatePresence mode="wait">
 
@@ -5185,9 +5185,9 @@ function InterviewRoomContent({
 
                                 >
 
-                                    <div className="bg-[#27272a]/95 backdrop-blur-2xl border border-white/10 px-10 py-6 rounded-[2.5rem] shadow-[0_20px_80px_rgba(0,0,0,0.6)] flex items-center gap-6 group">
+                                    <div className="bg-[#27272a]/95 backdrop-blur-2xl border border-white/10 px-8 py-5 rounded-[2.25rem] shadow-[0_20px_80px_rgba(0,0,0,0.6)] flex items-center gap-5 group w-full">
 
-                                        <div className="flex items-start gap-4 min-w-0">
+                                        <div className="flex items-start gap-4 min-w-0 w-full">
 
                                             <div className={cn(
 
@@ -5197,7 +5197,7 @@ function InterviewRoomContent({
 
                                             )} />
 
-                                            <p className="text-[17px] font-medium text-white leading-relaxed tracking-tight">
+                                            <p className="text-[16px] font-medium text-white leading-[1.65] tracking-tight whitespace-normal break-words w-full">
 
                                                 {text}
 

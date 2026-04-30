@@ -3,12 +3,12 @@ import asyncpg
 import json
 import os
 import time
-import urllib.request
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlunparse, urlparse
 
 from agent_profile_context import build_interview_turns
 from agent_providers import build_google_analysis_client
+from behavioral_analysis import synthesize_behavioral_report
 from agent_runtime_support import (
     APP_BASE_URL,
     DATABASE_URL,
@@ -982,6 +982,14 @@ async def generate_interview_report(
         return
 
     try:
+        # Generate behavioral analysis early (no LLM calls)
+        behavioral_report = synthesize_behavioral_report(
+            transcript_lines=transcript_lines,
+            answer_scores=answer_scores,
+            total_duration_sec=int(proctoring_data.get("session_duration", 0)) if proctoring_data else 0,
+            proctoring_events=proctoring_data.get("events", []) if proctoring_data else [],
+            contradictions_found=proctoring_data.get("contradictions", []) if proctoring_data else [],
+        )
         client = build_google_analysis_client() if is_google_model else AsyncOpenAI()
         transcript_text = "\n".join(transcript_lines)
         transcript_text = truncate_to_tokens(transcript_text, 3000)
@@ -1000,26 +1008,41 @@ async def generate_interview_report(
         completion = await client.chat.completions.create(
             model=llm_model,
             temperature=0.2,
-            max_tokens=1500,
+            max_tokens=2000,
             messages=[
                 {
                     "role": "system",
                     "content": (
                         f"You are analyzing a technical interview for the '{job_title}' role. "
-                        "Extract structured insights from the transcript:\n\n"
-                        "1. SKILLS_COVERED: List 3-5 key skills this candidate demonstrated (e.g., 'Operations Management', 'CRM Systems', 'Data Analysis')\n"
-                        "2. SKILL_RATINGS: For each skill, rate 1-10 based on answer quality\n"
-                        "3. STRENGTHS: List 3-5 specific strengths with evidence from transcript\n"
-                        "4. QA_BLOCKS: Provide reasoning for question quality\n\n"
+                        "Extract comprehensive insights from the transcript:\n\n"
+                        "RULES:\n"
+                        "1. SKILLS_COVERED: List ALL key skills this candidate demonstrated or attempted (minimum 4-6 skills).\n"
+                        "   Look for: Technical skills, domain expertise, soft skills, process knowledge, tool proficiency.\n"
+                        "   Be specific: 'CRM Systems' not just 'CRM', 'Data Analysis' not 'analytics'\n\n"
+                        "2. SKILL_RATINGS: Rate each skill 1-10 based on how well they demonstrated it:\n"
+                        "   - 1-3: Mentioned but showed no understanding or contradicted themselves\n"
+                        "   - 4-6: Basic understanding, but vague or surface-level\n"
+                        "   - 7-8: Good understanding with examples\n"
+                        "   - 9-10: Deep expertise with specific projects/details\n\n"
+                        "3. TOP_STRENGTHS: List 4-5 specific, evidence-based strengths (not generic):\n"
+                        "   Examples: 'Provides specific examples with numbers', 'Takes ownership of problems', 'Shows learning from failures'\n"
+                        "   Each strength MUST have 1 sentence of evidence from transcript.\n\n"
+                        "4. CONCERNS: List 2-3 specific concerns if present:\n"
+                        "   Examples: 'Avoided giving specific numbers', 'Contradicted earlier statements about team size'\n\n"
                         "OUTPUT FORMAT (valid JSON):\n"
                         "{\n"
-                        '  "skills_covered": ["skill1", "skill2", "skill3"],\n'
-                        '  "skill_ratings": {"skill1": 7, "skill2": 5, "skill3": 6},\n'
-                        '  "top_strengths": ["strength1", "strength2", "strength3"],\n'
-                        '  "qa_blocks": [\n'
-                        "    {\"q\": 1, \"title\": \"Question 1\", \"verdict\": \"Answer was clear with examples\", \"score\": 8},\n"
-                        "    {\"q\": 2, \"title\": \"Question 2\", \"verdict\": \"Vague answer lacking specifics\", \"score\": 4}\n"
-                        "  ]\n"
+                        '  "skills_covered": ["Operations Management", "CRM Systems", "Data Analysis", "Team Coordination", "Process Improvement"],\n'
+                        '  "skill_ratings": {"Operations Management": 6, "CRM Systems": 5, "Data Analysis": 4, "Team Coordination": 7, "Process Improvement": 5},\n'
+                        '  "top_strengths": [\n'
+                        '    "Detail-oriented in tracking metrics: mentioned specific numbers like 120 complaints and 10-12 per technician",\n'
+                        '    "Takes systematic approach to problem-solving: described step-by-step process for prioritizing work",\n'
+                        '    "Communicates with concrete examples: referenced actual CRM systems and specific workflow",\n'
+                        '    "Shows ownership of operational challenges: took responsibility for managing service centers"\n'
+                        '  ],\n'
+                        '  "concerns": [\n'
+                        '    "Communication clarity: answers are fragmented with run-on sentences, hard to follow structure",\n'
+                        '    "Lack of specific metrics in some areas: struggled to quantify impact or improvements made"\n'
+                        '  ]\n'
                         "}"
                     ),
                 },
@@ -1056,18 +1079,24 @@ async def generate_interview_report(
             report_data["qa_blocks"] = qa_blocks
 
         # Build final report
+        skills_covered = report_data.get("skills_covered", [])
+        top_strengths = report_data.get("top_strengths", [])
+        concerns = report_data.get("concerns", [])
+
         final_report = {
             "technical_score": technical_score,
             "scores": {
                 "technical": technical_score,
                 "communication": int(sum(s.get("clarity", 5) for s in answer_scores) / max(len(answer_scores), 1) * 10) if answer_scores else 0,
             },
-            "skills_proof": report_data.get("skills_covered", []),
+            "skills_proof": skills_covered,
             "skill_ratings": report_data.get("skill_ratings", {}),
-            "top_strengths": report_data.get("top_strengths", []),
+            "top_strengths": top_strengths if isinstance(top_strengths, list) else [],
+            "concerns": concerns if isinstance(concerns, list) else [],
             "qa_blocks": report_data.get("qa_blocks", []),
+            "behavioral_analysis": behavioral_report,
             "verdict": {
-                "summary": f"Candidate demonstrated {len(report_data.get('skills_covered', []))} key skills with overall technical score of {technical_score}%."
+                "summary": f"Candidate demonstrated {len(skills_covered)} key skills with overall technical score of {technical_score}%. Strengths include {len(top_strengths)} notable areas. {len(concerns)} concern(s) noted in evaluation. {behavioral_report.get('summary', '')}"
             },
         }
 
