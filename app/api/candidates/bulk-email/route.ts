@@ -153,16 +153,18 @@ export async function POST(request: Request) {
         }
 
         let queued = 0;
+        const failures: Array<{ id: string; reason: string }> = [];
 
-        await Promise.all(
-            plannedDeliveries.map(async ({ app, action, scheduleDays }, index) => {
-                const dayOffset = emailType === "screening"
-                    ? Math.floor((index * scheduleDays) / plannedDeliveries.length)
-                    : 0;
-                const scheduledAt = new Date(Date.now() + dayOffset * DAY_MS);
-                const delay = Math.max(0, scheduledAt.getTime() - Date.now());
-                const jobId = `invitation_${app.id}_${action}_${scheduledAt.getTime()}`;
+        for (let index = 0; index < plannedDeliveries.length; index += 1) {
+            const { app, action, scheduleDays } = plannedDeliveries[index];
+            const dayOffset = emailType === "screening"
+                ? Math.floor((index * scheduleDays) / plannedDeliveries.length)
+                : 0;
+            const scheduledAt = new Date(Date.now() + dayOffset * DAY_MS);
+            const delay = Math.max(0, scheduledAt.getTime() - Date.now());
+            const jobId = generateId("inv", `${app.id}-${action}-${scheduledAt.getTime()}`);
 
+            try {
                 if (action === "shortlist") {
                     await (prisma.interview as any).upsert({
                         where: { applicationId: app.id },
@@ -194,8 +196,20 @@ export async function POST(request: Request) {
                 );
 
                 queued += 1;
-            })
-        );
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                console.error("[bulk-email] queue failed:", {
+                    applicationId: app.id,
+                    action,
+                    scheduledAt: scheduledAt.toISOString(),
+                    reason,
+                });
+                failures.push({
+                    id: app.id,
+                    reason,
+                });
+            }
+        }
 
         const delayed = plannedDeliveries.filter((item, index) => emailType === "screening" && Math.floor((index * item.scheduleDays) / plannedDeliveries.length) > 0).length;
         const immediate = queued - delayed;
@@ -203,12 +217,23 @@ export async function POST(request: Request) {
             ? `Queued ${queued} email${queued !== 1 ? "s" : ""} (${immediate} immediate, ${delayed} scheduled).`
             : `Queued ${queued} email${queued !== 1 ? "s" : ""}.`;
 
+        if (queued === 0) {
+            return NextResponse.json({
+                error: "Failed to queue emails",
+                queued: 0,
+                skipped: skipReasons.length,
+                reasons: skipReasons,
+                failures,
+            }, { status: 500 });
+        }
+
         return NextResponse.json({
             message,
             queued,
             sent: queued,
             skipped: skipReasons.length,
             reasons: skipReasons,
+            failures,
         });
     } catch (error) {
         console.error("[bulk-email] error:", error);
