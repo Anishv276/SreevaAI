@@ -4,6 +4,7 @@ Probe strategy router.
 Turns signal flags and evaluator output into a concrete next move.
 This is the training layer that keeps "signal -> reaction" explicit.
 """
+from typing import Optional
 from turn_decision import SignalFlags, TurnDecision
 
 
@@ -96,6 +97,8 @@ _SIGNAL_TO_FAMILY = [
     ("latency_mismatch", "compression"),
     ("ownership_ambiguity", "ownership"),
     ("meta_question", "rapport"),
+    ("depth_decay", "depth"),
+    ("complexity_latency_mismatch", "evidence"),
 ]
 
 
@@ -271,7 +274,13 @@ def _build_collapse_probe_lines(collapse_stage: int, signal_events: list) -> lis
     return header + [f"EVIDENCE: {evidence}"] + probe_lines if evidence else header + probe_lines
 
 
-def build_directive(td: TurnDecision, depth_signal: str, topic_follow_up_count: int, collapse_stage: int = 0) -> str:
+def build_directive(
+    td: TurnDecision,
+    depth_signal: str,
+    topic_follow_up_count: int,
+    collapse_stage: int = 0,
+    uncovered_topics: Optional[list[str]] = None,
+) -> str:
     """
     Build the NEXT_TURN_DIRECTIVE string injected into Ishita's context.
     """
@@ -323,7 +332,10 @@ def build_directive(td: TurnDecision, depth_signal: str, topic_follow_up_count: 
     if action != "MOVE_ON":
         lines.append(
             f"Follow-ups on this topic so far: {topic_follow_up_count}. "
-            f"If this reaches 3, move on regardless."
+            f"If this reaches 2, move on regardless."
         )
+    elif action == "MOVE_ON" and uncovered_topics:
+        next_topic = uncovered_topics[0] if uncovered_topics else "next area"
+        lines.append(f"BRIDGE NOW to: {next_topic}")
 
     return "\n".join(lines)

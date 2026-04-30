@@ -62,7 +62,8 @@ async def run_turn_evaluation(
     score_answer_quality_fn,              # imported from agent.py at call site
     evaluate_answer_and_decide_fn,        # imported from agent.py at call site
     signal_toggles: Optional[dict[str, Any]] = None,
-    max_follow_ups: int = 3,
+    max_follow_ups: int = 2,
+    uncovered_topics: Optional[list[str]] = None,
     collapse_stage: int = 0,
     session_score_history: Optional[list[float]] = None,
     turns_since_last_decay: int = 999,
@@ -150,6 +151,7 @@ async def run_turn_evaluation(
         depth_signal=llm_decision.get("depth_signal", "SURFACE"),
         topic_follow_up_count=topic_follow_up_count,
         collapse_stage=collapse_stage,
+        uncovered_topics=uncovered_topics,
     )
 
     logger.info(

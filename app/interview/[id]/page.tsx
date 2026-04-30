@@ -375,6 +375,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
     });
 
+    const SHOW_BACKGROUND_PROCTORING_ALERTS = false;
+    const SHOW_TAB_FULLSCREEN_ALERTS = true;
+
     /**
 
      * Shared ref updated by InterviewRoomContent whenever a candidate transcript
@@ -467,13 +470,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
 
 
-        // 1. Show transient alert to candidate (auto-dismiss after 6s)
-
-        setFaceViolationAlert({ type: eventType, reason });
-
-        if (faceViolationTimerRef.current) clearTimeout(faceViolationTimerRef.current);
-
-        faceViolationTimerRef.current = setTimeout(() => setFaceViolationAlert(null), 6000);
+        // 1. Keep the violation silent in the interview UI, but still record it.
+        if (SHOW_BACKGROUND_PROCTORING_ALERTS) {
+            setFaceViolationAlert({ type: eventType, reason });
+            if (faceViolationTimerRef.current) clearTimeout(faceViolationTimerRef.current);
+            faceViolationTimerRef.current = setTimeout(() => setFaceViolationAlert(null), 6000);
+        }
 
 
 
@@ -557,13 +559,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
 
 
-        // 1. Show transient alert to candidate (8s - longer for high-severity)
-
-        setHardwareViolationAlert({ type: eventType, reason });
-
-        if (hardwareViolationTimerRef.current) clearTimeout(hardwareViolationTimerRef.current);
-
-        hardwareViolationTimerRef.current = setTimeout(() => setHardwareViolationAlert(null), 8000);
+        // 1. Keep the violation silent in the interview UI, but still record it.
+        if (SHOW_BACKGROUND_PROCTORING_ALERTS) {
+            setHardwareViolationAlert({ type: eventType, reason });
+            if (hardwareViolationTimerRef.current) clearTimeout(hardwareViolationTimerRef.current);
+            hardwareViolationTimerRef.current = setTimeout(() => setHardwareViolationAlert(null), 8000);
+        }
 
 
 
@@ -627,15 +628,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
 
 
-        // 1. Show toast to candidate (5 s for restored, 8 s for lost)
-
+        // 1. Keep connection events silent in the interview UI, but still record them.
         const displayMs = eventType === "connection_restored" ? 5000 : 8000;
-
-        setConnectionAlert({ eventType, reason });
-
-        if (connectionAlertTimerRef.current) clearTimeout(connectionAlertTimerRef.current);
-
-        connectionAlertTimerRef.current = setTimeout(() => setConnectionAlert(null), displayMs);
+        if (SHOW_BACKGROUND_PROCTORING_ALERTS) {
+            setConnectionAlert({ eventType, reason });
+            if (connectionAlertTimerRef.current) clearTimeout(connectionAlertTimerRef.current);
+            connectionAlertTimerRef.current = setTimeout(() => setConnectionAlert(null), displayMs);
+        }
 
 
 
@@ -684,18 +683,14 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
 
         // Determine display duration by severity
-
         const displayMs = severity === "high" ? 9000 : severity === "low" ? 5000 : 7000;
 
-
-
-        // 1. Show transient toast to candidate
-
-        setMouseViolationAlert({ eventType, reason, severity: severity ?? "medium" });
-
-        if (mouseViolationTimerRef.current) clearTimeout(mouseViolationTimerRef.current);
-
-        mouseViolationTimerRef.current = setTimeout(() => setMouseViolationAlert(null), displayMs);
+        // 1. Keep the violation silent in the interview UI, but still record it.
+        if (SHOW_BACKGROUND_PROCTORING_ALERTS) {
+            setMouseViolationAlert({ eventType, reason, severity: severity ?? "medium" });
+            if (mouseViolationTimerRef.current) clearTimeout(mouseViolationTimerRef.current);
+            mouseViolationTimerRef.current = setTimeout(() => setMouseViolationAlert(null), displayMs);
+        }
 
 
 
@@ -760,12 +755,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const handleAgentDetectedViolation = useCallback((eventType: string, reason: string, severity?: string) => {
 
         // This is called when the Agent sends a 'proctoring_violation' packet over the data channel
-
-        setSoundViolationAlert({ eventType, reason, severity: severity ?? "medium" });
-
-        if (soundViolationTimerRef.current) clearTimeout(soundViolationTimerRef.current);
-
-        soundViolationTimerRef.current = setTimeout(() => setSoundViolationAlert(null), 8000);
+        if (SHOW_BACKGROUND_PROCTORING_ALERTS) {
+            setSoundViolationAlert({ eventType, reason, severity: severity ?? "medium" });
+            if (soundViolationTimerRef.current) clearTimeout(soundViolationTimerRef.current);
+            soundViolationTimerRef.current = setTimeout(() => setSoundViolationAlert(null), 8000);
+        }
 
     }, []);
 
@@ -1395,7 +1389,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
                 tabViolationTimerRef.current = null;
 
-                setIsTabViolation(true);
+                if (SHOW_TAB_FULLSCREEN_ALERTS) {
+                    setIsTabViolation(true);
+                }
 
 
 
@@ -1531,7 +1527,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
                     fullscreenViolationTimerRef.current = null;
 
-                    setIsFullscreenViolation(true);
+                    if (SHOW_TAB_FULLSCREEN_ALERTS) {
+                        setIsFullscreenViolation(true);
+                    }
 
 
 
@@ -2031,6 +2029,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
                 referenceSnapshotUrl={referenceSnapshotUrl}
 
+                lastCandidateTranscriptAtRef={lastCandidateTranscriptAtRef}
+
                 onViolation={handleFaceViolation}
 
             />
@@ -2211,7 +2211,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
             <AnimatePresence>
 
-                {isTabViolation && phase === "interview" && (
+                {SHOW_TAB_FULLSCREEN_ALERTS && isTabViolation && phase === "interview" && (
 
                     <motion.div
 
@@ -2279,7 +2279,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
             <AnimatePresence>
 
-                {isFullscreenViolation && phase === "interview" && (
+                {SHOW_TAB_FULLSCREEN_ALERTS && isFullscreenViolation && phase === "interview" && (
 
                     <motion.div
 
@@ -2349,7 +2349,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
             <AnimatePresence>
 
-                {faceViolationAlert && phase === "interview" && (
+                {SHOW_BACKGROUND_PROCTORING_ALERTS && faceViolationAlert && phase === "interview" && (
 
                     <motion.div
 
@@ -2421,7 +2421,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
             <AnimatePresence>
 
-                {hardwareViolationAlert && phase === "interview" && (
+                {SHOW_BACKGROUND_PROCTORING_ALERTS && hardwareViolationAlert && phase === "interview" && (
 
                     <motion.div
 
@@ -2481,7 +2481,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
             <AnimatePresence>
 
-                {connectionAlert && phase === "interview" && (
+                {SHOW_BACKGROUND_PROCTORING_ALERTS && connectionAlert && phase === "interview" && (
 
                     <motion.div
 
@@ -2557,7 +2557,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
             <AnimatePresence>
 
-                {mouseViolationAlert && mouseViolationAlert.eventType === "behavior_flag" && phase === "interview" && (
+                {SHOW_BACKGROUND_PROCTORING_ALERTS && mouseViolationAlert && mouseViolationAlert.eventType === "behavior_flag" && phase === "interview" && (
 
                     <motion.div
 
@@ -2605,7 +2605,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
             <AnimatePresence>
 
-                {mouseViolationAlert && mouseViolationAlert.eventType !== "behavior_flag" && phase === "interview" && (
+                {SHOW_BACKGROUND_PROCTORING_ALERTS && mouseViolationAlert && mouseViolationAlert.eventType !== "behavior_flag" && phase === "interview" && (
 
                     <motion.div
 
@@ -2713,7 +2713,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
             <AnimatePresence>
 
-                {soundViolationAlert && phase === "interview" && (
+                {SHOW_BACKGROUND_PROCTORING_ALERTS && soundViolationAlert && phase === "interview" && (
 
                     <motion.div
 

@@ -187,6 +187,95 @@ def extract_integrity_flags(
     return signals
 
 
+def extract_proctoring_signals(
+    proctoring_events: list[dict],
+) -> list[dict[str, Any]]:
+    """
+    Extract hidden signals (recruiter_visible=False) when cumulative count >= 2.
+
+    Returns list of signal dicts with evidence formatted for recruiter visibility:
+    - signal: signal name
+    - turns: list of turn numbers where signal fired
+    - confidence: highest confidence among all firings
+    - evidence: formatted evidence from the detection
+    - interpretation: what this signal means for hiring decision
+    """
+    if not proctoring_events:
+        return []
+
+    # Group signals by name, track all metadata
+    signal_groups: dict[str, list[dict]] = {}
+    for event in proctoring_events:
+        sig_name = event.get("signal_name", "unknown")
+        if sig_name not in signal_groups:
+            signal_groups[sig_name] = []
+        signal_groups[sig_name].append(event)
+
+    # Filter for hidden signals (recruiter_visible=False) and count >= 2
+    result = []
+    for sig_name, events in signal_groups.items():
+        # Check if this signal is hidden (recruiter_visible=False)
+        if events and not events[0].get("recruiter_visible", True):
+            # Include if cumulative count >= 2 different firings OR confidence is very high
+            if len(events) >= 2 or (events and events[0].get("confidence", 0) >= 0.85):
+                highest_confidence = max(e.get("confidence", 0) for e in events)
+                turn_numbers = [e.get("turn", 0) for e in events if e.get("turn")]
+
+                # Format interpretation based on signal type
+                interpretation = _interpret_hidden_signal(sig_name, events)
+
+                # Combine evidence from all firings
+                evidence_parts = []
+                for e in events[:2]:  # Show top 2 evidences
+                    ev = e.get("evidence", "")
+                    if ev:
+                        evidence_parts.append(ev)
+                combined_evidence = "; ".join(evidence_parts) if evidence_parts else "signal detected"
+
+                result.append({
+                    "signal": sig_name,
+                    "turns": sorted(set(turn_numbers)),
+                    "confidence": round(highest_confidence, 2),
+                    "evidence": combined_evidence,
+                    "interpretation": interpretation,
+                })
+
+    return result
+
+
+def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
+    """Generate recruiter-friendly interpretation of hidden signal."""
+    del events  # noqa: F841
+    interpretations = {
+        "example_evasion": (
+            "When asked for concrete examples, candidate stayed theoretical or avoided specifics. "
+            "May indicate candidate recites preparation rather than drawing from lived experience."
+        ),
+        "latency_mismatch": (
+            "Answer timing mismatched the question complexity — follow-up answers unnaturally compressed. "
+            "May indicate candidate is guessing or avoiding depth rather than recalling genuine knowledge."
+        ),
+        "ownership_ambiguity": (
+            "Heavy use of team language ('we', 'our') with minimal personal ownership language. "
+            "May indicate candidate contributed to team effort but unclear on personal technical decisions."
+        ),
+        "complexity_latency_mismatch": (
+            "Suspicious timing pattern: complex question answered instantly (suggests pre-written answer) "
+            "OR simple factual question took very long (suggests candidate looking things up). "
+            "May indicate AI-assisted preparation or external reference during interview."
+        ),
+        "resume_claim_mismatch": (
+            "Resume-like claims presented without concrete evidence or grounding in actual work. "
+            "May indicate candidate listing technologies without hands-on experience."
+        ),
+    }
+
+    return interpretations.get(
+        signal_name,
+        f"Signal '{signal_name}' detected. Pattern suggests potential gap between claims and demonstrated knowledge."
+    )
+
+
 def synthesize_behavioral_report(
     transcript_lines: list[str],
     answer_scores: list[dict],
@@ -196,19 +285,27 @@ def synthesize_behavioral_report(
 ) -> dict[str, Any]:
     """Synthesize all behavioral signals into comprehensive report."""
 
-    return {
-        "engagement_signals": extract_engagement_signals(transcript_lines, total_duration_sec, answer_scores),
-        "consistency_signals": extract_consistency_signals(transcript_lines, contradictions_found),
-        "communication_patterns": extract_communication_patterns(answer_scores),
-        "confidence_indicators": extract_confidence_indicators(answer_scores),
-        "integrity_flags": extract_integrity_flags(proctoring_events, answer_scores, contradictions_found),
-        "summary": _generate_behavioral_summary(
-            extract_engagement_signals(transcript_lines, total_duration_sec, answer_scores),
-            extract_consistency_signals(transcript_lines, contradictions_found),
-            extract_communication_patterns(answer_scores),
-            extract_integrity_flags(proctoring_events, answer_scores, contradictions_found),
-        ),
+    engagement = extract_engagement_signals(transcript_lines, total_duration_sec, answer_scores)
+    consistency = extract_consistency_signals(transcript_lines, contradictions_found)
+    communication = extract_communication_patterns(answer_scores)
+    confidence = extract_confidence_indicators(answer_scores)
+    integrity = extract_integrity_flags(proctoring_events, answer_scores, contradictions_found)
+    hidden_signals = extract_proctoring_signals(proctoring_events)
+
+    report = {
+        "engagement_signals": engagement,
+        "consistency_signals": consistency,
+        "communication_patterns": communication,
+        "confidence_indicators": confidence,
+        "integrity_flags": integrity,
+        "summary": _generate_behavioral_summary(engagement, consistency, communication, integrity),
     }
+
+    # Phase 5: Add hidden signals if detected
+    if hidden_signals:
+        report["proctoring_signals_detected"] = hidden_signals
+
+    return report
 
 
 def _generate_behavioral_summary(

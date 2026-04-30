@@ -92,9 +92,12 @@ const CHIN = 152;
 
 const ABSENCE_GRACE_MS = 3_000;  // 3 s no face -> flag
 
-const GAZE_GRACE_MS = 1_500;  // 1.5 s sustained off-screen gaze -> flag
+const GAZE_GRACE_MS = 3_500;  // require a longer sustained off-screen gaze before flagging
 
-const HEAD_POSE_GRACE_MS = 1_500;  // 1.5 s sustained head turn -> flag
+const HEAD_POSE_GRACE_MS = 3_500;  // require a longer sustained head turn before flagging
+
+/** If transcript is updating recently, treat downward gaze/head tilt as normal reading. */
+const TRANSCRIPT_READING_SUPPRESSION_MS = 15_000;
 
 // Nose-offset thresholds (fraction of face width):
 
@@ -108,11 +111,11 @@ const GAZE_X_THRESHOLD = 0.12;   // ~12% of face width off-center
 
 const GAZE_UP_THRESHOLD = -0.06;  // nose 6% above expected neutral Y
 
-const GAZE_DOWN_THRESHOLD = 0.08;  // nose 8% below expected neutral Y
+const GAZE_DOWN_THRESHOLD = 0.14;  // nose 14% below expected neutral Y
 
 const YAW_THRESHOLD_DEG = 14;     // ~14° horizontal head turn (moderate)
 
-const PITCH_DOWN_THRESHOLD_DEG = 12;     // ~12° head looking down
+const PITCH_DOWN_THRESHOLD_DEG = 18;     // allow normal reading posture before flagging
 
 const PITCH_UP_THRESHOLD_DEG = 10;     // ~10° head looking up
 
@@ -140,9 +143,9 @@ const COOLDOWNS: Record<string, number> = {
 
   multiple_faces: 8_000,  // re-alert every 8 s if extra face persists
 
-  gaze_violation: 8_000,
+  gaze_violation: 30_000,
 
-  head_pose_violation: 8_000,
+  head_pose_violation: 30_000,
 
   identity_mismatch: 60_000,
 
@@ -164,6 +167,12 @@ interface FaceProctoringProps {
 
   referenceSnapshotUrl: string | null;
 
+  /**
+   * Timestamp of the most recent candidate transcript segment.
+   * Used to suppress false gaze/head-pose flags while the candidate is reading the live transcript.
+   */
+  lastCandidateTranscriptAtRef?: React.RefObject<number | null>;
+
   /** Called whenever a violation is detected; parent handles UI + API call */
 
   onViolation: (eventType: string, reason: string, severity?: "low" | "medium" | "high") => void;
@@ -181,6 +190,8 @@ export function FaceProctoring({
   isActive,
 
   referenceSnapshotUrl,
+
+  lastCandidateTranscriptAtRef,
 
   onViolation,
 
@@ -271,6 +282,12 @@ export function FaceProctoring({
   }, [canFire, onViolation]);
 
 
+  const getTranscriptRecencyMs = useCallback((): number => {
+    if (!lastCandidateTranscriptAtRef) return Number.POSITIVE_INFINITY;
+    const lastAt = lastCandidateTranscriptAtRef.current;
+    if (!lastAt) return Number.POSITIVE_INFINITY;
+    return Math.max(0, Date.now() - lastAt);
+  }, [lastCandidateTranscriptAtRef]);
 
   //  Gaze classification (nose-offset - reliable, mirror-invariant) 
 
@@ -378,7 +395,7 @@ export function FaceProctoring({
 
       const noseRelY = faceHeight < 0.001 ? 0 : (nose.y - forehead.y) / faceHeight;
 
-      // When looking down noseRelY increases; normal ≈ 0.55
+      // When looking down noseRelY increases; normal ˜ 0.55
 
       const pitch = (noseRelY - 0.55) * 100; // positive = looking down
 
@@ -785,8 +802,11 @@ export function FaceProctoring({
     //  3. Gaze Tracking 
 
     const gazeDir = classifyGaze(landmarks);
+    const transcriptRecencyMs = getTranscriptRecencyMs();
+    const isReadingTranscript = transcriptRecencyMs <= TRANSCRIPT_READING_SUPPRESSION_MS;
+    const isTranscriptReadingDownward = isReadingTranscript && gazeDir === "down";
 
-    if (gazeDir !== "center") {
+    if (gazeDir !== "center" && !isTranscriptReadingDownward) {
 
       if (!gazeViolStartRef.current) gazeViolStartRef.current = now;
 
@@ -826,9 +846,9 @@ export function FaceProctoring({
 
       pitch < -PITCH_UP_THRESHOLD_DEG;
 
+    const isReadingPosture = isReadingTranscript && (gazeDir === "down" || pitch > 0);
 
-
-    if (isHeadPoseViolation) {
+    if (isHeadPoseViolation && !isReadingPosture) {
 
       if (!headPoseViolStartRef.current) headPoseViolStartRef.current = now;
 
@@ -920,7 +940,16 @@ export function FaceProctoring({
 
     }
 
-  }, [classifyGaze, classifyHeadPose, verifyIdentity, fire, referenceSnapshotUrl, cropAndResize, toNormalisedGrayscale]);
+  }, [
+    classifyGaze,
+    classifyHeadPose,
+    verifyIdentity,
+    fire,
+    referenceSnapshotUrl,
+    cropAndResize,
+    toNormalisedGrayscale,
+    getTranscriptRecencyMs,
+  ]);
 
 
 
@@ -1119,6 +1148,10 @@ export function FaceProctoring({
   return null;
 
 }
+
+
+
+
 
 
 

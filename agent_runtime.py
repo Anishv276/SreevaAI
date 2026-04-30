@@ -337,6 +337,17 @@ async def generate_candidate_brief(
                             "  - Tool: [name]\n"
                             "  - Validation question: [one specific question that proves real depth vs name-dropping - must require hands-on experience to answer well]\n"
                             "If a tool sounds like a mispronunciation of a known tool, note the likely intended tool.\n\n"
+                            "QUICK PROBES — RESUME-GROUNDED FOLLOW-UPS (Phase 4):\n"
+                            "Pre-build 5-8 targeted follow-up questions that Ishita can use when she needs specificity.\n"
+                            "Each probe must reference a specific technology, project, or skill from the resume.\n"
+                            "Format:\n"
+                            "  - [TECHNOLOGY/PROJECT]: [one specific question about hands-on use or experience]\n"
+                            "These are NOT main interview questions. Use these when:\n"
+                            "  (a) candidate gives a vague answer and Ishita needs to probe deeper with specifics\n"
+                            "  (b) evaluator signals 'need evidence' or 'need specificity'\n"
+                            "  (c) Ishita wants to verify depth on a resume skill claim\n"
+                            "Example: If resume lists 'PostgreSQL', probe could be: 'Tell me about the largest table you've scaled. What was the approach?'\n"
+                            "Ensure each probe is answerable only by someone with real hands-on experience with that tech.\n\n"
                             "WATCH-OUTS:\n"
                             "2-3 red flags or thin areas from the resume or report that Ishita must probe carefully. Be blunt.\n\n"
                             "OWNERSHIP RISKS:\n"
@@ -741,7 +752,7 @@ async def entrypoint(ctx: JobContext):
     )
 
     session_context.candidate_summary_block = build_candidate_summary(resume_context)
-    session_context.jd_summary_block = build_jd_summary(extracted_details, jd_block)
+    session_context.jd_summary_block = jd_block
     session_context.screening_summary_block = build_screening_summary(ai_report, ai_report_block)
     session_context.role_layer = build_role_layer(
         session_context.role_category, session_context.role_subtype, session_context.candidate_band
@@ -778,14 +789,11 @@ async def entrypoint(ctx: JobContext):
     chat_ctx = llm.ChatContext()
     chat_ctx.add_message(role="system", content=system_prompt)
 
-    # Inject warmup directive: first 2 turns are conversational, then pivot to interview
+    # Inject ONLY warmup directive upfront — pivot fires later when warmup_complete=True
     warmup_context = build_fast_opening_context()
     chat_ctx.add_message(role="system", content=warmup_context)
 
-    pivot_directive = build_interview_pivot_directive()
-    chat_ctx.add_message(role="system", content=pivot_directive)
-
-    logger.info("[OPENING] Conversational warmup + interview pivot directives injected")
+    logger.info("[OPENING] Conversational warmup directive injected (pivot will fire after 2 candidate responses)")
 
     ctx.proc.userdata["candidate_band_context"] = session_context
 
@@ -826,7 +834,8 @@ async def entrypoint(ctx: JobContext):
             f"[BRIEF] Deferred brief attached to chat context ({len(delayed_brief)} chars)"
         )
 
-    spawn_background_task(attach_brief_when_ready(), "attach_brief_when_ready")
+    # attach_brief_when_ready() is triggered on warmup_complete (after 2 candidate responses)
+    # Do NOT spawn it here — it fires from on_conversation_item_added when warmup_complete=True
     logger.info(
         "[SESSION] brief_available=%s opening_question=%s band=%s role=%s",
         bool(session_context.candidate_brief_block),
@@ -986,6 +995,8 @@ async def entrypoint(ctx: JobContext):
     interview_marked_finished = False
     turn_count = 0           # counts assistant turns for state injection cadence
     last_injection_turn = 0  # tracks which turn last received a state injection
+    warmup_responses_received = 0  # counts candidate responses during 2-turn warmup
+    warmup_complete = False  # True after 2nd candidate response received
     environment_risk = 0     # browser-side proctoring signals
     integrity_risk = 0       # integrity-related proctoring signals
     depth_risk = 0           # surface answers / compression failures
@@ -1452,6 +1463,9 @@ async def entrypoint(ctx: JobContext):
                         # Hard timeout: if evaluation LLM is slow the next candidate answer
                         # arrives before directive is injected — Ishita answers with no context.
                         try:
+                            # Build uncovered topics list for directive bridging (Phase 3)
+                            uncovered_topics = session_context.coverage_items[:3]  # Top 3 uncovered areas
+
                             td, directive = await asyncio.wait_for(
                                 run_turn_evaluation(
                                     candidate_answer=answer,
@@ -1466,6 +1480,8 @@ async def entrypoint(ctx: JobContext):
                                     score_answer_quality_fn=score_answer_quality,
                                     evaluate_answer_and_decide_fn=evaluate_answer_and_decide,
                                     signal_toggles=evaluation_signal_toggles,
+                                    max_follow_ups=follow_up_depth,
+                                    uncovered_topics=uncovered_topics,
                                     collapse_stage=collapse_stage,
                                     session_score_history=score_history,
                                     turns_since_last_decay=turns_since_decay,
@@ -1681,7 +1697,7 @@ async def entrypoint(ctx: JobContext):
     def on_conversation_item_added(event) -> None:
         nonlocal session_start_time, turn_count, last_injection_turn, \
             _last_interviewer_question, _topic_follow_up_count, \
-            _question_asked_at, _answer_received_at
+            _question_asked_at, _answer_received_at, warmup_responses_received, warmup_complete
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -1690,6 +1706,16 @@ async def entrypoint(ctx: JobContext):
                 return
             if role == "user":
                 _answer_received_at = time.perf_counter()
+                if not warmup_complete:
+                    warmup_responses_received += 1
+                    if warmup_responses_received >= 2:
+                        warmup_complete = True
+                        # Remove warmup directive, inject pivot + brief now
+                        remove_system_messages(chat_ctx, "[CONVERSATIONAL WARMUP")
+                        pivot_directive = build_interview_pivot_directive()
+                        chat_ctx.add_message(role="system", content=pivot_directive)
+                        logger.info("[OPENING] Warmup complete — pivot directive injected")
+                        spawn_background_task(attach_brief_when_ready(), "attach_brief_on_warmup_complete")
                 turn_snapshot = turn_count
                 spawn_background_task(
                     _process_user_conversation_item(event, content, role, turn_snapshot),

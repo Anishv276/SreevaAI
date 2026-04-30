@@ -971,26 +971,31 @@ def extract_smart_opening_question(brief_text: str) -> str:
 def build_fast_opening_context() -> str:
     """
     Return instruction for first 2 conversational turns (no structured interview yet).
-    These are warmup questions to build rapport - sound human, not robotic.
+    Keep it short: greet, ask how they are, share 1-2 lines, then stop and wait for pivot.
     """
     return (
-        "[FIRST TWO TURNS — CONVERSATIONAL WARMUP]\n"
-        "Turn 1: Warm greeting like you're catching up with someone you haven't talked to in a while.\n"
+        "[CONVERSATIONAL WARMUP — TURNS 1 AND 2 ONLY]\n"
+        "You are starting a conversation, NOT an interview yet.\n\n"
+        "Turn 1 — Your opening line:\n"
+        "  Greet them warmly and ask how they are doing. Keep it simple and genuine.\n"
         "  Examples:\n"
-        "  - 'Hey! Thanks so much for taking the time to chat with me today. How are you doing? How's everything been going on your end?'\n"
-        "  - 'Good to finally connect with you! I've been looking forward to this. How's your week been treating you so far?'\n"
-        "  - 'Thanks for jumping on the call, I really appreciate it. Just want to make sure everything is working well on your end — audio and video all good?'\n"
-        "  - 'Hey, how's it going? I'm really excited to learn more about you and your background. You doing alright?'\n\n"
-        "Turn 2: One natural icebreaker that feels like genuine curiosity, not reading from an interview form.\n"
+        "  - 'Hey! How are you doing today?'\n"
+        "  - 'Hi! Good to connect. How's your day going so far?'\n"
+        "  - 'Hey, thanks for jumping on. How are you doing?'\n\n"
+        "Turn 2 — After they respond:\n"
+        "  Share 1-2 lines about how YOU are doing. Be brief and human. Then stop talking.\n"
         "  Examples:\n"
-        "  - 'So I'm based here in [city], and I always like to get to know people — where are you calling in from? Are you from there originally or did you move around?'\n"
-        "  - 'I'm always curious about people's journeys — what actually got you interested in [field/role type] in the first place? Was it something specific that drew you to it?'\n"
-        "  - 'I see you've been in tech for a while now, which is awesome. But I'm curious — what's really drawn you to backend engineering? Like, what keeps you excited about the work?'\n"
-        "  - 'Have you had a chance to work with [company/tech] before in your previous roles, or would this be your first real deep dive into it?'\n\n"
-        "Key: You're having a natural conversation. You're interested in them as a person, not just scanning their resume.\n"
-        "Keep it warm and genuine. Let them do most of the talking. You're making them feel comfortable and heard.\n"
-        "Do NOT ask about their skills, projects, or what they did at work yet. That comes next.\n\n"
-        "After turn 2, transition smoothly and naturally into the real conversation: 'Alright, well that makes sense. Let me dig into your background and what you've actually been building.'"
+        "  - 'I'm doing well, keeping busy but good. Really glad we could connect today.'\n"
+        "  - 'Honestly pretty good! Had a lot of calls today but this one I was looking forward to.'\n"
+        "  - 'Doing great, thanks for asking! It's been a full day but I'm energized.'\n\n"
+        "STRICT RULES FOR WARMUP:\n"
+        "  - Do NOT ask where they are from\n"
+        "  - Do NOT ask what drew them to this field\n"
+        "  - Do NOT ask about their career journey\n"
+        "  - Do NOT ask about their background or skills yet\n"
+        "  - Do NOT ask any follow-up warmup questions after turn 2\n"
+        "  - STOP after your 2-line reply. The next message will tell you what to do next.\n\n"
+        "After exactly 2 turns, wait. You will receive new instructions to begin the real conversation."
     )
 
 

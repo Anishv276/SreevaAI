@@ -78,30 +78,6 @@ class ShortUtteranceClassification(TypedDict):
     token_count: int
 
 
-_SIGNAL_RULES: dict[str, SignalRule] = {}
-
-
-def register_signal_rule(
-    signal_name: str,
-    *,
-    signal_layer: str,
-    trust_bucket_affected: str,
-    probe_mode: str,
-    recoverable: bool,
-    recruiter_visible: bool,
-    detector: Callable[
-        [str, str, float, list[float], int, bool],
-        Optional[SignalEvent],
-    ],
-) -> None:
-    _SIGNAL_RULES[signal_name] = SignalRule(
-        signal_layer=signal_layer,
-        trust_bucket_affected=trust_bucket_affected,
-        probe_mode=probe_mode,
-        recoverable=recoverable,
-        recruiter_visible=recruiter_visible,
-        detector=detector,
-    )
 
 
 def _build_signal_event(
@@ -359,7 +335,7 @@ def _detect_follow_up_collapse_event(
             f"{collapse_type} collapse: first={first_answer_depth:.1f} "
             f"follow-up={current_depth:.1f} drop={drop:.1f} stage={collapse_stage}"
         ),
-        trust_bucket_affected="competency_authenticity",
+        trust_bucket_affected="behavioral_confidence",
         score_delta=score_delta,
         probe_mode="follow_up_collapse_staged",
         recoverable=is_recoverable,
@@ -763,89 +739,6 @@ def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
         depth_decay="depth_decay" in names,
         complexity_latency_mismatch="complexity_latency_mismatch" in names,
     )
-
-
-register_signal_rule(
-    "ownership_ambiguity",
-    signal_layer="behavioral_confidence",
-    trust_bucket_affected="behavioral_confidence",
-    probe_mode="ownership",
-    recoverable=True,
-    recruiter_visible=True,
-    detector=_detect_ownership_ambiguity_event,
-)
-register_signal_rule(
-    "example_evasion",
-    signal_layer="behavioral_confidence",
-    trust_bucket_affected="behavioral_confidence",
-    probe_mode="evidence",
-    recoverable=True,
-    recruiter_visible=False,
-    detector=_detect_example_evasion_event,
-)
-register_signal_rule(
-    "resume_claim_mismatch",
-    signal_layer="behavioral_confidence",
-    trust_bucket_affected="behavioral_confidence",
-    probe_mode="evidence",
-    recoverable=True,
-    recruiter_visible=True,
-    detector=_detect_resume_claim_mismatch_event,
-)
-register_signal_rule(
-    "latency_mismatch",
-    signal_layer="behavioral_confidence",
-    trust_bucket_affected="behavioral_confidence",
-    probe_mode="compression",
-    recoverable=True,
-    recruiter_visible=False,
-    detector=_detect_latency_mismatch_event,
-)
-register_signal_rule(
-    "follow_up_collapse",
-    signal_layer="hard_integrity",
-    trust_bucket_affected="competency_authenticity",
-    probe_mode="follow_up_collapse_staged",
-    recoverable=True,
-    recruiter_visible=True,
-    detector=_detect_follow_up_collapse_event,
-)
-register_signal_rule(
-    "contradiction",
-    signal_layer="hard_integrity",
-    trust_bucket_affected="hard_integrity",
-    probe_mode="contradiction",
-    recoverable=True,
-    recruiter_visible=True,
-    detector=_detect_contradiction_event,
-)
-register_signal_rule(
-    "meta_question",
-    signal_layer="rapport_repair",
-    trust_bucket_affected="rapport_repair",
-    probe_mode="rapport",
-    recoverable=True,
-    recruiter_visible=False,
-    detector=_detect_meta_question_event,
-)
-register_signal_rule(
-    "depth_decay",
-    signal_layer="intelligence_quality",
-    trust_bucket_affected="intelligence_quality",
-    probe_mode="depth",
-    recoverable=True,
-    recruiter_visible=True,
-    detector=_detect_depth_decay_event,  # type: ignore[arg-type]  # closure wrapper used at runtime
-)
-register_signal_rule(
-    "complexity_latency_mismatch",
-    signal_layer="behavioral_confidence",
-    trust_bucket_affected="behavioral_confidence",
-    probe_mode="evidence",
-    recoverable=True,
-    recruiter_visible=True,
-    detector=_detect_complexity_latency_mismatch_event,  # type: ignore[arg-type]
-)
 
 
 def detect_ownership_ambiguity(answer: str) -> bool:
