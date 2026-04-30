@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         # NEXT_PUBLIC_LIVEKIT_URL: "wss://new-wi7dgqfb.livekit.cloud" # LiveKit Cloud (commented for now)
-        NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreeva.ai" # Deployment cloud
+        NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com" # Deployment cloud
         NEXT_PUBLIC_APP_URL: "https://www.sreevaai.com"
     container_name: hr-frontend
     networks:
@@ -14,8 +14,8 @@ services:
     env_file:
       - .env
     environment:
-      LIVEKIT_URL: "wss://lk.sreeva.ai"
-      NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreeva.ai"
+      LIVEKIT_URL: "wss://lk.sreevaai.com"
+      NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com"
     restart: always
     dns:
       - 8.8.8.8
@@ -40,8 +40,8 @@ services:
     env_file:
       - .env
     environment:
-      LIVEKIT_URL: "wss://lk.sreeva.ai"
-      NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreeva.ai"
+      LIVEKIT_URL: "wss://lk.sreevaai.com"
+      NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com"
     restart: always
     depends_on:
       - redis
@@ -62,7 +62,7 @@ services:
     env_file:
       - .env
     environment:
-      LIVEKIT_URL: "wss://lk.sreeva.ai"
+      LIVEKIT_URL: "wss://lk.sreevaai.com"
     restart: always
     dns:
       - 8.8.8.8
@@ -89,7 +89,7 @@ services:
       - "7881:7881"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.livekit.rule=Host(`lk.sreeva.ai`)"
+      - "traefik.http.routers.livekit.rule=Host(`lk.sreevaai.com`)"
       - "traefik.http.routers.livekit.entrypoints=websecure"
       - "traefik.http.routers.livekit.tls=true"
       - "traefik.http.routers.livekit.tls.certresolver=mytlschallenge"

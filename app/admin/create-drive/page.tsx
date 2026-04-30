@@ -34,7 +34,7 @@ import {
   Lock,
 } from "lucide-react";
 const STEPS = ["Basic Info", "Job Description", "Interview", "Preview"];
-// const CANDIDATE_LINK = "sreeva.ai/careers/jobs/backend-engineer-2024";
+// const CANDIDATE_LINK = "sreevaai.com/careers/jobs/backend-engineer-2024";
 // Per-step validation messages shown when fields appear incomplete
 const STEP_VALIDATION_HINTS: Record<number, string> = {
   0: "Please fill all required fields.",

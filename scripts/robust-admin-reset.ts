@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 
 async function main() {
     const email1 = "admin@sreeva";
-    const email2 = "admin@sreeva.ai";
+    const email2 = "admin@sreevaai.com";
     const password = "123456";
     const name = "Organization Admin";
     const orgId = "hire-org-id";

@@ -58,7 +58,7 @@ export async function POST(request: Request) {
 
         const careersUrl = process.env.NEXT_PUBLIC_APP_URL
             ? `${process.env.NEXT_PUBLIC_APP_URL}/careers`
-            : "https://sreeva.ai/careers";
+            : "https://sreevaai.com/careers";
 
         if (action === "shortlist") {
             // Shortlist: set resumeStatus to shortlisted, create interview invites, send emails
