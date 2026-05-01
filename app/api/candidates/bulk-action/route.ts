@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { sendApplicationStatusEmail } from "@/lib/mail";
-import { generateId } from "@/lib/ids";
-import { isInterviewTokenRequired } from "@/lib/interview-access";
 
 export async function POST(request: Request) {
     try {
@@ -56,44 +53,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ message: `${validIds.length} candidates deleted` });
         }
 
-        const careersUrl = process.env.NEXT_PUBLIC_APP_URL
-            ? `${process.env.NEXT_PUBLIC_APP_URL}/careers`
-            : "https://sreevaai.com/careers";
-
         if (action === "shortlist") {
-            // Shortlist: set resumeStatus to shortlisted, create interview invites, send emails
             await prisma.application.updateMany({
                 where: { id: { in: validIds } },
                 data: { resumeStatus: "shortlisted" },
             });
-
-            // Create interview records and send emails
-            await Promise.allSettled(applications.map(async (app: (typeof applications)[number]) => {
-                const interview = await (prisma as any).interview.upsert({
-                    where: { applicationId: app.id },
-                    update: { expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000), status: "PENDING" },
-                    create: {
-                        id: generateId("int", app.fullName || app.id),
-                        applicationId: app.id,
-                        expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-                        status: "PENDING",
-                    },
-                });
-                const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com"}/interview/${app.id}`;
-                const interviewLink = isInterviewTokenRequired()
-                    ? `${interviewBase}?token=${interview.accessToken}`
-                    : interviewBase;
-                return sendApplicationStatusEmail({
-                    email: app.email,
-                    fullName: app.fullName,
-                    jobTitle: app.drive.title,
-                    orgId: app.drive.orgId ?? undefined,
-                    status: "SHORTLISTED",
-                    score: 0,
-                    interviewLink,
-                });
-            }));
-
             return NextResponse.json({ message: `${validIds.length} candidates shortlisted` });
         }
 
@@ -107,22 +71,6 @@ export async function POST(request: Request) {
                 },
             });
 
-            Promise.allSettled(
-                applications.map((app: (typeof applications)[number]) =>
-                    sendApplicationStatusEmail({
-                        email: app.email,
-                        fullName: app.fullName,
-                        jobTitle: app.drive.title,
-                        orgId: app.drive.orgId ?? undefined,
-                        status: "REJECTED",
-                        score: 0,
-                        interviewLink: careersUrl,
-                    })
-                )
-            ).catch(err => {
-                console.error("[BULK_REJECT_EMAIL_ERROR]:", err);
-            });
-
             return NextResponse.json({ message: `${validIds.length} candidates marked as not hired` });
         }
 
@@ -130,21 +78,6 @@ export async function POST(request: Request) {
             await prisma.application.updateMany({
                 where: { id: { in: validIds } },
                 data: { hiringStatus: "hired", resumeStatus: "shortlisted", interviewStatus: "finished" },
-            });
-
-            Promise.allSettled(
-                applications.map((app: (typeof applications)[number]) =>
-                    sendApplicationStatusEmail({
-                        email: app.email,
-                        fullName: app.fullName,
-                        jobTitle: app.drive.title,
-                        orgId: app.drive.orgId ?? undefined,
-                        status: "Hired",
-                        score: 0,
-                    })
-                )
-            ).catch(err => {
-                console.error("[BULK_HIRE_EMAIL_ERROR]:", err);
             });
 
             try {

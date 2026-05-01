@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { PremiumFilter } from "@/components/admin/premium-filter";
+import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { useCandidates } from "@/context/candidates-context";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
@@ -70,6 +71,14 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isSelectionMode, setIsSelectionMode] = useState(true);
     const [isBulkLoading, setIsBulkLoading] = useState(false);
+    const [pendingEmailBatch, setPendingEmailBatch] = useState<{
+        ids: string[];
+        emailType: "screening" | "hiring";
+        targetAction: "shortlist" | "reject" | "hire" | "nothired";
+        title: string;
+        description: string;
+        confirmText: string;
+    } | null>(null);
     const [quotaLocked, setQuotaLocked] = useState(false);
     const isSuspended = String(organization?.status || "").toUpperCase() === "SUSPENDED" || String(organization?.status || "").toUpperCase() === "CLOSED";
     const isInterviewActionBlocked = isSuspended || quotaLocked;
@@ -203,20 +212,66 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
         setSelectedIds(new Set());
         setIsSelectionMode(true);
     };
+    const getBulkEmailPrompt = (action: "hire" | "not_hired" | "reject" | "shortlist", ids: string[]) => {
+        const count = ids.length;
+        switch (action) {
+            case "shortlist":
+                return {
+                    ids,
+                    emailType: "screening" as const,
+                    targetAction: "shortlist" as const,
+                    title: "Send Interview Emails?",
+                    description: `You shortlisted ${count} selected candidate(s). Send interview invitation emails now?`,
+                    confirmText: `Send Email (${count})`,
+                };
+            case "reject":
+                return {
+                    ids,
+                    emailType: "screening" as const,
+                    targetAction: "reject" as const,
+                    title: "Send Rejection Emails?",
+                    description: `You rejected ${count} selected candidate(s). Send rejection emails now?`,
+                    confirmText: `Send Email (${count})`,
+                };
+            case "hire":
+                return {
+                    ids,
+                    emailType: "hiring" as const,
+                    targetAction: "hire" as const,
+                    title: "Send Hire Emails?",
+                    description: `You hired ${count} selected candidate(s). Send hire confirmation emails now?`,
+                    confirmText: `Send Email (${count})`,
+                };
+            case "not_hired":
+                return {
+                    ids,
+                    emailType: "hiring" as const,
+                    targetAction: "nothired" as const,
+                    title: "Send Rejection Emails?",
+                    description: `You marked ${count} selected candidate(s) as not hired. Send rejection emails now?`,
+                    confirmText: `Send Email (${count})`,
+                };
+        }
+    };
     const handleBulkStatus = async (action: "hire" | "not_hired" | "reject" | "shortlist" | "delete") => {
         if (!selectedCount || isBulkLoading) return;
+        const ids = Array.from(selectedIds);
         try {
             setIsBulkLoading(true);
             const res = await fetch("/api/candidates/bulk-action", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ids: Array.from(selectedIds), action }),
+                body: JSON.stringify({ ids, action }),
             });
             const data = await res.json().catch(() => null);
             if (res.ok) {
                 toast.success(data?.message || "Bulk action completed");
                 clearSelection();
                 fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
+                if (action !== "delete") {
+                    const emailPrompt = getBulkEmailPrompt(action as "hire" | "not_hired" | "reject" | "shortlist", ids);
+                    if (emailPrompt) setPendingEmailBatch(emailPrompt);
+                }
                 return;
             }
             toast.error(data?.error || "Failed to update selected candidates");
@@ -253,26 +308,28 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     };
     const handleBulkSendEmail = async (
         emailType: "screening" | "hiring",
-        targetAction?: "shortlist" | "reject" | "hire" | "nothired"
+        targetAction?: "shortlist" | "reject" | "hire" | "nothired",
+        ids?: string[]
     ) => {
-        if (!selectedCount || isBulkLoading) return;
+        const targetIds = ids && ids.length > 0 ? ids : Array.from(selectedIds);
+        if (!targetIds.length || isBulkLoading) return false;
         if (isInterviewActionBlocked) {
             toast.error(interviewActionBlockedMessage);
-            return;
+            return false;
         }
         try {
             setIsBulkLoading(true);
             const res = await fetch("/api/candidates/bulk-email", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ids: Array.from(selectedIds), emailType, targetAction }),
+                body: JSON.stringify({ ids: targetIds, emailType, targetAction }),
             });
             const data = await res.json().catch(() => null);
             if (res.ok) {
                 toast.success(data?.message || "Emails sent");
                 clearSelection();
                 fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
-                return;
+                return true;
             }
             toast.error(data?.error || "Failed to send emails");
         } catch {
@@ -280,6 +337,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
         } finally {
             setIsBulkLoading(false);
         }
+        return false;
     };
     const driveTitle = jobs.find((job) => job.id === driveId)?.title || "Drive";
     return (
@@ -496,12 +554,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                 )}
                                 <TableHead className="w-[60px] pl-8 font-bold uppercase tracking-wider text-[11px] text-gray-500">#</TableHead>
                                 <TableHead className="w-[320px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 pl-4">Candidate</TableHead>
-                                <TableHead className="w-[220px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">
-                                    <div className="flex items-center justify-center gap-1">
-                                        <span>Drive ID</span>
-                                        <span className="text-[9px] font-black tracking-[0.18em] text-gray-400">DEBUG</span>
-                                    </div>
-                                </TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">
                                     <div className="flex items-center justify-center gap-1">
                                         <span>Score</span>
@@ -552,13 +604,13 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                         <TableBody className="[&_tr:last-child]:border-0">
                             {isLoading ? (
                                 <TableRow>
-                                    <TableCell colSpan={isSelectionMode ? 11 : 10} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-12 text-center text-sm font-bold text-gray-400">
                                         Loading candidates...
                                     </TableCell>
                                 </TableRow>
                             ) : filteredCandidates.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={isSelectionMode ? 11 : 10} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-12 text-center text-sm font-bold text-gray-400">
                                         No candidates found for this drive
                                     </TableCell>
                                 </TableRow>
@@ -618,26 +670,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                         <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{displayName}</span>
                                                         <span className="text-[11px] text-gray-400 font-bold mt-0.5">{displayEmail}</span>
                                                     </div>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
-                                                <div className="flex flex-col items-center gap-1">
-                                                    <span
-                                                        className={cn(
-                                                            "max-w-[190px] truncate rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] border",
-                                                            candidate.driveId === driveId
-                                                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                                                : "border-rose-200 bg-rose-50 text-rose-700"
-                                                        )}
-                                                        title={candidate.driveId || "No drive id"}
-                                                    >
-                                                        {candidate.driveId || "missing"}
-                                                    </span>
-                                                    {candidate.driveId !== driveId && (
-                                                        <span className="text-[9px] font-black uppercase tracking-[0.18em] text-rose-500">
-                                                            mismatch
-                                                        </span>
-                                                    )}
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
@@ -743,7 +775,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                                     ? "text-gray-400 opacity-70"
                                                                     : isInterviewActionBlocked
                                                                         ? "text-gray-400 opacity-70"
-                                                                : canResendInterview
+                                                            : canResendInterview
                                                                             ? "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
                                                                             : "text-gray-400 opacity-70"
                                                             )}
@@ -754,11 +786,11 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                         <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Shortlist</DropdownMenuLabel>
                                                         <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${displayName} shortlisted`)} className="rounded-lg px-3 py-2 font-bold text-emerald-600 cursor-pointer focus:text-emerald-700 focus:bg-emerald-50 transition-colors">
                                                             <Target className="h-4 w-4 mr-2" />
-                                                            Shortlist Candidate
+                                                            Shortlist
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${displayName} rejected`)} className="rounded-lg px-3 py-2 font-bold text-rose-600 cursor-pointer focus:text-rose-700 focus:bg-rose-50 transition-colors">
                                                             <UserX className="h-4 w-4 mr-2" />
-                                                            Reject Candidate
+                                                            Reject
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
                                                             onClick={() => {
@@ -783,7 +815,31 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                             className="rounded-lg px-3 py-2 font-bold cursor-pointer text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
                                                         >
                                                             <BadgeCheck className="h-4 w-4 mr-2" />
-                                                            Hire this person
+                                                            Hire
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem
+                                                            onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "not hired" }, `${displayName} marked as not hired`)}
+                                                            className="rounded-lg px-3 py-2 font-bold cursor-pointer text-rose-600 focus:text-rose-700 focus:bg-rose-50 transition-colors"
+                                                        >
+                                                            <XCircle className="h-4 w-4 mr-2" />
+                                                            Not Hired
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem
+                                                            onClick={() => {
+                                                                if (isInterviewActionBlocked) {
+                                                                    toast.error(interviewActionBlockedMessage);
+                                                                    return;
+                                                                }
+                                                                window.location.href = `mailto:${candidate.email}`;
+                                                            }}
+                                                            disabled={isInterviewActionBlocked}
+                                                            className={cn(
+                                                                "rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors",
+                                                                isInterviewActionBlocked ? "text-gray-400 opacity-70" : "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
+                                                            )}
+                                                        >
+                                                            {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
+                                                            Send Mail
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
                                                             onClick={async () => {
@@ -803,7 +859,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                             className="rounded-lg px-3 py-2 font-bold cursor-pointer text-gray-600 focus:text-gray-900 focus:bg-gray-50 transition-colors"
                                                         >
                                                             <Trash2 className="h-4 w-4 mr-2" />
-                                                            Delete candidate
+                                                            Delete
                                                         </DropdownMenuItem>
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
@@ -855,6 +911,22 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                     </Button>
                 </div>
             </div>
+            <ActionConfirmModal
+                isOpen={pendingEmailBatch !== null}
+                onClose={() => setPendingEmailBatch(null)}
+                onConfirm={async () => {
+                    if (!pendingEmailBatch) return;
+                    const batch = pendingEmailBatch;
+                    const sent = await handleBulkSendEmail(batch.emailType, batch.targetAction, batch.ids);
+                    if (sent) setPendingEmailBatch(null);
+                }}
+                title={pendingEmailBatch?.title || "Send Emails?"}
+                description={pendingEmailBatch?.description || "Would you like to send emails to the selected candidates now?"}
+                confirmText={pendingEmailBatch?.confirmText || "Send Email"}
+                cancelText="No Thanks"
+                variant="info"
+                isLoading={isBulkLoading}
+            />
         </div>
     );
 }

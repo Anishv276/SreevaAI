@@ -94,7 +94,7 @@ export async function POST(
                             applicationId,
                             candidateName: application.fullName,
                             roleLabel: application.drive?.role || application.drive?.title || "Interview",
-                            timeLimitMins: driveDurationMins,
+                            timeLimitMins: FIXED_INTERVIEW_DURATION_MINUTES,
                         }),
                     });
                 } catch (dispatchErr) {

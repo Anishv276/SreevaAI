@@ -1,10 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 
-const globalForPrisma = global as unknown as { prisma: PrismaClient }
-
-const prisma =
-    globalForPrisma.prisma ||
-    new PrismaClient({
+function createPrismaClient() {
+    return new PrismaClient({
         log: ['error', 'warn'],
     }).$extends({
         query: {
@@ -33,6 +30,13 @@ const prisma =
             },
         },
     })
+}
+
+const globalForPrisma = global as unknown as {
+    prisma?: ReturnType<typeof createPrismaClient>
+}
+
+const prisma = globalForPrisma.prisma ?? createPrismaClient()
 
 export { prisma };
 

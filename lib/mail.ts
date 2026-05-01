@@ -124,7 +124,9 @@ export async function sendApplicationStatusEmail({
         console.error(`[MAIL GMAIL FAILED]`, error);
         return {
             success: false,
-            error: `Failed to send email from the connected Gmail account for orgId=${orgId}`
+            error: error instanceof Error
+                ? error.message
+                : `Failed to send email from the connected Gmail account for orgId=${orgId}`
         };
     }
 }

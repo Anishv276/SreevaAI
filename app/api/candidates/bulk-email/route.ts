@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { generateId } from "@/lib/ids";
-import { invitationDeliveryQueue } from "@/lib/queue";
+import { sendApplicationStatusEmail } from "@/lib/mail";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { v4 as uuidv4 } from "uuid";
 
 type BulkEmailAction = "shortlist" | "reject" | "hire" | "nothired" | null;
 
@@ -41,12 +41,6 @@ function resolveAction(
     if (resumeStatus === "shortlisted" || resumeStatus === "shortlist") return "shortlist";
     if (resumeStatus === "rejected" || resumeStatus === "reject") return "reject";
     return null;
-}
-
-function getDriveScheduleDays(drive: {
-    inviteScheduleDays?: number | null;
-}) {
-    return Number(drive.inviteScheduleDays ?? 1) || 1;
 }
 
 export async function POST(request: Request) {
@@ -152,79 +146,90 @@ export async function POST(request: Request) {
                 continue;
             }
 
-            const driveScheduleDays = getDriveScheduleDays(app.drive || {});
-            const effectiveScheduleDays = emailType === "screening"
-                ? Math.max(1, Number(scheduleDays ?? driveScheduleDays ?? 1))
-                : 1;
-
             plannedDeliveries.push({
                 app,
                 action,
-                scheduleDays: effectiveScheduleDays,
+                scheduleDays: 1,
             });
         }
 
         if (!plannedDeliveries.length) {
             const firstReason = skipReasons[0] || "No eligible candidates";
             return NextResponse.json({
-                error: "No emails could be queued",
+                error: "No emails could be sent",
                 reasons: skipReasons,
                 message: firstReason,
-                queued: 0,
+                sent: 0,
                 skipped: skipReasons.length,
             }, { status: 400 });
         }
 
-        let queued = 0;
+        let sent = 0;
         const failures: Array<{ id: string; reason: string }> = [];
 
-        for (let index = 0; index < plannedDeliveries.length; index += 1) {
-            const { app, action, scheduleDays } = plannedDeliveries[index];
-            const dayOffset = emailType === "screening"
-                ? Math.floor((index * scheduleDays) / plannedDeliveries.length)
-                : 0;
-            const scheduledAt = new Date(Date.now() + dayOffset * DAY_MS);
-            const delay = Math.max(0, scheduledAt.getTime() - Date.now());
-            const jobId = generateId("inv", `${app.id}-${action}-${scheduledAt.getTime()}`);
-
+        for (const { app, action } of plannedDeliveries) {
             try {
+                let interviewLink: string | undefined;
                 if (action === "shortlist") {
+                    const newToken = uuidv4();
+                    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
                     await (prisma.interview as any).upsert({
                         where: { applicationId: app.id },
                         update: {
-                            scheduledAt,
+                            accessToken: newToken,
+                            scheduledAt: new Date(),
+                            inviteSentAt: new Date(),
+                            expiresAt,
                             status: "PENDING",
+                            startedAt: null,
+                            completedAt: null,
                         },
                         create: {
                             id: generateId("int", app.fullName || app.id),
                             applicationId: app.id,
-                            scheduledAt,
+                            accessToken: newToken,
+                            scheduledAt: new Date(),
+                            inviteSentAt: new Date(),
+                            expiresAt,
                             status: "PENDING",
                         },
                     });
+                    const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com"}/interview/${app.id}`;
+                    interviewLink = isInterviewTokenRequired()
+                        ? `${interviewBase}?token=${newToken}`
+                        : interviewBase;
                 }
 
-                await invitationDeliveryQueue.add(
-                    "deliver-invitation",
-                    {
-                        applicationId: app.id,
-                        action,
-                        emailType,
-                        scheduledAt: scheduledAt.toISOString(),
-                    },
-                    {
-                        jobId,
-                        delay,
-                    }
-                );
+                const status = action === "shortlist"
+                    ? "ACCEPTED"
+                    : action === "hire"
+                        ? "Hired"
+                        : "REJECTED";
 
-                queued += 1;
+                const mailResult = await sendApplicationStatusEmail({
+                    email: app.email,
+                    fullName: app.fullName || "Candidate",
+                    jobTitle: app.drive?.title || "Unknown Role",
+                    orgId: app.drive?.orgId ?? undefined,
+                    status,
+                    score: app.fullName ? 0 : 0,
+                    interviewLink,
+                });
+
+                if (!mailResult.success) {
+                    throw new Error(
+                        typeof mailResult.error === "string"
+                            ? mailResult.error
+                            : (mailResult.error as any)?.message || "Unknown email delivery error"
+                    );
+                }
+
+                sent += 1;
             } catch (error) {
                 const reason = error instanceof Error ? error.message : String(error);
-                console.error("[bulk-email] queue failed:", {
+                console.error("[bulk-email] send failed:", {
                     applicationId: app.id,
                     action,
-                    scheduledAt: scheduledAt.toISOString(),
                     reason,
                 });
                 failures.push({
@@ -234,16 +239,12 @@ export async function POST(request: Request) {
             }
         }
 
-        const delayed = plannedDeliveries.filter((item, index) => emailType === "screening" && Math.floor((index * item.scheduleDays) / plannedDeliveries.length) > 0).length;
-        const immediate = queued - delayed;
-        const message = delayed > 0
-            ? `Queued ${queued} email${queued !== 1 ? "s" : ""} (${immediate} immediate, ${delayed} scheduled).`
-            : `Queued ${queued} email${queued !== 1 ? "s" : ""}.`;
+        const message = `Sent ${sent} email${sent !== 1 ? "s" : ""}.`;
 
-        if (queued === 0) {
+        if (sent === 0) {
             return NextResponse.json({
-                error: "Failed to queue emails",
-                queued: 0,
+                error: "Failed to send emails",
+                sent: 0,
                 skipped: skipReasons.length,
                 reasons: skipReasons,
                 failures,
@@ -252,14 +253,14 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
             message,
-            queued,
-            sent: queued,
+            sent,
+            queued: sent,
             skipped: skipReasons.length,
             reasons: skipReasons,
             failures,
         });
     } catch (error) {
         console.error("[bulk-email] error:", error);
-        return NextResponse.json({ error: "Failed to queue emails" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to send emails" }, { status: 500 });
     }
 }

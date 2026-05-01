@@ -474,7 +474,7 @@ export async function POST(req: NextRequest) {
                         candidateName: application.fullName,
                         roleLabel: application.drive.role || application.drive.title || "Interview",
                         roomName,
-                        timeLimitMins: driveDurationMins,
+                        timeLimitMins: FIXED_INTERVIEW_DURATION_MINUTES,
                     });
                     await dispatchClient.createDispatch(roomName, agentName, {
                         metadata: dispatchMetadata,

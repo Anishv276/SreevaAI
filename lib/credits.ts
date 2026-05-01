@@ -98,12 +98,20 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
     const interviewQuotaUsed = Number(current.interviewQuotaUsed || 0);
     const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
 
-    if (current.status === "ACTIVE" && interviewQuotaTotal > 0 && interviewQuotaRemaining <= 0) {
+    if (interviewQuotaTotal > 0 && interviewQuotaRemaining <= 0 && current.status === "ACTIVE") {
         await prisma.organization.update({
             where: { id: orgId },
             data: { status: "SUSPENDED" },
         });
         return "SUSPENDED";
+    }
+
+    if (interviewQuotaTotal > 0 && interviewQuotaRemaining > 0 && current.status === "SUSPENDED") {
+        await prisma.organization.update({
+            where: { id: orgId },
+            data: { status: "ACTIVE" },
+        });
+        return "ACTIVE";
     }
 
     return current.status;

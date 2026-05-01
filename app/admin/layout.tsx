@@ -9,6 +9,7 @@ import { Toaster } from "@/components/ui/toast-custom";
 import { AccountStatusHandler } from "@/components/admin/AccountStatusHandler";
 import { LowCreditsBanner } from "../../components/admin/LowCreditsBanner";
 import { prisma } from "@/lib/prisma";
+import { syncOrgStatusWithInterviewQuota } from "@/lib/credits";
 import { canUseRecruiterAssistant } from "@/lib/org-plans";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -35,28 +36,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
             if (org) {
                 orgData = org;
-
-                const interviewQuotaTotal = Number(org.interviewQuotaTotal || 0);
-                const interviewQuotaUsed = Number(org.interviewQuotaUsed || 0);
-                const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
-
-                if (
-                    org.status === "ACTIVE" &&
-                    interviewQuotaTotal > 0 &&
-                    interviewQuotaRemaining <= 0
-                ) {
-                    const suspended = await prisma.organization.update({
-                        where: { id: session.orgId },
-                        data: { status: "SUSPENDED" },
-                        select: {
-                            status: true,
-                            onboardingComplete: true,
-                            plan: true,
-                            interviewQuotaTotal: true,
-                            interviewQuotaUsed: true,
-                        },
-                    });
-                    orgData = suspended;
+                const syncedStatus = await syncOrgStatusWithInterviewQuota(session.orgId);
+                if (syncedStatus) {
+                    orgData.status = syncedStatus as typeof orgData.status;
                 }
             }
         } catch (error) {

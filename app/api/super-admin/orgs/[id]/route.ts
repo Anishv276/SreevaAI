@@ -7,6 +7,7 @@ import { deleteUrlTargets } from "@/lib/delete-utils";
 import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
+import { syncOrgStatusWithInterviewQuota } from "@/lib/credits";
 
 // GET /api/super-admin/orgs/[id] - fetch org for editing
 export async function GET(
@@ -82,14 +83,22 @@ export async function PATCH(
             llmProvider, llmModel, llmTemperature,
             usageMetrics,
             interviewQuotaTotal,
+            interviewQuotaTopUp,
             creditsTotal,
         } = body;
+        const parsedInterviewQuotaTopUp =
+            interviewQuotaTopUp !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTopUp) || 0)) : undefined;
         const parsedInterviewQuotaTotal =
             interviewQuotaTotal !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTotal) || 0)) : undefined;
         const parsedCreditsTotal =
             creditsTotal !== undefined ? parseFloat(creditsTotal) : undefined;
+        const shouldApplyInterviewQuotaTopUp =
+            parsedInterviewQuotaTopUp !== undefined && parsedInterviewQuotaTopUp > 0;
         const shouldUpdateInterviewQuotaTotal =
-            parsedInterviewQuotaTotal !== undefined && !isNaN(parsedInterviewQuotaTotal) && parsedInterviewQuotaTotal >= 0;
+            !shouldApplyInterviewQuotaTopUp &&
+            parsedInterviewQuotaTotal !== undefined &&
+            !isNaN(parsedInterviewQuotaTotal) &&
+            parsedInterviewQuotaTotal >= 0;
         const shouldUpdateCreditsTotal =
             parsedCreditsTotal !== undefined && !isNaN(parsedCreditsTotal) && parsedCreditsTotal >= 0;
 
@@ -246,6 +255,16 @@ export async function PATCH(
                 );
             }
 
+            if (shouldApplyInterviewQuotaTopUp) {
+                await tx.$executeRaw(
+                    Prisma.sql`
+                        UPDATE "Organization"
+                        SET "interviewQuotaTotal" = COALESCE("interviewQuotaTotal", 0) + ${parsedInterviewQuotaTopUp}
+                        WHERE id = ${id}
+                    `
+                );
+            }
+
             // 2. Update Primary Admin if name/email provided
             if (adminName !== undefined || adminEmail !== undefined) {
                 // Find the first ORG_ADMIN
@@ -288,6 +307,13 @@ export async function PATCH(
                 creditsUsed: billingRows[0]?.creditsUsed ?? 0,
             };
         });
+
+        if (shouldUpdateInterviewQuotaTotal || shouldApplyInterviewQuotaTopUp) {
+            const syncedStatus = await syncOrgStatusWithInterviewQuota(id);
+            if (syncedStatus) {
+                updated.status = syncedStatus;
+            }
+        }
 
         return NextResponse.json(updated);
     } catch (error) {

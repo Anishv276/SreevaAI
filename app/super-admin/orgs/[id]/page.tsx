@@ -13,13 +13,13 @@ import { cn } from "@/lib/utils";
 import { Steps } from "@/components/create-drive/steps";
 
 // UI Components
-function PremiumInput({ label, icon: Icon, error, ...props }: any) {
+function PremiumInput({ label, icon: Icon, error, required = true, ...props }: any) {
     return (
         <div className="space-y-2">
             <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
                 <Icon className="h-3 w-3 text-[#F97316]" />
                 {label}
-                <span className="text-[#F97316] ml-0.5">*</span>
+                {required && <span className="text-[#F97316] ml-0.5">*</span>}
             </label>
             <input {...props} className={cn("h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md", error && "border-red-500")} />
         </div>
@@ -78,6 +78,12 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const [showVoiceDropdown, setShowVoiceDropdown] = useState(false);
     const [voiceSearch, setVoiceSearch] = useState("");
     const [creditsInput, setCreditsInput] = useState("0");
+    const [interviewTopUpInput, setInterviewTopUpInput] = useState("0");
+    const [billingSnapshot, setBillingSnapshot] = useState({
+        interviewQuotaTotal: 0,
+        interviewQuotaUsed: 0,
+        interviewQuotaRemaining: 0,
+    });
 
     const [form, setForm] = useState({
         name: "", slug: "", plan: DEFAULT_ORG_PLAN,
@@ -180,6 +186,11 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     llmTemperature: data.llmTemperature != null ? data.llmTemperature : 0.7,
                 });
                 setCreditsInput(String(data.creditsTotal || 0));
+                setBillingSnapshot({
+                    interviewQuotaTotal: Number(data.interviewQuotaTotal || 0),
+                    interviewQuotaUsed: Number(data.interviewQuotaUsed || 0),
+                    interviewQuotaRemaining: Math.max(0, Number(data.interviewQuotaTotal || 0) - Number(data.interviewQuotaUsed || 0)),
+                });
             } catch { setError("Failed to load organization"); }
             finally { setLoading(false); }
         };
@@ -192,7 +203,11 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         try {
             const res = await fetch(`/api/super-admin/orgs/${id}`, {
                 method: "PATCH", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ...form, creditsTotal: parseFloat(creditsInput) || 0 }),
+                body: JSON.stringify({
+                    ...form,
+                    interviewQuotaTopUp: Math.max(0, Number(interviewTopUpInput) || 0),
+                    creditsTotal: parseFloat(creditsInput) || 0,
+                }),
             });
             if (!res.ok) throw new Error("Failed to update records");
             toast.success("Organization updated!");
@@ -345,6 +360,34 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                             <LimitControl label="Drive Limit" value={form.maxActiveDrives} onChange={val => setForm(p => ({ ...p, maxActiveDrives: val }))} />
                             <LimitControl label="Team Limit" value={form.maxTeamMembers} onChange={val => setForm(p => ({ ...p, maxTeamMembers: val }))} />
                             <PremiumInput label="Available Credits" icon={Coins} type="number" value={creditsInput} onChange={(e: any) => setCreditsInput(e.target.value)} />
+                        </div>
+                        <div className="rounded-2xl border border-orange-100 bg-orange-50/40 p-6 space-y-4">
+                            <div className="flex items-center justify-between gap-4 flex-wrap">
+                                <div>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-orange-600">Interview Quota Top-Up</p>
+                                    <p className="text-sm font-medium text-gray-600 mt-1">
+                                        Current total: <span className="font-black text-gray-900">{billingSnapshot.interviewQuotaTotal}</span>
+                                        {" "} | Used: <span className="font-black text-gray-900">{billingSnapshot.interviewQuotaUsed}</span>
+                                        {" "} | Remaining: <span className="font-black text-gray-900">{billingSnapshot.interviewQuotaRemaining}</span>
+                                    </p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">New total after save</p>
+                                    <p className="text-lg font-black text-gray-900">
+                                        {billingSnapshot.interviewQuotaTotal + Math.max(0, Number(interviewTopUpInput) || 0)}
+                                    </p>
+                                </div>
+                            </div>
+                            <PremiumInput
+                                label="Add Interview Quota"
+                                icon={Coins}
+                                type="number"
+                                min="0"
+                                required={false}
+                                value={interviewTopUpInput}
+                                onChange={(e: any) => setInterviewTopUpInput(e.target.value)}
+                                placeholder="100"
+                            />
                         </div>
                         <div className="flex justify-between pt-8 border-t border-gray-100">
                             <button type="button" onClick={() => setStep(2)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>

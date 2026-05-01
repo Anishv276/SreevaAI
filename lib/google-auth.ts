@@ -147,7 +147,22 @@ export async function refreshGoogleToken(orgId: string) {
         const data = await response.json();
 
         if (!response.ok) {
-            throw new Error(data.error_description || 'Failed to refresh token');
+            const reason = String(data?.error_description || data?.error || "Failed to refresh token");
+            const isRevoked = /invalid_grant|unauthorized|revoked|expired/i.test(reason);
+
+            if (isRevoked) {
+                await prisma.organization.update({
+                    where: { id: orgId },
+                    data: {
+                        googleAccessToken: null,
+                        googleRefreshToken: null,
+                        googleTokenExpiresAt: null,
+                    },
+                });
+                throw new Error("Google Gmail connection expired or was revoked. Please reconnect Gmail in onboarding.");
+            }
+
+            throw new Error(reason);
         }
 
         const expiresAt = new Date(Date.now() + data.expires_in * 1000);
@@ -220,25 +235,35 @@ export async function sendGmailEmail({
         .replace(/\//g, '_')
         .replace(/=+$/, '');
 
-    const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            raw: encodedMessage,
-        }),
-    });
+    const sendOnce = async (token: string) => {
+        const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                raw: encodedMessage,
+            }),
+        });
 
-    const data = await response.json();
+        const data = await response.json().catch(() => ({}));
+        return { response, data };
+    };
 
-    if (!response.ok) {
-        console.error('[GMAIL API ERROR]', data);
-        throw new Error(data.error?.message || 'Failed to send email via Gmail');
+    let result = await sendOnce(accessToken);
+
+    if (!result.response.ok && [401, 403].includes(result.response.status)) {
+        const refreshedToken = await refreshGoogleToken(orgId);
+        result = await sendOnce(refreshedToken);
     }
 
-    return data;
+    if (!result.response.ok) {
+        console.error('[GMAIL API ERROR]', result.data);
+        throw new Error(result.data?.error?.message || 'Failed to send email via Gmail');
+    }
+
+    return result.data;
 }
 
 /**

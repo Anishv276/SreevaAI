@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, Loader2, Lock, FileText, Eye } from "lucide-react";
+import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, Loader2, Lock, FileText, Eye, Send } from "lucide-react";
 
 import Link from "next/link";
 
@@ -481,6 +481,16 @@ export default function CandidatesPage() {
 
     const [emailCandidate, setEmailCandidate] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
 
+    const [pendingEmailBatch, setPendingEmailBatch] = useState<{
+        ids: string[];
+        action: "hire" | "reject" | "shortlist" | "not_hired";
+        emailType: "screening" | "hiring";
+        targetAction: "shortlist" | "reject" | "hire" | "nothired";
+        title: string;
+        description: string;
+        confirmText: string;
+    } | null>(null);
+
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
 
     const searchParams = useSearchParams();
@@ -761,6 +771,55 @@ export default function CandidatesPage() {
 
     };
 
+    const getBulkEmailPrompt = (action: "hire" | "reject" | "shortlist" | "not_hired", ids: string[]) => {
+        const count = ids.length;
+
+        switch (action) {
+            case "shortlist":
+                return {
+                    ids,
+                    action,
+                    emailType: "screening" as const,
+                    targetAction: "shortlist" as const,
+                    title: "Send Interview Emails?",
+                    description: `You shortlisted ${count} selected candidate(s). Send interview invitation emails to everyone now?`,
+                    confirmText: `Send Email (${count})`,
+                };
+            case "reject":
+                return {
+                    ids,
+                    action,
+                    emailType: "screening" as const,
+                    targetAction: "reject" as const,
+                    title: "Send Rejection Emails?",
+                    description: `You rejected ${count} selected candidate(s). Send rejection emails to everyone now?`,
+                    confirmText: `Send Email (${count})`,
+                };
+            case "hire":
+                return {
+                    ids,
+                    action,
+                    emailType: "hiring" as const,
+                    targetAction: "hire" as const,
+                    title: "Send Hire Emails?",
+                    description: `You hired ${count} selected candidate(s). Send hire confirmation emails to everyone now?`,
+                    confirmText: `Send Email (${count})`,
+                };
+            case "not_hired":
+                return {
+                    ids,
+                    action,
+                    emailType: "hiring" as const,
+                    targetAction: "nothired" as const,
+                    title: "Send Rejection Emails?",
+                    description: `You marked ${count} selected candidate(s) as not hired. Send rejection emails to everyone now?`,
+                    confirmText: `Send Email (${count})`,
+                };
+            default:
+                return null;
+        }
+    };
+
 
 
     const confirmBulkAction = async () => {
@@ -777,6 +836,7 @@ export default function CandidatesPage() {
         setIsBulkLoading(true);
 
         try {
+            const ids = Array.from(selectedIds);
 
             const res = await fetch("/api/candidates/bulk-action", {
 
@@ -784,19 +844,21 @@ export default function CandidatesPage() {
 
                 headers: { "Content-Type": "application/json" },
 
-                body: JSON.stringify({ ids: Array.from(selectedIds), action: pendingAction }),
+                body: JSON.stringify({ ids, action: pendingAction }),
 
             });
 
             if (!res.ok) throw new Error();
 
-            const count = selectedIds.size;
+            const count = ids.length;
+            const emailPrompt = pendingAction === "delete" ? null : getBulkEmailPrompt(pendingAction, ids);
 
             setSelectedIds(new Set());
 
             setIsSelectionMode(true);
 
             setIsActionModalOpen(false);
+            setPendingAction(null);
 
             let startDate: string | undefined;
 
@@ -836,17 +898,20 @@ export default function CandidatesPage() {
 
             fetchCandidates(pagination.page, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
 
-            const msg = pendingAction === "hire" ? `${count} candidate(s) hired - emails sent`
+            const msg = pendingAction === "hire" ? `${count} candidate(s) hired`
 
-                : pendingAction === "reject" ? `${count} candidate(s) marked as not hired - emails sent`
+                : pendingAction === "reject" ? `${count} candidate(s) rejected`
 
-                    : pendingAction === "shortlist" ? `${count} candidate(s) shortlisted - interview emails sent`
+                    : pendingAction === "shortlist" ? `${count} candidate(s) shortlisted`
 
                         : pendingAction === "not_hired" ? `${count} candidate(s) marked as not hired`
 
                             : `${count} candidate(s) deleted`;
 
             toast.success(msg);
+            if (emailPrompt) {
+                setPendingEmailBatch(emailPrompt);
+            }
 
         } catch {
 
@@ -856,30 +921,30 @@ export default function CandidatesPage() {
 
             setIsBulkLoading(false);
 
-            setPendingAction(null);
-
         }
 
     };
 
     const handleBulkSendEmail = async (
         emailType: "screening" | "hiring",
-        targetAction?: "shortlist" | "reject" | "hire" | "nothired"
-    ) => {
-        if (selectedIds.size === 0) return;
+        targetAction?: "shortlist" | "reject" | "hire" | "nothired",
+        ids?: string[]
+    ): Promise<boolean> => {
+        const targetIds = ids && ids.length > 0 ? ids : Array.from(selectedIds);
+        if (targetIds.length === 0) return false;
         setIsBulkLoading(true);
         try {
             const res = await fetch("/api/candidates/bulk-email", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ids: Array.from(selectedIds), emailType, targetAction }),
+                body: JSON.stringify({ ids: targetIds, emailType, targetAction }),
             });
             const data = await res.json().catch(() => null);
             if (res.ok) {
                 toast.success(data?.message || "Emails sent");
                 setSelectedIds(new Set());
                 setIsSelectionMode(true);
-                return;
+                return true;
             }
             toast.error(data?.error || "Failed to send emails");
         } catch {
@@ -887,6 +952,7 @@ export default function CandidatesPage() {
         } finally {
             setIsBulkLoading(false);
         }
+        return false;
     };
 
 
@@ -1406,11 +1472,11 @@ export default function CandidatesPage() {
 
                                                     <Badge variant="outline" className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm transition-all border",
-                                                        interviewStageKey === "in progress"
+                                                        interviewStage === "in progress"
                                                             ? "bg-blue-50 text-blue-700 border-blue-100"
-                                                            : interviewStageKey === "completed" || interviewStageKey === "finished"
+                                                            : interviewStage === "completed" || interviewStage === "finished"
                                                                 ? "bg-indigo-50 text-indigo-700 border-indigo-100"
-                                                                : interviewStageKey === "pending"
+                                                                : interviewStage === "pending"
                                                                     ? "bg-slate-50 text-slate-500 border-slate-100"
                                                                     : "bg-white text-gray-700 border-gray-100"
                                                     )}>
@@ -1649,15 +1715,15 @@ export default function CandidatesPage() {
 
                     pendingAction === "hire"
 
-                        ? `Hire ${selectedIds.size} selected candidate(s)? A hire confirmation email will be sent to each.`
+                        ? `Hire ${selectedIds.size} selected candidate(s)? You will be asked next whether to send hire emails.`
 
                         : pendingAction === "shortlist"
 
-                            ? `Shortlist ${selectedIds.size} selected candidate(s)? An interview invitation email will be sent to each.`
+                            ? `Shortlist ${selectedIds.size} selected candidate(s)? You will be asked next whether to send interview emails.`
 
                             : pendingAction === "not_hired" || pendingAction === "reject"
 
-                                ? `Mark ${selectedIds.size} selected candidate(s) as Not Hired? A rejection email will be sent to each.`
+                                ? `Mark ${selectedIds.size} selected candidate(s) as Not Hired? You will be asked next whether to send rejection emails.`
 
                                 : `Permanently delete ${selectedIds.size} selected candidate(s)? This cannot be undone.`
 
@@ -1674,6 +1740,33 @@ export default function CandidatesPage() {
                                 `Confirm Delete (${selectedIds.size})`
 
                 }
+
+                isLoading={isBulkLoading}
+
+            />
+
+            <ActionConfirmModal
+
+                isOpen={pendingEmailBatch !== null}
+
+                onClose={() => setPendingEmailBatch(null)}
+
+                onConfirm={async () => {
+                    if (!pendingEmailBatch) return;
+                    const batch = pendingEmailBatch;
+                    const sent = await handleBulkSendEmail(batch.emailType, batch.targetAction, batch.ids);
+                    if (sent) setPendingEmailBatch(null);
+                }}
+
+                title={pendingEmailBatch?.title || "Send Emails?"}
+
+                description={pendingEmailBatch?.description || "Would you like to send emails to the selected candidates now?"}
+
+                confirmText={pendingEmailBatch?.confirmText || "Send Email"}
+
+                cancelText="No Thanks"
+
+                variant="info"
 
                 isLoading={isBulkLoading}
 
