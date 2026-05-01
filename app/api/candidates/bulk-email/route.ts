@@ -85,6 +85,7 @@ export async function POST(request: Request) {
                         title: true,
                         orgId: true,
                         status: true,
+                        inviteScheduleDays: true,
                     },
                 },
             },

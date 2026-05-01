@@ -257,10 +257,10 @@ async def extract_proctoring_signals(
 
 
 async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
-    """Generate recruiter-friendly interpretation of hidden signal using LLM for ownership_ambiguity and example_evasion."""
+    """Generate recruiter-friendly interpretation of hidden signal using LLM for multiple signals."""
 
     # For signals that benefit from LLM interpretation, use dynamic summary based on evidence
-    if signal_name in ("ownership_ambiguity", "example_evasion") and events:
+    if signal_name in ("ownership_ambiguity", "example_evasion", "resume_claim_mismatch", "follow_up_collapse", "latency_mismatch", "ownership_clarified", "example_given") and events:
         try:
             from openai import AsyncOpenAI
 
@@ -274,6 +274,16 @@ async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
                 signal_desc = "Candidate used 'we/our/team' without personal ownership claims"
             elif signal_name == "example_evasion":
                 signal_desc = "Candidate was asked for an example but gave a theoretical answer"
+            elif signal_name == "resume_claim_mismatch":
+                signal_desc = "Candidate listed resume-like claims without concrete project details or hands-on evidence"
+            elif signal_name == "follow_up_collapse":
+                signal_desc = "Candidate gave detailed first answer but follow-up answer lost depth and specifics sharply"
+            elif signal_name == "latency_mismatch":
+                signal_desc = "Follow-up answer unnaturally compressed to very few words after detail-seeking question"
+            elif signal_name == "ownership_clarified":
+                signal_desc = "Candidate clarified personal ownership with explicit 'I' language and ownership terms after initial ambiguity"
+            elif signal_name == "example_given":
+                signal_desc = "Candidate provided concrete specific example with dates/numbers/project names after initial theoretical evasion"
             else:
                 signal_desc = f"Signal: {signal_name}"
 

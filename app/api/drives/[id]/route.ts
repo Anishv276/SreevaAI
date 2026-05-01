@@ -25,11 +25,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             where: {
                 id
             },
-            select: {
-                id: true,
-                title: true,
-                role: true,
-                description: true,
+                select: {
+                    id: true,
+                    title: true,
+                    role: true,
+                    description: true,
                 department: true,
                 type: true,
                 screeningThreshold: true,
@@ -53,17 +53,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 orgId: true,
                 shortlistMode: true,
                 location: true,
-                aiName: true,
-                cartesiaVoiceId: true,
-                sarvamVoice: true,
-                sarvamModel: true,
-                googleModel: true,
-                googleVoiceName: true,
-                ttsProvider: true,
-                organization: {
-                    select: {
-                        status: true,
-                        name: true,
+                    aiName: true,
+                    cartesiaVoiceId: true,
+                    sarvamVoice: true,
+                    sarvamModel: true,
+                    googleModel: true,
+                    googleVoiceName: true,
+                    ttsProvider: true,
+                    inviteScheduleDays: true,
+                    organization: {
+                        select: {
+                            status: true,
+                            name: true,
                         logoUrl: true,
                         industry: true,
                         size: true,
@@ -86,7 +87,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
         const screeningThreshold = Number((drive as any).screeningThreshold ?? 60);
         const shortlistMode = (drive as any).shortlistMode || "automatic";
-        const inviteScheduleDays = 1;
+        const inviteScheduleDays = Number((drive as any).inviteScheduleDays ?? 1) || 1;
         const screeningCriteria = JSON.stringify({
             threshold: screeningThreshold,
             shortlistMode,

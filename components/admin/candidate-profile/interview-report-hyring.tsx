@@ -473,24 +473,31 @@ function SkillRatingsContainer({ skills }: { skills: { name: string; stars: numb
 }
 
 function _formatSignalSummary(signal: any): string {
+  // Check if this is a recovery signal (positive)
+  const isRecovery = signal.signal === "ownership_clarified" || signal.signal === "example_given";
+  const prefix = isRecovery ? "✓ " : "● ";
+
   // Use the LLM-generated interpretation from the backend if available
   if (signal.interpretation) {
     // Extract first sentence only for one-liner display
     const firstSentence = signal.interpretation.split('.')[0] + '.';
-    return firstSentence.trim();
+    return prefix + firstSentence.trim();
   }
 
   // Fallback for signals without LLM interpretation
   const fallbacks: Record<string, string> = {
+    ownership_ambiguity: "Candidate uses team language without demonstrating personal ownership",
     example_evasion: "Candidate gave theoretical answer when asked for concrete example",
-    follow_up_collapse: "Detailed first answer but follow-up lost depth",
-    latency_mismatch: "Answer timing suspicious — doesn't match question complexity",
+    resume_claim_mismatch: "Resume claims lack concrete project details or hands-on evidence",
+    follow_up_collapse: "Strong first answer but follow-up lost depth and specifics sharply",
+    latency_mismatch: "Follow-up answer unnaturally compressed — suggests evasion or guessing",
     complexity_latency_mismatch: "Complex question answered too fast, simple question too slow",
-    resume_claim_mismatch: "Resume claims lack concrete evidence or hands-on grounding",
     depth_decay: "Answer quality declined across multiple topics",
+    ownership_clarified: "Initially used team language but clarified personal ownership when probed",
+    example_given: "Initially gave theoretical answer but provided concrete example when asked",
   };
 
-  return fallbacks[signal.signal] || `Signal detected: ${signal.signal}`;
+  return prefix + (fallbacks[signal.signal] || `Signal detected: ${signal.signal}`);
 }
 
 export function buildHyringInterviewViewModel(i: {

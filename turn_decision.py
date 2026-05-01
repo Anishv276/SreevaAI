@@ -27,6 +27,10 @@ class SignalFlags(TypedDict):
     meta_question: bool         # candidate is checking if Ishita is a bot or if she's present
     depth_decay: bool                    # cross-topic quality degradation across rolling window of turns
     complexity_latency_mismatch: bool    # inverted timing pattern — hard Q instant, easy Q slow
+    ownership_clarified: bool   # recovery: candidate clarified personal ownership after ambiguity
+    example_given: bool         # recovery: candidate provided concrete example after evasion
+    ownership_clarified: bool   # recovery: candidate clarified personal ownership after ambiguity
+    example_given: bool         # recovery: candidate provided concrete example after evasion
 
 
 class TrustDelta(TypedDict):
@@ -697,6 +701,14 @@ def detect_signal_events(
             response_latency_sec=response_latency_sec,
         )
 
+    def _ownership_clarified_detector(a, q, d, h, f, c):  # noqa: ARG001
+        del d, h, f, c
+        return _detect_ownership_clarified_event(a, q)
+
+    def _example_given_detector(a, q, d, h, f, c):  # noqa: ARG001
+        del d, h, f, c
+        return _detect_example_given_event(a, q)
+
     detectors: dict[str, Callable[[str, str, float, list[float], int, bool], Optional[SignalEvent]]] = {
         "ownership_ambiguity": _detect_ownership_ambiguity_event,
         "example_evasion": _detect_example_evasion_event,
@@ -707,6 +719,8 @@ def detect_signal_events(
         "meta_question": _detect_meta_question_event,
         "depth_decay": _decay_detector,
         "complexity_latency_mismatch": _clm_detector,
+        "ownership_clarified": _ownership_clarified_detector,
+        "example_given": _example_given_detector,
     }
     events: list[SignalEvent] = []
     for signal_name, detector in detectors.items():
@@ -738,6 +752,8 @@ def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
         meta_question="meta_question" in names,
         depth_decay="depth_decay" in names,
         complexity_latency_mismatch="complexity_latency_mismatch" in names,
+        ownership_clarified="ownership_clarified" in names,
+        example_given="example_given" in names,
     )
 
 
@@ -747,7 +763,6 @@ def detect_ownership_ambiguity(answer: str) -> bool:
     Uses token-level matching to avoid false positives ("new" matching "we", etc.).
     Heuristic: we-tokens appear 2+ times, I-tokens appear 0-1 times.
     """
-    tokens = answer.lower().split()
     return _detect_ownership_ambiguity_event(answer, "", 0.0, [], 0, False) is not None
 
 
@@ -756,6 +771,81 @@ def detect_example_evasion(answer: str, last_question: str) -> bool:
     True when question asked for a real example but answer stays theoretical.
     """
     return _detect_example_evasion_event(answer, last_question, 0.0, [], 0, False) is not None
+
+
+def _detect_ownership_clarified_event(
+    answer: str,
+    last_question: str,  # noqa: ARG001
+) -> Optional[SignalEvent]:
+    """
+    Recovery signal: fires when candidate clarifies personal ownership after initial ambiguity.
+    Looks for explicit personal pronouns + ownership language.
+    """
+    a_lower = answer.lower()
+
+    # Check for personal ownership language
+    has_personal = any(p in a_lower for p in _I_TOKENS)
+    has_ownership = any(p in a_lower for p in [
+        "i owned", "i designed", "i built", "i decided", "i led", "i managed",
+        "i personally", "my responsibility", "my role", "i specifically"
+    ])
+
+    # Check that answer actually addresses the question (not deflecting)
+    has_specifics = bool(re.search(r"\b(specific|personal|i|my|me|myself)\b", a_lower))
+
+    if has_personal and has_ownership and has_specifics:
+        return _build_signal_event(
+            signal_name="ownership_clarified",
+            signal_layer="behavioral_confidence",
+            confidence=0.85,  # Recovery signal, high confidence
+            evidence="candidate clarified personal ownership with explicit 'I' and ownership language",
+            trust_bucket_affected="behavioral_confidence",
+            score_delta=0.05,  # Positive recovery
+            probe_mode="ownership",
+            recoverable=False,  # Recovery signals don't fire multiple times
+            recruiter_visible=True,
+        )
+
+    return None
+
+
+def _detect_example_given_event(
+    answer: str,
+    last_question: str,  # noqa: ARG001
+) -> Optional[SignalEvent]:
+    """
+    Recovery signal: fires when candidate provides concrete example after initial evasion.
+    Looks for specific details: names, dates, numbers, project names.
+    """
+    a_lower = answer.lower()
+
+    # Check for specific details
+    has_specifics = bool(re.search(r"\b(at |in |during |when|year|ago|\d+|project|client|company|system|database|api)\b", a_lower))
+
+    # Check for concrete language (not theoretical)
+    is_concrete = not any(p in a_lower for p in [
+        "typically", "usually", "generally", "you should", "you could",
+        "ideally", "theoretically", "in theory"
+    ])
+
+    # Check word count (example_given should be substantive, not minimal)
+    word_count = len(answer.split())
+    is_substantive = word_count >= 25
+
+    if has_specifics and is_concrete and is_substantive:
+        return _build_signal_event(
+            signal_name="example_given",
+            signal_layer="behavioral_confidence",
+            confidence=0.80,  # Recovery signal
+            evidence="candidate provided concrete example with specific details, dates, or project names",
+            trust_bucket_affected="behavioral_confidence",
+            score_delta=0.04,  # Positive recovery (slightly less than ownership_clarified)
+            probe_mode="evidence",
+            recoverable=False,
+            recruiter_visible=True,
+        )
+
+    return None
 
 
 def detect_follow_up_collapse(

@@ -103,6 +103,7 @@ export async function GET(request: Request) {
                     googleModel: true,
                     googleVoiceName: true,
                     ttsProvider: true,
+                    inviteScheduleDays: true,
                     _count: {
                         select: { applications: true },
                     },
@@ -114,7 +115,7 @@ export async function GET(request: Request) {
         const formattedDrives = drives.map((drive: any) => {
             const screeningThreshold = Number(drive.screeningThreshold ?? 60);
             const shortlistMode = drive.shortlistMode || "automatic";
-            const inviteScheduleDays = 1;
+            const inviteScheduleDays = Number(drive.inviteScheduleDays ?? 1) || 1;
             const screeningCriteria = JSON.stringify({
                 threshold: screeningThreshold,
                 shortlistMode,
