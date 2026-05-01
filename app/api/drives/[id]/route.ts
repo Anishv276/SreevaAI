@@ -186,7 +186,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         const updateData: any = {};
 
         if (data.title !== undefined) updateData.title = data.title;
-        if (data.description !== undefined) updateData.description = data.description;
+        if (data.description !== undefined) updateData.description = data.description ?? "";
         if (data.role !== undefined) updateData.role = data.role;
         if (data.department !== undefined) updateData.department = data.department;
         if (data.employmentType !== undefined || data.type !== undefined) {

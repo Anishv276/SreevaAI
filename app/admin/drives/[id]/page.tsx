@@ -32,7 +32,41 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
     const [inviteScheduleDays, setInviteScheduleDays] = useState(1);
     const [quotaLocked, setQuotaLocked] = useState(false);
 
-    const drive = jobs.find(j => j.id === driveId);
+    const [drive, setDrive] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const loadDrive = async () => {
+            try {
+                const res = await fetch(`/api/drives/${driveId}`, { cache: "no-store" });
+                if (!res.ok) {
+                    toast.error("Failed to fetch drive details");
+                    router.push("/admin/drives");
+                    return;
+                }
+                const data = await res.json();
+                setDrive(data);
+                
+                const parsed = parseDriveScreeningSettings(
+                    data.screeningCriteria,
+                    Number(data.screeningThreshold ?? 60),
+                    (data.shortlistMode as "automatic" | "manual") || "automatic",
+                    Number(data.inviteScheduleDays ?? 1),
+                );
+
+                setScreeningThreshold(parsed.threshold);
+                setShortlistMode(parsed.shortlistMode);
+                setInviteScheduleDays(parsed.inviteScheduleDays);
+                setScreeningCriteria(parsed.criteria as Record<string, any>);
+            } catch (err) {
+                console.error("Load drive error:", err);
+                toast.error("An error occurred");
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadDrive();
+    }, [driveId]);
 
     useEffect(() => {
         const currentDrive = drive as any;
@@ -51,11 +85,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
         setScreeningCriteria(parsed.criteria as Record<string, any>);
     }, [drive]);
 
-    useEffect(() => {
-        if (!drive) {
-            router.push("/admin/drives");
-        }
-    }, [drive, router]);
+
 
     useEffect(() => {
         let cancelled = false;
@@ -102,7 +132,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
         }
     };
 
-    if (!drive) {
+    if (loading || !drive) {
         return (
             <div className="flex items-center justify-center min-h-screen">
                 <Loader2 className="h-10 w-10 text-orange-500 animate-spin" />

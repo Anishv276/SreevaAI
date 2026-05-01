@@ -131,6 +131,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     const lastFetchRef = useRef<{ key: string; at: number } | null>(null);
     const inFlightRequestsRef = useRef<Map<string, Promise<void>>>(new Map());
     const lastFetchParamsRef = useRef<CandidateFetchParams | null>(null);
+    const fetchSequenceRef = useRef(0);
 
     useEffect(() => {
         setIsHydrated(true);
@@ -211,6 +212,8 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             return;
         }
 
+        const requestId = ++fetchSequenceRef.current;
+
         const fetchWithRetry = async (url: string, retries = 3, backoff = 1000): Promise<Response> => {
             try {
                 const res = await fetch(url);
@@ -273,6 +276,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
 
                 const res = await fetchWithRetry(`/api/candidates?${params.toString()}`);
                 if (!res.ok) {
+                    if (requestId !== fetchSequenceRef.current) return;
                     const data = await res.json().catch(() => ({}));
                     setError(data.error || "Failed to load candidates. Partial recovery active.");
                     return;
@@ -280,6 +284,10 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
 
                 const result = await res.json();
                 const { candidates: rawCandidates, pagination: pagData, stats: statsData } = result;
+
+                if (requestId !== fetchSequenceRef.current) {
+                    return;
+                }
 
                 const mappedCandidates = Array.isArray(rawCandidates)
                     ? rawCandidates.map((c: any) => ({
@@ -319,10 +327,13 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 lastFetchRef.current = { key, at: Date.now() };
                 lastFetchParamsRef.current = currentFetchParams;
             } catch (error: any) {
+                if (requestId !== fetchSequenceRef.current) {
+                    return;
+                }
                 console.error("Failed to fetch candidates:", error);
                 setError(error.message || "An unexpected error occurred during data synchronization.");
             } finally {
-                if (!options?.background) {
+                if (!options?.background && requestId === fetchSequenceRef.current) {
                     setIsLoading(false);
                 }
             }

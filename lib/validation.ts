@@ -6,7 +6,7 @@ export const driveIdSchema = z.object({
 
 export const createDriveSchema = z.object({
   title: z.preprocess((val) => (typeof val === 'string' && val.trim() !== '') ? val : "Untitled Drive", z.string().min(1).max(200)),
-  description: z.string().max(5000).optional().default(""),
+  description: z.string().max(50000).optional().default(""),
   role: z.string().optional(),
   department: z.preprocess((val) => (typeof val === 'string' && val.trim() !== '') ? val : "General", z.string().min(1)),
   employmentType: z.preprocess((val) => {

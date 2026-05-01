@@ -17,7 +17,6 @@ import { cn } from "@/lib/utils";
 import { getAuditTrailFromAiReport, type CandidateActivityEvent } from "@/lib/candidate-activity.shared";
 
 type CandidateDetails = {
-    id: string;
     fullName?: string;
     createdAt?: string;
     updatedAt?: string;

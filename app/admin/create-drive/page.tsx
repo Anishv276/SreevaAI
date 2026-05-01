@@ -190,119 +190,93 @@ function CreateDriveForm() {
       setMaxStepReached(5);
     }
   }, [isEditMode]);
-  // Initial load for edit mode
+  // Initial load for edit mode - Fetch specific drive by ID to ensure we have all data
   useEffect(() => {
-    if (
-      isEditMode &&
-      jobs.length > 0 &&
-      hasInitialLoadedRef.current !== driveId
-    ) {
-      const drive = jobs.find((j) => j.id === driveId);
-      if (drive) {
-        hasInitialLoadedRef.current = driveId;
-        setPublishedDriveId(drive.id);
-        // Fetch org config to get the authoritative ttsProvider
-        fetch("/api/admin/organization", { cache: "no-store" })
-          .then((res) => res.json())
-          .then((orgData) => {
-            const orgProvider =
-              (orgData.error ? null : orgData.ttsProvider) ||
-              (drive as any).ttsProvider ||
-              "CARTESIA";
-            setFormData((prev: any) => ({
-              ...prev,
-              title: drive.title,
-              role: (drive as any).role || drive.title,
-              department: drive.department,
-              workMode: (drive as any).workMode || "",
-              location: (drive as any).location || "",
-              employmentType: drive.type,
-              description: drive.description,
-              skills: (drive as any).skills || "",
-              responsibilities: (drive as any).responsibilities || "",
-              requirements: (drive as any).requirements || "",
-              experience: (drive as any).experience || "",
-              salary: (drive as any).salary || "",
-              interviewEnabled: (drive as any).interviewEnabled ?? true,
-              interviewLanguage: (drive as any).interviewLanguage || "English",
-              interviewAntiCheat: (drive as any).proctoringLevel || "Medium",
-              interviewQuestions:
-                typeof (drive as any).interviewQuestions === "string"
-                  ? JSON.parse((drive as any).interviewQuestions)
-                  : (drive as any).interviewQuestions || [],
-              extractedDetails: (drive as any).extractedDetails || {},
-              jdFileName: (drive as any).jdFileName || "",
-              jdPreviewUrl: (drive as any).jdPreviewUrl || "",
-              // Org is the authority for provider; drive provides the voice ID
-              ttsProvider: orgProvider,
-              cartesiaVoiceId:
-                orgProvider === "CARTESIA"
-                  ? (drive as any).cartesiaVoiceId ||
-                    orgData.cartesiaVoiceId ||
-                    "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
-                  : null,
-              sarvamVoice:
-                orgProvider === "SARVAM"
-                  ? (drive as any).sarvamVoice || orgData.sarvamVoice || "shubh"
-                  : null,
-              googleModel:
-                orgProvider === "GOOGLE"
-                  ? (drive as any).googleModel ||
-                    orgData.googleModel ||
-                    "gemini-3.1-flash-tts-preview"
-                  : null,
-              googleVoiceName:
-                orgProvider === "GOOGLE"
-                  ? (drive as any).googleVoiceName ||
-                    orgData.googleVoiceName ||
-                    "Puck"
-                  : null,
-              aiName: (drive as any).aiName || "Ishitha",
-            }));
-          })
-          .catch(() => {
-            // Fallback: just use drive data as-is
-            setFormData((prev: any) => ({
-              ...prev,
-              title: drive.title,
-              role: (drive as any).role || drive.title,
-              department: drive.department,
-              workMode: (drive as any).workMode || "",
-              location: (drive as any).location || "",
-              employmentType: drive.type,
-              description: drive.description,
-              skills: (drive as any).skills || "",
-              responsibilities: (drive as any).responsibilities || "",
-              requirements: (drive as any).requirements || "",
-              experience: (drive as any).experience || "",
-              salary: (drive as any).salary || "",
-              interviewEnabled: (drive as any).interviewEnabled ?? true,
-              interviewLanguage: (drive as any).interviewLanguage || "English",
-              interviewAntiCheat: (drive as any).proctoringLevel || "Medium",
-              interviewQuestions:
-                typeof (drive as any).interviewQuestions === "string"
-                  ? JSON.parse((drive as any).interviewQuestions)
-                  : (drive as any).interviewQuestions || [],
-              extractedDetails: (drive as any).extractedDetails || {},
-              jdFileName: (drive as any).jdFileName || "",
-              jdPreviewUrl: (drive as any).jdPreviewUrl || "",
-              ttsProvider: (drive as any).ttsProvider || "CARTESIA",
-              cartesiaVoiceId: (drive as any).cartesiaVoiceId || null,
-              sarvamVoice: (drive as any).sarvamVoice || null,
-              googleModel: (drive as any).googleModel || null,
-              googleVoiceName: (drive as any).googleVoiceName || null,
-              aiName: (drive as any).aiName || "Ishitha",
-            }));
-          });
-        if ((drive as any).registrationFields) {
-          try {
-          } catch (e) {
-            console.error("Failed to parse reg fields", e);
+    if (isEditMode && hasInitialLoadedRef.current !== driveId) {
+      const loadDrive = async () => {
+        try {
+          const res = await fetch(`/api/drives/${driveId}`, { cache: "no-store" });
+          if (!res.ok) {
+            toast.error("Failed to fetch drive details");
+            return;
           }
+          const drive = await res.json();
+          if (drive.error) {
+            toast.error(drive.error);
+            return;
+          }
+
+          hasInitialLoadedRef.current = driveId;
+          setPublishedDriveId(drive.id);
+
+          // Fetch org config to get the authoritative ttsProvider
+          const orgRes = await fetch("/api/admin/organization", { cache: "no-store" });
+          const orgData = await orgRes.json();
+          
+          const orgProvider =
+            (orgData.error ? null : orgData.ttsProvider) ||
+            (drive as any).ttsProvider ||
+            "CARTESIA";
+
+          setFormData((prev: any) => ({
+            ...prev,
+            title: drive.title,
+            role: (drive as any).role || drive.title,
+            department: drive.department,
+            workMode: (drive as any).workMode || "",
+            location: (drive as any).location || "",
+            employmentType: drive.type,
+            description: drive.description,
+            skills: (drive as any).skills || "",
+            responsibilities: (drive as any).responsibilities || "",
+            requirements: (drive as any).requirements || "",
+            experience: (drive as any).experience || "",
+            salary: (drive as any).salary || "",
+            interviewEnabled: (drive as any).interviewEnabled ?? true,
+            interviewLanguage: (drive as any).interviewLanguage || "English",
+            interviewAntiCheat: (drive as any).proctoringLevel || "Medium",
+            interviewQuestions:
+              typeof (drive as any).interviewQuestions === "string"
+                ? JSON.parse((drive as any).interviewQuestions)
+                : (drive as any).interviewQuestions || [],
+            extractedDetails: (drive as any).extractedDetails || {},
+            jdFileName: (drive as any).jdFileName || "",
+            jdPreviewUrl: (drive as any).jdPreviewUrl || "",
+            // Org is the authority for provider; drive provides the voice ID
+            ttsProvider: orgProvider,
+            cartesiaVoiceId:
+              orgProvider === "CARTESIA"
+                ? (drive as any).cartesiaVoiceId ||
+                  orgData.cartesiaVoiceId ||
+                  "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
+                : null,
+            sarvamVoice:
+              orgProvider === "SARVAM"
+                ? (drive as any).sarvamVoice || orgData.sarvamVoice || "shubh"
+                : null,
+            googleModel:
+              orgProvider === "GOOGLE"
+                ? (drive as any).googleModel ||
+                  orgData.googleModel ||
+                  "gemini-3.1-flash-tts-preview"
+                : null,
+            googleVoiceName:
+              orgProvider === "GOOGLE"
+                ? (drive as any).googleVoiceName ||
+                  orgData.googleVoiceName ||
+                  "Puck"
+                : null,
+            aiName: (drive as any).aiName || "Ishitha",
+          }));
+        } catch (err) {
+          console.error("Failed to load drive:", err);
+          toast.error("An error occurred while loading drive details");
         }
-      }
+      };
+
+      loadDrive();
     }
-  }, [isEditMode, driveId, jobs]);
+  }, [isEditMode, driveId]);
   // Handle redirection from AI Chat
   useEffect(() => {
     const method = searchParams.get("method");
