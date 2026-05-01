@@ -74,7 +74,6 @@ export const createDriveSchema = z.object({
     const n = Number(val);
     return Number.isNaN(n) ? undefined : n;
   }, z.coerce.number().int().min(1).max(30).optional()),
-  isPassportRequired: z.boolean().optional(),
   shortlistMode: z.enum(["automatic", "manual"]).optional(),
 });
 
@@ -101,7 +100,6 @@ export const createCandidateSchema = z.object({
       "Please enter a valid international phone number (e.g. +919876543210 or +1 555-000-0000)"
     ),
   resumeUrl: z.string().optional(), // Relaxed for mocks/internal paths
-  passportUrl: z.string().optional(),
   resumeText: z.string().optional(),
   structuredResume: z.any().optional(),
   portfolio: z.string().optional(), // Relaxed
@@ -135,7 +133,7 @@ export const presignedUrlSchema = z.object({
   fileType: z.string().min(1, "File type required").regex(/^[\w-]+\/[\w-]+$/, "Invalid MIME type"),
   fileSize: z.number().max(10 * 1024 * 1024, "File size must be less than 10MB").optional(),
   driveId: z.string().optional(),
-  type: z.enum(["JD", "RESUME", "CERTIFICATION"]).optional().default("RESUME"),
+  type: z.enum(["JD", "RESUME"]).optional().default("RESUME"),
 });
 
 export const extractSchema = z.object({

@@ -22,10 +22,9 @@ export async function POST(request: Request) {
         // -- AUTHORIZATION & QUOTA -------------------------
         const session = await getSession();
         const isJD = type === "JD";
-        const isCert = type === "CERTIFICATION";
 
         if (fileSize) {
-            const limit = (isJD || isCert) ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
+            const limit = isJD ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
             if (fileSize > limit) {
                 return NextResponse.json({ 
                     error: `File too large. Maximum size for ${type} is ${limit / (1024 * 1024)}MB` 
@@ -33,11 +32,11 @@ export async function POST(request: Request) {
             }
         }
 
-        if (isJD || isCert) {
+        if (isJD) {
             if (!session || !isAdminRole(session.role)) {
-                return NextResponse.json({ error: "Unauthorized: Admin access required for JD/Certification uploads" }, { status: 401 });
+                return NextResponse.json({ error: "Unauthorized: Admin access required for JD uploads" }, { status: 401 });
             }
-        } else if (type === "RESUME") {
+        } else {
             // For public uploads, verify the driveId exists and is active
             if (!driveId) {
                 return NextResponse.json({ error: "driveId is required for resume uploads" }, { status: 400 });
@@ -54,15 +53,13 @@ export async function POST(request: Request) {
 
         const uniqueId = uuidv4();
         const safeFileName = fileName.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
-        
+
         // Pick BUCKET and PREFIX based on TYPE
         const bucket = isJD 
             ? (process.env.R2_JDS_BUCKET || "jds")
-            : isCert
-                ? (process.env.R2_CERTIFICATIONS_BUCKET || "certifications")
-                : (process.env.R2_RESUMES_BUCKET || "resumes");
+            : (process.env.R2_RESUMES_BUCKET || "resumes");
         
-        const prefix = isJD ? "jds/" : isCert ? "certifications/" : "resumes/";
+        const prefix = isJD ? "jds/" : "resumes/";
         const key = `${prefix}drive_${driveId || 'unknown'}/${uniqueId}_${safeFileName}`;
 
         const uploadUrl = await getPresignedUploadUrl(bucket, key, fileType);
@@ -71,8 +68,6 @@ export async function POST(request: Request) {
         let publicUrlBase = "";
         if (isJD) {
             publicUrlBase = process.env.NEXT_PUBLIC_R2_JDS_URL || "";
-        } else if (isCert) {
-            publicUrlBase = process.env.NEXT_PUBLIC_R2_CERTIFICATIONS_URL || "";
         } else {
             publicUrlBase = process.env.NEXT_PUBLIC_R2_RESUMES_URL || "";
         }

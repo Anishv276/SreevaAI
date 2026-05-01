@@ -12,7 +12,7 @@ import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { prisma } from "@/lib/prisma";
 
 const extractQuerySchema = z.object({
-    type: z.enum(["JD", "RESUME", "PASSPORT"]),
+    type: z.enum(["JD", "RESUME"]),
     url: z.string().url().optional(),
 });
 
@@ -70,11 +70,11 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing file or URL" }, { status: 400 });
         }
 
-        if (!typeRaw || !["JD", "RESUME", "PASSPORT"].includes(typeRaw)) {
-            return NextResponse.json({ error: "Invalid type. Must be JD, RESUME or PASSPORT" }, { status: 400 });
+        if (!typeRaw || !["JD", "RESUME"].includes(typeRaw)) {
+            return NextResponse.json({ error: "Invalid type. Must be JD or RESUME" }, { status: 400 });
         }
 
-        const type = typeRaw as "JD" | "RESUME" | "PASSPORT";
+        const type = typeRaw as "JD" | "RESUME";
 
         if (url) {
             if (type !== "JD") {
@@ -134,7 +134,6 @@ export async function POST(request: Request) {
         const allowedTypes = {
             JD: ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"],
             RESUME: ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"],
-            PASSPORT: ["image/jpeg", "image/png", "application/pdf", "image/webp"]
         };
 
         const currentAllowed = allowedTypes[type as keyof typeof allowedTypes] || [];
@@ -142,7 +141,7 @@ export async function POST(request: Request) {
         
         if (!isMimeAllowed) {
              // Fallback: check extension if MIME is missing
-             const validExts = type === "PASSPORT" ? /\.(jpg|jpeg|png|pdf|webp)$/i : /\.(pdf|docx|txt)$/i;
+             const validExts = /\.(pdf|docx|txt)$/i;
              if (!file.name.match(validExts)) {
                 return NextResponse.json({ 
                     error: `Invalid file type for ${type}.`, 
@@ -165,11 +164,9 @@ export async function POST(request: Request) {
 
         const bucket = type === "JD" 
             ? (process.env.R2_JDS_BUCKET || "jds")
-            : type === "PASSPORT"
-                ? (process.env.R2_PASSPHOTO_BUCKET || "passportphoto")
-                : (process.env.R2_RESUMES_BUCKET || "resumes");
+            : (process.env.R2_RESUMES_BUCKET || "resumes");
 
-        const prefix = type === "JD" ? "jds/" : type === "PASSPORT" ? "passport/" : "resumes/";
+        const prefix = type === "JD" ? "jds/" : "resumes/";
         const fileName = `${prefix}${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
 
         let fileUrl: string | null = null;
@@ -222,17 +219,6 @@ export async function POST(request: Request) {
 
         // Cleanup temp file (after upload is attempted)
         await unlink(tempFilePath).catch(() => { });
-
-        if (type === "PASSPORT") {
-            if (!fileUrl) {
-                console.error("[PASSPORT_ERROR]: Storage failed for identity document");
-                return NextResponse.json({ 
-                    error: "Passport security dispatch failed. Identity persistence incomplete.", 
-                    code: "STORAGE_VULNERABILITY" 
-                }, { status: 507 });
-            }
-            return NextResponse.json({ url: fileUrl });
-        }
 
         if (exitCode !== 0) {
             console.error("[EXTRACTION_FAILED]: Python script returned non-zero exit code", { exitCode, stderr: errorData, stdout: outputData });

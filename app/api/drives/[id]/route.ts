@@ -232,7 +232,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.interviewAntiCheat !== undefined) updateData.proctoringLevel = data.interviewAntiCheat;
         if (data.interviewQuestions !== undefined) updateData.interviewQuestions = JSON.stringify(data.interviewQuestions);
         if (data.requirements !== undefined) updateData.requirements = data.requirements;
-        if ((data as any).isPassportRequired !== undefined) updateData.isPassportRequired = (data as any).isPassportRequired;
         Object.assign(
             updateData,
             normalizeDriveAiConfig({

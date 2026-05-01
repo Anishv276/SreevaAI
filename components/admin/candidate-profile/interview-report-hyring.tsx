@@ -505,7 +505,7 @@ function _formatSignalSummary(signal: any): string {
 
 export function buildHyringInterviewViewModel(i: {
   backHref?: string;
-  candidate: { fullName?: string; createdAt?: string; location?: string; passportUrl?: string; interview?: any; assessment?: any; drive?: { role?: string; title?: string } };
+  candidate: { fullName?: string; createdAt?: string; location?: string; interview?: any; assessment?: any; drive?: { role?: string; title?: string } };
   mounted: boolean;
   displayAvatar: string;
   interviewReportScores: Record<string, any>;

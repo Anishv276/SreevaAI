@@ -39,7 +39,6 @@ export type Candidate = {
     education?: any[];
     experience_list?: any[];
     certifications?: any[];
-    passportUrl?: string;
 };
 
 interface Pagination {
