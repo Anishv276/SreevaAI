@@ -511,7 +511,7 @@ def _detect_depth_decay_event(
         ),
         trust_bucket_affected="intelligence_quality",
         score_delta=score_delta,
-        probe_mode="depth",
+        probe_mode="normal",
         recoverable=True,
         recruiter_visible=True,
     )
@@ -578,7 +578,7 @@ def _detect_complexity_latency_mismatch_event(
     Two distinct failure patterns caught:
 
     1. FAST-COMPLEX: Candidate answers a deep behavioral question in < 5.5s with
-       >= 25 words. Real humans need time to recall, structure, and articulate a
+       >= 20 words. Real humans need time to recall, structure, and articulate a
        specific past experience. An instant polished answer strongly suggests
        AI-generated text being read aloud.
 

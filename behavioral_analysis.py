@@ -49,7 +49,7 @@ def extract_engagement_signals(
 
 
 def extract_consistency_signals(
-    transcript_lines: list[str],  # noqa: F841
+    transcript_lines: list[str],  # noqa: ARG001
     contradictions_found: list[dict],
 ) -> list[str]:
     """Check resume claims vs interview answers."""
@@ -263,7 +263,7 @@ async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
     if signal_name in (
         "ownership_ambiguity", "example_evasion", "resume_claim_mismatch",
         "follow_up_collapse", "latency_mismatch", "ownership_clarified", "example_given",
-        "contradiction", "contradiction_resolved",
+        "contradiction", "contradiction_resolved", "complexity_latency_mismatch",
     ) and events:
         try:
             from openai import AsyncOpenAI
@@ -306,6 +306,12 @@ async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
                 signal_desc = (
                     f"Candidate clarified and resolved a contradiction about {c_type or 'a prior claim'} "
                     "convincingly after being probed"
+                )
+            elif signal_name == "complexity_latency_mismatch":
+                latest = events[-1]
+                signal_desc = (
+                    f"Suspicious answer timing: {latest.get('evidence', 'timing anomaly detected')}. "
+                    "Complex question answered instantly (pre-written) OR simple question took too long (looking things up)."
                 )
             else:
                 signal_desc = f"Signal: {signal_name}"
@@ -366,6 +372,10 @@ async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
         "meta_question": (
             "Candidate paused to check if the interviewer could hear them or asked whether they were speaking to a bot. "
             "No integrity concern — signal is informational only. Ishita acknowledged and continued."
+        ),
+        "depth_decay": (
+            "Answer quality declined progressively across multiple topics in the interview. "
+            "May indicate fatigue, loss of focus, or that early answers were rehearsed while later ones were not."
         ),
     }
 

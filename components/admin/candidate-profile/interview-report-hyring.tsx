@@ -492,12 +492,12 @@ function _formatSignalSummary(signal: any): string {
     follow_up_collapse: "Strong first answer but follow-up lost depth and specifics sharply",
     latency_mismatch: "Follow-up answer unnaturally compressed — suggests evasion or guessing",
     complexity_latency_mismatch: "Complex question answered too fast, simple question too slow",
-    depth_decay: "Answer quality declined across multiple topics",
     ownership_clarified: "Initially used team language but clarified personal ownership when probed",
     example_given: "Initially gave theoretical answer but provided concrete example when asked",
     contradiction: "Candidate made conflicting statements about a verifiable fact — needs recruiter review",
     contradiction_resolved: "Candidate clarified and resolved a contradiction convincingly when probed",
     meta_question: "Candidate checked if interviewer could hear them — no integrity concern, informational only",
+    depth_decay: "Answer quality declined progressively across topics — may indicate fatigue or rehearsed early answers",
   };
 
   return prefix + (fallbacks[signal.signal] || `Signal detected: ${signal.signal}`);

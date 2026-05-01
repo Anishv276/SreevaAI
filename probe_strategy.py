@@ -97,7 +97,7 @@ _SIGNAL_TO_FAMILY = [
     ("latency_mismatch", "compression"),
     ("ownership_ambiguity", "ownership"),
     ("meta_question", "rapport"),
-    ("depth_decay", "depth"),
+    ("depth_decay", "normal"),
     ("complexity_latency_mismatch", "evidence"),
 ]
 
@@ -210,6 +210,9 @@ def route(
 
     for flag, family in _SIGNAL_TO_FAMILY:
         if signals.get(flag):
+            if flag == "depth_decay":
+                # Candidate is fatiguing — move to next topic, not deeper probe
+                return ("MOVE_ON", "normal", _family_goal("normal"))
             action = "VERIFY" if family == "clarification" else "PROBE"
             return (action, family, _family_goal(family))
 
@@ -304,6 +307,15 @@ def build_directive(
 
     if active_signals:
         lines.append(f"SIGNALS: {', '.join(active_signals)}")
+
+    if "depth_decay" in active_signals:
+        lines.extend([
+            "DEPTH DECAY DETECTED — candidate answer quality is declining across topics.",
+            "Do NOT ask a harder or deeper question. The candidate is fatiguing.",
+            "ACTION: Move to the next topic at normal pace. Keep the next question light and broad.",
+            "If uncovered topics remain, bridge to the most important one now.",
+            "Do not reference the quality decline to the candidate.",
+        ])
 
     if "meta_question" in active_signals:
         lines.extend(
