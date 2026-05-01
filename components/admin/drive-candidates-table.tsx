@@ -34,6 +34,7 @@ import {
     Square,
     Trash2,
     Radio,
+    Loader2,
 } from "lucide-react";
 import {
     DropdownMenu,
@@ -71,6 +72,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isSelectionMode, setIsSelectionMode] = useState(true);
     const [isBulkLoading, setIsBulkLoading] = useState(false);
+    const [isDriveViewReady, setIsDriveViewReady] = useState(false);
     const [pendingEmailBatch, setPendingEmailBatch] = useState<{
         ids: string[];
         emailType: "screening" | "hiring";
@@ -84,6 +86,10 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     const isInterviewActionBlocked = isSuspended || quotaLocked;
     const interviewActionBlockedMessage = getInterviewActionBlockedMessage(isSuspended);
     useEffect(() => {
+        let cancelled = false;
+        setIsDriveViewReady(false);
+        setSelectedIds(new Set());
+        setPendingEmailBatch(null);
         const handler = setTimeout(() => {
             let startDate: string | undefined;
             let endDate: string | undefined;
@@ -102,9 +108,15 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                 startDate = timeline.from;
                 endDate = timeline.to;
             }
-            fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort);
+            void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort)
+                .finally(() => {
+                    if (!cancelled) setIsDriveViewReady(true);
+                });
         }, 500);
-        return () => clearTimeout(handler);
+        return () => {
+            cancelled = true;
+            clearTimeout(handler);
+        };
     }, [driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, pageSize, fetchCandidates, scoreSort]);
 
     useEffect(() => {
@@ -340,6 +352,20 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
         return false;
     };
     const driveTitle = jobs.find((job) => job.id === driveId)?.title || "Drive";
+
+    if (!isDriveViewReady) {
+        return (
+            <div className="flex min-h-[40vh] items-center justify-center rounded-2xl border border-white/40 bg-white/60 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.03)]">
+                <div className="flex flex-col items-center gap-3">
+                    <Loader2 className="h-10 w-10 animate-spin text-orange-500" />
+                    <p className="text-xs font-black uppercase tracking-[0.24em] text-gray-400">
+                        Loading drive candidates...
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-4">
             <div className="rounded-[1.75rem] border border-white/40 bg-white/50 p-2.5 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.03)]">
