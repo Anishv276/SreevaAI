@@ -128,6 +128,12 @@ function PremiumToggle({ checked, onChange, label }: { checked: boolean; onChang
     );
 }
 
+function normalizeIntegerText(value: string) {
+    const digits = value.replace(/[^\d]/g, "");
+    if (!digits) return "";
+    return String(Number(digits));
+}
+
 export default function EditOrgPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const router = useRouter();
@@ -203,7 +209,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
 
                 setCreditsTotal(data.creditsTotal || 0);
                 setCreditsUsed(data.creditsUsed || 0);
-                setCreditsInput(String(data.creditsTotal || 0));
+                setCreditsInput(normalizeIntegerText(String(data.creditsTotal || 0)) || "0");
             } catch {
                 setError("Failed to load organization");
             } finally {
@@ -475,7 +481,9 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                         type="number"
                                         min="0"
                                         value={form.maxActiveDrives}
-                                        onChange={(e) => setForm((prev) => ({ ...prev, maxActiveDrives: Math.max(0, Number(e.target.value) || 0) }))}
+                                        inputMode="numeric"
+                                        onWheel={(e) => e.currentTarget.blur()}
+                                        onChange={(e) => setForm((prev) => ({ ...prev, maxActiveDrives: Math.max(0, Number(normalizeIntegerText(e.target.value)) || 0) }))}
                                         className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50/30 px-4 text-sm font-bold focus:bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-50 transition-all outline-none tabular-nums"
                                     />
                                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed">`0` means unlimited.</p>
@@ -486,7 +494,9 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                         type="number"
                                         min="0"
                                         value={form.maxTeamMembers}
-                                        onChange={(e) => setForm((prev) => ({ ...prev, maxTeamMembers: Math.max(0, Number(e.target.value) || 0) }))}
+                                        inputMode="numeric"
+                                        onWheel={(e) => e.currentTarget.blur()}
+                                        onChange={(e) => setForm((prev) => ({ ...prev, maxTeamMembers: Math.max(0, Number(normalizeIntegerText(e.target.value)) || 0) }))}
                                         className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50/30 px-4 text-sm font-bold focus:bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-50 transition-all outline-none tabular-nums"
                                     />
                                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed">`0` means unlimited.</p>
@@ -499,7 +509,10 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                             type="number"
                                             min="0"
                                             value={creditsInput}
-                                            onChange={(e) => setCreditsInput(e.target.value)}
+                                            inputMode="numeric"
+                                            onWheel={(e) => e.currentTarget.blur()}
+                                            onChange={(e) => setCreditsInput(normalizeIntegerText(e.target.value))}
+                                            onBlur={() => setCreditsInput((prev) => normalizeIntegerText(prev) || "0")}
                                             className="h-11 w-full pl-10 pr-4 rounded-xl border border-gray-200 bg-gray-50/30 text-sm font-bold focus:bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-50 transition-all outline-none tabular-nums"
                                         />
                                     </div>

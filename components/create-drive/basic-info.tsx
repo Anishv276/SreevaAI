@@ -384,6 +384,9 @@ function PositionCounter({ label, icon: Icon, value, onChange, error }: { label:
                     min="1"
                     value={value}
                     onChange={handleInput}
+                    onWheel={(e) => {
+                        e.currentTarget.blur();
+                    }}
                     className="min-w-0 w-8 flex-1 text-center text-[15px] font-bold text-gray-900 bg-transparent border-none outline-none focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
                 <button

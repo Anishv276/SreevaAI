@@ -6,6 +6,13 @@ export interface InputProps
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
     ({ className, type, ...props }, ref) => {
+        const handleWheel: React.WheelEventHandler<HTMLInputElement> = (event) => {
+            if (type === "number") {
+                event.currentTarget.blur();
+            }
+            props.onWheel?.(event);
+        };
+
         return (
             <input
                 type={type}
@@ -14,6 +21,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
                     className
                 )}
                 ref={ref}
+                onWheel={handleWheel}
                 {...props}
             />
         )
