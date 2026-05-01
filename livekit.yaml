@@ -7,7 +7,7 @@ rtc:
   port_range_end: 5100
   use_external_ip: true
 keys:
-  APIbMW6xw6HPBXe: MyY57MKfjUXSnJqXFSeFS433I3117Zh7RaJHKZQekxHA
+  API39GAiDQgxEUa: vXH07sp1dsyf2peIzqGwFfONXqlEO96higUxFGoTQhhB
 redis:
   address: redis:6379
 logging:

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Sparkles, Volume2, Mic2, BrainCircuit, Coins, Mic, ChevronDown } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Sparkles, Volume2, Mic2, BrainCircuit, Coins, Mic, ChevronDown, Infinity, Check, Search, AudioLines, Shield, Layers, Thermometer } from "lucide-react";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
@@ -11,852 +11,357 @@ import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS } from "@/lib/org-plans";
 import { DEFAULT_PROCTORING_SIGNALS, getProctoringSignalsForPlan } from "@/lib/proctoring-signals";
 import { cn } from "@/lib/utils";
 
-// Premium Custom Select Component
-function CustomSelect({
-    value,
-    onChange,
-    options,
-    label,
-    icon: Icon,
-    placeholder = "Select an option..."
-}: {
-    value: string,
-    onChange: (val: string) => void,
-    options: { value: string, label: string }[],
-    label: string,
-    icon?: any,
-    placeholder?: string
-}) {
-    const [isOpen, setIsOpen] = useState(false);
-    const containerRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-
-    const selectedOption = options.find(opt => opt.value === value);
-
+// Exact UI Components from Create Drive
+function PremiumInput({ label, icon: Icon, error, ...props }: any) {
     return (
-        <div className="space-y-2 relative" ref={containerRef}>
-            <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-                {Icon && <Icon className="h-3 w-3" />} {label}
+        <div className="space-y-2">
+            <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
+                <Icon className="h-3 w-3 text-[#F97316]" />
+                {label}
+                <span className="text-[#F97316] ml-0.5">*</span>
             </label>
-            <button
-                type="button"
-                onClick={() => setIsOpen(!isOpen)}
-                className={cn(
-                    "h-11 w-full rounded-xl border border-gray-200 bg-gray-50/30 px-4 flex items-center justify-between transition-all outline-none text-left",
-                    isOpen ? "border-orange-500 ring-4 ring-orange-50 bg-white" : "hover:border-gray-300"
-                )}
-            >
-                <span className={cn("text-sm font-bold", !selectedOption ? "text-gray-400" : "text-gray-900")}>
-                    {selectedOption ? selectedOption.label : placeholder}
-                </span>
-                <ChevronDown className={cn("h-4 w-4 text-gray-400 transition-transform duration-300", isOpen && "rotate-180 text-orange-500")} />
-            </button>
-
-            {isOpen && (
-                <div className="absolute z-50 mt-2 w-full max-h-64 overflow-y-auto rounded-xl border border-gray-100 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-                    <div className="p-1.5 space-y-0.5">
-                        {options.map((opt) => (
-                            <button
-                                key={opt.value}
-                                type="button"
-                                onClick={() => {
-                                    onChange(opt.value);
-                                    setIsOpen(false);
-                                }}
-                                className={cn(
-                                    "w-full px-4 py-3 rounded-lg text-sm font-bold text-left transition-all flex items-center justify-between",
-                                    value === opt.value
-                                        ? "bg-orange-500 text-white shadow-lg"
-                                        : "text-gray-600 hover:bg-orange-50 hover:text-orange-600"
-                                )}
-                            >
-                                {opt.label}
-                                {value === opt.value && <CheckCircle2 className="h-3.5 w-3.5" />}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            )}
+            <input {...props} className={cn("h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md", error && "border-red-500")} />
         </div>
     );
 }
 
-// Premium Toggle Component - SaaS Box Style
-function PremiumToggle({ checked, onChange, label }: { checked: boolean, onChange: (val: boolean) => void, label: string }) {
+function SectionHeader({ title }: { title: string }) {
     return (
-        <label className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-white hover:border-gray-200 transition-all cursor-pointer group shadow-sm">
-            <span className="text-[11px] font-black uppercase tracking-widest text-gray-600 group-hover:text-gray-900 transition-colors">{label}</span>
-            <div
-                onClick={(e) => {
-                    e.preventDefault();
-                    onChange(!checked);
-                }}
-                className={cn(
-                    "relative w-12 h-6 rounded-full transition-all duration-300 shadow-inner",
-                    checked ? "bg-emerald-500 shadow-emerald-200" : "bg-rose-500 shadow-rose-200"
-                )}
-            >
-                <div className={cn(
-                    "absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-all duration-300 shadow-sm",
-                    checked ? "translate-x-6" : "translate-x-0"
-                )} />
-            </div>
-        </label>
+        <div className="flex items-center gap-3 mb-6">
+            <span className="h-6 w-1 rounded-full bg-[#F97316]" />
+            <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest">{title}</p>
+        </div>
     );
 }
 
-function normalizeIntegerText(value: string) {
-    const digits = value.replace(/[^\d]/g, "");
-    if (!digits) return "";
-    return String(Number(digits));
+function Steps({ steps, currentStep, onStepClick }: { steps: string[], currentStep: number, onStepClick: (i: number) => void }) {
+    return (
+        <div className="relative flex justify-between w-full max-w-3xl mx-auto mb-16 px-4">
+            <div className="absolute top-4 left-0 h-[2px] w-full bg-gray-100 rounded-full" />
+            <div className="absolute top-4 left-0 h-[2px] bg-[#F97316] rounded-full transition-all duration-500" style={{ width: `${(currentStep / (steps.length - 1)) * 100}%` }} />
+            {steps.map((step, index) => {
+                const isCurrent = index === currentStep;
+                return (
+                    <div key={step} className="relative z-10 flex flex-col items-center gap-2 cursor-pointer group" onClick={() => onStepClick(index)}>
+                        <div className={cn("flex h-8 w-8 items-center justify-center rounded-full border-2 bg-white transition-all", index < currentStep ? "border-[#F97316] bg-[#F97316] text-white" : isCurrent ? "border-[#F97316] text-[#F97316] shadow-lg" : "border-gray-200 text-gray-400 group-hover:border-orange-200")}>
+                            {index < currentStep ? <Check className="h-4 w-4" /> : <span className="text-xs font-bold">{index + 1}</span>}
+                        </div>
+                        <span className={cn("text-[10px] font-bold uppercase tracking-tighter", isCurrent ? "text-gray-900" : "text-gray-400 group-hover:text-gray-600")}>{step}</span>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+function LimitControl({ value, onChange, label }: { value: number, onChange: (v: number) => void, label: string }) {
+    const isUnlimited = value === 0;
+    return (
+        <div className="space-y-2">
+            <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Layers className="h-3 w-3 text-[#F97316]" /> {label}</label>
+            <div className="flex items-center gap-1.5">
+                <div className="flex bg-gray-100/50 p-1 rounded-lg border border-gray-100 w-fit shrink-0">
+                    <button type="button" onClick={() => onChange(0)} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
+                    <button type="button" onClick={() => { if (isUnlimited) onChange(1); }} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Limited</button>
+                </div>
+                {!isUnlimited && <input type="number" min="1" value={value} onChange={(e) => onChange(Math.max(1, Number(e.target.value) || 1))} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
+            </div>
+        </div>
+    );
+}
+
+function CustomSelect({ value, onChange, options, label, icon: Icon }: any) {
+    return (
+        <div className="space-y-2">
+            <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
+                <Icon className="h-3 w-3 text-[#F97316]" />
+                {label}
+            </label>
+            <select value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm focus:border-[#F97316] focus:outline-none hover:border-orange-300 transition-all">
+                {options.map((opt: any) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+            </select>
+        </div>
+    );
 }
 
 export default function NewOrgPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
-    const [success, setSuccess] = useState<{ orgName: string; adminEmail: string } | null>(null);
-
+    const [step, setStep] = useState(0);
+    const [success, setSuccess] = useState<any>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
+    const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
     const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
+    const [showVoiceDropdown, setShowVoiceDropdown] = useState(false);
+    const [voiceSearch, setVoiceSearch] = useState("");
 
     const [form, setForm] = useState({
-        orgName: "",
-        slug: "",
-        location: "",
-        plan: DEFAULT_ORG_PLAN,
-        maxActiveDrives: 0,
-        maxTeamMembers: 0,
-        creditsTotal: 100,
+        orgName: "", slug: "", location: "", plan: DEFAULT_ORG_PLAN,
+        maxActiveDrives: 0, maxTeamMembers: 0, creditsTotal: 100,
         proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
-        adminName: "",
-        adminEmail: "",
-        adminPassword: "",
-        ttsProvider: "CARTESIA",
-        cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-        cartesiaModel: "cartesia/sonic-3",
-        sarvamModel: "bulbul:v3",
-        sarvamVoice: "shubh",
-        googleModel: DEFAULT_GOOGLE_TTS_MODEL,
-        googleVoiceName: "Puck",
-        sttProvider: "DEEPGRAM",
-        deepgramModel: "nova-3-general",
-        sarvamSttModel: "saaras:v3",
-        llmProvider: "OPENAI",
-        llmModel: "gpt-4o",
-        llmTemperature: 0.7,
+        adminName: "", adminEmail: "", adminPassword: "",
+        ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+        cartesiaModel: "cartesia/sonic-3", sarvamModel: "bulbul:v3", sarvamVoice: "shubh",
+        googleModel: DEFAULT_GOOGLE_TTS_MODEL, googleVoiceName: "Puck",
+        sttProvider: "DEEPGRAM", deepgramModel: "nova-3-general", sarvamSttModel: "saaras:v3",
+        llmProvider: "OPENAI", llmModel: "gpt-4o", llmTemperature: 0.7,
     });
 
-    const handleOrgNameChange = (name: string) => {
-        setForm(prev => ({
-            ...prev,
-            orgName: name,
-            slug: prev.slug === "" || prev.slug === prev.orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-                ? name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-                : prev.slug,
-        }));
-    };
-
-    const applyTtsProvider = (provider: string) => {
-        const normalized = provider.toUpperCase();
-        setForm((prev) => {
-            if (normalized === "GOOGLE") {
-                return {
-                    ...prev,
-                    ttsProvider: "GOOGLE",
-                    cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-                    cartesiaModel: "cartesia/sonic-3",
-                    sarvamModel: "bulbul:v3",
-                    sarvamVoice: "shubh",
-                    googleModel: DEFAULT_GOOGLE_TTS_MODEL,
-                    googleVoiceName: "Puck",
-                    sttProvider: "GOOGLE",
-                    deepgramModel: "nova-3-general",
-                    sarvamSttModel: "saaras:v3",
-                    llmProvider: "GOOGLE",
-                    llmModel: "gemini-2.5-flash",
-                };
-            }
-
-            if (normalized === "SARVAM") {
-                return {
-                    ...prev,
-                    ttsProvider: "SARVAM",
-                    cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-                    cartesiaModel: "cartesia/sonic-3",
-                    googleModel: DEFAULT_GOOGLE_TTS_MODEL,
-                    googleVoiceName: "Puck",
-                    sarvamModel: prev.sarvamModel || "bulbul:v3",
-                    sarvamVoice: prev.sarvamVoice || "shubh",
-                    sttProvider: "DEEPGRAM",
-                    deepgramModel: prev.deepgramModel || "nova-3-general",
-                    sarvamSttModel: prev.sarvamSttModel || "saaras:v3",
-                    llmProvider: "OPENAI",
-                    llmModel: prev.llmModel || "gpt-4o",
-                };
-            }
-
-            return {
-                ...prev,
-                ttsProvider: "CARTESIA",
-                sarvamModel: "bulbul:v3",
-                sarvamVoice: "shubh",
+    const handleTtsProviderChange = (v: string) => {
+        if (v === "GOOGLE") {
+            setForm(p => ({
+                ...p,
+                ttsProvider: "GOOGLE",
+                sttProvider: "GOOGLE",
+                llmProvider: "GOOGLE",
+                llmModel: "gemini-2.0-flash",
                 googleModel: DEFAULT_GOOGLE_TTS_MODEL,
-                googleVoiceName: "Puck",
-                cartesiaVoiceId: prev.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-                cartesiaModel: prev.cartesiaModel || "cartesia/sonic-3",
-                sttProvider: "DEEPGRAM",
-                deepgramModel: prev.deepgramModel || "nova-3-general",
-                sarvamSttModel: prev.sarvamSttModel || "saaras:v3",
-                llmProvider: "OPENAI",
-                llmModel: prev.llmModel || "gpt-4o",
-            };
-        });
+                googleVoiceName: "Puck"
+            }));
+        } else {
+            setForm(p => ({ 
+                ...p, 
+                ttsProvider: v,
+                sttProvider: p.sttProvider === "GOOGLE" ? "DEEPGRAM" : p.sttProvider,
+                llmProvider: p.llmProvider === "GOOGLE" ? "OPENAI" : p.llmProvider,
+                llmModel: p.llmModel.startsWith("gemini") ? "gpt-4o" : p.llmModel
+            }));
+        }
     };
 
-    const playSample = async () => {
+    const stopCurrentPreview = () => { if (activeAudio) { activeAudio.pause(); setActiveAudio(null); } setPlayingVoiceId(null); };
+
+    const getVoicesForProvider = () => {
+        if (form.ttsProvider === "SARVAM") return SARVAM_VOICES;
+        if (form.ttsProvider === "GOOGLE") return GOOGLE_VOICES;
+        return CARTESIA_VOICES;
+    };
+
+    const getVoiceId = () => {
+        if (form.ttsProvider === "SARVAM") return form.sarvamVoice;
+        if (form.ttsProvider === "GOOGLE") return form.googleVoiceName;
+        return form.cartesiaVoiceId;
+    };
+
+    const playSample = async (voiceId: string) => {
         const provider = form.ttsProvider;
-        const voiceId =
-            provider === "SARVAM"
-                ? form.sarvamVoice
-                : provider === "GOOGLE"
-                    ? form.googleVoiceName
-                    : form.cartesiaVoiceId;
-        const modelId =
-            provider === "SARVAM"
-                ? form.sarvamModel
-                : provider === "GOOGLE"
-                    ? form.googleModel
-                    : form.cartesiaModel;
-        const endpoint = "/api/admin/voice/preview";
-        const transcript =
-            provider === "SARVAM"
-                ? "नमस्ते, मैं आपकी टीम के लिए उच्च गुणवत्ता वाले साक्षात्कार आयोजित करने के लिए तैयार हूं।"
-                : "Hello! I am ready to conduct high-quality AI interviews for your team.";
-
-        if (!voiceId) return;
-
+        const modelId = provider === "SARVAM" ? form.sarvamModel : provider === "GOOGLE" ? form.googleModel : form.cartesiaModel;
+        if (playingVoiceId === voiceId) { stopCurrentPreview(); return; }
         setPreviewLoading(true);
         try {
-            if (activeAudio) {
-                activeAudio.pause();
-                setActiveAudio(null);
-            }
-
-            const res = await fetch(endpoint, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ provider: form.ttsProvider, voiceId, modelId, transcript })
+            stopCurrentPreview();
+            const res = await fetch("/api/admin/voice/preview", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ provider, voiceId, modelId, transcript: "Neural interface initialized." }),
             });
-
-            if (!res.ok) {
-                const errData = await res.json().catch(() => null);
-                throw new Error(errData?.error || "Preview failed");
-            }
-
+            if (!res.ok) throw new Error("Preview failed");
             const blob = await res.blob();
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
-
-            audio.onended = () => {
-                setActiveAudio(null);
-                URL.revokeObjectURL(url);
-            };
-
+            const audio = new Audio(URL.createObjectURL(blob));
+            audio.onended = () => stopCurrentPreview();
             await audio.play();
             setActiveAudio(audio);
-        } catch (err: any) {
-            console.error("Playback error:", err);
-            toast.error(err.message || "Could not play voice sample.");
-        } finally {
-            setPreviewLoading(false);
-        }
+            setPlayingVoiceId(voiceId);
+        } catch (err) { toast.error("Preview failed."); }
+        finally { setPreviewLoading(false); }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-        setError("");
-
         try {
             const res = await fetch("/api/super-admin/orgs", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
+                method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(form),
             });
-
-            if (!res.ok) {
-                const data = await res.json();
-                toast.error(data.error || "Failed to create organization");
-                return;
-            }
-
-            const result = await res.json();
-            toast.success("Client account provisioned successfully!");
+            if (!res.ok) throw new Error("Failed to create organization");
             setSuccess({ orgName: form.orgName, adminEmail: form.adminEmail });
-        } catch {
-            toast.error("Initialization failed. Check network connectivity.");
-        } finally {
-            setLoading(false);
-        }
+        } catch (err: any) { toast.error(err.message); }
+        finally { setLoading(false); }
     };
 
     if (success) {
         return (
-            <div className="p-8 flex items-center justify-center min-h-[80vh] font-inter">
-                <div className="w-full max-w-lg bg-white border border-gray-100 rounded-2xl p-10 text-center space-y-8 shadow-xl animate-fade-slide">
-                    <div className="w-16 h-16 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center mx-auto text-emerald-500 shadow-inner">
-                        <CheckCircle2 className="h-8 w-8" />
-                    </div>
-                    <div className="space-y-3">
-                        <h2 className="text-gray-900 font-black text-3xl tracking-tight">{success.orgName} is Live!</h2>
-                        <p className="text-gray-500 font-medium text-sm">Organization and HR Admin account provisioned on the network.</p>
-                    </div>
-
-                    <div className="bg-gray-50 border border-gray-100 rounded-xl p-8 text-left space-y-6">
-                        <div className="flex items-center gap-3">
-                            <span className="w-1 h-5 bg-emerald-500 rounded-full" />
-                            <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">HR Admin Credentials</p>
-                        </div>
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center pb-4 border-b border-gray-200/50">
-                                <span className="text-gray-400 text-xs font-bold uppercase tracking-widest">Admin Email</span>
-                                <span className="text-gray-900 font-black text-sm">{success.adminEmail}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                                <span className="text-gray-400 text-xs font-bold uppercase tracking-widest">Access Node</span>
-                                <span className="text-[#F97316] font-black text-sm">/login</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-4 pt-4">
-                        <button
-                        onClick={() => { setSuccess(null); setForm({ orgName: "", slug: "", location: "", plan: DEFAULT_ORG_PLAN, maxActiveDrives: 0, maxTeamMembers: 0, creditsTotal: 100, proctoringSignals: { ...DEFAULT_PROCTORING_SIGNALS }, adminName: "", adminEmail: "", adminPassword: "", ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", cartesiaModel: "cartesia/sonic-3", sarvamModel: "bulbul:v3", sarvamVoice: "shubh", googleModel: DEFAULT_GOOGLE_TTS_MODEL, googleVoiceName: "Puck", sttProvider: "DEEPGRAM", deepgramModel: "nova-3-general", sarvamSttModel: "saaras:v3", llmProvider: "OPENAI", llmModel: "gpt-4o", llmTemperature: 0.7 }); }}
-                            className="flex-1 h-12 rounded-xl border border-gray-200 bg-white text-gray-500 font-bold text-[11px] uppercase tracking-widest hover:bg-gray-50 transition-all shadow-sm"
-                        >
-                            Onboard Another
-                        </button>
-                        <button
-                            onClick={() => router.push("/super-admin/orgs")}
-                            className="flex-1 h-12 rounded-xl bg-gray-900 text-white font-bold text-[11px] uppercase tracking-widest shadow-lg hover:bg-black transition-all active:scale-95"
-                        >
-                            Return to Registry
-                        </button>
-                    </div>
+            <div className="min-h-[70vh] flex items-center justify-center p-8">
+                <div className="max-w-md w-full bg-white border border-gray-100 rounded-2xl p-10 text-center shadow-2xl space-y-6">
+                    <div className="h-16 w-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto text-emerald-500"><CheckCircle2 className="h-8 w-8" /></div>
+                    <h2 className="text-3xl font-black text-gray-900 tracking-tight">{success.orgName} Created</h2>
+                    <p className="text-gray-500 font-medium">{success.adminEmail} can now access the portal.</p>
+                    <button onClick={() => router.push("/super-admin/orgs")} className="w-full h-12 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all">Go to Registry</button>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="p-8 lg:p-12 w-full max-w-[1440px] mx-auto font-inter bg-white text-premium">
-            {/* Header */}
-            <div className="mb-12">
-                <button
-                    onClick={() => router.back()}
-                    className="group flex items-center gap-2 text-gray-400 hover:text-gray-900 text-[11px] font-black uppercase tracking-widest mb-8 transition-all"
-                >
-                    <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-                    Back to Registry
-                </button>
+        <div className="p-8 lg:p-12 w-full max-w-[1100px] mx-auto bg-white min-h-screen">
+            <button onClick={() => router.back()} className="group flex items-center gap-2 text-gray-400 hover:text-gray-900 text-[11px] font-bold uppercase tracking-widest mb-10 transition-all">
+                <ArrowLeft className="h-3 w-3 group-hover:-translate-x-1" /> Back to Registry
+            </button>
 
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
-                    <div className="flex items-center gap-6">
-                        <div className="h-16 w-16 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#F97316] shadow-sm">
-                            <Building2 className="h-8 w-8" />
-                        </div>
-                        <div>
-                            <h1 className="text-4xl font-black text-gray-900 tracking-tight leading-none">Onboard Partner</h1>
-                            <p className="text-gray-400 font-medium text-base mt-2 max-w-xl">Provision a new high-performance organization node on the network.</p>
-                        </div>
-                    </div>
+            <div className="flex items-center gap-6 mb-16">
+                <div className="h-14 w-14 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#F97316]"><Building2 className="h-7 w-7" /></div>
+                <div>
+                    <h1 className="text-3xl font-black text-gray-900 tracking-tight leading-none">Onboard Partner</h1>
+                    <p className="text-gray-400 font-medium text-sm mt-1">Configure global AI and administrative guardrails.</p>
                 </div>
             </div>
 
+            <Steps steps={["Identity", "Admin", "AI Engine", "Billing", "Security"]} currentStep={step} onStepClick={setStep} />
+
             <form onSubmit={handleSubmit} className="space-y-12">
-                {/* 1. Identity & Plan */}
-                <section className="space-y-6">
-                    <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-lg bg-orange-500 flex items-center justify-center text-white shadow-md shadow-orange-100">
-                            <Sparkles className="h-4 w-4" />
+                {step === 0 && (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                        <SectionHeader title="Organization Profile" />
+                        <div className="grid md:grid-cols-2 gap-6">
+                            <PremiumInput label="Partner Name" icon={Building2} value={form.orgName} onChange={(e:any) => setForm(p => ({ ...p, orgName: e.target.value, slug: p.slug || e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-") }))} placeholder="e.g. Reliance Group" required />
+                            <PremiumInput label="URL Identifier" icon={Globe} value={form.slug} onChange={(e:any) => setForm(p => ({ ...p, slug: e.target.value.toLowerCase() }))} placeholder="slug-path" required />
                         </div>
-                        <h2 className="text-lg font-black text-gray-900 tracking-tight">Organization Details</h2>
+                        <div className="pt-6 border-t border-gray-100">
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><MapPinIcon className="h-3 w-3 text-[#F97316]" />Location</label>
+                                <LocationAutocomplete value={form.location || ""} onChange={val => setForm({ ...form, location: val })} placeholder="Mumbai, India" />
+                            </div>
+                        </div>
+                        <div className="flex justify-end pt-8"><button type="button" onClick={() => setStep(1)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: ADMIN <ChevronRight className="h-4 w-4" /></button></div>
                     </div>
+                )}
 
-                    <div className="grid lg:grid-cols-4 gap-8">
-                        <div className="lg:col-span-3 grid md:grid-cols-2 gap-6 bg-white border border-gray-100 rounded-xl p-8 shadow-sm">
-                            <div className="space-y-2">
-                                <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">Company Name</label>
-                                <input
-                                    value={form.orgName}
-                                    onChange={e => handleOrgNameChange(e.target.value)}
-                                    placeholder="e.g. Acme Corp"
-                                    required
-                                    className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50/30 px-4 text-sm font-bold focus:bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-50 transition-all outline-none"
-                                />
-                            </div>
+                {step === 1 && (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                        <SectionHeader title="Administrative Access" />
+                        <div className="grid md:grid-cols-3 gap-6">
+                            <PremiumInput label="Admin Name" icon={User} value={form.adminName} onChange={(e:any) => setForm(p => ({ ...p, adminName: e.target.value }))} placeholder="Full Name" />
+                            <PremiumInput label="Login Email" icon={Mail} value={form.adminEmail} onChange={(e:any) => setForm(p => ({ ...p, adminEmail: e.target.value }))} placeholder="admin@partner.com" />
+                            <PremiumInput label="Password" icon={Lock} type="password" value={form.adminPassword} onChange={(e:any) => setForm(p => ({ ...p, adminPassword: e.target.value }))} placeholder="••••••••" />
+                        </div>
+                        <div className="flex justify-between pt-8 border-t border-gray-100">
+                            <button type="button" onClick={() => setStep(0)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
+                            <button type="button" onClick={() => setStep(2)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: AI ENGINE <ChevronRight className="h-4 w-4" /></button>
+                        </div>
+                    </div>
+                )}
 
-                            <div className="space-y-2">
-                                <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">URL Slug</label>
-                                <div className="relative group">
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 font-black">/</span>
-                                    <input
-                                        value={form.slug}
-                                        onChange={e => setForm(prev => ({ ...prev, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") }))}
-                                        placeholder="acme-corp"
-                                        required
-                                        className="h-11 w-full pl-8 pr-4 rounded-xl border border-gray-200 bg-gray-50/30 text-sm font-bold focus:bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-50 transition-all outline-none"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="md:col-span-2 grid md:grid-cols-3 gap-6">
-                                <div className="md:col-span-1 space-y-2">
-                                    <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">Physical Location</label>
-                                    <LocationAutocomplete
-                                        value={form.location || ""}
-                                        onChange={val => setForm({ ...form, location: val })}
-                                        placeholder="e.g. San Francisco, CA"
-                                    />
-                                </div>
+                {step === 2 && (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                        <SectionHeader title="AI Engine & Audio" />
+                        <div className="grid md:grid-cols-2 gap-10">
+                            {/* TTS & Voice */}
+                            <div className="space-y-6">
+                                <CustomSelect label="TTS Provider" icon={Volume2} value={form.ttsProvider} onChange={handleTtsProviderChange} options={[{ value: "CARTESIA", label: "Cartesia" }, { value: "SARVAM", label: "Sarvam" }, { value: "GOOGLE", label: "Google Cloud" }]} />
                                 <div className="space-y-2">
-                                    <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">Active Drive Cap</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={form.maxActiveDrives}
-                                        inputMode="numeric"
-                                        onWheel={(e) => e.currentTarget.blur()}
-                                        onChange={e => setForm(prev => ({ ...prev, maxActiveDrives: Math.max(0, Number(normalizeIntegerText(e.target.value)) || 0) }))}
-                                        className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50/30 px-4 text-sm font-bold focus:bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-50 transition-all outline-none tabular-nums"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">Team Member Cap</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={form.maxTeamMembers}
-                                        inputMode="numeric"
-                                        onWheel={(e) => e.currentTarget.blur()}
-                                        onChange={e => setForm(prev => ({ ...prev, maxTeamMembers: Math.max(0, Number(normalizeIntegerText(e.target.value)) || 0) }))}
-                                        className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50/30 px-4 text-sm font-bold focus:bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-50 transition-all outline-none tabular-nums"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">Initial Credits</label>
+                                    <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Mic2 className="h-3 w-3 text-[#F97316]" />Voice Selection</label>
                                     <div className="relative">
-                                        <Coins className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-300" />
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            value={form.creditsTotal}
-                                            inputMode="numeric"
-                                            onWheel={(e) => e.currentTarget.blur()}
-                                            onChange={e => setForm(prev => ({ ...prev, creditsTotal: Math.max(0, Number(normalizeIntegerText(e.target.value)) || 0) }))}
-                                            className="h-11 w-full pl-10 pr-4 rounded-xl border border-gray-200 bg-gray-50/30 text-sm font-bold focus:bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-50 transition-all outline-none tabular-nums"
-                                        />
+                                        <button type="button" onClick={() => setShowVoiceDropdown(!showVoiceDropdown)} className="h-11 w-full rounded-lg border border-gray-200 bg-white px-4 flex items-center justify-between hover:border-orange-300 transition-all outline-none">
+                                            <div className="flex items-center gap-2">
+                                                <AudioLines className="h-4 w-4 text-orange-500" />
+                                                <span className="text-sm font-bold text-gray-900">{getVoicesForProvider().find(v => v.id === getVoiceId())?.name || "Select Voice"}</span>
+                                            </div>
+                                            <ChevronDown className={cn("h-4 w-4 text-gray-400 transition-transform", showVoiceDropdown && "rotate-180")} />
+                                        </button>
+                                        {showVoiceDropdown && (
+                                            <div className="absolute z-50 mt-2 w-full bg-white border border-gray-100 rounded-xl shadow-2xl p-2 max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+                                                <div className="relative mb-2">
+                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
+                                                    <input type="text" value={voiceSearch} onChange={e => setVoiceSearch(e.target.value)} placeholder="Search voices..." className="h-8 w-full pl-8 pr-3 rounded-lg border border-gray-100 text-[11px] focus:outline-none" />
+                                                </div>
+                                                {getVoicesForProvider().filter(v => v.name.toLowerCase().includes(voiceSearch.toLowerCase())).map(v => (
+                                                    <button key={v.id} type="button" onClick={() => { setForm(p => ({ ...p, [form.ttsProvider === "SARVAM" ? "sarvamVoice" : form.ttsProvider === "GOOGLE" ? "googleVoiceName" : "cartesiaVoiceId"]: v.id })); setShowVoiceDropdown(false); }} className="w-full flex items-center justify-between p-2.5 rounded-lg hover:bg-orange-50 group text-left transition-all">
+                                                        <div className="flex flex-col">
+                                                            <span className="text-xs font-bold text-gray-900 group-hover:text-orange-600">{v.name}</span>
+                                                            <span className="text-[9px] text-gray-400 font-medium uppercase tracking-tight truncate max-w-[150px]">{v.description}</span>
+                                                        </div>
+                                                        <div onClick={(e) => { e.stopPropagation(); playSample(v.id); }} className="h-8 w-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-orange-600 hover:text-white transition-all">
+                                                            {playingVoiceId === v.id ? <Pause className="h-3 w-3 fill-current" /> : <Play className="h-3 w-3 fill-current ml-0.5" />}
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
+                                <CustomSelect label="Neural Model" icon={Layers} value={form.ttsProvider === "SARVAM" ? form.sarvamModel : form.ttsProvider === "GOOGLE" ? form.googleModel : form.cartesiaModel} onChange={(v:any) => setForm(p => ({ ...p, [form.ttsProvider === "SARVAM" ? "sarvamModel" : form.ttsProvider === "GOOGLE" ? "googleModel" : "cartesiaModel"]: v }))} options={form.ttsProvider === "CARTESIA" ? [{ value: "cartesia/sonic-3", label: "Sonic-3 (Ultra)" }, { value: "cartesia/sonic-2", label: "Sonic-2" }] : form.ttsProvider === "SARVAM" ? [{ value: "bulbul:v3", label: "Bulbul v3" }, { value: "bulbul:v2", label: "Bulbul v2" }] : GOOGLE_TTS_MODELS.map(m => ({ value: m.value, label: m.label }))} />
                             </div>
-                        </div>
 
-                        <div className="space-y-4">
-                            <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">Select Service Plan</label>
-                            <div className="grid gap-3">
-                                {ORG_PLAN_OPTIONS.map(plan => (
-                                    <button
-                                        key={plan.id}
-                                        type="button"
-                                        onClick={() => {
-                                            const signals = getProctoringSignalsForPlan(plan.id);
-                                            setForm(prev => ({ ...prev, plan: plan.id, proctoringSignals: signals }));
-                                        }}
-                                        className={cn(
-                                            "relative flex items-center justify-between p-4 rounded-xl border transition-all text-left group overflow-hidden shadow-sm",
-                                            form.plan === plan.id
-                                                ? "border-orange-500 bg-orange-50/50"
-                                                : "border-gray-100 bg-white hover:border-gray-200"
-                                        )}
-                                    >
-                                        <div className="relative z-10 flex items-center gap-3">
-                                            <div className={cn(
-                                                "w-2.5 h-2.5 rounded-full transition-all",
-                                                form.plan === plan.id ? "bg-orange-500" : "bg-gray-200"
-                                            )} />
-                                            <div>
-                                                <p className="text-[11px] font-black uppercase tracking-[0.1em] text-gray-900">{plan.label}</p>
-                                                <p className="text-[9px] font-bold text-gray-400 mt-0.5">{plan.desc}</p>
+                            {/* STT & LLM */}
+                            <div className="space-y-6">
+                                <div className="relative group">
+                                    <CustomSelect label="Transcription (STT)" icon={Mic} value={form.sttProvider} onChange={(v:any) => setForm(p => ({ ...p, sttProvider: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "GOOGLE", label: "Google Cloud STT" }] : [{ value: "DEEPGRAM", label: "Deepgram (Flux)" }, { value: "SARVAM", label: "Sarvam (Regional)" }]} />
+                                    {form.ttsProvider === "GOOGLE" && (
+                                        <div className="absolute inset-0 pointer-events-none flex items-center justify-end pr-10">
+                                            <div className="flex items-center gap-1 bg-blue-50/90 border border-blue-100 px-1.5 py-0.5 rounded shadow-sm translate-y-1">
+                                                <Lock className="h-2 w-2 text-blue-600" />
+                                                <span className="text-[7px] font-black text-blue-600 uppercase tracking-widest">Stack Locked</span>
                                             </div>
                                         </div>
+                                    )}
+                                </div>
+                                <div className="relative group">
+                                    <CustomSelect label="Intelligence (LLM)" icon={BrainCircuit} value={form.llmModel} onChange={(v:any) => setForm(p => ({ ...p, llmModel: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" }, { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" }] : [{ value: "gpt-4o", label: "GPT-4o" }, { value: "gpt-4o-mini", label: "GPT-4o Mini" }]} />
+                                    {form.ttsProvider === "GOOGLE" && (
+                                        <div className="absolute inset-0 pointer-events-none flex items-center justify-end pr-10">
+                                            <div className="flex items-center gap-1 bg-blue-50/90 border border-blue-100 px-1.5 py-0.5 rounded shadow-sm translate-y-1">
+                                                <Lock className="h-2 w-2 text-blue-600" />
+                                                <span className="text-[7px] font-black text-blue-600 uppercase tracking-widest">Stack Locked</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Thermometer className="h-3 w-3 text-[#F97316]" /> Temperature</label>
+                                        <span className="text-[12px] font-black text-gray-900">{form.llmTemperature.toFixed(1)}</span>
+                                    </div>
+                                    <input type="range" min="0" max="1" step="0.1" value={form.llmTemperature} onChange={e => setForm(p => ({ ...p, llmTemperature: parseFloat(e.target.value) }))} className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-[#F97316] hover:accent-orange-600 transition-all" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex justify-between pt-8">
+                            <button type="button" onClick={() => setStep(1)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
+                            <button type="button" onClick={() => setStep(3)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: BILLING <ChevronRight className="h-4 w-4" /></button>
+                        </div>
+                    </div>
+                )}
+
+                {step === 3 && (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                        <SectionHeader title="Billing & Quotas" />
+                        <div className="grid md:grid-cols-3 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
+                            <LimitControl label="Drive Limit" value={form.maxActiveDrives} onChange={val => setForm(p => ({ ...p, maxActiveDrives: val }))} />
+                            <LimitControl label="Team Limit" value={form.maxTeamMembers} onChange={val => setForm(p => ({ ...p, maxTeamMembers: val }))} />
+                            <PremiumInput label="Initial Credits" icon={Coins} type="number" value={form.creditsTotal} onChange={(e:any) => setForm(p => ({ ...p, creditsTotal: Number(e.target.value) }))} />
+                        </div>
+                        <div className="flex justify-between pt-8 border-t border-gray-100">
+                            <button type="button" onClick={() => setStep(2)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
+                            <button type="button" onClick={() => setStep(4)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: SECURITY <ChevronRight className="h-4 w-4" /></button>
+                        </div>
+                    </div>
+                )}
+
+                {step === 4 && (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                        <SectionHeader title="Security & Network Plan" />
+                        <div className="grid md:grid-cols-4 gap-8">
+                            <div className="md:col-span-1 space-y-4">
+                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Partner Plan</label>
+                                {ORG_PLAN_OPTIONS.map(p => (
+                                    <button key={p.id} type="button" onClick={() => setForm(prev => ({ ...prev, plan: p.id, proctoringSignals: getProctoringSignalsForPlan(p.id) }))} className={cn("w-full p-4 rounded-lg border text-left transition-all", form.plan === p.id ? "border-[#F97316] bg-orange-50 shadow-sm" : "border-gray-100 hover:border-gray-200")}>
+                                        <p className="text-xs font-black uppercase text-gray-900">{p.label}</p>
+                                        <p className="text-[10px] text-gray-400 font-bold mt-0.5">{p.desc}</p>
                                     </button>
                                 ))}
                             </div>
+                            <div className="md:col-span-3">
+                                <ProctoringSignalsSection signals={form.proctoringSignals as any} onChange={(k, v) => setForm(p => ({ ...p, proctoringSignals: { ...p.proctoringSignals, [k]: v } }))} />
+                            </div>
+                        </div>
+                        <div className="flex justify-between pt-10 border-t border-gray-100">
+                            <button type="button" onClick={() => setStep(3)} className="h-14 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
+                            <button type="submit" disabled={loading} className="h-14 px-12 rounded-lg bg-[#F97316] text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-orange-200 hover:bg-orange-700 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-3">
+                                {loading ? <RefreshCw className="h-5 w-5 animate-spin" /> : <Shield className="h-5 w-5" />} DEPLOY ORGANIZATION
+                            </button>
                         </div>
                     </div>
-                </section>
-
-                {/* 2. Admin Controller */}
-                <section className="space-y-6">
-                    <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-lg bg-blue-500 flex items-center justify-center text-white shadow-md shadow-blue-100">
-                            <User className="h-4 w-4" />
-                        </div>
-                        <h2 className="text-lg font-black text-gray-900 tracking-tight">Administrative Control</h2>
-                    </div>
-
-                    <div className="grid md:grid-cols-3 gap-6 bg-white border border-gray-100 rounded-xl p-8 shadow-sm">
-                        <div className="space-y-2">
-                            <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">Admin Full Name</label>
-                            <input
-                                value={form.adminName}
-                                onChange={e => setForm(prev => ({ ...prev, adminName: e.target.value }))}
-                                placeholder="Amit Sharma"
-                                className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50/30 px-4 text-sm font-bold focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all outline-none"
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">Business Email</label>
-                            <input
-                                type="email"
-                                value={form.adminEmail}
-                                onChange={e => setForm(prev => ({ ...prev, adminEmail: e.target.value }))}
-                                placeholder="amit@zomato.com"
-                                required
-                                className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50/30 px-4 text-sm font-bold focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all outline-none"
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">Initial Password</label>
-                            <input
-                                type="text"
-                                value={form.adminPassword}
-                                onChange={e => setForm(prev => ({ ...prev, adminPassword: e.target.value }))}
-                                placeholder="Set secure key"
-                                required
-                                className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50/30 px-4 text-sm font-bold focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all outline-none"
-                            />
-                        </div>
-                    </div>
-                </section>
-
-                {/* 3. Audio & Speech Infrastructure */}
-                <section className="space-y-6">
-                    <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-lg bg-purple-500 flex items-center justify-center text-white shadow-md shadow-purple-100">
-                            <Volume2 className="h-4 w-4" />
-                        </div>
-                        <h2 className="text-lg font-black text-gray-900 tracking-tight">Audio & Speech Infrastructure</h2>
-                    </div>
-
-                    <div className="bg-white border border-gray-100 rounded-xl p-8 shadow-sm space-y-12">
-                        {form.ttsProvider === "GOOGLE" && (
-                            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">
-                                Google mode is exclusive. Saving this org clears Cartesia, Sarvam, Deepgram, and OpenAI settings and runs the Google-only runtime.
-                            </div>
-                        )}
-                        {/* TTS SECTION */}
-                        <div className="space-y-8">
-                            <div className="flex items-center gap-2 pb-2 border-b border-gray-50">
-                                <Volume2 className="h-4 w-4 text-purple-500" />
-                                <h3 className="text-xs font-black text-gray-900 uppercase tracking-widest">Text-to-Speech (TTS)</h3>
-                            </div>
-                            <div className="grid md:grid-cols-2 gap-10">
-                                <div className="space-y-6">
-                                    <div className="space-y-4">
-                                        <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">TTS Provider</label>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            {[
-                                                { id: "CARTESIA", label: "Cartesia", sub: "Ultra-Low Latency" },
-                                                { id: "SARVAM", label: "Sarvam AI", sub: "Regional Authenticity" },
-                                                { id: "GOOGLE", label: "Google TTS", sub: "Live Preview" }
-                                            ].map((provider) => (
-                                                <button
-                                                    key={provider.id}
-                                                    type="button"
-                                                    onClick={() => applyTtsProvider(provider.id)}
-                                                    className={cn(
-                                                        "p-4 rounded-xl border text-left transition-all",
-                                                        form.ttsProvider === provider.id
-                                                            ? provider.id === "CARTESIA"
-                                                                ? "border-gray-300 bg-white shadow-sm ring-4 ring-gray-50"
-                                                                : provider.id === "SARVAM"
-                                                                    ? "border-[#F97316] bg-orange-50 shadow-sm ring-4 ring-orange-50"
-                                                                    : "border-blue-500 bg-blue-50 shadow-sm ring-4 ring-blue-50"
-                                                            : "border-gray-100 bg-gray-50/30 hover:border-gray-300"
-                                                    )}
-                                                >
-                                                    <p className={cn("text-[11px] font-black uppercase tracking-widest",
-                                                        form.ttsProvider === provider.id
-                                                            ? provider.id === "CARTESIA"
-                                                                ? "text-gray-900"
-                                                                : provider.id === "SARVAM"
-                                                                    ? "text-[#F97316]"
-                                                                    : "text-blue-600"
-                                                            : "text-gray-400"
-                                                    )}>{provider.label}</p>
-                                                    <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-tighter">{provider.sub}</p>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <CustomSelect
-                                        label="TTS Neural Engine"
-                                        value={form.ttsProvider === "CARTESIA" ? form.cartesiaModel : form.ttsProvider === "SARVAM" ? form.sarvamModel : form.googleModel}
-                                        onChange={val => setForm(prev => ({ ...prev, [form.ttsProvider === "CARTESIA" ? "cartesiaModel" : form.ttsProvider === "SARVAM" ? "sarvamModel" : "googleModel"]: val }))}
-                                        options={form.ttsProvider === "CARTESIA"
-                                            ? [
-                                                { value: "cartesia/sonic-3", label: "Sonic-3 (Elite Latency)" },
-                                                { value: "cartesia/sonic-2", label: "Sonic-2 (Stable)" },
-                                                { value: "cartesia/sonic-turbo", label: "Sonic-Turbo" }
-                                            ]
-                                            : form.ttsProvider === "SARVAM"
-                                                ? [
-                                                { value: "bulbul:v3", label: "Bulbul v3 (Flagship)" },
-                                                { value: "bulbul:v2", label: "Bulbul v2" },
-                                                { value: "bulbul:v1", label: "Bulbul v1" }
-                                                ]
-                                                : GOOGLE_TTS_MODELS.map(model => ({ value: model.value, label: model.label }))
-                                        }
-                                    />
-                                </div>
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">Voice Selection</label>
-                                        <button
-                                            type="button"
-                                            disabled={previewLoading}
-                                            onClick={playSample}
-                                            className={cn(
-                                                "h-8 px-4 rounded-lg font-black text-[9px] uppercase tracking-widest flex items-center gap-2 transition-all shadow-sm",
-                                                activeAudio
-                                                    ? "bg-rose-500 text-white"
-                                                    : "bg-emerald-500 text-white hover:scale-105 active:scale-95"
-                                            )}
-                                        >
-                                            {previewLoading ? (
-                                                <RefreshCw className="h-3 w-3 animate-spin" />
-                                            ) : activeAudio ? (
-                                                <Pause className="h-3 w-3" />
-                                            ) : (
-                                                <Play className="h-3 w-3" />
-                                            )}
-                                            {previewLoading ? "..." : activeAudio ? "Pause" : "Preview"}
-                                        </button>
-                                    </div>
-                                    <CustomSelect
-                                        label="Neural Persona"
-                                        value={form.ttsProvider === "CARTESIA" ? form.cartesiaVoiceId : form.ttsProvider === "SARVAM" ? form.sarvamVoice : form.googleVoiceName}
-                                        onChange={val => setForm(prev => ({ ...prev, [form.ttsProvider === "CARTESIA" ? "cartesiaVoiceId" : form.ttsProvider === "SARVAM" ? "sarvamVoice" : "googleVoiceName"]: val }))}
-                                        options={form.ttsProvider === "CARTESIA"
-                                            ? CARTESIA_VOICES.map(v => ({ value: v.id, label: `${v.name} (${v.description})` }))
-                                            : form.ttsProvider === "SARVAM"
-                                                ? SARVAM_VOICES.map(v => ({ value: v.id, label: `${v.name} (${v.description})` }))
-                                                : GOOGLE_VOICES.map(v => ({ value: v.name, label: `${v.name} (${v.description})` }))
-                                        }
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        {form.ttsProvider !== "GOOGLE" && (
-                            <div className="space-y-8 pt-8 border-t border-gray-50">
-                                <div className="flex items-center gap-2 pb-2 border-b border-gray-50">
-                                    <Mic className="h-4 w-4 text-indigo-500" />
-                                    <h3 className="text-xs font-black text-gray-900 uppercase tracking-widest">Speech-to-Text (STT)</h3>
-                                </div>
-                                <div className="grid md:grid-cols-2 gap-10">
-                                    <div className="space-y-4">
-                                        <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">STT Provider</label>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            {[
-                                                { id: "DEEPGRAM", label: "Deepgram", sub: "Flux Architecture" },
-                                                { id: "SARVAM", label: "Sarvam AI", sub: "Regional Saaras" }
-                                            ].map((provider) => (
-                                                <button
-                                                    key={provider.id}
-                                                    type="button"
-                                                    onClick={() => setForm(prev => ({ ...prev, sttProvider: provider.id }))}
-                                                    className={cn(
-                                                        "p-4 rounded-xl border text-left transition-all",
-                                                        form.sttProvider === provider.id
-                                                            ? provider.id === "DEEPGRAM"
-                                                                ? "border-emerald-500 bg-emerald-50 shadow-sm ring-4 ring-emerald-50"
-                                                                : "border-[#F97316] bg-orange-50 shadow-sm ring-4 ring-orange-50"
-                                                            : "border-gray-100 bg-gray-50/30 hover:border-gray-300"
-                                                    )}
-                                                >
-                                                    <p className={cn("text-[11px] font-black uppercase tracking-widest",
-                                                        form.sttProvider === provider.id
-                                                            ? provider.id === "DEEPGRAM" ? "text-emerald-600" : "text-[#F97316]"
-                                                            : "text-gray-400"
-                                                    )}>{provider.label}</p>
-                                                    <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-tighter">{provider.sub}</p>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="space-y-4">
-                                        <CustomSelect
-                                            label="Transcription Model"
-                                            value={form.sttProvider === "DEEPGRAM" ? form.deepgramModel : form.sarvamSttModel}
-                                            onChange={val => setForm(prev => ({ ...prev, [form.sttProvider === "DEEPGRAM" ? "deepgramModel" : "sarvamSttModel"]: val }))}
-                                            options={form.sttProvider === "DEEPGRAM"
-                                                ? [
-                                                    { value: "flux-general-en", label: "Flux General (English)" },
-                                                    { value: "nova-3-general", label: "Nova-3 General" },
-                                                    { value: "nova-3", label: "Nova-3 (Balanced)" },
-                                                    { value: "nova-2-general", label: "Nova-2 General" },
-                                                    { value: "nova-2-conversationalai", label: "Nova-2 Conversational AI" },
-                                                    { value: "whisper-large", label: "Whisper Large" },
-                                                    { value: "whisper-medium", label: "Whisper Medium" }
-                                                ]
-                                                : [
-                                                    { value: "saaras:v3", label: "Saaras v3 (High Quality)" },
-                                                    { value: "saarika:v2.5", label: "Saarika v2.5 (Streaming)" },
-                                                    { value: "saaras:v2", label: "Saaras v2 (Standard)" }
-                                                ]
-                                            }
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </section>
-
-                <ProctoringSignalsSection
-                    signals={form.proctoringSignals as any}
-                    onChange={(key, checked) =>
-                        setForm((prev) => ({
-                            ...prev,
-                            proctoringSignals: { ...prev.proctoringSignals, [key]: checked },
-                        }))
-                    }
-                />
-
-                {form.ttsProvider !== "GOOGLE" ? (
-                    <section className="space-y-6">
-                        <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-lg bg-gray-900 flex items-center justify-center text-white shadow-md shadow-gray-200">
-                                <BrainCircuit className="h-4 w-4" />
-                            </div>
-                            <h2 className="text-lg font-black text-gray-900 tracking-tight">Reasoning Infrastructure (LLM)</h2>
-                        </div>
-
-                        <div className="bg-white border border-gray-100 rounded-xl p-8 shadow-sm space-y-10">
-                            <div className="grid md:grid-cols-2 gap-10">
-                                <div className="space-y-4">
-                                    <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest ml-1">LLM Provider</label>
-                                    <div className="grid grid-cols-1 gap-3">
-                                        <button
-                                            type="button"
-                                            className="p-4 rounded-xl border border-gray-200 bg-white text-left transition-all shadow-sm ring-4 ring-gray-50"
-                                        >
-                                            <p className="text-[11px] font-black uppercase tracking-widest text-gray-900">OpenAI</p>
-                                            <p className="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-tighter">Global Intelligence Standard</p>
-                                        </button>
-                                    </div>
-                                </div>
-                                <div className="space-y-4">
-                                    <CustomSelect
-                                        label="Intelligence Model"
-                                        value={form.llmModel}
-                                        onChange={val => setForm(prev => ({ ...prev, llmModel: val }))}
-                                        options={[
-                                            { value: "gpt-4o", label: "GPT-4o (Elite Reasoning)" },
-                                            { value: "gpt-4o-mini", label: "GPT-4o-mini (Efficient)" },
-                                            { value: "gpt-4.1", label: "GPT-4.1 (Next Gen)" },
-                                            { value: "gpt-4.1-mini", label: "GPT-4.1-mini" },
-                                            { value: "o1-preview", label: "o1-preview" },
-                                            { value: "o1-mini", label: "o1-mini" },
-                                            { value: "gpt-5.1", label: "GPT-5.1 (Research)" },
-                                            { value: "gpt-5.1-mini", label: "GPT-5.1-mini" },
-                                            { value: "gpt-5.0", label: "GPT-5.0 (Frontier)" },
-                                            { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
-                                            { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
-                                        ]}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="pt-8 border-t border-gray-50">
-                                <div className="flex items-center justify-between mb-8">
-                                    <div className="space-y-1">
-                                        <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest block">LLM Temperature</label>
-                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                                            {form.llmTemperature <= 0.3 ? "Deterministic / Precise" : form.llmTemperature >= 0.8 ? "Creative / Variable" : "Balanced Reasoning"}
-                                        </p>
-                                    </div>
-                                    <div className="h-9 px-4 rounded-lg bg-gray-900 text-white flex items-center justify-center font-black text-xs shadow-md">
-                                        {Number(form.llmTemperature).toFixed(1)}
-                                    </div>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="1"
-                                    step="0.1"
-                                    value={form.llmTemperature}
-                                    onChange={e => setForm(prev => ({ ...prev, llmTemperature: parseFloat(e.target.value) }))}
-                                    className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-gray-900"
-                                />
-                            </div>
-                        </div>
-                    </section>
-                ) : (
-                    <section className="space-y-6">
-                        <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-lg bg-gray-900 flex items-center justify-center text-white shadow-md shadow-gray-200">
-                                <BrainCircuit className="h-4 w-4" />
-                            </div>
-                            <h2 className="text-lg font-black text-gray-900 tracking-tight">Google-Only Reasoning</h2>
-                        </div>
-                        <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 text-sm font-semibold text-blue-800">
-                            Google mode uses the Google runtime for STT, LLM, and TTS. The other provider fields are cleared automatically on save.
-                        </div>
-                    </section>
                 )}
-
-                {/* Final Actions */}
-                <div className="pt-12 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-8">
-                    <div className="flex items-center gap-4">
-                    </div>
-
-                    <div className="flex items-center gap-4 w-full sm:w-auto">
-                        <button
-                            type="button"
-                            onClick={() => router.back()}
-                            className="flex-1 sm:flex-none h-12 px-8 rounded-xl border border-gray-200 bg-white text-gray-500 font-bold text-[11px] uppercase tracking-widest hover:bg-gray-50 transition-all"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="flex-1 sm:flex-none h-12 px-12 rounded-xl bg-[#F97316] text-white font-black text-[11px] uppercase tracking-[0.2em] shadow-xl shadow-orange-100 hover:bg-[#EA580C] hover:translate-y-[-1px] active:translate-y-0 transition-all disabled:opacity-50"
-                        >
-                            {loading ? (
-                                <div className="flex items-center gap-3">
-                                    <RefreshCw className="h-4 w-4 animate-spin" />
-                                    Provisioning...
-                                </div>
-                            ) : "Onboard Partner"}
-                        </button>
-                    </div>
-                </div>
             </form>
         </div>
     );
