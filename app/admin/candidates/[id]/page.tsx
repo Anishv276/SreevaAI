@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { InterviewReportHyring, buildHyringInterviewViewModel } from "@/components/admin/candidate-profile/interview-report-hyring";
 import { ResumeReportHyring, buildHyringResumeViewModel } from "@/components/admin/candidate-profile/resume-report-hyring";
-import { getAuditTrailFromAiReport, type CandidateActivityEvent } from "@/lib/candidate-activity";
+import { getAuditTrailFromAiReport, type CandidateActivityEvent } from "@/lib/candidate-activity.shared";
 
 function toTextList(value: unknown): string[] {
     const toLine = (item: unknown): string => {
