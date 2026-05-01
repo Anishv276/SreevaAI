@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { generateId } from "@/lib/ids";
 import { sendApplicationStatusEmail } from "@/lib/mail";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
-import { isInterviewTokenRequired } from "@/lib/interview-access";
-import { v4 as uuidv4 } from "uuid";
+import { invitationDeliveryQueue } from "@/lib/queue";
+import { appendCandidateActivity } from "@/lib/candidate-activity";
 
 type BulkEmailAction = "shortlist" | "reject" | "hire" | "nothired" | null;
 
@@ -165,47 +164,58 @@ export async function POST(request: Request) {
         }
 
         let sent = 0;
+        let queued = 0;
         const failures: Array<{ id: string; reason: string }> = [];
+        const shortlistApps = plannedDeliveries.filter(({ action }) => action === "shortlist");
+        const directDeliveries = plannedDeliveries.filter(({ action }) => action !== "shortlist");
+        const shortlistSpreadDays = Math.max(
+            1,
+            Number(scheduleDays ?? orderedApplications[0]?.drive?.inviteScheduleDays ?? 1) || 1
+        );
+        const shortlistWindowMs = Math.max(0, shortlistSpreadDays - 1) * 24 * 60 * 60 * 1000;
 
-        for (const { app, action } of plannedDeliveries) {
+        for (let index = 0; index < shortlistApps.length; index += 1) {
+            const { app } = shortlistApps[index];
             try {
-                let interviewLink: string | undefined;
-                if (action === "shortlist") {
-                    const newToken = uuidv4();
-                    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
-                    await (prisma.interview as any).upsert({
-                        where: { applicationId: app.id },
-                        update: {
-                            accessToken: newToken,
-                            scheduledAt: new Date(),
-                            inviteSentAt: new Date(),
-                            expiresAt,
-                            status: "PENDING",
-                            startedAt: null,
-                            completedAt: null,
-                        },
-                        create: {
-                            id: generateId("int", app.fullName || app.id),
-                            applicationId: app.id,
-                            accessToken: newToken,
-                            scheduledAt: new Date(),
-                            inviteSentAt: new Date(),
-                            expiresAt,
-                            status: "PENDING",
-                        },
-                    });
-                    const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com"}/interview/${app.id}`;
-                    interviewLink = isInterviewTokenRequired()
-                        ? `${interviewBase}?token=${newToken}`
-                        : interviewBase;
-                }
+                const delayMs = shortlistApps.length > 1 && shortlistWindowMs > 0
+                    ? Math.round((index / Math.max(1, shortlistApps.length - 1)) * shortlistWindowMs)
+                    : 0;
 
-                const status = action === "shortlist"
-                    ? "ACCEPTED"
-                    : action === "hire"
-                        ? "Hired"
-                        : "REJECTED";
+                await invitationDeliveryQueue.add(
+                    "send-shortlist-email",
+                    {
+                        applicationId: app.id,
+                        action: "shortlist",
+                        emailType: "screening",
+                        scheduledAt: new Date(Date.now() + delayMs).toISOString(),
+                    },
+                    { delay: delayMs }
+                );
+                queued += 1;
+                await appendCandidateActivity(app.id, {
+                    type: "email_sent",
+                    label: "Shortlisted email queued",
+                    details: `Scheduled for ${new Date(Date.now() + delayMs).toISOString()}`,
+                    timestamp: new Date().toISOString(),
+                    source: "worker",
+                });
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                console.error("[bulk-email] queue failed:", {
+                    applicationId: app.id,
+                    action: "shortlist",
+                    reason,
+                });
+                failures.push({
+                    id: app.id,
+                    reason,
+                });
+            }
+        }
 
+        const directResults = await Promise.allSettled(
+            directDeliveries.map(async ({ app, action }) => {
+                const status = action === "hire" ? "Hired" : "REJECTED";
                 const mailResult = await sendApplicationStatusEmail({
                     email: app.email,
                     fullName: app.fullName || "Candidate",
@@ -213,7 +223,6 @@ export async function POST(request: Request) {
                     orgId: app.drive?.orgId ?? undefined,
                     status,
                     score: app.fullName ? 0 : 0,
-                    interviewLink,
                 });
 
                 if (!mailResult.success) {
@@ -224,37 +233,52 @@ export async function POST(request: Request) {
                     );
                 }
 
+                await appendCandidateActivity(app.id, {
+                    type: "email_sent",
+                    label: action === "hire" ? "Hire email sent" : "Rejection email sent",
+                    details: `Sent at ${new Date().toISOString()}`,
+                    timestamp: new Date().toISOString(),
+                    source: "system",
+                });
+
+                return app.id;
+            })
+        );
+
+        for (const result of directResults) {
+            if (result.status === "fulfilled") {
                 sent += 1;
-            } catch (error) {
-                const reason = error instanceof Error ? error.message : String(error);
-                console.error("[bulk-email] send failed:", {
-                    applicationId: app.id,
-                    action,
-                    reason,
-                });
-                failures.push({
-                    id: app.id,
-                    reason,
-                });
+                continue;
             }
+
+            const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+            console.error("[bulk-email] send failed:", reason);
+            failures.push({
+                id: "unknown",
+                reason,
+            });
         }
 
-        const message = `Sent ${sent} email${sent !== 1 ? "s" : ""}.`;
-
-        if (sent === 0) {
+        if (sent === 0 && queued === 0) {
             return NextResponse.json({
                 error: "Failed to send emails",
                 sent: 0,
+                queued: 0,
                 skipped: skipReasons.length,
                 reasons: skipReasons,
                 failures,
             }, { status: 500 });
         }
 
+        const messageParts: string[] = [];
+        if (queued > 0) messageParts.push(`Queued ${queued} shortlist email${queued !== 1 ? "s" : ""}`);
+        if (sent > 0) messageParts.push(`Sent ${sent} email${sent !== 1 ? "s" : ""}`);
+        const message = messageParts.join(" and ") + ".";
+
         return NextResponse.json({
             message,
             sent,
-            queued: sent,
+            queued,
             skipped: skipReasons.length,
             reasons: skipReasons,
             failures,

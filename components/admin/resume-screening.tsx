@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import {
-    Upload, X, FileText, Zap, CheckCircle2, XCircle,
+    Upload, X, FileText, Zap, CheckCircle2, XCircle, Mail,
     AlertCircle, TrendingUp, TrendingDown, Minus,
     ChevronUp, ChevronDown, ArrowUpDown, Users, Target,
     History, RefreshCw, ExternalLink, ArrowRight, Lock,
@@ -183,14 +183,23 @@ function UploadModal({
 }) {
     const [files, setFiles] = useState<File[]>([]);
     const [isDragging, setIsDragging] = useState(false);
-    const [phase, setPhase] = useState<"idle" | "uploading" | "processing" | "done" | "failed">("idle");
+    const [phase, setPhase] = useState<"idle" | "uploading" | "processing" | "summary" | "failed">("idle");
     const [progress, setProgress] = useState({ processed: 0, total: 0 });
     const [error, setError] = useState<string | null>(null);
+    const [summary, setSummary] = useState<{
+        shortlisted: number;
+        rejected: number;
+        total: number;
+        candidateIds: string[];
+    } | null>(null);
+    const [sendingFollowUp, setSendingFollowUp] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const pollRef = useRef<NodeJS.Timeout | null>(null);
     const reset = () => {
         setFiles([]); setPhase("idle");
         setProgress({ processed: 0, total: 0 }); setError(null);
+        setSummary(null);
+        setSendingFollowUp(false);
         if (pollRef.current) clearInterval(pollRef.current);
     };
     const handleClose = () => {
@@ -202,6 +211,49 @@ function UploadModal({
         const dropped = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith(".pdf"));
         setFiles(prev => [...prev, ...dropped]);
     };
+    const loadBatchSummary = async (nextBatchId: string) => {
+        const res = await fetch(`/api/drives/${driveId}/resume-screening`);
+        if (!res.ok) throw new Error("Failed to load screening summary");
+        const data = await res.json();
+        const batchCandidates = Array.isArray(data.candidates)
+            ? data.candidates.filter((candidate: any) => candidate.bulkBatchId === nextBatchId)
+            : [];
+
+        const normalizedStatus = (value: unknown) =>
+            String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
+
+        return {
+            shortlisted: batchCandidates.filter((candidate: any) => normalizedStatus(candidate.resumeStatus) === "shortlisted").length,
+            rejected: batchCandidates.filter((candidate: any) => normalizedStatus(candidate.resumeStatus) === "rejected").length,
+            total: batchCandidates.length,
+            candidateIds: batchCandidates.map((candidate: any) => candidate.id),
+        };
+    };
+    const handleSendFollowUpEmails = async () => {
+        if (!summary || summary.candidateIds.length === 0 || sendingFollowUp) return;
+        setSendingFollowUp(true);
+        try {
+            const res = await fetch("/api/candidates/bulk-email", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    ids: summary.candidateIds,
+                    emailType: "screening",
+                }),
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                throw new Error(data?.error || "Failed to send follow-up emails");
+            }
+            toast.success(data?.message || "Follow-up emails queued/sent");
+            reset();
+            onComplete();
+        } catch (err) {
+            toast.error((err as Error).message);
+        } finally {
+            setSendingFollowUp(false);
+        }
+    };
     const startScreening = async () => {
         if (!files.length) return;
         setPhase("uploading"); setError(null);
@@ -210,19 +262,26 @@ function UploadModal({
             files.forEach(f => fd.append("files", f));
             const res = await fetch(`/api/drives/${driveId}/resume-screening`, { method: "POST", body: fd });
             if (!res.ok) throw new Error((await res.json()).error || "Upload failed");
-            const { batchId, totalCount } = await res.json();
+            const { batchId: nextBatchId, totalCount } = await res.json();
             setProgress({ processed: 0, total: totalCount });
             setPhase("processing");
             pollRef.current = setInterval(async () => {
                 try {
-                    const pr = await fetch(`/api/drives/${driveId}/resume-screening?batchId=${batchId}`);
+                    const pr = await fetch(`/api/drives/${driveId}/resume-screening?batchId=${nextBatchId}`);
                     const data = await pr.json();
                     setProgress({ processed: data.processedCount, total: data.totalCount });
                     if (data.status === "COMPLETED") {
                         clearInterval(pollRef.current!);
-                        setPhase("done");
-                        toast.success(`${data.processedCount} resumes screened successfully`);
-                        setTimeout(() => { reset(); onComplete(); }, 1200);
+                        try {
+                            const nextSummary = await loadBatchSummary(nextBatchId);
+                            setSummary(nextSummary);
+                            setPhase("summary");
+                            toast.success(`${data.processedCount} resumes screened successfully`);
+                        } catch (summaryError) {
+                            clearInterval(pollRef.current!);
+                            setPhase("failed");
+                            setError((summaryError as Error).message || "Failed to build screening summary");
+                        }
                     } else if (data.status === "FAILED") {
                         clearInterval(pollRef.current!);
                         setPhase("failed"); setError("Processing failed. Try again.");
@@ -241,7 +300,8 @@ function UploadModal({
                 <DialogHeader>
                     <DialogTitle className="text-xl font-black text-gray-900">
                         {phase === "processing" ? "Screening in Progress" :
-                            phase === "done" ? "Screening Complete" : "Upload Resumes"}
+                            phase === "summary" ? "Screening Complete" :
+                            "Upload Resumes"}
                     </DialogTitle>
                     <p className="text-sm text-gray-400">{driveName}</p>
                 </DialogHeader>
@@ -354,14 +414,54 @@ function UploadModal({
                         </div>
                     </div>
                 )}
-                {/* DONE */}
-                {phase === "done" && (
-                    <div className="py-8 text-center space-y-3">
-                        <div className="mx-auto w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center">
-                            <CheckCircle2 className="h-7 w-7 text-emerald-600" />
+                {/* SUMMARY */}
+                {phase === "summary" && summary && (
+                    <div className="py-6 space-y-5">
+                        <div className="text-center space-y-3">
+                            <div className="mx-auto w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center">
+                                <CheckCircle2 className="h-7 w-7 text-emerald-600" />
+                            </div>
+                            <p className="text-base font-black text-gray-900">Screening complete</p>
+                            <p className="text-sm text-gray-500">
+                                {summary.shortlisted} shortlisted and {summary.rejected} rejected from {summary.total} screened resumes.
+                            </p>
                         </div>
-                        <p className="text-base font-black text-gray-900">All done!</p>
-                        <p className="text-sm text-gray-400">{progress.total} resumes screened. Closing…</p>
+
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 text-center">
+                                <p className="text-2xl font-black text-emerald-700">{summary.shortlisted}</p>
+                                <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-emerald-700">Shortlisted</p>
+                            </div>
+                            <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 text-center">
+                                <p className="text-2xl font-black text-rose-700">{summary.rejected}</p>
+                                <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-rose-700">Rejected</p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 text-center">
+                                <p className="text-2xl font-black text-slate-900">{summary.total}</p>
+                                <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-slate-500">Total</p>
+                            </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-600">
+                            <p className="font-semibold text-slate-900">Send follow-up emails now?</p>
+                            <p className="mt-1">
+                                Rejection emails will be sent immediately. Shortlisted emails will be queued and delivered through the invitation queue.
+                            </p>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 pt-1">
+                            <Button variant="ghost" onClick={() => { reset(); onComplete(); }} className="rounded-xl font-bold text-gray-500">
+                                Skip
+                            </Button>
+                            <Button
+                                onClick={handleSendFollowUpEmails}
+                                disabled={sendingFollowUp}
+                                className="rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold px-6 flex items-center gap-2"
+                            >
+                                <Mail className="h-4 w-4" />
+                                {sendingFollowUp ? "Sending..." : "Send Emails"}
+                            </Button>
+                        </div>
                     </div>
                 )}
                 {/* FAILED */}

@@ -10,6 +10,7 @@ import * as dotenv from 'dotenv';
 import { putObject } from "./lib/s3";
 import { generateId } from "./lib/ids";
 import { isInterviewTokenRequired } from "./lib/interview-access";
+import { appendCandidateActivity } from "./lib/candidate-activity";
 
 // Load environment variables
 dotenv.config();
@@ -558,6 +559,14 @@ const invitationDeliveryWorker = new Worker(
           : (mailResult.error as any)?.message || "Unknown email delivery error";
       throw new Error(reason);
     }
+
+    await appendCandidateActivity(applicationId, {
+      type: "email_sent",
+      label: action === "shortlist" ? "Shortlisted email sent" : action === "hire" ? "Hire email sent" : "Rejection email sent",
+      details: `Delivered at ${new Date().toISOString()}`,
+      timestamp: new Date().toISOString(),
+      source: "worker",
+    });
 
     console.log(`[Invitation Worker] Delivered ${action} email for ${applicationId}`);
     return { success: true };

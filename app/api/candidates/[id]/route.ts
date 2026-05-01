@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { sendApplicationStatusEmail } from "@/lib/mail";
 import { deleteCandidateEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
+import { appendCandidateActivity } from "@/lib/candidate-activity";
 
 export async function GET(
     request: Request,
@@ -29,6 +30,7 @@ export async function GET(
                 interviewStatus: true,
                 hiringStatus: true,
                 createdAt: true,
+                updatedAt: true,
                 drive: {
                     select: {
                         title: true,
@@ -51,6 +53,9 @@ export async function GET(
                         aiSummary: true,
                         candidateFeedback: true,
                         candidateRating: true,
+                        createdAt: true,
+                        updatedAt: true,
+                        inviteSentAt: true,
                         proctoringEvents: true,
                         interviewReport: true,
                         proctoringReport: true,
@@ -222,16 +227,42 @@ export async function PATCH(
             include: { drive: { select: { title: true, orgId: true } } },
         });
 
+        if (isShortlist || isRejected || isHired || isNotHired) {
+            const actionLabel = isShortlist
+                ? "Resume shortlisted"
+                : isRejected
+                    ? "Resume rejected"
+                    : isHired
+                        ? "Candidate hired"
+                        : "Marked as not hired";
+            await appendCandidateActivity(id, {
+                type: "status_changed",
+                label: actionLabel,
+                details: `resume=${updated.resumeStatus}, interview=${updated.interviewStatus}, hiring=${updated.hiringStatus}`,
+                timestamp: new Date().toISOString(),
+                source: "hr",
+            });
+        }
+
         // Send email for hire / not-hired actions
         if (body.hiringStatus === "hired") {
-            sendApplicationStatusEmail({
+            const mailResult = await sendApplicationStatusEmail({
                 email: updated.email,
                 fullName: updated.fullName,
                 jobTitle: (updated as any).drive?.title || "the role",
                 orgId: (updated as any).drive?.orgId ?? undefined,
                 status: "Hired",
                 score: updated.aiScore || 0,
-            }).catch(() => { });
+            });
+            if (mailResult.success) {
+                await appendCandidateActivity(id, {
+                    type: "email_sent",
+                    label: "Hire email sent",
+                    details: `Sent at ${new Date().toISOString()}`,
+                    timestamp: new Date().toISOString(),
+                    source: "system",
+                });
+            }
 
             try {
                 const driveStats = await prisma.drive.findUnique({
@@ -253,14 +284,23 @@ export async function PATCH(
                 console.error("Auto-close drive error:", err);
             }
         } else if (body.hiringStatus === "not hired") {
-            sendApplicationStatusEmail({
+            const mailResult = await sendApplicationStatusEmail({
                 email: updated.email,
                 fullName: updated.fullName,
                 jobTitle: (updated as any).drive?.title || "the role",
                 orgId: (updated as any).drive?.orgId ?? undefined,
                 status: "REJECTED",
                 score: updated.aiScore || 0,
-            }).catch(() => { });
+            });
+            if (mailResult.success) {
+                await appendCandidateActivity(id, {
+                    type: "email_sent",
+                    label: "Rejection email sent",
+                    details: `Sent at ${new Date().toISOString()}`,
+                    timestamp: new Date().toISOString(),
+                    source: "system",
+                });
+            }
         }
 
         return NextResponse.json(updated);

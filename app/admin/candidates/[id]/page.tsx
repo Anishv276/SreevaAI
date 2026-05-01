@@ -2,12 +2,14 @@
 
 import { useMemo } from "react";
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { FileText, Sparkles, XCircle } from "lucide-react";
+import { FileText, Sparkles, XCircle, Clock3, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { InterviewReportHyring, buildHyringInterviewViewModel } from "@/components/admin/candidate-profile/interview-report-hyring";
 import { ResumeReportHyring, buildHyringResumeViewModel } from "@/components/admin/candidate-profile/resume-report-hyring";
+import { getAuditTrailFromAiReport, type CandidateActivityEvent } from "@/lib/candidate-activity";
 
 function toTextList(value: unknown): string[] {
     const toLine = (item: unknown): string => {
@@ -325,6 +327,56 @@ export default function CandidateProfilePage() {
         });
     }, [candidate, candidatePhotoSrc, mounted, resumeReportData]);
 
+    const activityTrail: CandidateActivityEvent[] = useMemo(() => {
+        const trail = getAuditTrailFromAiReport(candidate?.aiReport);
+        const fallback: CandidateActivityEvent[] = [];
+        if (candidate?.createdAt) {
+            fallback.push({
+                type: "resume_screened",
+                label: "Resume uploaded",
+                details: "Candidate record created",
+                timestamp: String(candidate.createdAt),
+                source: "system",
+            });
+        }
+        if (candidate?.updatedAt && String(candidate.updatedAt) !== String(candidate.createdAt)) {
+            fallback.push({
+                type: "status_changed",
+                label: "Candidate record updated",
+                details: `Last updated at ${candidate.updatedAt}`,
+                timestamp: String(candidate.updatedAt),
+                source: "system",
+            });
+        }
+        if (candidate?.interview?.inviteSentAt) {
+            fallback.push({
+                type: "interview_invite_sent",
+                label: "Interview link sent",
+                details: `Sent at ${candidate.interview.inviteSentAt}`,
+                timestamp: String(candidate.interview.inviteSentAt),
+                source: "system",
+            });
+        }
+        const merged = [...trail, ...fallback];
+        const dedup = new Map<string, CandidateActivityEvent>();
+        for (const item of merged) {
+            const key = `${item.type}|${item.label}|${item.timestamp}`;
+            if (!dedup.has(key)) dedup.set(key, item);
+        }
+        return Array.from(dedup.values()).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    }, [candidate]);
+
+    const formatActivityTimestamp = (timestamp: string) => {
+        const date = new Date(timestamp);
+        if (Number.isNaN(date.getTime())) return timestamp;
+        return date.toLocaleString("en-IN", {
+            dateStyle: "medium",
+            timeStyle: "medium",
+            hour12: true,
+            timeZone: "Asia/Kolkata",
+        });
+    };
+
     const formatDuration = (totalSeconds: number) => {
         const m = Math.floor(totalSeconds * 0.0166666);
         const s = Math.floor(totalSeconds % 60);
@@ -361,6 +413,69 @@ export default function CandidateProfilePage() {
         return (
             <div className="min-h-screen bg-slate-50">
                 <ResumeReportHyring model={resumeReportModel} />
+            </div>
+        );
+    }
+
+    if (reportMode === "activity") {
+        return (
+            <div className="min-h-screen bg-slate-50">
+                <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+                    <div className="mb-6 flex items-center justify-between gap-4">
+                        <div>
+                            <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">
+                                <Activity className="h-3.5 w-3.5 text-[#F97316]" />
+                                Candidate Activity
+                            </div>
+                            <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
+                                {candidate?.fullName || "Candidate"} history
+                            </h1>
+                            <p className="mt-1 text-sm text-slate-500">
+                                Exact resume, status, interview, and email timestamps in reverse chronological order.
+                            </p>
+                        </div>
+                        <Button asChild variant="outline" className="rounded-xl">
+                            <Link href={backHref}>Back</Link>
+                        </Button>
+                    </div>
+
+                    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+                        {activityTrail.length === 0 ? (
+                            <div className="py-16 text-center">
+                                <Clock3 className="mx-auto h-10 w-10 text-slate-300" />
+                                <p className="mt-3 text-base font-bold text-slate-900">No activity history yet</p>
+                                <p className="mt-1 text-sm text-slate-500">Once shortlist, rejection, interview, or email actions happen, they will appear here with timestamps.</p>
+                            </div>
+                        ) : (
+                            <div className="relative space-y-4">
+                                {activityTrail.map((item, index) => (
+                                    <div key={`${item.type}-${item.timestamp}-${index}`} className="relative flex gap-4">
+                                        <div className="flex flex-col items-center">
+                                            <div className="h-3.5 w-3.5 rounded-full bg-[#F97316] ring-8 ring-orange-50" />
+                                            {index !== activityTrail.length - 1 && <div className="h-full w-px bg-slate-200" />}
+                                        </div>
+                                        <div className="min-w-0 flex-1 pb-4">
+                                            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                                    <p className="text-sm font-black text-slate-950">{item.label}</p>
+                                                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                                                        {formatActivityTimestamp(item.timestamp)}
+                                                    </p>
+                                                </div>
+                                                {item.details && (
+                                                    <p className="mt-2 text-sm text-slate-600">{item.details}</p>
+                                                )}
+                                                <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                                                    {String(item.source || "system")}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
         );
     }

@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, Loader2, Lock, FileText, Eye, Send } from "lucide-react";
+import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, Loader2, Lock, FileText, Eye, Send, Activity } from "lucide-react";
 
 import Link from "next/link";
 
@@ -1585,27 +1585,15 @@ export default function CandidatesPage() {
                                                         </DropdownMenuTrigger>
 
                                                         <DropdownMenuContent align="end" className="w-64 p-2 rounded-xl shadow-xl border-gray-100 bg-white">
-                                                            {/* Email Group */}
-                                                            <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Email</DropdownMenuLabel>
-                                                            <DropdownMenuItem
-                                                                onClick={() => {
-                                                                    if (isInterviewActionBlocked) {
-                                                                        toast.error(interviewActionBlockedMessage);
-                                                                        return;
-                                                                    }
-                                                                    setEmailCandidate({ id: candidate.id, name: candidate.name, email: candidate.email, role: candidate.role });
-                                                                }}
-                                                                disabled={isInterviewActionBlocked}
-                                                                className={cn("rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors", isInterviewActionBlocked ? "text-gray-400 opacity-70" : "text-blue-600 focus:text-blue-700 focus:bg-blue-50")}
-                                                            >
-                                                                {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
-                                                                Send Mail
-                                                            </DropdownMenuItem>
-
-                                                            <DropdownMenuSeparator className="my-1 bg-gray-50" />
-
                                                             {/* Drive Group */}
                                                             <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Drive</DropdownMenuLabel>
+                                                            <DropdownMenuItem
+                                                                onClick={() => router.push(`/admin/candidates/${candidate.id}?report=activity&back=${encodeURIComponent("/admin/candidates")}`)}
+                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-slate-700 focus:text-slate-900 focus:bg-slate-50"
+                                                            >
+                                                                <Activity className="h-4 w-4 mr-2" />
+                                                                Activity
+                                                            </DropdownMenuItem>
                                                             <DropdownMenuItem
                                                                 onClick={() => handleMoveToDrive(candidate.driveId)}
                                                                 disabled={!candidate.driveId}

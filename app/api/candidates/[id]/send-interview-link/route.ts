@@ -7,6 +7,7 @@ import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
+import { appendCandidateActivity } from "@/lib/candidate-activity";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
     try {
@@ -125,6 +126,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 error: `Interview token refreshed, but email could not be sent: ${reason}`
             }, { status: 502 });
         }
+
+        await appendCandidateActivity(applicationId, {
+            type: "interview_invite_sent",
+            label: "Interview link sent",
+            details: `Sent at ${new Date().toISOString()}`,
+            timestamp: new Date().toISOString(),
+            source: "system",
+        });
 
         return NextResponse.json({
             success: true,

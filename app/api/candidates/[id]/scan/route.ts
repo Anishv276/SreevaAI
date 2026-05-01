@@ -9,6 +9,7 @@ import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { safeJsonParse } from "@/lib/utils";
 import { parseDriveScreeningSettings } from "@/lib/screening-criteria";
+import { appendCandidateActivity } from "@/lib/candidate-activity";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -145,6 +146,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             },
         });
 
+        await appendCandidateActivity(id, {
+            type: "resume_screened",
+            label: resumeStatus === "SHORTLISTED" ? "Resume shortlisted" : "Resume rejected",
+            details: `AI score ${score} vs threshold ${threshold}`,
+            timestamp: new Date().toISOString(),
+            source: "system",
+        });
+
         // 6. Email & interview invite (only in automatic mode)
         const isAutomatic = (application.drive.shortlistMode || "automatic") === "automatic";
 
@@ -169,7 +178,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 const interviewLink = isInterviewTokenRequired()
                     ? `${interviewBase}?token=${interview.accessToken}`
                     : interviewBase;
-                await sendApplicationStatusEmail({
+                const mailResult = await sendApplicationStatusEmail({
                     email: application.email,
                     fullName: application.fullName,
                     jobTitle: application.drive.title,
@@ -177,18 +186,42 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                     status: resumeStatus,
                     score,
                     interviewLink,
-                }).catch((err) => console.error("[SCAN API] Email trigger failed:", err));
+                }).catch((err) => {
+                    console.error("[SCAN API] Email trigger failed:", err);
+                    return { success: false };
+                });
+                if (mailResult?.success) {
+                    await appendCandidateActivity(id, {
+                        type: "email_sent",
+                        label: "Shortlisted email sent",
+                        details: `Interview link sent at ${new Date().toISOString()}`,
+                        timestamp: new Date().toISOString(),
+                        source: "system",
+                    });
+                }
             }
         } else if (isAutomatic) {
             const { sendApplicationStatusEmail } = await import("@/lib/mail");
-            await sendApplicationStatusEmail({
+            const mailResult = await sendApplicationStatusEmail({
                 email: application.email,
                 fullName: application.fullName,
                 jobTitle: application.drive.title,
                 orgId: application.drive.orgId ?? undefined,
                 status: "REJECTED",
                 score,
-            }).catch((err) => console.error("[SCAN API] Email trigger failed:", err));
+            }).catch((err) => {
+                console.error("[SCAN API] Email trigger failed:", err);
+                return { success: false };
+            });
+            if (mailResult?.success) {
+                await appendCandidateActivity(id, {
+                    type: "email_sent",
+                    label: "Rejection email sent",
+                    details: `Sent at ${new Date().toISOString()}`,
+                    timestamp: new Date().toISOString(),
+                    source: "system",
+                });
+            }
         }
 
         return NextResponse.json(updated);

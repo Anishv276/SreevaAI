@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { appendCandidateActivity } from "@/lib/candidate-activity";
 
 export async function POST(request: Request) {
     try {
@@ -62,6 +63,13 @@ export async function POST(request: Request) {
                     hiringStatus: "pending",
                 },
             });
+            await Promise.all(validIds.map((id) => appendCandidateActivity(id, {
+                type: "status_changed",
+                label: "Resume shortlisted",
+                details: "resume=shortlisted, interview=pending, hiring=pending",
+                timestamp: new Date().toISOString(),
+                source: "hr",
+            })));
             return NextResponse.json({ message: `${validIds.length} candidates shortlisted` });
         }
 
@@ -75,6 +83,14 @@ export async function POST(request: Request) {
                 },
             });
 
+            await Promise.all(validIds.map((id) => appendCandidateActivity(id, {
+                type: "status_changed",
+                label: action === "reject" ? "Resume rejected" : "Marked as not hired",
+                details: `resume=rejected, interview=Not Qualified, hiring=${action === "reject" ? "Not Shortlisted" : "Not Hired"}`,
+                timestamp: new Date().toISOString(),
+                source: "hr",
+            })));
+
             return NextResponse.json({ message: `${validIds.length} candidates marked as not hired` });
         }
 
@@ -83,6 +99,14 @@ export async function POST(request: Request) {
                 where: { id: { in: validIds } },
                 data: { hiringStatus: "hired", resumeStatus: "shortlisted", interviewStatus: "finished" },
             });
+
+            await Promise.all(validIds.map((id) => appendCandidateActivity(id, {
+                type: "status_changed",
+                label: "Candidate hired",
+                details: "resume=shortlisted, interview=finished, hiring=hired",
+                timestamp: new Date().toISOString(),
+                source: "hr",
+            })));
 
             try {
                 const driveIds = [...new Set(applications.map((a: (typeof applications)[number]) => a.drive.id))];

@@ -35,6 +35,7 @@ import {
     Trash2,
     Radio,
     Loader2,
+    Activity,
 } from "lucide-react";
 import {
     DropdownMenu,
@@ -785,6 +786,13 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                         </Button>
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="end" className="w-64 p-2 rounded-xl shadow-xl border-gray-100 bg-white">
+                                                        <DropdownMenuItem
+                                                            onClick={() => window.location.href = `/admin/candidates/${candidate.id}?report=activity&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`}
+                                                            className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-slate-700 focus:text-slate-900 focus:bg-slate-50"
+                                                        >
+                                                            <Activity className="h-4 w-4 mr-2" />
+                                                            Activity
+                                                        </DropdownMenuItem>
                                                         <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Interview</DropdownMenuLabel>
                                                         <DropdownMenuItem
                                                             onClick={() => {

@@ -10,6 +10,7 @@ import { generateId } from "@/lib/ids";
 import { parseDriveScreeningSettings } from "@/lib/screening-criteria";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
+import { appendCandidateActivity } from "@/lib/candidate-activity";
 
 const CHUNK_SIZE = 5;
 const pythonCmd = process.platform === "win32" ? "python" : "python3";
@@ -398,6 +399,14 @@ async function processOneResume(
                 interviewStatus: "pending",
                 hiringStatus: "pending",
             },
+        });
+
+        await appendCandidateActivity(screeningCandidate.id, {
+            type: "resume_screened",
+            label: resumeStatus === "SHORTLISTED" ? "Resume shortlisted" : "Resume rejected",
+            details: `AI score ${score} vs threshold ${threshold}`,
+            timestamp: new Date().toISOString(),
+            source: "system",
         });
 
         console.log(
