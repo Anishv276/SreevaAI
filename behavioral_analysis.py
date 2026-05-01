@@ -363,6 +363,10 @@ async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
             "Candidate was probed on a conflicting claim and provided a convincing clarification. "
             "Contradiction is considered closed — no further action needed on this specific inconsistency."
         ),
+        "meta_question": (
+            "Candidate paused to check if the interviewer could hear them or asked whether they were speaking to a bot. "
+            "No integrity concern — signal is informational only. Ishita acknowledged and continued."
+        ),
     }
 
     return interpretations.get(
