@@ -316,6 +316,19 @@ def build_directive(
             ]
         )
 
+    if "ownership_ambiguity" in active_signals:
+        lines.extend([
+            "OWNERSHIP AMBIGUITY DETECTED.",
+            "Candidate uses heavy team language ('we', 'our', 'team') with minimal personal ownership ('I', 'my').",
+            "This patterns suggests candidate contributed to team effort but is unclear on personal technical decisions.",
+            "[ACTION - MANDATORY]",
+            "Next turn, ask directly about PERSONAL contribution:",
+            "  - 'What specifically did YOU do versus the rest of the team?'",
+            "  - 'If I called your manager, what would they say YOUR individual contribution was?'",
+            "  - 'Walk me through what YOU personally built or decided — not what the team did.'",
+            "Wait for clear personal ownership language before moving on.",
+        ])
+
     if "follow_up_collapse" in active_signals:
         lines.extend(_build_collapse_probe_lines(collapse_stage, td.get("signal_events", [])))
 

@@ -472,6 +472,27 @@ function SkillRatingsContainer({ skills }: { skills: { name: string; stars: numb
   );
 }
 
+function _formatSignalSummary(signal: any): string {
+  // Use the LLM-generated interpretation from the backend if available
+  if (signal.interpretation) {
+    // Extract first sentence only for one-liner display
+    const firstSentence = signal.interpretation.split('.')[0] + '.';
+    return firstSentence.trim();
+  }
+
+  // Fallback for signals without LLM interpretation
+  const fallbacks: Record<string, string> = {
+    example_evasion: "Candidate gave theoretical answer when asked for concrete example",
+    follow_up_collapse: "Detailed first answer but follow-up lost depth",
+    latency_mismatch: "Answer timing suspicious — doesn't match question complexity",
+    complexity_latency_mismatch: "Complex question answered too fast, simple question too slow",
+    resume_claim_mismatch: "Resume claims lack concrete evidence or hands-on grounding",
+    depth_decay: "Answer quality declined across multiple topics",
+  };
+
+  return fallbacks[signal.signal] || `Signal detected: ${signal.signal}`;
+}
+
 export function buildHyringInterviewViewModel(i: {
   backHref?: string;
   candidate: { fullName?: string; createdAt?: string; location?: string; passportUrl?: string; interview?: any; assessment?: any; drive?: { role?: string; title?: string } };
@@ -1732,19 +1753,35 @@ export function InterviewReportHyring({
                             confidence_indicators: "Confidence Indicators",
                             integrity_flags: "Integrity Flags & Red Flags",
                             strengths_observed: "Behavioral Strengths",
-                            concerns_noted: "Behavioral Concerns"
+                            concerns_noted: "Behavioral Concerns",
+                            proctoring_signals_detected: "Proctoring Signals Detected"
                           };
+
+                          const isSignalObjects = value.length > 0 && typeof value[0] === 'object' && 'signal' in value[0];
+
                           return (
                             <div key={key}>
                               <p className="text-[11px] font-extrabold uppercase tracking-widest text-[#6B7079] mb-2">{labels[key]}</p>
-                              <ul className="space-y-1.5">
-                                {value.map((bullet: string, idx: number) => (
-                                  <li key={idx} className="flex gap-2.5 text-[13px] leading-snug text-[#1A1D22]">
-                                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1E9D55]" />
-                                    <span>{bullet}</span>
-                                  </li>
-                                ))}
-                              </ul>
+
+                              {isSignalObjects ? (
+                                <ul className="space-y-1.5">
+                                  {value.map((signal: any, idx: number) => (
+                                    <li key={idx} className="flex gap-2.5 text-[13px] leading-snug text-[#1A1D22]">
+                                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                                      <span>{_formatSignalSummary(signal)}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <ul className="space-y-1.5">
+                                  {value.map((bullet: string, idx: number) => (
+                                    <li key={idx} className="flex gap-2.5 text-[13px] leading-snug text-[#1A1D22]">
+                                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1E9D55]" />
+                                      <span>{bullet}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
                             </div>
                           );
                         }

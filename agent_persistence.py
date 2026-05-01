@@ -982,8 +982,8 @@ async def generate_interview_report(
         return
 
     try:
-        # Generate behavioral analysis early (no LLM calls)
-        behavioral_report = synthesize_behavioral_report(
+        # Generate behavioral analysis (includes LLM call for ownership_ambiguity signal)
+        behavioral_report = await synthesize_behavioral_report(
             transcript_lines=transcript_lines,
             answer_scores=answer_scores,
             total_duration_sec=int(proctoring_data.get("session_duration", 0)) if proctoring_data else 0,

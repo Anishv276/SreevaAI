@@ -5,9 +5,7 @@ and consistency checks into narrative behavioral insights for HR decision-making
 Core principle: Report WHAT HAPPENED, not metrics. Evidence-based analysis.
 """
 
-import json
-import re
-from typing import Any, Optional
+from typing import Any
 
 
 def extract_engagement_signals(
@@ -51,7 +49,7 @@ def extract_engagement_signals(
 
 
 def extract_consistency_signals(
-    transcript_lines: list[str],
+    transcript_lines: list[str],  # noqa: F841
     contradictions_found: list[dict],
 ) -> list[str]:
     """Check resume claims vs interview answers."""
@@ -187,11 +185,11 @@ def extract_integrity_flags(
     return signals
 
 
-def extract_proctoring_signals(
+async def extract_proctoring_signals(
     proctoring_events: list[dict],
 ) -> list[dict[str, Any]]:
     """
-    Extract hidden signals (recruiter_visible=False) when cumulative count >= 2.
+    Extract all visible signals + hidden signals (recruiter_visible=False) when cumulative count >= 2.
 
     Returns list of signal dicts with evidence formatted for recruiter visibility:
     - signal: signal name
@@ -199,6 +197,7 @@ def extract_proctoring_signals(
     - confidence: highest confidence among all firings
     - evidence: formatted evidence from the detection
     - interpretation: what this signal means for hiring decision
+    - recruiter_visible: whether it was visible by default
     """
     if not proctoring_events:
         return []
@@ -211,41 +210,96 @@ def extract_proctoring_signals(
             signal_groups[sig_name] = []
         signal_groups[sig_name].append(event)
 
-    # Filter for hidden signals (recruiter_visible=False) and count >= 2
+    # Include: visible signals (recruiter_visible=True) + hidden signals with count >= 2
     result = []
     for sig_name, events in signal_groups.items():
-        # Check if this signal is hidden (recruiter_visible=False)
-        if events and not events[0].get("recruiter_visible", True):
-            # Include if cumulative count >= 2 different firings OR confidence is very high
-            if len(events) >= 2 or (events and events[0].get("confidence", 0) >= 0.85):
-                highest_confidence = max(e.get("confidence", 0) for e in events)
-                turn_numbers = [e.get("turn", 0) for e in events if e.get("turn")]
+        if not events:
+            continue
 
-                # Format interpretation based on signal type
-                interpretation = _interpret_hidden_signal(sig_name, events)
+        is_visible = events[0].get("recruiter_visible", True)
+        event_count = len(events)
 
-                # Combine evidence from all firings
-                evidence_parts = []
-                for e in events[:2]:  # Show top 2 evidences
-                    ev = e.get("evidence", "")
-                    if ev:
-                        evidence_parts.append(ev)
-                combined_evidence = "; ".join(evidence_parts) if evidence_parts else "signal detected"
+        # Include if: always visible OR hidden but fired 2+ times OR hidden with very high confidence
+        should_include = (
+            is_visible or
+            event_count >= 2 or
+            (events[0].get("confidence", 0) >= 0.85)
+        )
 
-                result.append({
-                    "signal": sig_name,
-                    "turns": sorted(set(turn_numbers)),
-                    "confidence": round(highest_confidence, 2),
-                    "evidence": combined_evidence,
-                    "interpretation": interpretation,
-                })
+        if not should_include:
+            continue
+
+        highest_confidence = max(e.get("confidence", 0) for e in events)
+        turn_numbers = [e.get("turn", 0) for e in events if e.get("turn")]
+
+        # Format interpretation based on signal type (LLM for ownership_ambiguity, static for others)
+        interpretation = await _interpret_hidden_signal(sig_name, events)
+
+        # Combine evidence from all firings
+        evidence_parts = []
+        for e in events[:2]:  # Show top 2 evidences
+            ev = e.get("evidence", "")
+            if ev:
+                evidence_parts.append(ev)
+        combined_evidence = "; ".join(evidence_parts) if evidence_parts else "signal detected"
+
+        result.append({
+            "signal": sig_name,
+            "turns": sorted(set(turn_numbers)),
+            "confidence": round(highest_confidence, 2),
+            "evidence": combined_evidence,
+            "interpretation": interpretation,
+            "visible": is_visible,
+            "count": event_count,
+        })
 
     return result
 
 
-def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
-    """Generate recruiter-friendly interpretation of hidden signal."""
-    del events  # noqa: F841
+async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
+    """Generate recruiter-friendly interpretation of hidden signal using LLM for ownership_ambiguity and example_evasion."""
+
+    # For signals that benefit from LLM interpretation, use dynamic summary based on evidence
+    if signal_name in ("ownership_ambiguity", "example_evasion") and events:
+        try:
+            from openai import AsyncOpenAI
+
+            evidence_list = [e.get("evidence", "") for e in events if e.get("evidence")]
+            evidence_text = "; ".join(evidence_list) if evidence_list else f"signal {signal_name} detected"
+
+            client = AsyncOpenAI()
+
+            # Customize prompt based on signal type
+            if signal_name == "ownership_ambiguity":
+                signal_desc = "Candidate used 'we/our/team' without personal ownership claims"
+            elif signal_name == "example_evasion":
+                signal_desc = "Candidate was asked for an example but gave a theoretical answer"
+            else:
+                signal_desc = f"Signal: {signal_name}"
+
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an HR interviewer analyzing candidate behavior. Generate a single concise line (under 15 words) summarizing what this signal means for hiring."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Signal: {signal_desc}\nEvidence: {evidence_text}\n\nGenerate one short line about what this means for the candidate."
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=50
+            )
+
+            summary = response.choices[0].message.content.strip()
+            return summary
+        except Exception:
+            # Fallback to static interpretation if LLM fails
+            pass
+
+    # Static interpretations for other signals
     interpretations = {
         "example_evasion": (
             "When asked for concrete examples, candidate stayed theoretical or avoided specifics. "
@@ -276,7 +330,7 @@ def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
     )
 
 
-def synthesize_behavioral_report(
+async def synthesize_behavioral_report(
     transcript_lines: list[str],
     answer_scores: list[dict],
     total_duration_sec: int,
@@ -290,7 +344,7 @@ def synthesize_behavioral_report(
     communication = extract_communication_patterns(answer_scores)
     confidence = extract_confidence_indicators(answer_scores)
     integrity = extract_integrity_flags(proctoring_events, answer_scores, contradictions_found)
-    hidden_signals = extract_proctoring_signals(proctoring_events)
+    hidden_signals = await extract_proctoring_signals(proctoring_events)
 
     report = {
         "engagement_signals": engagement,
