@@ -1,4 +1,6 @@
 export const INTERVIEW_SUPPORT_EMAIL = "support@sreevaai.com";
+export const INTERVIEW_SUSPENDED_MESSAGE =
+  "Your account got suspended because no interviews are left. Please recharge immediately and contact support@sreevaai.com.";
 
 export function getSupportComposeUrl(params?: { subject?: string; body?: string }) {
   const subject = encodeURIComponent(params?.subject ?? "Support request");
@@ -8,6 +10,10 @@ export function getSupportComposeUrl(params?: { subject?: string; body?: string 
 
 export function getInterviewQuotaSupportMessage(action = "interviews") {
   return `Interview quota exhausted. Please contact ${INTERVIEW_SUPPORT_EMAIL} for further ${action} or go to Billing to upgrade your plan.`;
+}
+
+export function getInterviewActionBlockedMessage(isSuspended?: boolean) {
+  return isSuspended ? INTERVIEW_SUSPENDED_MESSAGE : getInterviewQuotaSupportMessage("interviews");
 }
 
 export function isInterviewQuotaLocked(status?: {

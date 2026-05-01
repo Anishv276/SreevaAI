@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { recordOrgBillingFromOpenAICompletion } from "@/lib/usage-metrics";
 import { getOpenAIClient } from "@/lib/openai";
+import { canUseRecruiterAssistant } from "@/lib/org-plans";
 import type OpenAI from "openai";
 
 // -----------------------------------------------------------------------------
@@ -82,6 +83,12 @@ export async function POST(req: NextRequest) {
         llmModel: true,
       },
     });
+    if (!canUseRecruiterAssistant(org?.plan)) {
+      return NextResponse.json(
+        { error: "Recruiter Assistant is not available on the Starter plan." },
+        { status: 403 }
+      );
+    }
     const orgOpenAIModel =
       (org?.llmProvider || "OPENAI") === "OPENAI" && org?.llmModel
         ? org.llmModel

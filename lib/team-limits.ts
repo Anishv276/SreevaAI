@@ -1,4 +1,7 @@
 export const UNLIMITED_TEAM_MEMBERS = 0;
+export const TEAM_LIMIT_SUPPORT_EMAIL = "support@sreevaai.com";
+export const TEAM_LIMIT_REACHED_MESSAGE =
+  `Workspace has been filled up. Please contact ${TEAM_LIMIT_SUPPORT_EMAIL}.`;
 
 export function isTeamLimitEnabled(maxTeamMembers?: number | null): boolean {
   return Number(maxTeamMembers ?? 0) > UNLIMITED_TEAM_MEMBERS;

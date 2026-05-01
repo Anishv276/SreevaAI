@@ -49,7 +49,7 @@ import {
     Field,
     Toggle
 } from "@/components/admin/settings/settings-shared";
-import { formatTeamLimit, getTeamLimitRemaining, isTeamLimitReached } from "@/lib/team-limits";
+import { TEAM_LIMIT_REACHED_MESSAGE, formatTeamLimit, getTeamLimitRemaining, isTeamLimitReached } from "@/lib/team-limits";
 
 
 
@@ -691,8 +691,7 @@ export default function SettingsPage() {
 
                 setInviteMessage(data.warning || "Invitation sent successfully.");
                 if (data.code === "TEAM_LIMIT_REACHED") {
-                    toast.error(data.error || "Team member limit reached. Please upgrade your plan.");
-                    router.push("/admin/billing");
+                    toast.error(data.error || TEAM_LIMIT_REACHED_MESSAGE);
                     return;
                 }
 
@@ -700,8 +699,7 @@ export default function SettingsPage() {
 
                 setInviteError(data.error || "Failed to send invite.");
                 if (data.code === "TEAM_LIMIT_REACHED") {
-                    toast.error(data.error || "Team member limit reached. Please upgrade your plan.");
-                    router.push("/admin/billing");
+                    toast.error(data.error || TEAM_LIMIT_REACHED_MESSAGE);
                 }
 
             }
@@ -1324,7 +1322,7 @@ export default function SettingsPage() {
                                             onClick={handleInviteSubmit}
                                             className="h-12 px-8 rounded-xl bg-gray-950 hover:bg-[#F97316] text-white font-bold text-sm transition-all shadow-xl shadow-gray-200/50 active:scale-95 disabled:grayscale"
                                         >
-                                            {isInviting ? <Loader2 className="h-5 w-5 animate-spin" /> : teamLimitReached ? "Upgrade Billing" : "Invite"}
+                                            {isInviting ? <Loader2 className="h-5 w-5 animate-spin" /> : teamLimitReached ? "Workspace Full" : "Invite"}
                                         </Button>
                                     </div>
 
@@ -1332,7 +1330,7 @@ export default function SettingsPage() {
                                         <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-orange-100 bg-orange-50/60 px-4 py-3">
                                             <div>
                                                 <p className="text-[11px] font-black uppercase tracking-widest text-[#F97316]">Team limit reached</p>
-                                                <p className="text-xs font-medium text-gray-600 mt-1">Go to Billing to upgrade your plan and add more members.</p>
+                                                <p className="text-xs font-medium text-gray-600 mt-1">{TEAM_LIMIT_REACHED_MESSAGE}</p>
                                             </div>
                                             <button
                                                 type="button"

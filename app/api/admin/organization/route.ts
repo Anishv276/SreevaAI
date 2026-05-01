@@ -17,6 +17,7 @@ export async function GET() {
             where: { id: session.orgId },
             select: {
                 name: true,
+                plan: true,
                 industry: true,
                 size: true,
                 website: true,

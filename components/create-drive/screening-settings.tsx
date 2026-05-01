@@ -343,7 +343,7 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                     <button
                                         type="button"
                                         onClick={addSkill}
-                                        className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-900 bg-slate-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+                                        className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                                     >
                                         <Plus className="h-4 w-4" />
                                         Add
@@ -412,7 +412,7 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                                     <button
                                         type="button"
                                         onClick={addCustomCheck}
-                                        className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-900 bg-slate-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+                                        className="inline-flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                                     >
                                         <Plus className="h-4 w-4" />
                                         Add
@@ -441,7 +441,7 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                             type="button"
                             onClick={() => setShortlistMode("automatic")}
                             className={cn(
-                                "rounded-xl px-5 py-2 text-sm font-semibold transition-colors duration-200",
+                                "rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors duration-200",
                                 shortlistMode === "automatic"
                                     ? "bg-slate-950 text-white shadow-sm"
                                     : "text-slate-500 hover:text-slate-800"
@@ -453,7 +453,7 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                             type="button"
                             onClick={() => setShortlistMode("manual")}
                             className={cn(
-                                "rounded-xl px-5 py-2 text-sm font-semibold transition-colors duration-200",
+                                "rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors duration-200",
                                 shortlistMode === "manual"
                                     ? "bg-slate-950 text-white shadow-sm"
                                     : "text-slate-500 hover:text-slate-800"

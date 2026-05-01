@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { sendGmailEmail } from "@/lib/google-auth";
+import { getOrgBillingStatus } from "@/lib/credits";
+import { getInterviewActionBlockedMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
 
 export async function POST(
     request: Request,
@@ -60,6 +62,26 @@ export async function POST(
             }, { status: 502 });
         }
 
+        const [org, billing] = await Promise.all([
+            prisma.organization.findUnique({
+                where: { id: targetOrgId },
+                select: { status: true },
+            }),
+            getOrgBillingStatus(targetOrgId),
+        ]);
+
+        const isSuspended = String(org?.status || "").toUpperCase() === "SUSPENDED" || String(org?.status || "").toUpperCase() === "CLOSED";
+        const quotaLocked = isInterviewQuotaLocked(billing);
+        if (isSuspended || quotaLocked) {
+            return NextResponse.json(
+                {
+                    error: getInterviewActionBlockedMessage(isSuspended),
+                    code: isSuspended ? "ACCOUNT_SUSPENDED" : "NO_INTERVIEWS",
+                },
+                { status: isSuspended ? 403 : 402 }
+            );
+        }
+
         const html = `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eee; border-radius: 12px; background: #ffffff; color: #374151;">
                 <div style="white-space: pre-wrap; font-size: 15px; line-height: 1.7;">${resolvedBody.replace(/\n/g, "<br/>")}</div>
@@ -68,12 +90,12 @@ export async function POST(
             </div>
         `;
 
-        const org = await prisma.organization.findUnique({
+        const orgCredentials = await prisma.organization.findUnique({
             where: { id: targetOrgId },
             select: { googleAccessToken: true, googleEmail: true }
         });
 
-        if (!org?.googleAccessToken || !org.googleEmail) {
+        if (!orgCredentials?.googleAccessToken || !orgCredentials.googleEmail) {
             return NextResponse.json({
                 error: "Connect Gmail in onboarding before sending candidate emails."
             }, { status: 400 });

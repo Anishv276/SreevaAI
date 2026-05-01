@@ -89,7 +89,6 @@ export async function GET(request: Request) {
                     skills: true,
                     extractedDetails: true,
                     interviewLanguage: true,
-                    interviewTime: true,
                     proctoringLevel: true,
                     interviewQuestions: true,
                     jdFileName: true,
@@ -268,7 +267,6 @@ export async function POST(request: Request) {
 
                 // Interview configuration
                 interviewLanguage: data.interviewLanguage || "English",
-                interviewTime: data.interviewTime ?? null,
                 proctoringLevel: data.interviewAntiCheat || "Medium",
                 interviewQuestions: data.interviewQuestions ? JSON.stringify(data.interviewQuestions) : "[]",
 

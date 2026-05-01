@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { X, ShieldAlert, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";

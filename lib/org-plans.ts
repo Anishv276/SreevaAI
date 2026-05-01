@@ -39,6 +39,24 @@ export function normalizeOrgPlan(plan?: string | null): OrgPlanId | null {
   return LEGACY_PLAN_MAP[raw] || null;
 }
 
+export function getDefaultMaxActiveDrivesForPlan(plan?: string | null): number {
+  const normalized = normalizeOrgPlan(plan);
+  if (normalized === "STARTER") return 1;
+  if (normalized === "PRO") return 5;
+  if (normalized === "BUSINESS") return 10;
+  return 0;
+}
+
+export function canUseRecruiterAssistant(plan?: string | null): boolean {
+  const normalized = normalizeOrgPlan(plan);
+  return normalized !== "STARTER";
+}
+
+export function canUseMultilingual(plan?: string | null): boolean {
+  const normalized = normalizeOrgPlan(plan);
+  return normalized !== "STARTER";
+}
+
 export function isOrgPlan(plan?: string | null): plan is OrgPlanId {
   return Boolean(normalizeOrgPlan(plan));
 }

@@ -2,14 +2,14 @@
 
 import { useState, useRef, useEffect, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Switch } from "@/components/ui/switch";
-import { Slider } from "@/components/ui/slider";
-import { Mic, ShieldAlert, Languages, Clock, Plus, Trash2, HelpCircle, BrainCircuit, ChevronDown, Globe, Play, Pause, RefreshCw, AudioLines, Search } from "lucide-react";
+import { Mic, ShieldAlert, Languages, Plus, Trash2, HelpCircle, BrainCircuit, ChevronDown, Globe, Play, Pause, RefreshCw, AudioLines, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CARTESIA_VOICES, DEFAULT_GOOGLE_TTS_MODEL, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
 
 interface InterviewProps {
     formData: any;
     updateFormData: (fn: (prev: any) => any) => void;
+    allowLanguageSelection?: boolean;
 }
 
 const LANGUAGES = [
@@ -24,7 +24,7 @@ function safeArray(val: any): string[] {
     return [];
 }
 
-export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
+export function InterviewSetup({ formData, updateFormData, allowLanguageSelection = true }: InterviewProps) {
     const [newQuestion, setNewQuestion] = useState("");
     const [showLangDropdown, setShowLangDropdown] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -243,56 +243,45 @@ export function InterviewSetup({ formData, updateFormData }: InterviewProps) {
 
     return (
         <div className="space-y-6 animate-in-up duration-500 max-w-3xl mx-auto pb-6">
-            {/* Language & Duration Settings */}
-            <div className="grid md:grid-cols-2 gap-4">
+            {/* Language Settings */}
+            <div className="grid md:grid-cols-1 gap-4">
                         {/* Language */}
                         <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm space-y-3">
                             <div className="flex items-center gap-2">
                                 <Globe className="w-4 h-4 text-[#F97316]" />
                                 <h4 className="text-sm font-bold text-gray-900">Language</h4>
                             </div>
-                            <div className="relative" ref={dropdownRef}>
-                                <button
-                                    onClick={() => setShowLangDropdown(!showLangDropdown)}
-                                    className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white text-sm font-medium flex items-center justify-between hover:border-orange-300 transition-all"
-                                >
-                                    <span>{formData.interviewLanguage || "English"}</span>
-                                    <ChevronDown className="w-4 h-4 text-gray-400" />
-                                </button>
-                                {showLangDropdown && (
-                                    <div className="absolute top-full left-0 w-full mt-1 bg-white border border-gray-100 rounded-lg shadow-lg z-10 max-h-48 overflow-auto">
-                                        {LANGUAGES.map(lang => (
-                                            <button
-                                                key={lang}
-                                                onClick={() => { setField("interviewLanguage", lang); setShowLangDropdown(false); }}
-                                                className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-orange-50 hover:text-[#F97316] transition-all"
-                                            >
-                                                {lang}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                            {allowLanguageSelection ? (
+                                <div className="relative" ref={dropdownRef}>
+                                    <button
+                                        onClick={() => setShowLangDropdown(!showLangDropdown)}
+                                        className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white text-sm font-medium flex items-center justify-between hover:border-orange-300 transition-all"
+                                    >
+                                        <span>{formData.interviewLanguage || "English"}</span>
+                                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                                    </button>
+                                    {showLangDropdown && (
+                                        <div className="absolute top-full left-0 w-full mt-1 bg-white border border-gray-100 rounded-lg shadow-lg z-10 max-h-48 overflow-auto">
+                                            {LANGUAGES.map(lang => (
+                                                <button
+                                                    key={lang}
+                                                    onClick={() => { setField("interviewLanguage", lang); setShowLangDropdown(false); }}
+                                                    className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-orange-50 hover:text-[#F97316] transition-all"
+                                                >
+                                                    {lang}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="h-10 px-4 rounded-lg border border-gray-200 bg-gray-50 text-sm font-semibold text-gray-700 flex items-center justify-between">
+                                    <span>English</span>
+                                    <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Starter plan</span>
+                                </div>
+                            )}
                         </div>
 
-                        {/* Duration */}
-                        <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm space-y-3">
-                            <div className="flex items-center gap-2">
-                                <Clock className="w-4 h-4 text-[#F97316]" />
-                                <h4 className="text-sm font-bold text-gray-900">Duration</h4>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <Slider
-                                    value={[formData.interviewTime || 10]}
-                                    onValueChange={([v]) => setField("interviewTime", v)}
-                                    min={5}
-                                    max={30}
-                                    step={5}
-                                    className="flex-1"
-                                />
-                                <span className="text-sm font-bold text-gray-900 w-16 text-center">{formData.interviewTime || 10} min</span>
-                            </div>
-                        </div>
                     </div>
 
                     {/* Interviewer Persona */}

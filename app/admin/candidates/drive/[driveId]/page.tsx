@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Briefcase, Edit3, Loader2, Upload, Lock } from "lucide-react";
+import { ArrowLeft, Briefcase, Edit3, Loader2, Upload, Lock, Users, Settings } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +26,6 @@ interface DriveDetails {
     inviteScheduleDays?: number | null;
     proctoringLevel?: string | null;
     interviewLanguage?: string | null;
-    interviewTime?: number | null;
     type?: string | null;
     description?: string | null;
     workMode?: string | null;
@@ -79,7 +78,6 @@ export default function DriveCandidatesPage() {
                     inviteScheduleDays: data.inviteScheduleDays ?? null,
                     proctoringLevel: data.proctoringLevel || null,
                     interviewLanguage: data.interviewLanguage || null,
-                    interviewTime: data.interviewTime ?? null,
                     type: data.type || null,
                     description: data.description || null,
                     workMode: data.workMode || null,
@@ -253,7 +251,7 @@ export default function DriveCandidatesPage() {
                     <button
                         type="button"
                         onClick={() => setActiveTab("screening")}
-                        className="font-bold underline underline-offset-2"
+                        className="ml-1 inline-flex items-center rounded-full border border-amber-200 bg-white px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-amber-700 transition-colors hover:bg-amber-50"
                     >
                         Click here
                     </button>{" "}
@@ -262,11 +260,19 @@ export default function DriveCandidatesPage() {
             )}
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-                <TabsList className="h-9 rounded-lg border border-gray-200 bg-white p-1 shadow-none">
-                    <TabsTrigger value="candidates" className="h-7.5 rounded-md px-3 text-sm font-semibold text-gray-500 data-[state=active]:bg-[#F97316] data-[state=active]:text-white">
+                <TabsList className="inline-flex h-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
+                    <TabsTrigger
+                        value="candidates"
+                        className="inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-slate-800 transition-colors hover:text-slate-950 data-[state=active]:bg-[#F97316] data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                        <Users className="h-4 w-4" />
                         Candidates
                     </TabsTrigger>
-                    <TabsTrigger value="screening" className="h-7.5 rounded-md px-3 text-sm font-semibold text-gray-500 data-[state=active]:bg-[#F97316] data-[state=active]:text-white">
+                    <TabsTrigger
+                        value="screening"
+                        className="inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-slate-800 transition-colors hover:text-slate-950 data-[state=active]:bg-[#F97316] data-[state=active]:text-white data-[state=active]:shadow-sm"
+                    >
+                        <Settings className="h-4 w-4" />
                         Screening Settings
                     </TabsTrigger>
                 </TabsList>
@@ -338,12 +344,13 @@ export default function DriveCandidatesPage() {
                                         setInviteScheduleDays(next.inviteScheduleDays);
                                         setScreeningCriteria(next.criteria as Record<string, any>);
                                     }}
+                                    className="h-10 rounded-xl border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 shadow-sm hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                                 >
                                     Reset
                                 </Button>
                                 <Button
                                     onClick={handleSaveScreeningCriteria}
-                                    className="bg-orange-600 hover:bg-orange-700 text-white"
+                                    className="h-10 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
                                 >
                                     Save Screening Criteria
                                 </Button>

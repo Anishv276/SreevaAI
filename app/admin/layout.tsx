@@ -9,7 +9,7 @@ import { Toaster } from "@/components/ui/toast-custom";
 import { AccountStatusHandler } from "@/components/admin/AccountStatusHandler";
 import { LowCreditsBanner } from "../../components/admin/LowCreditsBanner";
 import { prisma } from "@/lib/prisma";
-import { syncOrgStatusWithInterviewQuota } from "@/lib/credits";
+import { canUseRecruiterAssistant } from "@/lib/org-plans";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
     const session = await getSession();
@@ -21,15 +21,46 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     // Fetch account status and onboarding completion in real-time
     let orgData = { status: "ACTIVE", onboardingComplete: session.onboardingComplete === true };
     if (session.orgId) {
-        const org = await prisma.organization.findUnique({
-            where: { id: session.orgId },
-            select: { status: true, onboardingComplete: true }
-        } as any);
-        if (org) orgData = org;
+        try {
+            const org = await prisma.organization.findUnique({
+                where: { id: session.orgId },
+                select: {
+                    status: true,
+                    onboardingComplete: true,
+                    plan: true,
+                    interviewQuotaTotal: true,
+                    interviewQuotaUsed: true,
+                },
+            });
 
-        const syncedStatus = await syncOrgStatusWithInterviewQuota(session.orgId);
-        if (syncedStatus) {
-            orgData.status = syncedStatus as typeof orgData.status;
+            if (org) {
+                orgData = org;
+
+                const interviewQuotaTotal = Number(org.interviewQuotaTotal || 0);
+                const interviewQuotaUsed = Number(org.interviewQuotaUsed || 0);
+                const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
+
+                if (
+                    org.status === "ACTIVE" &&
+                    interviewQuotaTotal > 0 &&
+                    interviewQuotaRemaining <= 0
+                ) {
+                    const suspended = await prisma.organization.update({
+                        where: { id: session.orgId },
+                        data: { status: "SUSPENDED" },
+                        select: {
+                            status: true,
+                            onboardingComplete: true,
+                            plan: true,
+                            interviewQuotaTotal: true,
+                            interviewQuotaUsed: true,
+                        },
+                    });
+                    orgData = suspended;
+                }
+            }
+        } catch (error) {
+            console.error("[admin/layout] Failed to load org state:", error);
         }
     }
 
@@ -43,6 +74,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     // Real-time synchronization: prioritize DB state over session cookie for onboarding UI
     const needsOnboarding = orgData.onboardingComplete !== true;
     const showSidebar = !needsOnboarding;
+    const showRecruiterAssistant = showSidebar && canUseRecruiterAssistant((orgData as any).plan);
 
     return (
         <>
@@ -90,7 +122,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             </div>
 
             {/* Premium AI Assistant */}
-            {showSidebar && <RecruiterAssistant />}
+            {showRecruiterAssistant && <RecruiterAssistant />}
         </div>
         <Toaster />
         </>

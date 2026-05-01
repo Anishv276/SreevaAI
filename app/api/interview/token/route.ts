@@ -6,6 +6,7 @@ import { isInterviewReopenAllowed, isInterviewTokenRequired } from "@/lib/interv
 import { z } from "zod";
 import { DEFAULT_PROCTORING_SIGNALS, isProctoringSignalEnabled, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { getProctoringCategory } from "@/lib/proctoring";
+import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
 
 const DISPATCH_DEBOUNCE_MS = 12_000;
 const dispatchByRoom = new Map<string, number>();
@@ -417,15 +418,7 @@ export async function POST(req: NextRequest) {
         })();
         // -- END SMART COLLUSION DETECTION ---------------------------------------
 
-        const driveDurationMins = application.drive.interviewTime;
-        if (typeof driveDurationMins !== "number" || !Number.isFinite(driveDurationMins) || driveDurationMins <= 0) {
-            return NextResponse.json(
-                { error: "Drive interview duration is not configured" },
-                { status: 400 }
-            );
-        }
-
-        const durationSeconds = Math.floor(driveDurationMins * 60);
+        const durationSeconds = Math.floor(FIXED_INTERVIEW_DURATION_MINUTES * 60);
 
         const apiKey    = process.env.LIVEKIT_API_KEY;
         const apiSecret = process.env.LIVEKIT_API_SECRET;

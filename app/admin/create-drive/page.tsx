@@ -12,6 +12,7 @@ import { InterviewSetup } from "@/components/create-drive/interview-setup";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked } from "@/lib/interview-quota";
+import { canUseMultilingual } from "@/lib/org-plans";
 import {
   formatDriveLimit,
   getActiveDriveCount,
@@ -77,7 +78,6 @@ function CreateDriveForm() {
     requirements: "",
     extractedDetails: {},
     interviewLanguage: "English",
-    interviewTime: 10,
     interviewAntiCheat: "Medium",
     interviewQuestions: [],
     ttsProvider: "",
@@ -111,6 +111,7 @@ function CreateDriveForm() {
   const activeDriveCount =
     organization?.activeDriveCount ?? getActiveDriveCount(jobs);
   const maxActiveDrives = Number(organization?.maxActiveDrives || 0);
+  const allowLanguageSelection = canUseMultilingual(organization?.plan);
   const driveCreationLocked =
     !isEditMode && (isDriveCreationLocked(maxActiveDrives, activeDriveCount) || quotaLocked);
   // Keep ref in sync with state for use in async handlers
@@ -174,6 +175,14 @@ function CreateDriveForm() {
         .catch(() => {});
     }
   }, [isEditMode]);
+  useEffect(() => {
+    if (!allowLanguageSelection && formData.interviewLanguage !== "English") {
+      setFormData((prev: any) => ({
+        ...prev,
+        interviewLanguage: "English",
+      }));
+    }
+  }, [allowLanguageSelection, formData.interviewLanguage]);
   // Sync completed steps if we enter edit mode (e.g. after first save)
   useEffect(() => {
     if (isEditMode) {
@@ -216,7 +225,6 @@ function CreateDriveForm() {
               salary: (drive as any).salary || "",
               interviewEnabled: (drive as any).interviewEnabled ?? true,
               interviewLanguage: (drive as any).interviewLanguage || "English",
-              interviewTime: (drive as any).interviewTime || 10,
               interviewAntiCheat: (drive as any).proctoringLevel || "Medium",
               interviewQuestions:
                 typeof (drive as any).interviewQuestions === "string"
@@ -270,7 +278,6 @@ function CreateDriveForm() {
               salary: (drive as any).salary || "",
               interviewEnabled: (drive as any).interviewEnabled ?? true,
               interviewLanguage: (drive as any).interviewLanguage || "English",
-              interviewTime: (drive as any).interviewTime || 10,
               interviewAntiCheat: (drive as any).proctoringLevel || "Medium",
               interviewQuestions:
                 typeof (drive as any).interviewQuestions === "string"
@@ -340,7 +347,6 @@ function CreateDriveForm() {
           extractedDetails: {},
           interviewEnabled: true,
           interviewLanguage: "English",
-          interviewTime: 10,
           interviewAntiCheat: "Medium",
           interviewQuestions: [],
           ttsProvider: "",
@@ -594,8 +600,9 @@ function CreateDriveForm() {
       jdFileName: currentFormData.jdFileName || null,
       jdPreviewUrl: currentFormData.jdPreviewUrl,
       interviewEnabled: currentFormData.interviewEnabled,
-      interviewLanguage: currentFormData.interviewLanguage,
-      interviewTime: currentFormData.interviewTime,
+      interviewLanguage: allowLanguageSelection
+        ? currentFormData.interviewLanguage || "English"
+        : "English",
       interviewAntiCheat: currentFormData.interviewAntiCheat,
       interviewQuestions: parsedQuestions,
       ttsProvider: currentFormData.ttsProvider || "CARTESIA",
@@ -735,8 +742,9 @@ function CreateDriveForm() {
       jdFileName: currentFormData.jdFileName,
       jdPreviewUrl: currentFormData.jdPreviewUrl,
       interviewEnabled: currentFormData.interviewEnabled,
-      interviewLanguage: currentFormData.interviewLanguage,
-      interviewTime: currentFormData.interviewTime,
+      interviewLanguage: allowLanguageSelection
+        ? currentFormData.interviewLanguage || "English"
+        : "English",
       interviewAntiCheat: currentFormData.interviewAntiCheat,
       interviewQuestions: parsedQuestions,
       ttsProvider: currentFormData.ttsProvider || "CARTESIA",
@@ -1075,7 +1083,11 @@ function CreateDriveForm() {
             />
           )}
           {currentStep === 2 && (
-            <InterviewSetup formData={formData} updateFormData={setFormData} />
+            <InterviewSetup
+              formData={formData}
+              updateFormData={setFormData}
+              allowLanguageSelection={allowLanguageSelection}
+            />
           )}
           {currentStep === 3 && <FinalPreview formData={formData} />}
         </div>

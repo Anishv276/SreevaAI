@@ -6,7 +6,7 @@ import { normalizeRole } from "@/lib/auth";
 import { hashInviteToken, normalizeOrgRole } from "@/lib/invite";
 import { generateId } from "@/lib/ids";
 import { validatePasswordStrength } from "@/lib/validation";
-import { isTeamLimitReached } from "@/lib/team-limits";
+import { TEAM_LIMIT_REACHED_MESSAGE, isTeamLimitReached } from "@/lib/team-limits";
 
 type InviteRow = {
     id: string;
@@ -207,7 +207,7 @@ export async function POST(
 
         if (message === "TEAM_LIMIT_REACHED") {
             return NextResponse.json({
-                error: "Team member limit reached. Please go to Billing and upgrade your plan.",
+                error: TEAM_LIMIT_REACHED_MESSAGE,
                 code: "TEAM_LIMIT_REACHED",
             }, { status: 409 });
         }

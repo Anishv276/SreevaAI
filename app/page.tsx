@@ -34,6 +34,7 @@ import {
     type LucideIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { LANDING_PACKAGES as pricingPlans } from "@/lib/landing-packages";
 
 type Session = {
     role?: string;
@@ -143,46 +144,11 @@ const heroMetrics = [
     },
 ];
 
-const pricingPlans = [
-    {
-        name: "Starter",
-        price: "$99",
-        suffix: "/mo",
-        features: ["30 interviews included", "Price per interview: $3.30", "Topup: $4.5/interview"],
-        cta: "Book Demo",
-        featured: false,
-    },
-    {
-        name: "Growth",
-        price: "$299",
-        suffix: "/mo",
-        features: ["100 interviews included", "Price per interview: $2.99", "Topup: $3.5/interview", "Ask Sreeva AI"],
-        cta: "Book Demo",
-        featured: true,
-    },
-    {
-        name: "Scale",
-        price: "$699",
-        suffix: "/mo",
-        features: ["300 interviews included", "Price per interview: $2.33", "Topup: $2.8/interview", "Ask Sreeva AI"],
-        cta: "Book Demo",
-        featured: false,
-    },
-    {
-        name: "Business",
-        price: "Custom",
-        suffix: "",
-        features: ["600+ interviews", "Price per interview: Custom", "Topup: Included", "Ask Sreeva AI"],
-        cta: "Talk to Us",
-        featured: false,
-    },
-];
-
 const featureComparison = [
     { feature: "Pre-qualifying Questions", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Drives", starter: "1", pro: "5", scale: "10+", enterprise: "Unlimited" },
     { feature: "AI Voices", starter: "3", pro: "10+", scale: "20+", enterprise: "Unlimited" },
-    { feature: "Interview Duration", starter: "20 min", pro: "20 min", scale: "20 min", enterprise: "Custom" },
+    { feature: "Interview Duration", starter: "20 min", pro: "20 min", scale: "20 min", enterprise: "20 min" },
     { feature: "Ask Sreeva AI", starter: "—", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Adaptive AI Interview", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Resume + JD Based Questions", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },

@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, RefreshCw, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, CheckSquare, Square, Send, Loader2, Lock, FileText, Eye } from "lucide-react";
+import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, Loader2, Lock, FileText, Eye } from "lucide-react";
 
 import Link from "next/link";
 
@@ -63,7 +63,7 @@ import {
 } from "@/components/ui/select";
 
 import { useEffect, useRef } from "react";
-import { getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
+import { getInterviewActionBlockedMessage, getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
 
 
 
@@ -94,12 +94,18 @@ function EmailComposer({
     candidate,
 
     onClose,
+    isBlocked,
+    blockedMessage,
 
 }: {
 
     candidate: { id: string; name: string; email: string; role: string } | null;
 
     onClose: () => void;
+
+    isBlocked: boolean;
+
+    blockedMessage: string;
 
 }) {
 
@@ -136,6 +142,7 @@ function EmailComposer({
     const handleSend = async () => {
 
         if (!subject.trim() || !body.trim()) { toast.error("Subject and message are required"); return; }
+        if (isBlocked) { toast.error(blockedMessage); return; }
 
         setSending(true);
 
@@ -273,9 +280,9 @@ function EmailComposer({
 
                         onClick={handleSend}
 
-                        disabled={sending}
+                        disabled={sending || isBlocked}
 
-                        className="h-10 px-6 rounded-2xl bg-[#F97316] hover:bg-orange-600 text-white font-bold flex items-center gap-2"
+                        className="h-10 px-6 rounded-2xl border border-gray-200 bg-white text-gray-900 font-bold flex items-center gap-2 shadow-sm hover:bg-gray-50"
 
                     >
 
@@ -460,11 +467,9 @@ export default function CandidatesPage() {
 
     const [roleFilter, setRoleFilter] = useState("all");
 
-    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [isSelectionMode, setIsSelectionMode] = useState(true);
 
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-    const [sendingInterviewLinkId, setSendingInterviewLinkId] = useState<string | null>(null);
 
     const [isActionModalOpen, setIsActionModalOpen] = useState(false);
 
@@ -475,8 +480,6 @@ export default function CandidatesPage() {
     const [isBulkLoading, setIsBulkLoading] = useState(false);
 
     const [emailCandidate, setEmailCandidate] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
-
-    const [interviewLinkCandidate, setInterviewLinkCandidate] = useState<{ id: string; name: string; interviewStatus?: string } | null>(null);
 
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
 
@@ -511,6 +514,7 @@ export default function CandidatesPage() {
     }, []);
     const isSuspended = orgStatus === "SUSPENDED" || orgStatus === "CLOSED";
     const isInterviewActionBlocked = isSuspended || quotaLocked;
+    const interviewActionBlockedMessage = getInterviewActionBlockedMessage(isSuspended);
 
 
 
@@ -626,37 +630,18 @@ export default function CandidatesPage() {
 
 
 
-    const handleSendInterviewLink = async (candidate: { id: string; interviewStatus?: string }) => {
-        if (isInterviewActionBlocked) {
-            toast.error(getInterviewQuotaSupportMessage("interviews"));
+    const handleMoveToDrive = (candidateDriveId?: string | null) => {
+        if (!candidateDriveId) {
+            toast.error("This candidate is not linked to a drive yet.");
             return;
         }
 
-        setSendingInterviewLinkId(candidate.id);
+        const href = orgIdParam
+            ? `/admin/candidates/drive/${encodeURIComponent(candidateDriveId)}?orgId=${encodeURIComponent(orgIdParam)}`
+            : `/admin/candidates/drive/${encodeURIComponent(candidateDriveId)}`;
 
-        try {
-
-            const res = await fetch(`/api/candidates/${candidate.id}/send-interview-link`, { method: "POST" });
-
-            const data = await res.json();
-
-            if (res.ok) toast.success("Interview link resent - email delivered successfully");
-
-            else toast.error(data.error || "Failed to send interview link");
-
-        } catch { toast.error("Failed to send interview link"); }
-
-        finally { setSendingInterviewLinkId(null); }
-
+        router.push(href);
     };
-
-    const confirmSendInterviewLink = async () => {
-        if (!interviewLinkCandidate) return;
-        await handleSendInterviewLink(interviewLinkCandidate);
-        setInterviewLinkCandidate(null);
-    };
-
-
 
     const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string; hiringStatus?: string }, successMsg: string) => {
 
@@ -809,7 +794,7 @@ export default function CandidatesPage() {
 
             setSelectedIds(new Set());
 
-            setIsSelectionMode(false);
+            setIsSelectionMode(true);
 
             setIsActionModalOpen(false);
 
@@ -893,7 +878,7 @@ export default function CandidatesPage() {
             if (res.ok) {
                 toast.success(data?.message || "Emails sent");
                 setSelectedIds(new Set());
-                setIsSelectionMode(false);
+                setIsSelectionMode(true);
                 return;
             }
             toast.error(data?.error || "Failed to send emails");
@@ -942,41 +927,7 @@ export default function CandidatesPage() {
 
 
                 <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-                    <Button
-
-                        variant="outline"
-
-                        onClick={() => {
-
-                            if (isSelectionMode) {
-
-                                setIsSelectionMode(false);
-
-                                setSelectedIds(new Set());
-
-                            } else {
-
-                                setIsSelectionMode(true);
-
-                            }
-
-                        }}
-
-                        className={cn(
-
-                            "h-12 px-6 rounded-2xl font-bold transition-all flex items-center gap-2 border-white/40 bg-white/40 backdrop-blur-md shadow-sm",
-
-                            isSelectionMode ? "bg-orange-50 text-[#F97316] border-orange-200" : "text-gray-500 hover:text-[#F97316] hover:border-orange-100"
-
-                        )}
-
-                    >
-
-                        {isSelectionMode ? <><X className="h-4 w-4" /> Cancel</> : <><CheckSquare className="h-4 w-4" /> Select</>}
-
-                    </Button>
-
-                    <Button
+                        <Button
 
                         variant="outline"
 
@@ -1062,125 +1013,32 @@ export default function CandidatesPage() {
 
 
 
-            {/*  Bulk Action Bar  */}
-
-            {isSelectionMode && (
-
-                <div className="rounded-2xl border border-gray-200 bg-white/60 backdrop-blur-xl p-4 shadow-sm space-y-3">
-
-                    {/* Selection header row */}
-                    <div className="flex flex-wrap items-center gap-3">
-
-                        <button
-
-                            onClick={toggleSelectAll}
-
-                            className="flex items-center gap-2 text-[12px] font-black uppercase tracking-widest text-gray-500 hover:text-[#F97316] transition-colors"
-
-                        >
-
-                            {selectedIds.size === filteredCandidates.length && filteredCandidates.length > 0
-
-                                ? <><Square className="h-4 w-4" /> Deselect All</>
-
-                                : <><CheckSquare className="h-4 w-4" /> Select All</>
-
-                            }
-
-                        </button>
-
-                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">
-
-                            {selectedIds.size} selected
-
-                        </span>
-
-                    </div>
-
-                    {selectedIds.size > 0 && (
-
-                        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-
-                            {/* Group 1: Shortlist */}
-                            <div className="rounded-2xl border border-gray-100 bg-gray-50/40 px-3 py-2.5">
-                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-gray-500 mb-2">Shortlist</p>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <Button size="sm" onClick={() => handleBulkAction("shortlist")} className="h-8 px-3 rounded-xl bg-white border border-gray-200 text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
-                                        Shortlist
-                                    </Button>
-                                    <Button size="sm" onClick={() => handleBulkAction("reject")} className="h-8 px-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
-                                        <UserX className="h-3.5 w-3.5" /> Reject
-                                    </Button>
-                                    <Button size="sm" onClick={() => handleBulkSendEmail("screening")} disabled={isBulkLoading} title="Send appropriate email (shortlisted/rejected) based on current status" className="h-8 px-3 rounded-xl bg-white border border-gray-200 text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
-                                        <Mail className="h-3.5 w-3.5" /> Send Email
-                                    </Button>
-                                </div>
-                            </div>
-
-                            {/* Group 2: Hire */}
-                            <div className="rounded-2xl border border-gray-100 bg-gray-50/40 px-3 py-2.5">
-                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-gray-500 mb-2">Hire</p>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <Button size="sm" onClick={() => handleBulkAction("hire")} className="h-8 px-3 rounded-xl bg-white border border-gray-200 text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
-                                        Hire
-                                    </Button>
-                                    <Button size="sm" onClick={() => handleBulkAction("not_hired")} className="h-8 px-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none">
-                                        <UserX className="h-3.5 w-3.5" /> Not Hired
-                                    </Button>
-                                    <Button size="sm" onClick={() => handleBulkSendEmail("hiring")} disabled={isBulkLoading} title="Send appropriate email (hired/not hired) based on current status" className="h-8 px-3 rounded-xl bg-white border border-gray-200 text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
-                                        <Mail className="h-3.5 w-3.5" /> Send Email
-                                    </Button>
-                                </div>
-                            </div>
-
-                            {/* Group 3: Interview Link */}
-                            <div className="rounded-2xl border border-gray-100 bg-gray-50/40 px-3 py-2.5">
-                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-gray-500 mb-2">Interview Link</p>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <Button size="sm" onClick={async () => {
-                                        if (selectedIds.size === 0) return;
-                                        if (isInterviewActionBlocked) {
-                                            toast.error(getInterviewQuotaSupportMessage("interviews"));
-                                            return;
-                                        }
-                                        setIsBulkLoading(true);
-                                        try {
-                                            const results = await Promise.all(Array.from(selectedIds).map(id => fetch(`/api/candidates/${id}/send-interview-link`, { method: "POST" })));
-                                            const failed = results.filter(r => !r.ok).length;
-                                            const succeeded = results.length - failed;
-                                            if (succeeded > 0) toast.success(`Interview link sent to ${succeeded} candidate(s)`);
-                                            if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
-                                        } catch { toast.error("Failed to send interview links"); }
-                                        finally { setIsBulkLoading(false); }
-                                    }} disabled={isBulkLoading || isInterviewActionBlocked} className="h-8 px-3 rounded-xl bg-white border border-gray-200 text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
-                                        <Send className="h-3.5 w-3.5" /> Resend Link
-                                    </Button>
-                                </div>
-                            </div>
-
-                            {/* Group 4: Remove */}
-                            <div className="rounded-2xl border border-red-100 bg-red-50/40 px-3 py-2.5">
-                                <p className="text-[9px] font-black uppercase tracking-[0.22em] text-red-500 mb-2">Remove</p>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <Button size="sm" variant="outline" onClick={() => handleBulkAction("delete")} className="h-8 px-3 rounded-xl border-red-200 text-red-600 hover:bg-red-50 font-bold text-xs flex items-center gap-1.5">
-                                        <Trash2 className="h-3.5 w-3.5" /> Delete
-                                    </Button>
-                                </div>
-                            </div>
-
-                        </div>
-
-                    )}
-
-                </div>
-
-            )}
-
-
-
             {/*  KPI Stats Row  */}
 
             <CandidateStatsRow />
+
+
+
+            {/*  Bulk Action Bar  */}
+
+            {selectedIds.size > 0 && (
+                <div className="rounded-2xl border border-gray-200 bg-white/60 backdrop-blur-xl p-4 shadow-sm space-y-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">
+                            {selectedIds.size} selected
+                        </span>
+                    </div>
+
+                    <div className="rounded-2xl border border-red-100 bg-red-50/40 px-3 py-2.5">
+                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-red-500 mb-2">Remove</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button size="sm" variant="outline" onClick={() => handleBulkAction("delete")} className="h-8 px-3 rounded-xl border-red-200 text-red-600 hover:bg-red-50 font-bold text-xs flex items-center gap-1.5">
+                                <Trash2 className="h-3.5 w-3.5" /> Delete
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
 
 
@@ -1528,8 +1386,12 @@ export default function CandidatesPage() {
                                                     </div>
 
                                                     <Badge variant="secondary" className={cn(
-                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border border-gray-100 shadow-sm transition-all",
-                                                        mainStatus === 'rejected' ? 'bg-rose-50 text-rose-700 border-rose-100' : 'bg-white text-gray-700'
+                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border shadow-sm transition-all",
+                                                        mainStatus === 'shortlisted'
+                                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                                            : mainStatus === 'rejected'
+                                                                ? 'bg-rose-50 text-rose-700 border-rose-100'
+                                                                : 'bg-slate-50 text-slate-600 border-slate-100'
                                                     )}>
                                                         {mainStatusLabel}
                                                     </Badge>
@@ -1542,7 +1404,16 @@ export default function CandidatesPage() {
 
                                                 <div className="flex justify-center items-center h-full">
 
-                                                    <Badge variant="outline" className="rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-gray-100 bg-white text-gray-700 shadow-sm transition-all">
+                                                    <Badge variant="outline" className={cn(
+                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm transition-all border",
+                                                        interviewStageKey === "in progress"
+                                                            ? "bg-blue-50 text-blue-700 border-blue-100"
+                                                            : interviewStageKey === "completed" || interviewStageKey === "finished"
+                                                                ? "bg-indigo-50 text-indigo-700 border-indigo-100"
+                                                                : interviewStageKey === "pending"
+                                                                    ? "bg-slate-50 text-slate-500 border-slate-100"
+                                                                    : "bg-white text-gray-700 border-gray-100"
+                                                    )}>
                                                         {interviewStageLabel.length > 20 ? (
                                                             <span title={interviewStageLabel}>
                                                                 {interviewStageLabel.substring(0, 17)}...
@@ -1561,19 +1432,19 @@ export default function CandidatesPage() {
                                                 <div className="flex justify-center items-center h-full">
 
                                                     {isHiredResult ? (
-                                                        <Badge className="bg-white text-gray-700 border-gray-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
+                                                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
                                                             {hiringDecisionLabel}
                                                         </Badge>
                                                     ) : isNotHiredResult ? (
-                                                        <Badge variant="outline" className="bg-white text-gray-700 border-gray-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
+                                                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
                                                             {hiringDecisionLabel}
                                                         </Badge>
                                                     ) : hiringDecision === 'not shortlisted' ? (
-                                                        <Badge variant="outline" className="bg-rose-50 text-rose-600 border-rose-200 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
+                                                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
                                                             {hiringDecisionLabel}
                                                         </Badge>
                                                     ) : (
-                                                        <Badge variant="outline" className="bg-white text-gray-400 border-gray-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest">
+                                                        <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest">
                                                             {hiringDecisionLabel}
                                                         </Badge>
                                                     )}
@@ -1642,49 +1513,38 @@ export default function CandidatesPage() {
 
                                                         </DropdownMenuTrigger>
 
-                                                        <DropdownMenuContent align="end" className="w-64 p-2 rounded-xl shadow-xl border-gray-100 bg-white">                                                            {/* Actions menu without Shortlist and Reject */}
+                                                        <DropdownMenuContent align="end" className="w-64 p-2 rounded-xl shadow-xl border-gray-100 bg-white">
                                                             {/* Email Group */}
                                                             <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Email</DropdownMenuLabel>
                                                             <DropdownMenuItem
                                                                 onClick={() => {
                                                                     if (isInterviewActionBlocked) {
-                                                                        toast.error(getInterviewQuotaSupportMessage("interviews"));
+                                                                        toast.error(interviewActionBlockedMessage);
                                                                         return;
                                                                     }
-                                                                    setInterviewLinkCandidate({ id: candidate.id, name: candidate.name, interviewStatus: candidate.interviewStatus });
+                                                                    setEmailCandidate({ id: candidate.id, name: candidate.name, email: candidate.email, role: candidate.role });
                                                                 }}
-                                                                disabled={sendingInterviewLinkId === candidate.id || isInterviewActionBlocked}
-                                                                className={cn("rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors", isInterviewActionBlocked ? "text-gray-400 opacity-70" : "text-gray-700 focus:bg-gray-50")}
+                                                                disabled={isInterviewActionBlocked}
+                                                                className={cn("rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors", isInterviewActionBlocked ? "text-gray-400 opacity-70" : "text-blue-600 focus:text-blue-700 focus:bg-blue-50")}
                                                             >
-                                                                {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2" /> : <RefreshCw className={cn("h-4 w-4 mr-2", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
-                                                                {sendingInterviewLinkId === candidate.id ? "Sending..." : "Send Interview Link"}
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem
-                                                                onClick={() => setEmailCandidate({ id: candidate.id, name: candidate.name, email: candidate.email, role: candidate.role })}
-                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-gray-700 focus:text-gray-900 focus:bg-gray-50"
-                                                            >
-                                                                <Mail className="h-4 w-4 mr-2" />
+                                                                {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
                                                                 Send Mail
                                                             </DropdownMenuItem>
 
                                                             <DropdownMenuSeparator className="my-1 bg-gray-50" />
 
-                                                            {/* Hire Group */}
-                                                            <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Hire</DropdownMenuLabel>
+                                                            {/* Drive Group */}
+                                                            <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Drive</DropdownMenuLabel>
                                                             <DropdownMenuItem
-                                                                onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${candidate.name} hired - confirmation email sent`)}
-                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer text-gray-700 focus:text-gray-900 focus:bg-gray-50 transition-colors"
+                                                                onClick={() => handleMoveToDrive(candidate.driveId)}
+                                                                disabled={!candidate.driveId}
+                                                                className={cn(
+                                                                    "rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors",
+                                                                    candidate.driveId ? "text-gray-700 focus:text-gray-900 focus:bg-gray-50" : "text-gray-400 opacity-70"
+                                                                )}
                                                             >
-                                                                <Award className="h-4 w-4 mr-2" />
-                                                                Hire this person
-                                                            </DropdownMenuItem>
-
-                                                            <DropdownMenuItem
-                                                                onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "not hired" }, `${candidate.name} marked as Not Hired - email sent`)}
-                                                                className="rounded-lg px-3 py-2 font-bold cursor-pointer text-gray-600 focus:text-gray-900 focus:bg-gray-50 transition-colors"
-                                                            >
-                                                                <UserX className="h-4 w-4 mr-2" />
-                                                                Mark as not hired
+                                                                <Briefcase className="h-4 w-4 mr-2" />
+                                                                Move to Drive
                                                             </DropdownMenuItem>
 
                                                         </DropdownMenuContent>
@@ -1819,34 +1679,6 @@ export default function CandidatesPage() {
 
             />
 
-            <ActionConfirmModal
-
-                isOpen={!!interviewLinkCandidate}
-
-                onClose={() => setInterviewLinkCandidate(null)}
-
-                onConfirm={confirmSendInterviewLink}
-
-                title="Send Interview Link?"
-
-                description={
-                    interviewLinkCandidate
-                        ? `Send a fresh interview link to ${interviewLinkCandidate.name}? This will deliver a new access token to the candidate.`
-                        : "Send a fresh interview link? This will deliver a new access token to the candidate."
-                }
-
-                confirmText="Send Link"
-
-                cancelText="Cancel"
-
-                variant="info"
-
-                isLoading={sendingInterviewLinkId === interviewLinkCandidate?.id}
-
-            />
-
-
-
             {/* AI Assistant */}
 
 
@@ -1855,7 +1687,12 @@ export default function CandidatesPage() {
 
             {/* Email Composer */}
 
-            <EmailComposer candidate={emailCandidate} onClose={() => setEmailCandidate(null)} />
+            <EmailComposer
+                candidate={emailCandidate}
+                onClose={() => setEmailCandidate(null)}
+                isBlocked={isInterviewActionBlocked}
+                blockedMessage={interviewActionBlockedMessage}
+            />
 
         </div>
 

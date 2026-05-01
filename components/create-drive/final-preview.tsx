@@ -130,25 +130,17 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
                                     </p>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-3">
-                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
-                                            Language
-                                        </p>
-                                        <p className="mt-1 flex items-center gap-2 text-sm font-bold text-gray-800">
-                                            <Languages className="h-3.5 w-3.5 text-orange-400" />
-                                            {formData.interviewLanguage || "English"}
-                                        </p>
-                                    </div>
-
-                                    <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-3">
-                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
-                                            Duration
-                                        </p>
-                                        <p className="mt-1 text-sm font-bold text-gray-800">
-                                            {formData.interviewTime || 10} mins
-                                        </p>
-                                    </div>
+                                <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-3">
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
+                                        Language
+                                    </p>
+                                    <p className="mt-1 flex items-center gap-2 text-sm font-bold text-gray-800">
+                                        <Languages className="h-3.5 w-3.5 text-orange-400" />
+                                        {formData.interviewLanguage || "English"}
+                                    </p>
+                                    <p className="mt-2 text-[11px] font-medium text-gray-500">
+                                        Interview duration is fixed at 20 minutes.
+                                    </p>
                                 </div>
 
                                 <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-3">

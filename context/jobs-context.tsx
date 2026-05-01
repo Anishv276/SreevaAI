@@ -32,6 +32,7 @@ interface Pagination {
 
 interface OrganizationSettings {
     status?: string;
+    plan?: string;
     maxActiveDrives?: number;
     activeDriveCount?: number;
 }
@@ -76,6 +77,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             const data = await res.json();
             setOrganization({
                 status: data.status || "ACTIVE",
+                plan: data.plan || undefined,
                 maxActiveDrives: Number(data.maxActiveDrives || 0),
                 activeDriveCount: Number(data.activeDriveCount || 0),
             });

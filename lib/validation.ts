@@ -51,11 +51,6 @@ export const createDriveSchema = z.object({
   jdFileName: z.string().nullable().optional(),
   jdPreviewUrl: z.string().nullable().optional(),
   interviewLanguage: z.string().optional(),
-  interviewTime: z.preprocess((val) => {
-    if (val === null || val === undefined || val === "") return undefined;
-    const n = Number(val);
-    return isNaN(n) ? undefined : n;
-  }, z.coerce.number().int().positive().optional()),
   interviewAntiCheat: z.string().optional(),
   interviewQuestions: z.array(z.any()).optional(),
   ttsProvider: z.string().optional(),

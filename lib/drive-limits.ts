@@ -1,4 +1,5 @@
 export const UNLIMITED_ACTIVE_DRIVES = 0;
+export const FIXED_INTERVIEW_DURATION_MINUTES = 20;
 
 export type DriveLike = {
 };

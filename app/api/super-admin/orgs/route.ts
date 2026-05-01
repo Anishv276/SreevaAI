@@ -354,7 +354,10 @@ export async function POST(request: Request) {
                 name: orgName,
                 slug: slug.toLowerCase().replace(/\s+/g, "-"),
                 plan: normalizeOrgPlan(plan) || DEFAULT_ORG_PLAN,
-                maxActiveDrives: Math.max(0, Number(maxActiveDrives ?? 0) || 0),
+                maxActiveDrives:
+                    maxActiveDrives !== undefined && maxActiveDrives !== null && String(maxActiveDrives).trim() !== ""
+                        ? Math.max(0, Number(maxActiveDrives) || 0)
+                        : 0,
                 maxTeamMembers: Math.max(0, Number(maxTeamMembers ?? 0) || 0),
                 interviewQuotaTotal: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
                 creditsTotal: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),

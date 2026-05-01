@@ -150,7 +150,6 @@ model Drive {
   extractedDetails   String?       @default("{}")
   screeningCriteria  String?       @default("{}")
   interviewLanguage  String?       @default("English")
-  interviewTime      Int?
   proctoringLevel    String?       @default("Medium")
   interviewQuestions String?       @default("[]")
   jdFileName         String?

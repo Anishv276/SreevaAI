@@ -233,7 +233,7 @@ export default function DrivesPage() {
             </div>
 
             {/* Cards Grid */}
-            <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[repeat(2,560px)] justify-start">
+            <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[repeat(2,480px)] justify-start">
                 {isLoading ? (
                     <div className="col-span-full flex w-full flex-col items-center justify-center py-24 min-h-[320px]">
                         <Loader2 className="h-10 w-10 text-orange-500 animate-spin mb-3" />
@@ -298,19 +298,19 @@ export default function DrivesPage() {
                                 key={drive.id}
                                 className="group cursor-pointer w-full"
                             >
-                                <div className="relative h-full overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-orange-200 hover:shadow-[0_20px_50px_rgba(15,23,42,0.12)] flex flex-col">
+                                <div className="relative h-full overflow-hidden rounded-[1.5rem] border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-orange-200 hover:shadow-[0_20px_50px_rgba(15,23,42,0.12)] flex flex-col">
                                     <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-400 via-amber-400 to-orange-500" />
                                     <div className="absolute right-0 top-0 h-28 w-28 rounded-bl-full bg-gradient-to-br from-orange-50 to-transparent opacity-70" />
 
                                     {/* Card Header */}
-                                    <div className="relative p-5 pb-4">
-                                        <div className="mb-5 flex items-start justify-between gap-4">
-                                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-orange-100 bg-orange-50 text-orange-600 shadow-[0_6px_20px_rgba(249,115,22,0.12)] transition-transform group-hover:scale-105">
-                                                <Briefcase className="h-5 w-5" />
+                                    <div className="relative p-4 pb-3.5">
+                                        <div className="mb-4 flex items-start justify-between gap-3">
+                                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-orange-100 bg-orange-50 text-orange-600 shadow-[0_6px_20px_rgba(249,115,22,0.12)] transition-transform group-hover:scale-105">
+                                                <Briefcase className="h-4.5 w-4.5" />
                                             </div>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="secondary" size="icon" className="h-9 w-9 rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:text-slate-700">
+                                                    <Button variant="secondary" size="icon" className="h-8.5 w-8.5 rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:text-slate-700">
                                                         <MoreHorizontal className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
@@ -341,39 +341,39 @@ export default function DrivesPage() {
                                             </DropdownMenu>
                                         </div>
 
-                                        <h3 className="text-[17px] font-extrabold leading-snug tracking-tight text-slate-950 mb-2 line-clamp-2 group-hover:text-orange-600 transition-colors">
+                                        <h3 className="text-[16px] font-extrabold leading-snug tracking-tight text-slate-950 mb-2 line-clamp-2 group-hover:text-orange-600 transition-colors">
                                             {drive.title}
                                         </h3>
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                                            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
                                                 Drive
                                             </span>
                                         </div>
                                     </div>
 
                                     {/* Card Body */}
-                                    <div className="relative px-5 pb-4 space-y-3.5 flex-1">
-                                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
-                                            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400 mb-2">Role</p>
-                                            <p className="text-[13px] font-semibold text-slate-800 leading-relaxed line-clamp-2">
+                                    <div className="relative px-4 pb-3.5 space-y-3 flex-1">
+                                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                                            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400 mb-1.5">Role</p>
+                                            <p className="text-[12px] font-semibold text-slate-800 leading-relaxed line-clamp-2">
                                                 {drive.role || "Not specified"}
                                             </p>
                                         </div>
 
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_2px_10px_rgba(15,23,42,0.03)]">
-                                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400 mb-2">
-                                                    <Users className="h-3.5 w-3.5 text-orange-500" />
+                                        <div className="grid grid-cols-2 gap-2.5">
+                                            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_2px_10px_rgba(15,23,42,0.03)]">
+                                                <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.22em] text-slate-400 mb-1.5">
+                                                    <Users className="h-3 w-3 text-orange-500" />
                                                     Candidates
                                                 </div>
-                                                <p className="text-[22px] font-black text-slate-950 leading-none">{applicants}</p>
+                                                <p className="text-[20px] font-black text-slate-950 leading-none">{applicants}</p>
                                             </div>
-                                            <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-[0_2px_10px_rgba(15,23,42,0.03)]">
-                                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.22em] text-slate-400 mb-2">
-                                                    <Target className="h-3.5 w-3.5 text-orange-500" />
+                                            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_2px_10px_rgba(15,23,42,0.03)]">
+                                                <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.22em] text-slate-400 mb-1.5">
+                                                    <Target className="h-3 w-3 text-orange-500" />
                                                     Created
                                                 </div>
-                                                <p className="text-[14px] font-bold text-slate-800 leading-tight">
+                                                <p className="text-[13px] font-bold text-slate-800 leading-tight">
                                                     {createdAt}
                                                 </p>
                                             </div>
@@ -391,19 +391,19 @@ export default function DrivesPage() {
                                     </div>
 
                                     {/* Card Footer */}
-                                    <div className="relative p-5 pt-0 mt-auto">
+                                    <div className="relative p-4 pt-0 mt-auto">
                                         <div className="mb-3 h-px bg-gradient-to-r from-slate-200 via-slate-100 to-transparent" />
                                         <div className="grid grid-cols-1 gap-3">
                                             <Button
                                                 size="sm"
-                                                className="h-10 rounded-xl bg-slate-950 text-white font-bold shadow-[0_10px_20px_rgba(15,23,42,0.14)] transition-all hover:bg-orange-600 hover:shadow-[0_14px_30px_rgba(249,115,22,0.22)]"
+                                                className="h-9 rounded-xl bg-slate-950 text-white font-bold shadow-[0_10px_20px_rgba(15,23,42,0.14)] transition-all hover:bg-orange-600 hover:shadow-[0_14px_30px_rgba(249,115,22,0.22)] text-[13px]"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     router.push(`/admin/candidates/drive/${encodeURIComponent(drive.id)}`);
                                                 }}
                                             >
                                                 View Candidates
-                                                <ArrowUpRight className="ml-2 h-4 w-4" />
+                                                <ArrowUpRight className="ml-2 h-3.5 w-3.5" />
                                             </Button>
                                         </div>
                                     </div>

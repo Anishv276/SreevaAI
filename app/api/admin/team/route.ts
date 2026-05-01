@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { buildInviteUrl, generateInviteToken, getInviteExpiry, normalizeOrgRole } from "@/lib/invite";
 import { sendTeamInviteEmail } from "@/lib/mail";
-import { isTeamLimitReached } from "@/lib/team-limits";
+import { TEAM_LIMIT_REACHED_MESSAGE, isTeamLimitReached } from "@/lib/team-limits";
 
 async function hasInviteTable() {
     const result = await prisma.$queryRawUnsafe<Array<{ exists: boolean }>>(
@@ -287,7 +287,7 @@ export async function POST(request: Request) {
         console.error("Invite team error:", error);
         if (error instanceof Error && error.message === "TEAM_LIMIT_REACHED") {
             return NextResponse.json({
-                error: "Team member limit reached. Please go to Billing and upgrade your plan.",
+                error: TEAM_LIMIT_REACHED_MESSAGE,
                 code: "TEAM_LIMIT_REACHED",
             }, { status: 409 });
         }

@@ -13,7 +13,7 @@ import { useCandidates } from "@/context/candidates-context";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
-import { getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
+import { getInterviewActionBlockedMessage, getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     AlertCircle,
@@ -31,7 +31,6 @@ import {
     BadgeCheck,
     CheckSquare,
     Square,
-    X,
     Trash2,
     Radio,
 } from "lucide-react";
@@ -59,7 +58,7 @@ function normalizeStatusKey(value?: string) {
 }
 export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     const { candidates, pagination, isLoading, error, fetchCandidates, clearError } = useCandidates();
-    const { jobs } = useJobs();
+    const { jobs, organization } = useJobs();
     const [searchTerm, setSearchTerm] = useState("");
     const [resumeFilter, setResumeFilter] = useState("all");
     const [interviewFilter, setInterviewFilter] = useState("all");
@@ -69,9 +68,12 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     const [pageSize, setPageSize] = useState(20);
     const [sendingInterviewLinkId, setSendingInterviewLinkId] = useState<string | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [isSelectionMode, setIsSelectionMode] = useState(true);
     const [isBulkLoading, setIsBulkLoading] = useState(false);
     const [quotaLocked, setQuotaLocked] = useState(false);
+    const isSuspended = String(organization?.status || "").toUpperCase() === "SUSPENDED" || String(organization?.status || "").toUpperCase() === "CLOSED";
+    const isInterviewActionBlocked = isSuspended || quotaLocked;
+    const interviewActionBlockedMessage = getInterviewActionBlockedMessage(isSuspended);
     useEffect(() => {
         const handler = setTimeout(() => {
             let startDate: string | undefined;
@@ -152,8 +154,8 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
         }
     };
     const handleSendInterviewLink = async (candidate: { id: string; name: string; interviewStatus?: string }) => {
-        if (quotaLocked) {
-            toast.error(getInterviewQuotaSupportMessage("interviews"));
+        if (isInterviewActionBlocked) {
+            toast.error(interviewActionBlockedMessage);
             return;
         }
         try {
@@ -199,7 +201,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     };
     const clearSelection = () => {
         setSelectedIds(new Set());
-        setIsSelectionMode(false);
+        setIsSelectionMode(true);
     };
     const handleBulkStatus = async (action: "hire" | "not_hired" | "reject" | "shortlist" | "delete") => {
         if (!selectedCount || isBulkLoading) return;
@@ -226,8 +228,8 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     };
     const handleBulkSendInterviewLink = async () => {
         if (!selectedCount || isBulkLoading) return;
-        if (quotaLocked) {
-            toast.error(getInterviewQuotaSupportMessage("interviews"));
+        if (isInterviewActionBlocked) {
+            toast.error(interviewActionBlockedMessage);
             return;
         }
         try {
@@ -254,6 +256,10 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
         targetAction?: "shortlist" | "reject" | "hire" | "nothired"
     ) => {
         if (!selectedCount || isBulkLoading) return;
+        if (isInterviewActionBlocked) {
+            toast.error(interviewActionBlockedMessage);
+            return;
+        }
         try {
             setIsBulkLoading(true);
             const res = await fetch("/api/candidates/bulk-email", {
@@ -327,23 +333,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                 { value: "pending", label: "Pending", colorClass: "text-slate-600" },
                             ]}
                         />
-                        <Button
-                            variant="outline"
-                            type="button"
-                            onClick={() => {
-                                if (isSelectionMode) {
-                                    clearSelection();
-                                } else {
-                                    setIsSelectionMode(true);
-                                }
-                            }}
-                            className={cn(
-                                "h-12 px-5 rounded-2xl font-bold transition-all flex items-center gap-2 shadow-none",
-                                isSelectionMode ? "bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:text-gray-900" : "bg-white text-gray-500 border-white/40 hover:bg-gray-50 hover:text-[#F97316] hover:border-orange-100"
-                            )}
-                        >
-                            {isSelectionMode ? <><X className="h-4 w-4" /> Cancel</> : <><CheckSquare className="h-4 w-4" /> Select</>}
-                        </Button>
                     </div>
                 </div>
             </div>
@@ -385,7 +374,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                         size="sm"
                                         onClick={() => handleBulkStatus("shortlist")}
                                         disabled={isBulkLoading}
-                                        className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                        className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
                                     >
                                         <Target className="h-3.5 w-3.5" /> Shortlist
                                     </Button>
@@ -393,16 +382,16 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                         size="sm"
                                         onClick={() => handleBulkStatus("reject")}
                                         disabled={isBulkLoading}
-                                        className="h-8 px-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                        className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
                                     >
                                         <UserX className="h-3.5 w-3.5" /> Reject
                                     </Button>
                                     <Button
                                         size="sm"
                                         onClick={() => handleBulkSendEmail("screening")}
-                                        disabled={isBulkLoading}
-                                        title="Send appropriate email (shortlisted/rejected) based on current status"
-                                        className="h-8 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                        disabled={isBulkLoading || isInterviewActionBlocked}
+                                        title={isInterviewActionBlocked ? interviewActionBlockedMessage : "Send appropriate email (shortlisted/rejected) based on current status"}
+                                        className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
                                     >
                                         <Mail className="h-3.5 w-3.5" /> Send Email
                                     </Button>
@@ -417,7 +406,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                         size="sm"
                                         onClick={() => handleBulkStatus("hire")}
                                         disabled={isBulkLoading}
-                                        className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                        className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
                                     >
                                         <BadgeCheck className="h-3.5 w-3.5" /> Hire
                                     </Button>
@@ -425,16 +414,16 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                         size="sm"
                                         onClick={() => handleBulkStatus("not_hired")}
                                         disabled={isBulkLoading}
-                                        className="h-8 px-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                        className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
                                     >
                                         <UserX className="h-3.5 w-3.5" /> Not Hired
                                     </Button>
                                     <Button
                                         size="sm"
                                         onClick={() => handleBulkSendEmail("hiring")}
-                                        disabled={isBulkLoading}
-                                        title="Send appropriate email (hired/not hired) based on current status"
-                                        className="h-8 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                        disabled={isBulkLoading || isInterviewActionBlocked}
+                                        title={isInterviewActionBlocked ? interviewActionBlockedMessage : "Send appropriate email (hired/not hired) based on current status"}
+                                        className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
                                     >
                                         <Mail className="h-3.5 w-3.5" /> Send Email
                                     </Button>
@@ -450,7 +439,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                         onClick={handleBulkSendInterviewLink}
                                         disabled={isBulkLoading || quotaLocked}
                                         title={quotaLocked ? getInterviewQuotaSupportMessage("interviews") : undefined}
-                                        className="h-8 px-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
+                                        className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
                                     >
                                         {quotaLocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Link
                                     </Button>
@@ -606,12 +595,12 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                         >
                                             {isSelectionMode && (
                                                 <TableCell className="pl-6 py-5" onClick={(e) => e.stopPropagation()}>
-                                                        <Checkbox
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            checked={selectedIds.has(candidate.id)}
-                                                            onCheckedChange={() => toggleSelected(candidate.id)}
-                                                            aria-label={`Select ${displayName}`}
-                                                        />
+                                                    <Checkbox
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        checked={selectedIds.has(candidate.id)}
+                                                        onCheckedChange={() => toggleSelected(candidate.id)}
+                                                        aria-label={`Select ${displayName}`}
+                                                    />
                                                 </TableCell>
                                             )}
                                             <TableCell className="pl-8 py-5 text-[12px] font-bold text-gray-400 tabular-nums">
@@ -656,8 +645,8 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                     <Badge className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm",
                                                         score >= 80 ? "bg-emerald-50 text-emerald-700" :
-                                                        score >= 50 ? "bg-amber-50 text-amber-700" :
-                                                        "bg-rose-50 text-rose-700"
+                                                            score >= 50 ? "bg-amber-50 text-amber-700" :
+                                                                "bg-rose-50 text-rose-700"
                                                     )}>
                                                         {score ? `${score}%` : "No score"}
                                                     </Badge>
@@ -668,7 +657,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                     <Badge variant="secondary" className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all",
                                                         statusKey === "rejected" ? "bg-rose-50 text-rose-700" :
-                                                        statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"
+                                                            statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"
                                                     )}>
                                                         {statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
                                                     </Badge>
@@ -679,9 +668,9 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                     <Badge variant="secondary" className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all",
                                                         interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "bg-indigo-50 text-indigo-700" :
-                                                        interviewStatusKey === "in progress" ? "bg-blue-50 text-blue-700" :
-                                                        interviewStatusKey === "pending" ? "bg-slate-50 text-slate-500" :
-                                                        "bg-amber-50 text-amber-700"
+                                                            interviewStatusKey === "in progress" ? "bg-blue-50 text-blue-700" :
+                                                                interviewStatusKey === "pending" ? "bg-slate-50 text-slate-500" :
+                                                                    "bg-amber-50 text-amber-700"
                                                     )}>
                                                         {interviewStatusLabel}
                                                     </Badge>
@@ -692,9 +681,9 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                     <Badge variant="secondary" className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all",
                                                         hiringStatusKey === "hired" ? "bg-emerald-50 text-emerald-700" :
-                                                        hiringStatusKey === "not hired" ? "bg-rose-50 text-rose-700" :
-                                                        hiringStatusKey === "not shortlisted" ? "bg-amber-50 text-amber-700" :
-                                                        "bg-slate-50 text-slate-500"
+                                                            hiringStatusKey === "not hired" ? "bg-rose-50 text-rose-700" :
+                                                                hiringStatusKey === "not shortlisted" ? "bg-amber-50 text-amber-700" :
+                                                                    "bg-slate-50 text-slate-500"
                                                     )}>
                                                         {hiringStatusLabel}
                                                     </Badge>
@@ -741,25 +730,25 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                         <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Interview</DropdownMenuLabel>
                                                         <DropdownMenuItem
                                                             onClick={() => {
-                                                                if (quotaLocked) {
-                                                                    toast.error(getInterviewQuotaSupportMessage("interviews"));
+                                                                if (isInterviewActionBlocked) {
+                                                                    toast.error(interviewActionBlockedMessage);
                                                                     return;
                                                                 }
                                                                 handleSendInterviewLink({ id: candidate.id, name: displayName, interviewStatus: candidate.interviewStatus });
                                                             }}
-                                                            disabled={sendingInterviewLinkId === candidate.id || !canResendInterview || quotaLocked}
+                                                            disabled={sendingInterviewLinkId === candidate.id || !canResendInterview || isInterviewActionBlocked}
                                                             className={cn(
                                                                 "rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors",
                                                                 sendingInterviewLinkId === candidate.id
                                                                     ? "text-gray-400 opacity-70"
-                                                                    : quotaLocked
+                                                                    : isInterviewActionBlocked
                                                                         ? "text-gray-400 opacity-70"
-                                                                        : canResendInterview
-                                                                        ? "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
-                                                                        : "text-gray-400 opacity-70"
+                                                                : canResendInterview
+                                                                            ? "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
+                                                                            : "text-gray-400 opacity-70"
                                                             )}
                                                         >
-                                                            {quotaLocked ? <Lock className="h-4 w-4 mr-2" /> : <RefreshCw className={cn("h-4 w-4 mr-2", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
+                                                            {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2" /> : <RefreshCw className={cn("h-4 w-4 mr-2", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
                                                             {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Interview Link"}
                                                         </DropdownMenuItem>
                                                         <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Shortlist</DropdownMenuLabel>
@@ -771,8 +760,21 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                             <UserX className="h-4 w-4 mr-2" />
                                                             Reject Candidate
                                                         </DropdownMenuItem>
-                                                        <DropdownMenuItem onClick={() => window.location.href = `mailto:${candidate.email}`} className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-blue-600 focus:text-blue-700 focus:bg-blue-50">
-                                                            <Mail className="h-4 w-4 mr-2" />
+                                                        <DropdownMenuItem
+                                                            onClick={() => {
+                                                                if (isInterviewActionBlocked) {
+                                                                    toast.error(interviewActionBlockedMessage);
+                                                                    return;
+                                                                }
+                                                                window.location.href = `mailto:${candidate.email}`;
+                                                            }}
+                                                            disabled={isInterviewActionBlocked}
+                                                            className={cn(
+                                                                "rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors",
+                                                                isInterviewActionBlocked ? "text-gray-400 opacity-70" : "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
+                                                            )}
+                                                        >
+                                                            {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
                                                             Send Mail
                                                         </DropdownMenuItem>
                                                         <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Hire</DropdownMenuLabel>

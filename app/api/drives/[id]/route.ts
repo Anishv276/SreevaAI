@@ -45,7 +45,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 skills: true,
                 extractedDetails: true,
                 interviewLanguage: true,
-                interviewTime: true,
                 proctoringLevel: true,
                 interviewQuestions: true,
                 jdFileName: true,
@@ -228,7 +227,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         // Add new interview fields to PATCH
 
         if (data.interviewLanguage !== undefined) updateData.interviewLanguage = data.interviewLanguage;
-        if (data.interviewTime !== undefined) updateData.interviewTime = data.interviewTime;
         if (data.interviewAntiCheat !== undefined) updateData.proctoringLevel = data.interviewAntiCheat;
         if (data.interviewQuestions !== undefined) updateData.interviewQuestions = JSON.stringify(data.interviewQuestions);
         if (data.requirements !== undefined) updateData.requirements = data.requirements;

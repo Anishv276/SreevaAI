@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { generateId } from "@/lib/ids";
 import { invitationDeliveryQueue } from "@/lib/queue";
+import { getOrgBillingStatus } from "@/lib/credits";
+import { getInterviewActionBlockedMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -54,6 +56,26 @@ export async function POST(request: Request) {
 
         const orgId = session.orgId;
         if (!orgId) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+
+        const [org, billing] = await Promise.all([
+            prisma.organization.findUnique({
+                where: { id: orgId },
+                select: { status: true },
+            }),
+            getOrgBillingStatus(orgId),
+        ]);
+
+        const isSuspended = String(org?.status || "").toUpperCase() === "SUSPENDED" || String(org?.status || "").toUpperCase() === "CLOSED";
+        const quotaLocked = isInterviewQuotaLocked(billing);
+        if (isSuspended || quotaLocked) {
+            return NextResponse.json(
+                {
+                    error: getInterviewActionBlockedMessage(isSuspended),
+                    code: isSuspended ? "ACCOUNT_SUSPENDED" : "NO_INTERVIEWS",
+                },
+                { status: isSuspended ? 403 : 402 }
+            );
+        }
 
         const {
             ids,

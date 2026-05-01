@@ -6,6 +6,8 @@ import { HistoryTable } from "./internal/billing-history";
 import { Eyebrow, Fact, RingStat } from "./internal/billing-primitives";
 import { injectBillingAnimStyles } from "./internal/inject-styles";
 import { INK, LINE, LINE_2, MUTED, ORANGE } from "./internal/tokens";
+import { formatOrgPlan } from "@/lib/org-plans";
+import { getLandingPackageByName, getLandingPackageForOrgPlan, type LandingPackage } from "@/lib/landing-packages";
 import type { InterviewRow } from "./internal/types";
 import { useCount } from "./internal/use-billing-count";
 
@@ -67,6 +69,9 @@ export function BillingContent({
   const [historyRows, setHistoryRows] = React.useState<InterviewRow[]>([]);
   const [historyLoading, setHistoryLoading] = React.useState(true);
   const [historyError, setHistoryError] = React.useState<string | null>(null);
+  const [resolvedPlan, setResolvedPlan] = React.useState<LandingPackage | null>(
+    getLandingPackageByName(orgPlanLabel) || null,
+  );
 
   React.useEffect(() => {
     injectBillingAnimStyles();
@@ -140,6 +145,33 @@ export function BillingContent({
       cancelled = true;
     };
   }, [historyEndpoint]);
+
+  React.useEffect(() => {
+    if (orgPlanLabel) {
+      setResolvedPlan(getLandingPackageByName(orgPlanLabel) || null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadOrgPlan = async () => {
+      try {
+        const res = await fetch("/api/admin/organization", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setResolvedPlan(getLandingPackageForOrgPlan(data.plan) || getLandingPackageByName(formatOrgPlan(data.plan)) || getLandingPackageByName("Starter"));
+      } catch {
+        // ignore
+      }
+    };
+
+    loadOrgPlan();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [orgPlanLabel]);
 
   const interviewRemaining = Math.max(0, status.interviewQuotaRemaining);
   const interviewUsed = Math.max(0, status.interviewQuotaUsed);
@@ -356,14 +388,71 @@ export function BillingContent({
             </div>
           ) : (
             <div style={{ ...card, borderTop: `4px solid ${ORANGE}`, padding: 24 }}>
-              <Eyebrow>Plan</Eyebrow>
-              <div style={{ fontSize: 24, fontWeight: 800, color: INK, marginTop: 8 }}>Current workspace</div>
-              <div style={{ fontSize: 12.5, color: MUTED, marginTop: 4 }}>
-                Interview quota is enforced across all active hiring flows.
-              </div>
-              <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
-                <Fact label="Quota status" value={status.hasSufficientInterviews ? "Active" : "Exhausted"} sub="Interview access is controlled by quota." />
-                <Fact label="Completed interviews" value={status.interviewQuotaUsed.toString()} sub="Counted from finalized interviews." />
+              <Eyebrow>Package</Eyebrow>
+              <div
+                style={{
+                  marginTop: 12,
+                  border: `1px solid ${LINE}`,
+                  borderRadius: 18,
+                  padding: 18,
+                  background: "#fff",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 24, fontWeight: 800, color: INK, lineHeight: 1.1 }}>
+                      {resolvedPlan?.name || "Starter"}
+                    </div>
+                    <div style={{ fontSize: 13, color: MUTED, marginTop: 4 }}>
+                      {resolvedPlan?.interviewsIncluded || "30 interviews included"}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      background: "#FFF7ED",
+                      color: ORANGE,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Current package
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 28, fontWeight: 900, color: INK, lineHeight: 1 }}>
+                    {resolvedPlan?.price || "$99"}
+                    <span style={{ fontSize: 14, fontWeight: 700, color: MUTED }}>{resolvedPlan?.suffix || "/mo"}</span>
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
+                  {(resolvedPlan?.features?.slice(0, 4) || ["30 interviews included", "Price per interview: $3.30", "Topup: $4.5/interview"]).map((feature) => (
+                    <div
+                      key={feature}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        border: `1px solid ${LINE}`,
+                        borderRadius: 14,
+                        padding: "10px 12px",
+                        background: "#FAFAFA",
+                        color: INK,
+                        fontSize: 13,
+                        fontWeight: 600,
+                      }}
+                    >
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: ORANGE, flexShrink: 0 }} />
+                      <span>{feature}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}

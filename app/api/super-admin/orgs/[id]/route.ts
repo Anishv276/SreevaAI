@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { deleteOrgEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
-import { isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
+import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 
@@ -133,7 +133,9 @@ export async function PATCH(
         const updateData: any = {};
         if (name !== undefined) updateData.name = name;
         if (plan !== undefined) updateData.plan = normalizeOrgPlan(plan) || plan;
-        if (maxActiveDrives !== undefined) updateData.maxActiveDrives = Math.max(0, Number(maxActiveDrives) || 0);
+        if (maxActiveDrives !== undefined && String(maxActiveDrives).trim() !== "") {
+            updateData.maxActiveDrives = Math.max(0, Number(maxActiveDrives) || 0);
+        }
         if (maxTeamMembers !== undefined) updateData.maxTeamMembers = Math.max(0, Number(maxTeamMembers) || 0);
         if (proctoringSignals !== undefined) updateData.proctoringSignals = normalizeProctoringSignals(proctoringSignals);
         if (status !== undefined) updateData.status = status;

@@ -4,6 +4,7 @@ import React from "react";
 import { Building2, Search, RefreshCw, ChevronRight } from "lucide-react";
 import { BillingContent } from "@/components/admin/billing/billing-content";
 import { formatOrgPlan } from "@/lib/org-plans";
+import { formatLandingPackageForOrgPlan } from "@/lib/landing-packages";
 import { cn } from "@/lib/utils";
 
 type OrgSummary = {
@@ -185,7 +186,7 @@ export default function SuperAdminBillingPage() {
                           <div className="mt-0.5 flex flex-wrap items-center gap-1">
                             <span className="text-[7px] font-bold uppercase tracking-[0.14em] text-gray-400">{org.slug}</span>
                             <span className="h-1 w-1 rounded-full bg-gray-200" />
-                            <span className="text-[7px] font-bold uppercase tracking-[0.14em] text-gray-400">{formatOrgPlan(org.plan) || "Starter"}</span>
+                            <span className="text-[7px] font-bold uppercase tracking-[0.14em] text-gray-400">{formatLandingPackageForOrgPlan(org.plan) || "Starter"}</span>
                           </div>
                           <div className="mt-1 flex items-center justify-between text-[7px] font-bold uppercase tracking-[0.14em]">
                             <span className={cn(
@@ -216,7 +217,7 @@ export default function SuperAdminBillingPage() {
                 creditsEndpoint={creditsUrl}
                 historyEndpoint={historyUrl}
                 orgName={selectedOrg.name}
-                orgPlanLabel={formatOrgPlan(selectedOrg.plan) || "Starter"}
+                orgPlanLabel={formatLandingPackageForOrgPlan(selectedOrg.plan) || "Starter"}
                 showRechargeHelp={false}
                 showCreditInternals={true}
                 showCreditsUsedInHistory={true}

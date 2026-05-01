@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { getOpenAIClient } from "@/lib/openai";
+import { canUseRecruiterAssistant } from "@/lib/org-plans";
 
 async function getOrgOpenAIModel(orgId: string): Promise<string> {
     const org = await prisma.organization.findUnique({
@@ -719,6 +720,16 @@ export async function POST(request: Request) {
 
         const { message, history = [] } = await request.json();
         const orgId = session.orgId;
+        const org = await prisma.organization.findUnique({
+            where: { id: orgId },
+            select: { plan: true },
+        });
+        if (!canUseRecruiterAssistant(org?.plan)) {
+            return NextResponse.json(
+                { error: "Recruiter Assistant is not available on the Starter plan." },
+                { status: 403 }
+            );
+        }
         const orgOpenAIModel = await getOrgOpenAIModel(orgId);
 
         const intent = detectIntent(message);

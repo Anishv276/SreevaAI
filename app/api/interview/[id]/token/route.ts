@@ -2,6 +2,7 @@ import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-ser
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isInterviewReopenAllowed, isInterviewTokenRequired } from "@/lib/interview-access";
+import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
 
 export async function POST(
     request: Request,
@@ -43,7 +44,6 @@ export async function POST(
             include: {
                 drive: {
                     select: {
-                        interviewTime: true,
                         role: true,
                         title: true,
                     },
@@ -55,14 +55,9 @@ export async function POST(
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
 
-        const driveDurationMins = application.drive?.interviewTime;
-        if (typeof driveDurationMins !== "number" || !Number.isFinite(driveDurationMins) || driveDurationMins <= 0) {
-            return NextResponse.json({ error: "Drive interview duration is not configured" }, { status: 400 });
-        }
-
         const roomName = `interview_${applicationId}`;
         const participantIdentity = `candidate_${applicationId}`;
-        const durationSeconds = Math.floor(driveDurationMins * 60);
+        const durationSeconds = Math.floor(FIXED_INTERVIEW_DURATION_MINUTES * 60);
         const serverUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL;
         const agentName = process.env.LIVEKIT_AGENT_NAME || "ai_interviewer";
 
