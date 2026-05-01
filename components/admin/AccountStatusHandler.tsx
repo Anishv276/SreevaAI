@@ -53,7 +53,7 @@ export function AccountStatusHandler({ status }: AccountStatusHandlerProps) {
                                     <a
                                         href={getSupportComposeUrl({
                                             subject: "Urgent: interview quota exhausted",
-                                            body: "Hi support team,\n\nOur account is suspended because no interviews are left. Please help us recharge immediately.\n",
+                                            body: "Hi support team,\n\nOur account got suspended because no interviews are left. Please help us recharge immediately.\n",
                                         })}
                                         target="_blank"
                                         rel="noreferrer"
@@ -98,29 +98,30 @@ export function AccountStatusHandler({ status }: AccountStatusHandlerProps) {
             <motion.div 
                 initial={{ y: -100 }}
                 animate={{ y: 0 }}
-                className="sticky top-0 z-[100] w-full border-b border-amber-500/20 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-100/70 shadow-[0_10px_30px_rgba(0,0,0,0.08)] backdrop-blur-md md:ml-[240px] md:w-[calc(100%-240px)]"
+                className="sticky top-0 z-[100] w-full border-b border-red-200 bg-white shadow-[0_10px_30px_rgba(0,0,0,0.08)] md:ml-[240px] md:w-[calc(100%-240px)]"
             >
                 <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3 sm:px-6 lg:px-8">
                     <div className="flex min-w-0 flex-1 items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 ring-1 ring-white/40">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 shadow-sm ring-1 ring-red-100">
                             <AlertCircle className="h-5 w-5" />
                         </div>
                         <div className="min-w-0">
-                            <p className="truncate text-sm font-black text-amber-950">
-                                Your account got suspended.
+                            <p className="truncate text-sm font-black text-red-700">
+                                Your account got suspended because no interviews are left.
                             </p>
-                            <p className="truncate text-xs font-medium text-amber-800/80">
-                                Please complete the subscription to proceed with your services.
+                            <p className="truncate text-xs font-medium text-red-600/90">
+                                Please recharge immediately to stop interruptions to your interviews or services, and contact support@sreevaai.com for help.
                             </p>
                         </div>
                     </div>
                     
                     <Link 
                         href="/admin/billing"
-                        className="group ml-auto flex flex-shrink-0 items-center gap-2 rounded-full border border-amber-200 bg-amber-950 px-5 py-2.5 text-xs font-black uppercase tracking-[0.18em] text-white shadow-[0_12px_28px_rgba(146,64,14,0.25)] transition-all hover:-translate-y-0.5 hover:bg-amber-900 active:translate-y-0"
+                        className="group ml-auto flex flex-shrink-0 items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 hover:shadow-lg"
+                        style={{ background: "linear-gradient(135deg, #F97316, #ea6608)" }}
                     >
                         Go to Billing
-                        <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
+                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                     </Link>
                 </div>
             </motion.div>
