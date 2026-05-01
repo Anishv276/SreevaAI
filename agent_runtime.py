@@ -1615,10 +1615,23 @@ async def entrypoint(ctx: JobContext):
                                     quality_avg=quality_avg_for_recovery,
                                 )
                                 if contradiction_state_event:
+                                    _c_status = contradiction_state_event["status"]
+                                    _c_signal_name = (
+                                        "contradiction_resolved"
+                                        if _c_status == "candidate_clarified"
+                                        else "contradiction"
+                                    )
+                                    _c_confidence = (
+                                        0.90 if _c_status == "repeated"
+                                        else 0.80 if _c_status == "candidate_clarified"
+                                        else 0.95
+                                    )
                                     proctoring_events.append({
                                         "event": contradiction_state_event["event"],
+                                        "signal_name": _c_signal_name,
+                                        "signal_layer": "hard_integrity",
                                         "source": contradiction_state_event["source"],
-                                        "status": contradiction_state_event["status"],
+                                        "status": _c_status,
                                         "turn": contradiction_state_event["turn"],
                                         "surfaced_turn": contradiction_state_event["surfaced_turn"],
                                         "repeat_count": contradiction_state_event["repeat_count"],
@@ -1626,8 +1639,10 @@ async def entrypoint(ctx: JobContext):
                                         "recovery_path": contradiction_state_event["recovery_path"],
                                         "recruiter_note": contradiction_state_event["recruiter_note"],
                                         "trust_delta": contradiction_state_event["trust_delta"],
-                                        "score_delta": 0,
+                                        "score_delta": contradiction_state_event["trust_delta"],
                                         "score_after": suspicion_score,
+                                        "confidence": _c_confidence,
+                                        "recruiter_visible": True,
                                         "evidence": contradiction_state_event.get("evidence", ""),
                                         "contradiction_type": contradiction_state_event.get("contradiction_type", ""),
                                     })

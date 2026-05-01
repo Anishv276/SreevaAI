@@ -260,7 +260,11 @@ async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
     """Generate recruiter-friendly interpretation of hidden signal using LLM for multiple signals."""
 
     # For signals that benefit from LLM interpretation, use dynamic summary based on evidence
-    if signal_name in ("ownership_ambiguity", "example_evasion", "resume_claim_mismatch", "follow_up_collapse", "latency_mismatch", "ownership_clarified", "example_given") and events:
+    if signal_name in (
+        "ownership_ambiguity", "example_evasion", "resume_claim_mismatch",
+        "follow_up_collapse", "latency_mismatch", "ownership_clarified", "example_given",
+        "contradiction", "contradiction_resolved",
+    ) and events:
         try:
             from openai import AsyncOpenAI
 
@@ -284,6 +288,25 @@ async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
                 signal_desc = "Candidate clarified personal ownership with explicit 'I' language and ownership terms after initial ambiguity"
             elif signal_name == "example_given":
                 signal_desc = "Candidate provided concrete specific example with dates/numbers/project names after initial theoretical evasion"
+            elif signal_name == "contradiction":
+                # Extract old/new values from the most recent event for a specific summary
+                latest = events[-1]
+                old_v = latest.get("old_value") or latest.get("evidence", "earlier claim")
+                new_v = latest.get("new_value") or "a conflicting statement"
+                c_type = str(latest.get("contradiction_type", "") or "").replace("_", " ")
+                repeat = sum(1 for e in events if e.get("status") == "repeated")
+                signal_desc = (
+                    f"Candidate contradicted a prior claim about {c_type or 'a key fact'}: "
+                    f"earlier said '{old_v}', then said '{new_v}'"
+                    + (f". Pattern repeated {repeat} time(s)" if repeat else "")
+                )
+            elif signal_name == "contradiction_resolved":
+                latest = events[-1]
+                c_type = str(latest.get("contradiction_type", "") or "").replace("_", " ")
+                signal_desc = (
+                    f"Candidate clarified and resolved a contradiction about {c_type or 'a prior claim'} "
+                    "convincingly after being probed"
+                )
             else:
                 signal_desc = f"Signal: {signal_name}"
 
@@ -331,6 +354,14 @@ async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
         "resume_claim_mismatch": (
             "Resume-like claims presented without concrete evidence or grounding in actual work. "
             "May indicate candidate listing technologies without hands-on experience."
+        ),
+        "contradiction": (
+            "Candidate made conflicting statements about a verifiable fact during the interview. "
+            "Requires recruiter review — may indicate inflated claims, poor recall, or deliberate misrepresentation."
+        ),
+        "contradiction_resolved": (
+            "Candidate was probed on a conflicting claim and provided a convincing clarification. "
+            "Contradiction is considered closed — no further action needed on this specific inconsistency."
         ),
     }
 

@@ -18,19 +18,18 @@ class QualityScores(TypedDict):
 
 
 class SignalFlags(TypedDict):
-    ownership_ambiguity: bool   # vague "we" with no personal contribution named
-    example_evasion: bool       # stayed theoretical after request for real example
-    resume_claim_mismatch: bool # resume-like claims without concrete grounding
-    latency_mismatch: bool      # answer is unnaturally compressed on a follow-up
-    contradiction: bool         # conflicts with prior answer or resume claim
-    follow_up_collapse: bool    # depth dropped sharply from first to follow-up answer
-    meta_question: bool         # candidate is checking if Ishita is a bot or if she's present
-    depth_decay: bool                    # cross-topic quality degradation across rolling window of turns
-    complexity_latency_mismatch: bool    # inverted timing pattern — hard Q instant, easy Q slow
-    ownership_clarified: bool   # recovery: candidate clarified personal ownership after ambiguity
-    example_given: bool         # recovery: candidate provided concrete example after evasion
-    ownership_clarified: bool   # recovery: candidate clarified personal ownership after ambiguity
-    example_given: bool         # recovery: candidate provided concrete example after evasion
+    ownership_ambiguity: bool        # vague "we" with no personal contribution named
+    example_evasion: bool            # stayed theoretical after request for real example
+    resume_claim_mismatch: bool      # resume-like claims without concrete grounding
+    latency_mismatch: bool           # answer is unnaturally compressed on a follow-up
+    contradiction: bool              # conflicts with prior answer or resume claim
+    follow_up_collapse: bool         # depth dropped sharply from first to follow-up answer
+    meta_question: bool              # candidate is checking if Ishita is a bot or if she's present
+    depth_decay: bool                # cross-topic quality degradation across rolling window of turns
+    complexity_latency_mismatch: bool  # inverted timing pattern — hard Q instant, easy Q slow
+    ownership_clarified: bool        # recovery: candidate clarified personal ownership after ambiguity
+    example_given: bool              # recovery: candidate provided concrete example after evasion
+    contradiction_resolved: bool     # recovery: candidate convincingly resolved a surfaced contradiction
 
 
 class TrustDelta(TypedDict):
@@ -754,6 +753,7 @@ def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
         complexity_latency_mismatch="complexity_latency_mismatch" in names,
         ownership_clarified="ownership_clarified" in names,
         example_given="example_given" in names,
+        contradiction_resolved="contradiction_resolved" in names,
     )
 
 

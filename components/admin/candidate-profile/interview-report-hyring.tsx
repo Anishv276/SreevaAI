@@ -473,8 +473,8 @@ function SkillRatingsContainer({ skills }: { skills: { name: string; stars: numb
 }
 
 function _formatSignalSummary(signal: any): string {
-  // Check if this is a recovery signal (positive)
-  const isRecovery = signal.signal === "ownership_clarified" || signal.signal === "example_given";
+  // Recovery signals get a positive prefix
+  const isRecovery = signal.signal === "ownership_clarified" || signal.signal === "example_given" || signal.signal === "contradiction_resolved";
   const prefix = isRecovery ? "✓ " : "● ";
 
   // Use the LLM-generated interpretation from the backend if available
@@ -495,6 +495,8 @@ function _formatSignalSummary(signal: any): string {
     depth_decay: "Answer quality declined across multiple topics",
     ownership_clarified: "Initially used team language but clarified personal ownership when probed",
     example_given: "Initially gave theoretical answer but provided concrete example when asked",
+    contradiction: "Candidate made conflicting statements about a verifiable fact — needs recruiter review",
+    contradiction_resolved: "Candidate clarified and resolved a contradiction convincingly when probed",
   };
 
   return prefix + (fallbacks[signal.signal] || `Signal detected: ${signal.signal}`);
