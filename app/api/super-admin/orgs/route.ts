@@ -73,13 +73,38 @@ export async function GET(request: Request) {
             interviewCount: number;
         }>;
 
-        const stats = await prisma.$transaction(async (tx) => {
-            const totalOrgs = await tx.organization.count();
-            const activeOrgs = await tx.organization.count({ where: { status: "ACTIVE" } });
-            const suspendedOrgs = await tx.organization.count({ where: { status: "SUSPENDED" } });
-            const closedOrgs = await tx.organization.count({ where: { status: "CLOSED" } });
-            
-            const counts = await tx.$queryRaw`
+        const lastWeek = new Date();
+        lastWeek.setDate(lastWeek.getDate() - 7);
+        const twoWeeksAgo = new Date();
+        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
+        const [
+            totalOrgs,
+            activeOrgs,
+            suspendedOrgs,
+            closedOrgs,
+            counts,
+            orgCreditStats,
+            orgInterviewStats,
+            recentActivity,
+            trends,
+        ] = await Promise.all([
+            prisma.organization.count(),
+            prisma.organization.count({ where: { status: "ACTIVE" } }),
+            prisma.organization.count({ where: { status: "SUSPENDED" } }),
+            prisma.organization.count({ where: { status: "CLOSED" } }),
+            prisma.$queryRaw<Array<{
+                totalAdmins: number;
+                totalDrives: number;
+                totalCandidates: number;
+                totalShortlisted: number;
+                totalInterviewed: number;
+                totalHired: number;
+                totalInterviewQuotaAllocated: number;
+                totalInterviewQuotaConsumed: number;
+                totalCreditsAllocated: number;
+                totalCreditsConsumed: number;
+            }>>`
                 SELECT 
                     (SELECT COUNT(*)::INT FROM "User") as "totalAdmins",
                     (SELECT COUNT(*)::INT FROM "Drive") as "totalDrives",
@@ -87,20 +112,19 @@ export async function GET(request: Request) {
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "resumeStatus" = 'shortlisted') as "totalShortlisted",
                     (SELECT COUNT(*)::INT FROM "Interview" WHERE "status" = 'COMPLETED') as "totalInterviewed",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "hiringStatus" = 'hired') as "totalHired",
+                    COALESCE(SUM("interviewQuotaTotal"), 0)::INT as "totalInterviewQuotaAllocated",
+                    COALESCE(SUM("interviewQuotaUsed"), 0)::INT as "totalInterviewQuotaConsumed",
                     COALESCE(SUM("creditsTotal"), 0)::FLOAT as "totalCreditsAllocated",
                     COALESCE(SUM("creditsUsed"), 0)::FLOAT as "totalCreditsConsumed"
                 FROM "Organization"
-            ` as any[];
-
-            const orgCreditStats = await tx.$queryRaw<Array<{ name: string, creditsTotal: number, creditsUsed: number }>>`
-                SELECT "name", "creditsTotal", "creditsUsed"
+            `,
+            prisma.$queryRaw<Array<{ name: string, creditsTotal: number, creditsUsed: number, interviewQuotaTotal: number, interviewQuotaUsed: number }>>`
+                SELECT "name", "creditsTotal", "creditsUsed", "interviewQuotaTotal", "interviewQuotaUsed"
                 FROM "Organization"
                 ORDER BY "creditsUsed" DESC
                 LIMIT 5
-            `;
-
-            // New: Get top orgs by interview volume
-            const orgInterviewStats = await tx.$queryRaw<Array<{ name: string, count: number }>>`
+            `,
+            prisma.$queryRaw<Array<{ name: string, count: number }>>`
                 SELECT o."name", COUNT(i.id)::INT as "count"
                 FROM "Organization" o
                 JOIN "Drive" d ON d."orgId" = o.id
@@ -109,10 +133,8 @@ export async function GET(request: Request) {
                 GROUP BY o."name"
                 ORDER BY "count" DESC
                 LIMIT 5
-            `;
-
-            // New: Get Recent Global Activity
-            const recentActivity = await tx.$queryRaw<Array<{ type: string, detail: string, org: string, at: Date }>>`
+            `,
+            prisma.$queryRaw<Array<{ type: string, detail: string, org: string, at: Date }>>`
                 (SELECT 'ORG' as type, name as detail, '' as org, "createdAt" as at FROM "Organization")
                 UNION ALL
                 (SELECT 'DRIVE' as type, title as detail, (SELECT name FROM "Organization" o WHERE o.id = d."orgId") as org, "createdAt" as at FROM "Drive" d)
@@ -122,14 +144,17 @@ export async function GET(request: Request) {
                 (SELECT 'INTERVIEW' as type, 'Completed' as detail, (SELECT name FROM "Organization" o JOIN "Drive" d3 ON d3."orgId" = o.id JOIN "Application" a2 ON a2."driveId" = d3.id WHERE a2.id = i."applicationId") as org, "completedAt" as at FROM "Interview" i WHERE i."status" = 'COMPLETED')
                 ORDER BY at DESC
                 LIMIT 10
-            `;
-
-            const lastWeek = new Date();
-            lastWeek.setDate(lastWeek.getDate() - 7);
-            const twoWeeksAgo = new Date();
-            twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-
-            const trends = await tx.$queryRaw`
+            `,
+            prisma.$queryRaw<Array<{
+                orgsNew: number;
+                orgsPrev: number;
+                adminsNew: number;
+                adminsPrev: number;
+                drivesNew: number;
+                drivesPrev: number;
+                candidatesNew: number;
+                candidatesPrev: number;
+            }>>`
                 SELECT 
                     (SELECT COUNT(*)::INT FROM "Organization" WHERE "createdAt" >= ${lastWeek}) as "orgsNew",
                     (SELECT COUNT(*)::INT FROM "Organization" WHERE "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "orgsPrev",
@@ -139,47 +164,52 @@ export async function GET(request: Request) {
                     (SELECT COUNT(*)::INT FROM "Drive" WHERE "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "drivesPrev",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "createdAt" >= ${lastWeek}) as "candidatesNew",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "candidatesPrev"
-            ` as any[];
+            `,
+        ]);
 
-            const calculateTrend = (curr: number, prev: number) => {
-                if (prev === 0) return curr > 0 ? 100 : 0;
-                return Math.round(((curr - prev) / prev) * 100);
-            };
+        const calculateTrend = (curr: number, prev: number) => {
+            if (prev === 0) return curr > 0 ? 100 : 0;
+            return Math.round(((curr - prev) / prev) * 100);
+        };
 
-            const t = trends[0] || {};
-            
-            return {
-                totalOrgs,
-                activeOrgs,
-                suspendedOrgs,
-                closedOrgs,
-                totalAdmins: counts[0]?.totalAdmins || 0,
-                totalDrives: counts[0]?.totalDrives || 0,
-                totalCandidates: counts[0]?.totalCandidates || 0,
-                totalShortlisted: counts[0]?.totalShortlisted || 0,
-                totalInterviewed: counts[0]?.totalInterviewed || 0,
-                totalHired: counts[0]?.totalHired || 0,
-                totalCreditsAllocated: counts[0]?.totalCreditsAllocated || 0,
-                totalCreditsConsumed: counts[0]?.totalCreditsConsumed || 0,
-                orgCreditStats: orgCreditStats.map(o => ({
-                    name: o.name,
-                    creditsTotal: Number(o.creditsTotal || 0),
-                    creditsUsed: Number(o.creditsUsed || 0)
-                })),
-                orgInterviewStats: orgInterviewStats.map(o => ({
-                    name: o.name,
-                    count: Number(o.count || 0)
-                })),
-                recentActivity,
-                trends: {
-                    orgs: calculateTrend(t.orgsNew, t.orgsPrev),
-                    admins: calculateTrend(t.adminsNew, t.adminsPrev),
-                    drives: calculateTrend(t.drivesNew, t.drivesPrev),
-                    candidates: calculateTrend(t.candidatesNew, t.candidatesPrev),
-                    credits: 0
-                }
-            };
-        });
+        const t = trends[0] || {};
+        const c = counts[0] || {};
+        
+        const stats = {
+            totalOrgs,
+            activeOrgs,
+            suspendedOrgs,
+            closedOrgs,
+            totalAdmins: c.totalAdmins || 0,
+            totalDrives: c.totalDrives || 0,
+            totalCandidates: c.totalCandidates || 0,
+            totalShortlisted: c.totalShortlisted || 0,
+            totalInterviewed: c.totalInterviewed || 0,
+            totalHired: c.totalHired || 0,
+            totalInterviewQuotaAllocated: c.totalInterviewQuotaAllocated || 0,
+            totalInterviewQuotaConsumed: c.totalInterviewQuotaConsumed || 0,
+            totalCreditsAllocated: c.totalCreditsAllocated || 0,
+            totalCreditsConsumed: c.totalCreditsConsumed || 0,
+            orgCreditStats: orgCreditStats.map(o => ({
+                name: o.name,
+                creditsTotal: Number(o.creditsTotal || 0),
+                creditsUsed: Number(o.creditsUsed || 0),
+                interviewQuotaTotal: Number(o.interviewQuotaTotal || 0),
+                interviewQuotaUsed: Number(o.interviewQuotaUsed || 0),
+            })),
+            orgInterviewStats: orgInterviewStats.map(o => ({
+                name: o.name,
+                count: Number(o.count || 0)
+            })),
+            recentActivity,
+            trends: {
+                orgs: calculateTrend(t.orgsNew, t.orgsPrev),
+                admins: calculateTrend(t.adminsNew, t.adminsPrev),
+                drives: calculateTrend(t.drivesNew, t.drivesPrev),
+                candidates: calculateTrend(t.candidatesNew, t.candidatesPrev),
+                credits: 0
+            }
+        };
 
         return NextResponse.json({
             orgs,
@@ -192,7 +222,7 @@ export async function GET(request: Request) {
     }
 }
 
-export async function sendOrgWelcomeEmail({
+async function sendOrgWelcomeEmail({
     email,
     orgName,
     adminName,
@@ -278,6 +308,7 @@ export async function POST(request: Request) {
             orgName, slug, plan, logoUrl, adminEmail, adminName, adminPassword,
             maxActiveDrives,
             maxTeamMembers,
+            interviewQuotaTotal,
             proctoringSignals,
             ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice, googleModel, googleVoiceName,
             sttProvider, deepgramModel, sarvamSttModel,
@@ -325,6 +356,8 @@ export async function POST(request: Request) {
                 plan: normalizeOrgPlan(plan) || DEFAULT_ORG_PLAN,
                 maxActiveDrives: Math.max(0, Number(maxActiveDrives ?? 0) || 0),
                 maxTeamMembers: Math.max(0, Number(maxTeamMembers ?? 0) || 0),
+                interviewQuotaTotal: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
+                creditsTotal: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
                 proctoringSignals: normalizeProctoringSignals(proctoringSignals || getProctoringSignalsForPlan(plan || DEFAULT_ORG_PLAN)),
                 logoUrl: logoUrl || null,
                 usageMetrics: {},

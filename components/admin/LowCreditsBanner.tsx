@@ -1,23 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, X, CreditCard } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 
 type BannerState = "low" | "empty" | null;
 
 export function LowCreditsBanner() {
     const [state, setState] = useState<BannerState>(null);
-    const [creditsRemaining, setCreditsRemaining] = useState(0);
+    const [interviewsRemaining, setInterviewsRemaining] = useState(0);
     const [dismissed, setDismissed] = useState(false);
 
     useEffect(() => {
         fetch("/api/admin/credits")
             .then(r => r.json())
             .then(data => {
-                setCreditsRemaining(data.creditsRemaining ?? 0);
-                if (data.creditsRemaining === 0) {
+                setInterviewsRemaining(data.interviewQuotaRemaining ?? 0);
+                if (data.interviewQuotaRemaining === 0) {
                     setState("empty");
-                } else if (data.creditsRemaining < 10) {
+                } else if (data.interviewQuotaRemaining < 10) {
                     setState("low");
                 }
             })
@@ -44,13 +44,13 @@ export function LowCreditsBanner() {
                     <div className="min-w-0">
                         <p className="truncate text-sm font-black tracking-tight">
                             {isEmpty
-                                ? "Credits exhausted. New drives and interview links are blocked."
-                                : `Low credits warning. Only ${creditsRemaining.toFixed(2)} credits remaining.`}
+                                ? "Interview quota exhausted. New drives and interview links are blocked."
+                                : `Low interview quota warning. Only ${interviewsRemaining.toFixed(0)} interviews remaining.`}
                         </p>
                         <p className="truncate text-xs font-medium text-white/80">
                             {isEmpty
-                                ? "Recharge now to restore access and keep hiring moving."
-                                : "Recharge soon to avoid interruption."}
+                                ? "Increase the org quota now to restore access and keep hiring moving."
+                                : "Increase the quota soon to avoid interruption."}
                         </p>
                     </div>
                 </div>
@@ -60,7 +60,7 @@ export function LowCreditsBanner() {
                         href="/admin/billing"
                         className="group inline-flex items-center gap-2 rounded-full border border-white/20 bg-white px-5 py-2.5 text-xs font-black uppercase tracking-[0.18em] text-gray-950 shadow-[0_10px_24px_rgba(0,0,0,0.18)] transition-all hover:-translate-y-0.5 hover:bg-white/95 active:translate-y-0"
                     >
-                        <CreditCard className="h-3.5 w-3.5 text-gray-900 transition-transform group-hover:scale-110" />
+                        <AlertTriangle className="h-3.5 w-3.5 text-gray-900 transition-transform group-hover:scale-110" />
                         Go to Billing
                     </a>
                     <button

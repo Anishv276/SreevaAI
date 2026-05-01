@@ -4,8 +4,8 @@ export type InterviewRow = {
   id: string;
   candidate: string;
   role: string;
-  durationSec: number;
-  credits: number;
+  interviews: number;
+  creditsUsed: number;
   status: InterviewStatus;
   date: string;
 };

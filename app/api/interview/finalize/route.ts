@@ -6,7 +6,11 @@ import crypto from "crypto";
 import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { generateInterviewReport } from "@/lib/interview-analysis";
-import { deductInterviewCredits } from "@/lib/credits";
+import {
+  deductInterviewCredits,
+  deductInterviewQuota,
+  getInterviewQuotaUnits,
+} from "@/lib/credits";
 import { safeJsonParse } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -297,20 +301,26 @@ export async function POST(req: Request) {
       applicationId
     );
 
-    // Deduct credits based on actual interview duration
-    if (resolvedDuration && resolvedDuration > 0) {
-      try {
-        const appForOrg = await prisma.application.findUnique({
-          where: { id: applicationId },
-          select: { drive: { select: { orgId: true } } }
-        });
-        const orgId = appForOrg?.drive?.orgId;
-        if (orgId) {
+    // Deduct one interview only when the session crosses the 5-minute quota threshold.
+    try {
+      const appForOrg = await prisma.application.findUnique({
+        where: { id: applicationId },
+        select: { drive: { select: { orgId: true } } }
+      });
+      const orgId = appForOrg?.drive?.orgId;
+      if (orgId) {
+        const quotaUnits = resolvedDuration !== null && !isNaN(resolvedDuration as number)
+          ? getInterviewQuotaUnits(resolvedDuration)
+          : 0;
+        if (quotaUnits > 0) {
+          await deductInterviewQuota(orgId, quotaUnits);
+        }
+        if (resolvedDuration !== null && !isNaN(resolvedDuration as number) && resolvedDuration > 0) {
           await deductInterviewCredits(orgId, resolvedDuration);
         }
-      } catch (creditError) {
-        console.error("[FINALIZE] Credit deduction failed:", creditError);
       }
+    } catch (creditError) {
+      console.error("[FINALIZE] Billing deduction failed:", creditError);
     }
 
     try {

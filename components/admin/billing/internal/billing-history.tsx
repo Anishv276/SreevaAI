@@ -4,7 +4,7 @@ import React from "react";
 import { Icon } from "./billing-icons";
 import { Avatar, StatusPill } from "./billing-primitives";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
-import { fmtDate, fmtDuration } from "./format";
+import { fmtDate } from "./format";
 import {
   INK,
   INK_2,
@@ -202,7 +202,15 @@ function PageBtn({
   );
 }
 
-export function HistoryTable({ rows, loading = false }: { rows: InterviewRow[]; loading?: boolean }) {
+export function HistoryTable({
+  rows,
+  loading = false,
+  showCreditsUsed = false,
+}: {
+  rows: InterviewRow[];
+  loading?: boolean;
+  showCreditsUsed?: boolean;
+}) {
   const [page, setPage] = React.useState(1);
   const [search, setSearch] = React.useState("");
   const [status, setStatus] = React.useState("all");
@@ -268,6 +276,8 @@ export function HistoryTable({ rows, loading = false }: { rows: InterviewRow[]; 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  const gridCols = showCreditsUsed ? "1.6fr 1.4fr .9fr .9fr 1fr 120px" : "1.6fr 1.4fr .9fr 1fr 120px";
+
   return (
     <div
       style={{
@@ -281,9 +291,7 @@ export function HistoryTable({ rows, loading = false }: { rows: InterviewRow[]; 
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700, color: INK, letterSpacing: "-0.005em" }}>Interview history</div>
-            <div style={{ fontSize: 12.5, color: MUTED, marginTop: 3 }}>
-              Second-precision credit usage at 1 credit/min across {rows.length} interviews.
-            </div>
+            <div style={{ fontSize: 12.5, color: MUTED, marginTop: 3 }}>Interview consumption across {rows.length} completed sessions.</div>
           </div>
           <button
             type="button"
@@ -366,7 +374,7 @@ export function HistoryTable({ rows, loading = false }: { rows: InterviewRow[]; 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1.6fr 1.4fr .9fr .9fr 1fr 120px",
+          gridTemplateColumns: gridCols,
           gap: 12,
           padding: "12px 22px",
           borderBottom: `1px solid ${LINE}`,
@@ -380,12 +388,14 @@ export function HistoryTable({ rows, loading = false }: { rows: InterviewRow[]; 
         <HistorySortHead k="role" sort={sort} setSort={setSort}>
           Role
         </HistorySortHead>
-        <HistorySortHead k="durationSec" sort={sort} setSort={setSort}>
-          Duration
+        <HistorySortHead k="interviews" sort={sort} setSort={setSort}>
+          Interviews
         </HistorySortHead>
-        <HistorySortHead k="credits" sort={sort} setSort={setSort}>
-          Credits
-        </HistorySortHead>
+        {showCreditsUsed ? (
+          <HistorySortHead k="creditsUsed" sort={sort} setSort={setSort}>
+            Credits used
+          </HistorySortHead>
+        ) : null}
         <HistorySortHead k="date" sort={sort} setSort={setSort}>
           Date
         </HistorySortHead>
@@ -405,7 +415,7 @@ export function HistoryTable({ rows, loading = false }: { rows: InterviewRow[]; 
             key={row.id}
             style={{
               display: "grid",
-              gridTemplateColumns: "1.6fr 1.4fr .9fr .9fr 1fr 120px",
+              gridTemplateColumns: gridCols,
               gap: 12,
               padding: "14px 22px",
               borderBottom: `1px solid ${LINE_2}`,
@@ -432,10 +442,12 @@ export function HistoryTable({ rows, loading = false }: { rows: InterviewRow[]; 
               </div>
             </div>
             <div style={{ color: INK_2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.role}</div>
-            <div style={{ color: INK_2, fontVariantNumeric: "tabular-nums" }}>{fmtDuration(row.durationSec)}</div>
-            <div style={{ color: INK, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-              {row.credits === 0 ? <span style={{ color: MUTED }}>—</span> : row.credits.toFixed(2)}
-            </div>
+            <div style={{ color: INK, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{row.interviews.toLocaleString()}</div>
+            {showCreditsUsed ? (
+              <div style={{ color: INK, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                {row.creditsUsed === 0 ? <span style={{ color: MUTED }}>—</span> : row.creditsUsed.toFixed(2)}
+              </div>
+            ) : null}
             <div style={{ color: MUTED, fontSize: 12.5 }}>{fmtDate(row.date)}</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
               <StatusPill status={row.status} />
@@ -454,8 +466,7 @@ export function HistoryTable({ rows, loading = false }: { rows: InterviewRow[]; 
         }}
       >
         <div style={{ fontSize: 12.5, color: MUTED }}>
-          Page{" "}
-          <span style={{ color: INK, fontWeight: 600 }}>{page}</span> of <span style={{ color: INK, fontWeight: 600 }}>{totalPages}</span>
+          Page <span style={{ color: INK, fontWeight: 600 }}>{page}</span> of <span style={{ color: INK, fontWeight: 600 }}>{totalPages}</span>
           {" · "}
           Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
         </div>

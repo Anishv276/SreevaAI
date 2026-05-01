@@ -1,63 +1,124 @@
 /**
- * Credit billing system.
- * Uses dedicated creditsTotal / creditsUsed columns on Organization (Float).
- * Completely separate from usageMetrics (which tracks API cost for internal use).
+ * Billing helpers for organizations.
  *
- * Rate: 1 credit per minute (second-precision).
- * Formula: round(durationSeconds / 60 * 1, 2)
+ * The app now tracks two separate concepts:
+ * - interview quota: the customer-facing count of available interviews
+ * - credits: the internal billing/usage counter that super-admins can still inspect
  *
- * Examples:
- *   1m 00s (60s)   = 1.00 credit
- *   1m 30s (90s)   = 1.50 credits
- *   4m 10s (250s)  = 4.17 credits
- *   5m 00s (300s)  = 5.00 credits
- *   6m 20s (380s)  = 6.33 credits
+ * Existing callers still import this module as "credits", so we keep that filename
+ * while exposing both interview and credit status helpers.
  */
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export const CREDITS_PER_MINUTE = 1;
+export const INTERVIEW_QUOTA_THRESHOLD_SECONDS = 5 * 60;
 
-export interface CreditStatus {
+export interface BillingStatus {
+    interviewQuotaTotal: number;
+    interviewQuotaUsed: number;
+    interviewQuotaRemaining: number;
     creditsTotal: number;
     creditsUsed: number;
     creditsRemaining: number;
     minutesTotal: number;
     minutesUsed: number;
     minutesRemaining: number;
+    hasSufficientInterviews: boolean;
     hasSufficientCredits: boolean;
 }
 
-export async function getOrgCreditStatus(orgId: string): Promise<CreditStatus> {
-    const org = await prisma.$queryRaw<Array<{ creditsTotal: number | null; creditsUsed: number | null }>>(
+export type CreditStatus = BillingStatus;
+
+export function getInterviewQuotaUnits(durationSeconds: number): number {
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+        return 0;
+    }
+
+    return durationSeconds > INTERVIEW_QUOTA_THRESHOLD_SECONDS ? 1 : 0;
+}
+
+export async function getOrgBillingStatus(orgId: string): Promise<BillingStatus> {
+    const org = await prisma.$queryRaw<Array<{
+        interviewQuotaTotal: number | null;
+        interviewQuotaUsed: number | null;
+        creditsTotal: number | null;
+        creditsUsed: number | null;
+    }>>(
         Prisma.sql`
-            SELECT "creditsTotal", "creditsUsed"
+            SELECT
+                "interviewQuotaTotal",
+                "interviewQuotaUsed",
+                "creditsTotal",
+                "creditsUsed"
             FROM "Organization"
             WHERE id = ${orgId}
             LIMIT 1
         `
     );
 
+    const interviewQuotaTotal = org[0]?.interviewQuotaTotal ?? 0;
+    const interviewQuotaUsed = org[0]?.interviewQuotaUsed ?? 0;
+    const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
     const creditsTotal = org[0]?.creditsTotal ?? 0;
     const creditsUsed = org[0]?.creditsUsed ?? 0;
     const creditsRemaining = Math.max(0, Math.round((creditsTotal - creditsUsed) * 100) / 100);
 
     return {
+        interviewQuotaTotal,
+        interviewQuotaUsed,
+        interviewQuotaRemaining,
         creditsTotal,
         creditsUsed,
         creditsRemaining,
         minutesTotal: Math.round(creditsTotal / CREDITS_PER_MINUTE),
         minutesUsed: Math.round(creditsUsed / CREDITS_PER_MINUTE),
         minutesRemaining: Math.round(creditsRemaining / CREDITS_PER_MINUTE),
+        hasSufficientInterviews: interviewQuotaRemaining > 0,
         hasSufficientCredits: creditsRemaining > 0,
     };
 }
 
+export async function getOrgCreditStatus(orgId: string): Promise<CreditStatus> {
+    return getOrgBillingStatus(orgId);
+}
+
 /**
- * Deduct credits at interview completion.
- * 1 credit per minute, second-precision, rounded to 2dp.
+ * Deduct one interview from the org's quota at interview completion.
  */
+export async function deductInterviewQuota(orgId: string, count = 1): Promise<{
+    deducted: number;
+    interviewQuotaRemaining: number;
+}> {
+    await prisma.$executeRaw(
+        Prisma.sql`
+            UPDATE "Organization"
+            SET "interviewQuotaUsed" = COALESCE("interviewQuotaUsed", 0) + ${count}
+            WHERE id = ${orgId}
+        `
+    );
+
+    const updated = await prisma.$queryRaw<Array<{
+        interviewQuotaTotal: number | null;
+        interviewQuotaUsed: number | null;
+    }>>(
+        Prisma.sql`
+            SELECT "interviewQuotaTotal", "interviewQuotaUsed"
+            FROM "Organization"
+            WHERE id = ${orgId}
+            LIMIT 1
+        `
+    );
+    const interviewQuotaTotal = updated[0]?.interviewQuotaTotal ?? 0;
+    const interviewQuotaUsed = updated[0]?.interviewQuotaUsed ?? 0;
+
+    return {
+        deducted: count,
+        interviewQuotaRemaining: Math.max(0, interviewQuotaTotal - interviewQuotaUsed),
+    };
+}
+
 export async function deductInterviewCredits(orgId: string, durationSeconds: number): Promise<{
     deducted: number;
     creditsRemaining: number;

@@ -13,7 +13,8 @@ import {
     X,
     ShieldAlert,
     Loader2,
-    LifeBuoy
+    LifeBuoy,
+    CreditCard
 } from "lucide-react";
 import { Toaster } from "@/components/ui/toast-custom";
 
@@ -108,6 +109,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
                     {[ 
                         { href: "/super-admin", label: "Dashboard", icon: LayoutDashboard },
                         { href: "/super-admin/orgs", label: "Organizations", icon: Users },
+                        { href: "/super-admin/billing", label: "Billing", icon: CreditCard },
                         { href: "/super-admin/support", label: "Support Tickets", icon: LifeBuoy },
                         { href: "/super-admin/settings", label: "Settings", icon: Settings },
                     ].map((item) => {

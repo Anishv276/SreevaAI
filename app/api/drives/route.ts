@@ -7,7 +7,7 @@ import { sanitizeObject } from "@/lib/utils";
 import { generateId } from "@/lib/ids";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { deleteDriveEmbeddings } from "@/lib/pinecone";
-import { getOrgCreditStatus } from "@/lib/credits";
+import { getOrgBillingStatus } from "@/lib/credits";
 import { isDriveCreationLocked } from "@/lib/drive-limits";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
 
@@ -167,9 +167,9 @@ export async function POST(request: Request) {
                 return NextResponse.json({ error: "Drive creation is blocked because your organization is restricted." }, { status: 403 });
             }
 
-            const creditStatus = await getOrgCreditStatus(session.orgId);
-            if (creditStatus.creditsTotal > 0 && !creditStatus.hasSufficientCredits) {
-                return NextResponse.json({ error: "Insufficient credits. Recharge to create new drives.", code: "NO_CREDITS" }, { status: 402 });
+            const billingStatus = await getOrgBillingStatus(session.orgId);
+            if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
+                return NextResponse.json({ error: "Interview quota exhausted. Increase quota to create new drives.", code: "NO_INTERVIEWS" }, { status: 402 });
             }
 
             const maxActiveDrives = Number(org?.maxActiveDrives || 0);

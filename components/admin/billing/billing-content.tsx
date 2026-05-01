@@ -1,61 +1,69 @@
-// Billing page — ring hero, plan column, how-it-works, history.
-
 "use client";
 
-import { Check, Crown, ExternalLink } from "lucide-react";
 import React from "react";
-import { SettingsCard } from "../settings/settings-shared";
-import { Button } from "@/components/ui/button";
-import { Icon } from "./internal/billing-icons";
-import { BuyCreditsModal } from "./internal/buy-credits-modal";
-import { Eyebrow, Fact, RingStat } from "./internal/billing-primitives";
+import { ReceiptText, Sparkles, BarChart3 } from "lucide-react";
 import { HistoryTable } from "./internal/billing-history";
+import { Eyebrow, Fact, RingStat } from "./internal/billing-primitives";
 import { injectBillingAnimStyles } from "./internal/inject-styles";
 import { INK, LINE, LINE_2, MUTED, ORANGE } from "./internal/tokens";
-import type { CreditPack, InterviewRow } from "./internal/types";
+import type { InterviewRow } from "./internal/types";
 import { useCount } from "./internal/use-billing-count";
 
-const card = {
+type BillingStatus = {
+  interviewQuotaTotal: number;
+  interviewQuotaUsed: number;
+  interviewQuotaRemaining: number;
+  creditsTotal: number;
+  creditsUsed: number;
+  creditsRemaining: number;
+  minutesTotal: number;
+  minutesUsed: number;
+  minutesRemaining: number;
+  hasSufficientInterviews: boolean;
+  hasSufficientCredits: boolean;
+};
+
+type BillingContentProps = {
+  creditsEndpoint?: string;
+  historyEndpoint?: string;
+  orgName?: string;
+  orgPlanLabel?: string;
+  showRechargeHelp?: boolean;
+  showCreditInternals?: boolean;
+  showCreditsUsedInHistory?: boolean;
+};
+
+const card: React.CSSProperties = {
   background: "#fff",
   border: `1px solid ${LINE}`,
-  borderRadius: 14,
-  overflow: "hidden" as const,
+  borderRadius: 18,
+  overflow: "hidden",
 };
 
-const ghostBtn: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: `1px solid ${LINE}`,
-  background: "#fff",
-  color: INK,
-  fontSize: 13,
-  fontWeight: 500,
-  cursor: "pointer",
-};
-
-const primaryBtn: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "10px 16px",
-  borderRadius: 10,
-  border: "none",
-  background: ORANGE,
-  color: "#fff",
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: "pointer",
-  boxShadow: "0 1px 2px rgba(242,107,31,.3)",
-};
-
-export function BillingContent() {
-  const [credits, setCredits] = React.useState({ total: 0, used: 0 });
-  const [creditsLoading, setCreditsLoading] = React.useState(true);
-  const [creditsError, setCreditsError] = React.useState<string | null>(null);
-  const [buyOpen, setBuyOpen] = React.useState(false);
+export function BillingContent({
+  creditsEndpoint = "/api/admin/credits",
+  historyEndpoint = "/api/admin/billing/history",
+  orgName,
+  orgPlanLabel,
+  showRechargeHelp = true,
+  showCreditInternals = false,
+  showCreditsUsedInHistory = false,
+}: BillingContentProps = {}) {
+  const [status, setStatus] = React.useState<BillingStatus>({
+    interviewQuotaTotal: 0,
+    interviewQuotaUsed: 0,
+    interviewQuotaRemaining: 0,
+    creditsTotal: 0,
+    creditsUsed: 0,
+    creditsRemaining: 0,
+    minutesTotal: 0,
+    minutesUsed: 0,
+    minutesRemaining: 0,
+    hasSufficientInterviews: true,
+    hasSufficientCredits: true,
+  });
+  const [statusLoading, setStatusLoading] = React.useState(true);
+  const [statusError, setStatusError] = React.useState<string | null>(null);
   const [historyRows, setHistoryRows] = React.useState<InterviewRow[]>([]);
   const [historyLoading, setHistoryLoading] = React.useState(true);
   const [historyError, setHistoryError] = React.useState<string | null>(null);
@@ -67,35 +75,42 @@ export function BillingContent() {
   React.useEffect(() => {
     let cancelled = false;
 
-    const loadCredits = async () => {
+    const loadStatus = async () => {
       try {
-        setCreditsLoading(true);
-        setCreditsError(null);
-        const res = await fetch("/api/admin/credits", { cache: "no-store" });
-        if (!res.ok) {
-          throw new Error(`Failed to load credits (${res.status})`);
-        }
+        setStatusLoading(true);
+        setStatusError(null);
+        const res = await fetch(creditsEndpoint, { cache: "no-store" });
+        if (!res.ok) throw new Error(`Failed to load billing status (${res.status})`);
         const data = await res.json();
         if (cancelled) return;
-        setCredits({
-          total: Number(data.creditsTotal ?? 0),
-          used: Number(data.creditsUsed ?? 0),
+        setStatus({
+          interviewQuotaTotal: Number(data.interviewQuotaTotal ?? 0),
+          interviewQuotaUsed: Number(data.interviewQuotaUsed ?? 0),
+          interviewQuotaRemaining: Number(data.interviewQuotaRemaining ?? 0),
+          creditsTotal: Number(data.creditsTotal ?? 0),
+          creditsUsed: Number(data.creditsUsed ?? 0),
+          creditsRemaining: Number(data.creditsRemaining ?? 0),
+          minutesTotal: Number(data.minutesTotal ?? 0),
+          minutesUsed: Number(data.minutesUsed ?? 0),
+          minutesRemaining: Number(data.minutesRemaining ?? 0),
+          hasSufficientInterviews: Boolean(data.hasSufficientInterviews ?? true),
+          hasSufficientCredits: Boolean(data.hasSufficientCredits ?? true),
         });
       } catch (error) {
         if (cancelled) return;
-        console.error("[BillingContent] Failed to load credits:", error);
-        setCreditsError("Unable to load live credit balance.");
+        console.error("[BillingContent] Failed to load billing status:", error);
+        setStatusError("Unable to load live billing status.");
       } finally {
-        if (!cancelled) setCreditsLoading(false);
+        if (!cancelled) setStatusLoading(false);
       }
     };
 
-    loadCredits();
+    loadStatus();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [creditsEndpoint]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -104,10 +119,8 @@ export function BillingContent() {
       try {
         setHistoryLoading(true);
         setHistoryError(null);
-        const res = await fetch("/api/admin/billing/history", { cache: "no-store" });
-        if (!res.ok) {
-          throw new Error(`Failed to load history (${res.status})`);
-        }
+        const res = await fetch(historyEndpoint, { cache: "no-store" });
+        if (!res.ok) throw new Error(`Failed to load history (${res.status})`);
         const data = await res.json();
         if (cancelled) return;
         setHistoryRows(Array.isArray(data.rows) ? data.rows : []);
@@ -126,139 +139,177 @@ export function BillingContent() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [historyEndpoint]);
 
-  const remaining = Math.max(0, credits.total - credits.used);
-  const minsRemaining = Math.round(remaining);
-  const usedPct = credits.total > 0 ? (credits.used / credits.total) * 100 : 0;
+  const interviewRemaining = Math.max(0, status.interviewQuotaRemaining);
+  const interviewUsed = Math.max(0, status.interviewQuotaUsed);
+  const interviewTotal = Math.max(0, status.interviewQuotaTotal);
+  const interviewUsedPct = interviewTotal > 0 ? (interviewUsed / interviewTotal) * 100 : 0;
 
-  const animTotal = useCount(credits.total, [credits.total]);
-  const animRem = useCount(remaining, [credits.total, credits.used]);
-  const animMins = useCount(minsRemaining, [minsRemaining]);
-  const animPct = useCount(usedPct, [usedPct]);
+  const animRemaining = useCount(interviewRemaining, [interviewRemaining]);
+  const animUsed = useCount(interviewUsed, [interviewUsed]);
+  const animTotal = useCount(interviewTotal, [interviewTotal]);
+  const animPct = useCount(interviewUsedPct, [interviewUsedPct]);
 
-  const onPurchase = (pack: CreditPack) => setCredits((c) => ({ ...c, total: c.total + pack.credits }));
+  const creditUsedPct = status.creditsTotal > 0 ? (status.creditsUsed / status.creditsTotal) * 100 : 0;
+  const animCreditUsed = useCount(status.creditsUsed, [status.creditsUsed]);
+  const animCreditPct = useCount(creditUsedPct, [creditUsedPct]);
 
   const ringR = 88;
   const ringC = 2 * Math.PI * ringR;
   const ringDash = ringC * (animPct / 100);
+  const creditRingDash = ringC * (animCreditPct / 100);
 
   return (
-    <>
-      <BuyCreditsModal open={buyOpen} onClose={() => setBuyOpen(false)} onPurchase={onPurchase} />
-
-      <div style={{ maxWidth: "100%", margin: "0 auto", padding: "40px 4% 56px" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 40 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <span style={{ width: 4, height: 18, background: ORANGE, borderRadius: 2 }} />
-              <Eyebrow>Billing</Eyebrow>
-            </div>
-            <h1 style={{ fontSize: 38, fontWeight: 700, color: INK, margin: 0, letterSpacing: "-0.025em", lineHeight: 1.05 }}>Credits & Usage</h1>
-            <div style={{ fontSize: 14.5, color: MUTED, marginTop: 8 }}>Manage your interview credits, recharge anytime, view your plan.</div>
+    <div className="font-sans" style={{ maxWidth: "100%", margin: "0 auto", padding: "8px 0 56px" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, marginBottom: 32 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <span style={{ width: 4, height: 18, background: ORANGE, borderRadius: 2 }} />
+            <Eyebrow>Billing</Eyebrow>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button type="button" className="ghost-btn" style={ghostBtn}>
-              <Icon.receipt s={15} /> Invoices
-            </button>
-            <button type="button" className="primary-btn" onClick={() => setBuyOpen(true)} style={primaryBtn}>
-              <Icon.plus s={15} /> Buy credits
-            </button>
+          <h1 style={{ fontSize: 34, fontWeight: 800, color: INK, margin: 0, letterSpacing: "-0.03em", lineHeight: 1.05 }}>
+            Interviews & Usage
+          </h1>
+          {orgName ? (
+            <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  padding: "5px 10px",
+                  borderRadius: 999,
+                  border: `1px solid ${LINE}`,
+                  color: INK,
+                  background: "#fff",
+                }}
+              >
+                {orgName}
+              </span>
+              {orgPlanLabel ? (
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    padding: "5px 10px",
+                    borderRadius: 999,
+                    border: `1px solid ${LINE}`,
+                    color: MUTED,
+                    background: "#fff",
+                  }}
+                >
+                  {orgPlanLabel}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          <div style={{ fontSize: 14.5, color: MUTED, marginTop: 8 }}>
+            Manage interview quota, review usage, and keep track of internal billing totals.
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 20 }}>
-          <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 18, padding: 32 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
-              <div>
-                <Eyebrow>Interview credits</Eyebrow>
-                <div style={{ fontSize: 13, color: MUTED, marginTop: 6 }}>1 credit/min · second-precision billing</div>
-              </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  padding: "5px 10px",
-                  border: `1px solid ${LINE}`,
-                  borderRadius: 999,
-                  color: MUTED,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22A06B" }} />
-                All systems operational
-              </div>
-            </div>
+        <button
+          type="button"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: `1px solid ${LINE}`,
+            background: "#fff",
+            color: INK,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          <ReceiptText size={15} /> Invoices
+        </button>
+      </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 40 }}>
-              <div style={{ position: "relative", width: 220, height: 220, flexShrink: 0 }}>
-                <svg width={220} height={220} style={{ transform: "rotate(-90deg)" }}>
-                  <circle cx={110} cy={110} r={ringR} stroke={LINE} strokeWidth={14} fill="none" />
-                  <circle
-                    cx={110}
-                    cy={110}
-                    r={ringR}
-                    stroke={ORANGE}
-                    strokeWidth={14}
-                    fill="none"
-                    strokeDasharray={`${ringDash} ${ringC}`}
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" }}>Remaining</div>
-                  <div style={{ fontSize: 44, fontWeight: 700, color: INK, letterSpacing: "-0.03em", marginTop: 6 }}>
-                    {creditsLoading ? "…" : animRem.toFixed(1)}
-                  </div>
-                  <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>
-                    of {creditsLoading ? "…" : animTotal.toFixed(0)} credits
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ flex: 1, display: "grid", gap: 18 }}>
-                <RingStat label="Minutes remaining" value={Math.round(animMins).toLocaleString()} hint="of interview time left" />
-                <div style={{ height: 1, background: LINE_2 }} />
-                <RingStat
-                  label="Credits used"
-                  value={(credits.used).toFixed(2)}
-                  hint={`${Math.round(credits.used)} min consumed`}
-                />
-                <div style={{ height: 1, background: LINE_2 }} />
-                <RingStat label="Consumption" value={`${animPct.toFixed(1)}%`} hint={`${(100 - animPct).toFixed(1)}% still available`} accent />
-              </div>
+      <div style={{ display: "grid", gridTemplateColumns: showCreditInternals ? "1.35fr 1fr" : "1.35fr .95fr", gap: 20 }}>
+        <div style={{ ...card, borderTop: `4px solid ${ORANGE}`, padding: 28 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+            <div>
+              <Eyebrow>Interview quota</Eyebrow>
+              <div style={{ fontSize: 13, color: MUTED, marginTop: 6 }}>1 interview is deducted after each completed session.</div>
             </div>
-
-            <div style={{ marginTop: 32 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: MUTED, marginBottom: 8, fontWeight: 500 }}>
-                <span>{Math.round(credits.used)} min used</span>
-                <span>{credits.total.toLocaleString()} min total</span>
-              </div>
-              <div style={{ height: 6, background: LINE_2, borderRadius: 999, overflow: "hidden" }}>
-                <div style={{ width: `${animPct}%`, height: "100%", background: ORANGE, borderRadius: 999, transition: "width .3s ease" }} />
-              </div>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "5px 10px",
+                border: `1px solid ${LINE}`,
+                borderRadius: 999,
+                color: MUTED,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22A06B" }} />
+              All systems operational
             </div>
-            {creditsError ? (
-              <div style={{ marginTop: 12, fontSize: 12.5, color: "#B45309" }}>{creditsError}</div>
-            ) : null}
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            <div style={{ background: INK, borderRadius: 18, padding: 26, color: "#fff" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 32, flexWrap: "wrap" }}>
+            <div style={{ position: "relative", width: 220, height: 220, flexShrink: 0 }}>
+              <svg width={220} height={220} style={{ transform: "rotate(-90deg)" }}>
+                <circle cx={110} cy={110} r={ringR} stroke={LINE} strokeWidth={14} fill="none" />
+                <circle
+                  cx={110}
+                  cy={110}
+                  r={ringR}
+                  stroke={ORANGE}
+                  strokeWidth={14}
+                  fill="none"
+                  strokeDasharray={`${ringDash} ${ringC}`}
+                  strokeLinecap="round"
+                />
+              </svg>
+              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" }}>Remaining</div>
+                <div style={{ fontSize: 44, fontWeight: 800, color: INK, letterSpacing: "-0.03em", marginTop: 6 }}>
+                  {statusLoading ? "..." : animRemaining.toFixed(0)}
+                </div>
+                <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>
+                  of {statusLoading ? "..." : animTotal.toFixed(0)} interviews
+                </div>
+              </div>
+            </div>
+
+            <div style={{ flex: 1, display: "grid", gap: 18, minWidth: 220 }}>
+              <RingStat label="Interviews remaining" value={statusLoading ? "..." : animRemaining.toLocaleString()} hint="available to schedule" />
+              <div style={{ height: 1, background: LINE_2 }} />
+              <RingStat label="Interviews used" value={statusLoading ? "..." : animUsed.toLocaleString()} hint={`${animTotal.toLocaleString()} total allocated`} />
+              <div style={{ height: 1, background: LINE_2 }} />
+              <RingStat label="Consumption" value={`${animPct.toFixed(1)}%`} hint={`${(100 - animPct).toFixed(1)}% still available`} accent />
+            </div>
+          </div>
+
+          {statusError ? <div style={{ marginTop: 12, fontSize: 12.5, color: "#B45309" }}>{statusError}</div> : null}
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {showCreditInternals ? (
+            <div style={{ ...card, borderTop: `4px solid ${ORANGE}`, padding: 24 }}>
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
                 <div>
-                  <Eyebrow color="rgba(255,255,255,.65)">Current plan</Eyebrow>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: "#fff", marginTop: 8 }}>Studio</div>
-                  <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.65)", marginTop: 4 }}>Renews May 24, 2026</div>
+                  <Eyebrow>Internal billing</Eyebrow>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: INK, marginTop: 8 }}>Credits</div>
+                  <div style={{ fontSize: 12.5, color: MUTED, marginTop: 4 }}>Used for super-admin cost visibility.</div>
                 </div>
                 <div
                   style={{
                     padding: "5px 10px",
                     borderRadius: 999,
                     fontSize: 10.5,
-                    fontWeight: 600,
+                    fontWeight: 700,
                     letterSpacing: "0.08em",
                     textTransform: "uppercase",
                     background: ORANGE,
@@ -268,113 +319,79 @@ export function BillingContent() {
                   Active
                 </div>
               </div>
+
               <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 24 }}>
-                <span style={{ fontSize: 32, fontWeight: 700, color: "#fff" }}>$99</span>
-                <span style={{ fontSize: 13, color: "rgba(255,255,255,.6)" }}>/ month</span>
+                <span style={{ fontSize: 32, fontWeight: 800, color: INK }}>{animCreditUsed.toFixed(0)}</span>
+                <span style={{ fontSize: 13, color: MUTED }}>credits used</span>
               </div>
-              <div style={{ height: 1, background: "rgba(255,255,255,.1)", margin: "20px 0" }} />
-              <div style={{ display: "grid", gap: 10 }}>
-                {[
-                  ["100 credits / month", true],
-                  ["Up to 5 team seats", true],
-                  ["Custom interview scripts", true],
-                  ["Priority support", false],
-                ].map(([t, on]) => (
-                  <div
-                    key={String(t)}
-                    style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: on ? "#fff" : "rgba(255,255,255,.4)" }}
-                  >
-                    <span
-                      style={{
-                        width: 16,
-                        height: 16,
-                        borderRadius: "50%",
-                        background: on ? ORANGE : "rgba(255,255,255,.08)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "#fff",
-                      }}
-                    >
-                      <Icon.check s={10} />
-                    </span>
-                    {t}
+
+              <div style={{ position: "relative", width: 176, height: 176, marginTop: 18 }}>
+                <svg width={176} height={176} style={{ transform: "rotate(-90deg)" }}>
+                  <circle cx={88} cy={88} r={ringR - 12} stroke={LINE} strokeWidth={12} fill="none" />
+                  <circle
+                    cx={88}
+                    cy={88}
+                    r={ringR - 12}
+                    stroke="#111827"
+                    strokeWidth={12}
+                    fill="none"
+                    strokeDasharray={`${creditRingDash} ${ringC}`}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ fontSize: 10.5, color: MUTED, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>Used</div>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: INK, marginTop: 4 }}>
+                    {statusLoading ? "..." : animCreditUsed.toFixed(0)}
                   </div>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="ghost-btn"
-                style={{
-                  marginTop: 22,
-                  width: "100%",
-                  padding: "11px 14px",
-                  borderRadius: 10,
-                  border: "none",
-                  background: "rgba(255,255,255,.1)",
-                  color: "#fff",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 6,
-                }}
-              >
-                Manage plan <Icon.arrowRight s={13} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ ...card, marginTop: 16 }}>
-          <div style={{ padding: "20px 24px" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: INK, marginBottom: 14 }}>How credits work</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)" }}>
-              <Fact label="Rate" value="1 credit/min" sub="60 seconds = 1.00 credit" />
-              <Fact label="Precision" value="Second-precision" sub="4m 10s = 4.17, 5m 01s = 5.02" divider />
-              <Fact label="Deducted" value="On finalize" sub="Based on actual interview duration" divider />
-            </div>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 24 }}>
-          {historyError ? (
-            <div style={{ marginBottom: 10, fontSize: 12.5, color: "#B45309" }}>{historyError}</div>
-          ) : null}
-          <HistoryTable rows={historyRows} loading={historyLoading} />
-        </div>
-
-        <div style={{ marginTop: 24 }}>
-          <SettingsCard
-            title="Need More Credits?"
-            description="Contact your administrator to recharge credits and continue running interviews."
-            icon={Crown}
-          >
-            <div className="grid grid-cols-2 gap-y-4 gap-x-8 mb-8">
-              {[
-                "Instant credit top-up",
-                "No subscription required",
-                "Pay-as-you-go model",
-                "Usage tracked per interview",
-                "Auto-deducted at completion",
-                "Full audit trail",
-              ].map((feat) => (
-                <div key={feat} className="flex items-center gap-3">
-                  <div className="h-6 w-6 rounded-lg bg-gray-900 flex items-center justify-center flex-shrink-0">
-                    <Check className="h-3.5 w-3.5 text-white" />
+                  <div style={{ fontSize: 11.5, color: MUTED, marginTop: 3 }}>
+                    credits consumed
                   </div>
-                  <span className="text-sm font-medium text-gray-600">{feat}</span>
                 </div>
-              ))}
+              </div>
+
+              <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
+                <Fact label="Credits used" value={status.creditsUsed.toFixed(2)} sub={`${status.minutesUsed.toLocaleString()} min consumed`} />
+              </div>
             </div>
-            <Button className="h-11 px-8 rounded-lg bg-[#F97316] hover:bg-orange-600 text-white font-bold shadow-md transition-all">
-              Contact Admin to Recharge <ExternalLink className="h-4 w-4 ml-2.5" />
-            </Button>
-          </SettingsCard>
+          ) : (
+            <div style={{ ...card, borderTop: `4px solid ${ORANGE}`, padding: 24 }}>
+              <Eyebrow>Plan</Eyebrow>
+              <div style={{ fontSize: 24, fontWeight: 800, color: INK, marginTop: 8 }}>Current workspace</div>
+              <div style={{ fontSize: 12.5, color: MUTED, marginTop: 4 }}>
+                Interview quota is enforced across all active hiring flows.
+              </div>
+              <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
+                <Fact label="Quota status" value={status.hasSufficientInterviews ? "Active" : "Exhausted"} sub="Interview access is controlled by quota." />
+                <Fact label="Completed interviews" value={status.interviewQuotaUsed.toString()} sub="Counted from finalized interviews." />
+              </div>
+            </div>
+          )}
+
+          {showRechargeHelp ? (
+            <div style={{ ...card, padding: 20 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 12, background: "#FFF7ED", color: ORANGE, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Sparkles size={16} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Need more interviews?</div>
+                  <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>Increase the org quota from super-admin org settings.</div>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
-    </>
+
+      <div style={{ marginTop: 28 }}>
+        <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+          <BarChart3 size={16} color={ORANGE} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>Interview history</span>
+        </div>
+        <HistoryTable rows={historyRows} loading={historyLoading} showCreditsUsed={showCreditsUsedInHistory} />
+        {historyError ? <div style={{ marginTop: 10, fontSize: 12.5, color: "#B45309" }}>{historyError}</div> : null}
+      </div>
+    </div>
   );
 }

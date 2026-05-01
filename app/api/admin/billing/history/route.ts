@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession, isAdminRole } from "@/lib/auth";
+import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
+import { getInterviewQuotaUnits } from "@/lib/credits";
 
 function normalizeStatus(value?: string | null) {
   const v = String(value || "").trim().toLowerCase().replace(/[_\s]+/g, "-");
@@ -12,18 +13,25 @@ function normalizeStatus(value?: string | null) {
   return "completed";
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await getSession();
-    if (!session || !isAdminRole(session.role) || !session.orgId) {
+    if (!session || (!isAdminRole(session.role) && !isSuperAdminRole(session.role))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const requestedOrgId = searchParams.get("orgId")?.trim() || null;
+    const orgId = isSuperAdminRole(session.role) ? (requestedOrgId || session.orgId) : session.orgId;
+    if (!orgId) {
+      return NextResponse.json({ error: "Organization required" }, { status: 400 });
     }
 
     const interviews = await prisma.interview.findMany({
       where: {
         application: {
           drive: {
-            orgId: session.orgId,
+            orgId,
           },
         },
       },
@@ -54,8 +62,8 @@ export async function GET() {
           id: row.id,
           candidate: row.application?.fullName || "Unknown Candidate",
           role: row.application?.drive?.role || row.application?.drive?.title || "Unknown Role",
-          durationSec,
-          credits: Math.round((durationSec / 60) * 100) / 100,
+          interviews: getInterviewQuotaUnits(durationSec),
+          creditsUsed: Math.round((durationSec / 60) * 100) / 100,
           status: normalizeStatus(row.status),
           date,
         };
