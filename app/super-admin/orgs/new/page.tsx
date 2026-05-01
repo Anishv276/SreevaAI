@@ -15,12 +15,12 @@ import { cn } from "@/lib/utils";
 function PremiumInput({ label, icon: Icon, error, ...props }: any) {
     return (
         <div className="space-y-2">
-            <label className="flex items-center gap-1.5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">
+            <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
                 <Icon className="h-3 w-3 text-[#F97316]" />
                 {label}
                 <span className="text-[#F97316] ml-0.5">*</span>
             </label>
-            <input {...props} className={cn("h-11 w-full rounded-lg bg-white border border-gray-200 px-3.5 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md", error && "border-red-500")} />
+            <input {...props} className={cn("h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md", error && "border-red-500")} />
         </div>
     );
 }
@@ -29,7 +29,7 @@ function SectionHeader({ title }: { title: string }) {
     return (
         <div className="flex items-center gap-3 mb-6">
             <span className="h-6 w-1 rounded-full bg-[#F97316]" />
-            <p className="text-[16px] font-bold text-gray-900">{title}</p>
+            <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest">{title}</p>
         </div>
     );
 }
@@ -58,13 +58,13 @@ function LimitControl({ value, onChange, label }: { value: number, onChange: (v:
     const isUnlimited = value === 0;
     return (
         <div className="space-y-2">
-            <label className="flex items-center gap-1.5 text-[11px] font-bold text-gray-400 uppercase tracking-widest"><Layers className="h-3 w-3 text-[#F97316]" /> {label}</label>
+            <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Layers className="h-3 w-3 text-[#F97316]" /> {label}</label>
             <div className="flex items-center gap-1.5">
                 <div className="flex bg-gray-100/50 p-1 rounded-lg border border-gray-100 w-fit shrink-0">
-                    <button type="button" onClick={() => onChange(0)} className={cn("px-4 h-8 rounded-md text-[10px] font-black uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
-                    <button type="button" onClick={() => { if (isUnlimited) onChange(1); }} className={cn("px-4 h-8 rounded-md text-[10px] font-black uppercase transition-all", !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Limited</button>
+                    <button type="button" onClick={() => onChange(0)} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
+                    <button type="button" onClick={() => { if (isUnlimited) onChange(1); }} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Limited</button>
                 </div>
-                {!isUnlimited && <input type="number" min="1" value={value} onChange={(e) => onChange(Math.max(1, Number(e.target.value) || 1))} className="h-10 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
+                {!isUnlimited && <input type="number" min="1" value={value} onChange={(e) => onChange(Math.max(1, Number(e.target.value) || 1))} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
             </div>
         </div>
     );
@@ -73,11 +73,11 @@ function LimitControl({ value, onChange, label }: { value: number, onChange: (v:
 function CustomSelect({ value, onChange, options, label, icon: Icon }: any) {
     return (
         <div className="space-y-2">
-            <label className="flex items-center gap-1.5 text-[11px] font-bold text-gray-400 uppercase tracking-widest">
+            <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
                 <Icon className="h-3 w-3 text-[#F97316]" />
                 {label}
             </label>
-            <select value={value} onChange={(e) => onChange(e.target.value)} className="h-11 w-full rounded-lg bg-white border border-gray-200 px-3.5 text-[14px] font-medium shadow-sm focus:border-[#F97316] focus:outline-none hover:border-orange-300 transition-all">
+            <select value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm focus:border-[#F97316] focus:outline-none hover:border-orange-300 transition-all">
                 {options.map((opt: any) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
             </select>
         </div>
@@ -119,8 +119,8 @@ export default function NewOrgPage() {
                 googleVoiceName: "Puck"
             }));
         } else {
-            setForm(p => ({ 
-                ...p, 
+            setForm(p => ({
+                ...p,
                 ttsProvider: v,
                 sttProvider: p.sttProvider === "GOOGLE" ? "DEEPGRAM" : p.sttProvider,
                 llmProvider: p.llmProvider === "GOOGLE" ? "OPENAI" : p.llmProvider,
@@ -201,11 +201,8 @@ export default function NewOrgPage() {
             <div className="flex items-center gap-6 mb-16">
                 <div className="h-14 w-14 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#F97316]"><Building2 className="h-7 w-7" /></div>
                 <div>
-                    <h1 className="text-4xl font-black text-gray-900 tracking-tight leading-none">Organizations</h1>
-                    <p className="text-gray-400 font-bold text-[11px] uppercase tracking-[0.2em] mt-3 flex items-center gap-2">
-                        <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
-                        Onboard New Partner
-                    </p>
+                    <h1 className="text-3xl font-black text-gray-900 tracking-tight leading-none">Onboard Partner</h1>
+                    <p className="text-gray-400 font-medium text-sm mt-1">Configure global AI and administrative guardrails.</p>
                 </div>
             </div>
 
@@ -216,8 +213,8 @@ export default function NewOrgPage() {
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Organization Profile" />
                         <div className="grid md:grid-cols-2 gap-6">
-                            <PremiumInput label="Partner Name" icon={Building2} value={form.orgName} onChange={(e:any) => setForm(p => ({ ...p, orgName: e.target.value, slug: p.slug || e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-") }))} placeholder="e.g. Reliance Group" required />
-                            <PremiumInput label="URL Identifier" icon={Globe} value={form.slug} onChange={(e:any) => setForm(p => ({ ...p, slug: e.target.value.toLowerCase() }))} placeholder="slug-path" required />
+                            <PremiumInput label="Partner Name" icon={Building2} value={form.orgName} onChange={(e: any) => setForm(p => ({ ...p, orgName: e.target.value, slug: p.slug || e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-") }))} placeholder="e.g. Reliance Group" required />
+                            <PremiumInput label="URL Identifier" icon={Globe} value={form.slug} onChange={(e: any) => setForm(p => ({ ...p, slug: e.target.value.toLowerCase() }))} placeholder="slug-path" required />
                         </div>
                         <div className="pt-6 border-t border-gray-100">
                             <div className="space-y-2">
@@ -233,9 +230,9 @@ export default function NewOrgPage() {
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Administrative Access" />
                         <div className="grid md:grid-cols-3 gap-6">
-                            <PremiumInput label="Admin Name" icon={User} value={form.adminName} onChange={(e:any) => setForm(p => ({ ...p, adminName: e.target.value }))} placeholder="Full Name" />
-                            <PremiumInput label="Login Email" icon={Mail} value={form.adminEmail} onChange={(e:any) => setForm(p => ({ ...p, adminEmail: e.target.value }))} placeholder="admin@partner.com" />
-                            <PremiumInput label="Password" icon={Lock} type="password" value={form.adminPassword} onChange={(e:any) => setForm(p => ({ ...p, adminPassword: e.target.value }))} placeholder="••••••••" />
+                            <PremiumInput label="Admin Name" icon={User} value={form.adminName} onChange={(e: any) => setForm(p => ({ ...p, adminName: e.target.value }))} placeholder="Full Name" />
+                            <PremiumInput label="Login Email" icon={Mail} value={form.adminEmail} onChange={(e: any) => setForm(p => ({ ...p, adminEmail: e.target.value }))} placeholder="admin@partner.com" />
+                            <PremiumInput label="Password" icon={Lock} type="password" value={form.adminPassword} onChange={(e: any) => setForm(p => ({ ...p, adminPassword: e.target.value }))} placeholder="••••••••" />
                         </div>
                         <div className="flex justify-between pt-8 border-t border-gray-100">
                             <button type="button" onClick={() => setStep(0)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
@@ -282,13 +279,13 @@ export default function NewOrgPage() {
                                         )}
                                     </div>
                                 </div>
-                                <CustomSelect label="Neural Model" icon={Layers} value={form.ttsProvider === "SARVAM" ? form.sarvamModel : form.ttsProvider === "GOOGLE" ? form.googleModel : form.cartesiaModel} onChange={(v:any) => setForm(p => ({ ...p, [form.ttsProvider === "SARVAM" ? "sarvamModel" : form.ttsProvider === "GOOGLE" ? "googleModel" : "cartesiaModel"]: v }))} options={form.ttsProvider === "CARTESIA" ? [{ value: "cartesia/sonic-3", label: "Sonic-3 (Ultra)" }, { value: "cartesia/sonic-2", label: "Sonic-2" }] : form.ttsProvider === "SARVAM" ? [{ value: "bulbul:v3", label: "Bulbul v3" }, { value: "bulbul:v2", label: "Bulbul v2" }] : GOOGLE_TTS_MODELS.map(m => ({ value: m.value, label: m.label }))} />
+                                <CustomSelect label="Neural Model" icon={Layers} value={form.ttsProvider === "SARVAM" ? form.sarvamModel : form.ttsProvider === "GOOGLE" ? form.googleModel : form.cartesiaModel} onChange={(v: any) => setForm(p => ({ ...p, [form.ttsProvider === "SARVAM" ? "sarvamModel" : form.ttsProvider === "GOOGLE" ? "googleModel" : "cartesiaModel"]: v }))} options={form.ttsProvider === "CARTESIA" ? [{ value: "cartesia/sonic-3", label: "Sonic-3 (Ultra)" }, { value: "cartesia/sonic-2", label: "Sonic-2" }] : form.ttsProvider === "SARVAM" ? [{ value: "bulbul:v3", label: "Bulbul v3" }, { value: "bulbul:v2", label: "Bulbul v2" }] : GOOGLE_TTS_MODELS.map(m => ({ value: m.value, label: m.label }))} />
                             </div>
 
                             {/* STT & LLM */}
                             <div className="space-y-6">
                                 <div className="relative group">
-                                    <CustomSelect label="Transcription (STT)" icon={Mic} value={form.sttProvider} onChange={(v:any) => setForm(p => ({ ...p, sttProvider: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "GOOGLE", label: "Google Cloud STT" }] : [{ value: "DEEPGRAM", label: "Deepgram (Flux)" }, { value: "SARVAM", label: "Sarvam (Regional)" }]} />
+                                    <CustomSelect label="Transcription (STT)" icon={Mic} value={form.sttProvider} onChange={(v: any) => setForm(p => ({ ...p, sttProvider: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "GOOGLE", label: "Google Cloud STT" }] : [{ value: "DEEPGRAM", label: "Deepgram (Flux)" }, { value: "SARVAM", label: "Sarvam (Regional)" }]} />
                                     {form.ttsProvider === "GOOGLE" && (
                                         <div className="absolute inset-0 pointer-events-none flex items-center justify-end pr-10">
                                             <div className="flex items-center gap-1 bg-blue-50/90 border border-blue-100 px-1.5 py-0.5 rounded shadow-sm translate-y-1">
@@ -299,7 +296,7 @@ export default function NewOrgPage() {
                                     )}
                                 </div>
                                 <div className="relative group">
-                                    <CustomSelect label="Intelligence (LLM)" icon={BrainCircuit} value={form.llmModel} onChange={(v:any) => setForm(p => ({ ...p, llmModel: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" }, { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" }] : [{ value: "gpt-4o", label: "GPT-4o" }, { value: "gpt-4o-mini", label: "GPT-4o Mini" }]} />
+                                    <CustomSelect label="Intelligence (LLM)" icon={BrainCircuit} value={form.llmModel} onChange={(v: any) => setForm(p => ({ ...p, llmModel: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" }, { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" }] : [{ value: "gpt-4o", label: "GPT-4o" }, { value: "gpt-4o-mini", label: "GPT-4o Mini" }]} />
                                     {form.ttsProvider === "GOOGLE" && (
                                         <div className="absolute inset-0 pointer-events-none flex items-center justify-end pr-10">
                                             <div className="flex items-center gap-1 bg-blue-50/90 border border-blue-100 px-1.5 py-0.5 rounded shadow-sm translate-y-1">
@@ -331,7 +328,7 @@ export default function NewOrgPage() {
                         <div className="grid md:grid-cols-3 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
                             <LimitControl label="Drive Limit" value={form.maxActiveDrives} onChange={val => setForm(p => ({ ...p, maxActiveDrives: val }))} />
                             <LimitControl label="Team Limit" value={form.maxTeamMembers} onChange={val => setForm(p => ({ ...p, maxTeamMembers: val }))} />
-                            <PremiumInput label="No. of Interviews" icon={Coins} type="number" value={form.interviewQuotaTotal} onChange={(e:any) => setForm(p => ({ ...p, interviewQuotaTotal: Math.max(0, Number(e.target.value) || 0) }))} />
+                            <PremiumInput label="Interview Quota" icon={Coins} type="number" value={form.interviewQuotaTotal} onChange={(e: any) => setForm(p => ({ ...p, interviewQuotaTotal: Math.max(0, Number(e.target.value) || 0) }))} />
                         </div>
                         <div className="flex justify-between pt-8 border-t border-gray-100">
                             <button type="button" onClick={() => setStep(2)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>

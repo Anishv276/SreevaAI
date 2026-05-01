@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/auth-context";
+import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 
 export default function LoginPage() {
@@ -44,7 +45,16 @@ export default function LoginPage() {
     };
 
     return (
-        <div suppressHydrationWarning={true} className="min-h-screen bg-[#F7F6F3] flex items-center justify-center p-6 font-medium">
+        <div suppressHydrationWarning={true} className="min-h-screen bg-[#F7F6F3] flex items-center justify-center p-6 font-medium relative">
+            {/* Back to Site Button */}
+            <Link 
+                href="/"
+                className="absolute top-8 left-8 flex items-center gap-2 text-gray-400 hover:text-gray-900 transition-colors group"
+            >
+                <ChevronLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Return to Home</span>
+            </Link>
+
             <div className="w-full max-w-md space-y-10 animate-fade-slide">
                 {/* Logo Section - Matching Admin Sidebar */}
                 <div className="flex flex-col items-center gap-6 text-center">

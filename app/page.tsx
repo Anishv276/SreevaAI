@@ -153,7 +153,7 @@ const pricingPlans = [
         featured: false,
     },
     {
-        name: "Pro",
+        name: "Growth",
         price: "$299",
         suffix: "/mo",
         features: ["100 interviews included", "Price per interview: $2.99", "Topup: $3.5/interview", "Ask Sreeva AI"],
@@ -169,10 +169,10 @@ const pricingPlans = [
         featured: false,
     },
     {
-        name: "Enterprise",
+        name: "Business",
         price: "Custom",
         suffix: "",
-        features: ["600+ interviews", "Price per interview: Custom", "Topup: Included (no extra charges)", "Ask Sreeva AI"],
+        features: ["600+ interviews", "Price per interview: Custom", "Topup: Included", "Ask Sreeva AI"],
         cta: "Talk to Us",
         featured: false,
     },
@@ -727,9 +727,9 @@ export default function Home() {
                                     <tr className="border-b border-slate-100 bg-slate-50/50">
                                         <th className="p-4 font-bold text-sm text-slate-600">Feature</th>
                                         <th className="p-4 font-bold text-sm text-slate-600 text-center">Starter</th>
-                                        <th className="p-4 font-bold text-sm text-slate-600 text-center bg-orange-50/20 text-orange-600">Pro</th>
+                                        <th className="p-4 font-bold text-sm text-slate-600 text-center bg-orange-50/20 text-orange-600">Growth</th>
                                         <th className="p-4 font-bold text-sm text-slate-600 text-center">Scale</th>
-                                        <th className="p-4 font-bold text-sm text-slate-600 text-center">Enterprise</th>
+                                        <th className="p-4 font-bold text-sm text-slate-600 text-center">Business</th>
                                     </tr>
                                 </thead>
                                 <tbody>
