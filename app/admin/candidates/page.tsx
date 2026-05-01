@@ -479,6 +479,8 @@ export default function CandidatesPage() {
 
     const [isBulkLoading, setIsBulkLoading] = useState(false);
 
+    const [isCandidatesTableReady, setIsCandidatesTableReady] = useState(false);
+
     const [emailCandidate, setEmailCandidate] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
 
     const [pendingEmailBatch, setPendingEmailBatch] = useState<{
@@ -525,6 +527,7 @@ export default function CandidatesPage() {
     const isSuspended = orgStatus === "SUSPENDED" || orgStatus === "CLOSED";
     const isInterviewActionBlocked = isSuspended || quotaLocked;
     const interviewActionBlockedMessage = getInterviewActionBlockedMessage(isSuspended);
+    const tableIsLoading = isLoading || !isCandidatesTableReady;
 
 
 
@@ -537,6 +540,8 @@ export default function CandidatesPage() {
     // Refetch when filters or search changes
 
     useEffect(() => {
+
+        setIsCandidatesTableReady(false);
 
         const handler = setTimeout(() => {
 
@@ -577,8 +582,8 @@ export default function CandidatesPage() {
             }
 
 
-
-            fetchCandidates(1, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
+            void fetchCandidates(1, pagination.limit, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm)
+                .finally(() => setIsCandidatesTableReady(true));
 
         }, 200); // 200ms Search Debounce
 
@@ -1290,7 +1295,7 @@ export default function CandidatesPage() {
 
                         <tbody className="[&_tr:last-child]:border-0">
 
-                            {isLoading ? (
+                            {tableIsLoading ? (
 
                                 <TableRow>
 
@@ -1625,7 +1630,7 @@ export default function CandidatesPage() {
 
                                     );
 
-                                }))}
+                                }))} 
 
                         </tbody>
 
@@ -1686,8 +1691,6 @@ export default function CandidatesPage() {
                 </div>
 
             </div>
-
-
 
             <ActionConfirmModal
 
