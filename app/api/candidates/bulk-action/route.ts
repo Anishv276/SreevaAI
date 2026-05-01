@@ -56,7 +56,11 @@ export async function POST(request: Request) {
         if (action === "shortlist") {
             await prisma.application.updateMany({
                 where: { id: { in: validIds } },
-                data: { resumeStatus: "shortlisted" },
+                data: {
+                    resumeStatus: "shortlisted",
+                    interviewStatus: "pending",
+                    hiringStatus: "pending",
+                },
             });
             return NextResponse.json({ message: `${validIds.length} candidates shortlisted` });
         }

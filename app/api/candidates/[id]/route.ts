@@ -179,6 +179,12 @@ export async function PATCH(
             return NextResponse.json({ error: "Candidate not found or unauthorized" }, { status: 404 });
         }
 
+        const normalize = (value: unknown) => String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
+        const isShortlist = normalize(body.resumeStatus) === "shortlisted";
+        const isRejected = normalize(body.resumeStatus) === "rejected";
+        const isHired = normalize(body.hiringStatus) === "hired";
+        const isNotHired = normalize(body.hiringStatus) === "not hired" || normalize(body.hiringStatus) === "not shortlisted";
+
         // -- UPDATE -----------------------------------------
         const dataToUpdate: any = {
             ...(body.resumeStatus !== undefined && { resumeStatus: body.resumeStatus }),
@@ -186,9 +192,28 @@ export async function PATCH(
             ...(body.hiringStatus !== undefined && { hiringStatus: body.hiringStatus }),
         };
 
-        if (body.resumeStatus === "rejected" || body.resumeStatus === "REJECTED") {
+        if (isShortlist) {
+            dataToUpdate.resumeStatus = "shortlisted";
+            dataToUpdate.interviewStatus = "pending";
+            dataToUpdate.hiringStatus = "pending";
+        }
+
+        if (isRejected) {
+            dataToUpdate.resumeStatus = "rejected";
             dataToUpdate.interviewStatus = "Not Qualified";
             dataToUpdate.hiringStatus = "Not Shortlisted";
+        }
+
+        if (isHired) {
+            dataToUpdate.resumeStatus = "shortlisted";
+            dataToUpdate.interviewStatus = "finished";
+            dataToUpdate.hiringStatus = "hired";
+        }
+
+        if (isNotHired) {
+            dataToUpdate.resumeStatus = "rejected";
+            dataToUpdate.interviewStatus = "Not Qualified";
+            dataToUpdate.hiringStatus = "Not Hired";
         }
 
         const updated = await prisma.application.update({
