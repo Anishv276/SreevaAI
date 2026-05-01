@@ -34,6 +34,7 @@ import { getInterviewActionBlockedMessage, getInterviewQuotaSupportMessage, isIn
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { motion } from "framer-motion";
 import { PremiumFilter } from "@/components/admin/premium-filter";
+import { CandidateActivitySidebar } from "@/components/admin/candidate-activity-sidebar";
 //  Email Composer Modal 
 const VARIABLES = [
     { label: "{{name}}", desc: "Candidate full name" },
@@ -244,6 +245,7 @@ export default function CandidatesPage() {
         description: string;
         confirmText: string;
     } | null>(null);
+    const [activitySidebarCandidate, setActivitySidebarCandidate] = useState<{ id: string; name: string } | null>(null);
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -876,7 +878,7 @@ export default function CandidatesPage() {
                                                             {/* Drive Group */}
                                                             <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Drive</DropdownMenuLabel>
                                                             <DropdownMenuItem
-                                                                onClick={() => router.push(`/admin/candidates/${candidate.id}?report=activity&back=${encodeURIComponent("/admin/candidates")}`)}
+                                                                onClick={() => setActivitySidebarCandidate({ id: candidate.id, name: candidate.name })}
                                                                 className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors text-slate-700 focus:text-slate-900 focus:bg-slate-50"
                                                             >
                                                                 <Activity className="h-4 w-4 mr-2" />
@@ -929,6 +931,13 @@ export default function CandidatesPage() {
                     </Button>
                 </div>
             </div>
+            <CandidateActivitySidebar
+                open={activitySidebarCandidate !== null}
+                candidateId={activitySidebarCandidate?.id || null}
+                candidateName={activitySidebarCandidate?.name}
+                backHref="/admin/candidates"
+                onClose={() => setActivitySidebarCandidate(null)}
+            />
             <ActionConfirmModal
                 isOpen={isActionModalOpen}
                 onClose={() => { setIsActionModalOpen(false); setPendingAction(null); }}

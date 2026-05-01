@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { PremiumFilter } from "@/components/admin/premium-filter";
+import { CandidateActivitySidebar } from "@/components/admin/candidate-activity-sidebar";
 import { useCandidates } from "@/context/candidates-context";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,7 @@ import {
     X,
     Trash2,
     Radio,
+    Activity,
 } from "lucide-react";
 import {
     DropdownMenu,
@@ -75,6 +77,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [isBulkLoading, setIsBulkLoading] = useState(false);
     const [quotaLocked, setQuotaLocked] = useState(false);
+    const [activitySidebarCandidate, setActivitySidebarCandidate] = useState<{ id: string; name: string } | null>(null);
 
     const isSuspended = String(organization?.status || "").toUpperCase() === "SUSPENDED" || String(organization?.status || "").toUpperCase() === "CLOSED";
     const isInterviewActionBlocked = isSuspended || quotaLocked;
@@ -661,6 +664,13 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent align="end" className="w-64 p-2 rounded-xl shadow-xl border-gray-100 bg-white">
                                                         <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Actions</DropdownMenuLabel>
+                                                        <DropdownMenuItem
+                                                            onClick={() => setActivitySidebarCandidate({ id: candidate.id, name: displayName })}
+                                                            className="rounded-lg px-3 py-2 font-bold cursor-pointer text-slate-700 focus:bg-slate-50"
+                                                        >
+                                                            <Activity className="h-4 w-4 mr-2" />
+                                                            Activity
+                                                        </DropdownMenuItem>
                                                         <DropdownMenuItem onClick={() => handleSendInterviewLink({ id: candidate.id, name: displayName, interviewStatus: candidate.interviewStatus })} disabled={sendingInterviewLinkId === candidate.id || !canResendInterview || isInterviewActionBlocked} className="rounded-lg px-3 py-2 font-bold text-blue-600 cursor-pointer focus:bg-blue-50">
                                                             <RefreshCw className={cn("h-4 w-4 mr-2", sendingInterviewLinkId === candidate.id && "animate-spin")} />
                                                             {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Link"}
@@ -685,6 +695,13 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                     </Table>
                 </div>
             </div>
+            <CandidateActivitySidebar
+                open={activitySidebarCandidate !== null}
+                candidateId={activitySidebarCandidate?.id || null}
+                candidateName={activitySidebarCandidate?.name}
+                backHref={`/admin/candidates/drive/${driveId}`}
+                onClose={() => setActivitySidebarCandidate(null)}
+            />
 
             <div className="flex flex-col gap-4 border-t border-white/20 bg-white/20 px-4 py-5 backdrop-blur-xl rounded-2xl lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-wrap items-center gap-3">
