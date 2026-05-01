@@ -17,7 +17,6 @@ import {
     Sparkles,
     Volume2,
     BrainCircuit,
-    Activity,
     Coins,
     Mic,
     ChevronDown,
@@ -25,6 +24,7 @@ import {
 } from "lucide-react";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "@/components/ui/toast-custom";
+import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
 import { CARTESIA_VOICES, DEFAULT_GOOGLE_TTS_MODEL, GOOGLE_TTS_MODELS, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, normalizeOrgPlan } from "@/lib/org-plans";
 import { DEFAULT_PROCTORING_SIGNALS, getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
@@ -795,60 +795,15 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     </div>
                 </section>
 
-                <section className="space-y-6">
-                    <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-lg bg-emerald-500 flex items-center justify-center text-white shadow-md shadow-emerald-100">
-                            <Activity className="h-4 w-4" />
-                        </div>
-                        <h2 className="text-lg font-black text-gray-900 tracking-tight">Behavioral & Proctoring Infrastructure</h2>
-                    </div>
-
-                    <div className="bg-white border border-gray-100 rounded-xl p-8 shadow-sm">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {[
-                                { key: "tab_switch", label: "Tab Switch" },
-                                { key: "fullscreen_exit", label: "Fullscreen Exit" },
-                                { key: "camera_disabled", label: "Camera Disabled" },
-                                { key: "microphone_disabled", label: "Microphone Disabled" },
-                                { key: "connection_lost", label: "Connection Lost" },
-                                { key: "face_absence", label: "Face Absence" },
-                                { key: "multiple_faces", label: "Multiple Faces" },
-                                { key: "gaze_violation", label: "Gaze Violation" },
-                                { key: "head_pose_violation", label: "Head Pose Violation" },
-                                { key: "identity_mismatch", label: "Identity Mismatch" },
-                                { key: "ownership_ambiguity", label: "Ownership Ambiguity" },
-                                { key: "example_evasion", label: "Example Evasion" },
-                                { key: "latency_mismatch", label: "Latency Mismatch" },
-                                { key: "resume_claim_mismatch", label: "Resume Claim Mismatch" },
-                                { key: "ownership_clarified", label: "Ownership Clarified" },
-                                { key: "example_given", label: "Example Given" },
-                                { key: "strong_under_pressure", label: "Strong Under Pressure" },
-                                { key: "follow_up_collapse", label: "Follow-Up Collapse" },
-                                { key: "contradiction", label: "Contradiction" },
-                                { key: "contradiction_resolved", label: "Contradiction Resolved" },
-                                { key: "meta_question", label: "Meta Question" },
-                                { key: "mouse_erratic", label: "Mouse Erratic" },
-                                { key: "mouse_snap", label: "Mouse Snap" },
-                                { key: "duplicate_ip", label: "Duplicate IP" },
-                                { key: "connection_restored", label: "Connection Restored" },
-                                { key: "depth_decay", label: "Depth Decay" },
-                                { key: "complexity_latency_mismatch", label: "Complexity Latency Mismatch" },
-                            ].map((signal) => (
-                                <PremiumToggle
-                                    key={signal.key}
-                                    label={signal.label}
-                                    checked={Boolean((form.proctoringSignals as any)[signal.key])}
-                                    onChange={(checked) =>
-                                        setForm((prev) => ({
-                                            ...prev,
-                                            proctoringSignals: { ...prev.proctoringSignals, [signal.key]: checked },
-                                        }))
-                                    }
-                                />
-                            ))}
-                        </div>
-                    </div>
-                </section>
+                <ProctoringSignalsSection
+                    signals={form.proctoringSignals as any}
+                    onChange={(key, checked) =>
+                        setForm((prev) => ({
+                            ...prev,
+                            proctoringSignals: { ...prev.proctoringSignals, [key]: checked },
+                        }))
+                    }
+                />
 
                     {form.ttsProvider !== "GOOGLE" ? (
                         <section className="space-y-6">
