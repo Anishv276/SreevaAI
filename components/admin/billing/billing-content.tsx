@@ -166,10 +166,10 @@ export function BillingContent({
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
             <span style={{ width: 4, height: 18, background: ORANGE, borderRadius: 2 }} />
-            <Eyebrow>Billing</Eyebrow>
+            <Eyebrow>Subscription & Billing</Eyebrow>
           </div>
           <h1 style={{ fontSize: 34, fontWeight: 800, color: INK, margin: 0, letterSpacing: "-0.03em", lineHeight: 1.05 }}>
-            Interviews & Usage
+            Interviews, Usage & Invoices
           </h1>
           {orgName ? (
             <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -302,7 +302,7 @@ export function BillingContent({
                 <div>
                   <Eyebrow>Internal billing</Eyebrow>
                   <div style={{ fontSize: 24, fontWeight: 800, color: INK, marginTop: 8 }}>Credits</div>
-                  <div style={{ fontSize: 12.5, color: MUTED, marginTop: 4 }}>Used for super-admin cost visibility.</div>
+                  <div style={{ fontSize: 12.5, color: MUTED, marginTop: 4 }}>Used for organization cost visibility.</div>
                 </div>
                 <div
                   style={{
@@ -376,7 +376,7 @@ export function BillingContent({
                 </div>
                 <div>
                   <div style={{ fontSize: 13.5, fontWeight: 700, color: INK }}>Need more interviews?</div>
-                  <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>Increase the org quota from super-admin org settings.</div>
+                  <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>Increase the org quota from organization settings or contact Sreeva AI support.</div>
                 </div>
               </div>
             </div>

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getOrgBillingStatus } from "@/lib/credits";
+import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 
 export async function POST(
     request: Request,
@@ -32,6 +34,19 @@ export async function POST(
 
         if (!drive) {
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
+        }
+
+        if (drive.orgId) {
+            const billingStatus = await getOrgBillingStatus(drive.orgId);
+            if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
+                return NextResponse.json(
+                    {
+                        error: getInterviewQuotaSupportMessage("interviews"),
+                        code: "NO_INTERVIEWS",
+                    },
+                    { status: 402 }
+                );
+            }
         }
 
         // TODO: Implement actual email sending via your email provider

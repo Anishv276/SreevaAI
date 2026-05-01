@@ -8,6 +8,8 @@ import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { safeJsonParse } from "@/lib/utils";
 import { generateId } from "@/lib/ids";
 import { parseDriveScreeningSettings } from "@/lib/screening-criteria";
+import { getOrgBillingStatus } from "@/lib/credits";
+import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 
 const CHUNK_SIZE = 5;
 const pythonCmd = process.platform === "win32" ? "python" : "python3";
@@ -134,6 +136,17 @@ export async function POST(
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
         if (!drive.orgId)
             return NextResponse.json({ error: "Drive has no organisation" }, { status: 400 });
+
+        const billingStatus = await getOrgBillingStatus(drive.orgId);
+        if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
+            return NextResponse.json(
+                {
+                    error: getInterviewQuotaSupportMessage("interviews"),
+                    code: "NO_INTERVIEWS",
+                },
+                { status: 402 }
+            );
+        }
 
         const batch = await prisma.resumeBatch.create({
             data: {

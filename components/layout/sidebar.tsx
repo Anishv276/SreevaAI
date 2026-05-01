@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/context/auth-context";
 import { motion, AnimatePresence } from "framer-motion";
+import { isInterviewQuotaLocked } from "@/lib/interview-quota";
 
 interface NavItem {
     icon: any;
@@ -31,7 +32,7 @@ const NAV_GROUPS: { items: NavItem[] }[] = [
     },
     {
         items: [
-            { icon: CreditCard, label: "Billing", href: "/admin/billing" },
+            { icon: CreditCard, label: "Subscription & Billing", href: "/admin/billing" },
             { icon: Plug, label: "Integrations", href: "/admin/integrations" },
             { icon: Settings, label: "Settings", href: "/admin/settings" },
         ]
@@ -49,6 +50,7 @@ export function Sidebar() {
     const { logout, user } = useAuth();
     const [mounted, setMounted] = useState(false);
     const [orgInfo, setOrgInfo] = useState<{ name: string; logoUrl: string | null } | null>(null);
+    const [quotaLocked, setQuotaLocked] = useState(false);
     const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
     useEffect(() => {
@@ -67,6 +69,13 @@ export function Sidebar() {
                 if (res.ok) {
                     const data = await res.json();
                     setOrgInfo({ name: data.name, logoUrl: data.logoUrl });
+                }
+                const billingRes = await fetch(
+                    isSuperAdmin && orgId ? `/api/admin/credits?orgId=${encodeURIComponent(orgId)}` : "/api/admin/credits"
+                );
+                if (billingRes.ok) {
+                    const billing = await billingRes.json();
+                    setQuotaLocked(isInterviewQuotaLocked(billing));
                 }
             } catch (err) {
                 console.error("Failed to sync branding:", err);
@@ -232,6 +241,9 @@ export function Sidebar() {
                     {NAV_GROUPS.map((group, gIdx) => (
                         <div key={gIdx} className="space-y-1">
                             {group.items.map((item) => {
+                                if (quotaLocked && (item.href === "/admin/create-drive" || item.href === "/admin/integrations")) {
+                                    return null;
+                                }
                                 const isActive = pathname === item.href;
                                 const hrefWithOrg = orgId ? `${item.href}?orgId=${orgId}` : item.href;
                                 
@@ -264,6 +276,7 @@ export function Sidebar() {
                             {gIdx < NAV_GROUPS.length - 1 && <div className="h-px bg-gray-100/60 mx-4 my-2" />}
                         </div>
                     ))}
+
                 </nav>
 
                 {/* Footer Section */}

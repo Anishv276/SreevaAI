@@ -37,6 +37,7 @@ import { useJobs } from "@/context/jobs-context";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
+import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked } from "@/lib/interview-quota";
 import Link from "next/link";
 
 export default function DrivesPage() {
@@ -53,6 +54,7 @@ export default function DrivesPage() {
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [driveToDelete, setDriveToDelete] = useState<string | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [quotaLocked, setQuotaLocked] = useState(false);
 
     useEffect(() => {
         const fetchOrgStatus = async () => {
@@ -61,6 +63,11 @@ export default function DrivesPage() {
                 if (res.ok) {
                     const data = await res.json();
                     setOrgStatus(data.status || "ACTIVE");
+                }
+                const billingRes = await fetch("/api/admin/credits");
+                if (billingRes.ok) {
+                    const billing = await billingRes.json();
+                    setQuotaLocked(isInterviewQuotaLocked(billing));
                 }
             } catch (error) {
                 console.error("Failed to fetch organization status:", error);
@@ -124,7 +131,7 @@ export default function DrivesPage() {
 
     const isSuspended = orgStatus === "SUSPENDED" || orgStatus === "CLOSED";
     const activeDriveCount = organization?.activeDriveCount ?? getActiveDriveCount(jobs);
-    const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount);
+    const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount) || quotaLocked;
 
     const confirmDelete = async () => {
         if (!driveToDelete) return;
@@ -166,11 +173,25 @@ export default function DrivesPage() {
                         <div className="flex items-center gap-3">
                             <button disabled className="bg-gray-100 text-gray-400 border border-gray-200 h-12 px-6 font-bold rounded-2xl cursor-not-allowed opacity-70 flex items-center gap-2">
                                 <Lock className="h-4 w-4" />
-                                New Drive
+                                {quotaLocked ? "Drive Locked" : "New Drive"}
                             </button>
-                            <Link href="/admin/billing" className="text-[12px] font-bold text-[#F97316] hover:text-orange-700 uppercase tracking-widest">
-                                Go to Billing
-                            </Link>
+                            {quotaLocked ? (
+                                <a
+                                    href={getSupportComposeUrl({
+                                        subject: "Interview quota support request",
+                                        body: "Hi support team,\n\nPlease help us restore interview access for our account.\n",
+                                    })}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[12px] font-bold text-[#F97316] hover:text-orange-700 uppercase tracking-widest"
+                                >
+                                    Contact Support
+                                </a>
+                            ) : (
+                                <Link href="/admin/billing" className="text-[12px] font-bold text-[#F97316] hover:text-orange-700 uppercase tracking-widest">
+                                    Go to Billing
+                                </Link>
+                            )}
                         </div>
                     ) : (
                         <Link href="/admin/create-drive">
@@ -212,7 +233,7 @@ export default function DrivesPage() {
             </div>
 
             {/* Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 justify-items-start">
+            <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[repeat(2,560px)] justify-start">
                 {isLoading ? (
                     <div className="col-span-full flex w-full flex-col items-center justify-center py-24 min-h-[320px]">
                         <Loader2 className="h-10 w-10 text-orange-500 animate-spin mb-3" />
@@ -232,11 +253,25 @@ export default function DrivesPage() {
                                 <div className="flex flex-col items-center gap-3">
                                     <Button disabled className="bg-gray-100 text-gray-400 transition-all duration-300 h-14 px-10 font-bold rounded-2xl border border-gray-200 cursor-not-allowed gap-3">
                                         <Lock className="h-5 w-5" />
-                                        Create Locked
+                                        {quotaLocked ? "Drive Locked" : "Create Locked"}
                                     </Button>
-                                    <Link href="/admin/billing" className="text-[12px] font-bold text-[#F97316] hover:text-orange-700 uppercase tracking-widest">
-                                        Go to Billing
-                                    </Link>
+                                    {quotaLocked ? (
+                                        <a
+                                            href={getSupportComposeUrl({
+                                                subject: "Interview quota support request",
+                                                body: "Hi support team,\n\nPlease help us restore interview access for our account.\n",
+                                            })}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-[12px] font-bold text-[#F97316] hover:text-orange-700 uppercase tracking-widest"
+                                        >
+                                            Contact Support
+                                        </a>
+                                    ) : (
+                                        <Link href="/admin/billing" className="text-[12px] font-bold text-[#F97316] hover:text-orange-700 uppercase tracking-widest">
+                                            Go to Billing
+                                        </Link>
+                                    )}
                                 </div>
                             ) : (
                                 <Link href="/admin/create-drive">
@@ -261,7 +296,7 @@ export default function DrivesPage() {
                         return (
                             <div
                                 key={drive.id}
-                                className="group cursor-pointer w-full max-w-[400px]"
+                                className="group cursor-pointer w-full"
                             >
                                 <div className="relative h-full overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-orange-200 hover:shadow-[0_20px_50px_rgba(15,23,42,0.12)] flex flex-col">
                                     <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-400 via-amber-400 to-orange-500" />

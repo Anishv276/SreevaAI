@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { AlertCircle, Lock, ArrowRight, Phone, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { getSupportComposeUrl } from "@/lib/interview-quota";
 
 interface AccountStatusHandlerProps {
     status: string;
@@ -36,23 +37,45 @@ export function AccountStatusHandler({ status }: AccountStatusHandlerProps) {
                         <p className="mb-10 text-gray-400 font-medium leading-relaxed">
                             {status === "CLOSED" 
                                 ? "Your account has been closed. Please contact the system administrator to resolve this and restore access."
-                                : "Your account is currently suspended. Please complete your subscription to unlock all features and continue creating recruitment drives."}
+                                : "Your account got suspended because no interviews are left. Please recharge immediately and contact support@sreevaai.com."}
                         </p>
                         
                         <div className="space-y-4">
                             {status === "SUSPENDED" ? (
-                                <Link 
-                                    href="/admin/billing"
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <Link
+                                        href="/admin/billing"
+                                        className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-8 py-4 text-sm font-black text-black transition-all hover:bg-gray-100 active:scale-95 shadow-lg"
+                                    >
+                                        <ArrowRight className="h-4 w-4" />
+                                        Recharge Now
+                                    </Link>
+                                    <a
+                                        href={getSupportComposeUrl({
+                                            subject: "Urgent: interview quota exhausted",
+                                            body: "Hi support team,\n\nOur account is suspended because no interviews are left. Please help us recharge immediately.\n",
+                                        })}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-8 py-4 text-sm font-black text-white transition-all hover:bg-white/10 active:scale-95 shadow-lg"
+                                    >
+                                        <Phone className="h-4 w-4" />
+                                        Contact Support
+                                    </a>
+                                </div>
+                            ) : (
+                                <a
+                                    href={getSupportComposeUrl({
+                                        subject: "Account support request",
+                                        body: "Hi support team,\n\nMy account is currently closed. Please help me review this.\n",
+                                    })}
+                                    target="_blank"
+                                    rel="noreferrer"
                                     className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-8 py-4 text-sm font-black text-black transition-all hover:bg-gray-100 active:scale-95 shadow-lg"
                                 >
-                                    <ArrowRight className="h-4 w-4" />
-                                    Complete Subscription
-                                </Link>
-                            ) : (
-                                <button className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-8 py-4 text-sm font-black text-black transition-all hover:bg-gray-100 active:scale-95 shadow-lg">
                                     <Phone className="h-4 w-4" />
                                     Contact Support
-                                </button>
+                                </a>
                             )}
                             <Link 
                                 href="/admin"

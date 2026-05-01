@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, Lock, ArrowRight } from "lucide-react";
 
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import { getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
+import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked } from "@/lib/interview-quota";
 
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { StatsGrid } from "@/components/admin/stats-grid";
@@ -18,11 +19,30 @@ import { LiveFeed } from "@/components/admin/live-feed";
 
 export default function DashboardPage() {
     const [dateRange, setDateRange] = useState<DateRange>({ type: "month" });
+    const [quotaLocked, setQuotaLocked] = useState(false);
 
     const { jobs, organization } = useJobs();
     const hasNoDrives = jobs.length === 0;
     const activeDriveCount = organization?.activeDriveCount ?? getActiveDriveCount(jobs);
-    const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount);
+    const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount) || quotaLocked;
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadQuota = async () => {
+            try {
+                const res = await fetch("/api/admin/credits", { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
+            } catch {
+                // ignore
+            }
+        };
+        loadQuota();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     return (
         <div className="space-y-8 pb-12" style={{ zoom: 0.88, transformOrigin: "top center" }}>
@@ -55,19 +75,33 @@ export default function DashboardPage() {
                             <button
                                 className="cursor-not-allowed rounded-lg border border-gray-200 bg-gray-100 px-4 py-2 text-[13.5px] font-medium text-gray-400 shadow-sm"
                                 disabled
-                                title="Drive limit reached"
+                                title={quotaLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached"}
                             >
                                 <span className="flex items-center gap-2">
                                     <Lock className="h-4 w-4" />
-                                    Create New Drive
+                                    {quotaLocked ? "Create Locked" : "Create New Drive"}
                                 </span>
                             </button>
-                            <Link
-                                href="/admin/billing"
-                                className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-[#F97316] hover:text-orange-700"
-                            >
-                                Go to Billing <ArrowRight className="h-3.5 w-3.5" />
-                            </Link>
+                            {quotaLocked ? (
+                                <a
+                                    href={getSupportComposeUrl({
+                                        subject: "Interview quota support request",
+                                        body: "Hi support team,\n\nPlease help us restore interview access for our account.\n",
+                                    })}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-[#F97316] hover:text-orange-700"
+                                >
+                                    Contact Support <ArrowRight className="h-3.5 w-3.5" />
+                                </a>
+                            ) : (
+                                <Link
+                                    href="/admin/billing"
+                                    className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-[#F97316] hover:text-orange-700"
+                                >
+                                    Go to Billing <ArrowRight className="h-3.5 w-3.5" />
+                                </Link>
+                            )}
                         </div>
                     ) : (
                         <Link

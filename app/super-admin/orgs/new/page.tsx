@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Sparkles, Volume2, Mic2, BrainCircuit, Coins, Mic, ChevronDown, Infinity, Check, Search, AudioLines, Shield, Layers, Thermometer } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Sparkles, Volume2, Mic2, BrainCircuit, Coins, Mic, ChevronDown, Infinity, Check, Search, AudioLines, Shield, Layers, Thermometer, Loader2 } from "lucide-react";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
@@ -186,7 +186,7 @@ export default function NewOrgPage() {
                     <div className="h-16 w-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto text-emerald-500"><CheckCircle2 className="h-8 w-8" /></div>
                     <h2 className="text-3xl font-black text-gray-900 tracking-tight">{success.orgName} Created</h2>
                     <p className="text-gray-500 font-medium">{success.adminEmail} can now access the portal.</p>
-                    <button onClick={() => router.push("/super-admin/orgs")} className="w-full h-12 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all">Go to Registry</button>
+                    <button onClick={() => router.push("/super-admin/orgs")} className="w-full h-12 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all">Go to Organizations</button>
                 </div>
             </div>
         );
@@ -195,13 +195,13 @@ export default function NewOrgPage() {
     return (
         <div className="p-8 lg:p-12 w-full max-w-[1100px] mx-auto bg-white min-h-screen">
             <button onClick={() => router.back()} className="group flex items-center gap-2 text-gray-400 hover:text-gray-900 text-[11px] font-bold uppercase tracking-widest mb-10 transition-all">
-                <ArrowLeft className="h-3 w-3 group-hover:-translate-x-1" /> Back to Registry
+                <ArrowLeft className="h-3 w-3 group-hover:-translate-x-1" /> Back to Organizations
             </button>
 
             <div className="flex items-center gap-6 mb-16">
                 <div className="h-14 w-14 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#F97316]"><Building2 className="h-7 w-7" /></div>
                 <div>
-                    <h1 className="text-3xl font-black text-gray-900 tracking-tight leading-none">Onboard Partner</h1>
+                    <h1 className="text-3xl font-black text-gray-900 tracking-tight leading-none">Add Client</h1>
                     <p className="text-gray-400 font-medium text-sm mt-1">Configure global AI and administrative guardrails.</p>
                 </div>
             </div>
@@ -213,7 +213,7 @@ export default function NewOrgPage() {
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Organization Profile" />
                         <div className="grid md:grid-cols-2 gap-6">
-                            <PremiumInput label="Partner Name" icon={Building2} value={form.orgName} onChange={(e: any) => setForm(p => ({ ...p, orgName: e.target.value, slug: p.slug || e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-") }))} placeholder="e.g. Reliance Group" required />
+                            <PremiumInput label="Client Name" icon={Building2} value={form.orgName} onChange={(e: any) => setForm(p => ({ ...p, orgName: e.target.value, slug: p.slug || e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-") }))} placeholder="e.g. Reliance Group" required />
                             <PremiumInput label="URL Identifier" icon={Globe} value={form.slug} onChange={(e: any) => setForm(p => ({ ...p, slug: e.target.value.toLowerCase() }))} placeholder="slug-path" required />
                         </div>
                         <div className="pt-6 border-t border-gray-100">
@@ -231,7 +231,7 @@ export default function NewOrgPage() {
                         <SectionHeader title="Administrative Access" />
                         <div className="grid md:grid-cols-3 gap-6">
                             <PremiumInput label="Admin Name" icon={User} value={form.adminName} onChange={(e: any) => setForm(p => ({ ...p, adminName: e.target.value }))} placeholder="Full Name" />
-                            <PremiumInput label="Login Email" icon={Mail} value={form.adminEmail} onChange={(e: any) => setForm(p => ({ ...p, adminEmail: e.target.value }))} placeholder="admin@partner.com" />
+                            <PremiumInput label="Login Email" icon={Mail} value={form.adminEmail} onChange={(e: any) => setForm(p => ({ ...p, adminEmail: e.target.value }))} placeholder="admin@client.com" />
                             <PremiumInput label="Password" icon={Lock} type="password" value={form.adminPassword} onChange={(e: any) => setForm(p => ({ ...p, adminPassword: e.target.value }))} placeholder="••••••••" />
                         </div>
                         <div className="flex justify-between pt-8 border-t border-gray-100">
@@ -342,7 +342,7 @@ export default function NewOrgPage() {
                         <SectionHeader title="Security & Network Plan" />
                         <div className="grid md:grid-cols-4 gap-8">
                             <div className="md:col-span-1 space-y-4">
-                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Partner Plan</label>
+                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Client Plan</label>
                                 {ORG_PLAN_OPTIONS.map(p => (
                                     <button key={p.id} type="button" onClick={() => setForm(prev => ({ ...prev, plan: p.id, proctoringSignals: getProctoringSignalsForPlan(p.id) }))} className={cn("w-full p-4 rounded-lg border text-left transition-all", form.plan === p.id ? "border-[#F97316] bg-orange-50 shadow-sm" : "border-gray-100 hover:border-gray-200")}>
                                         <p className="text-xs font-black uppercase text-gray-900">{p.label}</p>
@@ -357,7 +357,7 @@ export default function NewOrgPage() {
                         <div className="flex justify-between pt-10 border-t border-gray-100">
                             <button type="button" onClick={() => setStep(3)} className="h-14 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
                             <button type="submit" disabled={loading} className="h-14 px-12 rounded-lg bg-[#F97316] text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-orange-200 hover:bg-orange-700 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-3">
-                                {loading ? <RefreshCw className="h-5 w-5 animate-spin" /> : <Shield className="h-5 w-5" />} DEPLOY ORGANIZATION
+                                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Shield className="h-5 w-5" />} {loading ? "Creating..." : "Create"}
                             </button>
                         </div>
                     </div>

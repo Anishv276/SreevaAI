@@ -6,6 +6,7 @@ import { toast } from "@/components/ui/toast-custom";
 import { Button } from "@/components/ui/button";
 import { ScreeningSettings } from "@/components/create-drive/screening-settings";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
+import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked } from "@/lib/interview-quota";
 import {
     ArrowLeft,
     Briefcase,
@@ -13,6 +14,7 @@ import {
     Upload,
     Settings,
     Pencil,
+    Lock,
 } from "lucide-react";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
@@ -28,6 +30,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
     const [screeningCriteria, setScreeningCriteria] = useState<Record<string, any>>({});
     const [shortlistMode, setShortlistMode] = useState<"automatic" | "manual">("automatic");
     const [inviteScheduleDays, setInviteScheduleDays] = useState(1);
+    const [quotaLocked, setQuotaLocked] = useState(false);
 
     const drive = jobs.find(j => j.id === driveId);
 
@@ -53,6 +56,24 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
             router.push("/admin/drives");
         }
     }, [drive, router]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadQuota = async () => {
+            try {
+                const res = await fetch("/api/admin/credits", { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
+            } catch {
+                // ignore
+            }
+        };
+        loadQuota();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     const handleSaveScreeningCriteria = async () => {
         try {
@@ -126,15 +147,18 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                             </button>
                             <button
                                 onClick={() => setActiveTab("upload")}
+                                disabled={quotaLocked}
                                 className={cn(
                                     "inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition-colors",
-                                    activeTab === "upload"
+                                    quotaLocked
+                                        ? "cursor-not-allowed border border-amber-200 bg-amber-50 text-amber-700"
+                                        : activeTab === "upload"
                                         ? "bg-slate-950 text-white shadow-sm"
                                         : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                                 )}
                             >
-                                <Upload className="h-4 w-4" />
-                                Upload Resumes
+                                {quotaLocked ? <Lock className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+                                {quotaLocked ? "Upload Locked" : "Upload Resumes"}
                             </button>
                             <button
                                 onClick={() => setActiveTab("settings")}
@@ -166,21 +190,60 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                 <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
                     {activeTab === "upload" ? (
                         <div className="space-y-4 p-6">
-                            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
-                                <span className="font-semibold">Before starting screening, adjust screening settings first.</span>{" "}
-                                <button
-                                    type="button"
-                                    onClick={() => setActiveTab("settings")}
-                                    className="font-bold underline underline-offset-2"
-                                >
-                                    Click here
-                                </button>{" "}
-                                to open the screening settings.
-                            </div>
-                            <ResumeScreening
-                                driveId={driveId}
-                                driveName={drive?.title || ""}
-                            />
+                            {quotaLocked ? (
+                                <div className="rounded-3xl border border-amber-200 bg-amber-50 px-6 py-5 text-amber-950 shadow-sm">
+                                    <div className="flex items-start gap-4">
+                                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-amber-600 shadow-sm">
+                                            <Lock className="h-5 w-5" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <p className="text-sm font-black uppercase tracking-[0.2em] text-amber-700">Upload locked</p>
+                                            <h2 className="text-xl font-bold text-gray-900">You have no remaining interview quota.</h2>
+                                            <p className="text-sm font-medium text-gray-700">
+                                                {getInterviewQuotaSupportMessage("interviews")}
+                                            </p>
+                                            <div className="flex flex-wrap gap-3 pt-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => router.push("/admin/billing")}
+                                                    className="inline-flex items-center justify-center rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-bold text-white"
+                                                >
+                                                    Go to Billing
+                                                </button>
+                                                <a
+                                                    href={getSupportComposeUrl({
+                                                        subject: "Interview quota support request",
+                                                        body: "Hi support team,\n\nPlease help us restore interview access for our account.\n",
+                                                    })}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="inline-flex items-center justify-center rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-sm font-bold text-amber-700"
+                                                >
+                                                    Contact Support
+                                                </a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
+                                        <span className="font-semibold">Before starting screening, adjust screening settings first.</span>{" "}
+                                        <button
+                                            type="button"
+                                            onClick={() => setActiveTab("settings")}
+                                            className="font-bold underline underline-offset-2"
+                                        >
+                                            Click here
+                                        </button>{" "}
+                                        to open the screening settings.
+                                    </div>
+                                    <ResumeScreening
+                                        driveId={driveId}
+                                        driveName={drive?.title || ""}
+                                    />
+                                </>
+                            )}
                         </div>
                     ) : (
                         <div className="space-y-6 p-6 md:p-8">

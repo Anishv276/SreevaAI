@@ -11,6 +11,7 @@ import { FinalPreview } from "@/components/create-drive/final-preview";
 import { InterviewSetup } from "@/components/create-drive/interview-setup";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
+import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked } from "@/lib/interview-quota";
 import {
   formatDriveLimit,
   getActiveDriveCount,
@@ -102,6 +103,7 @@ function CreateDriveForm() {
   const [maxStepReached, setMaxStepReached] = useState(isEditMode ? 3 : 0);
   const [syncedFromAi, setSyncedFromAi] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [quotaLocked, setQuotaLocked] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
   const analysisAbortRef = useRef<AbortController | null>(null);
   const hasInitialLoadedRef = useRef<string | null>(null);
@@ -110,11 +112,29 @@ function CreateDriveForm() {
     organization?.activeDriveCount ?? getActiveDriveCount(jobs);
   const maxActiveDrives = Number(organization?.maxActiveDrives || 0);
   const driveCreationLocked =
-    !isEditMode && isDriveCreationLocked(maxActiveDrives, activeDriveCount);
+    !isEditMode && (isDriveCreationLocked(maxActiveDrives, activeDriveCount) || quotaLocked);
   // Keep ref in sync with state for use in async handlers
   useEffect(() => {
     formDataRef.current = formData;
   }, [formData]);
+  useEffect(() => {
+    if (isEditMode) return;
+    let cancelled = false;
+    const loadQuota = async () => {
+      try {
+        const res = await fetch("/api/admin/credits", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
+      } catch {
+        // ignore
+      }
+    };
+    loadQuota();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditMode]);
   // Cleanup blob URLs to prevent memory leaks
   useEffect(() => {
     const url = formData.jdPreviewUrl;
@@ -631,7 +651,7 @@ function CreateDriveForm() {
       return;
     }
     if (driveCreationLocked && !isEditMode) {
-      toast.error("Drive limit reached. Go to Billing to upgrade your plan.");
+      toast.error(quotaLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached. Go to Billing to upgrade your plan.");
       return;
     }
     if (!isStepValid(currentStep)) {
@@ -649,7 +669,7 @@ function CreateDriveForm() {
   const handleStepClick = async (index: number) => {
     if (isSavingDraft) return;
     if (driveCreationLocked && !isEditMode) {
-      toast.error("Drive limit reached. Go to Billing to upgrade your plan.");
+      toast.error(quotaLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached. Go to Billing to upgrade your plan.");
       return;
     }
     // In edit mode or if the step was previously reached/completed, just jump
@@ -675,7 +695,7 @@ function CreateDriveForm() {
   const handlePublish = async () => {
     const currentFormData = formDataRef.current;
     if (driveCreationLocked && !isEditMode) {
-      toast.error("Drive limit reached. Go to Billing to upgrade your plan.");
+      toast.error(quotaLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached. Go to Billing to upgrade your plan.");
       return;
     }
     setIsSavingDraft(true);
@@ -979,25 +999,40 @@ function CreateDriveForm() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#F97316]">
-                    Drive limit reached
+                    {quotaLocked ? "Interview quota locked" : "Drive limit reached"}
                   </p>
                   <h2 className="text-lg font-bold text-gray-900">
-                    Go to Billing to upgrade your plan
+                    {quotaLocked ? "Contact support@sreevaai.com for further interviews" : "Go to Billing to upgrade your plan"}
                   </h2>
                   <p className="text-sm font-medium text-gray-600">
-                    Your plan allows {formatDriveLimit(maxActiveDrives)} active
-                    drives and you currently have {activeDriveCount} active
-                    drives.
+                    {quotaLocked
+                      ? getInterviewQuotaSupportMessage("interviews")
+                      : `Your plan allows ${formatDriveLimit(maxActiveDrives)} active drives and you currently have ${activeDriveCount} active drives.`}
                   </p>
                 </div>
               </div>
-              <Link
-                href="/admin/billing"
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#F97316] px-5 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-orange-600"
-              >
-                Upgrade Plan
-                <ChevronRight className="h-4 w-4" />
-              </Link>
+              {quotaLocked ? (
+                <a
+                  href={getSupportComposeUrl({
+                    subject: "Interview quota support request",
+                    body: "Hi support team,\n\nPlease help us restore interview access for our account.\n",
+                  })}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#F97316] px-5 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-orange-600"
+                >
+                  Contact Support
+                  <ChevronRight className="h-4 w-4" />
+                </a>
+              ) : (
+                <Link
+                  href="/admin/billing"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#F97316] px-5 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-orange-600"
+                >
+                  Upgrade Plan
+                  <ChevronRight className="h-4 w-4" />
+                </Link>
+              )}
             </div>
           </div>
         )}
@@ -1056,7 +1091,6 @@ function CreateDriveForm() {
                 } else if (syncedFromAi) {
                   router.push("/admin/create-drive/ai-chat");
                 } else if (formData.jdFileName) {
-                  // Go back to the scan upload screen where our file is still visible
                   analysisAbortRef.current?.abort();
                   setIsAnalyzing(false);
                   setCreationMethod("scan");
@@ -1078,19 +1112,34 @@ function CreateDriveForm() {
               Previous
             </Button>
           )}
+
           {currentStep === STEPS.length - 1 ? (
             <div className="flex gap-3">
               {driveCreationLocked && !isEditMode ? (
-                <Link
-                  href="/admin/billing"
-                  className="flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 hover:shadow-lg"
-                  style={{
-                    background: "linear-gradient(135deg, #F97316, #ea6608)",
-                  }}
-                >
-                  <Lock className="h-5 w-5" />
-                  Go to Billing
-                </Link>
+            quotaLocked ? (
+              <a
+                href={getSupportComposeUrl({
+                  subject: "Interview quota support request",
+                  body: "Hi support team,\n\nPlease help us restore interview access for our account.\n",
+                })}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 hover:shadow-lg"
+                style={{ background: "linear-gradient(135deg, #F97316, #ea6608)" }}
+              >
+                    <Lock className="h-5 w-5" />
+                    Contact Support
+                  </a>
+                ) : (
+                  <Link
+                    href="/admin/billing"
+                    className="flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 hover:shadow-lg"
+                    style={{ background: "linear-gradient(135deg, #F97316, #ea6608)" }}
+                  >
+                    <Lock className="h-5 w-5" />
+                    Go to Billing
+                  </Link>
+                )
               ) : (
                 <button
                   type="button"
@@ -1102,9 +1151,7 @@ function CreateDriveForm() {
                   )}
                   style={{
                     background: "linear-gradient(135deg, #F97316, #ea6608)",
-                    animation: isSavingDraft
-                      ? "none"
-                      : "pulse-glow 2s infinite",
+                    animation: isSavingDraft ? "none" : "pulse-glow 2s infinite",
                   }}
                 >
                   {isSavingDraft ? (
@@ -1112,22 +1159,33 @@ function CreateDriveForm() {
                   ) : (
                     <Rocket className="h-5 w-5" />
                   )}
-                  {isSavingDraft
-                    ? "Saving..."
-                    : isEditMode
-                      ? "Update Drive"
-                      : "Publish Drive"}
+                  {isSavingDraft ? "Saving..." : isEditMode ? "Update Drive" : "Publish Drive"}
                 </button>
               )}
             </div>
           ) : driveCreationLocked && !isEditMode ? (
-            <Link
-              href="/admin/billing"
-              className="bg-gradient-to-r from-[#F97316] to-orange-500 hover:from-orange-600 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all duration-200 px-6 h-9 min-w-[140px] flex items-center justify-center gap-2 rounded-md text-sm font-medium"
-            >
-              <Lock className="h-4 w-4" />
-              Go to Billing
-            </Link>
+            quotaLocked ? (
+              <a
+                href={getSupportComposeUrl({
+                  subject: "Interview quota support request",
+                  body: "Hi support team,\n\nPlease help us restore interview access for our account.\n",
+                })}
+                target="_blank"
+                rel="noreferrer"
+                className="bg-gradient-to-r from-[#F97316] to-orange-500 hover:from-orange-600 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all duration-200 px-6 h-9 min-w-[140px] flex items-center justify-center gap-2 rounded-md text-sm font-medium"
+              >
+                <Lock className="h-4 w-4" />
+                Contact Support
+              </a>
+            ) : (
+              <Link
+                href="/admin/billing"
+                className="bg-gradient-to-r from-[#F97316] to-orange-500 hover:from-orange-600 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all duration-200 px-6 h-9 min-w-[140px] flex items-center justify-center gap-2 rounded-md text-sm font-medium"
+              >
+                <Lock className="h-4 w-4" />
+                Go to Billing
+              </Link>
+            )
           ) : (
             <Button
               onClick={nextStep}
@@ -1135,9 +1193,7 @@ function CreateDriveForm() {
               size="sm"
               className="bg-gradient-to-r from-[#F97316] to-orange-500 hover:from-orange-600 hover:to-orange-600 text-white shadow-md hover:shadow-lg transition-all duration-200 px-6 h-9 min-w-[140px]"
             >
-              {isSavingDraft ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : null}
+              {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               {isSavingDraft ? "Saving..." : "Save & Continue"}
             </Button>
           )}

@@ -9,6 +9,7 @@ import { Toaster } from "@/components/ui/toast-custom";
 import { AccountStatusHandler } from "@/components/admin/AccountStatusHandler";
 import { LowCreditsBanner } from "../../components/admin/LowCreditsBanner";
 import { prisma } from "@/lib/prisma";
+import { syncOrgStatusWithInterviewQuota } from "@/lib/credits";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
     const session = await getSession();
@@ -25,6 +26,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             select: { status: true, onboardingComplete: true }
         } as any);
         if (org) orgData = org;
+
+        const syncedStatus = await syncOrgStatusWithInterviewQuota(session.orgId);
+        if (syncedStatus) {
+            orgData.status = syncedStatus as typeof orgData.status;
+        }
     }
 
 
@@ -58,25 +64,25 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             {/* Real-time State Synchronization */}
             <OnboardingRedirect needsOnboarding={needsOnboarding} />
             
-             <div className="relative z-10 flex w-full">
-                {showSidebar && (
-                    <Suspense fallback={<div className="w-64 bg-white/50 animate-pulse" />}>
-                        <Sidebar />
-                    </Suspense>
-                )}
-                
-                <div id="admin-main-wrapper" className={cn(
-                    "flex-1 min-w-0 transition-all duration-500 ease-in-out", 
-                    showSidebar && "md:pl-[240px]"
-                )}>
+                <div className="relative z-10 flex w-full">
+                    {showSidebar && (
+                        <Suspense fallback={<div className="w-64 bg-white/50 animate-pulse" />}>
+                            <Sidebar />
+                        </Suspense>
+                    )}
+
+                    <div id="admin-main-wrapper" className={cn(
+                        "flex-1 min-w-0 transition-all duration-500 ease-in-out",
+                        showSidebar && "md:pl-[240px]"
+                    )}>
                     <style dangerouslySetInnerHTML={{ __html: `
                         body.reports-mode #global-admin-sidebar { display: none !important; }
                         body.reports-mode #admin-main-wrapper { padding-left: 0 !important; }
                         body.reports-mode .recruiter-assistant-btn { display: none !important; }
                     ` }} />
                     <main className="min-h-screen">
-                        {/* {showSidebar && <DomainVerificationBanner />} */}
-                        <div className="max-w-full mx-auto p-4 md:p-8 lg:p-10">
+                        {orgData.status === "ACTIVE" && <LowCreditsBanner />}
+                        <div className="max-w-full mx-auto px-4 pb-4 pt-4 md:px-8 md:pb-8 lg:px-10 lg:pb-10">
                             {children}
                         </div>
                     </main>

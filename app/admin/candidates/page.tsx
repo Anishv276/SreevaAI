@@ -63,6 +63,7 @@ import {
 } from "@/components/ui/select";
 
 import { useEffect, useRef } from "react";
+import { getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
 
 
 
@@ -488,6 +489,7 @@ export default function CandidatesPage() {
 
     // Organization Status
     const [orgStatus, setOrgStatus] = useState<string>("ACTIVE");
+    const [quotaLocked, setQuotaLocked] = useState(false);
     useEffect(() => {
         const fetchOrgStatus = async () => {
             try {
@@ -496,6 +498,11 @@ export default function CandidatesPage() {
                     const data = await res.json();
                     setOrgStatus(data.status || "ACTIVE");
                 }
+                const billingRes = await fetch("/api/admin/credits");
+                if (billingRes.ok) {
+                    const billing = await billingRes.json();
+                    setQuotaLocked(isInterviewQuotaLocked(billing));
+                }
             } catch (error) {
                 console.error("Failed to fetch organization status:", error);
             }
@@ -503,6 +510,7 @@ export default function CandidatesPage() {
         fetchOrgStatus();
     }, []);
     const isSuspended = orgStatus === "SUSPENDED" || orgStatus === "CLOSED";
+    const isInterviewActionBlocked = isSuspended || quotaLocked;
 
 
 
@@ -619,6 +627,10 @@ export default function CandidatesPage() {
 
 
     const handleSendInterviewLink = async (candidate: { id: string; interviewStatus?: string }) => {
+        if (isInterviewActionBlocked) {
+            toast.error(getInterviewQuotaSupportMessage("interviews"));
+            return;
+        }
 
         setSendingInterviewLinkId(candidate.id);
 
@@ -1127,16 +1139,20 @@ export default function CandidatesPage() {
                                 <div className="flex flex-wrap items-center gap-2">
                                     <Button size="sm" onClick={async () => {
                                         if (selectedIds.size === 0) return;
+                                        if (isInterviewActionBlocked) {
+                                            toast.error(getInterviewQuotaSupportMessage("interviews"));
+                                            return;
+                                        }
                                         setIsBulkLoading(true);
                                         try {
-                                            const results = await Promise.allSettled(Array.from(selectedIds).map(id => fetch(`/api/candidates/${id}/send-interview-link`, { method: "POST" })));
-                                            const failed = results.filter(r => r.status === "rejected").length;
+                                            const results = await Promise.all(Array.from(selectedIds).map(id => fetch(`/api/candidates/${id}/send-interview-link`, { method: "POST" })));
+                                            const failed = results.filter(r => !r.ok).length;
                                             const succeeded = results.length - failed;
                                             if (succeeded > 0) toast.success(`Interview link sent to ${succeeded} candidate(s)`);
                                             if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
                                         } catch { toast.error("Failed to send interview links"); }
                                         finally { setIsBulkLoading(false); }
-                                    }} disabled={isBulkLoading} className="h-8 px-3 rounded-xl bg-white border border-gray-200 text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
+                                    }} disabled={isBulkLoading || isInterviewActionBlocked} className="h-8 px-3 rounded-xl bg-white border border-gray-200 text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
                                         <Send className="h-3.5 w-3.5" /> Resend Link
                                     </Button>
                                 </div>
@@ -1630,11 +1646,17 @@ export default function CandidatesPage() {
                                                             {/* Email Group */}
                                                             <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Email</DropdownMenuLabel>
                                                             <DropdownMenuItem
-                                                                onClick={() => setInterviewLinkCandidate({ id: candidate.id, name: candidate.name, interviewStatus: candidate.interviewStatus })}
-                                                                disabled={sendingInterviewLinkId === candidate.id || isSuspended}
-                                                                className={cn("rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors", isSuspended ? "text-gray-400 opacity-70" : "text-gray-700 focus:bg-gray-50")}
+                                                                onClick={() => {
+                                                                    if (isInterviewActionBlocked) {
+                                                                        toast.error(getInterviewQuotaSupportMessage("interviews"));
+                                                                        return;
+                                                                    }
+                                                                    setInterviewLinkCandidate({ id: candidate.id, name: candidate.name, interviewStatus: candidate.interviewStatus });
+                                                                }}
+                                                                disabled={sendingInterviewLinkId === candidate.id || isInterviewActionBlocked}
+                                                                className={cn("rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors", isInterviewActionBlocked ? "text-gray-400 opacity-70" : "text-gray-700 focus:bg-gray-50")}
                                                             >
-                                                                {isSuspended ? <Lock className="h-4 w-4 mr-2" /> : <RefreshCw className={cn("h-4 w-4 mr-2", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
+                                                                {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2" /> : <RefreshCw className={cn("h-4 w-4 mr-2", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
                                                                 {sendingInterviewLinkId === candidate.id ? "Sending..." : "Send Interview Link"}
                                                             </DropdownMenuItem>
                                                             <DropdownMenuItem

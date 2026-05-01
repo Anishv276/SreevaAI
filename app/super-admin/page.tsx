@@ -61,7 +61,7 @@ export default function SuperAdminDashboard() {
                     <Link href="/super-admin/orgs/new">
                         <button className="btn-shimmer flex items-center gap-2 bg-[#F97316] hover:bg-orange-600 text-white text-[13.5px] font-semibold px-4 py-2.5 rounded-xl transition-all duration-150 shadow-sm hover:shadow-md">
                             <Plus className="h-4 w-4" />
-                            Provision Organization
+                            Add Client
                         </button>
                     </Link>
                 </div>
@@ -76,8 +76,8 @@ export default function SuperAdminDashboard() {
                     <div className="bg-white border border-gray-100 rounded-[2.5rem] p-8 shadow-sm h-full space-y-6">
                         <div className="flex items-center justify-between">
                             <div className="space-y-1">
-                                <h2 className="text-xl font-bold text-gray-900 tracking-tight">Active Registries</h2>
-                                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Recently provisioned portals</p>
+                                <h2 className="text-xl font-bold text-gray-900 tracking-tight">Active Organizations</h2>
+                                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Recently added clients</p>
                             </div>
                             <Link href="/super-admin/orgs">
                                 <button className="p-2.5 rounded-xl bg-gray-50 text-gray-400 hover:text-[#F97316] hover:bg-orange-50 transition-all">
@@ -96,7 +96,7 @@ export default function SuperAdminDashboard() {
                                     <div className="h-16 w-16 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto text-gray-300">
                                         <Building2 className="h-8 w-8" />
                                     </div>
-                                    <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No organizations provisioned</p>
+                                    <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No clients added</p>
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 gap-3">

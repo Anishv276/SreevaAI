@@ -205,18 +205,18 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     return (
         <div className="p-8 lg:p-12 w-full max-w-[1100px] mx-auto bg-white min-h-screen">
             <button onClick={() => router.back()} className="group flex items-center gap-2 text-gray-400 hover:text-gray-900 text-[11px] font-bold uppercase tracking-widest mb-10 transition-all">
-                <ArrowLeft className="h-3 w-3 group-hover:-translate-x-1" /> Back to Registry
+                <ArrowLeft className="h-3 w-3 group-hover:-translate-x-1" /> Back to Organizations
             </button>
 
             <div className="flex items-center gap-6 mb-12">
                 <div className="h-14 w-14 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#F97316]"><Building2 className="h-7 w-7" /></div>
                 <div>
-                    <h1 className="text-3xl font-black text-gray-900 tracking-tight leading-none">Modify Partner</h1>
+                    <h1 className="text-3xl font-black text-gray-900 tracking-tight leading-none">Modify Client</h1>
                     <p className="text-gray-400 font-medium text-sm mt-1">Updating <span className="text-gray-900 font-bold">{form.name}</span></p>
                 </div>
             </div>
 
-            <Steps steps={["Identity", "Admin", "AI Engine", "Billing", "Security"]} currentStep={step} onStepClick={setStep} />
+            <Steps steps={["Identity", "Admin", "AI Engine", "Billing", "Security"]} currentStep={step} onStepClick={setStep} isEditMode={true} />
 
             <form onSubmit={handleSubmit} className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {step === 0 && (
@@ -374,7 +374,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         <div className="pt-12 border-t border-gray-100 flex items-center justify-between">
                             <button type="button" onClick={() => setStep(3)} className="h-14 px-10 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50 transition-all">Back</button>
                             <button type="submit" disabled={saving} className="h-14 px-16 rounded-lg bg-[#F97316] text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-orange-200 hover:bg-orange-700 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-3">
-                                {saving ? <RefreshCw className="h-5 w-5 animate-spin" /> : <Shield className="h-5 w-5" />} {saving ? "SAVING..." : "UPDATE CONFIGURATION"}
+                                {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Shield className="h-5 w-5" />} {saving ? "Saving..." : "Update"}
                             </button>
                         </div>
                     </div>

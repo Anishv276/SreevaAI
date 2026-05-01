@@ -314,7 +314,7 @@ export default function OrgsPage() {
                         <div className="flex items-center gap-3">
                             <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
                             <p className="text-gray-400 font-bold text-[13px] uppercase tracking-[0.2em]">
-                                {total} Total Partners
+                                {total} Total Clients
                             </p>
                         </div>
                     </div>
@@ -326,7 +326,7 @@ export default function OrgsPage() {
                             className="h-12 px-6 rounded-2xl bg-gray-900 hover:bg-black text-white font-bold transition-all shadow-lg hover:shadow-gray-200 active:scale-95 flex items-center gap-2"
                         >
                             <Plus className="h-5 w-5" />
-                            Onboard Partner
+                            Add Client
                         </Button>
                     </Link>
                 </div>
@@ -365,7 +365,7 @@ export default function OrgsPage() {
                     {loading ? (
                         <div className="p-12 text-center">
                             <Loader2 className="h-10 w-10 animate-spin text-orange-500 mx-auto mb-4" />
-                            <p className="text-sm font-black text-gray-400 uppercase tracking-widest">Fetching registry data...</p>
+                            <p className="text-sm font-black text-gray-400 uppercase tracking-widest">Fetching organization data...</p>
                         </div>
                     ) : (
                         <table className="w-full border-collapse">
@@ -503,14 +503,14 @@ export default function OrgsPage() {
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="w-[240px] p-2 rounded-[24px] bg-white/90 backdrop-blur-2xl border border-white/60 shadow-[0_20px_60px_rgba(0,0,0,0.1)] z-[60] animate-in fade-in zoom-in-95 duration-200 font-inter">
                                                     <div className="px-3 pt-2 pb-3 mb-1">
-                                                        <p className="text-[11px] font-bold text-gray-400/80 uppercase tracking-widest pl-1">Partner Controls</p>
+                                                        <p className="text-[11px] font-bold text-gray-400/80 uppercase tracking-widest pl-1">Client Controls</p>
                                                     </div>
                                                     <Link href={`/super-admin/orgs/${org.id}`} className="block w-full">
                                                         <DropdownMenuItem className="cursor-pointer rounded-2xl py-2.5 px-3 focus:bg-gray-50/80 text-gray-700 focus:text-gray-900 font-medium text-[14px] leading-none transition-all duration-200 group flex items-center">
                                                             <div className="mr-3.5 h-8 w-8 rounded-xl bg-gray-50 border border-gray-100 text-gray-400 group-hover:bg-white group-hover:text-[#F97316] group-focus:border-orange-100/50 group-hover:shadow-sm flex items-center justify-center transition-all duration-200">
                                                                 <Edit2 className="h-4 w-4" />
                                                             </div>
-                                                            Instance Settings
+                                                            Edit Organization Settings
                                                         </DropdownMenuItem>
                                                     </Link>
 
@@ -526,7 +526,7 @@ export default function OrgsPage() {
                                                         <div className="mr-3.5 h-8 w-8 rounded-xl bg-red-50 border border-red-100/50 text-red-400 group-hover:bg-white group-hover:text-red-600 group-hover:border-red-200 group-hover:shadow-sm flex items-center justify-center transition-all duration-200">
                                                             <Trash2 className="h-4 w-4" />
                                                         </div>
-                                                        Terminate Portal
+                                                        Delete Organization
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
@@ -541,7 +541,7 @@ export default function OrgsPage() {
                 {/* Pagination Footer */}
                 <div className="px-6 py-4 bg-gray-50/30 flex items-center justify-between border-t border-white/40">
                     <p className="text-gray-400 text-[11px] font-medium font-inter">
-                        Showing <span className="font-bold text-gray-700">{orgs.length}</span> of <span className="font-bold text-gray-700">{total}</span> partners
+                        Showing <span className="font-bold text-gray-700">{orgs.length}</span> of <span className="font-bold text-gray-700">{total}</span> clients
                     </p>
                     <div className="flex items-center gap-2">
                         <Button
@@ -568,9 +568,9 @@ export default function OrgsPage() {
                 isOpen={isDeleteModalOpen}
                 onClose={() => setIsDeleteModalOpen(false)}
                 onConfirm={confirmDelete}
-                title="Terminate Organization"
+                title="Delete Organization"
                 description={`Are you sure you want to terminate ${orgToDelete?.name}? This will permanently remove all data, recruitment drives, and candidates associated with this portal. This action is irreversible.`}
-                confirmText="Confirm Termination"
+                confirmText="Confirm Deletion"
                 isLoading={isDeleting}
             />
 

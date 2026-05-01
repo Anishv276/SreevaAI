@@ -9,10 +9,11 @@ import {
     Upload, X, FileText, Zap, CheckCircle2, XCircle,
     AlertCircle, TrendingUp, TrendingDown, Minus,
     ChevronUp, ChevronDown, ArrowUpDown, Users, Target,
-    History, RefreshCw, ExternalLink, ArrowRight,
+    History, RefreshCw, ExternalLink, ArrowRight, Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
+import { INTERVIEW_SUPPORT_EMAIL, isInterviewQuotaLocked, getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 // ── Types ────────────────────────────────────────────────────────────────────
 interface ResumeCandidate {
     id: string;
@@ -43,6 +44,7 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
     const [candidates, setCandidates] = useState<ResumeCandidate[]>([]);
     const [batches, setBatches] = useState<ResumeBatch[]>([]);
     const [loadingData, setLoadingData] = useState(true);
+    const [quotaLocked, setQuotaLocked] = useState(false);
     const refresh = useCallback(async () => {
         try {
             const res = await fetch(`/api/drives/${driveId}/resume-screening`);
@@ -55,6 +57,24 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
         }
     }, [driveId]);
     useEffect(() => { refresh(); }, [refresh]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadQuota = async () => {
+            try {
+                const res = await fetch("/api/admin/credits", { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
+            } catch {
+                // ignore
+            }
+        };
+        loadQuota();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
     return (
         <div className="space-y-6">
             {/* Header row */}
@@ -76,13 +96,24 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
                             </Button>
                         </Link>
                     )}
-                    <Button
-                        onClick={() => setModalOpen(true)}
-                        className="h-10 px-5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold flex items-center gap-2 shadow-sm"
-                    >
-                        <Upload className="h-4 w-4" />
-                        Upload Resumes
-                    </Button>
+                    {quotaLocked ? (
+                        <Button
+                            disabled
+                            className="h-10 px-5 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 font-bold flex items-center gap-2 shadow-sm cursor-not-allowed"
+                            title={getInterviewQuotaSupportMessage("interviews")}
+                        >
+                            <Lock className="h-4 w-4" />
+                            Upload Locked
+                        </Button>
+                    ) : (
+                        <Button
+                            onClick={() => setModalOpen(true)}
+                            className="h-10 px-5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold flex items-center gap-2 shadow-sm"
+                        >
+                            <Upload className="h-4 w-4" />
+                            Upload Resumes
+                        </Button>
+                    )}
                 </div>
             </div>
             {/* Empty state or quick summary */}
@@ -96,17 +127,32 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
                 <EmptyState onUpload={() => setModalOpen(true)} />
             ) : null}
             {/* Upload + progress modal */}
-            <UploadModal
-                open={modalOpen}
-                onClose={() => setModalOpen(false)}
-                driveId={driveId}
-                driveName={driveName}
-                onComplete={() => {
-                    setModalOpen(false);
-                    refresh();
-                    router.push(`/admin/candidates/drive/${encodeURIComponent(driveId)}`);
-                }}
-            />
+            {quotaLocked ? (
+                <div className="rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-950 shadow-sm">
+                    <div className="font-black uppercase tracking-[0.2em] text-amber-700">Upload locked</div>
+                    <p className="mt-2 font-medium text-amber-900">{getInterviewQuotaSupportMessage("interviews")}</p>
+                    <div className="mt-4 flex flex-wrap gap-3">
+                        <Link href="/admin/billing" className="rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-bold text-white">
+                            Go to Billing
+                        </Link>
+                        <a href={`mailto:${INTERVIEW_SUPPORT_EMAIL}`} className="rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-sm font-bold text-amber-700">
+                            Contact Support
+                        </a>
+                    </div>
+                </div>
+            ) : (
+                <UploadModal
+                    open={modalOpen}
+                    onClose={() => setModalOpen(false)}
+                    driveId={driveId}
+                    driveName={driveName}
+                    onComplete={() => {
+                        setModalOpen(false);
+                        refresh();
+                        router.push(`/admin/candidates/drive/${encodeURIComponent(driveId)}`);
+                    }}
+                />
+            )}
         </div>
     );
 }

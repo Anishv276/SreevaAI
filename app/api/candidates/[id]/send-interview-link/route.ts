@@ -6,6 +6,7 @@ import { getSession, isAdminRole } from "@/lib/auth";
 import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { getOrgBillingStatus } from "@/lib/credits";
+import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
     try {
@@ -49,7 +50,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
             const billingStatus = await getOrgBillingStatus(session.orgId);
             if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
-                return NextResponse.json({ error: "Interview quota exhausted. Increase quota to send interview links.", code: "NO_INTERVIEWS" }, { status: 402 });
+                return NextResponse.json(
+                    {
+                        error: getInterviewQuotaSupportMessage("interviews"),
+                        code: "NO_INTERVIEWS",
+                    },
+                    { status: 402 }
+                );
             }
         }
 

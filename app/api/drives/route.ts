@@ -10,6 +10,7 @@ import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { isDriveCreationLocked } from "@/lib/drive-limits";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
+import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 
 export async function GET(request: Request) {
     try {
@@ -169,7 +170,13 @@ export async function POST(request: Request) {
 
             const billingStatus = await getOrgBillingStatus(session.orgId);
             if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
-                return NextResponse.json({ error: "Interview quota exhausted. Increase quota to create new drives.", code: "NO_INTERVIEWS" }, { status: 402 });
+                return NextResponse.json(
+                    {
+                        error: getInterviewQuotaSupportMessage("interviews"),
+                        code: "NO_INTERVIEWS",
+                    },
+                    { status: 402 }
+                );
             }
 
             const maxActiveDrives = Number(org?.maxActiveDrives || 0);

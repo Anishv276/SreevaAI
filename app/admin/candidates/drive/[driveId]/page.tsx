@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Briefcase, Edit3, Loader2, Upload } from "lucide-react";
+import { ArrowLeft, Briefcase, Edit3, Loader2, Upload, Lock } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import { DriveResumeUploadModal } from "@/components/admin/drive-resume-upload-m
 import { ScreeningSettings } from "@/components/create-drive/screening-settings";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import { toast } from "@/components/ui/toast-custom";
+import { getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
 
 interface DriveDetails {
     id: string;
@@ -52,6 +53,7 @@ export default function DriveCandidatesPage() {
     const [screeningCriteria, setScreeningCriteria] = useState<Record<string, any>>({});
     const [shortlistMode, setShortlistMode] = useState<"automatic" | "manual">("automatic");
     const [inviteScheduleDays, setInviteScheduleDays] = useState(1);
+    const [quotaLocked, setQuotaLocked] = useState(false);
 
     useEffect(() => {
         if (!driveId) return;
@@ -116,6 +118,24 @@ export default function DriveCandidatesPage() {
             ignore = true;
         };
     }, [driveId, refreshKey]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadQuota = async () => {
+            try {
+                const res = await fetch("/api/admin/credits", { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
+            } catch {
+                // ignore
+            }
+        };
+        loadQuota();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     if (!driveId) {
         return (
@@ -196,11 +216,18 @@ export default function DriveCandidatesPage() {
 
                     <div className="flex flex-wrap gap-2 lg:justify-end">
                         <button
-                            onClick={() => setUploadOpen(true)}
-                            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#F97316] px-3.5 text-sm font-semibold text-white shadow-none transition-colors hover:bg-orange-600 hover:shadow-none"
+                            onClick={() => {
+                                if (quotaLocked) {
+                                    toast.error(getInterviewQuotaSupportMessage("interviews"));
+                                    return;
+                                }
+                                setUploadOpen(true);
+                            }}
+                            disabled={quotaLocked}
+                            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#F97316] px-3.5 text-sm font-semibold text-white shadow-none transition-colors hover:bg-orange-600 hover:shadow-none disabled:cursor-not-allowed disabled:bg-amber-100 disabled:text-amber-700"
                         >
-                            <Upload className="h-4 w-4" />
-                            Upload More
+                            {quotaLocked ? <Lock className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+                            {quotaLocked ? "Upload Locked" : "Upload More"}
                         </button>
                         <Link
                             href={`/admin/create-drive?id=${driveId}`}

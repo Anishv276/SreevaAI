@@ -13,6 +13,7 @@ import { useCandidates } from "@/context/candidates-context";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
+import { getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     AlertCircle,
@@ -70,6 +71,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [isBulkLoading, setIsBulkLoading] = useState(false);
+    const [quotaLocked, setQuotaLocked] = useState(false);
     useEffect(() => {
         const handler = setTimeout(() => {
             let startDate: string | undefined;
@@ -93,6 +95,24 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
         }, 500);
         return () => clearTimeout(handler);
     }, [driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, pageSize, fetchCandidates, scoreSort]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadQuota = async () => {
+            try {
+                const res = await fetch("/api/admin/credits", { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
+            } catch {
+                // ignore
+            }
+        };
+        loadQuota();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
     const handlePageChange = (newPage: number) => {
         if (newPage < 1 || newPage > pagination.totalPages) return;
         let startDate: string | undefined;
@@ -132,6 +152,10 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
         }
     };
     const handleSendInterviewLink = async (candidate: { id: string; name: string; interviewStatus?: string }) => {
+        if (quotaLocked) {
+            toast.error(getInterviewQuotaSupportMessage("interviews"));
+            return;
+        }
         try {
             setSendingInterviewLinkId(candidate.id);
             const res = await fetch(`/api/candidates/${candidate.id}/send-interview-link`, {
@@ -202,14 +226,18 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     };
     const handleBulkSendInterviewLink = async () => {
         if (!selectedCount || isBulkLoading) return;
+        if (quotaLocked) {
+            toast.error(getInterviewQuotaSupportMessage("interviews"));
+            return;
+        }
         try {
             setIsBulkLoading(true);
-            const results = await Promise.allSettled(
+            const results = await Promise.all(
                 Array.from(selectedIds).map((id) =>
                     fetch(`/api/candidates/${id}/send-interview-link`, { method: "POST" })
                 )
             );
-            const failed = results.filter((result) => result.status === "rejected").length;
+            const failed = results.filter((result) => !result.ok).length;
             const succeeded = results.length - failed;
             if (succeeded > 0) toast.success(`Interview link sent to ${succeeded} candidate(s)`);
             if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
@@ -420,10 +448,11 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                     <Button
                                         size="sm"
                                         onClick={handleBulkSendInterviewLink}
-                                        disabled={isBulkLoading}
+                                        disabled={isBulkLoading || quotaLocked}
+                                        title={quotaLocked ? getInterviewQuotaSupportMessage("interviews") : undefined}
                                         className="h-8 px-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-none"
                                     >
-                                        <RefreshCw className="h-3.5 w-3.5" /> Resend Link
+                                        {quotaLocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Link
                                     </Button>
                                 </div>
                             </div>
@@ -711,18 +740,26 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                     <DropdownMenuContent align="end" className="w-64 p-2 rounded-xl shadow-xl border-gray-100 bg-white">
                                                         <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Interview</DropdownMenuLabel>
                                                         <DropdownMenuItem
-                                                            onClick={() => handleSendInterviewLink({ id: candidate.id, name: displayName, interviewStatus: candidate.interviewStatus })}
-                                                            disabled={sendingInterviewLinkId === candidate.id || !canResendInterview}
+                                                            onClick={() => {
+                                                                if (quotaLocked) {
+                                                                    toast.error(getInterviewQuotaSupportMessage("interviews"));
+                                                                    return;
+                                                                }
+                                                                handleSendInterviewLink({ id: candidate.id, name: displayName, interviewStatus: candidate.interviewStatus });
+                                                            }}
+                                                            disabled={sendingInterviewLinkId === candidate.id || !canResendInterview || quotaLocked}
                                                             className={cn(
                                                                 "rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors",
                                                                 sendingInterviewLinkId === candidate.id
                                                                     ? "text-gray-400 opacity-70"
-                                                                    : canResendInterview
+                                                                    : quotaLocked
+                                                                        ? "text-gray-400 opacity-70"
+                                                                        : canResendInterview
                                                                         ? "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
                                                                         : "text-gray-400 opacity-70"
                                                             )}
                                                         >
-                                                            <RefreshCw className={cn("h-4 w-4 mr-2", sendingInterviewLinkId === candidate.id && "animate-spin")} />
+                                                            {quotaLocked ? <Lock className="h-4 w-4 mr-2" /> : <RefreshCw className={cn("h-4 w-4 mr-2", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
                                                             {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Interview Link"}
                                                         </DropdownMenuItem>
                                                         <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">Shortlist</DropdownMenuLabel>

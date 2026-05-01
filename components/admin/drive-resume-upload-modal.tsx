@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
-import { AlertCircle, CheckCircle2, FileText, Loader2, Upload, X, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileText, Loader2, Upload, X, XCircle, Lock } from "lucide-react";
+import { getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
 
 type UploadPhase = "idle" | "uploading" | "processing" | "done" | "failed";
 
@@ -30,6 +31,7 @@ export function DriveResumeUploadModal({
     const [progress, setProgress] = useState({ processed: 0, total: 0 });
     const [error, setError] = useState<string | null>(null);
     const [displayPct, setDisplayPct] = useState(0);
+    const [quotaLocked, setQuotaLocked] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const pctAnimRef = useRef<number | null>(null);
@@ -91,7 +93,29 @@ export function DriveResumeUploadModal({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
+    useEffect(() => {
+        let cancelled = false;
+        const loadQuota = async () => {
+            try {
+                const res = await fetch("/api/admin/credits", { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
+            } catch {
+                // ignore
+            }
+        };
+        loadQuota();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     const startUpload = async () => {
+        if (quotaLocked) {
+            toast.error(getInterviewQuotaSupportMessage("interviews"));
+            return;
+        }
         if (!files.length) {
             toast.error("Please add at least one PDF resume");
             return;
@@ -310,13 +334,23 @@ export function DriveResumeUploadModal({
                                     </div>
                                 </div>
                             )}
-                        </div>
+                    </div>
 
-                        {error && (
-                            <div className="flex items-start gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-                                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                                <span className="font-medium">{error}</span>
+                    {quotaLocked && (
+                        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+                            <div className="space-y-1">
+                                <p className="font-bold">Resume upload locked</p>
+                                <p className="font-medium">{getInterviewQuotaSupportMessage("interviews")}</p>
                             </div>
+                        </div>
+                    )}
+
+                    {error && (
+                        <div className="flex items-start gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                            <span className="font-medium">{error}</span>
+                        </div>
                         )}
 
                         <div className="flex items-center justify-end gap-3">
@@ -331,7 +365,7 @@ export function DriveResumeUploadModal({
                             <Button
                                 type="button"
                                 onClick={startUpload}
-                                disabled={!files.length || phase === "uploading"}
+                                disabled={!files.length || phase === "uploading" || quotaLocked}
                                 className="h-11 rounded-2xl bg-orange-600 px-5 font-bold text-white hover:bg-orange-700"
                             >
                                 {phase === "uploading" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

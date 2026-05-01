@@ -84,6 +84,40 @@ export async function getOrgCreditStatus(orgId: string): Promise<CreditStatus> {
     return getOrgBillingStatus(orgId);
 }
 
+export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<string | null> {
+    const current = await prisma.organization.findUnique({
+        where: { id: orgId },
+        select: { status: true, interviewQuotaTotal: true, interviewQuotaUsed: true },
+    });
+
+    if (!current) {
+        return null;
+    }
+
+    const interviewQuotaTotal = Number(current.interviewQuotaTotal || 0);
+    const interviewQuotaUsed = Number(current.interviewQuotaUsed || 0);
+    const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
+
+    if (current.status === "ACTIVE" && interviewQuotaTotal > 0 && interviewQuotaRemaining <= 0) {
+        await prisma.organization.update({
+            where: { id: orgId },
+            data: { status: "SUSPENDED" },
+        });
+        return "SUSPENDED";
+    }
+
+    return current.status;
+}
+
+async function autoSuspendOrgIfQuotaExhausted(orgId: string, interviewQuotaRemaining: number) {
+    if (interviewQuotaRemaining > 0) {
+        return false;
+    }
+
+    const nextStatus = await syncOrgStatusWithInterviewQuota(orgId);
+    return nextStatus === "SUSPENDED";
+}
+
 /**
  * Deduct one interview from the org's quota at interview completion.
  */
@@ -112,10 +146,17 @@ export async function deductInterviewQuota(orgId: string, count = 1): Promise<{
     );
     const interviewQuotaTotal = updated[0]?.interviewQuotaTotal ?? 0;
     const interviewQuotaUsed = updated[0]?.interviewQuotaUsed ?? 0;
+    const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
+
+    try {
+        await autoSuspendOrgIfQuotaExhausted(orgId, interviewQuotaRemaining);
+    } catch (error) {
+        console.error("[credits] Failed to auto-suspend exhausted org:", error);
+    }
 
     return {
         deducted: count,
-        interviewQuotaRemaining: Math.max(0, interviewQuotaTotal - interviewQuotaUsed),
+        interviewQuotaRemaining,
     };
 }
 
