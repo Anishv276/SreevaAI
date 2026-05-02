@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromRequest, isAdminRole, isSuperAdminRole, refreshSessionCookie } from "@/lib/auth";
 
 export async function proxy(req: NextRequest) {
+    const host = req.headers.get('host');
+    if (host === 'sreevaai.com') {
+        const url = req.nextUrl.clone();
+        url.hostname = 'www.sreevaai.com';
+        return NextResponse.redirect(url, 301);
+    }
+
     const { pathname } = req.nextUrl;
 
     const legacyLoginPaths = [

@@ -14,7 +14,35 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Sreeva AI - AI-Powered Recruitment Platform",
-  description: "Automate your hiring process with AI-driven screening and interviews.",
+  description: "Automate your hiring process with AI-driven screening and interviews using adaptive intelligence.",
+  keywords: ["AI Recruitment", "AI Interviewer", "Candidate Screening", "HR Automation", "Adaptive AI", "Sreeva AI"],
+  authors: [{ name: "Sreeva AI Team" }],
+  metadataBase: new URL("https://www.sreevaai.com"),
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    title: "Sreeva AI - AI-Powered Recruitment Platform",
+    description: "Automate your hiring process with AI-driven screening and interviews.",
+    url: "https://www.sreevaai.com",
+    siteName: "Sreeva AI",
+    images: [
+      {
+        url: "/Logo.png",
+        width: 800,
+        height: 600,
+        alt: "Sreeva AI Logo",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Sreeva AI - AI-Powered Recruitment Platform",
+    description: "Automate your hiring process with AI-driven screening and interviews.",
+    images: ["/Logo.png"],
+  },
   icons: {
     icon: "/Logo.png",
     shortcut: "/Logo.png",
@@ -36,7 +64,13 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased" suppressHydrationWarning>
         <AuthProvider>
-          <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#F8F9FB] animate-pulse">Loading Sreeva AI...</div>}>
+          <Suspense fallback={
+            <div className="min-h-screen flex flex-col items-center justify-center bg-white">
+              <img src="/Logo.png" alt="Sreeva AI" className="h-16 w-16 mb-4 animate-pulse" />
+              <h1 className="text-2xl font-bold text-slate-900">Sreeva AI - Intelligent Recruitment Platform</h1>
+              <p className="text-slate-500 mt-2 animate-pulse">Setting up your AI-powered interview environment...</p>
+            </div>
+          }>
             <JobsProvider>
               <CandidatesProvider>
                 {children}

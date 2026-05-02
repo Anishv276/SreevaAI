@@ -320,7 +320,7 @@ export default function Home() {
                                     <p className="max-w-lg text-body-lg text-on-surface-variant">
                                         SreevaAI asks the questions your best engineers would ask. Every interview. Every candidate. Catch resume padding in real time. Reduce bad hires before they start.
                                     </p>
-                                    <p className="max-w-lg text-body-md text-on-surface-variant">
+                                    <p className="max-w-lg text-lg font-medium text-primary italic border-l-2 border-primary/30 pl-4 py-1">
                                         Know exactly who will succeed in the role. Not in weeks. But with total confidence.
                                     </p>
                                 </div>
@@ -845,8 +845,18 @@ export default function Home() {
                         </div>
                     ))}
                 </div>
-                <div className="mx-auto mt-12 max-w-[1320px] border-t border-slate-100 px-6 pt-8">
+                <div className="mx-auto mt-12 max-w-[1320px] border-t border-slate-100 px-6 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
                     <p className="text-sm text-slate-500">© 2026 Sreeva AI. All rights reserved.</p>
+                    <div className="flex flex-col md:flex-row items-center gap-4 md:gap-8 text-sm text-slate-500">
+                        <a href="mailto:support@sreevai.com" className="flex items-center gap-2 hover:text-orange-600 transition-colors">
+                            <Mail className="h-4 w-4" />
+                            support@sreevai.com
+                        </a>
+                        <a href="tel:+918919053970" className="flex items-center gap-2 hover:text-orange-600 transition-colors">
+                            <Phone className="h-4 w-4" />
+                            +918919053970
+                        </a>
+                    </div>
                 </div>
             </footer>
         </div>

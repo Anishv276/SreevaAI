@@ -5,6 +5,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   : ['geophagous-delicately-augustus.ngrok-free.app'];
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   experimental: {
     serverActions: {
       bodySizeLimit: '20mb',
