@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { SuperAdminStatsGrid } from "@/components/super-admin/stats-grid";
 import { OrgCreditPieChart, OrgCreditBarGraph, OrgInterviewPieChart } from "@/components/super-admin/credit-charts";
 import { RecentActivity } from "@/components/super-admin/recent-activity";
-import { Plus, ArrowRight, Building2, Users, Briefcase, Zap, Search, Activity, Loader2 } from "lucide-react";
+import { Plus, ArrowRight, Building2, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";

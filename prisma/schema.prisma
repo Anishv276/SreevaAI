@@ -40,7 +40,6 @@ model Organization {
   cartesiaModel        String?     @default("cartesia/sonic-3")
   interviewQuotaTotal  Int         @default(0)
   interviewQuotaUsed   Int         @default(0)
-  creditsTotal         Float       @default(0)
   creditsUsed          Float       @default(0)
   usageMetrics         Json?       @default("{}")
   googleAccessToken    String?

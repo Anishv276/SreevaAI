@@ -60,7 +60,12 @@ export async function GET(request: Request) {
                 (SELECT COUNT(*)::INT FROM "Interview" i 
                  JOIN "Application" a ON a.id = i."applicationId" 
                  JOIN "Drive" d ON d.id = a."driveId" 
-                 WHERE d."orgId" = o.id) as "interviewCount"
+                 WHERE d."orgId" = o.id) as "interviewCount",
+                (SELECT COUNT(*)::INT FROM "Interview" i 
+                 JOIN "Application" a ON a.id = i."applicationId" 
+                 JOIN "Drive" d ON d.id = a."driveId" 
+                 WHERE d."orgId" = o.id AND i."status" = 'COMPLETED') as "interviewsCompleted",
+                COALESCE(o."creditsUsed", 0) as "creditsUsed"
             FROM "Organization" o
             WHERE (o."name" ILIKE ${sqlSearch} OR o."slug" ILIKE ${sqlSearch})
             ${fromDate && toDate ? Prisma.sql`AND o."createdAt" BETWEEN ${fromDate} AND ${toDate}` : Prisma.empty}
@@ -71,6 +76,10 @@ export async function GET(request: Request) {
             driveCount: number;
             candidateCount: number;
             interviewCount: number;
+            interviewsCompleted: number;
+            creditsUsed: number;
+            interviewQuotaTotal: number;
+            interviewQuotaUsed: number;
         }>;
 
         const lastWeek = new Date();
@@ -102,8 +111,7 @@ export async function GET(request: Request) {
                 totalHired: number;
                 totalInterviewQuotaAllocated: number;
                 totalInterviewQuotaConsumed: number;
-                totalCreditsAllocated: number;
-                totalCreditsConsumed: number;
+                totalCreditsUsed: number;
             }>>`
                 SELECT 
                     (SELECT COUNT(*)::INT FROM "User") as "totalAdmins",
@@ -114,13 +122,14 @@ export async function GET(request: Request) {
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "hiringStatus" = 'hired') as "totalHired",
                     COALESCE(SUM("interviewQuotaTotal"), 0)::INT as "totalInterviewQuotaAllocated",
                     COALESCE(SUM("interviewQuotaUsed"), 0)::INT as "totalInterviewQuotaConsumed",
-                    COALESCE(SUM("creditsTotal"), 0)::FLOAT as "totalCreditsAllocated",
-                    COALESCE(SUM("creditsUsed"), 0)::FLOAT as "totalCreditsConsumed"
+                    COALESCE(SUM(COALESCE("creditsUsed", 0)), 0)::FLOAT as "totalCreditsUsed"
                 FROM "Organization"
             `,
-            prisma.$queryRaw<Array<{ name: string, creditsTotal: number, creditsUsed: number, interviewQuotaTotal: number, interviewQuotaUsed: number }>>`
-                SELECT "name", "creditsTotal", "creditsUsed", "interviewQuotaTotal", "interviewQuotaUsed"
-                FROM "Organization"
+            prisma.$queryRaw<Array<{ name: string, creditsUsed: number }>>`
+                SELECT
+                    o."name",
+                    COALESCE(o."creditsUsed", 0) as "creditsUsed"
+                FROM "Organization" o
                 ORDER BY "creditsUsed" DESC
                 LIMIT 5
             `,
@@ -188,14 +197,10 @@ export async function GET(request: Request) {
             totalHired: c.totalHired || 0,
             totalInterviewQuotaAllocated: c.totalInterviewQuotaAllocated || 0,
             totalInterviewQuotaConsumed: c.totalInterviewQuotaConsumed || 0,
-            totalCreditsAllocated: c.totalCreditsAllocated || 0,
-            totalCreditsConsumed: c.totalCreditsConsumed || 0,
+            totalCreditsUsed: c.totalCreditsUsed || 0,
             orgCreditStats: orgCreditStats.map(o => ({
                 name: o.name,
-                creditsTotal: Number(o.creditsTotal || 0),
                 creditsUsed: Number(o.creditsUsed || 0),
-                interviewQuotaTotal: Number(o.interviewQuotaTotal || 0),
-                interviewQuotaUsed: Number(o.interviewQuotaUsed || 0),
             })),
             orgInterviewStats: orgInterviewStats.map(o => ({
                 name: o.name,
@@ -360,7 +365,7 @@ export async function POST(request: Request) {
                         : 0,
                 maxTeamMembers: Math.max(0, Number(maxTeamMembers ?? 0) || 0),
                 interviewQuotaTotal: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
-                creditsTotal: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
+                creditsUsed: 0,
                 proctoringSignals: normalizeProctoringSignals(proctoringSignals || getProctoringSignalsForPlan(plan || DEFAULT_ORG_PLAN)),
                 logoUrl: logoUrl || null,
                 usageMetrics: {},

@@ -75,8 +75,29 @@ export async function GET(request: Request) {
             prisma.supportTicket.count({ where: { ...where, status: "CLOSED" } }),
         ]);
 
+        const enrichedTickets = await Promise.all(tickets.map(async (ticket) => {
+            if (!ticket.interview && ticket.applicationId) {
+                const application = await prisma.application.findUnique({
+                    where: { id: ticket.applicationId },
+                    include: {
+                        drive: {
+                            include: {
+                                organization: {
+                                    select: { id: true, name: true, slug: true, plan: true },
+                                },
+                            },
+                        },
+                    },
+                });
+                if (application) {
+                    return { ...ticket, interview: { application } };
+                }
+            }
+            return ticket;
+        }));
+
         return NextResponse.json({
-            tickets,
+            tickets: enrichedTickets,
             pagination: {
                 total,
                 page,

@@ -7,9 +7,9 @@ import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { generateInterviewReport } from "@/lib/interview-analysis";
 import {
-  deductInterviewCredits,
   deductInterviewQuota,
   getInterviewQuotaUnits,
+  incrementOrgCreditsUsed,
 } from "@/lib/credits";
 import { safeJsonParse } from "@/lib/utils";
 
@@ -251,11 +251,12 @@ export async function POST(req: Request) {
     // -- AUTHENTICATION --------------------------------
     const interview = await prisma.interview.findUnique({
       where: { applicationId },
-      select: { accessToken: true }
+      select: { accessToken: true, completedAt: true }
     });
     if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid finalization token" }, { status: 401 });
     }
+    const isNewCompletion = !interview?.completedAt;
 
     const transcriptRaw = transcript;
     const finalTranscript = transcriptRaw?.trim();
@@ -315,8 +316,11 @@ export async function POST(req: Request) {
         if (quotaUnits > 0) {
           await deductInterviewQuota(orgId, quotaUnits);
         }
-        if (resolvedDuration !== null && !isNaN(resolvedDuration as number) && resolvedDuration > 0) {
-          await deductInterviewCredits(orgId, resolvedDuration);
+        if (isNewCompletion && resolvedDuration !== null && !isNaN(resolvedDuration as number)) {
+          const creditsDelta = Math.round(((resolvedDuration || 0) / 60) * 100) / 100;
+          if (creditsDelta > 0) {
+            await incrementOrgCreditsUsed(orgId, creditsDelta);
+          }
         }
       }
     } catch (creditError) {

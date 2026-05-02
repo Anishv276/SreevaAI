@@ -15,14 +15,9 @@ type BillingStatus = {
   interviewQuotaTotal: number;
   interviewQuotaUsed: number;
   interviewQuotaRemaining: number;
-  creditsTotal: number;
   creditsUsed: number;
-  creditsRemaining: number;
-  minutesTotal: number;
   minutesUsed: number;
-  minutesRemaining: number;
   hasSufficientInterviews: boolean;
-  hasSufficientCredits: boolean;
 };
 
 type BillingContentProps = {
@@ -55,14 +50,9 @@ export function BillingContent({
     interviewQuotaTotal: 0,
     interviewQuotaUsed: 0,
     interviewQuotaRemaining: 0,
-    creditsTotal: 0,
     creditsUsed: 0,
-    creditsRemaining: 0,
-    minutesTotal: 0,
     minutesUsed: 0,
-    minutesRemaining: 0,
     hasSufficientInterviews: true,
-    hasSufficientCredits: true,
   });
   const [statusLoading, setStatusLoading] = React.useState(true);
   const [statusError, setStatusError] = React.useState<string | null>(null);
@@ -92,14 +82,9 @@ export function BillingContent({
           interviewQuotaTotal: Number(data.interviewQuotaTotal ?? 0),
           interviewQuotaUsed: Number(data.interviewQuotaUsed ?? 0),
           interviewQuotaRemaining: Number(data.interviewQuotaRemaining ?? 0),
-          creditsTotal: Number(data.creditsTotal ?? 0),
           creditsUsed: Number(data.creditsUsed ?? 0),
-          creditsRemaining: Number(data.creditsRemaining ?? 0),
-          minutesTotal: Number(data.minutesTotal ?? 0),
           minutesUsed: Number(data.minutesUsed ?? 0),
-          minutesRemaining: Number(data.minutesRemaining ?? 0),
           hasSufficientInterviews: Boolean(data.hasSufficientInterviews ?? true),
-          hasSufficientCredits: Boolean(data.hasSufficientCredits ?? true),
         });
       } catch (error) {
         if (cancelled) return;
@@ -183,14 +168,11 @@ export function BillingContent({
   const animTotal = useCount(interviewTotal, [interviewTotal]);
   const animPct = useCount(interviewUsedPct, [interviewUsedPct]);
 
-  const creditUsedPct = status.creditsTotal > 0 ? (status.creditsUsed / status.creditsTotal) * 100 : 0;
   const animCreditUsed = useCount(status.creditsUsed, [status.creditsUsed]);
-  const animCreditPct = useCount(creditUsedPct, [creditUsedPct]);
 
   const ringR = 88;
   const ringC = 2 * Math.PI * ringR;
   const ringDash = ringC * (animPct / 100);
-  const creditRingDash = ringC * (animCreditPct / 100);
 
   return (
     <div className="font-sans" style={{ maxWidth: "100%", margin: "0 auto", padding: "8px 0 56px" }}>
@@ -330,11 +312,11 @@ export function BillingContent({
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {showCreditInternals ? (
             <div style={{ ...card, borderTop: `4px solid ${ORANGE}`, padding: 24 }}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
                 <div>
-                  <Eyebrow>Internal billing</Eyebrow>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: INK, marginTop: 8 }}>Credits</div>
-                  <div style={{ fontSize: 12.5, color: MUTED, marginTop: 4 }}>Used for organization cost visibility.</div>
+                  <Eyebrow>Credits used</Eyebrow>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: INK, marginTop: 8 }}>Usage only</div>
+                  <div style={{ fontSize: 12.5, color: MUTED, marginTop: 4 }}>1 minute = 1 credit.</div>
                 </div>
                 <div
                   style={{
@@ -344,42 +326,19 @@ export function BillingContent({
                     fontWeight: 700,
                     letterSpacing: "0.08em",
                     textTransform: "uppercase",
-                    background: ORANGE,
+                    background: "#111827",
                     color: "#fff",
                   }}
                 >
-                  Active
+                  Live usage
                 </div>
               </div>
 
               <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 24 }}>
-                <span style={{ fontSize: 32, fontWeight: 800, color: INK }}>{animCreditUsed.toFixed(0)}</span>
+                <span style={{ fontSize: 36, fontWeight: 800, color: INK, letterSpacing: "-0.03em" }}>
+                  {statusLoading ? "..." : animCreditUsed.toFixed(0)}
+                </span>
                 <span style={{ fontSize: 13, color: MUTED }}>credits used</span>
-              </div>
-
-              <div style={{ position: "relative", width: 176, height: 176, marginTop: 18 }}>
-                <svg width={176} height={176} style={{ transform: "rotate(-90deg)" }}>
-                  <circle cx={88} cy={88} r={ringR - 12} stroke={LINE} strokeWidth={12} fill="none" />
-                  <circle
-                    cx={88}
-                    cy={88}
-                    r={ringR - 12}
-                    stroke="#111827"
-                    strokeWidth={12}
-                    fill="none"
-                    strokeDasharray={`${creditRingDash} ${ringC}`}
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ fontSize: 10.5, color: MUTED, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" }}>Used</div>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: INK, marginTop: 4 }}>
-                    {statusLoading ? "..." : animCreditUsed.toFixed(0)}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: MUTED, marginTop: 3 }}>
-                    credits consumed
-                  </div>
-                </div>
               </div>
 
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>

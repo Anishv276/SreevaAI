@@ -16,8 +16,6 @@ type OrgSummary = {
   logoUrl: string | null;
   interviewQuotaTotal: number;
   interviewQuotaUsed: number;
-  creditsTotal: number;
-  creditsUsed: number;
 };
 
 export default function SuperAdminBillingPage() {

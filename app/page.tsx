@@ -257,7 +257,7 @@ export default function Home() {
 
         const observer = new IntersectionObserver(observerCallback, observerOptions);
         const sections = ["hero", "problems", "solutions", "workflow", "pricing", "faq"];
-        
+
         sections.forEach(id => {
             const el = document.getElementById(id);
             if (el) observer.observe(el);
@@ -331,9 +331,8 @@ export default function Home() {
                             return (
                                 <a
                                     key={item.id}
-                                    className={`relative rounded-xl px-4 py-2 transition-colors duration-300 ${
-                                        isActive ? "text-orange-600" : "text-slate-600 hover:text-orange-600"
-                                    }`}
+                                    className={`relative rounded-xl px-4 py-2 transition-colors duration-300 ${isActive ? "text-orange-600" : "text-slate-600 hover:text-orange-600"
+                                        }`}
                                     href={`#${item.id}`}
                                     onClick={(e) => scrollToSection(e, `#${item.id}`)}
                                 >
@@ -700,17 +699,17 @@ export default function Home() {
                                             <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-orange-600">Sreeva AI</th>
                                         </tr>
                                     </thead>
-                                      <tbody className="divide-y divide-slate-100">
-                                          {[
-                                              { label: "Interview Style", traditional: "Same questions for every candidate", sreeva: "Adapts in real time based on every answer" },
-                                              { label: "Skill Verification", traditional: "You trust what they say", sreeva: "You see what they actually know" },
-                                              { label: "Candidate Fraud", traditional: "Anyone can show up and answer for them", sreeva: "Identity, behavior, and response patterns all verified" },
-                                              { label: "Interviewer Bias", traditional: "Depends on who shows up that day", sreeva: "Consistent evaluation every single time" },
-                                              { label: "Report Quality", traditional: "Gut feel notes after the call", sreeva: "Structured score with evidence and clear recommendation" },
-                                              { label: "Cost", traditional: "Expensive human screeners per interview", sreeva: "Fraction of the cost, no human bottleneck" }
-                                          ].map((row, i) => (
-                                              <tr key={i} className="group transition-colors hover:bg-slate-50/30">
-                                                  <td className="px-6 py-4 text-sm font-bold text-slate-900 whitespace-nowrap">{row.label}</td>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {[
+                                            { label: "Interview Style", traditional: "Same questions for every candidate", sreeva: "Adapts in real time based on every answer" },
+                                            { label: "Skill Verification", traditional: "You trust what they say", sreeva: "You see what they actually know" },
+                                            { label: "Candidate Fraud", traditional: "Anyone can show up and answer for them", sreeva: "Identity, behavior, and response patterns all verified" },
+                                            { label: "Interviewer Bias", traditional: "Depends on who shows up that day", sreeva: "Consistent evaluation every single time" },
+                                            { label: "Report Quality", traditional: "Gut feel notes after the call", sreeva: "Structured score with evidence and clear recommendation" },
+                                            { label: "Cost", traditional: "Expensive human screeners per interview", sreeva: "Fraction of the cost, no human bottleneck" }
+                                        ].map((row, i) => (
+                                            <tr key={i} className="group transition-colors hover:bg-slate-50/30">
+                                                <td className="px-6 py-4 text-sm font-bold text-slate-900 whitespace-nowrap">{row.label}</td>
                                                 <td className="px-6 py-4 text-sm text-slate-500 whitespace-nowrap">{row.traditional}</td>
                                                 <td className="px-6 py-4 text-sm font-medium text-slate-900 bg-orange-50/30 whitespace-nowrap">
                                                     <div className="flex items-center gap-2">
@@ -849,7 +848,7 @@ export default function Home() {
                     </div>
                 </section>
 
-                <section id="contact" className="relative py-24 overflow-hidden bg-slate-50/50">
+                <section id="contact" className="relative py-24 overflow-hidde  n bg-slate-50/50">
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full max-w-[1320px] pointer-events-none">
                         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-orange-500/5 blur-[120px] rounded-full" />
                         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/5 blur-[120px] rounded-full" />
@@ -886,8 +885,8 @@ export default function Home() {
                             Adaptive AI that interviews smarter than a script.
                         </p>
                         <div className="flex gap-4">
-                            <a 
-                                className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-400 transition-colors hover:text-primary" 
+                            <a
+                                className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-400 transition-colors hover:text-primary"
                                 href="#"
                                 onClick={(e) => scrollToSection(e, "#")}
                             >

@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { 
-    Users, Building2, Briefcase, Video, 
-    Coins, Zap, Activity, Globe,
-    TrendingUp, TrendingDown, Target, Star
+    Users, Building2, Briefcase, 
+    Zap, Globe,
+    TrendingUp, TrendingDown, Target
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
@@ -16,8 +16,7 @@ interface SuperAdminStats {
     totalAdmins: number;
     totalDrives: number;
     totalCandidates: number;
-    totalCreditsAllocated: number;
-    totalCreditsConsumed: number;
+    totalCreditsUsed: number;
     trends: {
         orgs: number;
         admins: number;
@@ -64,7 +63,6 @@ export function SuperAdminStatsGrid() {
     }
 
     const s = stats;
-    const remainingCredits = Math.max(0, s.totalCreditsAllocated - s.totalCreditsConsumed);
     const activePercentage = s.totalOrgs > 0 ? Math.round((s.activeOrgs / s.totalOrgs) * 100) : 0;
 
     const cards = [
@@ -105,31 +103,13 @@ export function SuperAdminStatsGrid() {
             iconBg: "bg-pink-100/50 text-pink-600",
         },
         {
-            label: "Allocated Credits",
-            value: Math.round(s.totalCreditsAllocated),
-            trend: 0,
-            icon: Coins,
-            accent: "#F59E0B",
-            bg: "bg-amber-50/50",
-            iconBg: "bg-amber-100/50 text-amber-600",
-        },
-        {
-            label: "Consumed Credits",
-            value: Math.round(s.totalCreditsConsumed),
+            label: "Credits Used",
+            value: Math.round(s.totalCreditsUsed),
             trend: 0,
             icon: Zap,
             accent: "#10B981",
             bg: "bg-emerald-50/50",
             iconBg: "bg-emerald-100/50 text-emerald-600",
-        },
-        {
-            label: "Remaining Balance",
-            value: Math.round(remainingCredits),
-            trend: 0,
-            icon: Activity,
-            accent: "#0EA5E9",
-            bg: "bg-sky-50/50",
-            iconBg: "bg-sky-100/50 text-sky-600",
         },
         {
             label: "Platform Health",

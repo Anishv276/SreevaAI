@@ -11,19 +11,18 @@ export async function GET() {
 
     const orgs = (await prisma.organization.findMany({
       orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        plan: true,
-        status: true,
-        logoUrl: true,
-        interviewQuotaTotal: true,
-        interviewQuotaUsed: true,
-        creditsTotal: true,
-        creditsUsed: true,
-        createdAt: true,
-      } as any,
+        select: {
+            id: true,
+            name: true,
+            slug: true,
+            plan: true,
+            status: true,
+            logoUrl: true,
+            interviewQuotaTotal: true,
+            interviewQuotaUsed: true,
+            creditsUsed: true,
+            createdAt: true,
+        } as any,
     } as any)) as any[];
 
     return NextResponse.json({
@@ -31,7 +30,6 @@ export async function GET() {
         ...org,
         interviewQuotaTotal: Number(org.interviewQuotaTotal || 0),
         interviewQuotaUsed: Number(org.interviewQuotaUsed || 0),
-        creditsTotal: Number(org.creditsTotal || 0),
         creditsUsed: Number(org.creditsUsed || 0),
       })),
     });

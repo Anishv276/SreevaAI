@@ -33,11 +33,10 @@ export async function GET(
         const billingRows = await prisma.$queryRaw<Array<{
             interviewQuotaTotal: number | null;
             interviewQuotaUsed: number | null;
-            creditsTotal: number | null;
             creditsUsed: number | null;
         }>>(
             Prisma.sql`
-                SELECT "interviewQuotaTotal", "interviewQuotaUsed", "creditsTotal", "creditsUsed"
+                SELECT "interviewQuotaTotal", "interviewQuotaUsed", "creditsUsed"
                 FROM "Organization"
                 WHERE id = ${id}
                 LIMIT 1
@@ -52,7 +51,6 @@ export async function GET(
             ...org,
             interviewQuotaTotal: billingRows[0]?.interviewQuotaTotal ?? 0,
             interviewQuotaUsed: billingRows[0]?.interviewQuotaUsed ?? 0,
-            creditsTotal: billingRows[0]?.creditsTotal ?? 0,
             creditsUsed: billingRows[0]?.creditsUsed ?? 0,
         });
     } catch (error) {
@@ -84,14 +82,11 @@ export async function PATCH(
             usageMetrics,
             interviewQuotaTotal,
             interviewQuotaTopUp,
-            creditsTotal,
         } = body;
         const parsedInterviewQuotaTopUp =
             interviewQuotaTopUp !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTopUp) || 0)) : undefined;
         const parsedInterviewQuotaTotal =
             interviewQuotaTotal !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTotal) || 0)) : undefined;
-        const parsedCreditsTotal =
-            creditsTotal !== undefined ? parseFloat(creditsTotal) : undefined;
         const shouldApplyInterviewQuotaTopUp =
             parsedInterviewQuotaTopUp !== undefined && parsedInterviewQuotaTopUp > 0;
         const shouldUpdateInterviewQuotaTotal =
@@ -99,8 +94,6 @@ export async function PATCH(
             parsedInterviewQuotaTotal !== undefined &&
             !isNaN(parsedInterviewQuotaTotal) &&
             parsedInterviewQuotaTotal >= 0;
-        const shouldUpdateCreditsTotal =
-            parsedCreditsTotal !== undefined && !isNaN(parsedCreditsTotal) && parsedCreditsTotal >= 0;
 
         const existingOrg = await prisma.organization.findUnique({
             where: { id },
@@ -245,16 +238,6 @@ export async function PATCH(
                 });
             }
 
-            if (shouldUpdateCreditsTotal) {
-                await tx.$executeRaw(
-                    Prisma.sql`
-                        UPDATE "Organization"
-                        SET "creditsTotal" = ${parsedCreditsTotal}
-                        WHERE id = ${id}
-                    `
-                );
-            }
-
             if (shouldApplyInterviewQuotaTopUp) {
                 await tx.$executeRaw(
                     Prisma.sql`
@@ -288,11 +271,10 @@ export async function PATCH(
             const billingRows = await tx.$queryRaw<Array<{
                 interviewQuotaTotal: number | null;
                 interviewQuotaUsed: number | null;
-                creditsTotal: number | null;
                 creditsUsed: number | null;
             }>>(
                 Prisma.sql`
-                    SELECT "interviewQuotaTotal", "interviewQuotaUsed", "creditsTotal", "creditsUsed"
+                    SELECT "interviewQuotaTotal", "interviewQuotaUsed", "creditsUsed"
                     FROM "Organization"
                     WHERE id = ${id}
                     LIMIT 1
@@ -303,7 +285,6 @@ export async function PATCH(
                 ...org,
                 interviewQuotaTotal: billingRows[0]?.interviewQuotaTotal ?? 0,
                 interviewQuotaUsed: billingRows[0]?.interviewQuotaUsed ?? 0,
-                creditsTotal: billingRows[0]?.creditsTotal ?? 0,
                 creditsUsed: billingRows[0]?.creditsUsed ?? 0,
             };
         });

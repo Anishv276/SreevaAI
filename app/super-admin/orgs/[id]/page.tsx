@@ -77,7 +77,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
     const [showVoiceDropdown, setShowVoiceDropdown] = useState(false);
     const [voiceSearch, setVoiceSearch] = useState("");
-    const [creditsInput, setCreditsInput] = useState("0");
     const [interviewTopUpInput, setInterviewTopUpInput] = useState("0");
     const [billingSnapshot, setBillingSnapshot] = useState({
         interviewQuotaTotal: 0,
@@ -185,7 +184,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     llmModel: data.llmModel || "gpt-4o",
                     llmTemperature: data.llmTemperature != null ? data.llmTemperature : 0.7,
                 });
-                setCreditsInput(String(data.creditsTotal || 0));
                 setBillingSnapshot({
                     interviewQuotaTotal: Number(data.interviewQuotaTotal || 0),
                     interviewQuotaUsed: Number(data.interviewQuotaUsed || 0),
@@ -206,7 +204,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                 body: JSON.stringify({
                     ...form,
                     interviewQuotaTopUp: Math.max(0, Number(interviewTopUpInput) || 0),
-                    creditsTotal: parseFloat(creditsInput) || 0,
                 }),
             });
             if (!res.ok) throw new Error("Failed to update records");
@@ -356,10 +353,9 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                 {step === 3 && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Billing & Quotas" />
-                        <div className="grid md:grid-cols-3 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
+                        <div className="grid md:grid-cols-2 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
                             <LimitControl label="Drive Limit" value={form.maxActiveDrives} onChange={val => setForm(p => ({ ...p, maxActiveDrives: val }))} />
                             <LimitControl label="Team Limit" value={form.maxTeamMembers} onChange={val => setForm(p => ({ ...p, maxTeamMembers: val }))} />
-                            <PremiumInput label="Available Credits" icon={Coins} type="number" value={creditsInput} onChange={(e: any) => setCreditsInput(e.target.value)} />
                         </div>
                         <div className="rounded-2xl border border-orange-100 bg-orange-50/40 p-6 space-y-4">
                             <div className="flex items-center justify-between gap-4 flex-wrap">

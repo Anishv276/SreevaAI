@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Bell, LifeBuoy, Search, Loader2, MessageSquare, Clock3, Building2, Mail, User, CheckCircle2, CircleDot, ArrowRight, ShieldAlert, Check, MoreVertical, Eye } from "lucide-react";
+import { Bell, LifeBuoy, Search, Loader2, MessageSquare, Clock3, Building2, Mail, User, CheckCircle2, CircleDot, ArrowRight, ShieldAlert, Check, MoreVertical, Eye, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -142,75 +142,66 @@ export default function SuperAdminSupportPage() {
     const visibleStats = useMemo(() => ([
         { label: "Total Tickets", value: stats.total, icon: MessageSquare, color: "text-blue-600", bg: "bg-blue-50" },
         { label: "Open", value: stats.openCount, icon: CircleDot, color: "text-amber-600", bg: "bg-amber-50" },
-        { label: "Closed", value: stats.closedCount, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50" },
+        { label: "Resolved", value: stats.resolvedCount, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50" },
+        { label: "Closed", value: stats.closedCount, icon: ShieldAlert, color: "text-gray-600", bg: "bg-gray-100" },
     ]), [stats]);
 
     return (
-        <div className="space-y-6 pb-8">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between animate-fade-slide">
-                <div className="flex items-center gap-4 group">
-                    <div className="h-10 w-1 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_10px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-12" />
-                    <div className="space-y-0.5">
-                        <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 leading-none tracking-tight">
-                            Support Tickets
-                        </h1>
-                        <div className="flex items-center gap-2">
-                            <span className="h-1 w-1 rounded-full bg-[#F97316] animate-pulse" />
-                            <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.15em]">
-                                Candidate issues and interview help requests
-                            </p>
-                        </div>
+        <div className="max-w-6xl mx-auto space-y-5 pb-8">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between animate-fade-slide">
+                <div className="flex items-center gap-3 group">
+                    <div className="h-8 w-1 bg-[#F97316] rounded-full" />
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Support Tickets</h1>
+                        <p className="text-gray-400 font-medium text-[10px] uppercase tracking-wider">Manage interview help requests</p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                    <Link href="/super-admin">
-                        <button className="flex items-center gap-2 bg-white border border-gray-200 hover:border-orange-200 text-gray-700 text-[12px] font-semibold px-3 py-2 rounded-xl transition-all shadow-sm">
-                            <ArrowRight className="h-3.5 w-3.5 rotate-180" />
-                            Back to Dashboard
-                        </button>
-                    </Link>
-                </div>
+                <Link href="/super-admin">
+                    <button className="flex items-center gap-1.5 bg-white border border-gray-100 hover:border-gray-200 text-gray-500 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all">
+                        <ArrowRight className="h-3 w-3 rotate-180" />
+                        Dashboard
+                    </button>
+                </Link>
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {visibleStats.map((item) => (
-                    <div key={item.label} className="group relative flex flex-col gap-1.5 p-4 bg-white/70 backdrop-blur-xl rounded-2xl border border-gray-100 shadow-sm hover:shadow-xl hover:shadow-orange-500/5 transition-all duration-500 hover:-translate-y-0.5">
-                        <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0 transition-all duration-500 group-hover:scale-110 shadow-sm", item.bg, item.color)}>
-                            <item.icon className="h-5 w-5" />
+                    <div key={item.label} className="flex items-center gap-3 p-3.5 bg-white rounded-xl border border-gray-100 shadow-sm transition-all hover:border-gray-200">
+                        <div className={cn("h-9 w-9 rounded-lg flex items-center justify-center shrink-0 shadow-sm", item.bg, item.color)}>
+                            <item.icon className="h-4.5 w-4.5" />
                         </div>
-                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">{item.label}</span>
-                        <span className="text-xl font-black text-gray-900 tabular-nums tracking-tighter">{item.value?.toLocaleString?.() || item.value || 0}</span>
+                        <div className="flex flex-col">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide leading-none mb-1">{item.label}</span>
+                            <span className="text-lg font-black text-gray-900 tabular-nums leading-none">{item.value?.toLocaleString?.() || item.value || 0}</span>
+                        </div>
                     </div>
                 ))}
             </div>
 
-            <div className="bg-white border border-gray-100 rounded-[2rem] p-6 shadow-sm space-y-5">
-                <div className="flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
-                    <div className="space-y-0.5">
-                        <h2 className="text-lg font-bold text-gray-900 tracking-tight">Ticket Queue</h2>
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">View and manage support requests from interview sessions</p>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-3">
-                        <div className="relative min-w-[260px]">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <h2 className="text-sm font-bold text-gray-900">Recent Tickets</h2>
+                    
+                    <div className="flex items-center gap-2">
+                        <div className="relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                             <Input
                                 value={searchInput}
                                 onChange={(e) => setSearchInput(e.target.value)}
                                 onKeyDown={(e) => {
                                     if (e.key === "Enter") setSearch(searchInput.trim());
                                 }}
-                                placeholder="Search by name, email, org, or issue..."
-                                className="pl-11 h-11 rounded-xl border-gray-200 bg-gray-50/40"
+                                placeholder="Search..."
+                                className="pl-8 h-8 w-48 text-xs rounded-lg border-gray-200 bg-gray-50/50"
                             />
                         </div>
                         <select
                             value={status}
                             onChange={(e) => setStatus(e.target.value)}
-                            className="h-11 rounded-xl border border-gray-200 bg-white px-4 text-sm font-bold text-gray-700"
+                            className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-bold text-gray-600 outline-none focus:border-orange-500 transition-colors"
                         >
-                            <option value="ALL">All statuses</option>
+                            <option value="ALL">Status: All</option>
                             <option value="OPEN">Open</option>
                             <option value="RESOLVED">Resolved</option>
                             <option value="CLOSED">Closed</option>
@@ -221,7 +212,7 @@ export default function SuperAdminSupportPage() {
                                 void fetchTickets(1, searchInput.trim(), status);
                                 setPage(1);
                             }}
-                            className="h-11 rounded-xl bg-[#F97316] text-white hover:bg-orange-600 font-bold"
+                            className="h-8 px-4 rounded-lg bg-gray-900 text-white hover:bg-gray-800 text-[11px] font-bold"
                         >
                             Filter
                         </Button>
@@ -240,142 +231,142 @@ export default function SuperAdminSupportPage() {
                         <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No support tickets found</p>
                     </div>
                 ) : (
-                    <div className="relative overflow-hidden rounded-[2rem] border border-gray-100 bg-white/40 backdrop-blur-sm shadow-sm overflow-x-auto custom-scrollbar">
-                        <table className="w-full border-collapse">
-                            <thead>
-                                <tr className="bg-gray-50/50 border-b border-gray-100">
-                                    <th className="pl-8 py-4 text-left font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Candidate</th>
-                                    <th className="px-6 py-4 text-left font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Application ID</th>
-                                    <th className="px-6 py-4 text-left font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Issue Description</th>
-                                    <th className="px-6 py-4 text-center font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Reported At</th>
-                                    <th className="pr-8 py-4 text-right font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100/40">
-                                {tickets.map((ticket) => (
-                                    <tr key={ticket.id} className="group border-b border-gray-100/50 hover:bg-white/60 transition-all duration-300">
-                                        <td className="pl-6 py-3.5">
-                                            <div className="flex items-center gap-3">
-                                                <div className="h-8 w-8 rounded-lg bg-gray-900 text-white flex items-center justify-center font-black text-[10px] shadow-sm shrink-0 group-hover:scale-110 transition-transform duration-500">
-                                                    {candidateName(ticket)[0]?.toUpperCase() || "?"}
+                    <>
+                        <div className="overflow-x-auto">
+                            <table className="w-full border-collapse">
+                                <thead>
+                                    <tr className="border-b border-gray-100 bg-gray-50/30">
+                                        <th className="pl-5 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Candidate</th>
+                                        <th className="px-4 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Application ID</th>
+                                        <th className="px-4 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Organization</th>
+                                        <th className="px-4 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Drive</th>
+                                        <th className="px-4 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Issue</th>
+                                        <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Reported At</th>
+                                        <th className="pr-5 py-3 text-right font-bold text-[10px] text-gray-400 uppercase tracking-wider">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-50">
+                                    {tickets.map((ticket) => (
+                                        <tr key={ticket.id} className="hover:bg-gray-50/80 transition-colors">
+                                            <td className="pl-5 py-4">
+                                                <div className="flex flex-col min-w-[140px]">
+                                                    <span className="text-gray-900 font-bold text-[12px] truncate">{candidateName(ticket)}</span>
+                                                    <span className="text-[10px] text-gray-400 truncate">{candidateEmail(ticket)}</span>
                                                 </div>
-                                                <div className="flex flex-col truncate max-w-[180px]">
-                                                    <span className="text-gray-900 font-extrabold text-[13px] leading-tight group-hover:text-orange-600 transition-colors">{candidateName(ticket)}</span>
-                                                    <span className="text-[10px] text-gray-400 font-bold mt-0.5 truncate">{candidateEmail(ticket)}</span>
-                                                </div>
-                                            </div>
-                                        </td>
+                                            </td>
 
-                                        <td className="px-5 py-3.5">
-                                            <div className="flex flex-col gap-0.5">
-                                                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gray-100/50 border border-gray-100 text-gray-600 group-hover:bg-orange-50 group-hover:border-orange-100 group-hover:text-orange-600 transition-all">
-                                                    <span className="text-[11px] font-bold tabular-nums">
-                                                        {ticket.applicationId || ticket.interviewId || "N/A"}
-                                                    </span>
-                                                </div>
-                                                {ticket.interview?.application?.drive?.organization?.name && (
-                                                    <div className="text-[8px] font-bold text-gray-300 uppercase tracking-widest mt-0.5 px-1">
-                                                        {orgName(ticket)}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </td>
+                                            <td className="px-4 py-4">
+                                                <span 
+                                                    className="text-[10px] font-medium text-gray-500 tabular-nums truncate whitespace-nowrap max-w-[180px] inline-block"
+                                                    title={ticket.applicationId || ticket.interviewId || "N/A"}
+                                                >
+                                                    {ticket.applicationId || ticket.interviewId || "N/A"}
+                                                </span>
+                                            </td>
 
-                                        <td className="px-6 py-3.5">
-                                            <div className="flex items-center gap-2 group/issue">
-                                                <div className="max-w-[280px] xl:max-w-[400px]">
-                                                    <p className="text-[12px] text-gray-600 leading-relaxed truncate">
+                                            <td className="px-4 py-4">
+                                                <span className="text-[11px] font-bold text-gray-700 truncate max-w-[120px]">
+                                                    {orgName(ticket)}
+                                                </span>
+                                            </td>
+
+                                            <td className="px-4 py-4">
+                                                <span className="text-[10px] font-medium text-gray-400 truncate uppercase max-w-[120px]">
+                                                    {driveTitle(ticket)}
+                                                </span>
+                                            </td>
+
+                                            <td className="px-4 py-4">
+                                                <div className="flex items-center gap-2 group/issue min-w-[150px]">
+                                                    <p className="text-[11px] text-gray-600 line-clamp-1">
                                                         {ticket.issueAbout}
                                                     </p>
-                                                </div>
-                                                <button 
-                                                    onClick={() => setViewTicket(ticket)}
-                                                    className="h-7 w-7 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 hover:bg-orange-50 hover:text-orange-600 transition-all group-hover/issue:scale-110 shrink-0"
-                                                >
-                                                    <Eye className="h-3.5 w-3.5" />
-                                                </button>
-                                            </div>
-                                        </td>
-
-                                        <td className="px-6 py-5 text-center">
-                                            <div className="flex flex-col items-center">
-                                                <span className="text-[12px] font-black text-gray-900 tabular-nums">{new Date(ticket.createdAt).toLocaleDateString()}</span>
-                                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">{new Date(ticket.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                            </div>
-                                        </td>
-
-                                        <td className="pr-8 py-5 text-right">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
                                                     <button 
-                                                        disabled={updatingStatus === ticket.id}
-                                                        className={cn(
-                                                            "flex items-center gap-2.5 ml-auto px-4 py-2 rounded-xl border-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm disabled:opacity-50",
-                                                            (ticket.status || "OPEN") === "OPEN" ? "bg-amber-50 border-amber-100 text-amber-700" :
-                                                            (ticket.status || "OPEN") === "RESOLVED" ? "bg-emerald-50 border-emerald-100 text-emerald-700" :
-                                                            "bg-gray-50 border-gray-200 text-gray-600"
-                                                        )}
+                                                        onClick={() => setViewTicket(ticket)}
+                                                        className="text-gray-300 hover:text-orange-500 transition-colors shrink-0"
                                                     >
-                                                        {updatingStatus === ticket.id ? (
-                                                            <Loader2 className="h-3 w-3 animate-spin mx-auto" />
-                                                        ) : (
-                                                            <>
-                                                                <div className={cn("h-1.5 w-1.5 rounded-full", ticket.status === 'OPEN' ? "bg-amber-500 animate-pulse" : ticket.status === 'RESOLVED' ? "bg-emerald-500" : "bg-gray-400")} />
-                                                                <span className="text-[11px] font-black uppercase tracking-wider">{ticket.status}</span>
-                                                            </>
-                                                        )}
+                                                        <Eye className="h-3 w-3" />
                                                     </button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="w-40 p-1.5 rounded-2xl shadow-xl border-gray-100 bg-white/95 backdrop-blur-xl">
-                                                    {["OPEN", "RESOLVED", "CLOSED"].map((s) => (
-                                                        <DropdownMenuItem
-                                                            key={s}
-                                                            className={cn(
-                                                                "rounded-xl px-3 py-2 font-bold text-[11px] cursor-pointer flex items-center justify-between mt-0.5 first:mt-0",
-                                                                ticket.status === s ? "bg-orange-50 text-orange-600" : "text-gray-600 hover:bg-gray-50"
-                                                            )}
-                                                            onClick={() => handleUpdateStatus(ticket.id, s)}
-                                                        >
-                                                            <div className="flex items-center gap-2">
-                                                                <div className={cn("h-1.5 w-1.5 rounded-full", s === 'OPEN' ? "bg-amber-500" : s === 'RESOLVED' ? "bg-emerald-500" : "bg-gray-400")} />
-                                                                {s}
-                                                            </div>
-                                                            {ticket.status === s && <Check className="h-3.5 w-3.5" />}
-                                                        </DropdownMenuItem>
-                                                    ))}
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
+                                                </div>
+                                            </td>
 
-                <div className="flex items-center justify-between gap-4 pt-4 border-t border-gray-100">
-                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">
-                        Page {page} of {totalPages}
-                    </p>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            disabled={page <= 1}
-                            onClick={() => setPage((p) => Math.max(1, p - 1))}
-                            className="h-10 rounded-xl"
-                        >
-                            Previous
-                        </Button>
-                        <Button
-                            variant="outline"
-                            disabled={page >= totalPages}
-                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                            className="h-10 rounded-xl"
-                        >
-                            Next
-                        </Button>
-                    </div>
-                </div>
+                                            <td className="px-4 py-4 text-center">
+                                                <div className="flex flex-col items-center min-w-[90px]">
+                                                    <span className="text-[10px] font-bold text-gray-700 tabular-nums">
+                                                        {new Date(ticket.createdAt).toLocaleDateString()}
+                                                    </span>
+                                                    <span className="text-[9px] text-gray-400 font-medium tabular-nums">
+                                                        {new Date(ticket.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                </div>
+                                            </td>
+
+                                            <td className="pr-5 py-4 text-right">
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <button 
+                                                            disabled={updatingStatus === ticket.id}
+                                                            className={cn(
+                                                                "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase border shadow-sm transition-all hover:bg-white active:scale-[0.98] disabled:opacity-50",
+                                                                (ticket.status || "OPEN") === "OPEN" ? "bg-amber-50 border-amber-200 text-amber-700" :
+                                                                (ticket.status || "OPEN") === "RESOLVED" ? "bg-emerald-50 border-emerald-200 text-emerald-700" :
+                                                                "bg-gray-50 border-gray-200 text-gray-600"
+                                                            )}
+                                                        >
+                                                            <div className={cn("h-1.5 w-1.5 rounded-full", ticket.status === 'OPEN' ? "bg-amber-500" : ticket.status === 'RESOLVED' ? "bg-emerald-500" : "bg-gray-400")} />
+                                                            {ticket.status}
+                                                            <ChevronDown className="h-3 w-3 opacity-50" />
+                                                        </button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end" className="w-36 p-1 rounded-xl border-gray-100 shadow-xl">
+                                                        {["OPEN", "RESOLVED", "CLOSED"].map((s) => (
+                                                            <DropdownMenuItem
+                                                                key={s}
+                                                                className={cn(
+                                                                    "rounded-lg px-2.5 py-2 font-bold text-[10px] cursor-pointer flex items-center justify-between",
+                                                                    ticket.status === s ? "bg-orange-50 text-orange-600" : "text-gray-500 hover:bg-gray-50"
+                                                                )}
+                                                                onClick={() => handleUpdateStatus(ticket.id, s)}
+                                                            >
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className={cn("h-1.5 w-1.5 rounded-full", s === 'OPEN' ? "bg-amber-500" : s === 'RESOLVED' ? "bg-emerald-500" : "bg-gray-400")} />
+                                                                    {s}
+                                                                </div>
+                                                                {ticket.status === s && <Check className="h-3.5 w-3.5" />}
+                                                            </DropdownMenuItem>
+                                                        ))}
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50/20 flex items-center justify-between">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                                Page <span className="text-gray-900">{page}</span> of <span className="text-gray-900">{totalPages}</span>
+                            </p>
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    disabled={page <= 1}
+                                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                                    className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-[11px] font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-all"
+                                >
+                                    Previous
+                                </button>
+                                <button
+                                    disabled={page >= totalPages}
+                                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                                    className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-[11px] font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-all"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    </>
+                )}
             </div>
             <Dialog open={!!viewTicket} onOpenChange={(open) => !open && setViewTicket(null)}>
                 <DialogContent className="max-w-xl rounded-[2rem] border-gray-100 bg-white/95 backdrop-blur-xl p-8 shadow-2xl">

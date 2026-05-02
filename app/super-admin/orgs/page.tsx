@@ -27,7 +27,8 @@ import {
     Zap,
     Download,
     CheckSquare,
-    Check
+    Check,
+    ChevronDown
 } from "lucide-react";
 
 import { motion } from "framer-motion";
@@ -77,8 +78,10 @@ interface Org {
     deepgramModel?: string;
     sarvamSttModel?: string;
 
-    creditsTotal?: number;
     creditsUsed?: number;
+    interviewsCompleted?: number;
+    interviewQuotaTotal?: number;
+    interviewQuotaUsed?: number;
     logoUrl?: string;
     interviewCount?: number;
     _count?: {
@@ -323,40 +326,34 @@ export default function OrgsPage() {
                 <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
                     <Link href="/super-admin/orgs/new">
                         <Button
-                            className="h-12 px-6 rounded-2xl bg-gray-900 hover:bg-black text-white font-bold transition-all shadow-lg hover:shadow-gray-200 active:scale-95 flex items-center gap-2"
+                            className="h-9 px-5 rounded-xl bg-gray-900 hover:bg-black text-white font-bold text-[11px] uppercase tracking-widest transition-all shadow-sm active:scale-95 flex items-center gap-2"
                         >
-                            <Plus className="h-5 w-5" />
-                            Add Client
+                            <Plus className="h-4 w-4" />
+                            ADD CLIENT
                         </Button>
                     </Link>
                 </div>
             </div>
 
 
-            {/* Registry Container - Glassmorphism */}
-            <div className="group relative bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)] overflow-hidden transition-all duration-700 hover:shadow-[0_20px_60px_rgba(0,0,0,0.08)] mt-10">
-                {/* Decorative top accent */}
-                <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-400/0 via-[#F97316]/40 to-orange-400/0" />
-
-                {/* Search & Filter Header */}
-                <div className="p-3 border-b border-white/40 bg-white/20">
-                    <div className="flex flex-col md:flex-row gap-4 items-center justify-between w-full">
-                        <div className="flex-1 flex flex-col md:flex-row items-center gap-4 w-full">
-                            <div className="relative flex-1 max-w-2xl w-full group/search">
-                                <Search className="absolute left-4 top-3.5 h-4 w-4 text-gray-400 group-focus-within/search:text-[#F97316] transition-colors" />
-                                <Input
-                                    placeholder="Search by name, slug, or ref..."
-                                    className="pl-11 h-12 border-transparent bg-white/60 rounded-2xl focus:bg-white focus:border-orange-200 focus:ring-8 focus:ring-orange-50/50 transition-all font-bold text-sm shadow-inner"
-                                    value={searchInput}
-                                    onChange={e => setSearchInput(e.target.value)}
-                                />
-                            </div>
-
-                            <DateFilter
-                                value={timeFilter}
-                                onChange={setTimeFilter}
+            <div className="bg-white rounded-[2rem] border border-gray-100 shadow-xl overflow-hidden mt-8">
+                <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100">
+                    <h2 className="text-sm font-black text-gray-900 uppercase tracking-widest hidden sm:block">All Organizations</h2>
+                    <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                        <div className="relative w-full sm:w-auto">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder="Search organizations..."
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-[11px] font-bold text-gray-900 w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all placeholder:text-gray-400"
                             />
                         </div>
+                        <DateFilter
+                            value={timeFilter}
+                            onChange={setTimeFilter}
+                        />
                     </div>
                 </div>
 
@@ -370,163 +367,163 @@ export default function OrgsPage() {
                     ) : (
                         <table className="w-full border-collapse">
                             <thead>
-                                <tr className="bg-gray-50/50 border-b border-gray-100">
-                                    <th className="w-[320px] h-14 pl-8 text-left font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Organization</th>
-                                    <th className="h-14 text-center font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Admins</th>
-                                    <th className="h-14 text-center font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Drives</th>
-                                    <th className="h-14 text-center font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Interviews</th>
-                                    <th className="h-14 text-center font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Candidates</th>
-                                    <th className="h-14 text-center font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Allocated</th>
-                                    <th className="h-14 text-center font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Consumed</th>
-                                    <th className="h-14 text-center font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Remaining</th>
-                                    <th className="h-14 text-center font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Status</th>
-                                    <th className="pr-8 text-right h-14 font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Actions</th>
+                                <tr className="border-b border-gray-100 bg-gray-50/30">
+                                    <th className="pl-5 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Organization</th>
+                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Admins</th>
+                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Drives</th>
+                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Candidates</th>
+                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Credits Used</th>
+                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Remaining</th>
+                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Done</th>
+                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Status</th>
+                                    <th className="pr-5 py-3 text-right font-bold text-[10px] text-gray-400 uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-white/20">
+                            <tbody className="divide-y divide-gray-50">
                                 {orgs.map((org) => (
-                                    <tr key={org.id} className="group border-b border-white/20 hover:bg-white/40 transition-all duration-500">
-                                        <td className="pl-8 py-4">
-                                            <div className="flex items-center gap-4">
+                                    <tr key={org.id} className="hover:bg-gray-50/80 transition-colors">
+                                        <td className="pl-5 py-4">
+                                            <div className="flex items-center gap-3">
                                                 {org.logoUrl ? (
-                                                    <div className="h-10 w-10 rounded-xl border border-gray-100 bg-white p-1.5 shadow-sm overflow-hidden flex items-center justify-center group-hover:scale-110 transition-transform duration-500 flex-shrink-0">
+                                                    <div className="h-8 w-8 rounded-lg border border-gray-100 bg-white p-1 shadow-sm overflow-hidden flex items-center justify-center flex-shrink-0">
                                                         <img src={org.logoUrl} alt={org.name} className="h-full w-full object-contain" />
                                                     </div>
                                                 ) : (
-                                                    <div className="h-10 w-10 rounded-xl bg-gray-900 text-white flex flex-shrink-0 items-center justify-center font-black text-xs shadow-lg group-hover:scale-110 transition-transform duration-500">
+                                                    <div className="h-8 w-8 rounded-lg bg-gray-100 text-gray-600 flex flex-shrink-0 items-center justify-center font-bold text-[10px] shadow-sm">
                                                         {org.name[0].toUpperCase()}
                                                     </div>
                                                 )}
-                                                <div className="flex flex-col truncate">
-                                                    <span className="text-gray-900 font-extrabold text-[15px] leading-tight group-hover:text-[#F97316] transition-colors">{org.name}</span>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <div className="inline-flex items-center px-1.5 py-0.5 rounded bg-gray-100/50 text-[9px] font-black text-gray-400 uppercase tracking-widest w-fit">
-                                                            {formatOrgPlan(org.plan) || "Starter"}
-                                                        </div>
-                                                        <span className="text-[9px] font-bold text-gray-300 uppercase tracking-widest">/{org.slug}</span>
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="text-gray-900 font-bold text-[12px] truncate">{cleanName(org.name)}</span>
+                                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                                        <span className="text-[10px] font-medium text-gray-400 truncate uppercase">{formatOrgPlan(org.plan) || "Starter"}</span>
+                                                        <span className="text-[10px] text-gray-300">•</span>
+                                                        <span className="text-[9px] text-gray-400 truncate">{org.slug}</span>
                                                     </div>
                                                 </div>
                                             </div>
                                         </td>
 
-                                        <td className="py-4 text-center font-black text-gray-900 text-base tabular-nums tracking-tighter">
+                                        <td className="px-4 py-4 text-center font-bold text-gray-700 text-[11px] tabular-nums">
                                             {org.adminCount ?? org._count?.users ?? 0}
                                         </td>
 
-                                        <td className="py-4 text-center font-black text-gray-900 text-base tabular-nums tracking-tighter">
+                                        <td className="px-4 py-4 text-center font-bold text-gray-700 text-[11px] tabular-nums">
                                             {org.driveCount ?? org._count?.drives ?? 0}
                                         </td>
 
-                                        <td className="py-4 text-center font-black text-blue-600 text-base tabular-nums tracking-tighter">
-                                            {org.interviewCount || 0}
-                                        </td>
-
-                                        <td className="py-4 text-center font-black text-[#F97316] text-base tabular-nums tracking-tighter">
+                                        <td className="px-4 py-4 text-center font-bold text-orange-500 text-[11px] tabular-nums">
                                             {org.candidateCount || 0}
                                         </td>
 
-                                        <td className="py-4 text-center font-black text-amber-600 text-sm tabular-nums tracking-tighter">
-                                            {org.creditsTotal || 0}
-                                        </td>
-
-                                        <td className="py-4 text-center font-black text-gray-500 text-sm tabular-nums tracking-tighter">
+                                        <td className="px-4 py-4 text-center font-bold text-gray-500 text-[11px] tabular-nums">
                                             {org.creditsUsed || 0}
                                         </td>
 
-                                        <td className="py-4 text-center font-black text-emerald-600 text-sm tabular-nums tracking-tighter">
-                                            {Math.max(0, (org.creditsTotal || 0) - (org.creditsUsed || 0))}
+                                        <td className="px-4 py-4 text-center font-bold text-emerald-600 text-[11px] tabular-nums">
+                                            {Math.max(0, (org.interviewQuotaTotal || 0) - (org.interviewQuotaUsed || 0))}
                                         </td>
 
-                                        <td className="py-4 text-center">
+                                        <td className="px-4 py-4 text-center font-bold text-blue-600 text-[11px] tabular-nums">
+                                            {org.interviewQuotaUsed || 0}
+                                        </td>
+
+                                        <td className="px-4 py-4 text-center">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                     <button className={cn(
-                                                        "flex items-center gap-2.5 px-4 py-2 rounded-xl border-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer mx-auto shadow-sm",
+                                                        "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase border shadow-sm transition-all hover:bg-white active:scale-[0.98]",
                                                         (org.status || "ACTIVE") === "ACTIVE"
-                                                            ? "bg-emerald-50 border-emerald-200 text-emerald-600"
-                                                            : "bg-gray-50 border-gray-200 text-gray-500"
+                                                            ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                                                            : "bg-gray-50 border-gray-200 text-gray-600"
                                                     )}>
-                                                        <div className={cn("h-2 w-2 rounded-full", (org.status || "ACTIVE") === "ACTIVE" ? "bg-emerald-500 animate-pulse" : "bg-gray-300")} />
-                                                        <span className="text-[11px] font-inter font-bold uppercase tracking-wider">
-                                                            {org.status || "ACTIVE"}
-                                                        </span>
+                                                        <div className={cn("h-1.5 w-1.5 rounded-full", (org.status || "ACTIVE") === "ACTIVE" ? "bg-emerald-500" : "bg-gray-400")} />
+                                                        {org.status || "ACTIVE"}
+                                                        <ChevronDown className="h-3 w-3 opacity-50" />
                                                     </button>
                                                 </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="center" className="w-52 p-2 rounded-2xl shadow-xl border-gray-100 bg-white/95 backdrop-blur-xl">
-                                                    <div className="px-3 py-2 border-b border-gray-50 mb-1">
-                                                        <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Control Status</p>
+                                                <DropdownMenuContent align="center" className="w-40 p-1.5 rounded-xl border-gray-100 shadow-xl bg-white/95 backdrop-blur-xl">
+                                                    <div className="px-2.5 py-2 border-b border-gray-50 mb-1">
+                                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Control Status</p>
                                                     </div>
                                                     <DropdownMenuItem
                                                         className={cn(
-                                                            "rounded-xl px-3 py-2.5 font-bold text-xs cursor-pointer gap-2",
+                                                            "rounded-lg px-2.5 py-2 font-bold text-[10px] cursor-pointer flex items-center justify-between",
                                                             (org.status || "ACTIVE") === "ACTIVE" ? "bg-emerald-50 text-emerald-700" : "text-gray-600 hover:bg-gray-50"
                                                         )}
                                                         onClick={() => handleStatusChange(org.id, "ACTIVE")}
                                                     >
-                                                        <div className={cn("h-1.5 w-1.5 rounded-full", (org.status || "ACTIVE") === "ACTIVE" ? "bg-emerald-500" : "bg-gray-300")} />
-                                                        Mark as Active
-                                                        {(org.status || "ACTIVE") === "ACTIVE" && <Check className="ml-auto h-3.5 w-3.5" />}
+                                                        <div className="flex items-center gap-2">
+                                                            <div className={cn("h-1.5 w-1.5 rounded-full", (org.status || "ACTIVE") === "ACTIVE" ? "bg-emerald-500" : "bg-gray-300")} />
+                                                            ACTIVE
+                                                        </div>
+                                                        {(org.status || "ACTIVE") === "ACTIVE" && <Check className="h-3.5 w-3.5" />}
                                                     </DropdownMenuItem>
                                                     <DropdownMenuItem
                                                         className={cn(
-                                                            "rounded-xl px-3 py-2.5 font-bold text-xs cursor-pointer gap-2 mt-1",
+                                                            "rounded-lg px-2.5 py-2 font-bold text-[10px] cursor-pointer flex items-center justify-between mt-1",
                                                             org.status === "SUSPENDED" ? "bg-red-50 text-red-700" : "text-gray-600 hover:bg-gray-50"
                                                         )}
                                                         onClick={() => handleStatusChange(org.id, "SUSPENDED")}
                                                     >
-                                                        <div className={cn("h-1.5 w-1.5 rounded-full", org.status === "SUSPENDED" ? "bg-red-500" : "bg-gray-300")} />
-                                                        Suspend Client
-                                                        {org.status === "SUSPENDED" && <Check className="ml-auto h-3.5 w-3.5" />}
+                                                        <div className="flex items-center gap-2">
+                                                            <div className={cn("h-1.5 w-1.5 rounded-full", org.status === "SUSPENDED" ? "bg-red-500" : "bg-gray-300")} />
+                                                            SUSPENDED
+                                                        </div>
+                                                        {org.status === "SUSPENDED" && <Check className="h-3.5 w-3.5" />}
                                                     </DropdownMenuItem>
 
                                                     <DropdownMenuItem
                                                         className={cn(
-                                                            "rounded-xl px-3 py-2.5 font-bold text-xs cursor-pointer gap-2 mt-1",
+                                                            "rounded-lg px-2.5 py-2 font-bold text-[10px] cursor-pointer flex items-center justify-between mt-1",
                                                             org.status === "CLOSED" ? "bg-rose-50 text-rose-700" : "text-gray-600 hover:bg-gray-50"
                                                         )}
                                                         onClick={() => handleStatusChange(org.id, "CLOSED")}
                                                     >
-                                                        <div className={cn("h-1.5 w-1.5 rounded-full", org.status === "CLOSED" ? "bg-rose-500" : "bg-gray-300")} />
-                                                        Close Portal
-                                                        {org.status === "CLOSED" && <Check className="ml-auto h-3.5 w-3.5" />}
+                                                        <div className="flex items-center gap-2">
+                                                            <div className={cn("h-1.5 w-1.5 rounded-full", org.status === "CLOSED" ? "bg-rose-500" : "bg-gray-300")} />
+                                                            CLOSED
+                                                        </div>
+                                                        {org.status === "CLOSED" && <Check className="h-3.5 w-3.5" />}
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         </td>
 
-                                        <td className="pr-8 py-4 text-right">
+                                        <td className="pr-5 py-4 text-right">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl hover:bg-gray-100 text-gray-400 group-hover:text-gray-900 transition-colors">
-                                                        <MoreVertical className="h-4 w-4" />
+                                                    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg hover:bg-gray-100 text-gray-400 group-hover:text-gray-900 transition-colors">
+                                                        <MoreVertical className="h-3 w-3" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="w-[240px] p-2 rounded-[24px] bg-white/90 backdrop-blur-2xl border border-white/60 shadow-[0_20px_60px_rgba(0,0,0,0.1)] z-[60] animate-in fade-in zoom-in-95 duration-200 font-inter">
-                                                    <div className="px-3 pt-2 pb-3 mb-1">
-                                                        <p className="text-[11px] font-bold text-gray-400/80 uppercase tracking-widest pl-1">Client Controls</p>
+                                                <DropdownMenuContent align="end" className="w-48 p-1.5 rounded-xl border-gray-100 shadow-xl bg-white/95 backdrop-blur-xl">
+                                                    <div className="px-2.5 py-2 border-b border-gray-50 mb-1">
+                                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Client Controls</p>
                                                     </div>
-                                                    <Link href={`/super-admin/orgs/${org.id}`} className="block w-full">
-                                                        <DropdownMenuItem className="cursor-pointer rounded-2xl py-2.5 px-3 focus:bg-gray-50/80 text-gray-700 focus:text-gray-900 font-medium text-[14px] leading-none transition-all duration-200 group flex items-center">
-                                                            <div className="mr-3.5 h-8 w-8 rounded-xl bg-gray-50 border border-gray-100 text-gray-400 group-hover:bg-white group-hover:text-[#F97316] group-focus:border-orange-100/50 group-hover:shadow-sm flex items-center justify-center transition-all duration-200">
-                                                                <Edit2 className="h-4 w-4" />
-                                                            </div>
-                                                            Edit Organization Settings
+                                                    <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-gray-600 hover:bg-gray-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group" onClick={() => setMetricsOrg(org)}>
+                                                            <Layers className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
+                                                            VIEW USAGE
                                                         </DropdownMenuItem>
-                                                    </Link>
 
-                                                    <div className="h-px bg-gray-100/80 my-2 mx-3" />
+                                                        <Link href={`/super-admin/orgs/${org.id}`} className="block w-full">
+                                                            <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-gray-600 hover:bg-gray-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group">
+                                                                <Edit2 className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
+                                                                EDIT SETTINGS
+                                                            </DropdownMenuItem>
+                                                        </Link>
+
+                                                        <div className="h-px bg-gray-100/60 my-1 mx-1" />
 
                                                     <DropdownMenuItem
                                                         onClick={() => {
                                                             setOrgToDelete(org);
                                                             setIsDeleteModalOpen(true);
                                                         }}
-                                                        className="cursor-pointer rounded-2xl py-2.5 px-3 focus:bg-red-50/50 text-red-600 focus:text-red-700 font-medium text-[14px] leading-none transition-all duration-200 group flex items-center mt-1"
+                                                        className="cursor-pointer rounded-lg px-2.5 py-2 text-red-600 hover:bg-red-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group"
                                                     >
-                                                        <div className="mr-3.5 h-8 w-8 rounded-xl bg-red-50 border border-red-100/50 text-red-400 group-hover:bg-white group-hover:text-red-600 group-hover:border-red-200 group-hover:shadow-sm flex items-center justify-center transition-all duration-200">
-                                                            <Trash2 className="h-4 w-4" />
-                                                        </div>
-                                                        Delete Organization
+                                                        <Trash2 className="h-3.5 w-3.5 text-red-400 group-hover:text-red-600 transition-colors" />
+                                                        DELETE PORTAL
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
@@ -539,26 +536,25 @@ export default function OrgsPage() {
                 </div>
 
                 {/* Pagination Footer */}
-                <div className="px-6 py-4 bg-gray-50/30 flex items-center justify-between border-t border-white/40">
-                    <p className="text-gray-400 text-[11px] font-medium font-inter">
-                        Showing <span className="font-bold text-gray-700">{orgs.length}</span> of <span className="font-bold text-gray-700">{total}</span> clients
+                <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50/20 flex items-center justify-between">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                        Page <span className="text-gray-900">{page}</span> of <span className="text-gray-900">{totalPages || 1}</span>
                     </p>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                    <div className="flex items-center gap-1.5">
+                        <button
                             disabled={page <= 1}
-                            className="h-8 px-4 bg-white/60 border-gray-100 text-gray-500 font-bold text-[10px] uppercase tracking-widest rounded-xl disabled:opacity-40 hover:bg-white hover:text-gray-900 transition-all"
-                        >Prev</Button>
-                        <div className="px-3 h-8 flex items-center rounded-xl bg-white/60 border border-gray-100 text-[10px] font-bold text-gray-600">
-                            {page} / {totalPages || 1}
-                        </div>
-                        <Button
-                            variant="outline"
-                            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-[11px] font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-all"
+                        >
+                            Previous
+                        </button>
+                        <button
                             disabled={page >= totalPages}
-                            className="h-8 px-4 bg-white/60 border-gray-100 text-gray-900 font-bold text-[10px] uppercase tracking-widest rounded-xl disabled:opacity-40 hover:bg-white transition-all"
-                        >Next</Button>
+                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-[11px] font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-all"
+                        >
+                            Next
+                        </button>
                     </div>
                 </div>
             </div>
@@ -617,284 +613,325 @@ export default function OrgsPage() {
             )}
 
             {metricsOrg && (
-                <div className="fixed inset-0 z-[400] flex items-center justify-center bg-gray-950/40 backdrop-blur-md px-4 py-6">
-                    <div className="w-full max-w-5xl h-full max-h-[90vh] flex flex-col overflow-hidden rounded-[3rem] border border-white/20 bg-white/95 shadow-2xl animate-in zoom-in-95 duration-500">
-                        <div className="relative flex items-center justify-between px-12 py-10 border-b border-gray-100 overflow-hidden bg-white/50">
-                            <div className="absolute top-0 right-0 p-8 opacity-[0.05] rotate-12">
-                                <Sparkles className="h-24 w-24" />
-                            </div>
-                            <div className="relative z-10 flex items-center gap-6">
-                                <div className="h-16 w-16 rounded-[1.5rem] bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-xl shadow-orange-200">
-                                    <Layers className="h-8 w-8 text-white" />
+                <div className="fixed inset-0 z-[400] flex items-center justify-center bg-gray-900/40 backdrop-blur-sm px-4 py-6 font-sans">
+                    <div className="w-full max-w-6xl h-full max-h-[90vh] flex flex-col overflow-hidden rounded-[18px] border border-gray-200 bg-[#FAFAFA] shadow-2xl animate-in zoom-in-95 duration-500">
+                        {/* Header */}
+                        <div className="flex items-start justify-between px-8 py-6 border-b border-gray-200 bg-white">
+                            <div>
+                                <div className="flex items-center gap-2.5 mb-2.5">
+                                    <span className="w-1 h-4.5 bg-[#F97316] rounded-sm" />
+                                    <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500">Live Intelligence Hub</span>
                                 </div>
-                                <div>
-                                    <div className="flex items-center gap-2 mb-1.5">
-                                        <div className="h-2 w-2 rounded-full bg-orange-500 animate-pulse" />
-                                        <span className="text-[10px] font-black uppercase tracking-[0.4em] text-orange-600/60">Live Intelligence Hub</span>
-                                    </div>
-                                    <h3 className="text-3xl font-black text-gray-900 tracking-tighter">
-                                        {metricsOrg.name} <span className="text-gray-400 font-medium">- Consumption Hub</span>
-                                    </h3>
-                                </div>
+                                <h2 className="text-[34px] font-[800] text-gray-900 m-0 tracking-[-0.03em] leading-[1.05]">
+                                    {metricsOrg.name} <span className="text-gray-400 font-[500]">- Consumption Hub</span>
+                                </h2>
                             </div>
                             <button
                                 onClick={() => setMetricsOrg(null)}
-                                className="relative z-10 group h-14 px-8 flex items-center gap-3 rounded-[1.5rem] bg-gray-50 text-gray-900 border border-gray-100 hover:bg-black hover:text-white transition-all shadow-sm hover:shadow-xl duration-500"
+                                className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-[10px] border border-gray-200 bg-white text-gray-900 text-[13px] font-[600] cursor-pointer hover:bg-gray-50 transition-colors shadow-sm"
                             >
-                                <X className="h-5 w-5 group-hover:rotate-90 transition-transform duration-500" />
-                                <span className="text-sm font-black uppercase tracking-widest">Dismiss</span>
+                                <X size={15} /> Dismiss
                             </button>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto scrollbar-hide p-12 space-y-16">
-                            {/* LLM Section */}
-                            <div className="space-y-8">
-                                <div className="flex items-center gap-6">
-                                    <h4 className="text-[11px] font-black uppercase tracking-[0.5em] text-gray-400 whitespace-nowrap">Core Processing Units</h4>
-                                    <div className="h-[1px] flex-1 bg-gradient-to-r from-gray-100 via-gray-50 to-transparent" />
-                                </div>
-                                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-                                    {metricSections.map((section) => {
-                                        const feature = getBillingFeature(metricsOrg, section.key);
-                                        const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
-                                        const models = Object.keys(feature.byModel || {});
-                                        const setupModel = getSetupModel(metricsOrg, 'LLM');
+                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-12">
+                            {(() => {
+                                const feature = getBillingFeature(metricsOrg, 'interview');
+                                const totalCost = Number(feature.costUsd || 0) + Number(feature.ttsCostUsd || 0) + Number(feature.sttCostUsd || 0);
+                                const logicCost = Number(feature.costUsd || 0);
+                                const synthCost = Number(feature.ttsCostUsd || 0);
+                                const sttCost = Number(feature.sttCostUsd || 0);
+                                
+                                const ringR = 88;
+                                const ringC = 2 * Math.PI * ringR;
+                                const getDash = (val: number) => totalCost > 0 ? ringC * (val / totalCost) : 0;
+                                
+                                const logicDash = getDash(logicCost);
+                                const synthDash = getDash(synthCost);
+                                const sttDash = getDash(sttCost);
 
-                                        return (
-                                            <div key={section.key} className="group relative rounded-[2rem] border border-gray-100 bg-white p-8 hover:border-orange-200 hover:shadow-2xl hover:shadow-orange-500/10 transition-all duration-500 hover:-translate-y-1">
-                                                <div className="flex flex-col gap-4">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="text-[10px] font-black uppercase tracking-[0.2em] text-[#F97316]/60">{section.label.replace('LLM - ', '')}</div>
-                                                        <div className="h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]" />
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-2 min-h-[28px]">
-                                                        {models.length > 0 ? (
-                                                            models.map(m => (
-                                                                <div key={m} className="text-[9px] font-black text-emerald-700 bg-emerald-50/50 px-3 py-1 rounded-xl border border-emerald-100 uppercase tracking-tight">
-                                                                    {cleanName(m)}
+                                const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
+                                const llmModels = Object.keys(feature.byModel || {});
+                                const ttsModels = Object.keys(feature.ttsByModel || {});
+                                const sttModels = Object.keys(feature.sttByModel || {});
+                                const setupLlm = getSetupModel(metricsOrg, 'LLM');
+                                const setupTts = getSetupModel(metricsOrg, 'TTS');
+                                const setupStt = getSetupModel(metricsOrg, 'STT');
+
+                                return (
+                                    <div className="flex flex-col gap-12">
+                                        {/* LLM Section */}
+                                        <div className="space-y-6">
+                                            <div className="flex items-center gap-6">
+                                                <h4 className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500 whitespace-nowrap">Core Processing Units</h4>
+                                                <div className="h-[1px] flex-1 bg-gray-200" />
+                                            </div>
+                                            <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+                                                {metricSections.map((section) => {
+                                                    const feature = getBillingFeature(metricsOrg, section.key);
+                                                    const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
+                                                    const models = Object.keys(feature.byModel || {});
+                                                    const setupModel = getSetupModel(metricsOrg, 'LLM');
+
+                                                    return (
+                                                        <div key={section.key} className="bg-white border border-gray-200 rounded-[18px] p-6 hover:border-orange-200 hover:shadow-lg transition-all duration-300">
+                                                            <div className="flex flex-col gap-4">
+                                                                <div className="flex items-center justify-between">
+                                                                    <div className="text-[10px] font-[800] uppercase tracking-[0.15em] text-[#F97316]">{section.label.replace('LLM - ', '')}</div>
+                                                                    <div className="h-2 w-2 rounded-full bg-emerald-500" />
                                                                 </div>
-                                                            ))
-                                                        ) : setupModel ? (
-                                                            <div className="text-[9px] font-black text-gray-400 bg-gray-50 px-3 py-1 rounded-xl border border-gray-200 uppercase tracking-tight">
-                                                                {setupModel}
+                                                                <div className="flex flex-wrap gap-2 min-h-[28px]">
+                                                                    {models.length > 0 ? (
+                                                                        models.map(m => (
+                                                                            <div key={m} className="text-[10px] font-[700] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 uppercase tracking-wide">
+                                                                                {cleanName(m)}
+                                                                            </div>
+                                                                        ))
+                                                                    ) : setupModel ? (
+                                                                        <div className="text-[10px] font-[700] text-gray-600 bg-gray-100 px-2 py-1 rounded-md border border-gray-200 uppercase tracking-wide">
+                                                                            {setupModel}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="text-[10px] font-bold text-gray-400 italic">Inactive Instance</div>
+                                                                    )}
+                                                                </div>
                                                             </div>
-                                                        ) : (
-                                                            <div className="text-[9px] font-bold text-gray-300 italic">Inactive Instance</div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <div className="mt-6 mb-5">
-                                                    <div className="text-4xl font-black text-gray-900 tracking-tighter">${Number(feature.costUsd || 0).toFixed(2)}</div>
-                                                </div>
-                                                <div className="space-y-2.5 pt-5 border-t border-gray-50 text-[11px] font-bold text-gray-500 uppercase tracking-[0.1em]">
-                                                    <div className="flex justify-between items-center">
-                                                        <span>Executions</span>
-                                                        <span className="text-gray-900">{Number(feature.runs || 0).toLocaleString()}</span>
-                                                    </div>
-                                                    <div className="flex justify-between items-center">
-                                                        <span>Token Vol</span>
-                                                        <span className="text-gray-900">{totalTokens.toLocaleString()} <span className="text-[9px] opacity-30">TKN</span></span>
-                                                    </div>
-                                                </div>
-                                                <div className="absolute inset-0 rounded-[2rem] bg-gradient-to-br from-orange-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                            <div className="mt-6 mb-5">
+                                                                <div className="text-[32px] font-[800] text-gray-900 tracking-[-0.03em]">${Number(feature.costUsd || 0).toFixed(2)}</div>
+                                                            </div>
+                                                            <div className="space-y-2.5 pt-5 border-t border-gray-100 text-[11.5px] font-[600] text-gray-500 uppercase tracking-[0.1em]">
+                                                                <div className="flex justify-between items-center">
+                                                                    <span>Executions</span>
+                                                                    <span className="text-gray-900 font-[700]">{Number(feature.runs || 0).toLocaleString()}</span>
+                                                                </div>
+                                                                <div className="flex justify-between items-center">
+                                                                    <span>Token Vol</span>
+                                                                    <span className="text-gray-900 font-[700]">{totalTokens.toLocaleString()} <span className="text-[9px] opacity-50">TKN</span></span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
+                                        </div>
 
-                            {/* Voice & STT Section */}
-                            <div className="grid gap-12 md:grid-cols-2">
-                                <div className="space-y-8">
-                                    <div className="flex items-center gap-6">
-                                        <h4 className="text-[11px] font-black uppercase tracking-[0.5em] text-gray-400 whitespace-nowrap">Synthesis Hub</h4>
-                                        <div className="h-[1px] flex-1 bg-gradient-to-r from-gray-100 via-gray-50 to-transparent" />
+                                        {/* Voice & STT Section */}
+                                        <div className="grid gap-8 md:grid-cols-2">
+                                            <div className="space-y-6">
+                                                <div className="flex items-center gap-6">
+                                                    <h4 className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500 whitespace-nowrap">TTS Hub</h4>
+                                                    <div className="h-[1px] flex-1 bg-gray-200" />
+                                                </div>
+                                                <div className="bg-white border border-gray-200 rounded-[18px] p-8 hover:border-blue-200 hover:shadow-lg transition-all duration-300">
+                                                    <div className="flex items-center justify-between mb-8">
+                                                        <div className="space-y-2">
+                                                            <div className="text-[40px] font-[800] text-gray-900 tracking-[-0.03em]">
+                                                                ${metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCostUsd || 0), 0).toFixed(2)}
+                                                            </div>
+                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.2em] text-blue-600">TTS</div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="text-[24px] font-[800] text-gray-900 tracking-[-0.03em]">{metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCharacters || 0), 0).toLocaleString()}</div>
+                                                            <div className="text-[10px] font-[800] uppercase tracking-[0.15em] text-gray-500">Characters Synth</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-2 pt-6 border-t border-gray-100">
+                                                        {(() => {
+                                                            const allTtsModels = metricSections.flatMap(s => Object.keys(getBillingFeature(metricsOrg, s.key).ttsByModel || {}));
+                                                            const uniqueModels = Array.from(new Set(allTtsModels));
+                                                            const setupModel = getSetupModel(metricsOrg, 'TTS');
+                                                            if (uniqueModels.length > 0) {
+                                                                return uniqueModels.map(m => (
+                                                                    <span key={m} className="px-3 py-1.5 bg-blue-50 text-blue-700 text-[10px] font-[700] rounded-md border border-blue-100 uppercase tracking-wide">
+                                                                        {cleanName(m)}
+                                                                    </span>
+                                                                ));
+                                                            }
+                                                            return <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">{setupModel || "System Standard"}</span>;
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-6">
+                                                <div className="flex items-center gap-6">
+                                                    <h4 className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500 whitespace-nowrap">STT Hub</h4>
+                                                    <div className="h-[1px] flex-1 bg-gray-200" />
+                                                </div>
+                                                <div className="bg-white border border-gray-200 rounded-[18px] p-8 hover:border-orange-200 hover:shadow-lg transition-all duration-300">
+                                                    <div className="flex items-center justify-between mb-8">
+                                                        <div className="space-y-2">
+                                                            <div className="text-[40px] font-[800] text-gray-900 tracking-[-0.03em]">
+                                                                ${metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttCostUsd || 0), 0).toFixed(2)}
+                                                            </div>
+                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.2em] text-orange-600">STT</div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="text-[24px] font-[800] text-gray-900 tracking-[-0.03em]">{(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttAudioSeconds || 0), 0) / 60).toFixed(1)}m</div>
+                                                            <div className="text-[10px] font-[800] uppercase tracking-[0.15em] text-gray-500">Minutes Transcribed</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-2 pt-6 border-t border-gray-100">
+                                                        {(() => {
+                                                            const allSttModels = metricSections.flatMap(s => Object.keys(getBillingFeature(metricsOrg, s.key).sttByModel || {}));
+                                                            const uniqueModels = Array.from(new Set(allSttModels));
+                                                            const setupModel = getSetupModel(metricsOrg, 'STT');
+                                                            if (uniqueModels.length > 0) {
+                                                                return uniqueModels.map(m => (
+                                                                    <span key={m} className="px-3 py-1.5 bg-orange-50 text-orange-700 text-[10px] font-[700] rounded-md border border-orange-100 uppercase tracking-wide">
+                                                                        {cleanName(m)}
+                                                                    </span>
+                                                                ));
+                                                            }
+                                                            return <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">{setupModel || "System Standard"}</span>;
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Pipeline Summary */}
+                                        <div className="space-y-6 pt-4">
+                                            <div className="flex items-center gap-6">
+                                                <h4 className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500 whitespace-nowrap">Integrated Pipeline</h4>
+                                                <div className="h-[1px] flex-1 bg-gray-200" />
+                                            </div>
+
+                                            <div className="bg-white border border-gray-200 rounded-[18px] overflow-hidden p-8">
+                                                <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] gap-10">
+                                                    {/* Donut and Cost breakdown */}
+                                                    <div>
+                                                        <div className="flex items-center gap-3 mb-6">
+                                                            <div className="h-2 w-2 rounded-full bg-[#F97316]" />
+                                                            <span className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500">Pipeline Total Expenditure</span>
+                                                        </div>
+                                                        
+                                                        <div className="flex flex-col sm:flex-row items-center gap-8 mb-8">
+                                                            <div className="relative w-[220px] h-[220px] shrink-0">
+                                                                <svg width={220} height={220} style={{ transform: "rotate(-90deg)" }}>
+                                                                    <circle cx={110} cy={110} r={ringR} stroke="#E5E7EB" strokeWidth={14} fill="none" />
+                                                                    {totalCost > 0 && (
+                                                                        <>
+                                                                            <circle cx={110} cy={110} r={ringR} stroke="#10B981" strokeWidth={14} fill="none" strokeDasharray={`${logicDash} ${ringC}`} strokeLinecap="round" />
+                                                                            <circle cx={110} cy={110} r={ringR} stroke="#3B82F6" strokeWidth={14} fill="none" strokeDasharray={`${synthDash} ${ringC}`} strokeDashoffset={-logicDash} strokeLinecap="round" />
+                                                                            <circle cx={110} cy={110} r={ringR} stroke="#F97316" strokeWidth={14} fill="none" strokeDasharray={`${sttDash} ${ringC}`} strokeDashoffset={-(logicDash + synthDash)} strokeLinecap="round" />
+                                                                        </>
+                                                                    )}
+                                                                </svg>
+                                                                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                                                    <div className="text-[11px] text-gray-500 font-[600] tracking-[0.1em] uppercase">Total Cost</div>
+                                                                    <div className="text-[44px] font-[800] text-gray-900 tracking-[-0.03em] mt-1.5">
+                                                                        ${totalCost.toFixed(2)}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex-1 grid gap-4 w-full">
+                                                                <div className="flex items-start justify-between">
+                                                                    <div>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="w-2.5 h-2.5 rounded-full bg-[#10B981]" />
+                                                                            <span className="text-[14.5px] font-[700] text-gray-900">LLM</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-[16px] font-[800] text-gray-900">${logicCost.toFixed(2)}</div>
+                                                                </div>
+                                                                <div className="h-px bg-[#F3F4F6]" />
+                                                                <div className="flex items-start justify-between">
+                                                                    <div>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="w-2.5 h-2.5 rounded-full bg-[#3B82F6]" />
+                                                                            <span className="text-[14.5px] font-[700] text-gray-900">TTS</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-[16px] font-[800] text-gray-900">${synthCost.toFixed(2)}</div>
+                                                                </div>
+                                                                <div className="h-px bg-[#F3F4F6]" />
+                                                                <div className="flex items-start justify-between">
+                                                                    <div>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="w-2.5 h-2.5 rounded-full bg-[#F97316]" />
+                                                                            <span className="text-[14.5px] font-[700] text-gray-900">STT</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-[16px] font-[800] text-gray-900">${sttCost.toFixed(2)}</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Right Side Stats */}
+                                                    <div className="grid grid-cols-2 sm:grid-cols-2 gap-8 text-right">
+                                                        <div className="space-y-1.5">
+                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Live Drives</div>
+                                                            <div className="text-[28px] font-[800] text-gray-900 tabular-nums">{(metricsOrg as any).driveCount || 0}</div>
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Total Sessions</div>
+                                                            <div className="text-[28px] font-[800] text-gray-900 tabular-nums">{Number(feature.runs || 0).toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Consumed Tokens</div>
+                                                            <div className="text-[28px] font-[800] text-gray-900 tabular-nums">{totalTokens.toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Audio Mins</div>
+                                                            <div className="text-[28px] font-[800] text-gray-900 tabular-nums">
+                                                                {Number(feature.sessionDuration || 0) > 0
+                                                                    ? (Number(feature.sessionDuration || 0) / 60).toFixed(1)
+                                                                    : (Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}<span className="text-sm ml-1 opacity-40">M</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="space-y-1.5 col-span-2">
+                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Health</div>
+                                                            <div className="text-[24px] font-[800] text-emerald-600 uppercase tracking-tight">Healthy</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Models Row */}
+                                                <div className="border-t border-gray-100 mt-8 pt-8 grid grid-cols-1 md:grid-cols-3 gap-8">
+                                                    <div>
+                                                        <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#10B981] transition-colors">LLM</div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {llmModels.length > 0 ? llmModels.map(m => (
+                                                                <span key={m} className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-[700] rounded-md border border-[#10B981]/20 uppercase tracking-wide">
+                                                                    {cleanName(m)}
+                                                                </span>
+                                                            )) : <span className="text-[10px] font-[700] text-gray-500 italic">{setupLlm || "Standard"}</span>}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#3B82F6] transition-colors">TTS</div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {ttsModels.length > 0 ? ttsModels.map(m => (
+                                                                <span key={m} className="px-3 py-1 bg-[#3B82F6]/10 text-[#3B82F6] text-[10px] font-[700] rounded-md border border-[#3B82F6]/20 uppercase tracking-wide">
+                                                                    {cleanName(m)}
+                                                                </span>
+                                                            )) : <span className="text-[10px] font-[700] text-gray-500 italic">{setupTts || "Standard"}</span>}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#F97316] transition-colors">STT</div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {sttModels.length > 0 ? sttModels.map(m => (
+                                                                <span key={m} className="px-3 py-1 bg-[#F97316]/10 text-[#F97316] text-[10px] font-[700] rounded-md border border-[#F97316]/20 uppercase tracking-wide">
+                                                                    {cleanName(m)}
+                                                                </span>
+                                                            )) : <span className="text-[10px] font-[700] text-gray-500 italic">{setupStt || "Standard"}</span>}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="relative overflow-hidden rounded-[3rem] border border-blue-100 bg-blue-50/20 p-10 group hover:bg-blue-50/40 transition-all duration-500">
-                                        <div className="relative z-10 flex items-center justify-between mb-10">
-                                            <div className="space-y-3">
-                                                <div className="text-5xl font-black text-blue-900 tracking-tighter">
-                                                    ${metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCostUsd || 0), 0).toFixed(2)}
-                                                </div>
-                                                <div className="text-[11px] font-black uppercase tracking-[0.3em] text-blue-600/60">Voice Generation Footprint</div>
-                                            </div>
-                                            <div className="text-right">
-                                                <div className="text-3xl font-black text-blue-800 tracking-tighter">{metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCharacters || 0), 0).toLocaleString()}</div>
-                                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400/60">Characters Synth</div>
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-wrap gap-3 pt-8 border-t border-blue-100/50">
-                                            {(() => {
-                                                const allTtsModels = metricSections.flatMap(s => Object.keys(getBillingFeature(metricsOrg, s.key).ttsByModel || {}));
-                                                const uniqueModels = Array.from(new Set(allTtsModels));
-                                                const setupModel = getSetupModel(metricsOrg, 'TTS');
-                                                if (uniqueModels.length > 0) {
-                                                    return uniqueModels.map(m => (
-                                                        <span key={m} className="px-4 py-2 bg-white text-blue-700 text-[10px] font-black rounded-2xl border border-blue-100 shadow-sm uppercase tracking-widest">
-                                                            {cleanName(m)}
-                                                        </span>
-                                                    ));
-                                                }
-                                                return <span className="text-[10px] font-bold text-blue-300 italic bg-white/50 px-5 py-2 rounded-2xl border border-blue-100/50 border-dashed">{setupModel || "System Standard"}</span>;
-                                            })()}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-8">
-                                    <div className="flex items-center gap-6">
-                                        <h4 className="text-[11px] font-black uppercase tracking-[0.5em] text-gray-400 whitespace-nowrap">Recognition Hub</h4>
-                                        <div className="h-[1px] flex-1 bg-gradient-to-r from-gray-100 via-gray-50 to-transparent" />
-                                    </div>
-                                    <div className="relative overflow-hidden rounded-[3rem] border border-orange-100 bg-orange-50/20 p-10 group hover:bg-orange-50/40 transition-all duration-500">
-                                        <div className="relative z-10 flex items-center justify-between mb-10">
-                                            <div className="space-y-3">
-                                                <div className="text-5xl font-black text-orange-900 tracking-tighter">
-                                                    ${metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttCostUsd || 0), 0).toFixed(2)}
-                                                </div>
-                                                <div className="text-[11px] font-black uppercase tracking-[0.3em] text-orange-600/60">Audio Processing Footprint</div>
-                                            </div>
-                                            <div className="text-right">
-                                                <div className="text-3xl font-black text-orange-800 tracking-tighter">{(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttAudioSeconds || 0), 0) / 60).toFixed(1)}m</div>
-                                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-400/60">Minutes Transcribed</div>
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-wrap gap-3 pt-8 border-t border-orange-100/50">
-                                            {(() => {
-                                                const allSttModels = metricSections.flatMap(s => Object.keys(getBillingFeature(metricsOrg, s.key).sttByModel || {}));
-                                                const uniqueModels = Array.from(new Set(allSttModels));
-                                                const setupModel = getSetupModel(metricsOrg, 'STT');
-                                                if (uniqueModels.length > 0) {
-                                                    return uniqueModels.map(m => (
-                                                        <span key={m} className="px-4 py-2 bg-white text-orange-700 text-[10px] font-black rounded-2xl border border-orange-100 shadow-sm uppercase tracking-widest">
-                                                            {cleanName(m)}
-                                                        </span>
-                                                    ));
-                                                }
-                                                return <span className="text-[10px] font-bold text-orange-300 italic bg-white/50 px-5 py-2 rounded-2xl border border-orange-100/50 border-dashed">{setupModel || "System Standard"}</span>;
-                                            })()}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Pipeline Summary */}
-                            <div className="pt-4">
-                                <div className="flex items-center gap-6 mb-10">
-                                    <h4 className="text-[11px] font-black uppercase tracking-[0.5em] text-gray-400 whitespace-nowrap">Integrated Pipeline</h4>
-                                    <div className="h-[1px] flex-1 bg-gradient-to-r from-gray-100 via-gray-50 to-transparent" />
-                                </div>
-                                {(() => {
-                                    const feature = getBillingFeature(metricsOrg, 'interview');
-                                    const totalCost = Number(feature.costUsd || 0) + Number(feature.ttsCostUsd || 0) + Number(feature.sttCostUsd || 0);
-                                    const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
-                                    const llmModels = Object.keys(feature.byModel || {});
-                                    const ttsModels = Object.keys(feature.ttsByModel || {});
-                                    const sttModels = Object.keys(feature.sttByModel || {});
-                                    const setupLlm = getSetupModel(metricsOrg, 'LLM');
-                                    const setupTts = getSetupModel(metricsOrg, 'TTS');
-                                    const setupStt = getSetupModel(metricsOrg, 'STT');
-
-                                    return (
-                                        <div className="relative overflow-hidden rounded-[4rem] border-[3px] border-gray-900 bg-gray-950 p-12 text-white shadow-3xl group transition-all duration-700 hover:shadow-orange-500/20">
-                                            <div className="absolute top-0 right-0 p-16 opacity-[0.08] group-hover:opacity-15 group-hover:rotate-12 transition-all duration-1000">
-                                                <Sparkles className="h-48 w-48" />
-                                            </div>
-
-                                            <div className="relative flex flex-col lg:flex-row lg:items-end justify-between gap-16 mb-16">
-                                                <div className="space-y-8">
-                                                    <div className="space-y-3">
-                                                        <div className="flex items-center gap-3 mb-4">
-                                                            <div className="h-2 w-2 rounded-full bg-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.8)]" />
-                                                            <span className="text-[11px] font-black uppercase tracking-[0.4em] text-gray-400">Pipeline Total Expenditure</span>
-                                                        </div>
-                                                        <div className="text-8xl font-black tracking-[calc(-0.05em)] text-white group-hover:text-orange-50 transition-colors duration-700">${totalCost.toFixed(2)}</div>
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-4 pt-6">
-                                                        <div className="bg-white/5 border border-white/10 backdrop-blur-xl rounded-[1.5rem] px-6 py-4 transition-all hover:bg-white/10 hover:translate-y-[-2px]">
-                                                            <div className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Logic Provider</div>
-                                                            <div className="text-base font-black text-emerald-400 tracking-tight">${Number(feature.costUsd || 0).toFixed(2)}</div>
-                                                        </div>
-                                                        <div className="bg-white/5 border border-white/10 backdrop-blur-xl rounded-[1.5rem] px-6 py-4 transition-all hover:bg-white/10 hover:translate-y-[-2px]">
-                                                            <div className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Synth Unit</div>
-                                                            <div className="text-base font-black text-blue-400 tracking-tight">${Number(feature.ttsCostUsd || 0).toFixed(2)}</div>
-                                                        </div>
-                                                        <div className="bg-white/5 border border-white/10 backdrop-blur-xl rounded-[1.5rem] px-6 py-4 transition-all hover:bg-white/10 hover:translate-y-[-2px]">
-                                                            <div className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Recognition</div>
-                                                            <div className="text-base font-black text-orange-400 tracking-tight">${Number(feature.sttCostUsd || 0).toFixed(2)}</div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-12 text-right min-w-[320px]">
-                                                    <div className="space-y-2">
-                                                        <div className="text-[11px] font-black uppercase tracking-widest text-gray-500">Live Drives</div>
-                                                        <div className="text-4xl font-black tabular-nums text-white">{(metricsOrg as any).driveCount || 0}</div>
-                                                    </div>
-                                                    <div className="space-y-2">
-                                                        <div className="text-[11px] font-black uppercase tracking-widest text-gray-500">Total Sessions</div>
-                                                        <div className="text-4xl font-black tabular-nums text-white">{Number(feature.runs || 0).toLocaleString()}</div>
-                                                    </div>
-                                                    <div className="space-y-2">
-                                                        <div className="text-[11px] font-black uppercase tracking-widest text-gray-500">Consumed Tokens</div>
-                                                        <div className="text-4xl font-black tabular-nums text-white">{totalTokens.toLocaleString()}</div>
-                                                    </div>
-                                                    <div className="space-y-2">
-                                                        <div className="text-[11px] font-black uppercase tracking-widest text-gray-500">Audio Mins</div>
-                                                        <div className="text-4xl font-black tabular-nums text-white">
-                                                            {Number(feature.sessionDuration || 0) > 0
-                                                                ? (Number(feature.sessionDuration || 0) / 60).toFixed(1)
-                                                                : (Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}<span className="text-sm ml-1 opacity-40">M</span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="space-y-2 col-span-2 sm:col-span-1">
-                                                        <div className="text-[11px] font-black uppercase tracking-widest text-gray-500">Health</div>
-                                                        <div className="text-4xl font-black text-emerald-400 uppercase tracking-tighter">Healthy</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="relative border-t border-white/10 pt-10 grid grid-cols-1 md:grid-cols-3 gap-10">
-                                                <div className="group/tech">
-                                                    <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-4 transition-colors group-hover/tech:text-emerald-400">Intelligence Node</div>
-                                                    <div className="flex flex-wrap gap-2.5">
-                                                        {llmModels.length > 0 ? llmModels.map(m => (
-                                                            <span key={m} className="px-4 py-1.5 bg-emerald-500/10 text-emerald-400 text-[11px] font-black rounded-xl border border-emerald-400/20 uppercase tracking-widest">
-                                                                {cleanName(m)}
-                                                            </span>
-                                                        )) : <span className="text-[11px] font-bold text-gray-600 italic">{setupLlm || "Standard"}</span>}
-                                                    </div>
-                                                </div>
-                                                <div className="group/tech">
-                                                    <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-4 transition-colors group-hover/tech:text-blue-400">Synthesis Engine</div>
-                                                    <div className="flex flex-wrap gap-2.5">
-                                                        {ttsModels.length > 0 ? ttsModels.map(m => (
-                                                            <span key={m} className="px-4 py-1.5 bg-blue-500/10 text-blue-400 text-[11px] font-black rounded-xl border border-blue-400/20 uppercase tracking-widest">
-                                                                {cleanName(m)}
-                                                            </span>
-                                                        )) : <span className="text-[11px] font-bold text-gray-600 italic">{setupTts || "Standard"}</span>}
-                                                    </div>
-                                                </div>
-                                                <div className="group/tech">
-                                                    <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-500 mb-4 transition-colors group-hover/tech:text-orange-400">Recognition Core</div>
-                                                    <div className="flex flex-wrap gap-2.5">
-                                                        {sttModels.length > 0 ? sttModels.map(m => (
-                                                            <span key={m} className="px-4 py-1.5 bg-orange-500/10 text-orange-400 text-[11px] font-black rounded-xl border border-orange-400/20 uppercase tracking-widest">
-                                                                {cleanName(m)}
-                                                            </span>
-                                                        )) : <span className="text-[11px] font-bold text-gray-600 italic">{setupStt || "Standard"}</span>}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
-                            </div>
+                                );
+                            })()}
                         </div>
-
-                        <div className="border-t border-gray-100 px-12 py-8 bg-gray-50/50 flex items-center justify-between">
-                            <div className="text-[12px] font-black uppercase tracking-[0.4em] text-gray-400">Full Organization Ecosystem Cost</div>
-                            <div className="text-3xl font-black text-gray-900 tracking-tighter">
+                        
+                        <div className="border-t border-gray-200 px-8 py-6 bg-gray-50 flex items-center justify-between font-sans">
+                            <div className="text-[12px] font-bold uppercase tracking-[0.15em] text-gray-500">Full Organization Ecosystem Cost</div>
+                            <div className="text-[28px] font-[800] text-gray-900 tracking-[-0.03em]">
                                 ${getOrgTotalBillingCost(metricsOrg).toFixed(2)}
                             </div>
                         </div>
