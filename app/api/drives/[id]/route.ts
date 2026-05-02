@@ -50,7 +50,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 jdFileName: true,
                 jdPreviewUrl: true,
                 orgId: true,
-                shortlistMode: true,
                 location: true,
                     aiName: true,
                     cartesiaVoiceId: true,
@@ -85,11 +84,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         }
 
         const screeningThreshold = Number((drive as any).screeningThreshold ?? 60);
-        const shortlistMode = (drive as any).shortlistMode || "automatic";
         const inviteScheduleDays = Number((drive as any).inviteScheduleDays ?? 1) || 1;
         const screeningCriteria = JSON.stringify({
             threshold: screeningThreshold,
-            shortlistMode,
             inviteScheduleDays,
             criteria: {},
         });
@@ -98,7 +95,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             ...drive,
             orgId: (drive as any).orgId,
             screeningThreshold,
-            shortlistMode,
             inviteScheduleDays,
             screeningCriteria,
             applicants: (drive as any)._count?.applications || 0,
@@ -207,7 +203,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
         if (data.registrationFields !== undefined) updateData.registrationFields = JSON.stringify(data.registrationFields);
 
-        if (data.screeningThreshold !== undefined || (data as any).screeningCriteria !== undefined || (data as any).shortlistMode !== undefined || data.inviteScheduleDays !== undefined) {
+        if (data.screeningThreshold !== undefined || (data as any).screeningCriteria !== undefined || data.inviteScheduleDays !== undefined) {
             if (data.screeningThreshold !== undefined) updateData.screeningThreshold = data.screeningThreshold;
 
             const rawCriteria = (data as any).screeningCriteria;
@@ -217,7 +213,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             const mergedCriteria = {
                 ...(parsedCriteria && typeof parsedCriteria === "object" ? parsedCriteria : {}),
                 ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
-                ...((data as any).shortlistMode !== undefined ? { shortlistMode: (data as any).shortlistMode } : {}),
                 ...(data.inviteScheduleDays !== undefined ? { inviteScheduleDays: data.inviteScheduleDays } : {}),
             };
             updateData.screeningCriteria = JSON.stringify(mergedCriteria);

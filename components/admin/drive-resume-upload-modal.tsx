@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
-import { AlertCircle, CheckCircle2, FileText, Loader2, Upload, X, XCircle, Lock } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileText, Loader2, Mail, Upload, X, XCircle, Lock } from "lucide-react";
 import { getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
 
-type UploadPhase = "idle" | "uploading" | "processing" | "done" | "failed";
+type UploadPhase = "idle" | "uploading" | "processing" | "summary" | "failed";
 
 interface DriveResumeUploadModalProps {
     open: boolean;
@@ -30,6 +30,13 @@ export function DriveResumeUploadModal({
     const [phase, setPhase] = useState<UploadPhase>("idle");
     const [progress, setProgress] = useState({ processed: 0, total: 0 });
     const [error, setError] = useState<string | null>(null);
+    const [summary, setSummary] = useState<{
+        shortlisted: number;
+        rejected: number;
+        total: number;
+        candidateIds: string[];
+    } | null>(null);
+    const [sendingFollowUp, setSendingFollowUp] = useState(false);
     const [displayPct, setDisplayPct] = useState(0);
     const [quotaLocked, setQuotaLocked] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -75,6 +82,8 @@ export function DriveResumeUploadModal({
         setPhase("idle");
         setProgress({ processed: 0, total: 0 });
         setError(null);
+        setSummary(null);
+        setSendingFollowUp(false);
     };
 
     const handleClose = () => {
@@ -83,6 +92,52 @@ export function DriveResumeUploadModal({
         }
         reset();
         onOpenChange(false);
+    };
+
+    const loadBatchSummary = async (batchId: string) => {
+        const res = await fetch(`/api/drives/${driveId}/resume-screening`);
+        if (!res.ok) throw new Error("Failed to load screening summary");
+        const data = await res.json();
+        const batchCandidates = Array.isArray(data.candidates)
+            ? data.candidates.filter((candidate: any) => candidate.bulkBatchId === batchId)
+            : [];
+
+        const normalizedStatus = (value: unknown) =>
+            String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
+
+        return {
+            shortlisted: batchCandidates.filter((candidate: any) => normalizedStatus(candidate.resumeStatus) === "shortlisted").length,
+            rejected: batchCandidates.filter((candidate: any) => normalizedStatus(candidate.resumeStatus) === "rejected").length,
+            total: batchCandidates.length,
+            candidateIds: batchCandidates.map((candidate: any) => candidate.id),
+        };
+    };
+
+    const handleSendFollowUpEmails = async () => {
+        if (!summary || summary.candidateIds.length === 0 || sendingFollowUp) return;
+        setSendingFollowUp(true);
+        try {
+            const res = await fetch("/api/candidates/bulk-email", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    ids: summary.candidateIds,
+                    emailType: "screening",
+                }),
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                throw new Error(data?.error || "Failed to send follow-up emails");
+            }
+            toast.success(data?.message || "Follow-up emails queued/sent");
+            reset();
+            onOpenChange(false);
+            onUploaded?.();
+        } catch (err) {
+            toast.error((err as Error).message);
+        } finally {
+            setSendingFollowUp(false);
+        }
     };
 
     useEffect(() => {
@@ -157,13 +212,15 @@ export function DriveResumeUploadModal({
 
                     if (data.status === "COMPLETED") {
                         clearPolling();
-                        setPhase("done");
                         toast.success(`${data.processedCount || 0} resumes screened successfully`);
-                        setTimeout(() => {
-                            reset();
-                            onOpenChange(false);
-                            onUploaded?.();
-                        }, 1000);
+                        try {
+                            const nextSummary = await loadBatchSummary(batchId);
+                            setSummary(nextSummary);
+                            setPhase("summary");
+                        } catch (summaryError) {
+                            setPhase("failed");
+                            setError((summaryError as Error).message || "Failed to build screening summary");
+                        }
                     } else if (data.status === "FAILED") {
                         clearPolling();
                         setPhase("failed");
@@ -192,7 +249,7 @@ export function DriveResumeUploadModal({
         clearIndeterminate();
 
         if (phase !== "processing") {
-            syncDisplayPct(phase === "done" ? 100 : 0);
+            syncDisplayPct(phase === "summary" ? 100 : 0);
             return;
         }
 
@@ -244,7 +301,7 @@ export function DriveResumeUploadModal({
                     <DialogTitle className="text-2xl font-black tracking-tight text-gray-900">
                         {phase === "processing"
                             ? "Screening in Progress"
-                            : phase === "done"
+                            : phase === "summary"
                                 ? "Screening Complete"
                                 : "Upload Resumes"}
                     </DialogTitle>
@@ -436,14 +493,52 @@ export function DriveResumeUploadModal({
                     </div>
                 )}
 
-                {phase === "done" && (
+                {phase === "summary" && summary && (
                     <div className="space-y-5 py-3">
-                        <div className="flex items-center gap-3 rounded-3xl border border-emerald-100 bg-emerald-50/60 px-4 py-4">
-                            <CheckCircle2 className="h-6 w-6 text-emerald-600" />
-                            <div>
-                                <p className="font-bold text-emerald-900">Screening complete</p>
-                                <p className="text-sm text-emerald-700">Your candidates are now available in the Candidates page.</p>
+                        <div className="text-center space-y-3">
+                            <div className="mx-auto w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center">
+                                <CheckCircle2 className="h-7 w-7 text-emerald-600" />
                             </div>
+                            <p className="text-base font-black text-gray-900">Screening complete</p>
+                            <p className="text-sm text-gray-500">
+                                {summary.shortlisted} shortlisted and {summary.rejected} rejected from {summary.total} screened resumes.
+                            </p>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 text-center">
+                                <p className="text-2xl font-black text-emerald-700">{summary.shortlisted}</p>
+                                <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-emerald-700">Shortlisted</p>
+                            </div>
+                            <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 text-center">
+                                <p className="text-2xl font-black text-rose-700">{summary.rejected}</p>
+                                <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-rose-700">Rejected</p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 text-center">
+                                <p className="text-2xl font-black text-slate-900">{summary.total}</p>
+                                <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-slate-500">Total</p>
+                            </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-600">
+                            <p className="font-semibold text-slate-900">Send follow-up emails now?</p>
+                            <p className="mt-1">
+                                Rejection emails will be sent immediately. Shortlisted emails will be queued and delivered through the invitation queue.
+                            </p>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 pt-1">
+                            <Button variant="ghost" onClick={() => { reset(); onOpenChange(false); onUploaded?.(); }} className="rounded-xl font-bold text-gray-500">
+                                Skip
+                            </Button>
+                            <Button
+                                onClick={handleSendFollowUpEmails}
+                                disabled={sendingFollowUp}
+                                className="rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold px-6 flex items-center gap-2"
+                            >
+                                <Mail className="h-4 w-4" />
+                                {sendingFollowUp ? "Sending..." : "Send Emails"}
+                            </Button>
                         </div>
                     </div>
                 )}

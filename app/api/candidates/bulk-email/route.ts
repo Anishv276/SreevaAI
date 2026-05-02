@@ -9,6 +9,27 @@ import { appendCandidateActivity } from "@/lib/candidate-activity";
 
 type BulkEmailAction = "shortlist" | "reject" | "hire" | "nothired" | null;
 
+type BulkEmailTarget = {
+    id: string;
+    fullName: string;
+    email: string;
+    resumeStatus: string | null;
+    hiringStatus: string | null;
+    drive: {
+        id: string;
+        title: string;
+        orgId: string | null;
+        status: string;
+        inviteScheduleDays: number | null;
+    } | null;
+};
+
+function getResumeCandidateIdFromResumeUrl(resumeUrl?: string | null) {
+    if (!resumeUrl) return null;
+    const match = String(resumeUrl).match(/[?&]candidateId=([^&]+)/i);
+    return match ? decodeURIComponent(match[1]) : null;
+}
+
 function resolveAction(
     app: {
         resumeStatus: string | null;
@@ -86,7 +107,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "ids are required" }, { status: 400 });
         }
 
-        const applications = await (prisma.application as any).findMany({
+        const directApplications = await prisma.application.findMany({
             where: { id: { in: ids }, drive: { orgId } },
             select: {
                 id: true,
@@ -94,6 +115,7 @@ export async function POST(request: Request) {
                 email: true,
                 resumeStatus: true,
                 hiringStatus: true,
+                resumeUrl: true,
                 drive: {
                     select: {
                         id: true,
@@ -106,17 +128,101 @@ export async function POST(request: Request) {
             },
         });
 
-        if (!applications.length) {
+        const resolvedApplications = new Map<string, BulkEmailTarget>();
+
+        for (const app of directApplications) {
+            resolvedApplications.set(app.id, {
+                id: app.id,
+                fullName: app.fullName,
+                email: app.email,
+                resumeStatus: app.resumeStatus,
+                hiringStatus: app.hiringStatus,
+                drive: app.drive,
+            });
+        }
+
+        const unresolvedIds = ids.filter((id) => !resolvedApplications.has(id));
+
+        if (unresolvedIds.length) {
+            const resumeCandidates = await prisma.resumeCandidate.findMany({
+                where: {
+                    id: { in: unresolvedIds },
+                    drive: { orgId },
+                },
+                select: {
+                    id: true,
+                    fullName: true,
+                    email: true,
+                    resumeStatus: true,
+                },
+            });
+
+            if (resumeCandidates.length) {
+                const applicationsFromResumeCandidates = await prisma.application.findMany({
+                    where: {
+                        drive: { orgId },
+                        OR: resumeCandidates.map((candidate) => ({
+                            resumeUrl: {
+                                contains: `candidateId=${candidate.id}`,
+                            },
+                        })),
+                    },
+                    select: {
+                        id: true,
+                        fullName: true,
+                        email: true,
+                        resumeStatus: true,
+                        hiringStatus: true,
+                        resumeUrl: true,
+                        drive: {
+                            select: {
+                                id: true,
+                                title: true,
+                                orgId: true,
+                                status: true,
+                                inviteScheduleDays: true,
+                            },
+                        },
+                    },
+                });
+
+                const byResumeCandidateId = new Map<string, BulkEmailTarget>();
+                for (const app of applicationsFromResumeCandidates) {
+                    const candidateId = getResumeCandidateIdFromResumeUrl(app.resumeUrl);
+                    if (!candidateId || byResumeCandidateId.has(candidateId)) continue;
+                    byResumeCandidateId.set(candidateId, {
+                        id: app.id,
+                        fullName: app.fullName,
+                        email: app.email,
+                        resumeStatus: app.resumeStatus,
+                        hiringStatus: app.hiringStatus,
+                        drive: app.drive,
+                    });
+                }
+
+                for (const candidate of resumeCandidates) {
+                    const app = byResumeCandidateId.get(candidate.id);
+                    if (!app) continue;
+                    resolvedApplications.set(candidate.id, app);
+                }
+            }
+        }
+
+        if (!resolvedApplications.size) {
             return NextResponse.json({ error: "No matching candidates found" }, { status: 404 });
         }
 
         const orderMap = new Map(ids.map((id, index) => [id, index]));
-        const orderedApplications = [...applications].sort(
-            (a, b) => (orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER)
-        );
+        const orderedApplications = [...resolvedApplications.entries()]
+            .sort(
+                (a, b) =>
+                    (orderMap.get(a[0]) ?? Number.MAX_SAFE_INTEGER) -
+                    (orderMap.get(b[0]) ?? Number.MAX_SAFE_INTEGER)
+            )
+            .map(([, app]) => app);
 
         const plannedDeliveries: Array<{
-            app: (typeof orderedApplications)[number];
+            app: BulkEmailTarget;
             action: Exclude<BulkEmailAction, null>;
             scheduleDays: number;
         }> = [];

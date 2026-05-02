@@ -43,20 +43,20 @@ type Session = {
 const problemCards = [
     {
         icon: Clock3,
-        title: "The Time Trap",
-        description: "Senior engineers spend 2-4 hours per hire on basic screens. Every hour they spend interviewing is an hour they aren't building.",
+        title: "Unqualified Candidates Advance",
+        description: "They pass screening, waste your hiring manager's time in interviews.",
         iconClassName: "bg-red-50 text-red-500 border border-red-100",
     },
     {
         icon: Scale,
-        title: "The Inconsistency Tax",
-        description: "Gut-feel assessments create shifting standards. Candidates face different bars depending on who happens to interview them.",
+        title: "Questions Lack Depth",
+        description: "Every interviewer asks different things. No one digs deep enough.",
         iconClassName: "bg-orange-50 text-orange-500 border border-orange-100",
     },
     {
         icon: FileText,
-        title: "The Resume-Reality Gap",
-        description: "Resumes are marketing documents. You don't know what you're hiring until they're in the interview—which is too late to filter at scale.",
+        title: "Resume Skills Don't Stick",
+        description: "They claim expertise. Follow-up questions expose they're repeating resume language.",
         iconClassName: "bg-blue-50 text-blue-500 border border-blue-100",
     },
 ];
@@ -69,55 +69,55 @@ const featureCards: Array<{
         {
             icon: Code2,
             title: "Resume Intelligence",
-            description: "Extracts hidden nuances, not just keywords, to map potential.",
+            description: "Maps real skill depth from resume, not just keywords.",
         },
         {
             icon: Repeat2,
             title: "Smart Follow-ups",
-            description: "AI probes reasoning depth like a senior hiring lead.",
+            description: "Digs deeper when answers are vague or unproven.",
         },
         {
             icon: ShieldCheck,
-            title: "Proctoring",
-            description: "Anti-cheating signals and tab-switching alerts keep interviews honest.",
+            title: "Integrity Proctoring",
+            description: "Detects cheating and dishonest behavior automatically.",
         },
         {
-            icon: Video,
-            title: "Video Analysis",
-            description: "Analyze non-verbal cues and communication clarity scores.",
+            icon: FileBarChart,
+            title: "Instant AI Report",
+            description: "Every interview generates a structured score, evidence, and hire recommendation.",
         },
         {
-            icon: Bot,
-            title: "Skill Proof",
-            description: "Live coding environments embedded directly in the interview.",
+            icon: Brain,
+            title: "Adaptive Questioning",
+            description: "Questions change based on what the candidate says. No two interviews are the same.",
         },
         {
-            icon: Users,
-            title: "Team Review",
-            description: "Share snippets of the interview with hiring managers instantly.",
+            icon: Zap,
+            title: "Cheaper Than Alternatives",
+            description: "Fraction of the cost of human screeners or traditional interview platforms.",
         },
     ];
 
 const workflowSteps = [
     {
-        title: "Upload & Context",
-        description: "You provide the job description. SreevaAI learns exactly what matters: not just buzzwords, but the reasoning, trade-offs, and depth required.",
+        title: "Upload Your JD",
+        description: "SreevaAI reads your job description and understands exactly what the role needs.",
         icon: FileUp,
     },
     {
-        title: "Adaptive Design",
-        description: "The system designs a dynamic questioning path. If a candidate claims mastery, the system digs into complexity, not surface-level syntax.",
+        title: "AI Builds the Interview",
+        description: "Custom questions generated for this specific role. No templates. No scripts.",
         icon: Brain,
     },
     {
-        title: "Intelligent Questioning",
-        description: "SreevaAI listens for depth, ownership, and authenticity. Vague answers trigger follow-ups. The system asks the questions your best interviewer would ask.",
+        title: "Candidate Gets Interviewed",
+        description: "AI adapts in real time based on every answer. Digs deep. Catches inconsistencies.",
         icon: Mic,
         highlighted: true,
     },
     {
-        title: "Hiring Signal",
-        description: "Within 60 seconds, you get a comprehensive report with reasoning depth analysis, authenticity flags, and hire/maybe/reject recommendations.",
+        title: "You Get the Decision",
+        description: "Structured report with scores, evidence, and a clear hire or reject recommendation.",
         icon: FileBarChart,
     },
 ];
@@ -145,7 +145,6 @@ const heroMetrics = [
 ];
 
 const featureComparison = [
-    { feature: "Pre-qualifying Questions", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Drives", starter: "1", pro: "5", scale: "10+", enterprise: "Unlimited" },
     { feature: "AI Voices", starter: "3", pro: "10+", scale: "20+", enterprise: "Unlimited" },
     { feature: "Interview Duration", starter: "20 min", pro: "20 min", scale: "20 min", enterprise: "20 min" },
@@ -154,6 +153,7 @@ const featureComparison = [
     { feature: "Resume + JD Based Questions", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Smart Follow-ups", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "AI Evaluation Report", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
+    { feature: "Pre-qualifying Questions", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "AI Proctoring", starter: "—", pro: "Basic", scale: "Advanced", enterprise: "Advanced" },
     { feature: "Multilingual", starter: "—", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Team Members", starter: "1", pro: "3", scale: "10", enterprise: "Custom" },
@@ -164,39 +164,52 @@ const featureComparison = [
 
 const faqs = [
     {
-        question: "Is the AI biased?",
-        answer: "No. Sreeva uses objective skill-mapping protocols that ignore demographic data and focus on technical and behavioral competency.",
+        question: "1. What is SreevaAI?",
+        answer: "An AI interviewer that conducts first-round interviews automatically — reads the resume, asks relevant questions, adapts based on answers, and gives you a hiring recommendation.",
     },
     {
-        question: "Can it detect ChatGPT use?",
-        answer: "Yes. Sreeva detects tab-switching, copy-pasting, and unnatural response patterns typical of AI assistance.",
+        question: "2. Is it really AI or just pre-recorded questions?",
+        answer: "It's a live AI conversation. Questions change based on what the candidate says. No scripts, no fixed flow.",
     },
     {
-        question: "How long are the interviews?",
-        answer: "On average, Sreeva interviews last 15-25 minutes, tailored dynamically based on the candidate's speed and depth.",
+        question: "3. Can I customize the interview for my role?",
+        answer: "Yes. Every interview is built from your JD. You can also add specific questions you want asked.",
     },
     {
-        question: "Does it integrate with my ATS?",
-        answer: "Yes. Sreeva supports Greenhouse, Lever, Workday, and other major recruiting platforms.",
+        question: "4. How does it detect cheating?",
+        answer: "It monitors 12+ behavioral signals — not just tab switching. The adaptive follow-ups themselves expose candidates who can't back up their answers.",
+    },
+    {
+        question: "5. Will candidates be comfortable with an AI interview?",
+        answer: "Most candidates prefer it. No scheduling pressure, no judgment, interview on their own time.",
+    },
+    {
+        question: "6. Does the AI make the final hiring decision?",
+        answer: "No. SreevaAI gives you a structured recommendation. Your team makes the final call.",
+    },
+    {
+        question: "7. How long does setup take?",
+        answer: "Under 10 minutes. Upload your JD, invite candidates, done.",
     },
 ];
 
 const footerGroups = [
     {
-        title: "Product",
-        links: ["Adaptive Engine", "Skill Library", "Integrations", "Security"],
-    },
-    {
-        title: "Company",
-        links: ["Careers", "About Us", "Blog", "News"],
+        title: "Sections",
+        links: [
+            { label: "Hero", href: "#hero" },
+            { label: "Problems", href: "#problems" },
+            { label: "Solutions", href: "#solutions" },
+            { label: "Workflow", href: "#workflow" },
+            { label: "FAQ", href: "#faq" },
+        ],
     },
     {
         title: "Legal",
-        links: ["Privacy Policy", "Terms of Service", "Security"],
-    },
-    {
-        title: "Support",
-        links: ["Contact Sales", "Status", "Help Center"],
+        links: [
+            { label: "Privacy Policy", href: "/privacy" },
+            { label: "Terms of Service", href: "/terms" },
+        ],
     },
 ];
 
@@ -257,17 +270,20 @@ export default function Home() {
                     </Link>
 
                     <nav className="hidden items-center gap-8 text-sm font-medium tracking-tight md:flex">
-                        <a className="border-b-2 border-orange-600 pb-1 font-bold text-orange-600" href="#product">
-                            Product
+                        <a className="border-b-2 border-orange-600 pb-1 font-bold text-orange-600" href="#hero">
+                            Hero
+                        </a>
+                        <a className="text-slate-600 transition-colors hover:text-orange-600" href="#problems">
+                            Problems
                         </a>
                         <a className="text-slate-600 transition-colors hover:text-orange-600" href="#solutions">
                             Solutions
                         </a>
-                        <a className="text-slate-600 transition-colors hover:text-orange-600" href="#pricing">
-                            Pricing
+                        <a className="text-slate-600 transition-colors hover:text-orange-600" href="#workflow">
+                            Workflow
                         </a>
-                        <a className="text-slate-600 transition-colors hover:text-orange-600" href="#resources">
-                            Resources
+                        <a className="text-slate-600 transition-colors hover:text-orange-600" href="#faq">
+                            FAQ
                         </a>
                     </nav>
 
@@ -293,7 +309,7 @@ export default function Home() {
             </header>
 
             <main className="pt-20">
-                <section className="mx-auto max-w-[1320px] overflow-hidden px-6 pb-24 pt-12 sm:pt-20">
+                <section id="hero" className="mx-auto max-w-[1320px] overflow-hidden px-6 pb-24 pt-12 sm:pt-20">
                     <div className="flex flex-col items-center gap-16 lg:flex-row">
                         <div className="space-y-8 lg:w-3/5">
                             <div className="space-y-5">
@@ -302,13 +318,16 @@ export default function Home() {
                                 </h1>
                                 <div className="space-y-3">
                                     <p className="max-w-lg text-body-lg text-on-surface-variant">
-                                        SreevaAI reads resumes, understands job requirements, and asks intelligent follow-up questions in real-time. Know who's genuinely qualified before your team spends a single hour.
+                                        SreevaAI asks the questions your best engineers would ask. Every interview. Every candidate. Catch resume padding in real time. Reduce bad hires before they start.
+                                    </p>
+                                    <p className="max-w-lg text-body-md text-on-surface-variant">
+                                        Know exactly who will succeed in the role. Not in weeks. But with total confidence.
                                     </p>
                                 </div>
                             </div>
                             <div className="flex flex-col gap-4 sm:flex-row">
                                 <Link href={ctaHref} target={!session ? "_blank" : undefined} rel={!session ? "noreferrer" : undefined} className="primary-btn inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-bold">
-                                    {session ? "Open Dashboard" : "Book Demo"}
+                                    {session ? "Open Dashboard" : "See Demo"}
                                     <ArrowRight className="h-5 w-5" />
                                 </Link>
                             </div>
@@ -409,7 +428,7 @@ export default function Home() {
                     </div>
                 </section>
 
-                <section id="solutions" className="bg-surface-container-low py-24">
+                <section id="problems" className="bg-surface-container-low py-24">
                     <SectionHeading
                         title="Your hiring process has a credibility problem."
                         description="You can't tell who's genuinely qualified from a resume. Using engineers for every screen is too expensive, while recruiters alone often lack accuracy. The result? Unqualified candidates waste hours in your final interview panels."
@@ -434,7 +453,7 @@ export default function Home() {
                     </div>
                 </section>
 
-                <section id="product" className="mx-auto max-w-[1320px] px-6 py-24">
+                <section id="solutions" className="mx-auto max-w-[1320px] px-6 py-24">
                     <SectionHeading
                         title="Everything you need to calibrate talent"
                         eyebrow="PRODUCT"
@@ -567,12 +586,12 @@ export default function Home() {
                     </div>
                 </section>
 
-                <section className="bg-surface py-24">
+                <section id="workflow" className="bg-surface py-24">
                     <div className="mx-auto max-w-[1320px] px-6">
                         <SectionHeading
-                            title="The Intelligent Workflow"
+                            title="How SreevaAI Works"
                             eyebrow="PROCESS"
-                            description="How we streamline your talent assessment from start to finish."
+                            description="Four steps from job description to hiring decision."
                         />
                         <div className="relative flex flex-col items-center gap-8 md:flex-row md:gap-4">
                             {workflowSteps.map((step, index) => (
@@ -616,17 +635,17 @@ export default function Home() {
                                             <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-orange-600">Sreeva AI</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {[
-                                            { label: "Screening Method", traditional: "Subjective resume review + gut feel", sreeva: "Objective resume parsing + live skill validation" },
-                                            { label: "Interviewer Bias", traditional: "High (varies by who's available)", sreeva: "Zero (consistent, data-driven)" },
-                                            { label: "Question Depth", traditional: "Surface-level scripted questions", sreeva: "Adaptive questioning that tests reasoning" },
-                                            { label: "Time to Decision", traditional: "4-7 days (scheduling, notes, debrief)", sreeva: "60 seconds (instant report)" },
-                                            { label: "Evidence Quality", traditional: '"Seemed knowledgeable"', sreeva: "Specific quotes + confidence scores" },
-                                            { label: "Consistency", traditional: "Every candidate different assessment", sreeva: "Standardized metrics across all candidates" }
-                                        ].map((row, i) => (
-                                            <tr key={i} className="group transition-colors hover:bg-slate-50/30">
-                                                <td className="px-6 py-4 text-sm font-bold text-slate-900 whitespace-nowrap">{row.label}</td>
+                                      <tbody className="divide-y divide-slate-100">
+                                          {[
+                                              { label: "Interview Style", traditional: "Same questions for every candidate", sreeva: "Adapts in real time based on every answer" },
+                                              { label: "Skill Verification", traditional: "You trust what they say", sreeva: "You see what they actually know" },
+                                              { label: "Candidate Fraud", traditional: "Anyone can show up and answer for them", sreeva: "Identity, behavior, and response patterns all verified" },
+                                              { label: "Interviewer Bias", traditional: "Depends on who shows up that day", sreeva: "Consistent evaluation every single time" },
+                                              { label: "Report Quality", traditional: "Gut feel notes after the call", sreeva: "Structured score with evidence and clear recommendation" },
+                                              { label: "Cost", traditional: "Expensive human screeners per interview", sreeva: "Fraction of the cost, no human bottleneck" }
+                                          ].map((row, i) => (
+                                              <tr key={i} className="group transition-colors hover:bg-slate-50/30">
+                                                  <td className="px-6 py-4 text-sm font-bold text-slate-900 whitespace-nowrap">{row.label}</td>
                                                 <td className="px-6 py-4 text-sm text-slate-500 whitespace-nowrap">{row.traditional}</td>
                                                 <td className="px-6 py-4 text-sm font-medium text-slate-900 bg-orange-50/30 whitespace-nowrap">
                                                     <div className="flex items-center gap-2">
@@ -714,7 +733,7 @@ export default function Home() {
                     </div>
                 </section>
 
-                <section id="resources" className="bg-surface-container-low py-24">
+                <section id="faq" className="bg-surface-container-low py-24">
                     <div className="mx-auto max-w-[1320px] px-6">
                         <SectionHeading
                             title="Frequently Asked Questions"
@@ -796,13 +815,13 @@ export default function Home() {
                             <span className="leading-none">Sreeva AI</span>
                         </div>
                         <p className="mb-6 max-w-xs text-sm text-slate-500">
-                            Building the future of talent assessment through adaptive artificial intelligence.
+                            Adaptive AI that interviews smarter than a script.
                         </p>
                         <div className="flex gap-4">
                             <a className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-400 transition-colors hover:text-primary" href="#">
                                 <Globe2 className="h-4 w-4" />
                             </a>
-                            <a className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-400 transition-colors hover:text-primary" href="#">
+                            <a className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-400 transition-colors hover:text-primary" href="mailto:support@sreevaai.com">
                                 <Mail className="h-4 w-4" />
                             </a>
                         </div>
@@ -813,12 +832,12 @@ export default function Home() {
                             <h5 className="mb-4 text-sm font-bold">{group.title}</h5>
                             <ul className="space-y-2 text-sm text-slate-500">
                                 {group.links.map((item) => (
-                                    <li key={item}>
+                                    <li key={item.label}>
                                         <Link
                                             className="underline-offset-4 hover:text-orange-600 hover:underline"
-                                            href={item === "Terms of Service" ? "/terms" : item === "Privacy Policy" ? "/privacy" : "#"}
+                                            href={item.href}
                                         >
-                                            {item}
+                                            {item.label}
                                         </Link>
                                     </li>
                                 ))}

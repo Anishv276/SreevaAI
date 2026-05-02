@@ -155,7 +155,6 @@ model Drive {
   jdFileName         String?
   jdPreviewUrl       String?
   orgId              String?
-  shortlistMode      String        @default("automatic")
   location           String?
   status             String        @default("ACTIVE")
   aiName             String?       @default("Ishitha")

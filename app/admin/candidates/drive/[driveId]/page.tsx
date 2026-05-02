@@ -22,7 +22,6 @@ interface DriveDetails {
     department?: string | null;
     applicants?: number | null;
     screeningThreshold?: number | null;
-    shortlistMode?: string | null;
     inviteScheduleDays?: number | null;
     proctoringLevel?: string | null;
     interviewLanguage?: string | null;
@@ -50,7 +49,6 @@ export default function DriveCandidatesPage() {
     const [refreshKey, setRefreshKey] = useState(0);
     const [screeningThreshold, setScreeningThreshold] = useState(60);
     const [screeningCriteria, setScreeningCriteria] = useState<Record<string, any>>({});
-    const [shortlistMode, setShortlistMode] = useState<"automatic" | "manual">("automatic");
     const [inviteScheduleDays, setInviteScheduleDays] = useState(1);
     const [quotaLocked, setQuotaLocked] = useState(false);
 
@@ -74,7 +72,6 @@ export default function DriveCandidatesPage() {
                     department: data.department || null,
                     applicants: data.applicants ?? data._count?.applications ?? 0,
                     screeningThreshold: data.screeningThreshold ?? null,
-                    shortlistMode: data.shortlistMode || null,
                     inviteScheduleDays: data.inviteScheduleDays ?? null,
                     proctoringLevel: data.proctoringLevel || null,
                     interviewLanguage: data.interviewLanguage || null,
@@ -95,12 +92,10 @@ export default function DriveCandidatesPage() {
                 const parsed = parseDriveScreeningSettings(
                     data.screeningCriteria,
                     Number(data.screeningThreshold ?? 60),
-                    (data.shortlistMode as "automatic" | "manual") || "automatic",
                     Number(data.inviteScheduleDays ?? 1),
                 );
 
                 setScreeningThreshold(parsed.threshold);
-                setShortlistMode(parsed.shortlistMode);
                 setInviteScheduleDays(parsed.inviteScheduleDays);
                 setScreeningCriteria(parsed.criteria as Record<string, any>);
             } catch (error) {
@@ -163,7 +158,6 @@ export default function DriveCandidatesPage() {
                     screeningThreshold,
                     screeningCriteria: JSON.stringify({
                         threshold: screeningThreshold,
-                        shortlistMode,
                         inviteScheduleDays,
                         criteria: sanitizeScreeningCriteria(screeningCriteria),
                     }),
@@ -190,7 +184,7 @@ export default function DriveCandidatesPage() {
                         <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-400">
                             <Badge className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#F97316] shadow-none">
                                 Drive Candidates
-                            </Badge>
+                              </Badge>
                             <span>{drive?.department || "Recruitment"}</span>
                         </div>
                         <div className="space-y-1">
@@ -292,9 +286,6 @@ export default function DriveCandidatesPage() {
                                         These values are stored in the Drive screening criteria JSON and used for resume scoring.
                                     </p>
                                 </div>
-                                <Badge className={cn("rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest", "bg-orange-50 text-[#F97316] border border-orange-200")}>
-                                    {shortlistMode}
-                                </Badge>
                             </div>
 
                             <ScreeningSettings
@@ -311,8 +302,6 @@ export default function DriveCandidatesPage() {
                                         setInviteScheduleDays(Number(cfg.inviteScheduleDays ?? 1));
                                     }
                                 }}
-                                shortlistMode={shortlistMode}
-                                setShortlistMode={setShortlistMode}
                             />
 
                             <div className="flex items-center justify-end gap-3 pt-6 mt-6 border-t border-gray-100">
@@ -336,11 +325,9 @@ export default function DriveCandidatesPage() {
                                         const next = parseDriveScreeningSettings(
                                             parsed,
                                             Number(current?.screeningThreshold ?? 60),
-                                            (current?.shortlistMode as "automatic" | "manual") || "automatic",
                                             Number(current?.inviteScheduleDays ?? 1),
                                         );
                                         setScreeningThreshold(next.threshold);
-                                        setShortlistMode(next.shortlistMode);
                                         setInviteScheduleDays(next.inviteScheduleDays);
                                         setScreeningCriteria(next.criteria as Record<string, any>);
                                     }}

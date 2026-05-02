@@ -751,7 +751,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                 )}
                                             </TableCell>
                                             <TableCell className="py-5 pr-8 text-right" onClick={(e) => e.stopPropagation()}>
-                                                <DropdownMenu>
+                                                <DropdownMenu modal={false}>
                                                     <DropdownMenuTrigger asChild>
                                                         <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg hover:bg-gray-50 transition-colors">
                                                             <MoreHorizontal className="h-4 w-4 text-gray-400" />
@@ -763,7 +763,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                         sideOffset={8}
                                                         collisionPadding={12}
                                                         className="w-64 max-h-[70vh] overflow-y-auto origin-top-right p-2 rounded-2xl shadow-xl border-gray-100 bg-white"
-                                                        style={{ transform: "scale(0.75)" }}
                                                     >
                                                         <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Activity</DropdownMenuLabel>
                                                         <DropdownMenuItem

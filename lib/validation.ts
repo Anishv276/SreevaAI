@@ -64,12 +64,12 @@ export const createDriveSchema = z.object({
   extractedDetails: z.record(z.string(), z.any()).optional(),
   screeningThreshold: z.coerce.number().int().optional(),
   screeningCriteria: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
+  shortlistMode: z.string().optional(),
   inviteScheduleDays: z.preprocess((val) => {
     if (val === null || val === undefined || val === "") return undefined;
     const n = Number(val);
     return Number.isNaN(n) ? undefined : n;
   }, z.coerce.number().int().min(1).max(30).optional()),
-  shortlistMode: z.enum(["automatic", "manual"]).optional(),
 });
 
 export const updateDriveSchema = createDriveSchema.partial();

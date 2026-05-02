@@ -16,14 +16,12 @@ export interface ScreeningConfig {
 interface ScreeningSettingsProps {
     config: ScreeningConfig;
     setConfig: (w: ScreeningConfig | ((prev: ScreeningConfig) => ScreeningConfig)) => void;
-    shortlistMode: "automatic" | "manual";
-    setShortlistMode: (v: "automatic" | "manual") => void;
 }
 
 type SkillItem = { name: string; weight?: number };
 type CustomCheckItem = { text: string; required?: boolean };
 
-export function ScreeningSettings({ config, setConfig, shortlistMode, setShortlistMode }: ScreeningSettingsProps) {
+export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps) {
     const threshold = config?.threshold ?? 60;
     const criteria = config?.criteria ?? {};
     const inviteScheduleDays = config?.inviteScheduleDays ?? 1;
@@ -421,53 +419,6 @@ export function ScreeningSettings({ config, setConfig, shortlistMode, setShortli
                             </div>
                         </div>
                     )}
-                </div>
-            </section>
-
-            <section className="space-y-5 rounded-3xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/60 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)] md:p-6">
-                <div className="flex items-center gap-3">
-                    <span className="h-5 w-1 rounded-full bg-slate-900" />
-                    <div>
-                        <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-slate-900">
-                            <Zap className="h-4 w-4 text-orange-500" />
-                            Shortlist Mode
-                        </p>
-                    </div>
-                </div>
-
-                <div className="space-y-4">
-                    <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
-                        <button
-                            type="button"
-                            onClick={() => setShortlistMode("automatic")}
-                            className={cn(
-                                "rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors duration-200",
-                                shortlistMode === "automatic"
-                                    ? "bg-slate-950 text-white shadow-sm"
-                                    : "text-slate-500 hover:text-slate-800"
-                            )}
-                        >
-                            Automatic
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setShortlistMode("manual")}
-                            className={cn(
-                                "rounded-xl px-5 py-2.5 text-sm font-semibold transition-colors duration-200",
-                                shortlistMode === "manual"
-                                    ? "bg-slate-950 text-white shadow-sm"
-                                    : "text-slate-500 hover:text-slate-800"
-                            )}
-                        >
-                            Manual
-                        </button>
-                    </div>
-                    <p className="max-w-md text-xs leading-relaxed text-slate-500">
-                        {shortlistMode === "automatic"
-                            ? "AI will auto-send interview links to matching candidates immediately."
-                            : "You will manually review and approve candidates before any invitations are sent."
-                        }
-                    </p>
                 </div>
             </section>
         </div>

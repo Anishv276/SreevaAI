@@ -6,7 +6,6 @@ import { spawn } from "child_process";
 import { tmpdir } from "os";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { generateId } from "@/lib/ids";
-import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { safeJsonParse } from "@/lib/utils";
 import { parseDriveScreeningSettings } from "@/lib/screening-criteria";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
@@ -30,7 +29,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         title: true,
                         description: true,
                         screeningThreshold: true,
-                        shortlistMode: true,
                         screeningCriteria: true,
                         extractedDetails: true,
                         orgId: true,
@@ -72,7 +70,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const screeningSettings = parseDriveScreeningSettings(
             application.drive.screeningCriteria,
             Number(application.drive.screeningThreshold ?? 0),
-            (application.drive.shortlistMode as "automatic" | "manual") || "automatic",
             1
         );
         const threshold = Number(screeningSettings.threshold ?? application.drive.screeningThreshold ?? 0);
@@ -154,74 +151,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             source: "system",
         });
 
-        // 6. Email & interview invite (only in automatic mode)
-        const isAutomatic = (application.drive.shortlistMode || "automatic") === "automatic";
-
+        // Manual only: We still create/upsert the interview record so it's ready, but we DON'T send the email here.
         if (resumeStatus === "SHORTLISTED") {
-                const interview = await (prisma as any).interview.upsert({
-                    where: { applicationId: id },
-                    update: {
-                        expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-                        status: "PENDING",
-                    },
-                    create: {
-                        id: generateId("int", application?.fullName || id),
-                        applicationId: id,
-                        expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-                        status: "PENDING",
-                    },
-                });
-
-            if (isAutomatic) {
-                const { sendApplicationStatusEmail } = await import("@/lib/mail");
-                const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com"}/interview/${id}`;
-                const interviewLink = isInterviewTokenRequired()
-                    ? `${interviewBase}?token=${interview.accessToken}`
-                    : interviewBase;
-                const mailResult = await sendApplicationStatusEmail({
-                    email: application.email,
-                    fullName: application.fullName,
-                    jobTitle: application.drive.title,
-                    orgId: application.drive.orgId ?? undefined,
-                    status: resumeStatus,
-                    score,
-                    interviewLink,
-                }).catch((err) => {
-                    console.error("[SCAN API] Email trigger failed:", err);
-                    return { success: false };
-                });
-                if (mailResult?.success) {
-                    await appendCandidateActivity(id, {
-                        type: "email_sent",
-                        label: "Shortlisted email sent",
-                        details: `Interview link sent at ${new Date().toISOString()}`,
-                        timestamp: new Date().toISOString(),
-                        source: "system",
-                    });
-                }
-            }
-        } else if (isAutomatic) {
-            const { sendApplicationStatusEmail } = await import("@/lib/mail");
-            const mailResult = await sendApplicationStatusEmail({
-                email: application.email,
-                fullName: application.fullName,
-                jobTitle: application.drive.title,
-                orgId: application.drive.orgId ?? undefined,
-                status: "REJECTED",
-                score,
-            }).catch((err) => {
-                console.error("[SCAN API] Email trigger failed:", err);
-                return { success: false };
+            await (prisma as any).interview.upsert({
+                where: { applicationId: id },
+                update: {
+                    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+                    status: "PENDING",
+                },
+                create: {
+                    id: generateId("int", application?.fullName || id),
+                    applicationId: id,
+                    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+                    status: "PENDING",
+                },
             });
-            if (mailResult?.success) {
-                await appendCandidateActivity(id, {
-                    type: "email_sent",
-                    label: "Rejection email sent",
-                    details: `Sent at ${new Date().toISOString()}`,
-                    timestamp: new Date().toISOString(),
-                    source: "system",
-                });
-            }
         }
 
         return NextResponse.json(updated);

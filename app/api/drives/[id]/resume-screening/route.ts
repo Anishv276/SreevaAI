@@ -121,7 +121,6 @@ export async function POST(
                 title: true,
                 description: true,
                 screeningThreshold: true,
-                shortlistMode: true,
                 screeningCriteria: true,
                 extractedDetails: true,
                 orgId: true,
@@ -225,7 +224,6 @@ async function processBatch(
         const parsed = parseDriveScreeningSettings(
             drive.screeningCriteria,
             Number(drive.screeningThreshold ?? 60),
-            (drive.shortlistMode as "automatic" | "manual") || "automatic",
             1
         );
         const threshold: number = Number(parsed.threshold ?? drive.screeningThreshold ?? 60);

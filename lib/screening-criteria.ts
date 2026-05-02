@@ -25,7 +25,6 @@ export interface ScreeningCriteria {
 
 export interface DriveScreeningSettings {
     threshold: number;
-    shortlistMode: "automatic" | "manual";
     inviteScheduleDays: number;
     criteria: ScreeningCriteria;
 }
@@ -86,13 +85,11 @@ export function sanitizeScreeningCriteria(criteria: ScreeningCriteria | Record<s
 export function parseDriveScreeningSettings(
     screeningCriteria: unknown,
     threshold: number,
-    shortlistMode: "automatic" | "manual",
     inviteScheduleDays: number
 ): DriveScreeningSettings {
     const parsed = sanitizeScreeningCriteria(parseMaybeJson(screeningCriteria));
     return {
         threshold: Number.isFinite(threshold) ? threshold : 60,
-        shortlistMode: shortlistMode === "manual" ? "manual" : "automatic",
         inviteScheduleDays: Number.isFinite(inviteScheduleDays) && inviteScheduleDays > 0 ? inviteScheduleDays : 1,
         criteria: parsed,
     };
