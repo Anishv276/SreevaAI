@@ -3,9 +3,12 @@ import { getSessionFromRequest, isAdminRole, isSuperAdminRole, refreshSessionCoo
 
 export async function proxy(req: NextRequest) {
     const host = req.headers.get('host');
-    if (host === 'sreevaai.com') {
+    
+    // Redirect sreevaai.com to www.sreevaai.com and strip port (like :3000)
+    if (host && (host === 'sreevaai.com' || host.startsWith('sreevaai.com:'))) {
         const url = req.nextUrl.clone();
         url.hostname = 'www.sreevaai.com';
+        url.port = ''; // Remove the port number
         return NextResponse.redirect(url, 301);
     }
 
