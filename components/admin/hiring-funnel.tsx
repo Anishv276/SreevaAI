@@ -39,7 +39,7 @@ const STAGES = [
     { key: "shortlisted",  label: "Shortlisted",   color: "#15803D", darkColor: "#166534" },
     { key: "invited",      label: "Invited",       color: "#1D4ED8", darkColor: "#1E40AF" },
     { key: "interviewed",  label: "Interviewed",   color: "#16A34A", darkColor: "#15803D" },
-    { key: "hired",        label: "Hired",         color: "#EA580C", darkColor: "#C2410C" },
+    { key: "hired",        label: "Hired",         color: "#10B981", darkColor: "#059669" },
 ] as const;
 
 export function HiringFunnel({ dateRange }: HiringFunnelProps) {
@@ -112,7 +112,7 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
                     <div className="text-right">
                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">Total Pass</p>
                         <div className="flex items-baseline justify-end gap-1">
-                            <span className="text-2xl font-black text-[#F97316] tracking-tighter">{passRate}%</span>
+                            <span className="text-2xl font-black text-slate-900 tracking-tighter">{passRate}%</span>
                         </div>
                     </div>
                 )}
@@ -173,7 +173,7 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
                                 {/* Conversion rate */}
                                 <div className="w-12 shrink-0 flex justify-end">
                                     {convRate != null ? (
-                                        <span className="text-[11px] font-black text-gray-400 group-hover/item:text-orange-400 transition-colors">
+                                        <span className="text-[11px] font-black text-gray-400 group-hover/item:text-slate-700 transition-colors">
                                             {convRate}%
                                         </span>
                                     ) : (

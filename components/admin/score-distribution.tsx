@@ -103,7 +103,7 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
             {/* Chart Area */}
             {loading ? (
                 <div className="flex-1 flex items-center justify-center min-h-[250px]">
-                    <Loader2 className="h-8 w-8 text-orange-200 animate-spin" />
+                    <Loader2 className="h-8 w-8 text-slate-400 animate-spin" />
                 </div>
             ) : error ? (
                 <div className="flex-1 flex items-center justify-center">

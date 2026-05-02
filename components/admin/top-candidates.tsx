@@ -23,14 +23,14 @@ interface TopCandidate {
 const AVATAR_AURA = [
     "from-blue-400 to-indigo-500",
     "from-emerald-400 to-teal-500",
-    "from-orange-400 to-amber-500",
+    "from-slate-500 to-slate-700",
     "from-purple-400 to-fuchsia-500",
     "from-rose-400 to-pink-500",
 ];
 
 const STATUS_GLOW: Record<string, string> = {
     Shortlisted:  "bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.3)]",
-    Hired:        "bg-orange-500 shadow-[0_0_12px_rgba(249,115,22,0.3)]",
+    Hired:        "bg-slate-500 shadow-[0_0_12px_rgba(100,116,139,0.25)]",
     Reviewing:    "bg-gray-400 shadow-[0_0_12px_rgba(156,163,175,0.2)]",
     "In progress":"bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.3)]",
 };
@@ -89,7 +89,7 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
                     <p className="text-[11px] font-bold text-gray-400 mt-1 uppercase tracking-[0.2em]">Neural Match Index</p>
                 </div>
                 <Link href="/admin/candidates">
-                    <button className="text-[11px] font-black text-gray-400 border border-gray-100 rounded-xl px-4 py-2 hover:border-orange-200 hover:text-orange-500 transition-all uppercase tracking-widest bg-white shadow-sm">
+                    <button className="text-[11px] font-black text-gray-400 border border-gray-100 rounded-xl px-4 py-2 hover:border-slate-300 hover:text-slate-950 transition-all uppercase tracking-widest bg-white shadow-sm">
                         Database
                     </button>
                 </Link>
@@ -99,7 +99,7 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
             <div className="flex-1 overflow-y-auto px-6 py-4 custom-scrollbar">
                 {loading ? (
                     <div className="flex items-center justify-center h-48">
-                        <Loader2 className="h-8 w-8 text-orange-200 animate-spin" />
+                        <Loader2 className="h-8 w-8 text-slate-400 animate-spin" />
                     </div>
                 ) : error ? (
                     <div className="flex items-center justify-center h-48 py-8">
@@ -134,7 +134,7 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
                                     hidden: { opacity: 0, scale: 0.95 },
                                     visible: { opacity: 1, scale: 1 }
                                 }}
-                                className="group flex items-center gap-4 p-4 rounded-[1.75rem] border border-gray-50/50 hover:border-orange-100 hover:bg-white transition-all duration-500 cursor-pointer shadow-sm hover:shadow-[0_15px_30px_rgba(0,0,0,0.03)]"
+                                className="group flex items-center gap-4 p-4 rounded-[1.75rem] border border-gray-50/50 hover:border-slate-200 hover:bg-white transition-all duration-500 cursor-pointer shadow-sm hover:shadow-[0_15px_30px_rgba(15,23,42,0.04)]"
                                 onClick={() => router.push(`/admin/candidates/${c.id}`)}
                             >
                                 {/* Avatar with Aura */}
@@ -155,14 +155,14 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
                                 {/* Identity */}
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-baseline justify-between mb-0.5">
-                                        <p className="text-[14px] font-black text-gray-900 leading-tight group-hover:text-orange-600 transition-colors truncate">
+                                        <p className="text-[14px] font-black text-gray-900 leading-tight group-hover:text-slate-700 transition-colors truncate">
                                             {c.name}
                                         </p>
                                         <div className="flex items-center gap-2">
                                             {c.interviewScore != null && (
                                                 <div className="flex flex-col items-end">
                                                     <span className="text-[11px] font-black text-gray-900 tracking-tighter tabular-nums">IV {c.interviewScore}</span>
-                                                    <div className="h-0.5 w-6 bg-orange-400 rounded-full" />
+                                                    <div className="h-0.5 w-6 bg-slate-400 rounded-full" />
                                                 </div>
                                             )}
                                         </div>

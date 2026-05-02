@@ -116,9 +116,9 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
             value: s.activeDrives,
             subtext: `${s.closingSoon} closing soon`,
             icon: Briefcase,
-            accent: "#F97316",
-            bg: "bg-orange-50/50",
-            iconBg: "bg-orange-100/50 text-[#F97316]",
+            accent: "#0F172A",
+            bg: "bg-slate-50/60",
+            iconBg: "bg-slate-100/70 text-slate-700",
         },
         {
             label: "Uploaded",
@@ -235,8 +235,8 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
                             </div>
                             {card.pulse && (
                                 <div className="flex h-3 w-3 relative">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-3 w-3 bg-orange-500"></span>
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-3 w-3 bg-slate-500"></span>
                                 </div>
                             )}
                         </div>

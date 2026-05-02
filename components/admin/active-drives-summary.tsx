@@ -25,8 +25,8 @@ interface DriveSummary {
 // Bar color based on threshold proximity
 function barColor(pct: number, threshold: number) {
     if (pct >= threshold) return "#10B981";
-    if (pct >= threshold * 0.75) return "#F97316";
-    return "#F59E0B";
+    if (pct >= threshold * 0.75) return "#475569";
+    return "#94A3B8";
 }
 
 interface ActiveDrivesSummaryProps {
@@ -82,15 +82,15 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
     };
 
     return (
-        <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-full overflow-hidden hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)] transition-all duration-700">
+        <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-[0_8px_32px_rgba(15,23,42,0.03)] flex flex-col h-full overflow-hidden hover:shadow-[0_20px_60px_rgba(15,23,42,0.06)] transition-all duration-700">
             {/* Header */}
-            <div className="flex items-center justify-between px-8 py-6 border-b border-gray-100/50">
+            <div className="flex items-center justify-between px-8 py-6 border-b border-slate-200">
                 <div>
                     <h3 className="text-xl font-black text-gray-900 tracking-tight text-premium">Drives</h3>
-                    <p className="text-[11px] font-bold text-gray-400 mt-1 uppercase tracking-[0.2em]">Neural Pipeline Sync</p>
+                    <p className="text-[11px] font-bold text-slate-400 mt-1 uppercase tracking-[0.2em]">Neural Pipeline Sync</p>
                 </div>
                 <Link href="/admin/drives">
-                    <button className="text-[11px] font-black text-gray-400 border border-gray-100 rounded-xl px-5 py-2 hover:border-orange-200 hover:text-orange-500 hover:bg-white transition-all shadow-sm uppercase tracking-widest">
+                    <button className="text-[11px] font-black text-slate-500 border border-slate-200 rounded-xl px-5 py-2 hover:border-slate-300 hover:text-slate-950 hover:bg-slate-50 transition-all shadow-sm uppercase tracking-widest">
                         View All Drives
                     </button>
                 </Link>
@@ -100,7 +100,7 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
             <div className="flex-1 overflow-y-auto px-6 py-4 custom-scrollbar">
                 {loading ? (
                     <div className="flex items-center justify-center h-48">
-                        <Loader2 className="h-8 w-8 text-orange-200 animate-spin" />
+                        <Loader2 className="h-8 w-8 text-slate-400 animate-spin" />
                     </div>
                 ) : error ? (
                     <div className="flex items-center justify-center h-48 py-8">
@@ -121,8 +121,8 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                             >
                                 {/* Card 1: Create Drive */}
                                 <Link href="/admin/create-drive" className="group/card w-full max-w-md">
-                                    <div className="h-full min-h-[220px] p-8 rounded-[2.5rem] border-2 border-dashed border-gray-100 bg-gray-50/30 flex flex-col items-center justify-center text-center gap-4 group-hover/card:border-orange-300 group-hover/card:bg-orange-50/30 transition-all duration-500">
-                                        <div className="h-16 w-16 rounded-[1.5rem] bg-orange-100/50 flex items-center justify-center text-[#F97316] group-hover/card:scale-110 group-hover/card:rotate-6 transition-all duration-500">
+                                    <div className="h-full min-h-[220px] p-8 rounded-[2.5rem] border-2 border-dashed border-slate-200 bg-slate-50/60 flex flex-col items-center justify-center text-center gap-4 group-hover/card:border-slate-300 group-hover/card:bg-white transition-all duration-500">
+                                        <div className="h-16 w-16 rounded-[1.5rem] bg-white flex items-center justify-center text-slate-700 border border-slate-200 group-hover/card:scale-110 group-hover/card:rotate-6 transition-all duration-500">
                                             <Plus className="h-8 w-8" />
                                         </div>
                                         <div>
@@ -131,7 +131,7 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                                 Initialize your first AI-driven recruitment pipeline
                                             </p>
                                         </div>
-                                        <div className="mt-2 px-6 py-2 bg-gray-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest group-hover/card:bg-[#F97316] group-hover/card:shadow-lg group-hover/card:shadow-orange-500/20 transition-all">
+                                        <div className="mt-2 px-6 py-2 bg-slate-950 text-white rounded-xl text-[10px] font-black uppercase tracking-widest group-hover/card:bg-slate-800 group-hover/card:shadow-lg group-hover/card:shadow-slate-900/10 transition-all">
                                             Get Started
                                         </div>
                                     </div>
@@ -160,18 +160,18 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                                 hidden: { opacity: 0, x: -10 },
                                                 visible: { opacity: 1, x: 0 },
                                             }}
-                                            className="p-5 rounded-[2rem] bg-white border border-gray-50/50 hover:border-orange-100 hover:shadow-[0_15px_40px_rgba(0,0,0,0.03)] transition-all duration-500 cursor-pointer group"
+                                            className="p-5 rounded-[2rem] bg-white border border-slate-200 hover:border-slate-300 hover:shadow-[0_15px_40px_rgba(15,23,42,0.04)] transition-all duration-500 cursor-pointer group"
                                             onClick={() => router.push(`/admin/candidates/drive/${drive.id}`)}
                                         >
                                             {/* Title row */}
                                             <div className="flex items-start justify-between gap-4 mb-4">
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex items-center gap-2 mb-1">
-                                                        <h4 className="text-[15px] font-black text-gray-800 group-hover:text-orange-600 transition-colors truncate tracking-tight">
+                                                        <h4 className="text-[15px] font-black text-slate-800 group-hover:text-slate-950 transition-colors truncate tracking-tight">
                                                             {drive.title}
                                                         </h4>
                                                     </div>
-                                                    <p className="text-[11px] font-bold text-gray-400 flex items-center gap-2 uppercase tracking-wider">
+                                                    <p className="text-[11px] font-bold text-slate-400 flex items-center gap-2 uppercase tracking-wider">
                                                         {drive.department}
                                                     </p>
                                                 </div>
@@ -186,10 +186,10 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                                     { label: "Pick", value: drive.shortlisted },
                                                 ].map((stat) => (
                                                     <div key={stat.label} className="flex flex-col">
-                                                        <span className="text-xl font-black text-gray-900 leading-none tracking-tighter tabular-nums">
+                                                        <span className="text-xl font-black text-slate-950 leading-none tracking-tighter tabular-nums">
                                                             {stat.value}
                                                         </span>
-                                                        <span className="text-[9px] font-bold text-gray-400 mt-1 uppercase tracking-widest">
+                                                        <span className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
                                                             {stat.label}
                                                         </span>
                                                     </div>
@@ -197,7 +197,7 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                             </div>
 
                                             {/* Neural Progress Bar */}
-                                            <div className="relative h-2 bg-gray-50 rounded-full overflow-hidden border border-gray-100/50">
+                                            <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
                                                 <motion.div
                                                     initial={{ width: 0 }}
                                                     animate={{ width: `${Math.min(drive.screeningPct, 100)}%` }}
@@ -210,10 +210,10 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                             </div>
 
                                             <div className="flex items-center justify-between mt-2.5">
-                                                <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">
-                                                    Efficiency: <span className="text-gray-600">{drive.screeningPct}%</span>
+                                                <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+                                                    Efficiency: <span className="text-slate-600">{drive.screeningPct}%</span>
                                                 </span>
-                                                <ChevronRight className="h-4 w-4 text-gray-200 group-hover:text-orange-400 group-hover:translate-x-1 transition-all" />
+                                                <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-slate-700 group-hover:translate-x-1 transition-all" />
                                             </div>
                                         </motion.div>
                                     );

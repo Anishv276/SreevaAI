@@ -30,7 +30,7 @@ interface FeedItem {
 function getIconProps(type: ActivityType) {
     switch (type) {
         case "application":
-            return { icon: UserPlus, color: "#F97316", bg: "bg-orange-500/10", border: "border-orange-500/20" };
+            return { icon: UserPlus, color: "#475569", bg: "bg-slate-500/10", border: "border-slate-500/20" };
         case "interview_completed":
             return { icon: FileCheck, color: "#10B981", bg: "bg-emerald-500/10", border: "border-emerald-500/20" };
         case "rejection":
@@ -117,7 +117,7 @@ export function LiveFeed({ dateRange }: LiveFeedProps) {
                 <div className="border-b border-gray-100/60 bg-white/30 px-8 py-6">
                     <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                         <div className="flex items-center gap-4">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-500/20 bg-orange-500/10 text-[#F97316]">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-500/20 bg-slate-500/10 text-slate-700">
                                 <Sparkles className="h-5 w-5" />
                             </div>
                             <div>
@@ -138,7 +138,7 @@ export function LiveFeed({ dateRange }: LiveFeedProps) {
                             <span className="rounded-full border border-red-100 bg-red-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-red-600">
                                 {summary.rejections} rejections
                             </span>
-                            {loading && <Loader2 className="h-4 w-4 animate-spin text-orange-400" />}
+                            {loading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
                         </div>
                     </div>
                 </div>
@@ -178,7 +178,7 @@ export function LiveFeed({ dateRange }: LiveFeedProps) {
                                         initial={{ opacity: 0, x: -10 }}
                                         animate={{ opacity: 1, x: 0 }}
                                         transition={{ delay: idx * 0.05 }}
-                                        className="group relative flex items-center gap-5 rounded-[2rem] border border-white bg-white/60 px-5 py-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-orange-100 hover:bg-white hover:shadow-[0_15px_30px_rgba(0,0,0,0.04)]"
+                                        className="group relative flex items-center gap-5 rounded-[2rem] border border-white bg-white/60 px-5 py-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-slate-200 hover:bg-white hover:shadow-[0_15px_30px_rgba(15,23,42,0.04)]"
                                         style={{ borderLeft: `4px solid ${color}` }}
                                     >
                                         <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border transition-transform group-hover:scale-110", bg, border)}>
@@ -187,7 +187,7 @@ export function LiveFeed({ dateRange }: LiveFeedProps) {
 
                                         <div className="min-w-0 flex-1">
                                             <div className="mb-1 flex items-center gap-2">
-                                                <p className="truncate text-[14px] font-black leading-none text-gray-900 group-hover:text-orange-600">
+                                                <p className="truncate text-[14px] font-black leading-none text-gray-900 group-hover:text-slate-700">
                                                     {item.action}
                                                 </p>
                                                 {item.isDemo && (
@@ -207,7 +207,7 @@ export function LiveFeed({ dateRange }: LiveFeedProps) {
                                             </div>
                                         </div>
 
-                                        <ChevronRight className="h-5 w-5 text-gray-200 transition-all group-hover:translate-x-1 group-hover:text-orange-400" />
+                                        <ChevronRight className="h-5 w-5 text-gray-200 transition-all group-hover:translate-x-1 group-hover:text-slate-700" />
                                     </motion.div>
                                 );
                             })}

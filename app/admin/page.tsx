@@ -45,17 +45,17 @@ export default function DashboardPage() {
     }, []);
 
     return (
-        <div className="space-y-8 pb-12" style={{ zoom: 0.88, transformOrigin: "top center" }}>
-            <div className="animate-fade-slide flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-10 pb-12 animate-fade-slide" style={{ zoom: 0.88, transformOrigin: "top center" }}>
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
                 <div className="group flex items-center gap-5">
-                    <div className="h-14 w-1.5 rounded-full bg-gradient-to-b from-[#F97316] to-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.5)] transition-all duration-500 group-hover:h-16 group-hover:shadow-[0_0_25px_rgba(249,115,22,0.6)]" />
+                    <div className="h-14 w-1.5 rounded-full bg-slate-900 shadow-[0_0_15px_rgba(15,23,42,0.15)] transition-all duration-500 group-hover:h-16" />
                     <div className="space-y-1">
-                        <h1 className="text-4xl font-black leading-none tracking-tighter text-gray-900 text-premium sm:text-5xl">
+                        <h1 className="text-4xl font-black leading-none tracking-tighter text-slate-950 text-premium sm:text-5xl">
                             Dashboard
                         </h1>
                         <div className="flex items-center gap-3">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
-                            <p className="text-[13px] font-bold uppercase tracking-[0.2em] text-gray-400">
+                            <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-pulse" />
+                            <p className="text-[13px] font-bold uppercase tracking-[0.2em] text-slate-400">
                                 Hiring Pulse ·{" "}
                                 {new Date().toLocaleDateString(undefined, {
                                     weekday: "long",
@@ -73,7 +73,7 @@ export default function DashboardPage() {
                     {driveCreationLocked ? (
                         <div className="flex items-center gap-3">
                             <button
-                                className="cursor-not-allowed rounded-lg border border-gray-200 bg-gray-100 px-4 py-2 text-[13.5px] font-medium text-gray-400 shadow-sm"
+                                className="cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-[13.5px] font-semibold text-slate-400 shadow-sm"
                                 disabled
                                 title={quotaLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached"}
                             >
@@ -90,14 +90,14 @@ export default function DashboardPage() {
                                     })}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-[#F97316] hover:text-orange-700"
+                                    className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-slate-700 hover:text-slate-950"
                                 >
                                     Contact Support <ArrowRight className="h-3.5 w-3.5" />
                                 </a>
                             ) : (
                                 <Link
                                     href="/admin/billing"
-                                    className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-[#F97316] hover:text-orange-700"
+                                    className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-slate-700 hover:text-slate-950"
                                 >
                                     Go to Billing <ArrowRight className="h-3.5 w-3.5" />
                                 </Link>
@@ -106,7 +106,7 @@ export default function DashboardPage() {
                     ) : (
                         <Link
                             href="/admin/create-drive"
-                            className="btn-shimmer flex items-center gap-2 rounded-lg bg-[#F97316] px-4 py-2 text-[13.5px] font-medium text-white shadow-sm transition-all duration-150 hover:bg-orange-600 hover:shadow-md"
+                            className="btn-shimmer flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-[13.5px] font-semibold text-white shadow-sm shadow-slate-900/10 transition-all duration-150 hover:bg-slate-800 hover:shadow-md"
                         >
                             <Plus className="h-4 w-4" />
                             Create New Drive
