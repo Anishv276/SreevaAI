@@ -881,9 +881,8 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 { label: "JD Extraction", key: "jdExtraction" },
 
                                 { label: "Chatbot", key: "chatbot" },
-
-                                { label: "General", key: "general" },
-
+                                { label: "Resume Report", key: "resumeReport" },
+                                { label: "Interview Report", key: "interviewReport" },
                             ].map((section) => {
 
                                 const usage = (org?.usageMetrics ?? {}) as Record<string, unknown>;
@@ -1088,9 +1087,8 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         "jdExtraction",
 
                                         "chatbot",
-
-                                        "general",
-
+                                        "resumeReport",
+                                        "interviewReport",
                                     ].reduce((sum, key) => {
 
                                         const usage = (org?.usageMetrics ?? {}) as Record<string, unknown>;

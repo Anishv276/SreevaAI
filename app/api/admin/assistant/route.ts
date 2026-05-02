@@ -13,7 +13,7 @@ async function getOrgOpenAIModel(orgId: string): Promise<string> {
     if ((org?.llmProvider || "OPENAI") === "OPENAI" && org?.llmModel) {
         return org.llmModel;
     }
-    return "gpt-4o-mini";
+    return "gpt-4.1-mini";
 }
 
 function detectIntent(message: string): string {

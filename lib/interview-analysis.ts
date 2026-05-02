@@ -28,7 +28,7 @@ export async function generateInterviewReport(params: {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey || apiKey === "dummy-key-for-mock-mode") {
     console.warn("[INTERVIEW_ANALYSIS] OPENAI_API_KEY is missing or dummy. Using fallback report.");
-    return generateFallbackReport(candidateName, role);
+    return { data: generateFallbackReport(candidateName, role), usage: null };
   }
 
   const openai = new OpenAI({ apiKey });
@@ -268,10 +268,18 @@ Guidelines:
 
     const data = JSON.parse(content);
     console.log(`[INTERVIEW_ANALYSIS] Successfully generated report for ${candidateName}`);
-    return data;
+    return {
+      data,
+      usage: {
+        model: response.model || "gpt-4o",
+        inputTokens: response.usage?.prompt_tokens || 0,
+        outputTokens: response.usage?.completion_tokens || 0,
+        cachedInputTokens: (response.usage as any)?.prompt_tokens_details?.cached_tokens || 0,
+      },
+    };
   } catch (error: any) {
     console.error("[INTERVIEW_ANALYSIS_FATAL]:", error.message);
-    return generateFallbackReport(candidateName, role, "AI analysis encountered an error.");
+    return { data: generateFallbackReport(candidateName, role, "AI analysis encountered an error."), usage: null };
   }
 }
 

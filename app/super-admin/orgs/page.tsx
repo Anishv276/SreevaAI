@@ -90,7 +90,7 @@ interface Org {
     };
 }
 
-type BillingFeatureKey = "interview" | "resumeExtraction" | "jdExtraction" | "chatbot" | "resumeReport" | "interviewReport" | "general";
+type BillingFeatureKey = "interview" | "resumeExtraction" | "jdExtraction" | "chatbot" | "resumeReport" | "interviewReport";
 
 type BillingFeatureMetrics = {
     runs?: number;
@@ -134,6 +134,44 @@ export default function OrgsPage() {
     const [statusModalOrg, setStatusModalOrg] = useState<{ id: string; name: string; currentStatus: string; pendingStatus: string } | null>(null);
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+    // Currency toggle state
+    const [currency, setCurrency] = useState<'USD' | 'INR'>('USD');
+    const [usdToInr, setUsdToInr] = useState<number>(84.5);
+    const [rateLoading, setRateLoading] = useState(false);
+    const [rateUpdatedAt, setRateUpdatedAt] = useState<string>('');
+
+    const fetchExchangeRate = async () => {
+        setRateLoading(true);
+        try {
+            const res = await fetch('/api/super-admin/exchange-rate');
+            if (res.ok) {
+                const data = await res.json();
+                setUsdToInr(data.rate);
+                setRateUpdatedAt(data.updatedAt || '');
+            }
+        } catch {
+            // keep current rate
+        } finally {
+            setRateLoading(false);
+        }
+    };
+
+    // Called when Consumption Hub opens
+    const openMetricsOrg = (org: Org) => {
+        setMetricsOrg(org);
+        setCurrency('USD'); // reset to USD on open
+        fetchExchangeRate();
+    };
+
+    // Format a USD value according to the current currency toggle
+    const fmt = (usd: number) => {
+        if (currency === 'INR') {
+            const inr = usd * usdToInr;
+            return `₹${inr.toFixed(0)}`;
+        }
+        return `$${usd.toFixed(2)}`;
+    };
+
     const metricSections: { key: BillingFeatureKey; label: string }[] = [
         { key: "resumeExtraction", label: "LLM - Resume" },
         { key: "chatbot", label: "LLM - Chatbot" },
@@ -141,8 +179,17 @@ export default function OrgsPage() {
         { key: "jdExtraction", label: "LLM - JD" },
         { key: "resumeReport", label: "LLM - Resume Report" },
         { key: "interviewReport", label: "LLM - Interview Report" },
-        { key: "general", label: "LLM - General" },
     ];
+
+    // Authoritative model per feature — matches what each API route actually uses
+    const FEATURE_MODEL_MAP: Record<string, string | null> = {
+        resumeExtraction: "gpt-5.4-mini",
+        jdExtraction: "gpt-5.4-mini",
+        chatbot: "gpt-4.1-mini",
+        interview: null, // read from org DB (llmModel)
+        resumeReport: "gpt-4o",
+        interviewReport: "gpt-4o",
+    };
 
     const getBillingFeature = (org: Org, key: BillingFeatureKey): BillingFeatureMetrics => {
         const usage = (org.usageMetrics ?? {}) as Record<string, any>;
@@ -160,7 +207,12 @@ export default function OrgsPage() {
         }, 0);
     };
 
-    const cleanName = (n: string) => n.includes(':') ? n.split(':')[1] : n;
+    const cleanName = (n: string) => {
+        // Strip provider prefix (e.g. "openai:gpt-4o" -> "gpt-4o")
+        const base = n.includes(':') ? n.split(':')[1] : n;
+        // Strip date version suffix (e.g. "gpt-4o-mini-2024-07-18" -> "gpt-4o-mini")
+        return base.replace(/-\d{4}-\d{2}-\d{2}$/, '');
+    };
 
     const getSetupModel = (org: Org, type: 'LLM' | 'TTS' | 'STT') => {
         if (type === 'LLM') return org.llmModel;
@@ -501,7 +553,7 @@ export default function OrgsPage() {
                                                     <div className="px-2.5 py-2 border-b border-gray-50 mb-1">
                                                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Client Controls</p>
                                                     </div>
-                                                    <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-gray-600 hover:bg-gray-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group" onClick={() => setMetricsOrg(org)}>
+                                                    <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-gray-600 hover:bg-gray-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group" onClick={() => openMetricsOrg(org)}>
                                                             <Layers className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
                                                             VIEW USAGE
                                                         </DropdownMenuItem>
@@ -625,22 +677,71 @@ export default function OrgsPage() {
                                 <h2 className="text-[34px] font-[800] text-gray-900 m-0 tracking-[-0.03em] leading-[1.05]">
                                     {metricsOrg.name} <span className="text-gray-400 font-[500]">- Consumption Hub</span>
                                 </h2>
+                                <div className="flex items-center gap-6 mt-4">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Credits Used:</span>
+                                        <span className="text-[14px] font-black text-gray-900 tabular-nums">${Number(metricsOrg.creditsUsed || 0).toFixed(2)}</span>
+                                    </div>
+                                    <div className="w-[1px] h-3 bg-gray-200" />
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Interview Balance:</span>
+                                        <span className="text-[14px] font-black text-emerald-600 tabular-nums">{Math.max(0, (metricsOrg.interviewQuotaTotal || 0) - (metricsOrg.interviewQuotaUsed || 0))}</span>
+                                        <span className="text-[11px] font-bold text-gray-300 uppercase">/ {metricsOrg.interviewQuotaTotal || 0}</span>
+                                    </div>
+                                </div>
                             </div>
-                            <button
-                                onClick={() => setMetricsOrg(null)}
-                                className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-[10px] border border-gray-200 bg-white text-gray-900 text-[13px] font-[600] cursor-pointer hover:bg-gray-50 transition-colors shadow-sm"
-                            >
-                                <X size={15} /> Dismiss
-                            </button>
+                            <div className="flex items-center gap-3">
+                                {/* USD / INR Toggle */}
+                                <div className="flex items-center bg-gray-100 rounded-[10px] p-1 gap-1">
+                                    {(['USD', 'INR'] as const).map(c => (
+                                        <button
+                                            key={c}
+                                            onClick={() => { setCurrency(c); if (c === 'INR' && !rateLoading) fetchExchangeRate(); }}
+                                            className={`px-3 py-1.5 rounded-[8px] text-[11px] font-[700] uppercase tracking-wide transition-all ${
+                                                currency === c
+                                                    ? 'bg-white text-gray-900 shadow-sm'
+                                                    : 'text-gray-500 hover:text-gray-700'
+                                            }`}
+                                        >
+                                            {c === 'INR' ? '₹ INR' : '$ USD'}
+                                        </button>
+                                    ))}
+                                </div>
+                                {currency === 'INR' && (
+                                    <span className="text-[10px] font-bold text-gray-400 tabular-nums">
+                                        {rateLoading ? 'Fetching…' : `1 USD = ₹${usdToInr.toFixed(2)}`}
+                                        {rateUpdatedAt && !rateLoading && <span className="ml-1 opacity-60">({rateUpdatedAt})</span>}
+                                    </span>
+                                )}
+                                <button
+                                    onClick={() => setMetricsOrg(null)}
+                                    className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-[10px] border border-gray-200 bg-white text-gray-900 text-[13px] font-[600] cursor-pointer hover:bg-gray-50 transition-colors shadow-sm"
+                                >
+                                    <X size={15} /> Dismiss
+                                </button>
+                            </div>
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-12">
                             {(() => {
-                                const feature = getBillingFeature(metricsOrg, 'interview');
-                                const totalCost = Number(feature.costUsd || 0) + Number(feature.ttsCostUsd || 0) + Number(feature.sttCostUsd || 0);
-                                const logicCost = Number(feature.costUsd || 0);
-                                const synthCost = Number(feature.ttsCostUsd || 0);
-                                const sttCost = Number(feature.sttCostUsd || 0);
+                                const ivFeature = getBillingFeature(metricsOrg, 'interview');
+                                // Interview donut: ONLY the interview feature's own LLM+TTS+STT cost
+                                const ivLlmCost = Number(ivFeature.costUsd || 0);
+                                const ivTtsCost = Number(ivFeature.ttsCostUsd || 0);
+                                const ivSttCost = Number(ivFeature.sttCostUsd || 0);
+                                const ivTotalCost = ivLlmCost + ivTtsCost + ivSttCost;
+
+                                // Full pipeline total: sum of ALL features LLM+TTS+STT
+                                const allLlmCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).costUsd || 0), 0);
+                                const allTtsCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).ttsCostUsd || 0), 0);
+                                const allSttCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).sttCostUsd || 0), 0);
+                                const grandTotal = allLlmCost + allTtsCost + allSttCost;
+
+                                const feature = ivFeature; // alias for interview feature
+                                const totalCost = ivTotalCost;
+                                const logicCost = ivLlmCost;
+                                const synthCost = ivTtsCost;
+                                const sttCost = ivSttCost;
                                 
                                 const ringR = 88;
                                 const ringC = 2 * Math.PI * ringR;
@@ -675,39 +776,55 @@ export default function OrgsPage() {
 
                                                     return (
                                                         <div key={section.key} className="bg-white border border-gray-200 rounded-[18px] p-6 hover:border-orange-200 hover:shadow-lg transition-all duration-300">
-                                                            <div className="flex flex-col gap-4">
+                                                        <div className="flex flex-col gap-4">
                                                                 <div className="flex items-center justify-between">
                                                                     <div className="text-[10px] font-[800] uppercase tracking-[0.15em] text-[#F97316]">{section.label.replace('LLM - ', '')}</div>
                                                                     <div className="h-2 w-2 rounded-full bg-emerald-500" />
                                                                 </div>
                                                                 <div className="flex flex-wrap gap-2 min-h-[28px]">
-                                                                    {models.length > 0 ? (
-                                                                        models.map(m => (
-                                                                            <div key={m} className="text-[10px] font-[700] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 uppercase tracking-wide">
-                                                                                {cleanName(m)}
+                                                                    {(() => {
+                                                                        // Use hardcoded authoritative model map; interview reads from org DB
+                                                                        const hardcoded = FEATURE_MODEL_MAP[section.key];
+                                                                        const activeModel = hardcoded ?? setupModel;
+                                                                        return activeModel ? (
+                                                                            <div className="text-[10px] font-[700] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 uppercase tracking-wide">
+                                                                                {cleanName(activeModel)}
                                                                             </div>
-                                                                        ))
-                                                                    ) : setupModel ? (
-                                                                        <div className="text-[10px] font-[700] text-gray-600 bg-gray-100 px-2 py-1 rounded-md border border-gray-200 uppercase tracking-wide">
-                                                                            {setupModel}
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="text-[10px] font-bold text-gray-400 italic">Inactive Instance</div>
-                                                                    )}
+                                                                        ) : (
+                                                                            <div className="text-[10px] font-[700] text-gray-500 bg-gray-50 px-2 py-1 rounded-md border border-gray-200 border-dashed uppercase tracking-wide">
+                                                                                NO LLM
+                                                                            </div>
+                                                                        );
+                                                                    })()}
                                                                 </div>
                                                             </div>
-                                                            <div className="mt-6 mb-5">
-                                                                <div className="text-[32px] font-[800] text-gray-900 tracking-[-0.03em]">${Number(feature.costUsd || 0).toFixed(2)}</div>
+                                                                <div className="mt-6 mb-5">
+                                                                <div className="text-[32px] font-[800] text-gray-900 tracking-[-0.03em]">{fmt(Number(feature.costUsd || 0))}</div>
                                                             </div>
                                                             <div className="space-y-2.5 pt-5 border-t border-gray-100 text-[11.5px] font-[600] text-gray-500 uppercase tracking-[0.1em]">
-                                                                <div className="flex justify-between items-center">
-                                                                    <span>Executions</span>
-                                                                    <span className="text-gray-900 font-[700]">{Number(feature.runs || 0).toLocaleString()}</span>
-                                                                </div>
-                                                                <div className="flex justify-between items-center">
-                                                                    <span>Token Vol</span>
-                                                                    <span className="text-gray-900 font-[700]">{totalTokens.toLocaleString()} <span className="text-[9px] opacity-50">TKN</span></span>
-                                                                </div>
+                                                                {section.key === 'interview' ? (
+                                                                    <>
+                                                                        <div className="flex justify-between items-center">
+                                                                            <span>Done</span>
+                                                                            <span className="text-gray-900 font-[700]">{Number(metricsOrg.interviewQuotaUsed || 0).toLocaleString()}</span>
+                                                                        </div>
+                                                                        <div className="flex justify-between items-center">
+                                                                            <span>Remaining</span>
+                                                                            <span className="text-emerald-600 font-[700]">{Math.max(0, (metricsOrg.interviewQuotaTotal || 0) - (metricsOrg.interviewQuotaUsed || 0)).toLocaleString()}</span>
+                                                                        </div>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <div className="flex justify-between items-center">
+                                                                            <span>Executions</span>
+                                                                            <span className="text-gray-900 font-[700]">{Number(feature.runs || 0).toLocaleString()}</span>
+                                                                        </div>
+                                                                        <div className="flex justify-between items-center">
+                                                                            <span>Token Vol</span>
+                                                                            <span className="text-gray-900 font-[700]">{totalTokens.toLocaleString()} <span className="text-[9px] opacity-50">TKN</span></span>
+                                                                        </div>
+                                                                    </>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     );
@@ -726,7 +843,7 @@ export default function OrgsPage() {
                                                     <div className="flex items-center justify-between mb-8">
                                                         <div className="space-y-2">
                                                             <div className="text-[40px] font-[800] text-gray-900 tracking-[-0.03em]">
-                                                                ${metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCostUsd || 0), 0).toFixed(2)}
+                                                                {fmt(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCostUsd || 0), 0))}
                                                             </div>
                                                             <div className="text-[11px] font-[800] uppercase tracking-[0.2em] text-blue-600">TTS</div>
                                                         </div>
@@ -737,17 +854,21 @@ export default function OrgsPage() {
                                                     </div>
                                                     <div className="flex flex-wrap gap-2 pt-6 border-t border-gray-100">
                                                         {(() => {
-                                                            const allTtsModels = metricSections.flatMap(s => Object.keys(getBillingFeature(metricsOrg, s.key).ttsByModel || {}));
-                                                            const uniqueModels = Array.from(new Set(allTtsModels));
-                                                            const setupModel = getSetupModel(metricsOrg, 'TTS');
-                                                            if (uniqueModels.length > 0) {
-                                                                return uniqueModels.map(m => (
-                                                                    <span key={m} className="px-3 py-1.5 bg-blue-50 text-blue-700 text-[10px] font-[700] rounded-md border border-blue-100 uppercase tracking-wide">
-                                                                        {cleanName(m)}
+                                                            // Show active TTS model from org setup config
+                                                            const ttsModel = getSetupModel(metricsOrg, 'TTS');
+                                                            const provider = metricsOrg.ttsProvider || 'CARTESIA';
+                                                            return ttsModel ? (
+                                                                <>
+                                                                    <span className="px-3 py-1.5 bg-blue-50 text-blue-700 text-[10px] font-[700] rounded-md border border-blue-100 uppercase tracking-wide">
+                                                                        {cleanName(ttsModel)}
                                                                     </span>
-                                                                ));
-                                                            }
-                                                            return <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">{setupModel || "System Standard"}</span>;
+                                                                    <span className="px-3 py-1.5 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">
+                                                                        {provider}
+                                                                    </span>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">NO TTS</span>
+                                                            );
                                                         })()}
                                                     </div>
                                                 </div>
@@ -762,7 +883,7 @@ export default function OrgsPage() {
                                                     <div className="flex items-center justify-between mb-8">
                                                         <div className="space-y-2">
                                                             <div className="text-[40px] font-[800] text-gray-900 tracking-[-0.03em]">
-                                                                ${metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttCostUsd || 0), 0).toFixed(2)}
+                                                                {fmt(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttCostUsd || 0), 0))}
                                                             </div>
                                                             <div className="text-[11px] font-[800] uppercase tracking-[0.2em] text-orange-600">STT</div>
                                                         </div>
@@ -773,17 +894,21 @@ export default function OrgsPage() {
                                                     </div>
                                                     <div className="flex flex-wrap gap-2 pt-6 border-t border-gray-100">
                                                         {(() => {
-                                                            const allSttModels = metricSections.flatMap(s => Object.keys(getBillingFeature(metricsOrg, s.key).sttByModel || {}));
-                                                            const uniqueModels = Array.from(new Set(allSttModels));
-                                                            const setupModel = getSetupModel(metricsOrg, 'STT');
-                                                            if (uniqueModels.length > 0) {
-                                                                return uniqueModels.map(m => (
-                                                                    <span key={m} className="px-3 py-1.5 bg-orange-50 text-orange-700 text-[10px] font-[700] rounded-md border border-orange-100 uppercase tracking-wide">
-                                                                        {cleanName(m)}
+                                                            // Show active STT model from org setup config
+                                                            const sttModel = getSetupModel(metricsOrg, 'STT');
+                                                            const provider = metricsOrg.sttProvider || 'DEEPGRAM';
+                                                            return sttModel ? (
+                                                                <>
+                                                                    <span className="px-3 py-1.5 bg-orange-50 text-orange-700 text-[10px] font-[700] rounded-md border border-orange-100 uppercase tracking-wide">
+                                                                        {cleanName(sttModel)}
                                                                     </span>
-                                                                ));
-                                                            }
-                                                            return <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">{setupModel || "System Standard"}</span>;
+                                                                    <span className="px-3 py-1.5 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">
+                                                                        {provider}
+                                                                    </span>
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">NO STT</span>
+                                                            );
                                                         })()}
                                                     </div>
                                                 </div>
@@ -819,9 +944,9 @@ export default function OrgsPage() {
                                                                     )}
                                                                 </svg>
                                                                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                                                    <div className="text-[11px] text-gray-500 font-[600] tracking-[0.1em] uppercase">Total Cost</div>
+                                                                    <div className="text-[11px] text-gray-500 font-[600] tracking-[0.1em] uppercase">Interview Cost</div>
                                                                     <div className="text-[44px] font-[800] text-gray-900 tracking-[-0.03em] mt-1.5">
-                                                                        ${totalCost.toFixed(2)}
+                                                                        {fmt(ivTotalCost)}
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -834,7 +959,7 @@ export default function OrgsPage() {
                                                                             <span className="text-[14.5px] font-[700] text-gray-900">LLM</span>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="text-[16px] font-[800] text-gray-900">${logicCost.toFixed(2)}</div>
+                                                                    <div className="text-[16px] font-[800] text-gray-900">{fmt(logicCost)}</div>
                                                                 </div>
                                                                 <div className="h-px bg-[#F3F4F6]" />
                                                                 <div className="flex items-start justify-between">
@@ -844,7 +969,7 @@ export default function OrgsPage() {
                                                                             <span className="text-[14.5px] font-[700] text-gray-900">TTS</span>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="text-[16px] font-[800] text-gray-900">${synthCost.toFixed(2)}</div>
+                                                                    <div className="text-[16px] font-[800] text-gray-900">{fmt(synthCost)}</div>
                                                                 </div>
                                                                 <div className="h-px bg-[#F3F4F6]" />
                                                                 <div className="flex items-start justify-between">
@@ -854,7 +979,7 @@ export default function OrgsPage() {
                                                                             <span className="text-[14.5px] font-[700] text-gray-900">STT</span>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="text-[16px] font-[800] text-gray-900">${sttCost.toFixed(2)}</div>
+                                                                    <div className="text-[16px] font-[800] text-gray-900">{fmt(sttCost)}</div>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -894,31 +1019,43 @@ export default function OrgsPage() {
                                                     <div>
                                                         <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#10B981] transition-colors">LLM</div>
                                                         <div className="flex flex-wrap gap-2">
-                                                            {llmModels.length > 0 ? llmModels.map(m => (
-                                                                <span key={m} className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-[700] rounded-md border border-[#10B981]/20 uppercase tracking-wide">
-                                                                    {cleanName(m)}
-                                                                </span>
-                                                            )) : <span className="text-[10px] font-[700] text-gray-500 italic">{setupLlm || "Standard"}</span>}
+                                                            {(() => {
+                                                                return setupLlm ? (
+                                                                    <span className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-[700] rounded-md border border-[#10B981]/20 uppercase tracking-wide">
+                                                                        {cleanName(setupLlm)}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[10px] font-[700] text-gray-500 italic">NO LLM</span>
+                                                                );
+                                                            })()}
                                                         </div>
                                                     </div>
                                                     <div>
                                                         <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#3B82F6] transition-colors">TTS</div>
                                                         <div className="flex flex-wrap gap-2">
-                                                            {ttsModels.length > 0 ? ttsModels.map(m => (
-                                                                <span key={m} className="px-3 py-1 bg-[#3B82F6]/10 text-[#3B82F6] text-[10px] font-[700] rounded-md border border-[#3B82F6]/20 uppercase tracking-wide">
-                                                                    {cleanName(m)}
-                                                                </span>
-                                                            )) : <span className="text-[10px] font-[700] text-gray-500 italic">{setupTts || "Standard"}</span>}
+                                                            {(() => {
+                                                                return setupTts ? (
+                                                                    <span className="px-3 py-1 bg-[#3B82F6]/10 text-[#3B82F6] text-[10px] font-[700] rounded-md border border-[#3B82F6]/20 uppercase tracking-wide">
+                                                                        {cleanName(setupTts)}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[10px] font-[700] text-gray-500 italic">NO TTS</span>
+                                                                );
+                                                            })()}
                                                         </div>
                                                     </div>
                                                     <div>
                                                         <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#F97316] transition-colors">STT</div>
                                                         <div className="flex flex-wrap gap-2">
-                                                            {sttModels.length > 0 ? sttModels.map(m => (
-                                                                <span key={m} className="px-3 py-1 bg-[#F97316]/10 text-[#F97316] text-[10px] font-[700] rounded-md border border-[#F97316]/20 uppercase tracking-wide">
-                                                                    {cleanName(m)}
-                                                                </span>
-                                                            )) : <span className="text-[10px] font-[700] text-gray-500 italic">{setupStt || "Standard"}</span>}
+                                                            {(() => {
+                                                                return setupStt ? (
+                                                                    <span className="px-3 py-1 bg-[#F97316]/10 text-[#F97316] text-[10px] font-[700] rounded-md border border-[#F97316]/20 uppercase tracking-wide">
+                                                                        {cleanName(setupStt)}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[10px] font-[700] text-gray-500 italic">NO STT</span>
+                                                                );
+                                                            })()}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -932,7 +1069,13 @@ export default function OrgsPage() {
                         <div className="border-t border-gray-200 px-8 py-6 bg-gray-50 flex items-center justify-between font-sans">
                             <div className="text-[12px] font-bold uppercase tracking-[0.15em] text-gray-500">Full Organization Ecosystem Cost</div>
                             <div className="text-[28px] font-[800] text-gray-900 tracking-[-0.03em]">
-                                ${getOrgTotalBillingCost(metricsOrg).toFixed(2)}
+                                {(() => {
+                                    const allLlmCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).costUsd || 0), 0);
+                                    const allTtsCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).ttsCostUsd || 0), 0);
+                                    const allSttCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).sttCostUsd || 0), 0);
+                                    const grandTotal = allLlmCost + allTtsCost + allSttCost;
+                                    return fmt(grandTotal);
+                                })()}
                             </div>
                         </div>
                     </div>

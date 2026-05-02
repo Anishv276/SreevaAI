@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
     const orgOpenAIModel =
       (org?.llmProvider || "OPENAI") === "OPENAI" && org?.llmModel
         ? org.llmModel
-        : "gpt-4o-mini";
+        : "gpt-4.1-mini";
 
     const { messages } = await req.json();
     const userMessage = messages[messages.length - 1]?.content ?? "";

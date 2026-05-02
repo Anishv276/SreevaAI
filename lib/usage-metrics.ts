@@ -7,8 +7,7 @@ export type BillingFeature =
   | "jdExtraction"
   | "chatbot"
   | "resumeReport"
-  | "interviewReport"
-  | "general";
+  | "interviewReport";
 
 const BILLING_FEATURES: BillingFeature[] = [
   "interview",
@@ -17,7 +16,6 @@ const BILLING_FEATURES: BillingFeature[] = [
   "chatbot",
   "resumeReport",
   "interviewReport",
-  "general",
 ];
 
 type ModelCostRate = {
@@ -61,6 +59,7 @@ type BillingFeatureMetrics = {
   sttAudioSeconds: number;
   sttCostUsd: number;
   byModel: Record<string, FeatureModelMetrics>;
+  lastModel?: string;
   ttsByModel: Record<string, TtsModelMetrics>;
   sttByModel: Record<string, SttModelMetrics>;
 };
@@ -124,6 +123,7 @@ const emptyFeature = () => ({
   sttAudioSeconds: 0,
   sttCostUsd: 0,
   byModel: {} as Record<string, FeatureModelMetrics>,
+  lastModel: undefined as string | undefined,
   ttsByModel: {} as Record<string, TtsModelMetrics>,
   sttByModel: {} as Record<string, SttModelMetrics>,
 }) satisfies BillingFeatureMetrics;
@@ -135,7 +135,6 @@ export const emptyBillingMetrics = () => ({
   chatbot: emptyFeature(),
   resumeReport: emptyFeature(),
   interviewReport: emptyFeature(),
-  general: emptyFeature(),
 });
 
 function normalizeModelName(model: string | undefined | null) {
@@ -228,6 +227,9 @@ export function mergeBillingFeature(
   modelBucket.sessionDuration += usage.sessionDuration ?? 0;
   modelBucket.costUsd += costUsd;
 
+  // Always update lastModel so we know the most recently used model
+  bucket.lastModel = modelKey;
+
   return billing;
 }
 
@@ -255,6 +257,7 @@ function coerceBillingMetrics(value: unknown) {
     dst.sttAudioSeconds = Number(src.sttAudioSeconds || 0);
     dst.sttCostUsd = Number(src.sttCostUsd || 0);
     dst.byModel = { ...(src.byModel || {}) };
+    if (src.lastModel) dst.lastModel = src.lastModel as string;
     dst.ttsByModel = { ...(src.ttsByModel || {}) };
     dst.sttByModel = { ...(src.sttByModel || {}) };
   }

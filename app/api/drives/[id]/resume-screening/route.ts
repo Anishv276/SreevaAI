@@ -217,7 +217,8 @@ async function processBatch(
     let failedCount = 0;
 
     try {
-        // Resume reports MUST use GPT-4o only — no other model allowed
+        // Resume EXTRACTION uses gpt-5.4-mini; scoring/report uses gpt-4o
+        const extractModel = "gpt-5.4-mini";
         const reportModel = "gpt-4o";
 
 
@@ -244,6 +245,7 @@ async function processBatch(
                         structuredJD,
                         jdRawText,
                         threshold,
+                        extractModel,
                         reportModel,
                         drive.orgId!,
                         screeningCriteria
@@ -297,6 +299,7 @@ async function processOneResume(
     structuredJD: Record<string, any>,
     jdRawText: string,
     threshold: number,
+    extractModel: string,
     reportModel: string,
     orgId: string,
     screeningCriteria?: Record<string, any>
@@ -312,7 +315,7 @@ async function processOneResume(
 
         // ── Step 1: Extract resume text + structured data ──
         const { text: resumeRawText, data: structuredResume, usage: extractUsage } =
-            await extractResume(tmpPdf, reportModel);
+            await extractResume(tmpPdf, extractModel);
 
         // Record extraction billing
         if (extractUsage?.inputTokens || extractUsage?.outputTokens) {
@@ -320,7 +323,7 @@ async function processOneResume(
                 orgId,
                 feature: "resumeExtraction",
                 usage: {
-                    model: extractUsage.model || reportModel,
+                    model: extractUsage.model || extractModel,
                     inputTokens: extractUsage.inputTokens || 0,
                     outputTokens: extractUsage.outputTokens || 0,
                     cachedInputTokens: extractUsage.cachedInputTokens || 0,

@@ -11,6 +11,7 @@ import {
   getInterviewQuotaUnits,
   incrementOrgCreditsUsed,
 } from "@/lib/credits";
+import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { safeJsonParse } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -390,7 +391,7 @@ export async function POST(req: Request) {
         // Use existing report from DB if available; otherwise generate new one using GPT-4o
         let report = app.interview?.interviewReport as any;
         if (!report && transcriptForReport) {
-          report = await generateInterviewReport({
+          const { data: generatedReport, usage: reportUsage } = await generateInterviewReport({
             transcript: transcriptForReport,
             resumeText,
             jdText,
@@ -400,6 +401,15 @@ export async function POST(req: Request) {
             proctoringEvents,
             orgId: app.drive?.orgId || undefined,
           });
+          report = generatedReport;
+
+          if (reportUsage && app.drive?.orgId) {
+            await recordOrgBillingUsage({
+              orgId: app.drive.orgId,
+              feature: "interviewReport",
+              usage: reportUsage,
+            }).catch(console.error);
+          }
 
           const turnRows = normalizeReportTurns(interviewTurns.length > 0 ? interviewTurns : buildInterviewTurns(transcriptForReport));
           if (!Array.isArray(report?.qa_blocks) || report.qa_blocks.length === 0) {
