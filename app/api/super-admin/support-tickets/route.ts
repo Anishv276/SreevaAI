@@ -95,3 +95,37 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Failed to fetch support tickets" }, { status: 500 });
     }
 }
+
+export async function PATCH(request: Request) {
+    try {
+        const session = await getSession();
+        if (!session || session.role !== "SUPER_ADMIN") {
+            return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
+        }
+
+        const body = await request.json();
+        const { id, status } = body;
+
+        if (!id || !status) {
+            return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+        }
+
+        const validStatuses = ["OPEN", "RESOLVED", "CLOSED"];
+        if (!validStatuses.includes(status)) {
+            return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+        }
+
+        const ticket = await prisma.supportTicket.update({
+            where: { id },
+            data: { 
+                status,
+                resolvedAt: status === "RESOLVED" || status === "CLOSED" ? new Date() : null
+            },
+        });
+
+        return NextResponse.json(ticket);
+    } catch (error) {
+        console.error("Support ticket update error:", error);
+        return NextResponse.json({ error: "Failed to update support ticket" }, { status: 500 });
+    }
+}

@@ -2,10 +2,24 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Bell, LifeBuoy, Search, Loader2, MessageSquare, Clock3, Building2, Mail, User, CheckCircle2, CircleDot, ArrowRight, ShieldAlert } from "lucide-react";
+import { Bell, LifeBuoy, Search, Loader2, MessageSquare, Clock3, Building2, Mail, User, CheckCircle2, CircleDot, ArrowRight, ShieldAlert, Check, MoreVertical, Eye } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+} from "@/components/ui/dialog";
+import { toast } from "@/components/ui/toast-custom";
 
 type SupportTicket = {
     id: string;
@@ -41,6 +55,36 @@ export default function SuperAdminSupportPage() {
     const [searchInput, setSearchInput] = useState("");
     const [search, setSearch] = useState("");
     const [status, setStatus] = useState("ALL");
+    const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+    const [viewTicket, setViewTicket] = useState<SupportTicket | null>(null);
+
+    const handleUpdateStatus = async (id: string, newStatus: string) => {
+        const ticket = tickets.find(t => t.id === id);
+        if (!ticket || ticket.status === newStatus) return;
+
+        setUpdatingStatus(id);
+        try {
+            const res = await fetch("/api/super-admin/support-tickets", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, status: newStatus }),
+            });
+
+            if (res.ok) {
+                setTickets(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t));
+                toast.success(`Ticket status updated to ${newStatus}`);
+                // Refresh stats
+                void fetchTickets(page, search, status);
+            } else {
+                toast.error("Failed to update status");
+            }
+        } catch (error) {
+            console.error("Status update error:", error);
+            toast.error("An error occurred while updating status");
+        } finally {
+            setUpdatingStatus(null);
+        }
+    };
 
     const fetchTickets = async (currentPage = page, currentSearch = search, currentStatus = status) => {
         setLoading(true);
@@ -98,55 +142,54 @@ export default function SuperAdminSupportPage() {
     const visibleStats = useMemo(() => ([
         { label: "Total Tickets", value: stats.total, icon: MessageSquare, color: "text-blue-600", bg: "bg-blue-50" },
         { label: "Open", value: stats.openCount, icon: CircleDot, color: "text-amber-600", bg: "bg-amber-50" },
-        { label: "Resolved", value: stats.resolvedCount, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50" },
-        { label: "Closed", value: stats.closedCount, icon: ShieldAlert, color: "text-gray-600", bg: "bg-gray-100" },
+        { label: "Closed", value: stats.closedCount, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50" },
     ]), [stats]);
 
     return (
-        <div className="space-y-8 pb-12">
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between animate-fade-slide">
-                <div className="flex items-center gap-5 group">
-                    <div className="h-14 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.5)] transition-all duration-500 group-hover:h-16" />
-                    <div className="space-y-1">
-                        <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 leading-none tracking-tight">
+        <div className="space-y-6 pb-8">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between animate-fade-slide">
+                <div className="flex items-center gap-4 group">
+                    <div className="h-10 w-1 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_10px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-12" />
+                    <div className="space-y-0.5">
+                        <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 leading-none tracking-tight">
                             Support Tickets
                         </h1>
-                        <div className="flex items-center gap-3">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
-                            <p className="text-gray-400 font-bold text-[12px] uppercase tracking-[0.15em]">
+                        <div className="flex items-center gap-2">
+                            <span className="h-1 w-1 rounded-full bg-[#F97316] animate-pulse" />
+                            <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.15em]">
                                 Candidate issues and interview help requests
                             </p>
                         </div>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 flex-wrap justify-end">
+                <div className="flex items-center gap-2 flex-wrap justify-end">
                     <Link href="/super-admin">
-                        <button className="flex items-center gap-2 bg-white border border-gray-200 hover:border-orange-200 text-gray-700 text-[13px] font-semibold px-4 py-2.5 rounded-xl transition-all shadow-sm">
-                            <ArrowRight className="h-4 w-4 rotate-180" />
+                        <button className="flex items-center gap-2 bg-white border border-gray-200 hover:border-orange-200 text-gray-700 text-[12px] font-semibold px-3 py-2 rounded-xl transition-all shadow-sm">
+                            <ArrowRight className="h-3.5 w-3.5 rotate-180" />
                             Back to Dashboard
                         </button>
                     </Link>
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {visibleStats.map((item) => (
-                    <div key={item.label} className="group relative flex flex-col gap-2 p-5 bg-white/70 backdrop-blur-xl rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:shadow-orange-500/5 transition-all duration-500 hover:-translate-y-1">
-                        <div className={cn("h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 transition-all duration-500 group-hover:scale-110 shadow-sm", item.bg, item.color)}>
-                            <item.icon className="h-6 w-6" />
+                    <div key={item.label} className="group relative flex flex-col gap-1.5 p-4 bg-white/70 backdrop-blur-xl rounded-2xl border border-gray-100 shadow-sm hover:shadow-xl hover:shadow-orange-500/5 transition-all duration-500 hover:-translate-y-0.5">
+                        <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0 transition-all duration-500 group-hover:scale-110 shadow-sm", item.bg, item.color)}>
+                            <item.icon className="h-5 w-5" />
                         </div>
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">{item.label}</span>
-                        <span className="text-2xl font-black text-gray-900 tabular-nums tracking-tighter">{item.value?.toLocaleString?.() || item.value || 0}</span>
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">{item.label}</span>
+                        <span className="text-xl font-black text-gray-900 tabular-nums tracking-tighter">{item.value?.toLocaleString?.() || item.value || 0}</span>
                     </div>
                 ))}
             </div>
 
-            <div className="bg-white border border-gray-100 rounded-[2.5rem] p-8 shadow-sm space-y-6">
-                <div className="flex flex-col lg:flex-row lg:items-center gap-4 justify-between">
-                    <div className="space-y-1">
-                        <h2 className="text-xl font-bold text-gray-900 tracking-tight">Ticket Queue</h2>
-                        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">View and manage support requests from interview sessions</p>
+            <div className="bg-white border border-gray-100 rounded-[2rem] p-6 shadow-sm space-y-5">
+                <div className="flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
+                    <div className="space-y-0.5">
+                        <h2 className="text-lg font-bold text-gray-900 tracking-tight">Ticket Queue</h2>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">View and manage support requests from interview sessions</p>
                     </div>
 
                     <div className="flex flex-col sm:flex-row gap-3">
@@ -197,56 +240,116 @@ export default function SuperAdminSupportPage() {
                         <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No support tickets found</p>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-                        {tickets.map((ticket) => (
-                            <div key={ticket.id} className="rounded-[2rem] border border-gray-100 bg-gray-50/30 p-5 hover:border-orange-100 hover:bg-white hover:shadow-[0_10px_30px_rgba(0,0,0,0.03)] transition-all">
-                                <div className="flex items-start justify-between gap-4">
-                                    <div className="flex items-start gap-4 min-w-0">
-                                        <div className="h-11 w-11 rounded-xl bg-gray-900 text-white flex items-center justify-center font-black text-sm shadow-sm shrink-0">
-                                            {candidateName(ticket)[0]?.toUpperCase() || "?"}
-                                        </div>
-                                        <div className="min-w-0">
-                                            <h3 className="text-base font-bold text-gray-900 truncate">{candidateName(ticket)}</h3>
-                                            <p className="text-sm text-gray-500 flex items-center gap-2 truncate">
-                                                <Mail className="h-3.5 w-3.5" />
-                                                {candidateEmail(ticket)}
-                                            </p>
-                                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                                                <span className="inline-flex items-center gap-1.5">
-                                                    <Clock3 className="h-3 w-3" />
-                                                    {new Date(ticket.createdAt).toLocaleString()}
-                                                </span>
-                                                {ticket.interview?.application?.drive?.organization?.name && (
-                                                    <span className="inline-flex items-center gap-1.5">
-                                                        <Building2 className="h-3 w-3" />
-                                                        {orgName(ticket)}
+                    <div className="relative overflow-hidden rounded-[2rem] border border-gray-100 bg-white/40 backdrop-blur-sm shadow-sm overflow-x-auto custom-scrollbar">
+                        <table className="w-full border-collapse">
+                            <thead>
+                                <tr className="bg-gray-50/50 border-b border-gray-100">
+                                    <th className="pl-8 py-4 text-left font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Candidate</th>
+                                    <th className="px-6 py-4 text-left font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Application ID</th>
+                                    <th className="px-6 py-4 text-left font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Issue Description</th>
+                                    <th className="px-6 py-4 text-center font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Reported At</th>
+                                    <th className="pr-8 py-4 text-right font-black uppercase tracking-[0.2em] text-[10px] text-gray-900">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100/40">
+                                {tickets.map((ticket) => (
+                                    <tr key={ticket.id} className="group border-b border-gray-100/50 hover:bg-white/60 transition-all duration-300">
+                                        <td className="pl-6 py-3.5">
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-8 w-8 rounded-lg bg-gray-900 text-white flex items-center justify-center font-black text-[10px] shadow-sm shrink-0 group-hover:scale-110 transition-transform duration-500">
+                                                    {candidateName(ticket)[0]?.toUpperCase() || "?"}
+                                                </div>
+                                                <div className="flex flex-col truncate max-w-[180px]">
+                                                    <span className="text-gray-900 font-extrabold text-[13px] leading-tight group-hover:text-orange-600 transition-colors">{candidateName(ticket)}</span>
+                                                    <span className="text-[10px] text-gray-400 font-bold mt-0.5 truncate">{candidateEmail(ticket)}</span>
+                                                </div>
+                                            </div>
+                                        </td>
+
+                                        <td className="px-5 py-3.5">
+                                            <div className="flex flex-col gap-0.5">
+                                                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gray-100/50 border border-gray-100 text-gray-600 group-hover:bg-orange-50 group-hover:border-orange-100 group-hover:text-orange-600 transition-all">
+                                                    <span className="text-[11px] font-bold tabular-nums">
+                                                        {ticket.applicationId || ticket.interviewId || "N/A"}
                                                     </span>
+                                                </div>
+                                                {ticket.interview?.application?.drive?.organization?.name && (
+                                                    <div className="text-[8px] font-bold text-gray-300 uppercase tracking-widest mt-0.5 px-1">
+                                                        {orgName(ticket)}
+                                                    </div>
                                                 )}
                                             </div>
-                                        </div>
-                                    </div>
-                                    <span className={cn("px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.15em] border", statusColor(ticket.status))}>
-                                        {ticket.status}
-                                    </span>
-                                </div>
+                                        </td>
 
-                                <div className="mt-5 rounded-2xl bg-white border border-gray-100 p-4">
-                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Issue About</p>
-                                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                                        {ticket.issueAbout}
-                                    </p>
-                                </div>
+                                        <td className="px-6 py-3.5">
+                                            <div className="flex items-center gap-2 group/issue">
+                                                <div className="max-w-[280px] xl:max-w-[400px]">
+                                                    <p className="text-[12px] text-gray-600 leading-relaxed truncate">
+                                                        {ticket.issueAbout}
+                                                    </p>
+                                                </div>
+                                                <button 
+                                                    onClick={() => setViewTicket(ticket)}
+                                                    className="h-7 w-7 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 hover:bg-orange-50 hover:text-orange-600 transition-all group-hover/issue:scale-110 shrink-0"
+                                                >
+                                                    <Eye className="h-3.5 w-3.5" />
+                                                </button>
+                                            </div>
+                                        </td>
 
-                                <div className="mt-4 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                                    {ticket.interviewId && <span className="rounded-full bg-gray-100 px-3 py-1">Interview: {ticket.interviewId}</span>}
-                                    {ticket.applicationId && <span className="rounded-full bg-gray-100 px-3 py-1">Application: {ticket.applicationId}</span>}
-                                    {ticket.interview?.application?.drive?.title && (
-                                        <span className="rounded-full bg-gray-100 px-3 py-1">Drive: {driveTitle(ticket)}</span>
-                                    )}
-                                    {orgSlug(ticket) && <span className="rounded-full bg-orange-50 text-[#F97316] px-3 py-1">/{orgSlug(ticket)}</span>}
-                                </div>
-                            </div>
-                        ))}
+                                        <td className="px-6 py-5 text-center">
+                                            <div className="flex flex-col items-center">
+                                                <span className="text-[12px] font-black text-gray-900 tabular-nums">{new Date(ticket.createdAt).toLocaleDateString()}</span>
+                                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">{new Date(ticket.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                            </div>
+                                        </td>
+
+                                        <td className="pr-8 py-5 text-right">
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <button 
+                                                        disabled={updatingStatus === ticket.id}
+                                                        className={cn(
+                                                            "flex items-center gap-2.5 ml-auto px-4 py-2 rounded-xl border-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-sm disabled:opacity-50",
+                                                            (ticket.status || "OPEN") === "OPEN" ? "bg-amber-50 border-amber-100 text-amber-700" :
+                                                            (ticket.status || "OPEN") === "RESOLVED" ? "bg-emerald-50 border-emerald-100 text-emerald-700" :
+                                                            "bg-gray-50 border-gray-200 text-gray-600"
+                                                        )}
+                                                    >
+                                                        {updatingStatus === ticket.id ? (
+                                                            <Loader2 className="h-3 w-3 animate-spin mx-auto" />
+                                                        ) : (
+                                                            <>
+                                                                <div className={cn("h-1.5 w-1.5 rounded-full", ticket.status === 'OPEN' ? "bg-amber-500 animate-pulse" : ticket.status === 'RESOLVED' ? "bg-emerald-500" : "bg-gray-400")} />
+                                                                <span className="text-[11px] font-black uppercase tracking-wider">{ticket.status}</span>
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-40 p-1.5 rounded-2xl shadow-xl border-gray-100 bg-white/95 backdrop-blur-xl">
+                                                    {["OPEN", "RESOLVED", "CLOSED"].map((s) => (
+                                                        <DropdownMenuItem
+                                                            key={s}
+                                                            className={cn(
+                                                                "rounded-xl px-3 py-2 font-bold text-[11px] cursor-pointer flex items-center justify-between mt-0.5 first:mt-0",
+                                                                ticket.status === s ? "bg-orange-50 text-orange-600" : "text-gray-600 hover:bg-gray-50"
+                                                            )}
+                                                            onClick={() => handleUpdateStatus(ticket.id, s)}
+                                                        >
+                                                            <div className="flex items-center gap-2">
+                                                                <div className={cn("h-1.5 w-1.5 rounded-full", s === 'OPEN' ? "bg-amber-500" : s === 'RESOLVED' ? "bg-emerald-500" : "bg-gray-400")} />
+                                                                {s}
+                                                            </div>
+                                                            {ticket.status === s && <Check className="h-3.5 w-3.5" />}
+                                                        </DropdownMenuItem>
+                                                    ))}
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 )}
 
@@ -274,6 +377,26 @@ export default function SuperAdminSupportPage() {
                     </div>
                 </div>
             </div>
+            <Dialog open={!!viewTicket} onOpenChange={(open) => !open && setViewTicket(null)}>
+                <DialogContent className="max-w-xl rounded-[2rem] border-gray-100 bg-white/95 backdrop-blur-xl p-8 shadow-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-bold text-gray-900 mb-4">Issue Description</DialogTitle>
+                    </DialogHeader>
+                    <div className="rounded-2xl bg-gray-50/50 border border-gray-100 p-6">
+                        <p className="text-[15px] text-gray-700 leading-relaxed whitespace-pre-wrap font-medium">
+                            {viewTicket?.issueAbout}
+                        </p>
+                    </div>
+                    <div className="mt-6 flex justify-end">
+                        <Button 
+                            onClick={() => setViewTicket(null)}
+                            className="bg-gray-900 text-white hover:bg-gray-800 rounded-xl font-bold text-xs px-8 h-10 shadow-sm"
+                        >
+                            Close
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
