@@ -153,11 +153,11 @@ export default function DrivesPage() {
             {/* Header */}
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between mb-8">
                 <div className="flex items-center gap-5 group">
-                    <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)]" />
+                    <div className="h-12 w-1.5 bg-slate-900 rounded-full shadow-[0_0_15px_rgba(15,23,42,0.15)]" />
                     <div className="space-y-1">
                         <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 tracking-tight">Drives</h1>
                         <div className="flex items-center gap-3">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
+                            <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-pulse" />
                             <p className="text-gray-400 font-bold text-[11px] uppercase tracking-widest">{pagination.total || 0} Total Campaigns</p>
                         </div>
                     </div>
@@ -183,19 +183,19 @@ export default function DrivesPage() {
                                     })}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="text-[12px] font-bold text-[#F97316] hover:text-orange-700 uppercase tracking-widest"
+                                    className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest"
                                 >
                                     Contact Support
                                 </a>
                             ) : (
-                                <Link href="/admin/billing" className="text-[12px] font-bold text-[#F97316] hover:text-orange-700 uppercase tracking-widest">
+                                <Link href="/admin/billing" className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest">
                                     Go to Billing
                                 </Link>
                             )}
                         </div>
                     ) : (
                         <Link href="/admin/create-drive">
-                            <Button className="bg-gradient-to-r from-[#F97316] to-orange-500 hover:shadow-orange-500/25 hover:shadow-xl transition-all duration-300 h-12 px-6 font-bold rounded-2xl text-white shadow-lg">
+                            <Button className="bg-slate-950 hover:bg-slate-800 transition-all duration-300 h-12 px-6 font-bold rounded-2xl text-white shadow-lg shadow-slate-900/10">
                                 <Plus className="h-5 w-5 mr-2" />
                                 New Drive
                             </Button>
@@ -205,13 +205,13 @@ export default function DrivesPage() {
             </div>
 
             {/* Filters */}
-            <div className="bg-white/40 backdrop-blur-xl p-3 rounded-[1.75rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)]">
+            <div className="bg-white p-3 rounded-[1.75rem] border border-slate-200 shadow-sm">
                 <div className="flex flex-col lg:flex-row items-center justify-between gap-6 w-full">
                     <div className="relative flex-1 max-w-2xl w-full group/search">
                         <Search className="absolute left-4 top-3.5 h-4 w-4 text-gray-400" />
                         <Input
                             placeholder="Search by role, department or title..."
-                            className="pl-11 h-11 border-transparent bg-white/60 rounded-2xl focus:bg-white focus:border-orange-200 focus:ring-8 focus:ring-orange-50/50 transition-all font-bold text-sm"
+                            className="pl-11 h-11 border-slate-200 bg-slate-50 rounded-2xl focus:bg-white focus:border-slate-300 focus:ring-4 focus:ring-slate-100 transition-all font-semibold text-sm shadow-inner"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
@@ -219,10 +219,10 @@ export default function DrivesPage() {
                     <div className="flex items-center gap-4 w-full md:w-auto">
                         <DateFilter value={timeline} onChange={setTimeline} />
                         <Select value={typeFilter} onValueChange={setTypeFilter}>
-                            <SelectTrigger className="h-11 min-w-[140px] px-5 border-transparent rounded-2xl bg-white/60 text-gray-500 font-medium">
+                            <SelectTrigger className="h-11 min-w-[140px] px-5 border-slate-200 rounded-2xl bg-slate-50 text-slate-600 font-medium shadow-inner">
                                 <SelectValue placeholder="Job Type" />
                             </SelectTrigger>
-                            <SelectContent className="rounded-2xl">
+                            <SelectContent className="rounded-2xl border-slate-200">
                                 <SelectItem value="all">All Types</SelectItem>
                                 <SelectItem value="Full-time">Full-time</SelectItem>
                                 <SelectItem value="Internship">Internship</SelectItem>
@@ -236,13 +236,13 @@ export default function DrivesPage() {
             <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[repeat(2,480px)] justify-start">
                 {isLoading ? (
                     <div className="col-span-full flex w-full flex-col items-center justify-center py-24 min-h-[320px]">
-                        <Loader2 className="h-10 w-10 text-orange-500 animate-spin mb-3" />
+                        <Loader2 className="h-10 w-10 text-slate-500 animate-spin mb-3" />
                         <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Loading drives...</p>
                     </div>
                 ) : jobs.length === 0 ? (
                     <div className="col-span-full">
                         <div className="flex flex-col items-center justify-center py-24 px-4">
-                            <div className="h-20 w-20 bg-orange-50 text-orange-500 rounded-3xl flex items-center justify-center mb-8 shadow-sm">
+                            <div className="h-20 w-20 bg-slate-50 text-slate-600 rounded-3xl flex items-center justify-center mb-8 shadow-sm border border-slate-200">
                                 <Rocket className="h-10 w-10" />
                             </div>
                             <h3 className="text-2xl font-bold text-gray-900 tracking-tight mb-2">Create your first recruitment drive</h3>
@@ -263,19 +263,19 @@ export default function DrivesPage() {
                                             })}
                                             target="_blank"
                                             rel="noreferrer"
-                                            className="text-[12px] font-bold text-[#F97316] hover:text-orange-700 uppercase tracking-widest"
+                                        className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest"
                                         >
                                             Contact Support
                                         </a>
                                     ) : (
-                                        <Link href="/admin/billing" className="text-[12px] font-bold text-[#F97316] hover:text-orange-700 uppercase tracking-widest">
+                                        <Link href="/admin/billing" className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest">
                                             Go to Billing
                                         </Link>
                                     )}
                                 </div>
                             ) : (
                                 <Link href="/admin/create-drive">
-                                    <Button className="bg-[#F97316] hover:bg-black transition-all duration-300 h-14 px-10 font-bold rounded-2xl text-white shadow-lg shadow-orange-500/20 gap-3 group">
+                                    <Button className="bg-slate-950 hover:bg-slate-800 transition-all duration-300 h-14 px-10 font-bold rounded-2xl text-white shadow-lg shadow-slate-900/10 gap-3 group">
                                         <Plus className="h-5 w-5" />
                                         Create New Drive
                                         <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
@@ -298,25 +298,24 @@ export default function DrivesPage() {
                                 key={drive.id}
                                 className="group cursor-pointer w-full"
                             >
-                                <div className="relative h-full overflow-hidden rounded-[1.5rem] border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:border-orange-200 hover:shadow-[0_20px_50px_rgba(15,23,42,0.12)] flex flex-col">
-                                    <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-400 via-amber-400 to-orange-500" />
-                                    <div className="absolute right-0 top-0 h-28 w-28 rounded-bl-full bg-gradient-to-br from-orange-50 to-transparent opacity-70" />
+                                <div className="relative h-full overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.05)] transition-all duration-300 hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_18px_44px_rgba(15,23,42,0.10)] flex flex-col">
+                                    <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-slate-900 via-slate-700 to-slate-900" />
 
                                     {/* Card Header */}
                                     <div className="relative p-4 pb-3.5">
                                         <div className="mb-4 flex items-start justify-between gap-3">
-                                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-orange-100 bg-orange-50 text-orange-600 shadow-[0_6px_20px_rgba(249,115,22,0.12)] transition-transform group-hover:scale-105">
+                                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-700 shadow-[0_6px_20px_rgba(15,23,42,0.06)] transition-transform group-hover:scale-105">
                                                 <Briefcase className="h-4.5 w-4.5" />
                                             </div>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="secondary" size="icon" className="h-8.5 w-8.5 rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:text-slate-700">
+                                                    <Button variant="secondary" size="icon" className="h-8.5 w-8.5 rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:text-slate-800">
                                                         <MoreHorizontal className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="w-[220px] p-2 rounded-2xl bg-white/95 backdrop-blur-2xl border border-slate-200 shadow-[0_20px_60px_rgba(0,0,0,0.12)]">
+                                                <DropdownMenuContent align="end" className="w-[220px] p-2 rounded-2xl bg-white/95 backdrop-blur-2xl border border-slate-200 shadow-[0_20px_60px_rgba(15,23,42,0.10)]">
                                                     <DropdownMenuItem
-                                                        className="rounded-xl py-2.5 px-3 focus:bg-orange-50 text-slate-700 font-medium text-[13px]"
+                                                        className="rounded-xl py-2.5 px-3 focus:bg-slate-100 text-slate-700 font-medium text-[13px]"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             router.push(`/admin/create-drive?id=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`);
@@ -341,7 +340,7 @@ export default function DrivesPage() {
                                             </DropdownMenu>
                                         </div>
 
-                                        <h3 className="text-[16px] font-extrabold leading-snug tracking-tight text-slate-950 mb-2 line-clamp-2 group-hover:text-orange-600 transition-colors">
+                                        <h3 className="text-[16px] font-extrabold leading-snug tracking-tight text-slate-950 mb-2 line-clamp-2 group-hover:text-slate-700 transition-colors">
                                             {drive.title}
                                         </h3>
                                         <div className="flex flex-wrap items-center gap-2">
@@ -363,30 +362,20 @@ export default function DrivesPage() {
                                         <div className="grid grid-cols-2 gap-2.5">
                                             <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_2px_10px_rgba(15,23,42,0.03)]">
                                                 <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.22em] text-slate-400 mb-1.5">
-                                                    <Users className="h-3 w-3 text-orange-500" />
+                                                    <Users className="h-3 w-3 text-slate-500" />
                                                     Candidates
                                                 </div>
                                                 <p className="text-[20px] font-black text-slate-950 leading-none">{applicants}</p>
                                             </div>
                                             <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_2px_10px_rgba(15,23,42,0.03)]">
                                                 <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.22em] text-slate-400 mb-1.5">
-                                                    <Target className="h-3 w-3 text-orange-500" />
+                                                    <Target className="h-3 w-3 text-slate-500" />
                                                     Created
                                                 </div>
                                                 <p className="text-[13px] font-bold text-slate-800 leading-tight">
                                                     {createdAt}
                                                 </p>
                                             </div>
-                                        </div>
-
-
-                                            <div className="flex items-center justify-between gap-3">
-                                                <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
-                                                    <Target className="h-3.5 w-3.5 text-orange-500" />
-
-                                                </div>
-                                                
-   
                                         </div>
                                     </div>
 
@@ -396,7 +385,7 @@ export default function DrivesPage() {
                                         <div className="grid grid-cols-1 gap-3">
                                             <Button
                                                 size="sm"
-                                                className="h-9 rounded-xl bg-slate-950 text-white font-bold shadow-[0_10px_20px_rgba(15,23,42,0.14)] transition-all hover:bg-orange-600 hover:shadow-[0_14px_30px_rgba(249,115,22,0.22)] text-[13px]"
+                                                className="h-9 rounded-xl bg-slate-950 text-white font-bold shadow-[0_10px_20px_rgba(15,23,42,0.14)] transition-all hover:bg-slate-800 hover:shadow-[0_14px_30px_rgba(15,23,42,0.18)] text-[13px]"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     router.push(`/admin/candidates/drive/${encodeURIComponent(drive.id)}`);
@@ -416,7 +405,7 @@ export default function DrivesPage() {
 
             {/* Pagination */}
             {!isLoading && jobs.length > 0 && (
-                <div className="flex items-center justify-between px-4 py-6 border-t border-white/20 bg-white/20 backdrop-blur-xl rounded-2xl">
+                <div className="flex items-center justify-between px-4 py-6 border-t border-slate-200 bg-white rounded-2xl shadow-sm">
                     <p className="text-[13px] font-medium text-gray-500">
                         Showing <span className="text-gray-900 font-bold">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="text-gray-900 font-bold">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="text-gray-900 font-bold">{pagination.total}</span> drives
                     </p>
@@ -424,7 +413,7 @@ export default function DrivesPage() {
                         <Button
                             variant="outline"
                             size="sm"
-                            className="h-10 px-6 rounded-xl border-white/40 bg-white/40 backdrop-blur-md text-gray-500 font-bold hover:bg-white hover:text-[#F97316] disabled:opacity-30 transition-all"
+                            className="h-10 px-6 rounded-xl border-slate-200 bg-white text-slate-500 font-bold hover:bg-slate-50 hover:text-slate-900 disabled:opacity-30 transition-all"
                             disabled={pagination.page <= 1 || isLoading}
                             onClick={() => handlePageChange(pagination.page - 1)}
                         >
@@ -433,7 +422,7 @@ export default function DrivesPage() {
                         <Button
                             variant="outline"
                             size="sm"
-                            className="h-10 px-6 rounded-xl border-white/40 bg-white/40 backdrop-blur-md text-gray-500 font-bold hover:bg-white hover:text-[#F97316] disabled:opacity-30 transition-all"
+                            className="h-10 px-6 rounded-xl border-slate-200 bg-white text-slate-500 font-bold hover:bg-slate-50 hover:text-slate-900 disabled:opacity-30 transition-all"
                             disabled={pagination.page >= pagination.totalPages || isLoading}
                             onClick={() => handlePageChange(pagination.page + 1)}
                         >

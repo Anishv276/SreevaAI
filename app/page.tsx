@@ -147,7 +147,7 @@ const heroMetrics = [
 const featureComparison = [
     { feature: "Drives", starter: "1", pro: "5", scale: "10+", enterprise: "Unlimited" },
     { feature: "AI Voices", starter: "3", pro: "10+", scale: "20+", enterprise: "Unlimited" },
-    { feature: "Interview Duration", starter: "20 min", pro: "20 min", scale: "20 min", enterprise: "20 min" },
+    { feature: "Interview Duration", starter: "20 min", pro: "20 min", scale: "20 min", enterprise: "Unlimited" },
     { feature: "Ask Sreeva AI", starter: "—", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Adaptive AI Interview", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Resume + JD Based Questions", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
@@ -238,6 +238,56 @@ function SectionHeading({
 export default function Home() {
     const [session, setSession] = useState<Session | null>(null);
     const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
+    const [activeSection, setActiveSection] = useState("hero");
+
+    useEffect(() => {
+        const observerOptions = {
+            root: null,
+            rootMargin: "-20% 0px -70% 0px", // Trigger when section is in the middle of the screen
+            threshold: 0
+        };
+
+        const observerCallback = (entries: IntersectionObserverEntry[]) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    setActiveSection(entry.target.id);
+                }
+            });
+        };
+
+        const observer = new IntersectionObserver(observerCallback, observerOptions);
+        const sections = ["hero", "problems", "solutions", "workflow", "pricing", "faq"];
+
+        sections.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) observer.observe(el);
+        });
+
+        return () => observer.disconnect();
+    }, []);
+
+    const scrollToSection = (e: React.MouseEvent, href: string) => {
+        if (href.startsWith("#")) {
+            e.preventDefault();
+            const id = href.replace("#", "");
+            if (id === "") {
+                window.scrollTo({ top: 0, behavior: "smooth" });
+                return;
+            }
+            const element = document.getElementById(id);
+            if (element) {
+                const headerOffset = 80; // height of fixed header (h-20 = 80px)
+                const elementPosition = element.getBoundingClientRect().top;
+                const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+
+                window.scrollTo({
+                    top: offsetPosition,
+                    behavior: "smooth"
+                });
+            }
+        }
+    };
+
 
     useEffect(() => {
         const checkAuth = async () => {
@@ -268,22 +318,37 @@ export default function Home() {
                         <span className="leading-none">Sreeva AI</span>
                     </Link>
 
-                    <nav className="hidden items-center gap-8 text-sm font-medium tracking-tight md:flex">
-                        <a className="border-b-2 border-orange-600 pb-1 font-bold text-orange-600" href="#hero">
-                            Hero
-                        </a>
-                        <a className="text-slate-600 transition-colors hover:text-orange-600" href="#problems">
-                            Problems
-                        </a>
-                        <a className="text-slate-600 transition-colors hover:text-orange-600" href="#solutions">
-                            Solutions
-                        </a>
-                        <a className="text-slate-600 transition-colors hover:text-orange-600" href="#workflow">
-                            Workflow
-                        </a>
-                        <a className="text-slate-600 transition-colors hover:text-orange-600" href="#faq">
-                            FAQ
-                        </a>
+                    <nav className="hidden items-center gap-1 text-sm font-medium tracking-tight md:flex">
+                        {[
+                            { id: "hero", label: "Hero" },
+                            { id: "problems", label: "Problems" },
+                            { id: "solutions", label: "Solutions" },
+                            { id: "workflow", label: "Workflow" },
+                            { id: "pricing", label: "Pricing" },
+                            { id: "faq", label: "FAQ" }
+                        ].map((item) => {
+                            const isActive = activeSection === item.id;
+                            return (
+                                <a
+                                    key={item.id}
+                                    className={`relative rounded-xl px-4 py-2 transition-colors duration-300 ${isActive ? "text-orange-600" : "text-slate-600 hover:text-orange-600"
+                                        }`}
+                                    href={`#${item.id}`}
+                                    onClick={(e) => scrollToSection(e, `#${item.id}`)}
+                                >
+                                    {isActive && (
+                                        <motion.div
+                                            layoutId="nav-box"
+                                            className="absolute inset-0 z-0 rounded-xl bg-orange-600/10 shadow-[inset_0_0_0_1px_rgba(255,106,0,0.1)]"
+                                            transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                        />
+                                    )}
+                                    <span className={`relative z-10 ${isActive ? "font-bold" : ""}`}>
+                                        {item.label}
+                                    </span>
+                                </a>
+                            );
+                        })}
                     </nav>
 
                     <div className="flex items-center gap-3 sm:gap-4">
@@ -634,17 +699,17 @@ export default function Home() {
                                             <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-orange-600">Sreeva AI</th>
                                         </tr>
                                     </thead>
-                                      <tbody className="divide-y divide-slate-100">
-                                          {[
-                                              { label: "Interview Style", traditional: "Same questions for every candidate", sreeva: "Adapts in real time based on every answer" },
-                                              { label: "Skill Verification", traditional: "You trust what they say", sreeva: "You see what they actually know" },
-                                              { label: "Candidate Fraud", traditional: "Anyone can show up and answer for them", sreeva: "Identity, behavior, and response patterns all verified" },
-                                              { label: "Interviewer Bias", traditional: "Depends on who shows up that day", sreeva: "Consistent evaluation every single time" },
-                                              { label: "Report Quality", traditional: "Gut feel notes after the call", sreeva: "Structured score with evidence and clear recommendation" },
-                                              { label: "Cost", traditional: "Expensive human screeners per interview", sreeva: "Fraction of the cost, no human bottleneck" }
-                                          ].map((row, i) => (
-                                              <tr key={i} className="group transition-colors hover:bg-slate-50/30">
-                                                  <td className="px-6 py-4 text-sm font-bold text-slate-900 whitespace-nowrap">{row.label}</td>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {[
+                                            { label: "Interview Style", traditional: "Same questions for every candidate", sreeva: "Adapts in real time based on every answer" },
+                                            { label: "Skill Verification", traditional: "You trust what they say", sreeva: "You see what they actually know" },
+                                            { label: "Candidate Fraud", traditional: "Anyone can show up and answer for them", sreeva: "Identity, behavior, and response patterns all verified" },
+                                            { label: "Interviewer Bias", traditional: "Depends on who shows up that day", sreeva: "Consistent evaluation every single time" },
+                                            { label: "Report Quality", traditional: "Gut feel notes after the call", sreeva: "Structured score with evidence and clear recommendation" },
+                                            { label: "Cost", traditional: "Expensive human screeners per interview", sreeva: "Fraction of the cost, no human bottleneck" }
+                                        ].map((row, i) => (
+                                            <tr key={i} className="group transition-colors hover:bg-slate-50/30">
+                                                <td className="px-6 py-4 text-sm font-bold text-slate-900 whitespace-nowrap">{row.label}</td>
                                                 <td className="px-6 py-4 text-sm text-slate-500 whitespace-nowrap">{row.traditional}</td>
                                                 <td className="px-6 py-4 text-sm font-medium text-slate-900 bg-orange-50/30 whitespace-nowrap">
                                                     <div className="flex items-center gap-2">
@@ -695,6 +760,9 @@ export default function Home() {
                                 </ul>
                                 <Link
                                     href={session ? dashboardHref : "#contact"}
+                                    onClick={(e) => {
+                                        if (!session) scrollToSection(e, "#contact");
+                                    }}
                                     className={`${plan.featured ? "primary-btn" : "secondary-btn"} w-full py-3 text-center font-bold`}
                                 >
                                     {plan.cta}
@@ -817,7 +885,11 @@ export default function Home() {
                             Adaptive AI that interviews smarter than a script.
                         </p>
                         <div className="flex gap-4">
-                            <a className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-400 transition-colors hover:text-primary" href="#">
+                            <a
+                                className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-400 transition-colors hover:text-primary"
+                                href="#"
+                                onClick={(e) => scrollToSection(e, "#")}
+                            >
                                 <Globe2 className="h-4 w-4" />
                             </a>
                             <a className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-400 transition-colors hover:text-primary" href="mailto:support@sreevaai.com">
@@ -835,6 +907,11 @@ export default function Home() {
                                         <Link
                                             className="underline-offset-4 hover:text-orange-600 hover:underline"
                                             href={item.href}
+                                            onClick={(e) => {
+                                                if (item.href.startsWith("#")) {
+                                                    scrollToSection(e, item.href);
+                                                }
+                                            }}
                                         >
                                             {item.label}
                                         </Link>

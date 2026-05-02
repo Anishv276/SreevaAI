@@ -1458,8 +1458,8 @@ export default function CandidatesPage() {
 
                                                     </div>
 
-                                                    <Badge variant="secondary" className={cn(
-                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border shadow-sm transition-all",
+                                                    <Badge variant="outline" className={cn(
+                                                        "pointer-events-none rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm transition-all border",
                                                         mainStatus === 'shortlisted'
                                                             ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
                                                             : mainStatus === 'rejected'
@@ -1505,19 +1505,19 @@ export default function CandidatesPage() {
                                                 <div className="flex justify-center items-center h-full">
 
                                                     {isHiredResult ? (
-                                                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
+                                                        <Badge variant="outline" className="pointer-events-none bg-emerald-50 text-emerald-700 border-emerald-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
                                                             {hiringDecisionLabel}
                                                         </Badge>
                                                     ) : isNotHiredResult ? (
-                                                        <Badge variant="outline" className="bg-rose-50 text-rose-700 border-rose-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
+                                                        <Badge variant="outline" className="pointer-events-none bg-rose-50 text-rose-700 border-rose-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
                                                             {hiringDecisionLabel}
                                                         </Badge>
                                                     ) : hiringDecision === 'not shortlisted' ? (
-                                                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
+                                                        <Badge variant="outline" className="pointer-events-none bg-amber-50 text-amber-700 border-amber-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest shadow-sm">
                                                             {hiringDecisionLabel}
                                                         </Badge>
                                                     ) : (
-                                                        <Badge variant="outline" className="bg-slate-50 text-slate-500 border-slate-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest">
+                                                        <Badge variant="outline" className="pointer-events-none bg-slate-50 text-slate-500 border-slate-100 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest">
                                                             {hiringDecisionLabel}
                                                         </Badge>
                                                     )}

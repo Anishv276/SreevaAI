@@ -773,11 +773,11 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                             Activity
                                                         </DropdownMenuItem>
                                                         <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Shortlist</DropdownMenuLabel>
-                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${displayName} shortlisted`)} className="rounded-xl px-2.5 py-2 text-sm font-semibold text-emerald-600 cursor-pointer focus:text-emerald-700 focus:bg-emerald-50 transition-colors">
+                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${displayName} shortlisted`)} className="rounded-xl px-2.5 py-2 text-sm font-semibold text-emerald-600 cursor-pointer transition-colors hover:bg-emerald-50 hover:text-emerald-700 focus:text-emerald-700 focus:bg-emerald-50 data-[highlighted]:bg-emerald-50 data-[highlighted]:text-emerald-700">
                                                             <Target className="h-4 w-4 mr-2 shrink-0" />
                                                             Shortlist
                                                         </DropdownMenuItem>
-                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${displayName} rejected`)} className="rounded-xl px-2.5 py-2 text-sm font-semibold text-rose-600 cursor-pointer focus:text-rose-700 focus:bg-rose-50 transition-colors">
+                                                        <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${displayName} rejected`)} className="rounded-xl px-2.5 py-2 text-sm font-semibold text-rose-600 cursor-pointer transition-colors hover:bg-rose-50 hover:text-rose-700 focus:text-rose-700 focus:bg-rose-50 data-[highlighted]:bg-rose-50 data-[highlighted]:text-rose-700">
                                                             <UserX className="h-4 w-4 mr-2 shrink-0" />
                                                             Reject
                                                         </DropdownMenuItem>
