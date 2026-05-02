@@ -31,7 +31,6 @@ export async function POST(
                         title: true,
                         description: true,
                         screeningThreshold: true,
-                        shortlistMode: true,
                         extractedDetails: true,
                         orgId: true,
                     }

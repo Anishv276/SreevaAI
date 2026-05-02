@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createDriveSchema, bulkDeleteSchema, driveQuerySchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
-import { sanitizeObject } from "@/lib/utils";
+import { safeJsonParse, sanitizeObject } from "@/lib/utils";
 import { generateId } from "@/lib/ids";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { deleteDriveEmbeddings } from "@/lib/pinecone";
@@ -88,13 +88,13 @@ export async function GET(request: Request) {
                     salary: true,
                     skills: true,
                     extractedDetails: true,
+                    screeningCriteria: true,
                     interviewLanguage: true,
                     proctoringLevel: true,
                     interviewQuestions: true,
                     jdFileName: true,
                     jdPreviewUrl: true,
                     orgId: true,
-                    shortlistMode: true,
                     location: true,
                     aiName: true,
                     cartesiaVoiceId: true,
@@ -114,11 +114,9 @@ export async function GET(request: Request) {
 
         const formattedDrives = drives.map((drive: any) => {
             const screeningThreshold = Number(drive.screeningThreshold ?? 60);
-            const shortlistMode = drive.shortlistMode || "automatic";
             const inviteScheduleDays = Number(drive.inviteScheduleDays ?? 1) || 1;
-            const screeningCriteria = JSON.stringify({
+            const screeningCriteriaJson = JSON.stringify({
                 threshold: screeningThreshold,
-                shortlistMode,
                 inviteScheduleDays,
                 criteria: {},
             });
@@ -127,9 +125,8 @@ export async function GET(request: Request) {
                 ...drive,
                 applicants: drive._count?.applications || 0,
                 screeningThreshold,
-                shortlistMode,
                 inviteScheduleDays,
-                screeningCriteria,
+                screeningCriteria: drive.screeningCriteria || screeningCriteriaJson,
                 aiScreening: {
                     enabled: (drive as any).aiScreeningEnabled
                 },
@@ -235,7 +232,6 @@ export async function POST(request: Request) {
         const mergedScreeningCriteria = {
             ...(screeningCriteria && typeof screeningCriteria === "object" ? screeningCriteria : {}),
             ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
-            ...(data.shortlistMode !== undefined ? { shortlistMode: data.shortlistMode } : {}),
             ...(data.inviteScheduleDays !== undefined ? { inviteScheduleDays: data.inviteScheduleDays } : {}),
         };
         const inviteScheduleDays = data.inviteScheduleDays ?? 1;

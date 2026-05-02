@@ -33,6 +33,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 department: true,
                 type: true,
                 screeningThreshold: true,
+                screeningCriteria: true,
                 creatorId: true,
                 createdAt: true,
                 updatedAt: true,
@@ -85,10 +86,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
         const screeningThreshold = Number((drive as any).screeningThreshold ?? 60);
         const inviteScheduleDays = Number((drive as any).inviteScheduleDays ?? 1) || 1;
+        const parsedCriteria = safeJsonParse((drive as any).screeningCriteria, {}) as Record<string, any>;
         const screeningCriteria = JSON.stringify({
             threshold: screeningThreshold,
             inviteScheduleDays,
-            criteria: {},
+            criteria: parsedCriteria.criteria || {},
         });
 
         return NextResponse.json({
