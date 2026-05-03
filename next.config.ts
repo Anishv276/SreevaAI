@@ -12,7 +12,6 @@ const nextConfig: NextConfig = {
       allowedOrigins,
     },
     proxyClientMaxBodySize: '20mb',
-    middlewareClientMaxBodySize: '20mb',
   },
 };
 
