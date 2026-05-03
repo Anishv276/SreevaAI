@@ -18,7 +18,6 @@ export type Job = {
     requirements?: string;
     skills?: string;
     workMode?: string;
-    registrationFields?: string;
     slug?: string;
     role?: string;
     createdAt: string;

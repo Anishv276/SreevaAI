@@ -23,7 +23,6 @@ interface DriveDetails {
     applicants?: number | null;
     screeningThreshold?: number | null;
     inviteScheduleDays?: number | null;
-    proctoringLevel?: string | null;
     interviewLanguage?: string | null;
     type?: string | null;
     description?: string | null;
@@ -73,7 +72,6 @@ export default function DriveCandidatesPage() {
                     applicants: data.applicants ?? data._count?.applications ?? 0,
                     screeningThreshold: data.screeningThreshold ?? null,
                     inviteScheduleDays: data.inviteScheduleDays ?? null,
-                    proctoringLevel: data.proctoringLevel || null,
                     interviewLanguage: data.interviewLanguage || null,
                     type: data.type || null,
                     description: data.description || null,
