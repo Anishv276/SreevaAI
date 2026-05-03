@@ -122,7 +122,6 @@ export async function POST(
                 description: true,
                 screeningThreshold: true,
                 screeningCriteria: true,
-                extractedDetails: true,
                 orgId: true,
                 organization: {
                     select: {
@@ -136,6 +135,16 @@ export async function POST(
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
         if (!drive.orgId)
             return NextResponse.json({ error: "Drive has no organisation" }, { status: 400 });
+
+        const driveRows = await prisma.$queryRawUnsafe<Array<{ extractedDetails: string | null }>>(
+            `
+            SELECT "extractedDetails"
+            FROM "Drive"
+            WHERE id = $1
+            LIMIT 1
+            `,
+            driveId
+        );
 
         const billingStatus = await getOrgBillingStatus(drive.orgId);
         if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
@@ -229,7 +238,16 @@ async function processBatch(
         );
         const threshold: number = Number(parsed.threshold ?? drive.screeningThreshold ?? 60);
         // Parse the drive's extracted JD once — reuse for every resume
-        const structuredJD = safeJsonParse(drive.extractedDetails, {});
+        const driveRows = await prisma.$queryRawUnsafe<Array<{ extractedDetails: string | null }>>(
+            `
+            SELECT "extractedDetails"
+            FROM "Drive"
+            WHERE id = $1
+            LIMIT 1
+            `,
+            driveId
+        );
+        const structuredJD = safeJsonParse(driveRows?.[0]?.extractedDetails, {});
         const jdRawText: string = drive.description || "";
         const screeningCriteria = parsed.criteria;
 

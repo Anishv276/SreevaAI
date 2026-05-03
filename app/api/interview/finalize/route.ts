@@ -338,11 +338,11 @@ export async function POST(req: Request) {
           aiReport: true,
           drive: {
             select: {
+              id: true,
               title: true,
               description: true,
               requirements: true,
               skills: true,
-              extractedDetails: true,
               orgId: true,
             },
           },
@@ -358,6 +358,16 @@ export async function POST(req: Request) {
       });
 
       if (app) {
+        const driveRows = await prisma.$queryRawUnsafe<Array<{ extractedDetails: string | null }>>(
+          `
+          SELECT "extractedDetails"
+          FROM "Drive"
+          WHERE id = $1
+          LIMIT 1
+          `,
+          app.drive?.id
+        );
+
         const resumeText =
           app.resumeText?.trim() ||
           (() => {
@@ -371,8 +381,8 @@ export async function POST(req: Request) {
           })();
 
         const structuredResume = {};
-        const driveDetails = app.drive?.extractedDetails
-          ? safeJsonParse(app.drive.extractedDetails, {})
+        const driveDetails = driveRows?.[0]?.extractedDetails
+          ? safeJsonParse(driveRows[0].extractedDetails, {})
           : {};
         const jdText = [
           app.drive?.title || "",

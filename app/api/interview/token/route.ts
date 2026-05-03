@@ -442,9 +442,18 @@ export async function POST(req: NextRequest) {
                 const dispatchClient = new (await import("livekit-server-sdk")).AgentDispatchClient(host, apiKey, apiSecret);
 
                 try {
+                    const driveRows = await prisma.$queryRawUnsafe<Array<{ extractedDetails: string | null }>>(
+                        `
+                        SELECT "extractedDetails"
+                        FROM "Drive"
+                        WHERE id = $1
+                        LIMIT 1
+                        `,
+                        application.drive.id
+                    );
                     const roomMetadata = JSON.stringify({
                         applicationId,
-                        extractedDetails: application.drive.extractedDetails || "{}",
+                        extractedDetails: driveRows?.[0]?.extractedDetails || "{}",
                         structuredResume: (application as any).structuredResume || "{}",
                         aiReport: application.aiReport || "{}",
                     });
