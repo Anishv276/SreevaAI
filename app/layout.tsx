@@ -7,6 +7,8 @@ import { JobsProvider } from "@/context/jobs-context";
 import { AuthProvider } from "@/context/auth-context";
 import { CandidatesProvider } from "@/context/candidates-context";
 import { Toaster } from "@/components/ui/toast-custom";
+import ClarityAnalytics from "@/components/clarity-analytics";
+
 
 const inter = Inter({ 
   subsets: ["latin"],
@@ -77,6 +79,7 @@ export default function RootLayout({
             gtag('config', 'G-LRB7QT4RJR');
           `}
         </Script>
+        <ClarityAnalytics />
         <AuthProvider>
           <Suspense fallback={
             <div className="min-h-screen flex flex-col items-center justify-center bg-white">
