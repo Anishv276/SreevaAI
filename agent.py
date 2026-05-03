@@ -1,12 +1,9 @@
 """Compatibility wrapper for the split agent runtime."""
-
 import asyncio
 import os
 import sys
-
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
 from agent_profile_context import (
     build_interview_turns,
     build_term_alias_hints,
@@ -75,8 +72,6 @@ from agent_utils import (
     truncate_to_tokens,
 )
 from livekit.agents import WorkerOptions, cli
-
-
 if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(

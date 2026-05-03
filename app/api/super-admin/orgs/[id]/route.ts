@@ -90,7 +90,6 @@ export async function PATCH(
         const shouldApplyInterviewQuotaTopUp =
             parsedInterviewQuotaTopUp !== undefined && parsedInterviewQuotaTopUp > 0;
         const shouldUpdateInterviewQuotaTotal =
-            !shouldApplyInterviewQuotaTopUp &&
             parsedInterviewQuotaTotal !== undefined &&
             !isNaN(parsedInterviewQuotaTotal) &&
             parsedInterviewQuotaTotal >= 0;

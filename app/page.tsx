@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
@@ -35,11 +34,9 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { LANDING_PACKAGES as pricingPlans } from "@/lib/landing-packages";
-
 type Session = {
     role?: string;
 };
-
 const problemCards = [
     {
         icon: Clock3,
@@ -60,7 +57,6 @@ const problemCards = [
         iconClassName: "bg-blue-50 text-blue-500 border border-blue-100",
     },
 ];
-
 const featureCards: Array<{
     icon: LucideIcon;
     title: string;
@@ -97,7 +93,6 @@ const featureCards: Array<{
             description: "Fraction of the cost of human screeners or traditional interview platforms.",
         },
     ];
-
 const workflowSteps = [
     {
         title: "Upload Your JD",
@@ -121,14 +116,12 @@ const workflowSteps = [
         icon: FileBarChart,
     },
 ];
-
 const reportSkills = [
     ["React & State Management", "Expert", "100%"],
     ["Performance Optimization", "Expert", "90%"],
     ["System Design", "Advanced", "75%"],
     ["Communication", "Excellent", "95%"],
 ];
-
 const heroMetrics = [
     {
         value: "500+",
@@ -143,7 +136,6 @@ const heroMetrics = [
         label: "structured report turnaround",
     },
 ];
-
 const featureComparison = [
     { feature: "Drives", starter: "1", pro: "5", scale: "10+", enterprise: "Unlimited" },
     { feature: "AI Voices", starter: "3", pro: "10+", scale: "20+", enterprise: "Unlimited" },
@@ -160,7 +152,6 @@ const featureComparison = [
     { feature: "Recording + Playback", starter: "7 days", pro: "14 days", scale: "30 days", enterprise: "Custom" },
     { feature: "Support", starter: "Email", pro: "Priority", scale: "Priority", enterprise: "Dedicated" }
 ];
-
 const faqs = [
     {
         question: "1. What is SreevaAI?",
@@ -191,7 +182,6 @@ const faqs = [
         answer: "Under 10 minutes. Upload your JD, invite candidates, done.",
     },
 ];
-
 const footerGroups = [
     {
         title: "Sections",
@@ -211,7 +201,6 @@ const footerGroups = [
         ],
     },
 ];
-
 function SectionHeading({
     title,
     eyebrow,
@@ -234,19 +223,16 @@ function SectionHeading({
         </div>
     );
 }
-
 export default function Home() {
     const [session, setSession] = useState<Session | null>(null);
     const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
     const [activeSection, setActiveSection] = useState("hero");
-
     useEffect(() => {
         const observerOptions = {
             root: null,
             rootMargin: "-20% 0px -70% 0px", // Trigger when section is in the middle of the screen
             threshold: 0
         };
-
         const observerCallback = (entries: IntersectionObserverEntry[]) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
@@ -254,18 +240,14 @@ export default function Home() {
                 }
             });
         };
-
         const observer = new IntersectionObserver(observerCallback, observerOptions);
         const sections = ["hero", "problems", "solutions", "workflow", "pricing", "faq"];
-
         sections.forEach(id => {
             const el = document.getElementById(id);
             if (el) observer.observe(el);
         });
-
         return () => observer.disconnect();
     }, []);
-
     const scrollToSection = (e: React.MouseEvent, href: string) => {
         if (href.startsWith("#")) {
             e.preventDefault();
@@ -279,7 +261,6 @@ export default function Home() {
                 const headerOffset = 80; // height of fixed header (h-20 = 80px)
                 const elementPosition = element.getBoundingClientRect().top;
                 const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
-
                 window.scrollTo({
                     top: offsetPosition,
                     behavior: "smooth"
@@ -287,8 +268,6 @@ export default function Home() {
             }
         }
     };
-
-
     useEffect(() => {
         const checkAuth = async () => {
             try {
@@ -301,14 +280,11 @@ export default function Home() {
                 console.error("Auth check failed", err);
             }
         };
-
         checkAuth();
     }, []);
-
     const dashboardHref = session?.role === "SUPER_ADMIN" ? "/super-admin" : "/admin";
     const ctaHref = session ? dashboardHref : "https://cal.com/vamsivk/30min";
     const ctaLabel = session ? "Dashboard" : "Book Demo";
-
     return (
         <div className="min-h-screen overflow-x-hidden bg-surface text-on-surface selection:bg-primary-fixed selection:text-on-primary-container">
             <header className="fixed top-0 left-0 right-0 z-50 h-20 bg-white/80 backdrop-blur-md border-b border-slate-100/50">
@@ -317,7 +293,6 @@ export default function Home() {
                         <img src="/Logo.png" alt="Sreeva AI Logo" className="h-14 w-14 object-contain" />
                         <span className="leading-none">Sreeva AI</span>
                     </Link>
-
                     <nav className="hidden items-center gap-1 text-sm font-medium tracking-tight md:flex">
                         {[
                             { id: "hero", label: "Hero" },
@@ -350,7 +325,6 @@ export default function Home() {
                             );
                         })}
                     </nav>
-
                     <div className="flex items-center gap-3 sm:gap-4">
                         {!session && (
                             <Link
@@ -371,7 +345,6 @@ export default function Home() {
                     </div>
                 </div>
             </header>
-
             <main className="pt-20">
                 <section id="hero" className="mx-auto max-w-[1320px] overflow-hidden px-6 pb-24 pt-12 sm:pt-20">
                     <div className="flex flex-col items-center gap-16 lg:flex-row">
@@ -396,7 +369,6 @@ export default function Home() {
                                 </Link>
                             </div>
                         </div>
-
                         <div className="relative w-full lg:w-2/5">
                             <div className="bento-card relative z-10 bg-surface-container-lowest p-4 shadow-2xl">
                                 <div className="mb-4 flex items-center justify-between rounded-2xl bg-surface p-3">
@@ -426,7 +398,6 @@ export default function Home() {
                                         <div className="text-caption font-bold text-secondary">HIRING SIGNAL</div>
                                     </div>
                                 </div>
-
                                 <div className="space-y-6">
                                     <div className="rounded-xl border border-surface-variant bg-surface p-4">
                                         <div className="mb-2 flex items-center gap-2 text-primary">
@@ -438,7 +409,6 @@ export default function Home() {
                                             bottleneck, the measurement, and the trade-off you chose.&quot;
                                         </p>
                                     </div>
-
                                     <div className="grid gap-4 sm:grid-cols-2">
                                         {[
                                             ["React Depth", "94%"],
@@ -471,7 +441,6 @@ export default function Home() {
                                     </div>
                                 </div>
                             </div>
-
                             <div className="bento-card absolute -right-3 -top-6 z-20 hidden items-center gap-3 border-l-4 border-l-green-500 bg-white p-3 shadow-lg sm:flex">
                                 <CheckCircle2 className="h-5 w-5 text-green-500" />
                                 <span className="text-caption font-bold">Resume matched</span>
@@ -491,7 +460,6 @@ export default function Home() {
                         </div>
                     </div>
                 </section>
-
                 <section id="problems" className="bg-surface-container-low py-24">
                     <SectionHeading
                         title="Your hiring process has a credibility problem."
@@ -516,7 +484,6 @@ export default function Home() {
                         ))}
                     </div>
                 </section>
-
                 <section id="solutions" className="mx-auto max-w-[1320px] px-6 py-24">
                     <SectionHeading
                         title="Everything you need to calibrate talent"
@@ -567,7 +534,6 @@ export default function Home() {
                                 </div>
                             </div>
                         </div>
-
                         <div className="bento-card col-span-12 row-span-2 flex flex-col justify-between !bg-primary-container p-4 lg:col-span-6">
                             <div className="text-on-primary">
                                 <span className="mb-2 inline-block rounded-full bg-white/20 px-3 py-1 text-caption font-bold text-white">
@@ -594,7 +560,6 @@ export default function Home() {
                                         Strong Hire
                                     </div>
                                 </div>
-
                                 <div className="grid gap-2 pt-2 sm:grid-cols-[0.72fr_1.28fr]">
                                     <div className="rounded-xl border border-orange-100 bg-surface p-2 text-center">
                                         <div className="text-3xl font-black leading-none text-primary">94</div>
@@ -605,7 +570,6 @@ export default function Home() {
                                             Ready for panel
                                         </div>
                                     </div>
-
                                     <div className="space-y-2">
                                         {[
                                             ["React Depth", "Expert", "96%"],
@@ -624,7 +588,6 @@ export default function Home() {
                                         ))}
                                     </div>
                                 </div>
-
                                 <div className="mt-2 grid gap-1.5 text-[9px] font-semibold text-on-surface-variant sm:grid-cols-3">
                                     <div className="rounded-md bg-green-50 px-2 py-1.5 text-green-700">Identity verified</div>
                                     <div className="rounded-md bg-green-50 px-2 py-1.5 text-green-700">No tab switches</div>
@@ -632,7 +595,6 @@ export default function Home() {
                                 </div>
                             </div>
                         </div>
-
                         {featureCards.map((feature, index) => (
                             <motion.div
                                 key={feature.title}
@@ -649,7 +611,6 @@ export default function Home() {
                         ))}
                     </div>
                 </section>
-
                 <section id="workflow" className="bg-surface py-24">
                     <div className="mx-auto max-w-[1320px] px-6">
                         <SectionHeading
@@ -680,14 +641,12 @@ export default function Home() {
                         </div>
                     </div>
                 </section>
-
                 <section className="mx-auto max-w-[1320px] px-6 py-24">
                     <SectionHeading
                         title="Intelligent screening that gets smarter with every answer."
                         eyebrow="COMPARISON"
                         description="Sreeva AI doesn't just automate screening—it improves the quality of hiring signals."
                     />
-
                     <div className="mx-auto max-w-[1200px]">
                         <div className="bento-card overflow-hidden bg-white shadow-xl">
                             <div className="overflow-x-auto">
@@ -725,8 +684,6 @@ export default function Home() {
                         </div>
                     </div>
                 </section>
-
-
                 <section id="pricing" className="mx-auto max-w-[1320px] px-6 py-24">
                     <SectionHeading
                         title="Plans for every hiring stage"
@@ -770,7 +727,6 @@ export default function Home() {
                             </motion.div>
                         ))}
                     </div>
-
                     <div className="mt-20 overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl">
                         <div className="bg-slate-50 px-6 py-4 font-bold text-slate-800">⚙️ Detailed Feature Comparison</div>
                         <div className="overflow-x-auto">
@@ -799,7 +755,6 @@ export default function Home() {
                         </div>
                     </div>
                 </section>
-
                 <section id="faq" className="bg-surface-container-low py-24">
                     <div className="mx-auto max-w-[1320px] px-6">
                         <SectionHeading
@@ -847,13 +802,11 @@ export default function Home() {
                         </div>
                     </div>
                 </section>
-
                 <section id="contact" className="relative py-24 overflow-hidde  n bg-slate-50/50">
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full max-w-[1320px] pointer-events-none">
                         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-orange-500/5 blur-[120px] rounded-full" />
                         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/5 blur-[120px] rounded-full" />
                     </div>
-
                     <div className="relative z-10 mx-auto max-w-[1320px] px-6">
                         <div className="text-center mb-16">
                             <SectionHeading
@@ -862,7 +815,6 @@ export default function Home() {
                                 description="Schedule a 30-minute walkthrough to see how Sreeva AI can transform your recruitment pipeline."
                             />
                         </div>
-
                         <div className="mx-auto max-w-[1000px] bg-white rounded-[32px] border border-slate-200/60 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.08)] overflow-hidden min-h-[700px]">
                             <iframe
                                 src="https://cal.com/vamsivk/30min?embed=true"
@@ -873,7 +825,6 @@ export default function Home() {
                     </div>
                 </section>
             </main>
-
             <footer id="footer" className="w-full border-t border-slate-100 bg-white py-12">
                 <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-8 px-6 md:grid-cols-4 lg:grid-cols-6">
                     <div className="col-span-2">
@@ -897,7 +848,6 @@ export default function Home() {
                             </a>
                         </div>
                     </div>
-
                     {footerGroups.map((group) => (
                         <div key={group.title}>
                             <h5 className="mb-4 text-sm font-bold">{group.title}</h5>

@@ -328,7 +328,7 @@ export default function NewOrgPage() {
                         <div className="grid md:grid-cols-3 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
                             <LimitControl label="Drive Limit" value={form.maxActiveDrives} onChange={val => setForm(p => ({ ...p, maxActiveDrives: val }))} />
                             <LimitControl label="Team Limit" value={form.maxTeamMembers} onChange={val => setForm(p => ({ ...p, maxTeamMembers: val }))} />
-                            <PremiumInput label="Interview Quota" icon={Coins} type="number" value={form.interviewQuotaTotal} onChange={(e: any) => setForm(p => ({ ...p, interviewQuotaTotal: Math.max(0, Number(e.target.value) || 0) }))} />
+                            <PremiumInput label="Total Interviews Allocated" icon={Coins} type="number" value={form.interviewQuotaTotal} onChange={(e: any) => setForm(p => ({ ...p, interviewQuotaTotal: Math.max(0, Number(e.target.value) || 0) }))} />
                         </div>
                         <div className="flex justify-between pt-8 border-t border-gray-100">
                             <button type="button" onClick={() => setStep(2)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>

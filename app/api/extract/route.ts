@@ -46,7 +46,7 @@ export async function POST(request: Request) {
         } catch (parseError: any) {
             console.error("[EXTRACTION_PARSE_ERROR]", parseError);
             return NextResponse.json({ 
-                error: "Failed to parse upload data. The file might be too large or the request was interrupted.",
+                error: "File size is larger than supported limit.",
                 code: "FILE_PARSE_ERROR",
                 details: parseError.message 
             }, { status: 400 });
@@ -126,7 +126,7 @@ export async function POST(request: Request) {
         const MAX_SIZE = 20 * 1024 * 1024; // Increased to 20MB
         if (file.size > MAX_SIZE) {
             return NextResponse.json({ 
-                error: "File size exceeds 10MB limit.", 
+                error: "File size exceeds 20MB limit.", 
                 code: "FILE_TOO_LARGE" 
             }, { status: 413 });
         }

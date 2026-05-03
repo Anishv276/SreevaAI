@@ -1,9 +1,7 @@
 from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 from typing import Any, Optional
-
 from agent_runtime_support import _TOOL_ALIAS_CATALOG
 from agent_utils import (
     _as_list,
@@ -16,8 +14,6 @@ from agent_utils import (
     _join_items,
     _safe_float,
 )
-
-
 def build_term_alias_hints(*text_blocks: str, max_lines: int = 10) -> str:
     combined = " ".join(block for block in text_blocks if isinstance(block, str)).lower()
     lines: list[str] = []
@@ -32,12 +28,9 @@ def build_term_alias_hints(*text_blocks: str, max_lines: int = 10) -> str:
         lines.append(f"- {', '.join(unique_aliases[:3])} -> {canonical}")
         if len(lines) >= max_lines:
             break
-
     if not lines:
         return "- No strong alias hints from context. If unclear, confirm once, then move on."
     return "\n".join(lines)
-
-
 def infer_candidate_band(structured_resume_raw: Any, resume_text_block: str) -> str:
     """
     Infer interview mode from structured resume + free text:
@@ -48,7 +41,6 @@ def infer_candidate_band(structured_resume_raw: Any, resume_text_block: str) -> 
     - senior: > 10 years
     """
     context = _ensure_resume_context(structured_resume_raw, resume_text_block)
-
     if context.years_of_experience is not None:
         if context.years_of_experience < 1.5:
             return "fresher"
@@ -57,7 +49,6 @@ def infer_candidate_band(structured_resume_raw: Any, resume_text_block: str) -> 
         if context.years_of_experience > 5:
             return "experienced"
         return "mid"
-
     text = context.resume_text.lower()
     if context.fresher_signals or any(sig in text for sig in ("fresher", "entry level", "student", "final year", "internship", "intern", "graduate")):
         return "fresher"
@@ -66,12 +57,9 @@ def infer_candidate_band(structured_resume_raw: Any, resume_text_block: str) -> 
             return "senior"
         return "experienced"
     return "mid"
-
-
 def build_interview_turns(transcript_lines: list[Any]) -> list[dict[str, Any]]:
     """Group raw transcript lines into question/answer turns."""
     blocks: list[dict[str, Any]] = []
-
     def _append_block(speaker: str, text: str) -> None:
         text = (text or "").strip()
         if not text:
@@ -80,7 +68,6 @@ def build_interview_turns(transcript_lines: list[Any]) -> list[dict[str, Any]]:
             blocks[-1]["text"] = f'{blocks[-1]["text"]} {text}'.strip()
         else:
             blocks.append({"speaker": speaker, "text": text})
-
     for raw_line in transcript_lines or []:
         if not isinstance(raw_line, str):
             continue
@@ -93,12 +80,10 @@ def build_interview_turns(transcript_lines: list[Any]) -> list[dict[str, Any]]:
             _append_block("Candidate", line[len("Candidate:"):].strip())
         else:
             _append_block("Interviewer", line)
-
     turns: list[dict[str, Any]] = []
     current_question: Optional[str] = None
     current_answer_parts: list[str] = []
     turn_index = 0
-
     def _flush_turn() -> None:
         nonlocal current_question, current_answer_parts, turn_index
         question = (current_question or "").strip()
@@ -114,7 +99,6 @@ def build_interview_turns(transcript_lines: list[Any]) -> list[dict[str, Any]]:
             })
         current_question = None
         current_answer_parts = []
-
     for block in blocks:
         speaker = block["speaker"]
         text = block["text"]
@@ -126,18 +110,13 @@ def build_interview_turns(transcript_lines: list[Any]) -> list[dict[str, Any]]:
             if current_question is None:
                 current_question = ""
             current_answer_parts.append(text)
-
     if current_question is not None or current_answer_parts:
         _flush_turn()
-
     return turns
-
-
 def detect_role_category(job_title: str) -> str:
     if not job_title:
         return "operations"
     title = job_title.lower().strip()
-
     ENGINEERING = [
         "engineer", "developer", "dev", "software", "backend", "frontend",
         "full stack", "fullstack", "sre", "devops", "platform", "infrastructure",
@@ -166,7 +145,6 @@ def detect_role_category(job_title: str) -> str:
         "pmm", "performance marketing", "digital marketing", "social media",
         "communications", " pr ", "campaign", "copywriter", "email marketing",
     ]
-
     for kw in ENGINEERING:
         if kw in title:
             return "engineering"
@@ -180,13 +158,10 @@ def detect_role_category(job_title: str) -> str:
         if kw in title:
             return "marketing"
     return "operations"
-
-
 def detect_role_subtype(job_title: str, role_category: str) -> str:
     if not job_title:
         return "general"
     title = job_title.lower().strip()
-
     if role_category == "engineering":
         if any(k in title for k in ["data scientist", "data engineer", "ml ", "machine learning", "ai ", "analytics engineer"]):
             return "data"
@@ -203,7 +178,6 @@ def detect_role_subtype(job_title: str, role_category: str) -> str:
         if any(k in title for k in ["solutions", "gtm", "presales", "pre-sales", "field engineer"]):
             return "solutions"
         return "backend"
-
     if role_category == "sales":
         if any(k in title for k in ["sdr", "bdr", "outbound", "prospecting"]):
             return "sdr"
@@ -212,7 +186,6 @@ def detect_role_subtype(job_title: str, role_category: str) -> str:
         if any(k in title for k in ["account manager", "account management", "renewal"]):
             return "account_management"
         return "general"
-
     if role_category == "marketing":
         if any(k in title for k in ["performance", "paid", "sem", "seo", "growth"]):
             return "performance"
@@ -223,10 +196,7 @@ def detect_role_subtype(job_title: str, role_category: str) -> str:
         if any(k in title for k in ["brand", "communications", "pr"]):
             return "brand"
         return "general"
-
     return "general"
-
-
 def first_name_from_full_name(full_name: str) -> str:
     if not full_name:
         return ""
@@ -234,38 +204,31 @@ def first_name_from_full_name(full_name: str) -> str:
     if not cleaned:
         return ""
     return cleaned.split(" ", 1)[0]
-
-
 def build_role_layer(role_category: str, role_subtype: str, candidate_band: str) -> str:
     engineering_base = """
 ROLE INTELLIGENCE - ENGINEERING
 Focus: real decisions, not tool lists.
-
 Evaluate:
 - constraint awareness
 - failure/debugging literacy
 - tradeoffs and system thinking
 - ownership ("I" vs "we")
 - measurable impact
-
 Strong signals:
 - names a real constraint, failure, or metric
 - explains why a choice was made
 - compares alternatives honestly
 - says what they would change now
-
 Weak signals:
 - tool dumping with no story
 - vague wins with no numbers
 - no failure or rollback story
 - polished STAR answers with no real detail
-
 Probe harder when they mention:
 - a tool
 - a success
 - an ownership claim
 - a vague result
-
 Ask for:
 - the constraint
 - the tradeoff
@@ -273,7 +236,6 @@ Ask for:
 - what broke
 - what they personally owned
 """
-
     engineering_subtypes = {
         "backend": """
 BACKEND: API design, data modeling, concurrency, production failures.
@@ -308,30 +270,25 @@ SOLUTIONS: technical-to-business translation, customer escalation, PoC thinking.
 Probe: ask when they pushed back, saved the deal, or explained ROI to a non-technical leader.
 """,
     }
-
     sales_base = """
 ROLE INTELLIGENCE - SALES
 Focus: numbers, deal judgment, rejection, and process.
-
 Evaluate:
 - quota and attainment
 - losses and self-awareness
 - multi-stakeholder deal handling
 - repeatable process
 - coachability
-
 Strong signals:
 - gives numbers naturally
 - explains why they won or lost
 - names a real objection or decision point
 - shows what they personally did
-
 Weak signals:
 - only win stories
 - no numbers
 - generic process language
 - no friction or failure
-
 Probe harder when they mention:
 - quota
 - a win
@@ -339,7 +296,6 @@ Probe harder when they mention:
 - an objection
 - a relationship change
 """
-
     sales_subtypes = {
         "sdr": """
 SDR: prospecting quality, sequence changes, ICP judgment.
@@ -354,55 +310,46 @@ ACCOUNT MANAGEMENT: renewals, expansion, churn risk, account growth.
 Probe: ask for a save, an expansion, and the turning point.
 """,
     }
-
     customer_success_layer = """
 ROLE INTELLIGENCE - CUSTOMER SUCCESS
 Focus: churn risk, account health, stakeholder movement, and business value.
-
 Evaluate:
 - at-risk account judgment
 - stakeholder navigation
 - value articulation
 - escalation timing
 - metrics and retention thinking
-
 Strong signals:
 - names specific accounts and turning points
 - gives metrics
 - explains cross-functional influence
 - shows what changed the outcome
-
 Weak signals:
 - only happy stories
 - no numbers
 - no conflict
 - generic relationship language
 """
-
     marketing_base = """
 ROLE INTELLIGENCE - MARKETING
 Focus: metrics, audience insight, ownership, and what failed.
-
 Evaluate:
 - metrics and attribution
 - audience understanding
 - ownership vs agency/team
 - experiments that failed
 - sales alignment
-
 Strong signals:
 - gives numbers
 - names a real audience
 - explains what changed the result
 - admits what did not work
-
 Weak signals:
 - strategy without execution
 - no numbers
 - only win stories
 - agency credit with no personal ownership
 """
-
     marketing_subtypes = {
         "performance": """
 PERFORMANCE: bidding, attribution, channel mix, diagnosis.
@@ -421,31 +368,26 @@ BRAND: business impact, consistency, tension with commercial pressure.
 Probe: ask how they defended a brand decision and measured effect.
 """,
     }
-
     operations_layer = """
 ROLE INTELLIGENCE - OPERATIONS / GENERALIST
 Focus: systems, ambiguity, stakeholder influence, and prioritization.
-
 Evaluate:
 - root cause thinking
 - influence without authority
 - prioritization
 - documentation
 - ambiguity handling
-
 Strong signals:
 - names a broken process
 - shows the conflict or tradeoff
 - explains what changed
 - shows what lasted after they left
-
 Weak signals:
 - frameworks with no conflict
 - no tradeoff
 - no resistance
 - vague efficiency claims
 """
-
     if role_category == "engineering":
         subtype_note = engineering_subtypes.get(role_subtype, engineering_subtypes["backend"])
         role_text = engineering_base + subtype_note
@@ -459,7 +401,6 @@ Weak signals:
         role_text = marketing_base + subtype_note
     else:
         role_text = operations_layer
-
     if candidate_band == "fresher":
         band_note = """
 SENIORITY NOTE FOR THIS ROLE (FRESHER / EARLY CAREER):
@@ -494,10 +435,7 @@ SENIORITY NOTE FOR THIS ROLE (MID-LEVEL):
   Balance breadth of skills with depth on the things they claim to know best.
   Look for growth trajectory - are they getting better, or plateauing?
 """
-
     return role_text + band_note
-
-
 def build_coverage_checklist(candidate_band: str) -> list[str]:
     common = [
         "Validate 2-3 core skills from the resume with one concrete example each.",
@@ -531,8 +469,6 @@ def build_coverage_checklist(candidate_band: str) -> list[str]:
         "Validate breadth and depth of claimed tools/skills.",
         "Ask one growth/career reflection (what changed from college/projects to real-world work).",
     ] + common
-
-
 @dataclass(slots=True)
 class ResumeContext:
     resume_data: dict[str, Any]
@@ -549,8 +485,6 @@ class ResumeContext:
     ownership_risks: list[str]
     fresher_signals: bool
     experienced_signals: bool
-
-
 @dataclass(slots=True)
 class CandidateBandContext:
     candidate_band: str
@@ -571,15 +505,11 @@ class CandidateBandContext:
     depth_instruction: str = ""
     initial_context_injected: bool = False
     full_brief_injected: bool = False
-
-
 def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
     if isinstance(resume_data, ResumeContext):
         return resume_data
-
     parsed_resume = _coerce_jsonish(resume_data)
     resume_text = resume_text or ""
-
     years: Optional[float] = None
     years = _safe_float(_deep_get(parsed_resume, "experience.total_years"))
     if years is None:
@@ -591,14 +521,12 @@ def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
         match = re.search(r"(\d+(?:\.\d+)?)\s*\+?\s*(?:years|year|yrs|yr)\b", lower)
         if match:
             years = _safe_float(match.group(1))
-
     if years is None:
         years_label = "Not stated"
     elif float(years).is_integer():
         years_label = f"{int(years)} years"
     else:
         years_label = f"{years:.1f} years"
-
     current_role = _first_text(
         _deep_get(parsed_resume, "experience.currentRole"),
         _deep_get(parsed_resume, "experience.current_role"),
@@ -619,13 +547,11 @@ def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
         current_role_label = current_company
     else:
         current_role_label = "Not stated"
-
     skills = _extract_text_items(_deep_get(parsed_resume, "skills.technical"), ("skill", "name", "value"))
     skills += _extract_text_items(_deep_get(parsed_resume, "skills.tools"), ("tool", "name", "value", "skill"))
     skills += _extract_text_items(_deep_get(parsed_resume, "skills.domain_skills"), ("skill", "name", "value"))
     skills += _extract_text_items(_deep_get(parsed_resume, "keywords"))
     skills = _extract_text_items(skills)
-
     projects: list[str] = []
     for project in _as_list(_deep_get(parsed_resume, "projects")):
         if not isinstance(project, dict):
@@ -633,7 +559,6 @@ def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
             if text:
                 projects.append(text)
             continue
-
         name = _first_text(project.get("name"), project.get("title"))
         description = _first_text(project.get("description"), project.get("summary"))
         technologies = _extract_text_items(project.get("technologies"), ("skill", "tool", "name", "value"))
@@ -643,7 +568,6 @@ def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
             compact = f"{compact} [{_join_items(technologies, 3)}]" if compact else _join_items(technologies, 3)
         if compact:
             projects.append(compact)
-
     education: list[str] = []
     for item in _as_list(
         _deep_get(parsed_resume, "education")
@@ -665,7 +589,6 @@ def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
             text = _first_text(item)
             if text:
                 education.append(text)
-
     hobbies: list[str] = []
     for item in _as_list(
         _deep_get(parsed_resume, "hobbies")
@@ -680,7 +603,6 @@ def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
             text = _first_text(item)
         if text:
             hobbies.append(text)
-
     work_history: list[str] = []
     for role in _as_list(_deep_get(parsed_resume, "work_history")):
         if not isinstance(role, dict):
@@ -688,7 +610,6 @@ def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
             if text:
                 work_history.append(text)
             continue
-
         company = _first_text(role.get("company"), role.get("organization"))
         role_name = _first_text(role.get("role"), role.get("title"))
         duration = _first_text(role.get("duration"), role.get("period"))
@@ -697,7 +618,6 @@ def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
             text = f"{text} ({duration})" if text else duration
         if text:
             work_history.append(text)
-
     experiences = _extract_text_items(projects + work_history)
     ownership_risks = _extract_text_items(
         _deep_get(parsed_resume, "red_flags")
@@ -710,7 +630,6 @@ def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
             if len(ownership_risks) >= 2:
                 break
     ownership_risks = _extract_text_items(ownership_risks)[:2]
-
     lower_text = resume_text.lower()
     fresher_signals = any(
         sig in lower_text
@@ -720,7 +639,6 @@ def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
         sig in lower_text
         for sig in ("senior", "lead", "manager", "head of", "director", "staff engineer", "principal")
     )
-
     return ResumeContext(
         resume_data=parsed_resume,
         resume_text=resume_text,
@@ -737,16 +655,10 @@ def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
         fresher_signals=fresher_signals,
         experienced_signals=experienced_signals,
     )
-
-
 def _ensure_resume_context(resume_data: Any, resume_text: str = "") -> ResumeContext:
     return parse_resume_context(resume_data, resume_text)
-
-
 def _extract_years_of_experience(resume_data: dict[str, Any], resume_text: str) -> str:
     return _ensure_resume_context(resume_data, resume_text).years_label
-
-
 def build_candidate_summary(structured_resume: Any, resume_text: str = "") -> str:
     context = _ensure_resume_context(structured_resume, resume_text)
     lines = [
@@ -761,8 +673,6 @@ def build_candidate_summary(structured_resume: Any, resume_text: str = "") -> st
         f"Ownership risks to verify: {_join_items(context.ownership_risks, 2)}",
     ]
     return _format_compact_section("CANDIDATE SUMMARY", lines)
-
-
 def _build_context_vars_block(*, org_name: str = "", org_location: str = "", drive_location: str = "", ai_name: str = "", candidate_first_name: str = "", candidate_name: str = "", job_title: str = "", interview_lang: str = "") -> str:
     lines = []
     if candidate_first_name:
@@ -782,8 +692,6 @@ def _build_context_vars_block(*, org_name: str = "", org_location: str = "", dri
     if interview_lang:
         lines.append(f"- Interview language: {interview_lang}")
     return "\n".join(lines)
-
-
 def _extract_jd_must_haves(jd_data: dict[str, Any], jd_text: str) -> list[str]:
     must_have_entries = _as_list(_deep_get(jd_data, "skills.must_have"))
     capabilities: list[str] = []
@@ -801,11 +709,9 @@ def _extract_jd_must_haves(jd_data: dict[str, Any], jd_text: str) -> list[str]:
             text = _first_text(item)
             if text:
                 capabilities.append(text)
-
     if not capabilities:
         requirements = _extract_text_items(_deep_get(jd_data, "requirements"))
         capabilities.extend(requirements)
-
     if not capabilities and jd_text:
         for line in re.split(r"[\nâ€¢\-]+", jd_text):
             text = _compact_text(line)
@@ -813,10 +719,7 @@ def _extract_jd_must_haves(jd_data: dict[str, Any], jd_text: str) -> list[str]:
                 capabilities.append(text)
             if len(capabilities) >= 5:
                 break
-
     return _extract_text_items(capabilities)[:5]
-
-
 def build_jd_summary(jd_details: Any, jd_text: str = "") -> str:
     jd_data = _coerce_jsonish(jd_details)
     target_seniority = _first_text(
@@ -830,7 +733,6 @@ def build_jd_summary(jd_details: Any, jd_text: str = "") -> str:
             target_seniority = f"{min_years:g}-{max_years:g} years"
         elif min_years is not None:
             target_seniority = f"{min_years:g}+ years"
-
     must_prove = _extract_jd_must_haves(jd_data, jd_text)
     risks = _extract_text_items(
         _deep_get(jd_data, "scoring_hints.red_flags_to_watch")
@@ -843,15 +745,12 @@ def build_jd_summary(jd_details: Any, jd_text: str = "") -> str:
             if len(risks) >= 3:
                 break
     risks = _extract_text_items(risks)[:3]
-
     lines = [
         f"Target seniority: {target_seniority or 'Not stated'}",
         f"Must-prove capabilities: {_join_items(must_prove, 5)}",
         f"Major gaps or risks if missing: {_join_items(risks, 3)}",
     ]
     return _format_compact_section("JD SUMMARY", lines)
-
-
 def build_screening_summary(ai_report: Any, ai_report_text: str = "") -> str:
     screening_data = _coerce_jsonish(ai_report)
     strengths = _extract_text_items(
@@ -880,7 +779,6 @@ def build_screening_summary(ai_report: Any, ai_report_text: str = "") -> str:
     )
     if not confidence and ai_report_text:
         confidence = _compact_text(ai_report_text[:200])
-
     lines = [
         f"Top strengths: {_join_items(strengths, 3)}",
         f"Top gaps: {_join_items(gaps, 3)}",
@@ -888,8 +786,6 @@ def build_screening_summary(ai_report: Any, ai_report_text: str = "") -> str:
         f"Confidence notes: {confidence or 'Treat screening as directional, not final.'}",
     ]
     return _format_compact_section("SCREENING SUMMARY", lines)
-
-
 def build_live_prompt_context(context: CandidateBandContext) -> str:
     coverage_block = (
         context.short_coverage_block.strip()
@@ -897,7 +793,6 @@ def build_live_prompt_context(context: CandidateBandContext) -> str:
         else "- Not available"
     )
     brief_block = context.candidate_brief_block.strip() if context.candidate_brief_block and context.candidate_brief_block.strip() else "No brief available - use the summaries below as the primary context and keep probing grounded in them."
-
     return (
         "PRIMARY GUIDANCE ORDER:\n"
         "- Use the candidate brief first.\n"
@@ -915,8 +810,6 @@ def build_live_prompt_context(context: CandidateBandContext) -> str:
         f"PERSONALIZED INTERVIEW BRIEF\n{brief_block}\n\n"
         f"SHORT MANDATORY COVERAGE LIST\n{coverage_block}"
     )
-
-
 def refresh_candidate_band_context(context: CandidateBandContext) -> CandidateBandContext:
     context.term_alias_hints = build_term_alias_hints(
         context.candidate_summary_block,
@@ -931,18 +824,14 @@ def refresh_candidate_band_context(context: CandidateBandContext) -> CandidateBa
         )
     context.live_prompt_context = build_live_prompt_context(context)
     return context
-
-
 def extract_brief_section(brief_text: str, section_title: str) -> str:
     lines = brief_text.splitlines()
     target = section_title.strip().upper().rstrip(":")
     capture = False
     collected: list[str] = []
-
     for line in lines:
         stripped = line.strip()
         normalized = stripped.rstrip(":").upper()
-
         if not capture:
             if normalized == target:
                 capture = True
@@ -951,23 +840,16 @@ def extract_brief_section(brief_text: str, section_title: str) -> str:
                     if inline_value:
                         collected.append(inline_value)
             continue
-
         if stripped and stripped.endswith(":") and stripped.upper() == stripped and normalized != target:
             break
-
         if capture:
             collected.append(line.rstrip())
-
     return "\n".join(collected).strip()
-
-
 def extract_smart_opening_question(brief_text: str) -> str:
     opening = extract_brief_section(brief_text, "SMART OPENING QUESTION")
     if opening:
         return opening
     return ""
-
-
 def build_fast_opening_context() -> str:
     """
     Return instruction for first 2 conversational turns (no structured interview yet).
@@ -997,8 +879,6 @@ def build_fast_opening_context() -> str:
         "  - STOP after your 2-line reply. The next message will tell you what to do next.\n\n"
         "After exactly 2 turns, wait. You will receive new instructions to begin the real conversation."
     )
-
-
 def build_interview_pivot_directive() -> str:
     """
     Return instruction to pivot from warmup to structured interview.
@@ -1018,8 +898,6 @@ def build_interview_pivot_directive() -> str:
         "Make it feel like you're having a conversation that's deepening naturally, not like you're switching modes or reading from a script.\n\n"
         "Then continue: ask one clear question at a time, listen to their answer, react to what they actually said, and follow up where it makes sense."
     )
-
-
 def build_candidate_context_ready_message(
     *,
     context: CandidateBandContext,

@@ -5,7 +5,6 @@ import os
 import time
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlunparse, urlparse
-
 from agent_profile_context import build_interview_turns
 from agent_providers import build_google_analysis_client
 from behavioral_analysis import synthesize_behavioral_report
@@ -21,26 +20,18 @@ from agent_runtime_support import (
 from agent_utils import _coerce_jsonish, truncate_to_tokens
 from livekit.agents.metrics import AgentSessionUsage
 from openai import AsyncOpenAI
-
-
 def normalize_postgres_dsn(conn_str: str) -> str:
     if conn_str.startswith("postgres://"):
         conn_str = conn_str.replace("postgres://", "postgresql://", 1)
-
     parsed = urlparse(conn_str)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
-
     # psycopg2 doesn't support several Prisma/Neon query flags.
     for key in ("pgbouncer", "connection_limit", "pool_timeout", "schema"):
         query.pop(key, None)
-
     return urlunparse(parsed._replace(query=urlencode(query)))
-
-
 async def _create_db_pool() -> asyncpg.Pool:
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set")
-
     conn_str = normalize_postgres_dsn(DATABASE_URL)
     return await asyncpg.create_pool(
         conn_str,
@@ -49,26 +40,19 @@ async def _create_db_pool() -> asyncpg.Pool:
         min_size=2,
         max_size=5,
     )
-
-
 async def get_db_pool() -> asyncpg.Pool:
     global _DB_POOL, _DB_POOL_INIT_TASK
-
     if _DB_POOL is not None and not _DB_POOL._closed:
         return _DB_POOL
-
     # Pool absent or closed (for example stale from a prewarm subprocess) - create fresh.
     _DB_POOL = None
     _DB_POOL_INIT_TASK = asyncio.create_task(_create_db_pool())
-
     try:
         _DB_POOL = await _DB_POOL_INIT_TASK
         return _DB_POOL
     except Exception:
         _DB_POOL_INIT_TASK = None
         raise
-
-
 _USAGE_BUCKET_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
     "llm": (
         ("input_tokens", "inputTokens"),
@@ -97,41 +81,33 @@ _USAGE_BUCKET_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
     "interruption": (("total_requests", "totalRequests"),),
 }
-
 _USAGE_TYPE_TO_BUCKET = {
     "llm_usage": "llm",
     "tts_usage": "tts",
     "stt_usage": "stt",
     "interruption_usage": "interruption",
 }
-
-
 def _empty_usage_bucket(kind: str) -> dict[str, Any]:
     return {
         "sessions": 0,
         "totals": {public_name: 0 for _, public_name in _USAGE_BUCKET_FIELDS[kind]},
         "byModel": {},
     }
-
-
 def summarize_session_usage(session_usage: AgentSessionUsage | None) -> dict[str, Any]:
     summary: dict[str, Any] = {kind: _empty_usage_bucket(kind) for kind in _USAGE_BUCKET_FIELDS}
     if not session_usage:
         return summary
-
     seen_kinds: set[str] = set()
     for item in getattr(session_usage, "model_usage", []) or []:
         kind = _USAGE_TYPE_TO_BUCKET.get(getattr(item, "type", ""))
         if not kind:
             continue
-
         seen_kinds.add(kind)
         provider = str(getattr(item, "provider", "") or "unknown")
         model = str(getattr(item, "model", "") or "unknown")
         model_key = f"{provider}:{model}"
         bucket = summary[kind]
         bucket["sessions"] = 1
-
         model_bucket = bucket["byModel"].setdefault(
             model_key,
             {
@@ -142,25 +118,19 @@ def summarize_session_usage(session_usage: AgentSessionUsage | None) -> dict[str
             },
         )
         model_bucket["sessions"] = 1
-
         for source_name, public_name in _USAGE_BUCKET_FIELDS[kind]:
             value = getattr(item, source_name, 0) or 0
             bucket["totals"][public_name] += value
             model_bucket[public_name] += value
-
     for kind in seen_kinds:
         summary[kind]["sessions"] = 1
-
     return summary
-
-
 _OPENAI_MODEL_RATES: dict[str, dict[str, float]] = {
     "gpt-4o-mini": {"input": 0.15, "cached_input": 0.075, "output": 0.6},
     "gpt-4.1-mini": {"input": 0.4, "cached_input": 0.1, "output": 1.6},
     "gpt-4o": {"input": 2.5, "cached_input": 1.25, "output": 10.0},
     "gpt-4.1": {"input": 2.0, "cached_input": 0.5, "output": 8.0},
 }
-
 # TTS pricing controls:
 # - Sarvam: INR rates from provider docs, converted to USD using BILLING_INR_PER_USD.
 # - Cartesia: default estimate in USD per 1M characters.
@@ -179,8 +149,6 @@ _DEEPGRAM_STT_USD_PER_MIN: dict[str, float] = {
     "nova-3": 0.0077,
     "nova-3-general": 0.0077,
 }
-
-
 def _empty_billing_feature() -> dict[str, Any]:
     return {
         "runs": 0,
@@ -199,8 +167,6 @@ def _empty_billing_feature() -> dict[str, Any]:
         "ttsByModel": {},
         "sttByModel": {},
     }
-
-
 def _coerce_billing_metrics(value: Any) -> dict[str, Any]:
     features = [
         "interview",
@@ -234,78 +200,56 @@ def _coerce_billing_metrics(value: Any) -> dict[str, Any]:
         dst["ttsByModel"] = _coerce_jsonish(src.get("ttsByModel"))
         dst["sttByModel"] = _coerce_jsonish(src.get("sttByModel"))
     return out
-
-
 def _estimate_openai_cost(model_name: str, input_tokens: int, cached_tokens: int, output_tokens: int) -> float:
     rates = _OPENAI_MODEL_RATES.get(model_name.strip().lower())
     if not rates:
         return 0.0
-
     input_tokens = max(0, int(input_tokens or 0))
     output_tokens = max(0, int(output_tokens or 0))
     cached_tokens = max(0, min(int(cached_tokens or 0), input_tokens))
     uncached_tokens = max(0, input_tokens - cached_tokens)
-
     return (
         (uncached_tokens / 1_000_000.0) * rates["input"]
         + (cached_tokens / 1_000_000.0) * rates["cached_input"]
         + (output_tokens / 1_000_000.0) * rates["output"]
     )
-
-
 def _normalize_tts_model_name(model_name: str) -> str:
     return str(model_name or "").strip().lower()
-
-
 def _estimate_tts_cost_usd(provider_name: str, model_name: str, characters: int) -> float:
     chars = max(0, int(characters or 0))
     if chars <= 0:
         return 0.0
-
     provider = str(provider_name or "").strip().upper()
     normalized_model = _normalize_tts_model_name(model_name)
-
     if provider == "SARVAM":
         inr_per_10k = _SARVAM_TTS_INR_PER_10K_CHARS.get(normalized_model)
         if inr_per_10k is None:
             inr_per_10k = _SARVAM_TTS_INR_PER_10K_CHARS["bulbul:v3"]
         inr_cost = (chars / 10_000.0) * inr_per_10k
         return inr_cost / max(_BILLING_INR_PER_USD, 1e-6)
-
     if provider == "CARTESIA":
         return (chars / 1_000_000.0) * _CARTESIA_TTS_DEFAULT_USD_PER_MILLION_CHARS
-
     return 0.0
-
-
 def _normalize_stt_model_name(model_name: str) -> str:
     return str(model_name or "").strip().lower()
-
-
 def _estimate_stt_cost_usd(provider_name: str, model_name: str, audio_seconds: float) -> float:
     seconds = max(0.0, float(audio_seconds or 0.0))
     if seconds <= 0:
         return 0.0
-
     provider = str(provider_name or "").strip().upper()
     normalized_model = _normalize_stt_model_name(model_name)
-
     if provider == "SARVAM":
         inr_per_hour = _SARVAM_STT_INR_PER_HOUR.get(normalized_model)
         if inr_per_hour is None:
             inr_per_hour = _SARVAM_STT_INR_PER_HOUR["saaras:v3"]
         inr_cost = (seconds / 3600.0) * inr_per_hour
         return inr_cost / max(_BILLING_INR_PER_USD, 1e-6)
-
     if provider == "DEEPGRAM":
         usd_per_min = _DEEPGRAM_STT_USD_PER_MIN.get(normalized_model)
         if usd_per_min is None:
             usd_per_min = _DEEPGRAM_STT_USD_PER_MIN["nova-3"]
         return (seconds / 60.0) * usd_per_min
-
     return 0.0
-
-
 def merge_interview_billing(
     existing: dict[str, Any],
     session_summary: dict[str, Any],
@@ -314,7 +258,6 @@ def merge_interview_billing(
 ) -> dict[str, Any]:
     merged = dict(existing)
     billing = _coerce_billing_metrics(merged.get("billing"))
-
     llm_summary = _coerce_jsonish(session_summary.get("llm"))
     llm_totals = _coerce_jsonish(llm_summary.get("totals"))
     llm_by_model = _coerce_jsonish(llm_summary.get("byModel"))
@@ -324,7 +267,6 @@ def merge_interview_billing(
     stt_summary = _coerce_jsonish(session_summary.get("stt"))
     stt_totals = _coerce_jsonish(stt_summary.get("totals"))
     stt_by_model = _coerce_jsonish(stt_summary.get("byModel"))
-
     llm_has_usage = bool(llm_by_model) or bool(llm_totals)
     tts_total_chars = int(tts_totals.get("charactersCount", 0) or tts_totals.get("inputTokens", 0) or 0)
     tts_has_usage = bool(tts_by_model) or tts_total_chars > 0
@@ -333,9 +275,7 @@ def merge_interview_billing(
     if not llm_has_usage and not tts_has_usage and not stt_has_usage:
         merged["billing"] = billing
         return merged
-
     interview_bucket = billing["interview"]
-
     if llm_has_usage:
         interview_bucket["runs"] = int(interview_bucket.get("runs", 0)) + 1
         interview_bucket["inputTokens"] = int(interview_bucket.get("inputTokens", 0)) + int(
@@ -350,7 +290,6 @@ def merge_interview_billing(
         interview_bucket["sessionDuration"] = float(interview_bucket.get("sessionDuration", 0)) + float(
             llm_totals.get("sessionDuration", 0) or 0
         )
-
         by_model = _coerce_jsonish(interview_bucket.get("byModel"))
         session_cost = 0.0
         for model_key, raw in llm_by_model.items():
@@ -362,7 +301,6 @@ def merge_interview_billing(
             session_duration = float(model_row.get("sessionDuration", 0) or 0)
             model_cost = _estimate_openai_cost(model_name, input_tokens, cached_tokens, output_tokens)
             session_cost += model_cost
-
             current = _coerce_jsonish(by_model.get(model_key))
             current["runs"] = int(current.get("runs", 0)) + 1
             current["inputTokens"] = int(current.get("inputTokens", 0)) + input_tokens
@@ -371,16 +309,13 @@ def merge_interview_billing(
             current["sessionDuration"] = float(current.get("sessionDuration", 0)) + session_duration
             current["costUsd"] = float(current.get("costUsd", 0.0)) + model_cost
             by_model[model_key] = current
-
         interview_bucket["byModel"] = by_model
         interview_bucket["costUsd"] = float(interview_bucket.get("costUsd", 0.0)) + session_cost
-
     session_tts_chars = 0
     session_tts_cost = 0.0
     tts_by_model_bucket = _coerce_jsonish(interview_bucket.get("ttsByModel"))
     default_tts_provider = str((tts_config or {}).get("provider", "") or "").strip().upper()
     default_tts_model = str((tts_config or {}).get("model", "") or "").strip()
-
     for _, raw in tts_by_model.items():
         model_row = _coerce_jsonish(raw)
         provider = str(model_row.get("provider", "") or default_tts_provider).strip().upper()
@@ -395,7 +330,6 @@ def merge_interview_billing(
         session_tts_chars += chars
         model_cost = _estimate_tts_cost_usd(provider, model_name, chars)
         session_tts_cost += model_cost
-
         model_key = f"{provider.lower() or 'unknown'}:{_normalize_tts_model_name(model_name) or 'unknown'}"
         current = _coerce_jsonish(tts_by_model_bucket.get(model_key))
         current["provider"] = provider or "UNKNOWN"
@@ -404,7 +338,6 @@ def merge_interview_billing(
         current["characters"] = int(current.get("characters", 0)) + chars
         current["costUsd"] = float(current.get("costUsd", 0.0)) + model_cost
         tts_by_model_bucket[model_key] = current
-
     if session_tts_chars == 0:
         fallback_chars = int(tts_totals.get("charactersCount", 0) or tts_totals.get("inputTokens", 0) or 0)
         if fallback_chars > 0:
@@ -413,7 +346,6 @@ def merge_interview_billing(
             model_name = default_tts_model or "unknown"
             model_cost = _estimate_tts_cost_usd(provider, model_name, fallback_chars)
             session_tts_cost += model_cost
-
             model_key = f"{provider.lower() or 'unknown'}:{_normalize_tts_model_name(model_name) or 'unknown'}"
             current = _coerce_jsonish(tts_by_model_bucket.get(model_key))
             current["provider"] = provider
@@ -422,19 +354,16 @@ def merge_interview_billing(
             current["characters"] = int(current.get("characters", 0)) + fallback_chars
             current["costUsd"] = float(current.get("costUsd", 0.0)) + model_cost
             tts_by_model_bucket[model_key] = current
-
     if session_tts_chars > 0:
         interview_bucket["ttsRuns"] = int(interview_bucket.get("ttsRuns", 0)) + 1
         interview_bucket["ttsCharacters"] = int(interview_bucket.get("ttsCharacters", 0)) + session_tts_chars
         interview_bucket["ttsCostUsd"] = float(interview_bucket.get("ttsCostUsd", 0.0)) + session_tts_cost
         interview_bucket["ttsByModel"] = tts_by_model_bucket
-
     session_stt_seconds = 0.0
     session_stt_cost = 0.0
     stt_by_model_bucket = _coerce_jsonish(interview_bucket.get("sttByModel"))
     default_stt_provider = str((stt_config or {}).get("provider", "") or "").strip().upper()
     default_stt_model = str((stt_config or {}).get("model", "") or "").strip()
-
     for _, raw in stt_by_model.items():
         model_row = _coerce_jsonish(raw)
         provider = str(model_row.get("provider", "") or default_stt_provider).strip().upper()
@@ -443,15 +372,12 @@ def merge_interview_billing(
             provider = default_stt_provider
         if (not model_name or model_name == "unknown") and default_stt_model:
             model_name = default_stt_model
-
         seconds = float(model_row.get("audioDuration", 0) or 0.0)
         if seconds <= 0:
             continue
-
         session_stt_seconds += seconds
         model_cost = _estimate_stt_cost_usd(provider, model_name, seconds)
         session_stt_cost += model_cost
-
         model_key = f"{provider.lower() or 'unknown'}:{_normalize_stt_model_name(model_name) or 'unknown'}"
         current = _coerce_jsonish(stt_by_model_bucket.get(model_key))
         current["provider"] = provider or "UNKNOWN"
@@ -460,14 +386,12 @@ def merge_interview_billing(
         current["audioSeconds"] = float(current.get("audioSeconds", 0.0)) + seconds
         current["costUsd"] = float(current.get("costUsd", 0.0)) + model_cost
         stt_by_model_bucket[model_key] = current
-
     if session_stt_seconds == 0 and stt_total_audio_seconds > 0:
         session_stt_seconds = stt_total_audio_seconds
         provider = default_stt_provider or "UNKNOWN"
         model_name = default_stt_model or "unknown"
         model_cost = _estimate_stt_cost_usd(provider, model_name, stt_total_audio_seconds)
         session_stt_cost += model_cost
-
         model_key = f"{provider.lower() or 'unknown'}:{_normalize_stt_model_name(model_name) or 'unknown'}"
         current = _coerce_jsonish(stt_by_model_bucket.get(model_key))
         current["provider"] = provider
@@ -476,18 +400,14 @@ def merge_interview_billing(
         current["audioSeconds"] = float(current.get("audioSeconds", 0.0)) + stt_total_audio_seconds
         current["costUsd"] = float(current.get("costUsd", 0.0)) + model_cost
         stt_by_model_bucket[model_key] = current
-
     if session_stt_seconds > 0:
         interview_bucket["sttRuns"] = int(interview_bucket.get("sttRuns", 0)) + 1
         interview_bucket["sttAudioSeconds"] = float(interview_bucket.get("sttAudioSeconds", 0.0)) + session_stt_seconds
         interview_bucket["sttCostUsd"] = float(interview_bucket.get("sttCostUsd", 0.0)) + session_stt_cost
         interview_bucket["sttByModel"] = stt_by_model_bucket
-
     billing["interview"] = interview_bucket
     merged["billing"] = billing
     return merged
-
-
 async def persist_org_manual_billing_usage(
     org_id: Optional[str], feature: str, usage: dict[str, Any]
 ) -> None:
@@ -495,8 +415,6 @@ async def persist_org_manual_billing_usage(
     if not org_id or not DATABASE_URL or not usage:
         return
     _PENDING_MANUAL_BILLING.setdefault(org_id, []).append((feature, usage))
-
-
 async def flush_pending_manual_billing(org_id: Optional[str]) -> None:
     """Write all accumulated manual billing usage to DB in a single transaction."""
     if not org_id or not DATABASE_URL:
@@ -535,8 +453,6 @@ async def flush_pending_manual_billing(org_id: Optional[str]) -> None:
         logger.info(f"[USAGE] Flushed {len(pending)} manual billing entries for {org_id}")
     except Exception as e:
         logger.error(f"[USAGE] Failed to flush manual billing for {org_id}: {e}")
-
-
 async def persist_org_usage_metrics(
     org_id: Optional[str],
     session_usage: AgentSessionUsage | None,
@@ -547,11 +463,9 @@ async def persist_org_usage_metrics(
 ):
     if not org_id or not DATABASE_URL or session_usage is None:
         return
-
     session_summary = summarize_session_usage(session_usage)
     if not any(bucket.get("sessions") for bucket in session_summary.values()):
         return
-
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -568,22 +482,18 @@ async def persist_org_usage_metrics(
                 if not row:
                     logger.warning(f"[USAGE] No organization found for usage metrics save: {org_id}")
                     return
-
                 existing_metrics = _coerce_jsonish(row["usageMetrics"])
                 merged_metrics = dict(existing_metrics)
                 merged_livekit = _coerce_jsonish(merged_metrics.get("livekit"))
                 for kind, kind_summary in session_summary.items():
                     if not isinstance(kind_summary, dict):
                         continue
-
                     existing_bucket = _coerce_jsonish(merged_livekit.get(kind))
                     if not existing_bucket:
                         existing_bucket = _empty_usage_bucket(kind)
-
                     existing_bucket["sessions"] = int(existing_bucket.get("sessions", 0)) + int(
                         kind_summary.get("sessions", 0)
                     )
-
                     existing_totals = existing_bucket.setdefault(
                         "totals", {public_name: 0 for _, public_name in _USAGE_BUCKET_FIELDS[kind]}
                     )
@@ -592,7 +502,6 @@ async def persist_org_usage_metrics(
                         existing_totals[public_name] = existing_totals.get(public_name, 0) + source_totals.get(
                             public_name, 0
                         )
-
                     existing_by_model = existing_bucket.setdefault("byModel", {})
                     for model_key, model_summary in kind_summary.get("byModel", {}).items():
                         current_model = _coerce_jsonish(existing_by_model.get(model_key))
@@ -603,7 +512,6 @@ async def persist_org_usage_metrics(
                                 "sessions": 0,
                                 **{public_name: 0 for _, public_name in _USAGE_BUCKET_FIELDS[kind]},
                             }
-
                         current_model["sessions"] = int(current_model.get("sessions", 0)) + int(
                             model_summary.get("sessions", 0)
                         )
@@ -612,10 +520,8 @@ async def persist_org_usage_metrics(
                                 public_name, 0
                             )
                         existing_by_model[model_key] = current_model
-
                     existing_bucket["updatedAt"] = time.time()
                     merged_livekit[kind] = existing_bucket
-
                 merged_metrics["livekit"] = merged_livekit
                 merged_metrics["updatedAt"] = time.time()
                 merged_metrics = merge_interview_billing(
@@ -624,7 +530,6 @@ async def persist_org_usage_metrics(
                     tts_config={"provider": tts_provider or "", "model": tts_model or ""},
                     stt_config={"provider": stt_provider or "", "model": stt_model or ""},
                 )
-
                 await conn.execute(
                     """
                     UPDATE "Organization"
@@ -635,7 +540,6 @@ async def persist_org_usage_metrics(
                     json.dumps(merged_metrics),
                     org_id,
                 )
-
             logger.info(
                 f"[USAGE] Saved LiveKit usage for org {org_id} "
                 f"(llm={session_summary['llm']['totals'].get('inputTokens', 0) + session_summary['llm']['totals'].get('outputTokens', 0)} tokens, "
@@ -645,13 +549,10 @@ async def persist_org_usage_metrics(
             )
     except Exception as e:
         logger.error(f"[USAGE] Failed to save org usage metrics for {org_id}: {e}")
-
-
 async def get_interview_context(app_id: str):
     """Fetch Candidate and Job Description context from PostgreSQL via asyncpg."""
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set")
-
     query = """
     SELECT a."fullName", d.title, d.role AS "role", d.description, d.skills, d."orgId" AS "orgId",
            d.location AS "driveLocation", d."interviewLanguage", d."interviewTime", d."interviewQuestions",
@@ -668,7 +569,6 @@ async def get_interview_context(app_id: str):
     WHERE a.id = $1
     LIMIT 1
     """
-
     last_error: Exception | None = None
     for attempt in range(1, 6):
         try:
@@ -677,7 +577,6 @@ async def get_interview_context(app_id: str):
                 row = await conn.fetchrow(query, app_id)
             if not row:
                 raise RuntimeError(f"No interview context found in DB for application {app_id}")
-
             questions_raw = row["interviewQuestions"]
             questions = []
             if questions_raw:
@@ -685,7 +584,6 @@ async def get_interview_context(app_id: str):
                     questions = json.loads(questions_raw) if isinstance(questions_raw, str) else questions_raw
                 except Exception:
                     questions = []
-
             return {
                 "fullName": row["fullName"],
                 "jobTitle": row["role"] or row["title"],
@@ -723,10 +621,7 @@ async def get_interview_context(app_id: str):
                 _DB_POOL_INIT_TASK = None
             if attempt < 5:
                 await asyncio.sleep(0.4 * attempt)
-
     raise RuntimeError(f"Failed to fetch interview context from DB: {last_error}")
-
-
 async def persist_transcript(
     app_id: str,
     transcript_lines: list,
@@ -739,7 +634,6 @@ async def persist_transcript(
     if not transcript_lines and final_status != "NO_SHOW":
         logger.info("[TRANSCRIPT] No lines captured - skipping save to avoid overwriting existing data")
         return
-
     if not DATABASE_URL:
         logger.warning("[TRANSCRIPT] No DATABASE_URL - skipping save")
         return
@@ -747,7 +641,6 @@ async def persist_transcript(
         full_text = "\n".join(transcript_lines) if transcript_lines else ""
         duration = int(time.time() - start_time) if start_time else 0
         interview_turns = build_interview_turns(transcript_lines)
-
         proctor_report = None
         if proctoring_data:
             proctor_report = {
@@ -763,7 +656,6 @@ async def persist_transcript(
                 "contradiction_state": proctoring_data.get("contradiction_state", {}),
                 "trust": recruiter_summary if recruiter_summary else {},
             }
-
         pool = await get_db_pool()
         async with pool.acquire() as conn:
             await conn.execute(
@@ -792,8 +684,6 @@ async def persist_transcript(
             )
     except Exception as e:
         logger.error(f"[TRANSCRIPT] DB save failed: {e}")
-
-
 async def mark_interview_started(app_id: str):
     """Mark the application and interview as IN_PROGRESS via asyncpg."""
     if not DATABASE_URL:
@@ -814,8 +704,6 @@ async def mark_interview_started(app_id: str):
             logger.info(f"[INTERVIEW] App {app_id} marked as IN_PROGRESS.")
     except Exception as e:
         logger.error(f"[INTERVIEW] Failed to update application status to started: {e}")
-
-
 async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
     """Save structured answer quality scores to Interview.answerScores JSONB."""
     if not app_id or not DATABASE_URL or not answer_scores:
@@ -829,7 +717,6 @@ async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
             avg_specificity = sum(s.get("specificity", 5) for s in answer_scores) / max(total_answers, 1)
             avg_grounding = sum(s.get("grounding", 5) for s in answer_scores) / max(total_answers, 1)
             avg_overall = sum(s.get("overall", 5) for s in answer_scores) / max(total_answers, 1)
-
             all_signals = {}
             all_concerns = {}
             for score in answer_scores:
@@ -837,7 +724,6 @@ async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
                     all_signals[sig] = all_signals.get(sig, 0) + 1
                 for concern in score.get("concerns", []):
                     all_concerns[concern] = all_concerns.get(concern, 0) + 1
-
             answer_scores_payload = {
                 "totalAnswers": total_answers,
                 "averages": {
@@ -851,7 +737,6 @@ async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
                 "concernCounts": all_concerns,
                 "allAnswers": answer_scores,
             }
-
             await conn.execute(
                 """
                 UPDATE "Interview"
@@ -869,8 +754,6 @@ async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
             )
     except Exception as e:
         logger.error(f"[SCORE] Failed to persist answer scores for {app_id}: {e}")
-
-
 async def update_interview_status(app_id: str):
     """Mark the application as COMPLETED via asyncpg."""
     if not DATABASE_URL:
@@ -891,8 +774,6 @@ async def update_interview_status(app_id: str):
             logger.info(f"[INTERVIEW] App {app_id} marked as COMPLETED.")
     except Exception as e:
         logger.error(f"[INTERVIEW] Failed to update interview status: {e}")
-
-
 async def generate_interview_summary(
     app_id: str,
     transcript_lines: list,
@@ -908,12 +789,10 @@ async def generate_interview_summary(
     if not is_google_model and not os.environ.get("OPENAI_API_KEY"):
         logger.warning("[SUMMARY] Skipping: missing OPENAI_API_KEY for non-Google summary")
         return
-
     try:
         client = build_google_analysis_client() if is_google_model else AsyncOpenAI()
         transcript_text = "\n".join(transcript_lines)
         transcript_text = truncate_to_tokens(transcript_text, 2500)
-
         logger.info(f"[SUMMARY] Generating narrative summary for {app_id}...")
         completion = await client.chat.completions.create(
             model=llm_model,
@@ -938,13 +817,11 @@ async def generate_interview_summary(
             ],
         )
         await persist_org_manual_billing_usage(org_id, "interview", _extract_openai_completion_usage(completion))
-
         raw_summary = completion.choices[0].message.content
         summary_text = raw_summary.strip() if isinstance(raw_summary, str) else ""
         if not summary_text:
             logger.warning(f"[SUMMARY] Empty summary generated for {app_id}; skipping save")
             return
-
         pool = await get_db_pool()
         async with pool.acquire() as conn:
             await conn.execute(
@@ -956,13 +833,9 @@ async def generate_interview_summary(
                 summary_text,
                 app_id,
             )
-
         logger.info(f"[SUMMARY] Generated summary for {app_id}")
-
     except Exception as e:
         logger.error(f"[SUMMARY] Generation failed for {app_id}: {e}")
-
-
 async def generate_interview_report(
     app_id: str,
     transcript_lines: list,
@@ -980,7 +853,6 @@ async def generate_interview_report(
     if not is_google_model and not os.environ.get("OPENAI_API_KEY"):
         logger.warning("[REPORT] Skipping: missing OPENAI_API_KEY for non-Google report")
         return
-
     try:
         # Generate behavioral analysis (includes LLM call for ownership_ambiguity signal)
         behavioral_report = await synthesize_behavioral_report(
@@ -993,7 +865,6 @@ async def generate_interview_report(
         client = build_google_analysis_client() if is_google_model else AsyncOpenAI()
         transcript_text = "\n".join(transcript_lines)
         transcript_text = truncate_to_tokens(transcript_text, 3000)
-
         # Calculate technical score from answer scores
         technical_score = 0
         if answer_scores:
@@ -1001,9 +872,7 @@ async def generate_interview_report(
             technical_score = int(min(100, max(0, avg_overall * 10)))
         else:
             technical_score = 0
-
         logger.info(f"[REPORT] Generating report for {app_id}, technical_score={technical_score}...")
-
         # Generate skills and strengths analysis
         completion = await client.chat.completions.create(
             model=llm_model,
@@ -1053,7 +922,6 @@ async def generate_interview_report(
             ],
         )
         await persist_org_manual_billing_usage(org_id, "interview", _extract_openai_completion_usage(completion))
-
         raw_report = completion.choices[0].message.content or "{}"
         try:
             report_data = json.loads(raw_report.strip())
@@ -1065,7 +933,6 @@ async def generate_interview_report(
                 "top_strengths": [],
                 "qa_blocks": []
             }
-
         # Merge scores data
         if answer_scores:
             qa_blocks = []
@@ -1077,12 +944,10 @@ async def generate_interview_report(
                     "verdict": f"Clarity: {score.get('clarity', 5)}/10, Depth: {score.get('depth', 5)}/10"
                 })
             report_data["qa_blocks"] = qa_blocks
-
         # Build final report
         skills_covered = report_data.get("skills_covered", [])
         top_strengths = report_data.get("top_strengths", [])
         concerns = report_data.get("concerns", [])
-
         final_report = {
             "technical_score": technical_score,
             "scores": {
@@ -1099,7 +964,6 @@ async def generate_interview_report(
                 "summary": f"Candidate demonstrated {len(skills_covered)} key skills with overall technical score of {technical_score}%. Strengths include {len(top_strengths)} notable areas. {len(concerns)} concern(s) noted in evaluation. {behavioral_report.get('summary', '')}"
             },
         }
-
         # Save to database
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -1112,13 +976,9 @@ async def generate_interview_report(
                 json.dumps(final_report),
                 app_id,
             )
-
         logger.info(f"[REPORT] Generated report for {app_id}: score={technical_score}, skills={len(report_data.get('skills_covered', []))}")
-
     except Exception as e:
         logger.error(f"[REPORT] Generation failed for {app_id}: {e}", exc_info=True)
-
-
 async def generate_interview_state_summary(
     transcript_lines: list,
     questions_list: str,
@@ -1134,15 +994,11 @@ async def generate_interview_state_summary(
     """Generate a concise mid-interview state summary for dynamic context injection."""
     if len(transcript_lines) < 4:
         return ""
-
     last_lines = transcript_lines[-12:]
     transcript_text = "\n".join(transcript_lines[-40:])
-
     pct_done = int((turn_count / max(total_turns_expected, 1)) * 100)
-
     mins_remaining = int(seconds_remaining // 60) if seconds_remaining is not None else None
     time_critical = seconds_remaining is not None and seconds_remaining <= 300
-
     time_critical_instruction = ""
     if time_critical:
         time_critical_instruction = (
@@ -1152,7 +1008,6 @@ async def generate_interview_state_summary(
             "'RAPID_FIRE_QUEUE: [topic1] | [topic2] | [topic3]'. "
             "Ishita must ask one direct question per topic with no follow-ups - move the moment she gets any answer."
         )
-
     try:
         completion = await asyncio.wait_for(
             client.chat.completions.create(
@@ -1208,8 +1063,6 @@ async def generate_interview_state_summary(
     except Exception as e:
         logger.warning(f"[STATE_INJECT] State summary generation failed: {e}")
         return ""
-
-
 def _extract_openai_completion_usage(completion: Any) -> dict[str, Any]:
     usage = getattr(completion, "usage", None)
     prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
@@ -1223,14 +1076,11 @@ def _extract_openai_completion_usage(completion: Any) -> dict[str, Any]:
         "cachedInputTokens": cached_tokens,
         "outputTokens": completion_tokens,
     }
-
-
 def merge_manual_billing_usage(existing: dict[str, Any], feature: str, usage: dict[str, Any]) -> dict[str, Any]:
     merged = dict(existing)
     billing = _coerce_billing_metrics(merged.get("billing"))
     if feature not in billing:
         feature = "general"
-
     model_name = str(usage.get("model", "unknown") or "unknown")
     model_key = f"openai:{model_name}"
     input_tokens = int(usage.get("inputTokens", 0) or 0)
@@ -1238,7 +1088,6 @@ def merge_manual_billing_usage(existing: dict[str, Any], feature: str, usage: di
     output_tokens = int(usage.get("outputTokens", 0) or 0)
     session_duration = float(usage.get("sessionDuration", 0) or 0)
     model_cost = _estimate_openai_cost(model_name, input_tokens, cached_tokens, output_tokens)
-
     bucket = billing[feature]
     bucket["runs"] = int(bucket.get("runs", 0)) + 1
     bucket["inputTokens"] = int(bucket.get("inputTokens", 0)) + input_tokens
@@ -1246,7 +1095,6 @@ def merge_manual_billing_usage(existing: dict[str, Any], feature: str, usage: di
     bucket["outputTokens"] = int(bucket.get("outputTokens", 0)) + output_tokens
     bucket["sessionDuration"] = float(bucket.get("sessionDuration", 0)) + session_duration
     bucket["costUsd"] = float(bucket.get("costUsd", 0.0)) + model_cost
-
     by_model = _coerce_jsonish(bucket.get("byModel"))
     current = _coerce_jsonish(by_model.get(model_key))
     current["runs"] = int(current.get("runs", 0)) + 1
@@ -1256,9 +1104,7 @@ def merge_manual_billing_usage(existing: dict[str, Any], feature: str, usage: di
     current["sessionDuration"] = float(current.get("sessionDuration", 0)) + session_duration
     current["costUsd"] = float(current.get("costUsd", 0.0)) + model_cost
     by_model[model_key] = current
-
     bucket["byModel"] = by_model
     billing[feature] = bucket
     merged["billing"] = billing
     return merged
-

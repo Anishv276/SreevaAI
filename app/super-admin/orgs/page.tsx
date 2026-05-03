@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import {
@@ -30,7 +29,6 @@ import {
     Check,
     ChevronDown
 } from "lucide-react";
-
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Skeleton as Shimmer } from "@/components/ui/skeleton";
@@ -55,7 +53,6 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast-custom";
 import { formatOrgPlan } from "@/lib/org-plans";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
-
 interface Org {
     id: string;
     name: string;
@@ -66,7 +63,6 @@ interface Org {
     adminCount: number;
     driveCount: number;
     candidateCount: number;
-
     // AI Config (Setup)
     llmProvider?: string;
     llmModel?: string;
@@ -77,7 +73,6 @@ interface Org {
     sttProvider?: string;
     deepgramModel?: string;
     sarvamSttModel?: string;
-
     creditsUsed?: number;
     interviewsCompleted?: number;
     interviewQuotaTotal?: number;
@@ -89,9 +84,7 @@ interface Org {
         drives: number;
     };
 }
-
 type BillingFeatureKey = "interview" | "resumeExtraction" | "jdExtraction" | "chatbot" | "resumeReport" | "interviewReport";
-
 type BillingFeatureMetrics = {
     runs?: number;
     inputTokens?: number;
@@ -109,14 +102,10 @@ type BillingFeatureMetrics = {
     ttsByModel?: Record<string, any>;
     sttByModel?: Record<string, any>;
 };
-
-
-
 export default function OrgsPage() {
     const [orgs, setOrgs] = useState<Org[]>([]);
     const [stats, setStats] = useState<any>({});
     const [loading, setLoading] = useState(true);
-
     // Pagination & Search state
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
@@ -124,7 +113,6 @@ export default function OrgsPage() {
     const [search, setSearch] = useState("");
     const [searchInput, setSearchInput] = useState("");
     const limit = 20;
-
     // Modal State
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [orgToDelete, setOrgToDelete] = useState<Org | null>(null);
@@ -133,13 +121,11 @@ export default function OrgsPage() {
     const [metricsOrg, setMetricsOrg] = useState<Org | null>(null);
     const [statusModalOrg, setStatusModalOrg] = useState<{ id: string; name: string; currentStatus: string; pendingStatus: string } | null>(null);
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-
     // Currency toggle state
     const [currency, setCurrency] = useState<'USD' | 'INR'>('USD');
     const [usdToInr, setUsdToInr] = useState<number>(84.5);
     const [rateLoading, setRateLoading] = useState(false);
     const [rateUpdatedAt, setRateUpdatedAt] = useState<string>('');
-
     const fetchExchangeRate = async () => {
         setRateLoading(true);
         try {
@@ -155,14 +141,12 @@ export default function OrgsPage() {
             setRateLoading(false);
         }
     };
-
     // Called when Consumption Hub opens
     const openMetricsOrg = (org: Org) => {
         setMetricsOrg(org);
         setCurrency('USD'); // reset to USD on open
         fetchExchangeRate();
     };
-
     // Format a USD value according to the current currency toggle
     const fmt = (usd: number) => {
         if (currency === 'INR') {
@@ -171,7 +155,6 @@ export default function OrgsPage() {
         }
         return `$${usd.toFixed(2)}`;
     };
-
     const metricSections: { key: BillingFeatureKey; label: string }[] = [
         { key: "resumeExtraction", label: "LLM - Resume" },
         { key: "chatbot", label: "LLM - Chatbot" },
@@ -180,7 +163,6 @@ export default function OrgsPage() {
         { key: "resumeReport", label: "LLM - Resume Report" },
         { key: "interviewReport", label: "LLM - Interview Report" },
     ];
-
     // Authoritative model per feature — matches what each API route actually uses
     const FEATURE_MODEL_MAP: Record<string, string | null> = {
         resumeExtraction: "gpt-5.4-mini",
@@ -190,13 +172,11 @@ export default function OrgsPage() {
         resumeReport: "gpt-4o",
         interviewReport: "gpt-4o",
     };
-
     const getBillingFeature = (org: Org, key: BillingFeatureKey): BillingFeatureMetrics => {
         const usage = (org.usageMetrics ?? {}) as Record<string, any>;
         const billing = usage.billing ? (usage.billing as Record<string, any>) : usage;
         return (billing[key] ?? {}) as BillingFeatureMetrics;
     };
-
     const getOrgTotalBillingCost = (org: Org): number => {
         return metricSections.reduce((sum, section) => {
             const row = getBillingFeature(org, section.key);
@@ -206,27 +186,23 @@ export default function OrgsPage() {
                 Number(row.sttCostUsd || 0);
         }, 0);
     };
-
     const cleanName = (n: string) => {
         // Strip provider prefix (e.g. "openai:gpt-4o" -> "gpt-4o")
         const base = n.includes(':') ? n.split(':')[1] : n;
         // Strip date version suffix (e.g. "gpt-4o-mini-2024-07-18" -> "gpt-4o-mini")
         return base.replace(/-\d{4}-\d{2}-\d{2}$/, '');
     };
-
     const getSetupModel = (org: Org, type: 'LLM' | 'TTS' | 'STT') => {
         if (type === 'LLM') return org.llmModel;
         if (type === 'TTS') return org.ttsProvider === 'SARVAM' ? org.sarvamModel : org.ttsProvider === 'GOOGLE' ? org.googleModel : org.cartesiaModel;
         if (type === 'STT') return org.sttProvider === 'SARVAM' ? org.sarvamSttModel : org.deepgramModel;
         return null;
     };
-
     const getUsageSummary = (usageMetrics?: Record<string, unknown> | null) => {
         if (!usageMetrics || typeof usageMetrics !== "object") return "$0.00";
         const cost = getOrgTotalBillingCost({ usageMetrics } as any);
         return `$${cost.toFixed(2)}`;
     };
-
     const fetchOrgs = async (currentPage = page, query = search, dateRange = timeFilter) => {
         setLoading(true);
         try {
@@ -235,12 +211,10 @@ export default function OrgsPage() {
                 limit: String(limit),
                 ...(query ? { q: query } : {}),
             });
-
             if (dateRange.type !== "all") {
                 const now = new Date();
                 let from = new Date();
                 let to = new Date();
-
                 if (dateRange.type === "today") {
                     from.setHours(0, 0, 0, 0);
                     to.setHours(23, 59, 59, 999);
@@ -253,11 +227,9 @@ export default function OrgsPage() {
                     to = new Date(dateRange.to);
                     to.setHours(23, 59, 59, 999);
                 }
-
                 params.append("from", from.toISOString());
                 params.append("to", to.toISOString());
             }
-
             const res = await fetch(`/api/super-admin/orgs?${params}`);
             const data = await res.json();
             if (data.orgs) {
@@ -275,9 +247,7 @@ export default function OrgsPage() {
             setLoading(false);
         }
     };
-
     const [timeFilter, setTimeFilter] = useState<DateRange>({ type: "all" });
-
     useEffect(() => {
         const timer = setTimeout(() => {
             setSearch(searchInput);
@@ -285,15 +255,12 @@ export default function OrgsPage() {
         }, 200);
         return () => clearTimeout(timer);
     }, [searchInput]);
-
     useEffect(() => {
         fetchOrgs(page, search, timeFilter);
     }, [page, search, timeFilter]);
-
     const handleStatusChange = async (orgId: string, newStatus: string) => {
         const org = orgs.find(o => o.id === orgId);
         if (!org || org.status === newStatus) return;
-
         setStatusModalOrg({
             id: orgId,
             name: org.name,
@@ -301,31 +268,25 @@ export default function OrgsPage() {
             pendingStatus: newStatus
         });
     };
-
     const confirmStatusUpdate = async () => {
         if (!statusModalOrg) return;
         const { id: orgId, name: orgName, pendingStatus: newStatus, currentStatus: previousStatus } = statusModalOrg;
-
         setIsUpdatingStatus(true);
         setOrgs(prev => prev.map(o => o.id === orgId ? { ...o, status: newStatus } : o));
         setSyncingOrgs(prev => new Set(prev).add(orgId));
         setStatusModalOrg(null);
-
         try {
             const res = await fetch(`/api/super-admin/orgs/${orgId}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ status: newStatus }),
             });
-
             if (!res.ok) throw new Error("Failed to update status");
-
             const normalizedStatus = newStatus.toUpperCase();
             if (normalizedStatus === "SUSPENDED") toast.info(`${orgName} has been suspended.`);
             else if (normalizedStatus === "ACTIVE") toast.success(`${orgName} is now active.`);
             else if (normalizedStatus === "CLOSED") toast.error(`${orgName} has been closed.`);
             else toast.success(`${orgName} status updated to ${newStatus.toLowerCase()}`);
-
         } catch (error) {
             setOrgs(prev => prev.map(o => o.id === orgId ? { ...o, status: previousStatus } : o));
             toast.error("Cloud sync failed. Reverting status.");
@@ -338,7 +299,6 @@ export default function OrgsPage() {
             });
         }
     };
-
     const confirmDelete = async () => {
         if (!orgToDelete) return;
         setIsDeleting(true);
@@ -355,7 +315,6 @@ export default function OrgsPage() {
             setIsDeleting(false);
         }
     };
-
     return (
         <div className="space-y-10 pb-12 animate-in fade-in duration-700 font-inter text-premium">
             {/* Header Area */}
@@ -374,7 +333,6 @@ export default function OrgsPage() {
                         </div>
                     </div>
                 </div>
-
                 <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
                     <Link href="/super-admin/orgs/new">
                         <Button
@@ -386,8 +344,6 @@ export default function OrgsPage() {
                     </Link>
                 </div>
             </div>
-
-
             <div className="bg-white rounded-[2rem] border border-gray-100 shadow-xl overflow-hidden mt-8">
                 <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100">
                     <h2 className="text-sm font-black text-gray-900 uppercase tracking-widest hidden sm:block">All Organizations</h2>
@@ -408,7 +364,6 @@ export default function OrgsPage() {
                         />
                     </div>
                 </div>
-
                 {/* Table Section */}
                 <div className="relative w-full overflow-auto custom-scrollbar">
                     {loading ? (
@@ -455,31 +410,24 @@ export default function OrgsPage() {
                                                 </div>
                                             </div>
                                         </td>
-
                                         <td className="px-4 py-4 text-center font-bold text-gray-700 text-[11px] tabular-nums">
                                             {org.adminCount ?? org._count?.users ?? 0}
                                         </td>
-
                                         <td className="px-4 py-4 text-center font-bold text-gray-700 text-[11px] tabular-nums">
                                             {org.driveCount ?? org._count?.drives ?? 0}
                                         </td>
-
                                         <td className="px-4 py-4 text-center font-bold text-orange-500 text-[11px] tabular-nums">
                                             {org.candidateCount || 0}
                                         </td>
-
                                         <td className="px-4 py-4 text-center font-bold text-gray-500 text-[11px] tabular-nums">
                                             {org.creditsUsed || 0}
                                         </td>
-
                                         <td className="px-4 py-4 text-center font-bold text-emerald-600 text-[11px] tabular-nums">
                                             {Math.max(0, (org.interviewQuotaTotal || 0) - (org.interviewQuotaUsed || 0))}
                                         </td>
-
                                         <td className="px-4 py-4 text-center font-bold text-blue-600 text-[11px] tabular-nums">
                                             {org.interviewQuotaUsed || 0}
                                         </td>
-
                                         <td className="px-4 py-4 text-center">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
@@ -524,7 +472,6 @@ export default function OrgsPage() {
                                                         </div>
                                                         {org.status === "SUSPENDED" && <Check className="h-3.5 w-3.5" />}
                                                     </DropdownMenuItem>
-
                                                     <DropdownMenuItem
                                                         className={cn(
                                                             "rounded-lg px-2.5 py-2 font-bold text-[10px] cursor-pointer flex items-center justify-between mt-1",
@@ -541,7 +488,6 @@ export default function OrgsPage() {
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         </td>
-
                                         <td className="pr-5 py-4 text-right">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
@@ -557,16 +503,13 @@ export default function OrgsPage() {
                                                             <Layers className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
                                                             VIEW USAGE
                                                         </DropdownMenuItem>
-
                                                         <Link href={`/super-admin/orgs/${org.id}`} className="block w-full">
                                                             <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-gray-600 hover:bg-gray-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group">
                                                                 <Edit2 className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
                                                                 EDIT SETTINGS
                                                             </DropdownMenuItem>
                                                         </Link>
-
                                                         <div className="h-px bg-gray-100/60 my-1 mx-1" />
-
                                                     <DropdownMenuItem
                                                         onClick={() => {
                                                             setOrgToDelete(org);
@@ -586,7 +529,6 @@ export default function OrgsPage() {
                         </table>
                     )}
                 </div>
-
                 {/* Pagination Footer */}
                 <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50/20 flex items-center justify-between">
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
@@ -610,7 +552,6 @@ export default function OrgsPage() {
                     </div>
                 </div>
             </div>
-
             {/* Modals remain the same but use the premium style */}
             <ActionConfirmModal
                 isOpen={isDeleteModalOpen}
@@ -621,7 +562,6 @@ export default function OrgsPage() {
                 confirmText="Confirm Deletion"
                 isLoading={isDeleting}
             />
-
             {statusModalOrg && (
                 <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/40 backdrop-blur-sm">
                     <div className="bg-white/95 backdrop-blur-xl rounded-[2.5rem] shadow-2xl p-10 w-full max-w-sm mx-4 space-y-8 border border-white/40 animate-in zoom-in-95 duration-300">
@@ -663,7 +603,6 @@ export default function OrgsPage() {
                     </div>
                 </div>
             )}
-
             {metricsOrg && (
                 <div className="fixed inset-0 z-[400] flex items-center justify-center bg-gray-900/40 backdrop-blur-sm px-4 py-6 font-sans">
                     <div className="w-full max-w-6xl h-full max-h-[90vh] flex flex-col overflow-hidden rounded-[18px] border border-gray-200 bg-[#FAFAFA] shadow-2xl animate-in zoom-in-95 duration-500">
@@ -721,7 +660,6 @@ export default function OrgsPage() {
                                 </button>
                             </div>
                         </div>
-
                         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-12">
                             {(() => {
                                 const ivFeature = getBillingFeature(metricsOrg, 'interview');
@@ -730,27 +668,22 @@ export default function OrgsPage() {
                                 const ivTtsCost = Number(ivFeature.ttsCostUsd || 0);
                                 const ivSttCost = Number(ivFeature.sttCostUsd || 0);
                                 const ivTotalCost = ivLlmCost + ivTtsCost + ivSttCost;
-
                                 // Full pipeline total: sum of ALL features LLM+TTS+STT
                                 const allLlmCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).costUsd || 0), 0);
                                 const allTtsCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).ttsCostUsd || 0), 0);
                                 const allSttCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).sttCostUsd || 0), 0);
                                 const grandTotal = allLlmCost + allTtsCost + allSttCost;
-
                                 const feature = ivFeature; // alias for interview feature
                                 const totalCost = ivTotalCost;
                                 const logicCost = ivLlmCost;
                                 const synthCost = ivTtsCost;
                                 const sttCost = ivSttCost;
-                                
                                 const ringR = 88;
                                 const ringC = 2 * Math.PI * ringR;
                                 const getDash = (val: number) => totalCost > 0 ? ringC * (val / totalCost) : 0;
-                                
                                 const logicDash = getDash(logicCost);
                                 const synthDash = getDash(synthCost);
                                 const sttDash = getDash(sttCost);
-
                                 const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
                                 const llmModels = Object.keys(feature.byModel || {});
                                 const ttsModels = Object.keys(feature.ttsByModel || {});
@@ -758,7 +691,6 @@ export default function OrgsPage() {
                                 const setupLlm = getSetupModel(metricsOrg, 'LLM');
                                 const setupTts = getSetupModel(metricsOrg, 'TTS');
                                 const setupStt = getSetupModel(metricsOrg, 'STT');
-
                                 return (
                                     <div className="flex flex-col gap-12">
                                         {/* LLM Section */}
@@ -773,7 +705,6 @@ export default function OrgsPage() {
                                                     const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
                                                     const models = Object.keys(feature.byModel || {});
                                                     const setupModel = getSetupModel(metricsOrg, 'LLM');
-
                                                     return (
                                                         <div key={section.key} className="bg-white border border-gray-200 rounded-[18px] p-6 hover:border-orange-200 hover:shadow-lg transition-all duration-300">
                                                         <div className="flex flex-col gap-4">
@@ -831,7 +762,6 @@ export default function OrgsPage() {
                                                 })}
                                             </div>
                                         </div>
-
                                         {/* Voice & STT Section */}
                                         <div className="grid gap-8 md:grid-cols-2">
                                             <div className="space-y-6">
@@ -849,7 +779,7 @@ export default function OrgsPage() {
                                                         </div>
                                                         <div className="text-right">
                                                             <div className="text-[24px] font-[800] text-gray-900 tracking-[-0.03em]">{metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCharacters || 0), 0).toLocaleString()}</div>
-                                                            <div className="text-[10px] font-[800] uppercase tracking-[0.15em] text-gray-500">Characters Synth</div>
+                                                            <div className="text-[10px] font-[800] uppercase tracking-[0.15em] text-gray-500">Characters</div>
                                                         </div>
                                                     </div>
                                                     <div className="flex flex-wrap gap-2 pt-6 border-t border-gray-100">
@@ -873,7 +803,6 @@ export default function OrgsPage() {
                                                     </div>
                                                 </div>
                                             </div>
-
                                             <div className="space-y-6">
                                                 <div className="flex items-center gap-6">
                                                     <h4 className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500 whitespace-nowrap">STT Hub</h4>
@@ -914,23 +843,20 @@ export default function OrgsPage() {
                                                 </div>
                                             </div>
                                         </div>
-
                                         {/* Pipeline Summary */}
                                         <div className="space-y-6 pt-4">
                                             <div className="flex items-center gap-6">
-                                                <h4 className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500 whitespace-nowrap">Integrated Pipeline</h4>
+                                                <h4 className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500 whitespace-nowrap">Total interview cost</h4>
                                                 <div className="h-[1px] flex-1 bg-gray-200" />
                                             </div>
-
                                             <div className="bg-white border border-gray-200 rounded-[18px] overflow-hidden p-8">
                                                 <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] gap-10">
                                                     {/* Donut and Cost breakdown */}
                                                     <div>
                                                         <div className="flex items-center gap-3 mb-6">
                                                             <div className="h-2 w-2 rounded-full bg-[#F97316]" />
-                                                            <span className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500">Pipeline Total Expenditure</span>
+                                                            <span className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500">Cost of interviews</span>
                                                         </div>
-                                                        
                                                         <div className="flex flex-col sm:flex-row items-center gap-8 mb-8">
                                                             <div className="relative w-[220px] h-[220px] shrink-0">
                                                                 <svg width={220} height={220} style={{ transform: "rotate(-90deg)" }}>
@@ -950,7 +876,6 @@ export default function OrgsPage() {
                                                                     </div>
                                                                 </div>
                                                             </div>
-
                                                             <div className="flex-1 grid gap-4 w-full">
                                                                 <div className="flex items-start justify-between">
                                                                     <div>
@@ -984,7 +909,6 @@ export default function OrgsPage() {
                                                             </div>
                                                         </div>
                                                     </div>
-
                                                     {/* Right Side Stats */}
                                                     <div className="grid grid-cols-2 sm:grid-cols-2 gap-8 text-right">
                                                         <div className="space-y-1.5">
@@ -1013,7 +937,6 @@ export default function OrgsPage() {
                                                         </div>
                                                     </div>
                                                 </div>
-
                                                 {/* Models Row */}
                                                 <div className="border-t border-gray-100 mt-8 pt-8 grid grid-cols-1 md:grid-cols-3 gap-8">
                                                     <div>
@@ -1065,9 +988,8 @@ export default function OrgsPage() {
                                 );
                             })()}
                         </div>
-                        
                         <div className="border-t border-gray-200 px-8 py-6 bg-gray-50 flex items-center justify-between font-sans">
-                            <div className="text-[12px] font-bold uppercase tracking-[0.15em] text-gray-500">Full Organization Ecosystem Cost</div>
+                            <div className="text-[12px] font-bold uppercase tracking-[0.15em] text-gray-500">Total org cost</div>
                             <div className="text-[28px] font-[800] text-gray-900 tracking-[-0.03em]">
                                 {(() => {
                                     const allLlmCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).costUsd || 0), 0);

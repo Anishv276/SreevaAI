@@ -77,6 +77,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
     const [showVoiceDropdown, setShowVoiceDropdown] = useState(false);
     const [voiceSearch, setVoiceSearch] = useState("");
+    const [interviewQuotaTotalInput, setInterviewQuotaTotalInput] = useState("0");
     const [interviewTopUpInput, setInterviewTopUpInput] = useState("0");
     const [billingSnapshot, setBillingSnapshot] = useState({
         interviewQuotaTotal: 0,
@@ -189,6 +190,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     interviewQuotaUsed: Number(data.interviewQuotaUsed || 0),
                     interviewQuotaRemaining: Math.max(0, Number(data.interviewQuotaTotal || 0) - Number(data.interviewQuotaUsed || 0)),
                 });
+                setInterviewQuotaTotalInput(String(Number(data.interviewQuotaTotal || 0)));
             } catch { setError("Failed to load organization"); }
             finally { setLoading(false); }
         };
@@ -203,6 +205,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                 method: "PATCH", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     ...form,
+                    interviewQuotaTotal: Math.max(0, Number(interviewQuotaTotalInput) || 0),
                     interviewQuotaTopUp: Math.max(0, Number(interviewTopUpInput) || 0),
                 }),
             });
@@ -357,33 +360,49 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                             <LimitControl label="Drive Limit" value={form.maxActiveDrives} onChange={val => setForm(p => ({ ...p, maxActiveDrives: val }))} />
                             <LimitControl label="Team Limit" value={form.maxTeamMembers} onChange={val => setForm(p => ({ ...p, maxTeamMembers: val }))} />
                         </div>
-                        <div className="rounded-2xl border border-orange-100 bg-orange-50/40 p-6 space-y-4">
+                        <div className="rounded-2xl border border-orange-100 bg-orange-50/40 p-6 space-y-5">
                             <div className="flex items-center justify-between gap-4 flex-wrap">
                                 <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-orange-600">Interview Quota Top-Up</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-orange-600">Interview Quotas</p>
                                     <p className="text-sm font-medium text-gray-600 mt-1">
                                         Current total: <span className="font-black text-gray-900">{billingSnapshot.interviewQuotaTotal}</span>
-                                        {" "} | Used: <span className="font-black text-gray-900">{billingSnapshot.interviewQuotaUsed}</span>
+                                        {" "} | 
+                                        Used: <span className="font-black text-gray-900">{billingSnapshot.interviewQuotaUsed}</span>
                                         {" "} | Remaining: <span className="font-black text-gray-900">{billingSnapshot.interviewQuotaRemaining}</span>
                                     </p>
                                 </div>
                                 <div className="text-right">
                                     <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">New total after save</p>
                                     <p className="text-lg font-black text-gray-900">
-                                        {billingSnapshot.interviewQuotaTotal + Math.max(0, Number(interviewTopUpInput) || 0)}
+                                        {Math.max(0, Number(interviewQuotaTotalInput) || 0) + Math.max(0, Number(interviewTopUpInput) || 0)}
                                     </p>
                                 </div>
                             </div>
-                            <PremiumInput
-                                label="Add Interview Quota"
-                                icon={Coins}
-                                type="number"
-                                min="0"
-                                required={false}
-                                value={interviewTopUpInput}
-                                onChange={(e: any) => setInterviewTopUpInput(e.target.value)}
-                                placeholder="100"
-                            />
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <PremiumInput
+                                    label="Total Interviews Allocated"
+                                    icon={Coins}
+                                    type="number"
+                                    min="0"
+                                    required={false}
+                                    value={interviewQuotaTotalInput}
+                                    onChange={(e: any) => setInterviewQuotaTotalInput(e.target.value)}
+                                    placeholder="100"
+                                />
+                                <PremiumInput
+                                    label="Top-Up Interviews"
+                                    icon={Coins}
+                                    type="number"
+                                    min="0"
+                                    required={false}
+                                    value={interviewTopUpInput}
+                                    onChange={(e: any) => setInterviewTopUpInput(e.target.value)}
+                                    placeholder="50"
+                                />
+                            </div>
+                            <p className="text-[11px] font-medium text-gray-500 leading-relaxed">
+                                Use <span className="font-black text-gray-700">Total Interviews Allocated</span> to set the exact quota. Use <span className="font-black text-gray-700">Top-Up Interviews</span> only to add more on top of that total.
+                            </p>
                         </div>
                         <div className="flex justify-between pt-8 border-t border-gray-100">
                             <button type="button" onClick={() => setStep(2)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>

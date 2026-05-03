@@ -1,18 +1,13 @@
 """
 Formal contradiction state machine for interview integrity handling.
-
 This module keeps contradiction handling explicit and auditable:
   none -> surfaced -> candidate_clarified / unresolved -> repeated
-
 It does not own trust math. It owns the contradiction lifecycle and the
 structured event metadata that downstream systems can consume.
 """
 from __future__ import annotations
-
 import time
 from typing import Any, TypedDict, Literal, Optional
-
-
 ContradictionStatus = Literal[
     "none",
     "surfaced",
@@ -20,8 +15,6 @@ ContradictionStatus = Literal[
     "unresolved",
     "repeated",
 ]
-
-
 class ContradictionState(TypedDict, total=False):
     status: ContradictionStatus
     active: bool
@@ -42,8 +35,6 @@ class ContradictionState(TypedDict, total=False):
     recruiter_note: str
     event_history: list[dict[str, Any]]
     updated_at: float
-
-
 def init_contradiction_state() -> ContradictionState:
     return ContradictionState(
         status="none",
@@ -66,8 +57,6 @@ def init_contradiction_state() -> ContradictionState:
         event_history=[],
         updated_at=time.time(),
     )
-
-
 def _event_from_state(state: ContradictionState, source: str, turn: int) -> dict[str, Any]:
     return {
         "event": "contradiction_state",
@@ -89,8 +78,6 @@ def _event_from_state(state: ContradictionState, source: str, turn: int) -> dict
         "old_quote": state.get("old_quote", ""),
         "new_quote": state.get("new_quote", ""),
     }
-
-
 def _evidence_text(contradiction: dict[str, Any]) -> str:
     old_value = str(contradiction.get("old_value", "") or "")
     new_value = str(contradiction.get("new_value", "") or "")
@@ -102,8 +89,6 @@ def _evidence_text(contradiction: dict[str, Any]) -> str:
     if new_value or new_quote:
         parts.append(f"now={new_value or new_quote}")
     return " | ".join(parts)
-
-
 def surface_contradiction(
     state: ContradictionState,
     contradiction: dict[str, Any],
@@ -111,7 +96,6 @@ def surface_contradiction(
 ) -> tuple[ContradictionState, dict[str, Any]]:
     next_state = ContradictionState(**state)
     repeated = next_state.get("status") in {"surfaced", "unresolved", "repeated"}
-
     next_state["status"] = "repeated" if repeated else "surfaced"
     next_state["active"] = True
     next_state["surfaced_turn"] = int(next_state.get("surfaced_turn", 0) or turn)
@@ -136,17 +120,13 @@ def surface_contradiction(
         else "Repeated contradiction pattern; clarification has not held."
     )
     next_state["updated_at"] = time.time()
-
     event = _event_from_state(next_state, "surface", turn)
     event["evidence"] = _evidence_text(contradiction)
     event["trust_delta"] = next_state["trust_delta"]
-
     history = list(next_state.get("event_history", []))
     history.append(event)
     next_state["event_history"] = history
     return next_state, event
-
-
 def clarify_contradiction(
     state: ContradictionState,
     turn: int,
@@ -160,17 +140,13 @@ def clarify_contradiction(
     next_state["recovery_path"] = "Clarified after a follow-up question."
     next_state["recruiter_note"] = "Candidate clarified the inconsistency convincingly."
     next_state["updated_at"] = time.time()
-
     event = _event_from_state(next_state, "clarified", turn)
     event["trust_delta"] = next_state["trust_delta"]
     event["evidence"] = "candidate clarified the conflicting claim"
-
     history = list(next_state.get("event_history", []))
     history.append(event)
     next_state["event_history"] = history
     return next_state, event
-
-
 def mark_unresolved(
     state: ContradictionState,
     turn: int,
@@ -186,17 +162,13 @@ def mark_unresolved(
     )
     next_state["recruiter_note"] = "Contradiction remained unresolved after follow-up."
     next_state["updated_at"] = time.time()
-
     event = _event_from_state(next_state, "unresolved", turn)
     event["trust_delta"] = 0.0
     event["evidence"] = "follow-up did not fully resolve the earlier inconsistency"
-
     history = list(next_state.get("event_history", []))
     history.append(event)
     next_state["event_history"] = history
     return next_state, event
-
-
 def advance_contradiction_state(
     state: ContradictionState,
     contradiction: Optional[dict[str, Any]],
@@ -208,26 +180,21 @@ def advance_contradiction_state(
 ) -> tuple[ContradictionState, Optional[dict[str, Any]]]:
     """
     Advance the contradiction state based on the current turn.
-
     Returns:
         (updated_state, event_or_none)
     """
     if contradiction:
         return surface_contradiction(state, contradiction, turn)
-
     if state.get("status") in {"surfaced", "repeated"}:
         if action == "MOVE_ON" and quality_avg >= clarification_threshold:
             return clarify_contradiction(state, turn)
         if action == "PROBE":
             return mark_unresolved(state, turn)
         return mark_unresolved(state, turn)
-
     next_state = ContradictionState(**state)
     next_state["last_turn"] = turn
     next_state["updated_at"] = time.time()
     return next_state, None
-
-
 def summarize_contradiction_state(state: ContradictionState) -> dict[str, Any]:
     status = state.get("status", "none")
     interpretation = {
@@ -237,7 +204,6 @@ def summarize_contradiction_state(state: ContradictionState) -> dict[str, Any]:
         "unresolved": "The contradiction remained unresolved after follow-up.",
         "repeated": "The same contradiction pattern surfaced again.",
     }.get(status, "No contradiction surfaced.")
-
     return {
         "status": status,
         "active": bool(state.get("active", False)),

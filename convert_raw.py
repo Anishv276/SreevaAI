@@ -1,10 +1,8 @@
 import re
 from bs4 import BeautifulSoup
-
 def process():
     with open('stitch_raw.html', 'r', encoding='utf-8') as f:
         html = f.read()
-
     # Hardcoded config from the HTML
     colors = {
         "primary-container": "#ff6a00", "surface-container-low": "#f6f3f2", "on-background": "#1c1b1b",
@@ -25,12 +23,10 @@ def process():
         "surface-bright": "#fcf9f8", "inverse-on-surface": "#f3f0ef",
         "on-tertiary-fixed-variant": "#00497a", "on-error": "#ffffff"
     }
-
     spacing = {
         "xl": "80px", "lg": "48px", "container-max": "1280px", "sm": "12px",
         "md": "24px", "gutter": "24px", "base": "8px", "xs": "4px"
     }
-    
     font_sizes = {
         "label-sm": "text-[14px] leading-[1] tracking-[0.02em] font-[500]",
         "body-md": "text-[16px] leading-[1.6] font-[400]",
@@ -41,7 +37,6 @@ def process():
         "display": "text-[64px] leading-[1.1] tracking-[-0.02em] font-[700]",
         "caption": "text-[12px] leading-[1.4] font-[400]"
     }
-
     def map_class(c):
         # Handle opacity split
         opacity = ""
@@ -49,7 +44,6 @@ def process():
         if "/" in c:
             base_class, op = c.split("/", 1)
             opacity = f"/{op}"
-
         # Colors
         prefixes = ['bg', 'text', 'border', 'ring', 'from', 'to', 'divide', 'placeholder']
         for p in prefixes:
@@ -57,7 +51,6 @@ def process():
                 color_name = base_class[len(p)+1:]
                 if color_name in colors:
                     return f"{p}-[{colors[color_name]}]{opacity}"
-
         # Spacing
         space_prefixes = ['p', 'px', 'py', 'pt', 'pb', 'pl', 'pr', 
                           'm', 'mx', 'my', 'mt', 'mb', 'ml', 'mr',
@@ -67,20 +60,15 @@ def process():
                 space_name = base_class[len(p)+1:]
                 if space_name in spacing:
                     return f"{p}-[{spacing[space_name]}]"
-
         # Font sizes
         if base_class.startswith("text-") and base_class[5:] in font_sizes:
             return font_sizes[base_class[5:]]
-
         # Font families
         if base_class.startswith("font-"):
             if base_class[5:] in ['label-sm', 'body-md', 'body-lg', 'h3', 'h2', 'h1', 'display', 'caption', 'inter']:
                 return "font-sans"
-
         return c
-
     soup = BeautifulSoup(html, 'html.parser')
-    
     for tag in soup.find_all(True):
         if tag.get('class'):
             new_classes = []
@@ -95,11 +83,9 @@ def process():
                     new_classes.append(map_class(c))
             tag['className'] = " ".join(new_classes)
             del tag['class']
-            
         if tag.name == 'img':
             if tag.get('src'):
                 tag['src'] = tag.get('src')
-        
         attrs_to_rename = {
             'stroke-width': 'strokeWidth',
             'stroke-linecap': 'strokeLinecap',
@@ -114,28 +100,22 @@ def process():
             if tag.get(old):
                 tag[new] = tag.get(old)
                 del tag[old]
-
     body = soup.find('body')
     styles = soup.find('style')
     style_content = styles.string if styles else ""
-    
     jsx_content = ""
     for child in body.children:
         if child.name == 'script': continue
         jsx_content += str(child)
-        
     jsx_content = re.sub(r'<img([^>]+)>', r'<img\1 />', jsx_content)
     jsx_content = re.sub(r'<input([^>]+)>', r'<input\1 />', jsx_content)
     jsx_content = re.sub(r'<br([^>]*)>', r'<br\1 />', jsx_content)
     jsx_content = re.sub(r'<hr([^>]*)>', r'<hr\1 />', jsx_content)
-    
     # Also replace class= with className= for any stragglers
     jsx_content = jsx_content.replace(' class=', ' className=')
     jsx_content = jsx_content.replace('&amp;', '&').replace('&nbsp;', ' ')
     jsx_content = re.sub(r'<!--(.*?)-->', r'{/*\1*/}', jsx_content, flags=re.DOTALL)
-    
     final_file = f"""import React from 'react';
-
 export default function LandingPage() {{
   return (
     <>
@@ -149,7 +129,5 @@ export default function LandingPage() {{
 """
     with open('app/page.tsx', 'w', encoding='utf-8') as f:
         f.write(final_file)
-        
     print("Successfully converted and saved to app/page.tsx")
-
 process()

@@ -2,7 +2,6 @@ import base64
 import os
 import sys
 import asyncio
-
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 import random
@@ -125,7 +124,6 @@ from livekit.agents.voice.events import ConversationItemAddedEvent
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
 from livekit.plugins import cartesia, openai, deepgram, silero, sarvam
-
 try:
     from livekit.plugins import ai_coustics
 except ImportError:  # pragma: no cover - optional plugin
@@ -142,17 +140,14 @@ from prompt_layers import (
 )
 from turn_decision import classify_short_utterance
 from probe_strategy import build_short_utterance_directive
-
 def prewarm(proc: JobProcess):
     logger.info("Prewarming worker process...")
     # Load VAD model (ONNX) - heaviest startup cost, must be synchronous
     proc.userdata["vad"] = build_vad()
     logger.info("VAD model prewarmed.")
-
     # Turn detector requires session context in some runtime modes.
     # Keep startup noise low and initialize it lazily in-session if needed.
     proc.userdata["turn_detector"] = None
-
     # Pre-instantiate default STT/TTS plugins so their internal HTTP sessions
     # and model configs are warm before the first job arrives.
     try:
@@ -165,25 +160,21 @@ def prewarm(proc: JobProcess):
         logger.info("Default TTS prewarmed.")
     except Exception as e:
         logger.warning(f"Failed to prewarm default TTS: {e}")
-
     try:
         loop = asyncio.get_running_loop()
         db_pool_task = loop.create_task(_create_db_pool())
         proc.userdata["db_pool_init_task"] = db_pool_task
-
         def _store_db_pool(task: asyncio.Task[asyncpg.Pool]) -> None:
             try:
                 proc.userdata["db_pool"] = task.result()
             except Exception as task_err:
                 logger.warning(f"Database pool warmup failed: {task_err}")
-
         db_pool_task.add_done_callback(_store_db_pool)
         global _DB_POOL_INIT_TASK
         _DB_POOL_INIT_TASK = db_pool_task
         logger.info("Database pool warmup scheduled.")
     except RuntimeError:
         logger.info("No running event loop in prewarm; DB pool will initialize lazily.")
-
 from agent_persistence import (
     _extract_openai_completion_usage,
     flush_pending_manual_billing,
@@ -206,8 +197,6 @@ from agent_scoring import (
     notify_sync_engine,
     score_answer_quality,
 )
-
-
 _EVALUATION_SIGNAL_KEYS = {
     "ownership_ambiguity",
     "example_evasion",
@@ -220,8 +209,6 @@ _EVALUATION_SIGNAL_KEYS = {
     "contradiction",
     "contradiction_resolved",
 }
-
-
 def _toggle_bool(value: Any, default: bool = True) -> bool:
     if isinstance(value, bool):
         return value
@@ -234,8 +221,6 @@ def _toggle_bool(value: Any, default: bool = True) -> bool:
     if isinstance(value, (int, float)):
         return bool(value)
     return default
-
-
 def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
     parsed: dict[str, Any] | None = None
     if isinstance(raw_signals, dict):
@@ -247,18 +232,14 @@ def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
                 parsed = maybe_obj
         except Exception:
             parsed = None
-
     if parsed is None:
         # No signals configured at all (null DB value) — default everything ON
         return {key: True for key in _EVALUATION_SIGNAL_KEYS}
-
     # Signals object exists — missing keys default OFF (explicit disable is respected)
     return {
         key: _toggle_bool(parsed.get(key), False)
         for key in _EVALUATION_SIGNAL_KEYS
     }
-
-
 async def generate_candidate_brief(
     candidate_name: str,
     job_title: str,
@@ -275,13 +256,11 @@ async def generate_candidate_brief(
     Pre-interview: generate a personalized interview plan from the candidate's actual
     resume, the JD, and the AI screening report. This becomes Ishita's private briefing -
     telling her exactly what to ask, in what order, tailored to this specific person.
-
     Returns a formatted brief string to inject into the system prompt.
     Falls back to empty string on failure (interview still works, just less personalized).
     """
     if resume_block == "No resume data provided." and ai_report_block == "No prior screening data.":
         return ""  # No data to work with - skip
-
     seniority_hint = ""
     resume_lower = resume_block.lower()
     years_patterns = ["fresher", "0 years", "0-1 year", "no experience", "final year", "graduate"]
@@ -292,7 +271,6 @@ async def generate_candidate_brief(
         seniority_hint = "This is an EXPERIENCED candidate. Focus on scale, ownership, technical depth, and cross-functional impact. Skip basics."
     else:
         seniority_hint = "Mid-level candidate. Balance technical depth with growth trajectory and ownership."
-
     try:
         completion = await asyncio.wait_for(
             client.chat.completions.create(
@@ -380,12 +358,9 @@ async def generate_candidate_brief(
     except Exception as e:
         logger.warning(f"[BRIEF] Candidate brief generation failed: {e}")
         return ""
-
-
 async def entrypoint(ctx: JobContext):
     entry_started_at = time.perf_counter()
     logger.info(f"Connecting to room {ctx.room.name}")
-
     # PRE-START CHECK: Do not join if another agent is already here
     for p in ctx.room.remote_participants.values():
         is_agent = (
@@ -398,16 +373,13 @@ async def entrypoint(ctx: JobContext):
                 f"Another agent ({p.identity}) is already in the room. Self-destructing."
             )
             return
-
     # --- Fix 1: Session State ---
     transcript_lines: list[str] = []
     session_start_time: Optional[float] = None
     background_tasks: set[asyncio.Task[Any]] = set()
-
     def spawn_background_task(coro, label: str) -> asyncio.Task[Any]:
         task = asyncio.create_task(coro)
         background_tasks.add(task)
-
         def _on_done(done_task: asyncio.Task[Any]) -> None:
             background_tasks.discard(done_task)
             if done_task.cancelled():
@@ -418,14 +390,11 @@ async def entrypoint(ctx: JobContext):
                 return
             if err:
                 logger.warning(f"[TASK] Background task '{label}' failed: {err}")
-
         task.add_done_callback(_on_done)
         return task
-
     def append_transcript_line(speaker: str, text: str) -> None:
         from agent_runtime_helpers import append_transcript_line as _atl
         _atl(transcript_lines, speaker, text)
-
     # Room name is available before connecting - derive app_id early so we can
     # fire the DB fetch in parallel with the room connect handshake.
     app_id = ctx.room.name.replace("interview_", "")
@@ -444,7 +413,6 @@ async def entrypoint(ctx: JobContext):
         })
     ctx.log_context_fields = session_log_context
     _LOG_CONTEXT_FIELDS.set(session_log_context)
-
     # --- Real-time Proctoring Sync Helpers ---
     async def _report_proctoring_realtime(evt_type: str, reason: str, score_delta: int, sev: str = "medium"):
         """Persist a single violation to the DB in real-time."""
@@ -475,7 +443,6 @@ async def entrypoint(ctx: JobContext):
                 )
         except Exception as e:
             logger.warning(f"[PROCTOR] Real-time persistence failed: {e}")
-
     async def _signal_client_proctoring_violation(evt_type: str, reason: str, sev: str = "medium"):
         """Send a data packet back to the candidate UI to trigger a toast."""
         if not ctx.room.local_participant: return
@@ -490,7 +457,6 @@ async def entrypoint(ctx: JobContext):
             await ctx.room.local_participant.publish_data(payload, reliable=True)
         except Exception as e:
             logger.warning(f"[PROCTOR] Client signaling failed: {e}")
-
     async def _signal_client_interview_terminated(reason: str) -> None:
         """Tell the candidate UI to exit the live room and open the feedback screen."""
         if not ctx.room.local_participant:
@@ -505,8 +471,6 @@ async def entrypoint(ctx: JobContext):
             logger.info(f"[INTERVIEW_END] termination signal sent: {reason}")
         except Exception as e:
             logger.warning(f"[INTERVIEW_END] Client termination signal failed: {e}")
-
-
     # Parallelize network-bound work: room connect + DB fetch run concurrently.
     async def connect_with_retry():
         for attempt in range(3):
@@ -519,26 +483,21 @@ async def entrypoint(ctx: JobContext):
                 logger.warning(f"Connection attempt {attempt + 1} failed: {e}. Retrying in 2s...")
                 await asyncio.sleep(2)
         return RuntimeError("Failed to connect after 3 attempts")
-
     try:
         context_result = await get_interview_context(app_id)
     except Exception as e:
         logger.error(f"Failed to load interview context from DB: {e}")
         return
-
     if not isinstance(context_result, dict):
         logger.error(f"Invalid DB context payload type: {type(context_result)}")
         return
-
     context: dict[str, Any] = context_result
-
     connect_result = await connect_with_retry()
     if isinstance(connect_result, Exception):
         raise connect_result
     evaluation_signal_toggles = _extract_evaluation_signal_toggles(
         context.get("proctoringSignals")
     )
-
     # Read Room Metadata Context (available after connect)
     room_meta = {}
     try:
@@ -546,11 +505,9 @@ async def entrypoint(ctx: JobContext):
             room_meta = json.loads(ctx.room.metadata)
     except Exception as e:
         logger.error(f"Failed to parse room metadata: {e}")
-
     extracted_details = room_meta.get("extractedDetails", "{}")
     structured_resume = room_meta.get("structuredResume", "{}")
     ai_report = room_meta.get("aiReport", "{}")
-
     def require_db_value(key: str, default: Any = None, required: bool = True):
         value = context.get(key)
         if value is None:
@@ -562,7 +519,6 @@ async def entrypoint(ctx: JobContext):
                 return default
             raise RuntimeError(f"Missing required DB field: {key}")
         return value
-
     candidate_name = require_db_value("fullName")
     candidate_first_name = first_name_from_full_name(candidate_name)
     job_title = require_db_value("jobTitle")
@@ -589,9 +545,7 @@ async def entrypoint(ctx: JobContext):
     )
     ctx.log_context_fields = session_log_context
     _LOG_CONTEXT_FIELDS.set(session_log_context)
-
     started_at = time.perf_counter()
-
     async def _log_shutdown(reason: str = "") -> None:
         elapsed_sec = round(time.perf_counter() - started_at, 1)
         logger.info(
@@ -609,28 +563,21 @@ async def entrypoint(ctx: JobContext):
                 sort_keys=True,
             )
         )
-
     ctx.add_shutdown_callback(_log_shutdown)
-
-
     # Org-specific model settings.
     org_tts_provider = str(require_db_value("ttsProvider")).upper()
-
     org_cartesia_model: Optional[str] = None
     org_cartesia_voice: Optional[str] = None
     org_sarvam_model: Optional[str] = None
     org_sarvam_voice: Optional[str] = None
     org_google_model: Optional[str] = None
     org_google_voice_name: Optional[str] = None
-
     org_deepgram_model: Optional[str] = None
     org_sarvam_stt_model: Optional[str] = None
-
     org_llm_model: Optional[str] = None
     org_llm_temperature: float = 0.4
     org_stt_provider: str = "GOOGLE" if org_tts_provider == "GOOGLE" else ""
     org_llm_provider: str = "GOOGLE" if org_tts_provider == "GOOGLE" else ""
-
     if org_tts_provider == "GOOGLE":
         org_google_model = str(require_db_value("googleModel", default=DEFAULT_GOOGLE_TTS_MODEL, required=False) or DEFAULT_GOOGLE_TTS_MODEL)
         org_google_voice_name = str(require_db_value("googleVoiceName", default=DEFAULT_GOOGLE_VOICE_NAME, required=False) or DEFAULT_GOOGLE_VOICE_NAME)
@@ -644,7 +591,6 @@ async def entrypoint(ctx: JobContext):
         org_llm_provider = str(require_db_value("llmProvider")).upper()
         org_llm_model = require_db_value("llmModel")
         org_llm_temperature = float(require_db_value("llmTemperature"))
-
         if org_tts_provider == "CARTESIA":
             # cartesiaModel may be null at org level when drive overrides ttsProvider to CARTESIA
             org_cartesia_model = str(require_db_value("cartesiaModel", default=CARTESIA_MODEL, required=False) or CARTESIA_MODEL)
@@ -654,20 +600,16 @@ async def entrypoint(ctx: JobContext):
             org_sarvam_voice = str(require_db_value("sarvamVoice", default="anushka", required=False) or "anushka")
         else:
             raise RuntimeError(f"Unsupported DB ttsProvider: {org_tts_provider}")
-
         if org_stt_provider == "DEEPGRAM":
             org_deepgram_model = str(require_db_value("deepgramModel"))
         elif org_stt_provider == "SARVAM":
             org_sarvam_stt_model = str(require_db_value("sarvamSttModel"))
         else:
             raise RuntimeError(f"Unsupported DB sttProvider: {org_stt_provider}")
-
         if org_llm_provider not in {"OPENAI", "SARVAM"}:
             raise RuntimeError(f"Unsupported DB llmProvider: {org_llm_provider}")
-
         analysis_client = AsyncOpenAI()
         analysis_model = org_llm_model if org_llm_provider == "OPENAI" else LLM_MODEL
-
     if org_tts_provider == "GOOGLE":
         logger.info(
             "Org models -> GOOGLE runtime model=%s voice=%s analysis=%s",
@@ -687,30 +629,24 @@ async def entrypoint(ctx: JobContext):
             org_llm_model,
             org_llm_provider,
         )
-
     # Keep custom question text only; we will combine it with a mandatory
     # candidate-band checklist after parsing resume context.
     custom_questions_list = "\n".join([f"- {q}" for q in custom_questions])
-
     # Language Mapping for STT and TTS
     LANGUAGE_MAPPING = {
         "English": {"stt": "en-US", "tts": "en"},
         "Hindi": {"stt": "hi", "tts": "hi"},
     }
-
     lang_codes = LANGUAGE_MAPPING.get(interview_lang)
     if not lang_codes:
         raise RuntimeError(f"Unsupported interview language in DB: {interview_lang}")
     logger.info(
         f"Preparing interview with {candidate_name} for {job_title} in {interview_lang}"
     )
-
     resume_block = safe_parse(structured_resume, "No resume data provided.")
     ai_report_block = safe_parse(ai_report, "No prior screening data.")
     resume_context = parse_resume_context(structured_resume, resume_block)
-
     jd_block = build_jd_summary(extracted_details, job_details or "General professional role.")
-
     session_context = CandidateBandContext(
         candidate_band=infer_candidate_band(resume_context, resume_block),
         role_category=detect_role_category(job_title),
@@ -729,7 +665,6 @@ async def entrypoint(ctx: JobContext):
         session_context.questions_list = f"{session_context.short_coverage_block}\n{custom_questions_list}"
     else:
         session_context.questions_list = session_context.short_coverage_block
-
     # Generate personalized candidate brief in the background.
     # We wait only briefly so first greeting is not blocked by this network call.
     candidate_brief_task = spawn_background_task(
@@ -750,7 +685,6 @@ async def entrypoint(ctx: JobContext):
     logger.info(
         "[BRIEF] Candidate brief generation started in background; greeting will not wait for it"
     )
-
     session_context.candidate_summary_block = build_candidate_summary(resume_context)
     session_context.jd_summary_block = jd_block
     session_context.screening_summary_block = build_screening_summary(ai_report, ai_report_block)
@@ -785,18 +719,13 @@ async def entrypoint(ctx: JobContext):
         voice_layer_prompt=voice_layer_prompt,
         evaluation_layer_prompt=evaluation_layer_prompt,
     )
-
     chat_ctx = llm.ChatContext()
     chat_ctx.add_message(role="system", content=system_prompt)
-
     # Inject ONLY warmup directive upfront — pivot fires later when warmup_complete=True
     warmup_context = build_fast_opening_context()
     chat_ctx.add_message(role="system", content=warmup_context)
-
     logger.info("[OPENING] Conversational warmup directive injected (pivot will fire after 2 candidate responses)")
-
     ctx.proc.userdata["candidate_band_context"] = session_context
-
     async def attach_brief_when_ready():
         if session_context.full_brief_injected:
             return
@@ -808,14 +737,12 @@ async def entrypoint(ctx: JobContext):
                 brief_err,
             )
             return
-
         if not delayed_brief:
             logger.warning("[BRIEF] Brief returned empty — interview proceeding without personalization")
             return
         if delayed_brief == session_context.candidate_brief_block:
             logger.info("[BRIEF] Brief unchanged from initial block — no update needed")
             return
-
         session_context.candidate_brief_block = delayed_brief
         session_context.smart_opening_question = extract_smart_opening_question(delayed_brief)
         refresh_candidate_band_context(session_context)
@@ -833,7 +760,6 @@ async def entrypoint(ctx: JobContext):
         logger.info(
             f"[BRIEF] Deferred brief attached to chat context ({len(delayed_brief)} chars)"
         )
-
     # attach_brief_when_ready() is triggered on warmup_complete (after 2 candidate responses)
     # Do NOT spawn it here — it fires from on_conversation_item_added when warmup_complete=True
     logger.info(
@@ -843,9 +769,7 @@ async def entrypoint(ctx: JobContext):
         session_context.candidate_band,
         session_context.role_category,
     )
-
     vad_instance = ctx.proc.userdata.get("vad") or build_vad()
-
     google_mode = org_tts_provider == "GOOGLE"
     if google_mode:
         voice_to_use = org_google_voice_name or DEFAULT_GOOGLE_VOICE_NAME
@@ -889,7 +813,6 @@ async def entrypoint(ctx: JobContext):
             stt_plugin = build_stt(
                 language_code=lang_codes["stt"], model=org_deepgram_model
             )
-
         if org_tts_provider == "SARVAM":
             if org_sarvam_model is None or org_sarvam_voice is None:
                 raise RuntimeError("DB config missing sarvamModel/sarvamVoice for SARVAM")
@@ -922,12 +845,10 @@ async def entrypoint(ctx: JobContext):
                 model=org_cartesia_model,
                 voice_id=org_cartesia_voice,
             )
-
         if org_llm_provider == "SARVAM":
             llm_plugin = build_sarvam_llm(model=str(org_llm_model))
         else:
             llm_plugin = build_llm(model=str(org_llm_model), temperature=org_llm_temperature)
-
         turn_detector = ctx.proc.userdata.get("turn_detector")
         session_kwargs = {
             "vad": vad_instance,
@@ -974,11 +895,8 @@ async def entrypoint(ctx: JobContext):
             ],
             "aec_warmup_duration": 2.5,
         }
-
     latest_session_usage: Optional[AgentSessionUsage] = None
-
     session = AgentSession(**session_kwargs)
-
     @session.on("session_usage_updated")
     def on_session_usage_updated(event) -> None:
         nonlocal latest_session_usage
@@ -986,9 +904,7 @@ async def entrypoint(ctx: JobContext):
         logger.debug(
             f"[USAGE] Session usage updated (model buckets={len(event.usage.model_usage)})"
         )
-
     agent = Agent(instructions=system_prompt, chat_ctx=chat_ctx)
-
     participant: Optional[Any] = None
     disconnect_event = asyncio.Event()
     interview_finished_event = asyncio.Event()
@@ -1006,7 +922,6 @@ async def entrypoint(ctx: JobContext):
     _face_absent_streak = 0            # repeated absence is stronger than a single blip
     ready_event = asyncio.Event()
     ready_signal_received_at: Optional[float] = None
-
     # Per-turn decision engine state
     _last_interviewer_question = ""   # most recent question Ishita asked
     _topic_follow_up_count = 0        # consecutive follow-ups on same topic
@@ -1021,25 +936,20 @@ async def entrypoint(ctx: JobContext):
     _trust_state = init_trust_state()  # session-level trust engine state
     _contradiction_state = init_contradiction_state()  # explicit contradiction lifecycle state
     _active_eval_task: Optional[asyncio.Task[Any]] = None  # track active eval to prevent stale injects
-
     # Cross-turn consistency engine state
     _claim_index: dict[str, list[dict]] = {}  # claims indexed by type for contradiction checks
     _contradictions_found: list[dict] = [] # all detected contradictions for final report
-
     # Lock protecting all shared session state that is written by background tasks.
     # Both _evaluate_and_inject() and _inject_state() modify the same variables;
     # this lock ensures they never interleave at async await points.
     _session_state_lock = asyncio.Lock()
-
     def refresh_composite_risk() -> int:
         nonlocal suspicion_score
         suspicion_score = compose_risk_score(integrity_risk, depth_risk)
         return suspicion_score
-
     @ctx.room.on("disconnected")
     def on_disconnected(reason):
         disconnect_event.set()
-
     @ctx.room.on("participant_disconnected")
     def on_participant_disconnected(disconnected_participant):
         if participant and disconnected_participant.identity == participant.identity:
@@ -1049,23 +959,18 @@ async def entrypoint(ctx: JobContext):
                     "Candidate disconnected before ready; waiting for reconnect"
                 )
                 return
-
             logger.info("Candidate participant disconnected")
-
             if interview_marked_finished:
                 # Candidate explicitly finished the interview; shutdown immediately.
                 disconnect_event.set()
                 return
-
             # No grace period after readiness: disconnect immediately.
             disconnect_event.set()
-
     @ctx.room.on("participant_connected")
     def on_participant_connected(connected_participant):
         if participant and connected_participant.identity == participant.identity:
             if ready_event.is_set() or interview_marked_finished:
                 logger.info("Candidate participant connected/reconnected")
-
     @ctx.room.on("data_received")
     def on_data_received(*event_args):
         nonlocal \
@@ -1079,12 +984,9 @@ async def entrypoint(ctx: JobContext):
             _trust_state
         try:
             raw_data = None
-            
             # Helper functions moved to entrypoint scope to prevent NameError
-
             if not event_args:
                 return
-
             # Compatibility across LiveKit Python event shapes:
             # - bytes payload directly
             # - object with .data bytes field
@@ -1103,14 +1005,12 @@ async def entrypoint(ctx: JobContext):
                 if isinstance(maybe, memoryview):
                     raw_data = maybe.tobytes()
                     break
-
             if raw_data is None:
                 logger.debug(
                     "data_received had no bytes payload",
                     extra={"arg_types": [type(a).__name__ for a in event_args]},
                 )
                 return
-
             payload = json.loads(raw_data.decode("utf-8"))
             if payload.get("type") == "user_ready":
                 if not ready_event.is_set():
@@ -1119,13 +1019,11 @@ async def entrypoint(ctx: JobContext):
                         f"Candidate is ready signal received (attempt={payload.get('attempt')})"
                     )
                 ready_event.set()
-
             elif payload.get("type") == "interview_finished":
                 logger.info("Candidate marked interview as finished")
                 interview_marked_finished = True
                 interview_finished_event.set()
                 disconnect_event.set()  # Resolve hang
-
             elif payload.get("type") == "proctor_event":
                 # Phase 5: Browser-side proctoring signals (tab switch, face absent, etc.)
                 event_name = payload.get("event")
@@ -1136,7 +1034,6 @@ async def entrypoint(ctx: JobContext):
                         event_weight = 0
                 elif event_name != "face_absent":
                     _face_absent_streak = 0
-
                 if event_weight > 0:
                     environment_risk = min(100, environment_risk + event_weight)
                     refresh_composite_risk()
@@ -1155,14 +1052,12 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.debug(f"Ignored malformed data packet: {e}")
             return
-
     # Pre-start all background processing while user is on hardware check.
     audio_input_options = {}
     if ai_coustics is not None:
         audio_input_options["noise_cancellation"] = ai_coustics.audio_enhancement(
             model=ai_coustics.EnhancerModel.QUAIL_VF_L
         )
-
     await session.start(
         agent=agent,
         room=ctx.room,
@@ -1171,9 +1066,7 @@ async def entrypoint(ctx: JobContext):
             audio_input=room_io.AudioInputOptions(**audio_input_options),
         ),
     )
-
     # --- Real-time Transcript Streaming is handled by LiveKit automatically ---
-
     async def _process_user_conversation_item(
         event,
         content: str,
@@ -1187,18 +1080,14 @@ async def entrypoint(ctx: JobContext):
         try:
             if not content or role != "user":
                 return
-
             async def _inject_candidate_context_before_first_question() -> None:
                 if session_context.full_brief_injected:
                     session_context.initial_context_injected = True
                     return
-
                 if session_context.initial_context_injected:
                     return
-
                 session_context.initial_context_injected = True
                 brief_text = session_context.candidate_brief_block.strip()
-
                 if not brief_text:
                     if candidate_brief_task.done():
                         try:
@@ -1221,7 +1110,6 @@ async def entrypoint(ctx: JobContext):
                                 f"[BRIEF] First-question brief wait failed: {brief_err}"
                             )
                             brief_text = ""
-
                 if brief_text:
                     session_context.candidate_brief_block = brief_text
                     session_context.smart_opening_question = extract_smart_opening_question(
@@ -1244,7 +1132,6 @@ async def entrypoint(ctx: JobContext):
                         len(brief_text), bool(session_context.smart_opening_question),
                     )
                     return
-
                 remove_system_messages(chat_ctx, "[CANDIDATE CONTEXT READY]")
                 chat_ctx.add_message(
                     role="system",
@@ -1257,16 +1144,13 @@ async def entrypoint(ctx: JobContext):
                     "[BRIEF] Lightweight candidate context injected brief_used=False opening_question=%s",
                     bool(session_context.smart_opening_question),
                 )
-
             # --- STT text cleanup / noise suppression ---
             def _clean_stt_text(raw_text: str) -> str:
                 text = re.sub(r"\s+", " ", (raw_text or "").strip())
                 if not text:
                     return ""
-
                 if text.lower().strip(" .!?") == "candidate response unavailable":
                     return ""
-
                 tokens = [t for t in text.split(" ") if t]
                 cleaned_tokens: list[str] = []
                 for token in tokens:
@@ -1279,13 +1163,10 @@ async def entrypoint(ctx: JobContext):
                         # Collapse immediate duplicates like "name name", "a a a".
                         continue
                     cleaned_tokens.append(token)
-
                 return re.sub(r"\s+", " ", " ".join(cleaned_tokens)).strip()
-
             content = _clean_stt_text(content)
             if not content:
                 return
-
             # During the first few seconds after Ishita's opening greeting, short
             # echo-like fragments ("hi", "hello", "okay") are often the AI's own
             # voice leaking back into STT rather than a real candidate turn.
@@ -1303,7 +1184,6 @@ async def entrypoint(ctx: JobContext):
                             f"[TRANSCRIPT] Suppressing early greeting echo fragment: '{content[:60]}'"
                         )
                         return
-
             # --- STT Spam / Hallucination Filter ---
             # Sarvam (and some Deepgram models) hallucinate the same word repeatedly
             # when they detect silence or background noise. Discard these before they
@@ -1325,7 +1205,6 @@ async def entrypoint(ctx: JobContext):
                         f"{len(unique_words)} unique): '{content[:60]}...'"
                     )
                     return
-
             # Ignore tiny fragments unless they match an explicit short-answer pattern.
             # This cuts down on STT hallucinations, echo bleed, and half-words like
             # "bu", "thr", or "qu" being treated as real candidate turns.
@@ -1336,7 +1215,6 @@ async def entrypoint(ctx: JobContext):
                     f"[TRANSCRIPT] Ignoring probable STT fragment ({word_count} words): '{content[:60]}'"
                 )
                 return
-
             # Pure acknowledgments and answer_starts — don't log to transcript or trigger LLM.
             # Acknowledgment: "ok/yeah/sure" — pure filler, discard silently.
             # Answer_start: "so basically/well/um" — candidate mid-thought, don't interrupt.
@@ -1353,16 +1231,13 @@ async def entrypoint(ctx: JobContext):
                     f"[SHORT_REPLY] dropping acknowledgment filler: '{content[:60]}'"
                 )
                 return
-
             speaker = "Candidate"
             append_transcript_line(speaker, content)
             logger.info(f"[TRANSCRIPT] {speaker}: {content[:60]}...")
-
             if not session_context.initial_context_injected:
                 _ctx_inject_t = time.perf_counter()
                 await _inject_candidate_context_before_first_question()
                 logger.info("[INIT] context_injection_ms=%.0f", (time.perf_counter() - _ctx_inject_t) * 1000)
-
             # Inject structured recent Q&A context for callbacks and contradiction detection.
             if _last_interviewer_question and turn_snapshot > 1:
                 recent_context = _build_recent_context_block(
@@ -1374,7 +1249,6 @@ async def entrypoint(ctx: JobContext):
                         role="system",
                         content=f"[RECENT_CONTEXT — DO NOT READ ALOUD]\n{recent_context}",
                     )
-
             if short_classification:
                 short_class = short_classification["response_class"]
                 short_directive = build_short_utterance_directive(
@@ -1388,7 +1262,6 @@ async def entrypoint(ctx: JobContext):
                     f"text='{short_classification['evidence'][:60]}'"
                 )
                 return
-
             # --- Per-Turn Answer Evaluator (Decision Engine) ---
             # Fires on every candidate response. Evaluates answer quality in real-time
             # and injects a NEXT_TURN_DIRECTIVE before Ishita generates her next response.
@@ -1411,7 +1284,6 @@ async def entrypoint(ctx: JobContext):
                     if _question_asked_at > 0 and _answer_received_at > _question_asked_at
                     else None
                 )
-
                 async def _evaluate_and_inject(
                     answer=answer_snap,
                     question=question_snap,
@@ -1447,7 +1319,6 @@ async def entrypoint(ctx: JobContext):
                             claim_type = str(claim.get("type", "") or "").strip()
                             if not claim_type:
                                 continue
-
                             contradiction = check_contradiction(claim, _claim_index)
                             if contradiction and not contradiction_alert:
                                 contradiction_alert = contradiction
@@ -1458,14 +1329,12 @@ async def entrypoint(ctx: JobContext):
                                     f"vs turn {turn} ({contradiction['new_value']!r})"
                                 )
                             _claim_index.setdefault(claim_type, []).append(claim)
-
                         # Step 2: Run TurnDecision pipeline (quality + signals + routing)
                         # Hard timeout: if evaluation LLM is slow the next candidate answer
                         # arrives before directive is injected — Ishita answers with no context.
                         try:
                             # Build uncovered topics list for directive bridging (Phase 3)
                             uncovered_topics = session_context.coverage_items[:3]  # Top 3 uncovered areas
-
                             td, directive = await asyncio.wait_for(
                                 run_turn_evaluation(
                                     candidate_answer=answer,
@@ -1500,7 +1369,6 @@ async def entrypoint(ctx: JobContext):
                                 "signal_events": [],
                             }
                             directive = "\nContinue with standard conversational depth."
-
                         action = td["decision"]["action"]
                         signal_events = td.get("signal_events", [])
                         depth_signal = "SURFACE"
@@ -1512,7 +1380,6 @@ async def entrypoint(ctx: JobContext):
                             depth_signal = "DEEP"
                         elif quality_avg >= 4.5:
                             depth_signal = "SPECIFIC"
-
                         # All I/O is done. Acquire lock before mutating any shared session state.
                         # This prevents _inject_state() (fires every 3 turns) from interleaving
                         # with this function at async await points and corrupting shared counters.
@@ -1530,7 +1397,6 @@ async def entrypoint(ctx: JobContext):
                                 "question": question,
                             }
                             answer_scores.append(quality_record)
-
                             # Update depth history and follow-up counter
                             _topic_depth_history.append(td["quality"]["depth"])
                             collapse_fired = any(
@@ -1549,12 +1415,10 @@ async def entrypoint(ctx: JobContext):
                                 _topic_follow_up_count = 0
                                 _topic_depth_history = []
                                 _collapse_stage = 0
-
                             # Update depth_decay cooldown state
                             if any(ev.get("signal_name") == "depth_decay" for ev in signal_events):
                                 _last_depth_decay_turn = turn
                                 _depth_decay_ever_fired = True
-
                             # Update the canonical TrustState only. Trust deltas are folded into the
                             # single structured engine so we do not maintain a second trust line.
                             _trust_state = apply_turn_decision(
@@ -1562,7 +1426,6 @@ async def entrypoint(ctx: JobContext):
                                 td,
                                 behavioral_toggles=evaluation_signal_toggles,
                             )
-
                             # Record the signal contract in one place and keep the legacy risk meter aligned.
                             for event in signal_events:
                                 event_delta = float(event.get("score_delta", 0.0) or 0.0)
@@ -1594,7 +1457,6 @@ async def entrypoint(ctx: JobContext):
                                     f"confidence={event['confidence']:.2f} trust_delta={event_delta:+.2f} "
                                     f"visible={event['recruiter_visible']} turn={turn}"
                                 )
-
                             # Contradiction recovery: if last turn surfaced a contradiction and
                             # this turn the candidate moved on cleanly with decent quality,
                             # treat it as resolved and restore hard_integrity.
@@ -1660,7 +1522,6 @@ async def entrypoint(ctx: JobContext):
                                 refresh_composite_risk()
                             elif depth_signal == "DEEP" and current_interview_mode == "normal":
                                 current_interview_mode = "deep"
-
                         # Append contradiction context to directive if needed
                         contradiction_summary = summarize_contradiction_state(_contradiction_state)
                         evidence = contradiction_summary["evidence"]
@@ -1682,7 +1543,6 @@ async def entrypoint(ctx: JobContext):
                                 f"If they clarify convincingly, accept it and move on. "
                                 f"If they stall or contradict again, note it internally and continue."
                             )
-
                         # Remove previous directive to keep context clean
                         messages = chat_ctx.messages() if callable(getattr(chat_ctx, "messages", None)) else chat_ctx.messages
                         for old_msg in list(messages):
@@ -1691,7 +1551,6 @@ async def entrypoint(ctx: JobContext):
                                     messages.remove(old_msg)
                                 except (ValueError, AttributeError):
                                     pass
-
                         logger.info(
                             "[DIRECTIVE] action=%s mode=%s turn=%d collapse_stage=%d",
                             td["decision"]["action"], td["decision"]["mode"],
@@ -1700,14 +1559,12 @@ async def entrypoint(ctx: JobContext):
                         chat_ctx.add_message(role="system", content=directive)
                     except Exception as e:
                         logger.warning(f"[EVAL] Evaluator injection failed turn={turn_snapshot}: {e}", exc_info=True)
-
                 # Cancel any stale eval task before spawning new one
                 if _active_eval_task and not _active_eval_task.done():
                     _active_eval_task.cancel()
                 _active_eval_task = spawn_background_task(_evaluate_and_inject(), f"eval_turn_{turn_snapshot}")
         except Exception as e:
             logger.debug(f"[TRANSCRIPT] User item processing failed: {e}")
-
     @session.on("conversation_item_added")
     def on_conversation_item_added(event) -> None:
         nonlocal session_start_time, turn_count, last_injection_turn, \
@@ -1742,14 +1599,12 @@ async def entrypoint(ctx: JobContext):
             clean_content = content.replace("<wait for response>", "").strip()
             append_transcript_line(speaker, clean_content)
             logger.info(f"[TRANSCRIPT] {speaker}: {clean_content[:60]}...")
-
             # --- Track last Ishita question (for per-turn evaluator) ---
             if role == "assistant":
                 # Extract the last sentence ending in "?" as the question
                 q_match = re.search(r'([^.!?]+\?)\s*$', clean_content.strip())
                 if q_match:
                     _last_interviewer_question = q_match.group(1).strip()
-
             # --- Per-Turn Answer Evaluator (Decision Engine) ---
             # Fires on every candidate response. Evaluates answer quality in real-time
             # and injects a NEXT_TURN_DIRECTIVE before Ishita generates her next response.
@@ -1771,9 +1626,7 @@ async def entrypoint(ctx: JobContext):
                     # Compute wall-clock seconds remaining at snapshot time
                     _elapsed = time.time() - session_start_time if session_start_time else 0
                     _secs_remaining = max(0.0, time_limit_mins * 60 - _elapsed)
-
                     mode_snap = current_interview_mode
-
                     async def _inject_state(
                         snap=lines_snap, q_list=q_list_snap, t=current_turn, exp=expected_total,
                         mode=mode_snap, secs_rem=_secs_remaining
@@ -1805,7 +1658,6 @@ async def entrypoint(ctx: JobContext):
                                             "note": "state summary surfaced a contradiction; trust handled in formal state machine",
                                         })
                                         logger.info(f"[PROCTOR] contradiction_detected turn={t} (formal state handles trust)")
-
                                     depth_match = re.search(r"ANSWER_DEPTH:\s*\[(SURFACE|SPECIFIC|DEEP)\]", state)
                                     if depth_match:
                                         depth_level = depth_match.group(1)
@@ -1820,7 +1672,6 @@ async def entrypoint(ctx: JobContext):
                                                 "score_after": suspicion_score,
                                             })
                                         logger.info(f"[PROCTOR] answer_depth={depth_level} turn={t} score={suspicion_score}")
-
                                     if "MOVE ON NOW" in state:
                                         proctoring_events.append({
                                             "event": "stuck_alert",
@@ -1829,7 +1680,6 @@ async def entrypoint(ctx: JobContext):
                                             "score_after": suspicion_score,
                                         })
                                         logger.info(f"[PROCTOR] stuck_alert turn={t}")
-
                                     if "PACE CRITICAL" in state:
                                         proctoring_events.append({
                                             "event": "pace_critical",
@@ -1838,7 +1688,6 @@ async def entrypoint(ctx: JobContext):
                                             "score_after": suspicion_score,
                                         })
                                         logger.info(f"[PROCTOR] pace_critical turn={t}")
-
                                     if "TIME CRITICAL" in state or secs_rem <= 300:
                                         proctoring_events.append({
                                             "event": "time_critical_rapid_fire",
@@ -1848,7 +1697,6 @@ async def entrypoint(ctx: JobContext):
                                             "score_after": suspicion_score,
                                         })
                                         logger.info(f"[PROCTOR] time_critical_rapid_fire turn={t} secs_rem={secs_rem:.0f}")
-
                                     # --- Determine interview mode from proctoring risk only ---
                                     mode_risk_score = compose_mode_risk_score(
                                         integrity_risk,
@@ -1860,7 +1708,6 @@ async def entrypoint(ctx: JobContext):
                                         new_mode = "pressure"
                                     else:
                                         new_mode = mode  # keep existing (could be "deep" from genuine depth)
-
                                     if new_mode != current_interview_mode:
                                         logger.info(
                                             f"[PROCTOR] mode_change {current_interview_mode}->{new_mode} "
@@ -1875,7 +1722,6 @@ async def entrypoint(ctx: JobContext):
                                             "to": new_mode,
                                             "score": mode_risk_score,
                                         })
-
                                     # --- Remove old state injections - keep only the latest 2 ---
                                     messages = chat_ctx.messages() if callable(getattr(chat_ctx, "messages", None)) else chat_ctx.messages
                                     state_msgs = [
@@ -1892,7 +1738,6 @@ async def entrypoint(ctx: JobContext):
                                                 messages.remove(old_msg)
                                             except (ValueError, AttributeError):
                                                 pass
-
                                     mins_left = int(secs_rem // 60)
                                     secs_left = int(secs_rem % 60)
                                     time_flag = (
@@ -1921,15 +1766,12 @@ async def entrypoint(ctx: JobContext):
                             logger.warning(
                                 f"[STATE_INJECT] Injection failed at turn {t}: {e}"
                             )
-
                     spawn_background_task(_inject_state(), f"inject_state_turn_{current_turn}")
-
             # --- Periodic auto-save every 5 turns to prevent data loss ---
             if len(transcript_lines) > 0:
                 start_t = session_start_time
                 lines_snapshot = list(transcript_lines)
                 app_id_snap = app_id
-
                 async def _periodic_save():
                     try:
                         await persist_transcript(app_id_snap, lines_snapshot, start_t)
@@ -1938,15 +1780,12 @@ async def entrypoint(ctx: JobContext):
                         )
                     except Exception as save_err:
                         logger.warning(f"[TRANSCRIPT] Periodic save failed: {save_err}")
-
                 spawn_background_task(
                     _periodic_save(),
                     f"periodic_save_{len(lines_snapshot)}_lines",
                 )
-
         except Exception as e:
             logger.warning(f"[TRANSCRIPT] Event parse error: {e}")
-
     # --- Thinking Filler Logic ---
     # NOTE: session.say() fillers are intentionally disabled.
     # When filler audio and the LLM TTS reply fire at near-simultaneous times
@@ -1961,7 +1800,6 @@ async def entrypoint(ctx: JobContext):
     inactivity_nudge_sent_for_current_prompt = False
     first_agent_turn_committed_at: float | None = None
     greeting_echo_suppression_secs = 6.0
-
     def reset_inactivity_clock(start_waiting: bool, preserve_nudge_flags: bool = False) -> None:
         nonlocal awaiting_candidate_response, awaiting_candidate_since, \
             inactivity_nudge_sent_for_current_prompt
@@ -1973,7 +1811,6 @@ async def entrypoint(ctx: JobContext):
             logger.debug("[NUDGE] Inactivity clock started (awaiting candidate response)")
         else:
             logger.debug("[NUDGE] Inactivity clock cleared")
-
     @session.on("user_state_changed")
     def on_user_state_changed(event):
         nonlocal is_candidate_speaking
@@ -1982,7 +1819,6 @@ async def entrypoint(ctx: JobContext):
             reset_inactivity_clock(start_waiting=False)
         elif event.new_state == "listening":
             is_candidate_speaking = False
-
     @session.on("agent_state_changed")
     def on_agent_state_changed(event):
         nonlocal is_agent_speaking, first_agent_turn_committed_at
@@ -1995,7 +1831,6 @@ async def entrypoint(ctx: JobContext):
                 first_agent_turn_committed_at = time.monotonic()
             reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=True)
             logger.debug("[NUDGE] AI finished speaking; starting inactivity countdown")
-
     # Wait for participant to join so we have their identity for tracking.
     # Keep waiting during hardware check and handle room-disconnect gracefully.
     async def wait_for_human_participant(max_wait_seconds: int = 600):
@@ -2020,10 +1855,8 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"Transient participant wait error: {e}")
                 await asyncio.sleep(0.2)
-
         logger.warning(f"Did not find a human participant within {max_wait_seconds}s")
         return None
-
     # FIX: Increased to 300s (5 mins) to allow for hardware checks.
     # If nobody joins in 5 minutes, free the process slot.
     participant = await wait_for_human_participant(max_wait_seconds=300)
@@ -2056,21 +1889,18 @@ async def entrypoint(ctx: JobContext):
             )
         except Exception as e:
             logger.error(f"[TRANSCRIPT] Failed to record NO_SHOW status: {e}")
-
         disconnect_event.set()
         try:
             await session.aclose()
         except Exception:
             pass
         return
-
     # PREWARM: Remove the wait for 'user_ready' signal. 
     # Greet the candidate as soon as they are physically in the room.
     if not disconnect_event.is_set():
         ready_signal_received_at = time.perf_counter()
         ready_event.set()
         logger.info(f"Pre-warming greeting for app {app_id} immediately after participant join")
-
     async def _warm_greeting_tts(plugin) -> None:
         warmup_method = getattr(plugin, "warmup", None)
         if callable(warmup_method):
@@ -2081,9 +1911,7 @@ async def entrypoint(ctx: JobContext):
                 logger.info("[GREETING] TTS warmup completed before greeting")
             except Exception as e:
                 logger.warning(f"[GREETING] TTS warmup failed before greeting: {e}")
-
     await _warm_greeting_tts(tts_plugin)
-
     if ready_event.is_set() and not disconnect_event.is_set():
         session_start_time = time.time()
         logger.info(
@@ -2091,7 +1919,6 @@ async def entrypoint(ctx: JobContext):
             app_id, candidate_name, job_title,
             getattr(session_context, "candidate_band", "unknown"),
         )
-
         ai_name = context.get("aiName") or "Ishita"
         # Dynamic, personalized, warm greeting - adapted per language
         # The greeting avoids robotic openers and uses natural warmth.
@@ -2110,10 +1937,8 @@ async def entrypoint(ctx: JobContext):
                 f"Before we dive in - how are you doing today, and are you ready to get started?"
             ),
         )
-
         # Mark as started in DB while greeting starts immediately.
         spawn_background_task(mark_interview_started(app_id), "mark_interview_started")
-
         try:
             startup_latency_ms = int((time.perf_counter() - entry_started_at) * 1000)
             if ready_signal_received_at is not None:
@@ -2127,7 +1952,6 @@ async def entrypoint(ctx: JobContext):
                 logger.info(
                     f"[GREETING] Starting welcome (boot={startup_latency_ms}ms)"
                 )
-
             # Only deliver scripted welcome if the LLM hasn't already spoken
             # (prevents double-greeting when candidate says hello first)
             llm_already_spoke = any(
@@ -2176,23 +2000,19 @@ async def entrypoint(ctx: JobContext):
                     logger.error("[GREETING] All TTS retry attempts failed for greeting")
         except Exception as e:
             logger.error(f"[GREETING] Failed to deliver greeting: {e}")
-
     # CRITICAL: Start inactivity clock after greeting finishes (or is skipped).
     # session.say() is a scripted call - it does NOT fire agent_speech_committed, so the
     # normal "AI finished speaking" hook may not run for this scripted audio.
     reset_inactivity_clock(start_waiting=True)
     logger.debug("[NUDGE] Inactivity clock started after greeting delivery")
-
     # Wait for either explicit finish signal OR disconnect OR hard timeout,
     # while also firing timed mid-session nudges (candidate-questions prompt, final goodbye).
     finished_task = asyncio.create_task(interview_finished_event.wait())
     disconnected_task = asyncio.create_task(disconnect_event.wait())
     total_seconds = time_limit_mins * 60
-
     # Timed intervention flags
     candidate_questions_asked = False
     wrap_up_signal_sent = False
-
     # Fixed inactivity timing so the candidate always gets the same experience.
     # 50s silence -> warning, 60s silence -> end call.
     INACTIVITY_WARNING_SECS = 50
@@ -2200,9 +2020,7 @@ async def entrypoint(ctx: JobContext):
     CANDIDATE_Q_TRIGGER_SECS = max(10, min(120, int(total_seconds * 0.2)))
     FINAL_THANKS_TRIGGER_SECS = 10
     MIN_CANDIDATE_LINES_FOR_WRAPUP = 3
-
     inactivity_nudge_count = 0
-
     async def _deliver_nudge(text: str) -> None:
         await session.say(text, allow_interruptions=True)
         # Scripted speech doesn't fire agent_speech_committed, manually restart clock.
@@ -2210,7 +2028,6 @@ async def entrypoint(ctx: JobContext):
         nonlocal awaiting_candidate_response, awaiting_candidate_since
         awaiting_candidate_response = True
         awaiting_candidate_since = time.monotonic()
-
     async def _send_termination_signal(reason: str):
         try:
             import json
@@ -2219,12 +2036,10 @@ async def entrypoint(ctx: JobContext):
             logger.info(f"[NUDGE] Sent termination signal to frontend (reason={reason})")
         except Exception as e:
             logger.warning(f"Failed to send termination signal: {e}")
-
     def _pick_nudge() -> str:
         """Return a context-aware inactivity nudge based on the type of question asked."""
         name = candidate_first_name or candidate_name
         q = (_last_interviewer_question or "").lower()
-
         # Technical/explanatory questions — candidate may need thinking time
         if any(w in q for w in ("how", "why", "explain", "walk me through", "describe", "what happened", "tell me about")):
             technical_nudges = [
@@ -2233,7 +2048,6 @@ async def entrypoint(ctx: JobContext):
                 "If it helps, start with a specific example and work from there.",
             ]
             return technical_nudges[inactivity_nudge_count % len(technical_nudges)]
-
         # Reflective questions — candidate may be searching for the right words
         if any(w in q for w in ("feel", "think", "would you", "looking back", "what would you", "in hindsight")):
             reflective_nudges = [
@@ -2241,7 +2055,6 @@ async def entrypoint(ctx: JobContext):
                 f"Take a moment, {name}. There is no right answer here.",
             ]
             return reflective_nudges[inactivity_nudge_count % len(reflective_nudges)]
-
         # Example / story requests — candidate may be picking which story to tell
         if any(w in q for w in ("example", "specific", "moment", "situation", "time when", "instance")):
             example_nudges = [
@@ -2249,7 +2062,6 @@ async def entrypoint(ctx: JobContext):
                 f"You can also answer with just one concrete example if that is easier, {name}.",
             ]
             return example_nudges[inactivity_nudge_count % len(example_nudges)]
-
         # Generic fallback nudges
         generic_nudges = [
             f"If you're thinking aloud, feel free to keep going — that helps me follow your reasoning.",
@@ -2257,19 +2069,14 @@ async def entrypoint(ctx: JobContext):
             "If you went quiet mid-thought, you can continue right from there.",
         ]
         return generic_nudges[inactivity_nudge_count % len(generic_nudges)]
-
     session_loop_start = time.monotonic()
-
     while True:
         elapsed = time.monotonic() - session_loop_start
         remaining = total_seconds - elapsed
-
         if finished_task.done() or disconnected_task.done():
             break
-
         if remaining <= 0:
             break
-
         # --- 2-3 min remaining: wrap-up / candidate questions nudge ---
         # Fire when close to the end. Tailor text based on how much the candidate said.
         candidate_line_count = sum(
@@ -2308,11 +2115,9 @@ async def entrypoint(ctx: JobContext):
                 logger.warning(
                     f"[TIMING] Failed to deliver candidate-questions nudge: {e}"
                 )
-
         # --- Final 10 seconds: warm thank-you ---
         if remaining <= FINAL_THANKS_TRIGGER_SECS:
             break
-
         # --- Strict Inactivity Handling ---
         # Suppressed after wrap-up nudge to avoid piling on messages near end.
         # 1. 30s: Initial warm nudge
@@ -2321,13 +2126,11 @@ async def entrypoint(ctx: JobContext):
         if candidate_questions_asked:
             await asyncio.sleep(1)
             continue
-
         inactivity_elapsed = (
             (time.monotonic() - awaiting_candidate_since)
             if awaiting_candidate_response and awaiting_candidate_since is not None
             else 0.0
         )
-
         # -- Stage 1: Warning --
         # Extra guard: don't fire if agent just finished speaking within last 5s
         # (covers the LLM "thinking/typing" window before TTS starts)
@@ -2353,7 +2156,6 @@ async def entrypoint(ctx: JobContext):
                 logger.info(f"[NUDGE] {INACTIVITY_WARNING_SECS:.0f}s termination warning delivered")
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver warning: {e}")
-
         # -- Stage 2: Final Termination --
         if (
             not is_agent_speaking
@@ -2370,12 +2172,9 @@ async def entrypoint(ctx: JobContext):
             interview_finished_event.set()
             disconnect_event.set()
             break
-
         await asyncio.sleep(1)
-
     # Check if we exited because of finish/disconnect or because time ran out
     time_expired = not finished_task.done() and not disconnected_task.done()
-
     if time_expired:
         # Tailor the goodbye to how much content was actually exchanged.
         # Avoid "we covered a lot" if the candidate barely spoke.
@@ -2392,31 +2191,26 @@ async def entrypoint(ctx: JobContext):
                 f"That concludes our interview, {candidate_first_name or candidate_name}. "
                 "Thank you for joining today. I’m ending the session now, and I wish you all the best."
             )
-
         try:
             await session.say(goodbye_text)
             await asyncio.sleep(3.0)  # wait for TTS to fully play before disconnecting
         except Exception:
             pass
-
         # FORCE DISCONNECT ROOM
         logger.info(f"Session hard-terminated due to time limit ({time_limit_mins}m)")
         await _send_termination_signal("time_expired")
         interview_marked_finished = True
         interview_finished_event.set()
         disconnect_event.set()
-
     # Cancel pending tasks
     for task in [finished_task, disconnected_task]:
         if not task.done():
             task.cancel()
-
     # --- Grace Period: Wait for final STT results to arrive (Deepgram/LiveKit tail) ---
     logger.info(
         f"Interview ended (finished={finished_task.done()}, time_expired={time_expired}). Waiting 2s for final transcripts..."
     )
     await asyncio.sleep(2)
-
     # ✅ Final definitive save - Phase 5 includes proctoring report + answer scores
     proctoring_data = {
         "role_category": session_context.role_category,
@@ -2453,7 +2247,6 @@ async def entrypoint(ctx: JobContext):
         f"trend={_trust_state['trend']} "
         f"recommendation={recruiter_summary['recommendation']}"
     )
-
     await persist_transcript(
         app_id,
         transcript_lines,
@@ -2462,10 +2255,8 @@ async def entrypoint(ctx: JobContext):
         final_status="COMPLETED",
         recruiter_summary=recruiter_summary,
     )
-
     # Save answer quality scores
     await persist_answer_scores(app_id, answer_scores)
-
     selected_tts_model = (
         str(org_google_model or DEFAULT_GOOGLE_TTS_MODEL)
         if org_tts_provider == "GOOGLE"
@@ -2487,7 +2278,6 @@ async def entrypoint(ctx: JobContext):
         stt_model=selected_stt_model,
     )
     await flush_pending_manual_billing(org_id)
-
     # 🤖 AI Scorecard (NEW)
     if session_start_time:
         try:
@@ -2505,7 +2295,6 @@ async def entrypoint(ctx: JobContext):
             logger.warning(f"[SUMMARY] Timed out for {app_id}; skipped after 8s")
         except Exception as e:
             logger.error(f"[SUMMARY] Failed post-interview for {app_id}: {e}")
-
         # Generate structured interview report (scores, skills, strengths)
         try:
             await asyncio.wait_for(
@@ -2533,13 +2322,11 @@ async def entrypoint(ctx: JobContext):
             logger.warning(f"[REPORT] Timed out for {app_id}; skipped after 10s")
         except Exception as e:
             logger.error(f"[REPORT] Failed post-interview for {app_id}: {e}")
-
     # Sync with dashboard: Application COMPLETED
     if finished_task.done():
         await update_interview_status(app_id)
         # ⚡ Trigger Pinecone Sync immediately
         await notify_sync_engine(app_id)
-
     # Cancel any leftover fire-and-forget work so job teardown is instant.
     if background_tasks:
         logger.debug(f"[SHUTDOWN] Cancelling {len(background_tasks)} background task(s)")
@@ -2548,7 +2335,6 @@ async def entrypoint(ctx: JobContext):
                 bg_task.cancel()
         await asyncio.gather(*list(background_tasks), return_exceptions=True)
         background_tasks.clear()
-
     # Allow session to close
     logger.info("Final save complete. Closing job process.")
     try:
@@ -2558,8 +2344,6 @@ async def entrypoint(ctx: JobContext):
             session.shutdown(drain=False)
         except Exception:
             pass
-
-
 if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(

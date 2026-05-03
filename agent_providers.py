@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import asyncio
 import base64
 import json
@@ -9,7 +8,6 @@ import urllib.parse
 import urllib.request
 import uuid
 from typing import Any
-
 from livekit.agents import (
     APIConnectOptions,
     APIConnectionError,
@@ -21,7 +19,6 @@ from livekit.agents import (
     tts as lk_tts,
 )
 from livekit.plugins import cartesia, deepgram, openai, sarvam, silero
-
 from agent_runtime_support import (
     CARTESIA_MODEL,
     CARTESIA_VOICE_ID,
@@ -31,8 +28,6 @@ from agent_runtime_support import (
     logger,
 )
 from agent_utils import _cartesia_plugin_model
-
-
 def build_cartesia_tts(
     language: str = "en",
     model: str = CARTESIA_MODEL,
@@ -42,7 +37,6 @@ def build_cartesia_tts(
     api_key = os.getenv("CARTESIA_API_KEY")
     if not api_key:
         raise RuntimeError("CARTESIA_API_KEY is not set")
-
     tts_kwargs: dict[str, Any] = {
         "model": _cartesia_plugin_model(model, CARTESIA_MODEL),
         "voice": voice_id,
@@ -53,8 +47,6 @@ def build_cartesia_tts(
     if extra_kwargs:
         tts_kwargs.update(extra_kwargs)
     return cartesia.TTS(**tts_kwargs)
-
-
 def build_tts(
     language: str = "en", model: str = CARTESIA_MODEL, voice_id: str = CARTESIA_VOICE_ID
 ):
@@ -65,18 +57,14 @@ def build_tts(
         logger.info(f"[TTS] Primary voice={voice_id}, fallback voice={fallback_voice} (Jacqueline)")
         return lk_tts.FallbackAdapter([primary_tts, fallback_tts], max_retry_per_tts=1)
     return primary_tts
-
-
 def build_sarvam_tts(
     language: str = "en-IN", model: str = "bulbul:v3", voice_id: str = "shubh"
 ):
     api_key = os.getenv("SARVAM_API_KEY")
     if not api_key:
         raise RuntimeError("SARVAM_API_KEY is not set")
-
     lang_map = {"hi": "hi-IN", "en": "en-IN"}
     mapped_lang = lang_map.get(language, language)
-
     tts_kwargs: dict[str, Any] = {
         "target_language_code": mapped_lang,
         "model": model,
@@ -88,22 +76,17 @@ def build_sarvam_tts(
         "min_buffer_size": 50,
         "max_chunk_length": 150,
     }
-
     if "v2" in model:
         tts_kwargs["pitch"] = 0.0
         tts_kwargs["loudness"] = 1.0
         tts_kwargs["enable_preprocessing"] = True
     else:
         tts_kwargs["temperature"] = 0.6
-
     return sarvam.TTS(**tts_kwargs)
-
-
 class _GoogleGeminiHttpChunkedStream(lk_tts.ChunkedStream):
     def __init__(self, *, tts: "GoogleGeminiHttpTTS", input_text: str, conn_options: APIConnectOptions) -> None:
         super().__init__(tts=tts, input_text=input_text, conn_options=conn_options)
         self._tts = tts
-
     async def _run(self, output_emitter: lk_tts.AudioEmitter) -> None:
         try:
             audio_bytes = await self._tts._generate_audio(self._input_text, timeout=self._conn_options.timeout)
@@ -129,8 +112,6 @@ class _GoogleGeminiHttpChunkedStream(lk_tts.ChunkedStream):
             raise APITimeoutError("Google Gemini TTS request timed out.") from e
         except Exception as e:
             raise APIConnectionError(f"Google Gemini TTS error: {e}", retryable=True) from e
-
-
 class GoogleGeminiHttpTTS(lk_tts.TTS):
     def __init__(self, *, api_key: str, model: str = "gemini-2.5-flash-preview-tts", voice_name: str = "Kore") -> None:
         super().__init__(
@@ -141,15 +122,12 @@ class GoogleGeminiHttpTTS(lk_tts.TTS):
         self._api_key = api_key.strip()
         self._model = model.strip() or "gemini-2.5-flash-preview-tts"
         self._voice_name = voice_name.strip() or "Kore"
-
     @property
     def model(self) -> str:
         return self._model
-
     @property
     def provider(self) -> str:
         return "Google Gemini"
-
     async def _generate_audio(self, text: str, *, timeout: float) -> bytes:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{urllib.parse.quote(self._model, safe='')}:generateContent"
         payload = {
@@ -175,7 +153,6 @@ class GoogleGeminiHttpTTS(lk_tts.TTS):
                 "x-goog-api-key": self._api_key,
             },
         )
-
         def _do_request() -> bytes:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 raw = resp.read()
@@ -187,44 +164,30 @@ class GoogleGeminiHttpTTS(lk_tts.TTS):
                 if isinstance(encoded, str) and encoded.strip() and mime_type.startswith("audio/"):
                     return base64.b64decode(encoded)
             raise RuntimeError("Invalid audio response from Google Gemini")
-
         return await asyncio.to_thread(_do_request)
-
     def synthesize(
         self, text: str, *, conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS
     ) -> lk_tts.ChunkedStream:
         return _GoogleGeminiHttpChunkedStream(tts=self, input_text=text, conn_options=conn_options)
-
-
 def build_google_tts(model: str = "gemini-2.5-flash-preview-tts", voice_name: str = "Kore"):
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError("GOOGLE_API_KEY is not set")
     return GoogleGeminiHttpTTS(api_key=api_key, model=model, voice_name=voice_name)
-
-
 class _GoogleCompletionPromptDetails:
     def __init__(self, cached_tokens: int = 0) -> None:
         self.cached_tokens = cached_tokens
-
-
 class _GoogleCompletionUsage:
     def __init__(self, prompt_tokens: int = 0, completion_tokens: int = 0, cached_tokens: int = 0) -> None:
         self.prompt_tokens = prompt_tokens
         self.completion_tokens = completion_tokens
         self.prompt_tokens_details = _GoogleCompletionPromptDetails(cached_tokens=cached_tokens)
-
-
 class _GoogleCompletionMessage:
     def __init__(self, content: str) -> None:
         self.content = content
-
-
 class _GoogleCompletionChoice:
     def __init__(self, content: str) -> None:
         self.message = _GoogleCompletionMessage(content)
-
-
 class _GoogleCompletionResponse:
     def __init__(self, *, model: str, content: str, prompt_tokens: int = 0, completion_tokens: int = 0, cached_tokens: int = 0) -> None:
         self.model = model
@@ -234,12 +197,9 @@ class _GoogleCompletionResponse:
             completion_tokens=completion_tokens,
             cached_tokens=cached_tokens,
         )
-
-
 class _GoogleChatCompletions:
     def __init__(self, client: Any) -> None:
         self._client = client
-
     @staticmethod
     def _join_message_content(content: Any) -> str:
         if isinstance(content, str):
@@ -255,11 +215,9 @@ class _GoogleChatCompletions:
                         pieces.append(str(text))
             return "\n".join(piece for piece in pieces if piece)
         return str(content)
-
     async def create(self, *, model: str, temperature: float | None = None, max_tokens: int | None = None, messages: list[dict[str, Any]] | None = None, **_: Any) -> _GoogleCompletionResponse:
         system_sections: list[str] = []
         contents: list[dict[str, Any]] = []
-
         for message in messages or []:
             role = str(message.get("role") or "user").lower()
             text = self._join_message_content(message.get("content", ""))
@@ -274,9 +232,7 @@ class _GoogleChatCompletions:
                         "parts": [{"text": text}],
                     }
                 )
-
         from google.genai import types as google_genai_types
-
         config = google_genai_types.GenerateContentConfig(
             systemInstruction="\n\n".join(system_sections) if system_sections else None,
             temperature=temperature,
@@ -300,28 +256,19 @@ class _GoogleChatCompletions:
             completion_tokens=completion_tokens,
             cached_tokens=cached_tokens,
         )
-
-
 class _GoogleChatNamespace:
     def __init__(self, client: Any) -> None:
         self.completions = _GoogleChatCompletions(client)
-
-
 class GoogleAnalysisClient:
     def __init__(self, api_key: str) -> None:
         from google import genai as google_genai
-
         self._client = google_genai.Client(api_key=api_key)
         self.chat = _GoogleChatNamespace(self._client)
-
-
 def build_google_analysis_client() -> GoogleAnalysisClient:
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError("GOOGLE_API_KEY is not set")
     return GoogleAnalysisClient(api_key=api_key)
-
-
 def build_google_realtime_llm(
     *,
     model: str = GOOGLE_REALTIME_MODEL,
@@ -356,8 +303,6 @@ def build_google_realtime_llm(
         modalities=[google_genai_types.Modality.AUDIO, google_genai_types.Modality.TEXT],
         temperature=temperature,
     )
-
-
 def build_stt(language_code: str = "en", model: str = STT_MODEL):
     stt_kwargs: dict[str, Any] = {
         "model": model,
@@ -366,10 +311,8 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
         "interim_results": True,
         "punctuate": True,
     }
-
     if "nova" in model.lower():
         stt_kwargs["enable_diarization"] = True
-
     for attempt in range(3):
         try:
             attempt_kwargs = dict(stt_kwargs)
@@ -413,21 +356,13 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
                 raise
             continue
     return deepgram.STT(**{"model": model, "language": language_code})
-
-
 def build_sarvam_stt(language: str = "en-IN", model: str = "saaras:v3"):
     lang_map = {"hi": "hi-IN", "en": "en-IN", "en-US": "en-IN", "hi-IN": "hi-IN"}
     mapped_lang = lang_map.get(language, language)
     return sarvam.STT(language=mapped_lang, model=model)
-
-
 def build_llm(model: str = LLM_MODEL, temperature: float = 0.6):
     return openai.LLM(model=model, temperature=temperature)
-
-
 def build_sarvam_llm(model: str = "sarvam-30b"):
     return sarvam.LLM(model=model)
-
-
 def build_vad():
     return silero.VAD.load()

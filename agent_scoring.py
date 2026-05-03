@@ -4,11 +4,8 @@ import re
 import time
 import urllib.request
 from typing import Any, Optional
-
 from agent_persistence import _extract_openai_completion_usage, persist_org_manual_billing_usage
 from agent_runtime_support import APP_BASE_URL, LLM_MODEL, logger
-
-
 async def score_answer_quality(
     candidate_answer: str,
     last_question: str,
@@ -29,9 +26,7 @@ async def score_answer_quality(
             "concerns": ["empty_answer"],
             "turn": 0,
         }
-
     recent_context = "\n".join(transcript_lines[-8:]) if transcript_lines else ""
-
     try:
         completion = await asyncio.wait_for(
             client.chat.completions.create(
@@ -128,8 +123,6 @@ async def score_answer_quality(
             "signals": [],
             "concerns": ["error"],
         }
-
-
 async def evaluate_answer_and_decide(
     candidate_answer: str,
     last_question: str,
@@ -142,9 +135,7 @@ async def evaluate_answer_and_decide(
     """Per-turn answer evaluator. Returns probe-vs-move-on guidance."""
     if not candidate_answer or not candidate_answer.strip():
         return {"action": "MOVE_ON", "probe_mode": None, "reason": "empty answer", "depth_signal": "SURFACE"}
-
     recent_context = "\n".join(transcript_lines[-10:]) if transcript_lines else ""
-
     try:
         completion = await asyncio.wait_for(
             client.chat.completions.create(
@@ -208,8 +199,6 @@ async def evaluate_answer_and_decide(
     except Exception as e:
         logger.warning(f"[EVAL] Per-turn evaluator failed: {e}", exc_info=True)
         return {"action": "MOVE_ON", "probe_mode": None, "reason": str(e), "depth_signal": "SURFACE"}
-
-
 async def extract_claims(
     candidate_answer: str,
     turn: int,
@@ -220,7 +209,6 @@ async def extract_claims(
     """Extract verifiable factual claims from a single candidate answer."""
     if not candidate_answer or len(candidate_answer.strip()) < 20:
         return []
-
     try:
         completion = await asyncio.wait_for(
             client.chat.completions.create(
@@ -267,8 +255,6 @@ async def extract_claims(
     except Exception as e:
         logger.debug(f"[CLAIMS] Claim extraction failed at turn {turn}: {e}")
         return []
-
-
 def check_contradiction(
     new_claim: dict,
     existing_claims_by_type: dict[str, list[dict]],
@@ -278,30 +264,22 @@ def check_contradiction(
     new_value = str(new_claim.get("value", "")).lower().strip()
     new_context = str(new_claim.get("context", "general")).lower().strip()
     new_turn = new_claim.get("turn", 0)
-
     if not claim_type or not new_value:
         return None
-
     for old in existing_claims_by_type.get(claim_type, []):
         old_context = str(old.get("context", "general")).lower().strip()
         if new_context != "general" and old_context != "general" and new_context != old_context:
             continue
-
         old_value = str(old.get("value", "")).lower().strip()
         old_turn = old.get("turn", 0)
-
         if old_value == new_value:
             continue
-
         def _extract_number(s: str) -> Optional[float]:
             m = re.search(r"(\d+(?:\.\d+)?)", s)
             return float(m.group(1)) if m else None
-
         new_num = _extract_number(new_value)
         old_num = _extract_number(old_value)
-
         is_contradiction = False
-
         if claim_type == "team_size":
             if new_num is not None and old_num is not None and abs(new_num - old_num) >= 3:
                 is_contradiction = True
@@ -324,7 +302,6 @@ def check_contradiction(
             if new_value != old_value and new_num is None and old_num is None:
                 if len(set(new_value.split()) & set(old_value.split())) == 0:
                     is_contradiction = True
-
         if is_contradiction:
             return {
                 "type": claim_type,
@@ -337,15 +314,11 @@ def check_contradiction(
                 "new_quote": new_claim.get("quote", ""),
                 "detected_at": time.time(),
             }
-
     return None
-
-
 async def notify_sync_engine(app_id: str):
     """Call the Next.js API to trigger Pinecone indexing for this candidate."""
     try:
         url = f"{APP_BASE_URL}/api/admin/candidates/{app_id}/sync"
-
         def _post_sync_request() -> tuple[int, str]:
             request = urllib.request.Request(
                 url,
@@ -360,11 +333,9 @@ async def notify_sync_engine(app_id: str):
                 status = int(getattr(response, "status", response.getcode()))
                 body = response.read().decode("utf-8", errors="replace")
                 return status, body
-
         status, body = await asyncio.to_thread(_post_sync_request)
         logger.info(f"[SYNC] Notified sync engine for {app_id} status={status}")
         if body.strip():
             logger.debug(f"[SYNC] Response body for {app_id}: {body[:500]}")
     except Exception as e:
         logger.warning(f"[SYNC_ERROR] Failed to notify sync engine: {e}")
-

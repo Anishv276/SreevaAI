@@ -11,12 +11,9 @@ import { putObject } from "./lib/s3";
 import { generateId } from "./lib/ids";
 import { isInterviewTokenRequired } from "./lib/interview-access";
 import { appendCandidateActivity } from "./lib/candidate-activity";
-
 // Load environment variables
 dotenv.config();
-
 console.log('DEBUG: REDIS_URL length:', process.env.REDIS_URL?.length || 0);
-
 // â”€â”€â”€ Silence BullMQ's built-in eviction-policy warning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // BullMQ internally logs "IMPORTANT! Eviction policy is volatile-lru" on every
 // queue/worker connection check. We handle this ourselves, so we suppress it.
@@ -35,9 +32,7 @@ if (!process.env.REDIS_URL) {
   console.error('â Œ FATAL: REDIS_URL is missing from environment variables!');
   process.exit(1);
 }
-
 const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-
 async function persistInterviewUpdateRaw(params: {
   applicationId: string;
   recordingUrl?: string;
@@ -45,10 +40,8 @@ async function persistInterviewUpdateRaw(params: {
   interviewStatus?: string;
 }) {
   const { applicationId, recordingUrl, transcript, interviewStatus } = params;
-
   const now = new Date();
   const fallbackId = generateId("int", "fallback");
-
   await prisma.$executeRawUnsafe(
     `
     INSERT INTO "Interview" ("id", "applicationId", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "completedAt", "createdAt", "updatedAt")
@@ -69,58 +62,45 @@ async function persistInterviewUpdateRaw(params: {
     now,
     fallbackId
   );
-
 }
-
 const redisConnection = new IORedis(process.env.REDIS_URL!, {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
   retryStrategy: (times: number) => Math.min(times * 500, 10_000),
 });
-
 console.log('🚀 Worker started: Awaiting jobs...');
-
 async function getRedisMemoryStatus() {
   try {
     const info = await redisConnection.info("memory");
     const usedMemoryMatch = info.match(/used_memory:(\d+)/);
     const maxMemoryMatch = info.match(/maxmemory:(\d+)/);
-
     const usedMemory = usedMemoryMatch ? Number(usedMemoryMatch[1]) : null;
     const maxMemory = maxMemoryMatch ? Number(maxMemoryMatch[1]) : null;
-
     return { usedMemory, maxMemory };
   } catch (error) {
     console.warn("[Worker] Could not read Redis memory info:", (error as Error).message);
     return { usedMemory: null, maxMemory: null };
   }
 }
-
 function formatBytes(bytes: number | null) {
   if (bytes == null || Number.isNaN(bytes)) return "unknown";
   const units = ["B", "KB", "MB", "GB"];
   let value = bytes;
   let unitIndex = 0;
-
   while (value >= 1024 && unitIndex < units.length - 1) {
     value /= 1024;
     unitIndex += 1;
   }
-
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
-
 async function shouldSkipCronRegistration() {
   const { usedMemory, maxMemory } = await getRedisMemoryStatus();
-
   if (!usedMemory || !maxMemory) {
     return false;
   }
-
   if (maxMemory <= 0) {
     return false;
   }
-
   const usageRatio = usedMemory / maxMemory;
   if (usageRatio >= 0.9) {
     console.warn(
@@ -130,16 +110,11 @@ async function shouldSkipCronRegistration() {
     );
     return true;
   }
-
   return false;
 }
-
-
 const worker = new Worker('resume-processing', async (job) => {
   const { applicationId, resumeText: initialResumeText, resumeUrl, jdText, drive, applicantEmail, applicantName, structuredResume: initialStructuredResume } = job.data;
-  
   console.log(`[JOB] Processing application ${applicationId} for ${applicantEmail}`);
-
   // Guard: skip if the application record was deleted
   const appExists = await prisma.application.findUnique({
     where: { id: applicationId },
@@ -154,7 +129,6 @@ const worker = new Worker('resume-processing', async (job) => {
     console.warn(`[JOB] Application ${applicationId} no longer exists. Discarding stale job.`);
     return;
   }
-
   const normalizedExistingStatus = String(appExists.resumeStatus || "")
     .trim()
     .toUpperCase()
@@ -163,29 +137,23 @@ const worker = new Worker('resume-processing', async (job) => {
     ["SHORTLISTED", "ACCEPTED", "REJECTED"].includes(normalizedExistingStatus) &&
     appExists.aiScore !== null &&
     !!appExists.aiReport;
-
   if (alreadyFinalized && !job.data.force) {
     console.log(
       `[JOB] Application ${applicationId} already finalized (${normalizedExistingStatus}). Skipping duplicate processing.`
     );
     return;
   }
-  
     let resumeText = initialResumeText || "";
     let structuredResume = initialStructuredResume || {};
     let tempResumePath: string | null = null;
     let tempInputPath: string | null = null;
-
     try {
         // 1. ENSURE TEXT & STRUCTURE (Always re-extract if text is empty)
         const needsExtraction = !resumeText || resumeText.length < 10 || Object.keys(structuredResume).length === 0;
-        
         if (needsExtraction) {
             console.log(`[JOB] Resume text or structure missing. Initiating extraction...`);
-            
             // Check if resumeUrl is a valid HTTP(S) URL
             const isRemoteUrl = typeof resumeUrl === 'string' && (resumeUrl.startsWith('http://') || resumeUrl.startsWith('https://'));
-            
             if (isRemoteUrl) {
                 tempResumePath = join(tmpdir(), `resume_${applicationId}_${Date.now()}.pdf`);
                 try {
@@ -199,11 +167,9 @@ const worker = new Worker('resume-processing', async (job) => {
                     tempResumePath = null;
                 }
             }
-
             if (tempResumePath) {
                 const extractProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempResumePath, "RESUME"]);
                 let extractionOutput = "";
-                
                 await new Promise((resolve, reject) => {
                     extractProcess.stdout.on("data", (data) => { extractionOutput += data.toString(); });
                     extractProcess.on("close", (code) => {
@@ -211,7 +177,6 @@ const worker = new Worker('resume-processing', async (job) => {
                         else resolve(null);
                     });
                 });
-
                 try {
                     const parsedExtraction = JSON.parse(extractionOutput);
                     resumeText = parsedExtraction.text || resumeText;
@@ -227,7 +192,6 @@ const worker = new Worker('resume-processing', async (job) => {
         } else {
             console.log(`[JOB] Using provided resume text and structured data.`);
         }
-
     // Update the DB with the latest structured data
     await (prisma.application as any).update({
       where: { id: applicationId },
@@ -236,11 +200,9 @@ const worker = new Worker('resume-processing', async (job) => {
         experienceYears: (structuredResume as any)?.experience?.total_years != null ? parseFloat(String((structuredResume as any).experience.total_years)) : null,
       }
     });
-
     // 2. SCORING (Structured JD vs Structured Resume)
     console.log(`[JOB] Scoring candidate ${applicantEmail} using Structured Data...`);
     let aiResult: { score: number; status: string; reasoning: string; hard_rejected?: boolean } = { score: 0, status: "Pending", reasoning: "No resume data" };
-
     // Always read the latest drive settings from DB (never trust queued snapshot).
     const latestDrive = await (prisma.drive as any).findUnique({
       where: { id: drive.id },
@@ -252,10 +214,8 @@ const worker = new Worker('resume-processing', async (job) => {
                 orgId: true,
       },
     });
-
     // Threshold source of truth: DB value; fallback must be 0 (not 70).
     const THRESHOLD = Number(latestDrive?.screeningThreshold ?? 0) || 0;
-    
     // Parse JD details if stored as string
     let jdDetails: Record<string, any> = {};
     try {
@@ -270,7 +230,6 @@ const worker = new Worker('resume-processing', async (job) => {
       console.warn(`[JOB] Failed to parse extractedDetails for drive ${drive.id}:`, e);
       jdDetails = {};
     }
-
     const scoringInput = {
         resume: structuredResume,
         jd: jdDetails,
@@ -278,15 +237,11 @@ const worker = new Worker('resume-processing', async (job) => {
         jd_raw_text: jdText || latestDrive?.description || (drive as any).description || "",
         threshold: THRESHOLD
     };
-
     tempInputPath = join(tmpdir(), `scoring_${Date.now()}_${Math.random().toString(36).substring(7)}.json`);
     await writeFile(tempInputPath, JSON.stringify(scoringInput));
-    
     const pythonProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempInputPath, "SCORE"]);
-
     let outputData = "";
     let errorData = "";
-
     await new Promise((resolve, reject) => {
       pythonProcess.stdout.on("data", (data) => { outputData += data.toString(); });
       pythonProcess.stderr.on("data", (data) => { 
@@ -299,27 +254,21 @@ const worker = new Worker('resume-processing', async (job) => {
         else resolve(null);
       });
     });
-
     await unlink(tempInputPath).catch(() => {});
     if (tempResumePath) await unlink(tempResumePath).catch(() => {});
-
     const parsed = JSON.parse(outputData);
     aiResult = parsed.data || parsed;
-
-
     const currentScore = Math.max(0, Math.min(100, parseInt(aiResult.score?.toString() || "0") || 0));
     const normalizedAiStatus = String(aiResult.status || "")
       .trim()
       .toUpperCase()
       .replace(/\s+/g, "_");
-
     // The DB screeningThreshold is the ONLY source of truth for pass/fail.
     // hard_rejected from Python is purely informational (shown in report to HR)
     // but can NEVER override the admin-configured threshold.
     // If admin sets threshold=1%, a score of 26 MUST shortlist - no exceptions.
     const resumeStatus: "SHORTLISTED" | "REJECTED" =
       currentScore >= THRESHOLD ? "SHORTLISTED" : "REJECTED";
-
     // 2. Update DB
     const exists = await prisma.application.findUnique({
       where: { id: applicationId },
@@ -329,25 +278,19 @@ const worker = new Worker('resume-processing', async (job) => {
       console.warn(`[JOB] Application ${applicationId} no longer exists. Skipping update.`);
       return;
     }
-
-    
-
     await prisma.application.update({
       where: { id: applicationId },
       data: {
         resumeStatus: resumeStatus,
         aiScore: currentScore,
         aiReport: JSON.stringify(aiResult),
-        
         ...(resumeStatus === "REJECTED" && {
           interviewStatus: "Not Qualified",
           hiringStatus: "Not Shortlisted",
         }),
       }
     });
-
     console.log(`[SUCCESS] Candidate ${applicantEmail} scored ${currentScore}. Status: ${resumeStatus}`);
-
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
     try {
         const syncToken = process.env.WORKER_SYNC_TOKEN?.trim() || process.env.JWT_SECRET?.trim();
@@ -365,7 +308,6 @@ const worker = new Worker('resume-processing', async (job) => {
         // Keep the candidate flow moving even if Pinecone is temporarily unavailable.
         // Email delivery and status updates are more important than search indexing.
     }
-
     // 4. Interview invite / status email flow
     const { sendApplicationStatusEmail } = await import('./lib/mail');
         if (resumeStatus === 'SHORTLISTED') {
@@ -383,9 +325,7 @@ const worker = new Worker('resume-processing', async (job) => {
           status: "PENDING",
         },
       });
-
       const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com'}/interview/${applicationId}?token=${interview.accessToken}`;
-
       const emailResult = await sendApplicationStatusEmail({
         email: applicantEmail,
         fullName: applicantName,
@@ -413,12 +353,10 @@ const worker = new Worker('resume-processing', async (job) => {
       });
       console.log(`[EMAIL] Status-only email sent to ${applicantEmail}  status: ${resumeStatus}`);
     }
-
   } catch (error) {
     console.error(`[ERROR] Job ${job.id} failed:`, error);
     if (tempResumePath) await unlink(tempResumePath).catch(() => {});
     if (tempInputPath) await unlink(tempInputPath).catch(() => {});
-
     throw error; // Rethrow so BullMQ knows it failed and can retry
   }
 }, {
@@ -430,11 +368,9 @@ const worker = new Worker('resume-processing', async (job) => {
   removeOnComplete: { count: 0 }, // Delete immediately — keeps 0 completed jobs
   removeOnFail: { count: 10 } // KEEP ONLY 10 FAILURES FOR DEBUGGING
 });
-
 worker.on('failed', (job, err) => {
   console.log(`[FATAL] Job ${job?.id} failed permanently: ${err.message}`);
 });
-
 const invitationDeliveryWorker = new Worker(
   "invitation-delivery-queue",
   async (job) => {
@@ -449,11 +385,9 @@ const invitationDeliveryWorker = new Worker(
       emailType?: "screening" | "hiring";
       scheduledAt?: string;
     } = job.data || {};
-
     if (!applicationId || !action) {
       throw new Error("Missing applicationId or action in invitation-delivery-queue job");
     }
-
     const application = await prisma.application.findUnique({
       where: { id: applicationId },
       select: {
@@ -477,30 +411,24 @@ const invitationDeliveryWorker = new Worker(
         },
       },
     });
-
     if (!application) {
       console.warn(`[Invitation Worker] Application ${applicationId} no longer exists. Skipping.`);
       return { skipped: true, reason: "missing_application" };
     }
-
     if (!application.email) {
       console.warn(`[Invitation Worker] Application ${applicationId} has no email address. Skipping.`);
       return { skipped: true, reason: "missing_email" };
     }
-
     if (application.drive?.status && application.drive.status !== "ACTIVE") {
       console.warn(`[Invitation Worker] Drive ${application.drive.id} is ${application.drive.status}. Skipping.`);
       return { skipped: true, reason: "drive_inactive" };
     }
-
     const now = new Date();
     const scheduledDate = scheduledAt ? new Date(scheduledAt) : now;
     let interviewLink: string | undefined;
-
     if (action === "shortlist") {
       const newToken = randomUUID();
       const expiresAt = new Date(now.getTime() + 48 * 60 * 60 * 1000);
-
       if (application.interview) {
         await (prisma.interview as any).update({
           where: { id: application.interview.id },
@@ -527,21 +455,17 @@ const invitationDeliveryWorker = new Worker(
           },
         });
       }
-
       const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com"}/interview/${applicationId}`;
       interviewLink = isInterviewTokenRequired()
         ? `${interviewBase}?token=${newToken}`
         : interviewBase;
     }
-
     const { sendApplicationStatusEmail } = await import('./lib/mail');
-
     const emailStatus = action === "shortlist"
       ? "SHORTLISTED"
       : action === "hire"
         ? "Hired"
         : "REJECTED";
-
     const mailResult = await sendApplicationStatusEmail({
       email: application.email,
       fullName: application.fullName || "Candidate",
@@ -551,7 +475,6 @@ const invitationDeliveryWorker = new Worker(
       score: application.aiScore || 0,
       interviewLink,
     });
-
     if (!mailResult.success) {
       const reason =
         typeof mailResult.error === "string"
@@ -559,7 +482,6 @@ const invitationDeliveryWorker = new Worker(
           : (mailResult.error as any)?.message || "Unknown email delivery error";
       throw new Error(reason);
     }
-
     await appendCandidateActivity(applicationId, {
       type: "email_sent",
       label: action === "shortlist" ? "Shortlisted email sent" : action === "hire" ? "Hire email sent" : "Rejection email sent",
@@ -567,7 +489,6 @@ const invitationDeliveryWorker = new Worker(
       timestamp: new Date().toISOString(),
       source: "worker",
     });
-
     console.log(`[Invitation Worker] Delivered ${action} email for ${applicationId}`);
     return { success: true };
   },
@@ -581,11 +502,9 @@ const invitationDeliveryWorker = new Worker(
     removeOnFail: { count: 10 },
   }
 );
-
 invitationDeliveryWorker.on("failed", (job, err) => {
   console.log(`[FATAL] Invitation Delivery Job ${job?.id} failed permanently: ${err.message}`);
 });
-
 /**
  * ðŸ’¾ DATABASE BACKUP WORKER (Phase 5 - Persistent Backups to R2)
  * Runs daily at midnight to export core hiring data.
@@ -594,11 +513,10 @@ const backupWorker = new Worker(
   "backup-queue",
   async (job) => {
     console.log(`[Backup Worker] Starting database backup to R2...`);
-
     try {
       // 1. Fetch data from core tables
       const users = await prisma.user.findMany();
-      const drives = await (prisma.drive as any).findMany({
+      const drives = await prisma.drive.findMany({
         select: {
           id: true,
           title: true,
@@ -619,13 +537,11 @@ const backupWorker = new Worker(
           skills: true,
           extractedDetails: true,
           interviewLanguage: true,
-          interviewTime: true,
           proctoringLevel: true,
           interviewQuestions: true,
           jdFileName: true,
           jdPreviewUrl: true,
           orgId: true,
-          shortlistMode: true,
           location: true,
           aiName: true,
           cartesiaVoiceId: true,
@@ -639,7 +555,6 @@ const backupWorker = new Worker(
       });
       const applications = await prisma.application.findMany();
       const interviews = await prisma.interview.findMany();
-
       const backupData = {
         metadata: {
           timestamp: new Date().toISOString(),
@@ -650,18 +565,15 @@ const backupWorker = new Worker(
         applications,
         interviews,
       };
-
       // 2. Upload to Cloudflare R2
       const filename = `backups/db_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
       const buffer = Buffer.from(JSON.stringify(backupData, null, 2));
-
       await putObject(
         "resumes", // Using the existing resumes bucket, folder 'backups'
         filename,
         buffer,
         "application/json"
       );
-
       console.log(`[Backup Worker] Backup successful: ${filename}`);
       return { success: true, filename };
     } catch (error) {
@@ -678,7 +590,6 @@ const backupWorker = new Worker(
     removeOnFail: { count: 3 },
   }
 );
-
 // Setup Recurring Backup Job (Daily at Midnight)
 const backupQueue = new Queue("backup-queue", { connection: redisConnection });
 async function setupCronJobs() {
@@ -687,7 +598,6 @@ async function setupCronJobs() {
     for (const job of repeatableJobs) {
         await backupQueue.removeRepeatableByKey(job.key);
     }
-    
     await backupQueue.add(
         "daily-backup",
         {},
@@ -710,9 +620,7 @@ const interviewFinalizationWorker = new Worker(
     if (!applicationId) {
       throw new Error("Missing applicationId in interview-finalization job");
     }
-
     console.log(`[JOB] Finalizing interview for ${applicationId}`);
-
     try {
       const updateData: any = { updatedAt: new Date() };
       if (recordingUrl) {
@@ -728,7 +636,6 @@ const interviewFinalizationWorker = new Worker(
       if (interviewStatus === "COMPLETED") {
         updateData.completedAt = new Date();
       }
-
       try {
         const appForId = await prisma.application.findUnique({ where: { id: applicationId }, select: { fullName: true } });
         await (prisma as any).interview.upsert({
@@ -744,7 +651,6 @@ const interviewFinalizationWorker = new Worker(
       } catch {
         await persistInterviewUpdateRaw({ applicationId, recordingUrl, transcript, interviewStatus });
       }
-
       if (appStatus) {
         await prisma.$executeRawUnsafe(
           'UPDATE "Application" SET "resumeStatus" = $1, "updatedAt" = NOW() WHERE id = $2',
@@ -752,7 +658,6 @@ const interviewFinalizationWorker = new Worker(
           applicationId
         );
       }
-
       console.log(`[SUCCESS] Interview finalization persisted for ${applicationId}`);
       return { success: true };
     } catch (error) {
@@ -770,11 +675,9 @@ const interviewFinalizationWorker = new Worker(
     removeOnFail: { count: 10 }
   }
 );
-
 interviewFinalizationWorker.on("failed", (job, err) => {
   console.log(`[FATAL] Interview Finalization Job ${job?.id} failed permanently: ${err.message}`);
 });
-
 /**
  * ðŸ“¸ INTERVIEW SNAPSHOT WORKER
  * Handles proctoring snapshot uploads to R2 and DB persistence.
@@ -787,14 +690,11 @@ const interviewSnapshotWorker = new Worker(
     if (!imageDataUrl || !applicationId) {
       throw new Error("Missing required data for snapshot job");
     }
-
     console.log(`[JOB] Processing proctoring snapshot for App: ${applicationId}`);
-
     try {
       // 1. Process Image Buffer
       const base64Data = imageDataUrl.replace(/^data:image\/\w+;base64,/, "");
       const buffer = Buffer.from(base64Data, "base64");
-
       // 2. Fetch Application details for folder naming
       const application = await prisma.application.findUnique({
         where: { id: applicationId },
@@ -803,7 +703,6 @@ const interviewSnapshotWorker = new Worker(
           drive: { select: { title: true } },
         },
       });
-
       // 3. Resolve Folder & Key
       const rawName = [application?.fullName, application?.drive?.title].filter(Boolean).join(" - ") || candidateName || applicationId;
       const safeName = rawName
@@ -811,26 +710,21 @@ const interviewSnapshotWorker = new Worker(
           .trim()
           .replace(/\s+/g, "_")
           .toLowerCase();
-
       const timestamp = Date.now();
       const snapshotLabel = label || "snapshot";
       const key = `candidates/${safeName}/snapshots/${snapshotLabel}_${timestamp}.jpg`;
       const bucket = process.env.R2_INTERVIEW_BUCKET || "interview";
-
       // 4. Upload to R2
       const url = await putObject(bucket, key, buffer, "image/jpeg");
-
       // 5. Update Database (Atomic Push)
       const appForSnapshot = await prisma.application.findUnique({ 
         where: { id: String(applicationId) }, 
         select: { id: true, fullName: true } 
       });
-
       if (!appForSnapshot) {
         console.warn(`[SKIP] Application ${applicationId} not found. Candidate may have been deleted.`);
         return { skipped: true };
       }
-
       await prisma.interview.upsert({
         where: { applicationId: String(applicationId) },
         update: {
@@ -845,7 +739,6 @@ const interviewSnapshotWorker = new Worker(
           status: "PENDING"
         }
       });
-
       console.log(`[SUCCESS] Snapshot persisted for ${applicationId} -> ${url}`);
       return { url };
     } catch (error) {
@@ -861,11 +754,9 @@ const interviewSnapshotWorker = new Worker(
     removeOnFail: { count: 1 }
   }
 );
-
 interviewSnapshotWorker.on("failed", (job, err) => {
   console.log(`[FATAL] Snapshot Job ${job?.id} failed: ${err.message}`);
 });
-
 /**
  * ðŸ“„ JD UPLOAD WORKER
  * Handles asynchronous uploading of AI-generated JD PDFs to Cloudflare R2.
@@ -877,17 +768,13 @@ const jdUploadWorker = new Worker(
         if (!bucket || !key || !buffer) {
             throw new Error("Missing required data for JD upload job");
         }
-
         console.log(`[JOB] Background upload starting for: ${key}`);
-
         try {
             // Redis/BullMQ might serialize Buffer as {type: 'Buffer', data: [...]}
             // We ensure we have a real Buffer before uploading.
             // Check Buffer.isBuffer first to prevent corruption if it's already a Buffer.
             const fileBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer.data || buffer);
-
             await putObject(bucket, key, fileBuffer, contentType || "application/pdf");
-
             console.log(`[SUCCESS] JD PDF uploaded to R2: ${key}`);
             return { success: true, key };
         } catch (error) {
@@ -902,13 +789,10 @@ const jdUploadWorker = new Worker(
         removeOnFail: { count: 10 }
     }
 );
-
 jdUploadWorker.on("failed", (job, err) => {
     console.log(`[FATAL] JD Upload Job ${job?.id} failed: ${err.message}`);
 });
-
 console.log("🚀 Workers are running and listening for jobs...");
-
 /**
  * ðŸ§¹ REDIS QUEUE PURGE
  * Aggressively cleans all BullMQ queue data on startup.
@@ -922,10 +806,8 @@ const ALL_QUEUE_NAMES = [
   "jd-upload",
   "backup-queue",
 ];
-
 async function purgeAllQueues() {
   console.log("[Worker] 🧹 Cleaning Redis queues to free memory...");
-
   try {
     let cursor = "0";
     let deletedCount = 0;
@@ -947,7 +829,6 @@ async function purgeAllQueues() {
   } catch (err: any) {
     console.warn(`  ⚠️ Could not purge keys: ${err.message}`);
   }
-
   // Report memory after cleanup
   const { usedMemory, maxMemory } = await getRedisMemoryStatus();
   if (usedMemory && maxMemory && maxMemory > 0) {
@@ -962,7 +843,6 @@ async function purgeAllQueues() {
     }
   }
 }
-
 /**
  * ðŸ› ï¸  REDIS CONFIGURATION & CRON SETUP
  * Attempts to set safe Redis settings and register repeatable jobs.
@@ -979,15 +859,12 @@ async function initializeWorkerMetadata() {
             console.warn(`  âš ï¸  Could not set Redis eviction policy (provider restricted): ${configErr.message}`);
             console.warn("  â„¹ï¸  Running queue cleanup to free memory instead...");
         }
-
         // Removed destructive purgeAllQueues() which deletes pending user uploads on restart
         // await purgeAllQueues();
-
         if (await shouldSkipCronRegistration()) {
             console.warn("  âš ï¸  Cron registration skipped because Redis is still near its memory limit.");
             return;
         }
-
         console.log("[Worker] Registering recurring daily backup job...");
         try {
             await setupCronJobs();
@@ -1000,5 +877,4 @@ async function initializeWorkerMetadata() {
         console.error("[Worker] Critical error during metadata initialization:", err.message);
     }
 }
-
 initializeWorkerMetadata();
