@@ -40,6 +40,16 @@ export async function POST(request: Request) {
         const contentLength = request.headers.get("content-length");
         console.log(`[API_EXTRACT] Processing request. Header Content-Length: ${contentLength} bytes`);
 
+        const maxBufferedBody = 20 * 1024 * 1024;
+        const reportedLength = contentLength ? Number(contentLength) : NaN;
+        if (!Number.isNaN(reportedLength) && reportedLength > maxBufferedBody) {
+            return NextResponse.json({
+                error: "File size exceeds 20MB limit.",
+                code: "FILE_TOO_LARGE",
+                details: `Request size ${reportedLength} bytes exceeds supported limit of ${maxBufferedBody} bytes.`,
+            }, { status: 413 });
+        }
+
         let formData: FormData;
         try {
             formData = await request.formData();

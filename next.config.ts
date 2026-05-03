@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '20mb',
       allowedOrigins,
     },
+    middlewareClientMaxBodySize: '20mb',
     proxyClientMaxBodySize: '20mb',
   },
 };
