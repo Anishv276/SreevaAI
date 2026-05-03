@@ -31,7 +31,6 @@ export async function POST(
                         title: true,
                         description: true,
                         screeningThreshold: true,
-                        extractedDetails: true,
                         orgId: true,
                     }
                 }
@@ -71,10 +70,20 @@ export async function POST(
             } catch (e) {}
         }
 
+        const driveRows = await prisma.$queryRawUnsafe<Array<{ extractedDetails: string | null }>>(
+            `
+            SELECT "extractedDetails"
+            FROM "Drive"
+            WHERE id = $1
+            LIMIT 1
+            `,
+            drive.id
+        );
+
         const threshold = Number(drive.screeningThreshold ?? 0);
         const scoringInput = {
             resume: structuredResume,
-            jd: safeJsonParse(drive.extractedDetails, {}),
+            jd: safeJsonParse(driveRows?.[0]?.extractedDetails, {}),
             resume_raw_text: resumeText,
             jd_raw_text: jdText,
             threshold,
