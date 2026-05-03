@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Sparkles, Volume2, Mic2, BrainCircuit, Coins, Mic, ChevronDown, Infinity, Check, Search, AudioLines, Shield, Layers, Thermometer, Loader2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Sparkles, Volume2, Mic2, BrainCircuit, Coins, Mic, ChevronDown, Infinity, Check, Search, AudioLines, Shield, Layers, Thermometer, Loader2, Zap } from "lucide-react";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
@@ -20,7 +20,11 @@ function PremiumInput({ label, icon: Icon, error, ...props }: any) {
                 {label}
                 <span className="text-[#F97316] ml-0.5">*</span>
             </label>
-            <input {...props} className={cn("h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md", error && "border-red-500")} />
+            <input 
+                {...props} 
+                onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                className={cn("h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md", error && "border-red-500")} 
+            />
         </div>
     );
 }
@@ -54,17 +58,17 @@ function Steps({ steps, currentStep, onStepClick }: { steps: string[], currentSt
     );
 }
 
-function LimitControl({ value, onChange, label }: { value: number, onChange: (v: number) => void, label: string }) {
-    const isUnlimited = value === 0;
+function LimitControl({ value, onChange, label }: { value: any, onChange: (v: any) => void, label: string }) {
+    const isUnlimited = Number(value) === 0;
     return (
         <div className="space-y-2">
             <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Layers className="h-3 w-3 text-[#F97316]" /> {label}</label>
             <div className="flex items-center gap-1.5">
                 <div className="flex bg-gray-100/50 p-1 rounded-lg border border-gray-100 w-fit shrink-0">
-                    <button type="button" onClick={() => onChange(0)} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
-                    <button type="button" onClick={() => { if (isUnlimited) onChange(1); }} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Limited</button>
+                    <button type="button" onClick={() => onChange("0")} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
+                    <button type="button" onClick={() => { if (isUnlimited) onChange("1"); }} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Limited</button>
                 </div>
-                {!isUnlimited && <input type="number" min="1" value={value} onChange={(e) => onChange(Math.max(1, Number(e.target.value) || 1))} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
+                {!isUnlimited && <input type="number" min="1" value={value} onChange={(e) => onChange(e.target.value)} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
             </div>
         </div>
     );
@@ -97,7 +101,7 @@ export default function NewOrgPage() {
 
     const [form, setForm] = useState({
         orgName: "", slug: "", location: "", plan: DEFAULT_ORG_PLAN,
-        maxActiveDrives: 0, maxTeamMembers: 0, interviewQuotaTotal: 100,
+        maxActiveDrives: "0", maxTeamMembers: "0", interviewQuotaTotal: "100",
         proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
         adminName: "", adminEmail: "", adminPassword: "",
         ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
@@ -105,6 +109,7 @@ export default function NewOrgPage() {
         googleModel: DEFAULT_GOOGLE_TTS_MODEL, googleVoiceName: "Puck",
         sttProvider: "DEEPGRAM", deepgramModel: "nova-3-general", sarvamSttModel: "saaras:v3",
         llmProvider: "OPENAI", llmModel: "gpt-4o", llmTemperature: 0.7,
+        slugSuffix: Math.floor(1000 + Math.random() * 9000).toString(),
     });
 
     const handleTtsProviderChange = (v: string) => {
@@ -208,12 +213,37 @@ export default function NewOrgPage() {
 
             <Steps steps={["Identity", "Admin", "AI Engine", "Billing", "Security"]} currentStep={step} onStepClick={setStep} />
 
-            <form onSubmit={handleSubmit} className="space-y-12">
+            <form 
+                onSubmit={handleSubmit} 
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                    }
+                }}
+                className="space-y-12"
+            >
                 {step === 0 && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Organization Profile" />
                         <div className="grid md:grid-cols-2 gap-6">
-                            <PremiumInput label="Client Name" icon={Building2} value={form.orgName} onChange={(e: any) => setForm(p => ({ ...p, orgName: e.target.value, slug: p.slug || e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-") }))} placeholder="e.g. Reliance Group" required />
+                            <PremiumInput label="Client Name" icon={Building2} value={form.orgName} onChange={(e: any) => {
+                                const newName = e.target.value;
+                                setForm(p => {
+                                    const generatedBase = newName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+                                    const currentGenerated = generatedBase ? `${generatedBase}-${(p as any).slugSuffix}` : "";
+                                    const previousName = p.orgName || "";
+                                    const previousGenerated = previousName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+                                    const expectedPrevious = previousGenerated ? `${previousGenerated}-${(p as any).slugSuffix}` : "";
+                                    
+                                    return { 
+                                        ...p, 
+                                        orgName: newName, 
+                                        slug: (p.slug === expectedPrevious || !p.slug) 
+                                            ? currentGenerated
+                                            : p.slug 
+                                    };
+                                });
+                            }} placeholder="e.g. Lumoscale" required />
                             <PremiumInput label="URL Identifier" icon={Globe} value={form.slug} onChange={(e: any) => setForm(p => ({ ...p, slug: e.target.value.toLowerCase() }))} placeholder="slug-path" required />
                         </div>
                         <div className="pt-6 border-t border-gray-100">
@@ -284,8 +314,24 @@ export default function NewOrgPage() {
 
                             {/* STT & LLM */}
                             <div className="space-y-6">
-                                <div className="relative group">
-                                    <CustomSelect label="Transcription (STT)" icon={Mic} value={form.sttProvider} onChange={(v: any) => setForm(p => ({ ...p, sttProvider: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "GOOGLE", label: "Google Cloud STT" }] : [{ value: "DEEPGRAM", label: "Deepgram (Flux)" }, { value: "SARVAM", label: "Sarvam (Regional)" }]} />
+                                <div className="relative group space-y-4">
+                                    <CustomSelect label="Transcription (STT)" icon={Mic} value={form.sttProvider} onChange={(v: any) => setForm(p => ({ ...p, sttProvider: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "GOOGLE", label: "Google Cloud STT" }] : [{ value: "DEEPGRAM", label: "Deepgram" }, { value: "SARVAM", label: "Sarvam (Regional)" }]} />
+                                    
+                                    {form.sttProvider === "DEEPGRAM" && (
+                                        <div className="animate-in fade-in slide-in-from-top-2">
+                                            <CustomSelect 
+                                                label="Deepgram Model" 
+                                                icon={Zap} 
+                                                value={form.deepgramModel} 
+                                                onChange={(v: any) => setForm(p => ({ ...p, deepgramModel: v }))} 
+                                                options={[
+                                                    { value: "nova-3-general", label: "Nova-3 (Latest)" },
+                                                    { value: "nova-2-general", label: "Nova-2 (Legacy)" },
+                                                ]} 
+                                            />
+                                        </div>
+                                    )}
+
                                     {form.ttsProvider === "GOOGLE" && (
                                         <div className="absolute inset-0 pointer-events-none flex items-center justify-end pr-10">
                                             <div className="flex items-center gap-1 bg-blue-50/90 border border-blue-100 px-1.5 py-0.5 rounded shadow-sm translate-y-1">
@@ -328,7 +374,7 @@ export default function NewOrgPage() {
                         <div className="grid md:grid-cols-3 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
                             <LimitControl label="Drive Limit" value={form.maxActiveDrives} onChange={val => setForm(p => ({ ...p, maxActiveDrives: val }))} />
                             <LimitControl label="Team Limit" value={form.maxTeamMembers} onChange={val => setForm(p => ({ ...p, maxTeamMembers: val }))} />
-                            <PremiumInput label="Total Interviews Allocated" icon={Coins} type="number" value={form.interviewQuotaTotal} onChange={(e: any) => setForm(p => ({ ...p, interviewQuotaTotal: Math.max(0, Number(e.target.value) || 0) }))} />
+                            <PremiumInput label="Total Interviews Allocated" icon={Coins} type="number" value={form.interviewQuotaTotal} onChange={(e: any) => setForm(p => ({ ...p, interviewQuotaTotal: e.target.value }))} />
                         </div>
                         <div className="flex justify-between pt-8 border-t border-gray-100">
                             <button type="button" onClick={() => setStep(2)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>

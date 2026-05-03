@@ -282,7 +282,7 @@ export default function OnboardingPage() {
     );
 
     return (
-        <div className="h-screen w-screen flex items-center justify-center bg-white overflow-hidden p-6 font-sans">
+        <div className="min-h-screen w-full flex flex-col items-center justify-start bg-white py-12 px-6 font-sans">
             <div className="w-full max-w-3xl mx-auto animate-in-fade zoom-in-[0.98] duration-700">
                 {/* Header */}
                 <div className="mb-8">

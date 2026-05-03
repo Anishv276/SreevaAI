@@ -639,8 +639,8 @@ function CreateDriveForm() {
       toast.error(STEP_VALIDATION_HINTS[currentStep]);
       return;
     }
-    // Auto-save progress on every "Save & Continue"
-    await autoSaveDrive();
+    // Auto-save progress removed as per user request to save only at the end
+    // await autoSaveDrive();
     setCompletedSteps((prev) => new Set(prev).add(currentStep));
     const next = Math.min(currentStep + 1, STEPS.length - 1);
     setMaxStepReached((prev) => Math.max(prev, next));
@@ -655,15 +655,15 @@ function CreateDriveForm() {
     }
     // In edit mode or if the step was previously reached/completed, just jump
     if (isEditMode || index <= maxStepReached || completedSteps.has(index)) {
-      // Auto-save before jumping to ensure no data loss
-      await autoSaveDrive();
+      // Auto-save removed to prevent partial DB entries
+      // await autoSaveDrive();
       setCurrentStep(index);
       return;
     }
     // If it's the next immediate step beyond what we've reached, check if current is valid
     if (index === currentStep + 1) {
       if (isStepValid(currentStep)) {
-        await autoSaveDrive();
+        // await autoSaveDrive();
         setCompletedSteps((prev) => new Set(prev).add(currentStep));
         setMaxStepReached((prev) => Math.max(prev, index));
         setCurrentStep(index);

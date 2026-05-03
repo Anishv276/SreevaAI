@@ -117,6 +117,7 @@ export function LocationAutocomplete({
                     {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#F97316]" />}
                     {query && (
                         <button 
+                            type="button"
                             onClick={() => { setQuery(""); onChange(""); }}
                             className="p-1 rounded-full hover:bg-gray-100 text-gray-400 transition-colors"
                         >
@@ -143,6 +144,7 @@ export function LocationAutocomplete({
                                 {suggestions.map((s, i) => (
                                     <button
                                         key={`${s.label}-${i}`}
+                                        type="button"
                                         onClick={() => handleSelect(s)}
                                         className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl hover:bg-orange-50 text-left transition-all group/item border border-transparent hover:border-orange-100 hover:shadow-sm"
                                     >
