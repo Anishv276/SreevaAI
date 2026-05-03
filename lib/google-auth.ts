@@ -4,6 +4,27 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
 
+function makeGmailError(message: string, code: string) {
+    const error = new Error(message) as Error & { code?: string; reconnectRequired?: boolean };
+    error.code = code;
+    error.reconnectRequired = code === "GMAIL_SCOPES_MISSING" || code === "GMAIL_RECONNECT_REQUIRED";
+    return error;
+}
+
+function isGmailScopeError(data: any, status: number) {
+    const message = String(data?.error?.message || data?.error_description || "").toLowerCase();
+    const reason = String(data?.error?.errors?.[0]?.reason || "").toLowerCase();
+    return (
+        status === 403 &&
+        (
+            message.includes("insufficient authentication scopes") ||
+            message.includes("insufficient permissions") ||
+            reason.includes("insufficient") ||
+            reason.includes("permission")
+        )
+    );
+}
+
 /**
  * Generates the Google OAuth authorization URL.
  * We request 'offline' access to get a refresh token.
@@ -159,7 +180,7 @@ export async function refreshGoogleToken(orgId: string) {
                         googleTokenExpiresAt: null,
                     },
                 });
-                throw new Error("Google Gmail connection expired or was revoked. Please reconnect Gmail in onboarding.");
+                throw makeGmailError("Google Gmail connection expired or was revoked. Please reconnect Gmail in onboarding.", "GMAIL_RECONNECT_REQUIRED");
             }
 
             throw new Error(reason);
@@ -204,7 +225,7 @@ export async function sendGmailEmail({
     });
 
     if (!org?.googleAccessToken) {
-        throw new Error('Google Integration not configured for this organization');
+        throw makeGmailError('Google Integration not configured for this organization', "GMAIL_NOT_CONFIGURED");
     }
 
     let accessToken = org.googleAccessToken;
@@ -260,7 +281,13 @@ export async function sendGmailEmail({
 
     if (!result.response.ok) {
         console.error('[GMAIL API ERROR]', result.data);
-        throw new Error(result.data?.error?.message || 'Failed to send email via Gmail');
+        if (isGmailScopeError(result.data, result.response.status)) {
+            throw makeGmailError(
+                "Your Gmail connection is missing send permissions. Please reconnect Gmail and approve the requested access again.",
+                "GMAIL_SCOPES_MISSING"
+            );
+        }
+        throw makeGmailError(result.data?.error?.message || 'Failed to send email via Gmail', "GMAIL_SEND_FAILED");
     }
 
     return result.data;
@@ -367,7 +394,7 @@ export async function sendSuperAdminGmailEmail({
     });
 
     if (!admin?.googleAccessToken) {
-        throw new Error('Google Integration not configured for Super Admin');
+        throw makeGmailError('Google Integration not configured for Super Admin', "GMAIL_NOT_CONFIGURED");
     }
 
     let accessToken = admin.googleAccessToken;
@@ -413,7 +440,13 @@ export async function sendSuperAdminGmailEmail({
 
     if (!response.ok) {
         console.error('[SUPER_ADMIN GMAIL API ERROR]', data);
-        throw new Error(data.error?.message || 'Failed to send email via Super Admin Gmail');
+        if (isGmailScopeError(data, response.status)) {
+            throw makeGmailError(
+                "Your Gmail connection is missing send permissions. Please reconnect Gmail and approve the requested access again.",
+                "GMAIL_SCOPES_MISSING"
+            );
+        }
+        throw makeGmailError(data.error?.message || 'Failed to send email via Super Admin Gmail', "GMAIL_SEND_FAILED");
     }
 
     return data;

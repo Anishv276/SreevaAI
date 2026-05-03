@@ -11,6 +11,7 @@ import { getOrgBillingStatus } from "@/lib/credits";
 import { isDriveCreationLocked } from "@/lib/drive-limits";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
+import { parseOrgLimitValue } from "@/lib/org-limits";
 
 export async function GET(request: Request) {
     try {
@@ -87,10 +88,8 @@ export async function GET(request: Request) {
                     requirements: true,
                     salary: true,
                     skills: true,
-                    extractedDetails: true,
                     screeningCriteria: true,
                     interviewLanguage: true,
-                    proctoringLevel: true,
                     interviewQuestions: true,
                     jdFileName: true,
                     jdPreviewUrl: true,
@@ -130,7 +129,6 @@ export async function GET(request: Request) {
                 aiScreening: {
                     enabled: (drive as any).aiScreeningEnabled
                 },
-                extractedDetails: drive.extractedDetails ? JSON.parse(drive.extractedDetails) : {},
                 interviewQuestions: drive.interviewQuestions ? JSON.parse(drive.interviewQuestions) : []
             };
         });
@@ -175,8 +173,8 @@ export async function POST(request: Request) {
                 );
             }
 
-            const maxActiveDrives = Number(org?.maxActiveDrives || 0);
-            if (maxActiveDrives > 0) {
+            const maxActiveDrives = parseOrgLimitValue(org?.maxActiveDrives);
+            if (maxActiveDrives !== null) {
                 const activeDriveCount = await prisma.drive.count({
                     where: { orgId: session.orgId }
                 });
@@ -254,7 +252,6 @@ export async function POST(request: Request) {
                 skills: data.skills || null,
                 responsibilities: data.responsibilities || null,
                 requirements: data.requirements || null,
-                extractedDetails: JSON.stringify(data.extractedDetails || {}),
                 jdFileName: data.jdFileName || null,
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
                 screeningCriteria: JSON.stringify(mergedScreeningCriteria),
@@ -263,7 +260,7 @@ export async function POST(request: Request) {
 
                 // Interview configuration
                 interviewLanguage: data.interviewLanguage || "English",
-                proctoringLevel: data.interviewAntiCheat || "Medium",
+
                 interviewQuestions: data.interviewQuestions ? JSON.stringify(data.interviewQuestions) : "[]",
 
                 aiName: data.aiName || "Ishitha",

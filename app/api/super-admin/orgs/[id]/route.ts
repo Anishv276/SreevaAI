@@ -8,6 +8,7 @@ import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 import { syncOrgStatusWithInterviewQuota } from "@/lib/credits";
+import { normalizeOrgLimitInput } from "@/lib/org-limits";
 
 // GET /api/super-admin/orgs/[id] - fetch org for editing
 export async function GET(
@@ -135,9 +136,9 @@ export async function PATCH(
         if (name !== undefined) updateData.name = name;
         if (plan !== undefined) updateData.plan = normalizeOrgPlan(plan) || plan;
         if (maxActiveDrives !== undefined && String(maxActiveDrives).trim() !== "") {
-            updateData.maxActiveDrives = Math.max(0, Number(maxActiveDrives) || 0);
+            updateData.maxActiveDrives = normalizeOrgLimitInput(maxActiveDrives);
         }
-        if (maxTeamMembers !== undefined) updateData.maxTeamMembers = Math.max(0, Number(maxTeamMembers) || 0);
+        if (maxTeamMembers !== undefined) updateData.maxTeamMembers = normalizeOrgLimitInput(maxTeamMembers);
         if (proctoringSignals !== undefined) updateData.proctoringSignals = normalizeProctoringSignals(proctoringSignals);
         if (status !== undefined) updateData.status = status;
         if (logoUrl !== undefined) updateData.logoUrl = logoUrl;

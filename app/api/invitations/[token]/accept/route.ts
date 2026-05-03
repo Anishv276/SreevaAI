@@ -7,6 +7,7 @@ import { hashInviteToken, normalizeOrgRole } from "@/lib/invite";
 import { generateId } from "@/lib/ids";
 import { validatePasswordStrength } from "@/lib/validation";
 import { TEAM_LIMIT_REACHED_MESSAGE, isTeamLimitReached } from "@/lib/team-limits";
+import { parseOrgLimitValue } from "@/lib/org-limits";
 
 type InviteRow = {
     id: string;
@@ -85,7 +86,7 @@ export async function POST(
                 throw new Error("USER_OTHER_ORG");
             }
 
-            const orgRows = await tx.$queryRawUnsafe<Array<{ maxTeamMembers: number | null }>>(
+            const orgRows = await tx.$queryRawUnsafe<Array<{ maxTeamMembers: string | null }>>(
                 `
                 SELECT "maxTeamMembers"
                 FROM "Organization"
@@ -106,7 +107,7 @@ export async function POST(
             });
 
             const isExistingOrgMember = existingUser?.orgId === invite.orgId && existingUser.role !== "CANDIDATE";
-            if (!isExistingOrgMember && isTeamLimitReached(org.maxTeamMembers, currentTeamCount)) {
+            if (!isExistingOrgMember && isTeamLimitReached(parseOrgLimitValue(org.maxTeamMembers), currentTeamCount)) {
                 throw new Error("TEAM_LIMIT_REACHED");
             }
 

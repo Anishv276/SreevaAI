@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -13,6 +13,7 @@ import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked } from "@/lib/interview-quota";
 import { canUseMultilingual } from "@/lib/org-plans";
+import { formatSalaryValue, splitSalaryValue } from "@/lib/salary-format";
 import {
   formatDriveLimit,
   getActiveDriveCount,
@@ -61,6 +62,7 @@ function CreateDriveForm() {
   const searchParams = useSearchParams();
   const driveId = searchParams.get("id");
   const isEditMode = !!driveId;
+  const isEditAction = searchParams.get("mode") === "edit";
   const { addJob, jobs, updateJob, fetchJobs, organization } = useJobs();
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState<any>({
@@ -76,9 +78,7 @@ function CreateDriveForm() {
     skills: "",
     responsibilities: "",
     requirements: "",
-    extractedDetails: {},
     interviewLanguage: "English",
-    interviewAntiCheat: "Medium",
     interviewQuestions: [],
     ttsProvider: "",
     cartesiaVoiceId: null,
@@ -110,7 +110,7 @@ function CreateDriveForm() {
   const formDataRef = useRef<any>(formData);
   const activeDriveCount =
     organization?.activeDriveCount ?? getActiveDriveCount(jobs);
-  const maxActiveDrives = Number(organization?.maxActiveDrives || 0);
+  const maxActiveDrives = organization?.maxActiveDrives;
   const allowLanguageSelection = canUseMultilingual(organization?.plan);
   const driveCreationLocked =
     !isEditMode && (isDriveCreationLocked(maxActiveDrives, activeDriveCount) || quotaLocked);
@@ -231,15 +231,15 @@ function CreateDriveForm() {
             responsibilities: (drive as any).responsibilities || "",
             requirements: (drive as any).requirements || "",
             experience: (drive as any).experience || "",
-            salary: (drive as any).salary || "",
-            interviewEnabled: (drive as any).interviewEnabled ?? true,
+            salary: (() => {
+              const salaryValue = splitSalaryValue((drive as any).salary || "", "INR");
+              return salaryValue.amount ? formatSalaryValue(salaryValue.amount, salaryValue.currency) : "";
+            })(),
             interviewLanguage: (drive as any).interviewLanguage || "English",
-            interviewAntiCheat: (drive as any).proctoringLevel || "Medium",
             interviewQuestions:
               typeof (drive as any).interviewQuestions === "string"
                 ? JSON.parse((drive as any).interviewQuestions)
                 : (drive as any).interviewQuestions || [],
-            extractedDetails: (drive as any).extractedDetails || {},
             jdFileName: (drive as any).jdFileName || "",
             jdPreviewUrl: (drive as any).jdPreviewUrl || "",
             // Org is the authority for provider; drive provides the voice ID
@@ -318,11 +318,8 @@ function CreateDriveForm() {
           skills: "",
           responsibilities: "",
           requirements: "",
-          extractedDetails: {},
-          interviewEnabled: true,
-          interviewLanguage: "English",
-          interviewAntiCheat: "Medium",
-          interviewQuestions: [],
+                interviewLanguage: "English",
+                interviewQuestions: [],
           ttsProvider: "",
           cartesiaVoiceId: null,
           sarvamVoice: null,
@@ -408,16 +405,16 @@ function CreateDriveForm() {
                 .filter(Boolean)
             : [];
           const allSkills = [...mustHaveArr, ...goodToHaveArr]
-            .map((s) => (s.startsWith("•") ? s : `• ${s}`))
+            .map((s) => (s.startsWith("Ã¢â‚¬Â¢") ? s : `Ã¢â‚¬Â¢ ${s}`))
             .join("\n");
           // Description: use role_summary, fallback to raw extracted text
           const desc = extracted?.role_summary || text || prev.description;
-          // Experience: convert to readable string e.g. "2+" or "2–5"
+          // Experience: convert to readable string e.g. "2+" or "2Ã¢â‚¬â€œ5"
           const minExp = experience?.min_years;
           const maxExp = experience?.max_years;
           const expText =
             typeof minExp === "number"
-              ? `${minExp}${maxExp ? `–${maxExp}` : "+"}`
+              ? `${minExp}${maxExp ? `Ã¢â‚¬â€œ${maxExp}` : "+"}`
               : prev.experience;
           // Salary: convert large INR numbers to LPA
           const salaryMin = salary?.min;
@@ -429,14 +426,14 @@ function CreateDriveForm() {
               n > 1000
                 ? (n / 100000).toFixed(1).replace(/\.0$/, "")
                 : String(n);
-            salaryText = `${toLPA(salaryMin)}${salaryMax ? `–${toLPA(salaryMax)}` : ""} LPA ${currency}`;
+            salaryText = formatSalaryValue(`${toLPA(salaryMin)}${salaryMax ? `-${toLPA(salaryMax)}` : ""}`, currency);
           }
           // Responsibilities: flat string array from new schema
           const resp =
             Array.isArray(extracted?.responsibilities) &&
             extracted.responsibilities.length > 0
               ? extracted.responsibilities
-                  .map((r: string) => (r.startsWith("•") ? r : `• ${r}`))
+                  .map((r: string) => (r.startsWith("Ã¢â‚¬Â¢") ? r : `Ã¢â‚¬Â¢ ${r}`))
                   .join("\n")
               : prev.responsibilities;
           // Requirements: flat string array + education fallback
@@ -471,7 +468,7 @@ function CreateDriveForm() {
           }
           const req =
             reqArr.length > 0
-              ? reqArr.map((r) => (r.startsWith("•") ? r : `• ${r}`)).join("\n")
+              ? reqArr.map((r) => (r.startsWith("Ã¢â‚¬Â¢") ? r : `Ã¢â‚¬Â¢ ${r}`)).join("\n")
               : prev.requirements;
           return {
             ...prev,
@@ -486,7 +483,6 @@ function CreateDriveForm() {
             employmentType: extracted?.employment_type || prev.employmentType,
             responsibilities: resp,
             requirements: req,
-            extractedDetails: extracted,
             jdPreviewUrl: r2Url || prev.jdPreviewUrl,
           };
         });
@@ -573,11 +569,10 @@ function CreateDriveForm() {
       requirements: currentFormData.requirements || "",
       jdFileName: currentFormData.jdFileName || null,
       jdPreviewUrl: currentFormData.jdPreviewUrl,
-      interviewEnabled: currentFormData.interviewEnabled,
+
       interviewLanguage: allowLanguageSelection
         ? currentFormData.interviewLanguage || "English"
         : "English",
-      interviewAntiCheat: currentFormData.interviewAntiCheat,
       interviewQuestions: parsedQuestions,
       ttsProvider: currentFormData.ttsProvider || "CARTESIA",
       cartesiaVoiceId:
@@ -599,7 +594,6 @@ function CreateDriveForm() {
           ? currentFormData.googleVoiceName || "Puck"
           : null,
       aiName: currentFormData.aiName || "Ishitha",
-      extractedDetails: currentFormData.extractedDetails || {},
     };
     try {
       setIsSavingDraft(true);
@@ -708,18 +702,20 @@ function CreateDriveForm() {
       workMode: currentFormData.workMode,
       location: currentFormData.location,
       positions: currentFormData.positions,
-      salary: currentFormData.salary,
+      salary: (() => {
+        const { amount, currency } = splitSalaryValue(currentFormData.salary, "INR");
+        return amount ? formatSalaryValue(amount, currency) : currentFormData.salary;
+      })(),
       experience: currentFormData.experience,
       skills: currentFormData.skills,
       responsibilities: currentFormData.responsibilities,
       requirements: currentFormData.requirements,
       jdFileName: currentFormData.jdFileName,
       jdPreviewUrl: currentFormData.jdPreviewUrl,
-      interviewEnabled: currentFormData.interviewEnabled,
+
       interviewLanguage: allowLanguageSelection
         ? currentFormData.interviewLanguage || "English"
         : "English",
-      interviewAntiCheat: currentFormData.interviewAntiCheat,
       interviewQuestions: parsedQuestions,
       ttsProvider: currentFormData.ttsProvider || "CARTESIA",
       cartesiaVoiceId:
@@ -741,7 +737,6 @@ function CreateDriveForm() {
           ? currentFormData.googleVoiceName || "Puck"
           : null,
       aiName: currentFormData.aiName || "Ishitha",
-      extractedDetails: currentFormData.extractedDetails || {},
     };
     console.log(
       "handlePublish called. isEditMode:",
@@ -769,9 +764,9 @@ function CreateDriveForm() {
         setPublishedDriveId(savedId);
         setPublished(true);
         toast.success(
-          isEditMode
+          isEditAction
             ? "Drive updated successfully!"
-            : "Drive published successfully!",
+            : "Drive created successfully!",
         );
       } else {
         console.error("Save succeeded but no ID returned. Result:", result);
@@ -929,7 +924,7 @@ function CreateDriveForm() {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
-            Your Drive is {isEditMode ? "Updated" : "Created"}! 🎉
+            Your Drive is {isEditAction ? "Updated" : "Created"}! Ã°Å¸Å½â€°
           </h1>
           <p className="text-gray-500 mt-2 text-[15px]">
             Your recruitment drive is ready. Go to your drives list to start
@@ -965,7 +960,7 @@ function CreateDriveForm() {
           <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
           <div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">
-              {isEditMode ? "Edit Drive Details" : "Create New Drive"}
+              {isEditAction ? "Edit Drive Details" : "Create New Drive"}
             </h1>
             <p className="text-gray-500 font-medium mt-1 text-base sm:text-lg">
               Configure your hiring drive and screening process.
@@ -1086,7 +1081,7 @@ function CreateDriveForm() {
               }}
               className="border-gray-300 bg-white text-gray-800 hover:bg-gray-50 h-9 font-semibold"
             >
-              {isEditMode ? "Cancel" : "Back"}
+              {isEditAction ? "Cancel" : "Back"}
             </Button>
           ) : (
             <Button
@@ -1145,7 +1140,7 @@ function CreateDriveForm() {
                   ) : (
                     <Rocket className="h-5 w-5" />
                   )}
-                  {isSavingDraft ? "Saving..." : isEditMode ? "Update Drive" : "Publish Drive"}
+                  {isSavingDraft ? "Saving..." : isEditAction ? "Update Drive" : "Create Drive"}
                 </button>
               )}
             </div>
@@ -1194,3 +1189,4 @@ function CreateDriveForm() {
     </div>
   );
 }
+

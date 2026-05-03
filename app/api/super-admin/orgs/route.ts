@@ -9,6 +9,7 @@ import { sendSuperAdminGmailEmail } from "@/lib/google-auth";
 import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
 import { DEFAULT_PROCTORING_SIGNALS, getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
+import { normalizeOrgLimitInput } from "@/lib/org-limits";
 
 // GET /api/super-admin/orgs - list organizations with stats, pagination, and search
 export async function GET(request: Request) {
@@ -361,9 +362,9 @@ export async function POST(request: Request) {
                 plan: normalizeOrgPlan(plan) || DEFAULT_ORG_PLAN,
                 maxActiveDrives:
                     maxActiveDrives !== undefined && maxActiveDrives !== null && String(maxActiveDrives).trim() !== ""
-                        ? Math.max(0, Number(maxActiveDrives) || 0)
-                        : 0,
-                maxTeamMembers: Math.max(0, Number(maxTeamMembers ?? 0) || 0),
+                        ? normalizeOrgLimitInput(maxActiveDrives)
+                        : "Unlimited",
+                maxTeamMembers: normalizeOrgLimitInput(maxTeamMembers ?? "Unlimited"),
                 interviewQuotaTotal: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
                 creditsUsed: 0,
                 proctoringSignals: normalizeProctoringSignals(proctoringSignals || getProctoringSignalsForPlan(plan || DEFAULT_ORG_PLAN)),

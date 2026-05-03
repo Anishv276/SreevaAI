@@ -44,9 +44,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 requirements: true,
                 salary: true,
                 skills: true,
-                extractedDetails: true,
                 interviewLanguage: true,
-                proctoringLevel: true,
                 interviewQuestions: true,
                 jdFileName: true,
                 jdPreviewUrl: true,
@@ -104,7 +102,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 enabled: true,
                 weights: {} // Schema doesn't have a weights field yet
             },
-            extractedDetails: safeJsonParse((drive as any).extractedDetails, {})
         });
     } catch (error: any) {
         console.error("[GET_DRIVE_ERROR]:", error);
@@ -197,13 +194,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.experience !== undefined) updateData.experience = data.experience;
         if (data.skills !== undefined) updateData.skills = data.skills;
         if (data.responsibilities !== undefined) updateData.responsibilities = data.responsibilities;
-        if (data.extractedDetails !== undefined) updateData.extractedDetails = JSON.stringify(data.extractedDetails);
+
         if (data.jdFileName !== undefined) updateData.jdFileName = data.jdFileName;
         if (data.jdPreviewUrl !== undefined) {
             updateData.jdPreviewUrl = data.jdPreviewUrl?.startsWith("blob:") ? undefined : data.jdPreviewUrl;
         }
 
-        if (data.registrationFields !== undefined) updateData.registrationFields = JSON.stringify(data.registrationFields);
+
 
         if (data.screeningThreshold !== undefined || (data as any).screeningCriteria !== undefined || data.inviteScheduleDays !== undefined) {
             if (data.screeningThreshold !== undefined) updateData.screeningThreshold = data.screeningThreshold;
@@ -224,7 +221,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         // Add new interview fields to PATCH
 
         if (data.interviewLanguage !== undefined) updateData.interviewLanguage = data.interviewLanguage;
-        if (data.interviewAntiCheat !== undefined) updateData.proctoringLevel = data.interviewAntiCheat;
+
         if (data.interviewQuestions !== undefined) updateData.interviewQuestions = JSON.stringify(data.interviewQuestions);
         if (data.requirements !== undefined) updateData.requirements = data.requirements;
         Object.assign(

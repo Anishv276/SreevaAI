@@ -58,17 +58,18 @@ function Steps({ steps, currentStep, onStepClick }: { steps: string[], currentSt
     );
 }
 
-function LimitControl({ value, onChange, label }: { value: any, onChange: (v: any) => void, label: string }) {
-    const isUnlimited = Number(value) === 0;
+function LimitControl({ value, onChange, label }: { value: string, onChange: (v: string) => void, label: string }) {
+    const isUnlimited = String(value).toLowerCase() === "unlimited" || Number(value) === 0;
+    const inputValue = isUnlimited ? "" : String(value);
     return (
         <div className="space-y-2">
             <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Layers className="h-3 w-3 text-[#F97316]" /> {label}</label>
             <div className="flex items-center gap-1.5">
                 <div className="flex bg-gray-100/50 p-1 rounded-lg border border-gray-100 w-fit shrink-0">
-                    <button type="button" onClick={() => onChange("0")} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
+                    <button type="button" onClick={() => onChange("Unlimited")} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
                     <button type="button" onClick={() => { if (isUnlimited) onChange("1"); }} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Limited</button>
                 </div>
-                {!isUnlimited && <input type="number" min="1" value={value} onChange={(e) => onChange(e.target.value)} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
+                {!isUnlimited && <input type="number" min="1" value={inputValue} onChange={(e) => onChange(String(Math.max(1, Number(e.target.value) || 1)))} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
             </div>
         </div>
     );
@@ -101,7 +102,7 @@ export default function NewOrgPage() {
 
     const [form, setForm] = useState({
         orgName: "", slug: "", location: "", plan: DEFAULT_ORG_PLAN,
-        maxActiveDrives: "0", maxTeamMembers: "0", interviewQuotaTotal: "100",
+        maxActiveDrives: "Unlimited", maxTeamMembers: "Unlimited", interviewQuotaTotal: "100",
         proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
         adminName: "", adminEmail: "", adminPassword: "",
         ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",

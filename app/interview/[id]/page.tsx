@@ -31,6 +31,7 @@ import { HardwareHeartbeat } from "@/components/careers/interview/HardwareHeartb
 import { ConnectionProctoring } from "@/components/careers/interview/ConnectionProctoring";
 
 import { collectDeviceFingerprint } from "@/lib/device-fingerprint";
+import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
 
 import { useSearchParams } from "next/navigation";
 
@@ -1045,10 +1046,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     setCandidateDisplayName(data.candidateName || "Candidate");
                     setProctoringSignals(normalizeProctoringSignals(data.proctoringSignals));
 
-                    if (typeof data.duration === "number" && data.duration > 0) {
-                        sessionDurationRef.current = data.duration;
-                        setRemainingSeconds(data.duration);
-                    }
+                    const fixedDurationSeconds = Math.floor(FIXED_INTERVIEW_DURATION_MINUTES * 60);
+                    sessionDurationRef.current = fixedDurationSeconds;
+                    setRemainingSeconds(fixedDurationSeconds);
 
                     console.log("Warm connection prepared.");
                     return true;

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 
 
@@ -9,6 +9,7 @@ import { Upload, Loader2, FileText, X, CheckCircle2, PenLine, Eye, Search, Chevr
 import { createPortal } from "react-dom";
 
 import { useEffect } from "react";
+import { formatSalaryValue, splitSalaryValue } from "@/lib/salary-format";
 
 
 
@@ -46,13 +47,13 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 
 const currencies = [
 
-    { code: "INR", symbol: "₹", name: "Indian Rupee" },
+    { code: "INR", symbol: "â‚¹", name: "Indian Rupee" },
 
     { code: "USD", symbol: "$", name: "US Dollar" },
 
-    { code: "EUR", symbol: "€", name: "Euro" },
+    { code: "EUR", symbol: "â‚¬", name: "Euro" },
 
-    { code: "GBP", symbol: "£", name: "British Pound" },
+    { code: "GBP", symbol: "Â£", name: "British Pound" },
 
     { code: "AUD", symbol: "A$", name: "Australian Dollar" },
 
@@ -60,11 +61,11 @@ const currencies = [
 
     { code: "SGD", symbol: "S$", name: "Singapore Dollar" },
 
-    { code: "AED", symbol: "د.إ", name: "UAE Dirham" },
+    { code: "AED", symbol: "Ø¯.Ø¥", name: "UAE Dirham" },
 
-    { code: "JPY", symbol: "¥", name: "Japanese Yen" },
+    { code: "JPY", symbol: "Â¥", name: "Japanese Yen" },
 
-    { code: "CNY", symbol: "¥", name: "Chinese Yuan" },
+    { code: "CNY", symbol: "Â¥", name: "Chinese Yuan" },
 
     { code: "CHF", symbol: "Fr", name: "Swiss Franc" },
 
@@ -136,18 +137,13 @@ function CurrencySelector({ value, onChange }: { value: string; onChange: (code:
 
             ref={dropdownRef}
 
-            style={{ 
-
-                position: "fixed", 
-
-                top: rect.bottom + 6, 
-
-                left: Math.min(rect.left, window.innerWidth - 220 - 20), 
-
-                width: 220, 
-
-                zIndex: 9999 
-
+            style={{
+                position: "fixed",
+                top: rect.top - 6,
+                left: Math.min(rect.right - 220, window.innerWidth - 220 - 20),
+                transform: "translateY(-100%)",
+                width: 220,
+                zIndex: 9999
             }}
 
             className="rounded-2xl border border-gray-100 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
@@ -480,7 +476,7 @@ export function JobDescription({
 
                                     </p>
 
-                                    <p className="text-[11px] text-gray-400">PDF, DOCX, or TXT · Max 10MB · Auto-extracts skills & responsibilities</p>
+                                    <p className="text-[11px] text-gray-400">PDF, DOCX, or TXT Â· Max 10MB Â· Auto-extracts skills & responsibilities</p>
 
                                 </div>
 
@@ -680,7 +676,7 @@ export function JobDescription({
 
                                     rows={6}
 
-                                    placeholder="• Define clear objectives&#10;• Collaborate with cross-functional teams&#10;• ..."
+                                    placeholder="â€¢ Define clear objectives&#10;â€¢ Collaborate with cross-functional teams&#10;â€¢ ..."
 
                                     value={formData.responsibilities || ""}
 
@@ -690,9 +686,9 @@ export function JobDescription({
 
                                             if (line.trim() === "") return line;
 
-                                            if (line.trim().startsWith("•")) return line;
+                                            if (line.trim().startsWith("â€¢")) return line;
 
-                                            return `• ${line.trimStart()}`;
+                                            return `â€¢ ${line.trimStart()}`;
 
                                         }).join('\n');
 
@@ -722,7 +718,7 @@ export function JobDescription({
 
                                     rows={4}
 
-                                    placeholder="• React.js & Next.js&#10;• TypeScript & Node.js&#10;• AWS / Cloud Infrastructure"
+                                    placeholder="â€¢ React.js & Next.js&#10;â€¢ TypeScript & Node.js&#10;â€¢ AWS / Cloud Infrastructure"
 
                                     value={formData.skills || ""}
 
@@ -732,9 +728,9 @@ export function JobDescription({
 
                                             if (line.trim() === "") return line;
 
-                                            if (line.trim().startsWith("•")) return line;
+                                            if (line.trim().startsWith("â€¢")) return line;
 
-                                            return `• ${line.trimStart()}`;
+                                            return `â€¢ ${line.trimStart()}`;
 
                                         }).join('\n');
 
@@ -758,7 +754,7 @@ export function JobDescription({
 
                                     rows={4}
 
-                                    placeholder="• Bachelor's degree in CS or related field&#10;• 3+ years of experience in...&#10;• ..."
+                                    placeholder="â€¢ Bachelor's degree in CS or related field&#10;â€¢ 3+ years of experience in...&#10;â€¢ ..."
 
                                     value={formData.requirements || ""}
 
@@ -768,9 +764,9 @@ export function JobDescription({
 
                                             if (line.trim() === "") return line;
 
-                                            if (line.trim().startsWith("•")) return line;
+                                            if (line.trim().startsWith("â€¢")) return line;
 
-                                            return `• ${line.trimStart()}`;
+                                            return `â€¢ ${line.trimStart()}`;
 
                                         }).join('\n');
 
@@ -786,105 +782,57 @@ export function JobDescription({
 
                         </div>
 
-
-
                         {/* Bottom Row: Experience & Salary */}
-
                         <div className="grid md:grid-cols-2 gap-6 items-end">
-
                             <div>
-
                                 <FieldLabel required>Experience (Yrs)</FieldLabel>
-
                                 <input
-
                                     type="text"
-
-                                    placeholder="e.g. 2–5 years"
-
+                                    placeholder="e.g. 2-5 years"
                                     value={formData.experience || ""}
-
                                     onChange={(e) => updateFormData((prev: any) => ({ ...prev, experience: e.target.value }))}
-
                                     className={`${inputClass} ${isAnalyzing && !formData.experience ? "bg-orange-50/20" : ""}`}
-
                                 />
-
                             </div>
 
                             <div>
-
                                 {(() => {
-
-                                    const curr = (formData.salary || "").split(" ")[2] || (formData.salary || "").split(" ")[1] || "INR";
-
+                                    const { currency: curr } = splitSalaryValue(formData.salary, "INR");
                                     const label = curr === "INR" ? "Salary Range (LPA · INR)" : `Salary Range (${curr})`;
-
                                     return <FieldLabel required>{label}</FieldLabel>;
-
                                 })()}
 
                                 <div className="flex items-center gap-2">
-
                                     <div className="relative flex-1">
-
                                         <input
-
                                             type="text"
-
-                                            placeholder="e.g. 12–18"
-
-                                            value={(formData.salary || "").split(" ")[0] || ""}
-
+                                            placeholder="e.g. 12-18"
+                                            value={splitSalaryValue(formData.salary, "INR").amount}
                                             onChange={(e) => {
-
                                                 const val = e.target.value;
-
-                                                const parts = (formData.salary || "").split(" ");
-
-                                                const curr = parts[2] || parts[1] || "INR";
-
-                                                updateFormData((prev: any) => ({ ...prev, salary: `${val} LPA ${curr}` }));
-
+                                                const { currency } = splitSalaryValue(formData.salary, "INR");
+                                                updateFormData((prev: any) => ({ ...prev, salary: formatSalaryValue(val, currency) }));
                                             }}
-
                                             className={inputClass}
-
                                         />
 
                                         <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-gray-300 uppercase tracking-widest pointer-events-none">
-
-                                            {((formData.salary || "").split(" ")[1] === "LPA" && (formData.salary || "").split(" ")[2] === "INR") ? "LPA INR" : (formData.salary || "").split(" ")[1] || ""}
-
+                                            {splitSalaryValue(formData.salary, "INR").amount ? "LPA" : ""}
                                         </div>
-
                                     </div>
 
-                                    <CurrencySelector 
-
-                                        value={(formData.salary || "").split(" ")[2] || (formData.salary || "").split(" ")[1] || "INR"}
-
+                                    <CurrencySelector
+                                        value={splitSalaryValue(formData.salary, "INR").currency}
                                         onChange={(code) => {
-
-                                            const parts = (formData.salary || "").split(" ");
-
-                                            const amount = parts[0] || "";
-
-                                            updateFormData((prev: any) => ({ ...prev, salary: `${amount} LPA ${code}` }));
-
+                                            const { amount } = splitSalaryValue(formData.salary, "INR");
+                                            updateFormData((prev: any) => ({ ...prev, salary: formatSalaryValue(amount, code) }));
                                         }}
-
                                     />
-
                                 </div>
-
                             </div>
-
                         </div>
 
                     </section>
-
-                    
 
                     {isAnalyzing && (
 
@@ -921,6 +869,7 @@ export function JobDescription({
     );
 
 }
+
 
 
 

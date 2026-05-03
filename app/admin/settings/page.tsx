@@ -49,6 +49,7 @@ import {
     Field,
     Toggle
 } from "@/components/admin/settings/settings-shared";
+import { formatOrgLimitValue } from "@/lib/org-limits";
 import { TEAM_LIMIT_REACHED_MESSAGE, formatTeamLimit, getTeamLimitRemaining, isTeamLimitReached } from "@/lib/team-limits";
 
 
@@ -170,7 +171,7 @@ export default function SettingsPage() {
 
         customSenderName: "",
 
-        maxTeamMembers: 0
+        maxTeamMembers: "Unlimited"
 
     });
 
@@ -346,7 +347,7 @@ export default function SettingsPage() {
 
                         customSenderName: data.customSenderName || "",
 
-                        maxTeamMembers: Number(data.maxTeamMembers || 0)
+                        maxTeamMembers: formatOrgLimitValue(data.maxTeamMembers)
 
                     });
 
@@ -690,6 +691,9 @@ export default function SettingsPage() {
                 await loadTeamData();
 
                 setInviteMessage(data.warning || "Invitation sent successfully.");
+                if (data.code === "GMAIL_SCOPES_MISSING" || data.code === "GMAIL_RECONNECT_REQUIRED" || data.code === "GMAIL_NOT_CONFIGURED") {
+                    toast.error(data.warning || "Reconnect Gmail and grant the missing permissions so workspace emails can send.");
+                }
                 if (data.code === "TEAM_LIMIT_REACHED") {
                     toast.error(data.error || TEAM_LIMIT_REACHED_MESSAGE);
                     return;
@@ -698,6 +702,9 @@ export default function SettingsPage() {
             } else {
 
                 setInviteError(data.error || "Failed to send invite.");
+                if (data.code === "GMAIL_SCOPES_MISSING" || data.code === "GMAIL_RECONNECT_REQUIRED" || data.code === "GMAIL_NOT_CONFIGURED") {
+                    toast.error(data.error || "Reconnect Gmail and grant the missing permissions so workspace emails can send.");
+                }
                 if (data.code === "TEAM_LIMIT_REACHED") {
                     toast.error(data.error || TEAM_LIMIT_REACHED_MESSAGE);
                 }

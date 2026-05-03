@@ -1,6 +1,33 @@
 import { prisma } from "@/lib/prisma";
 import { sendGmailEmail, sendSuperAdminGmailEmail } from './google-auth';
 
+export type MailFailureCode =
+    | "GMAIL_NOT_CONFIGURED"
+    | "GMAIL_SCOPES_MISSING"
+    | "GMAIL_RECONNECT_REQUIRED"
+    | "GMAIL_SEND_FAILED";
+
+export type MailResult =
+    | { success: true }
+    | {
+        success: false;
+        error: string;
+        code?: MailFailureCode;
+        reconnectRequired?: boolean;
+      };
+
+function buildMailFailure(error: unknown, fallbackMessage: string): Extract<MailResult, { success: false }> {
+    const err = error as Partial<Error> & { code?: string; reconnectRequired?: boolean };
+    const message = err?.message || fallbackMessage;
+    const code = err?.code as MailFailureCode | undefined;
+    return {
+        success: false,
+        error: message,
+        code,
+        reconnectRequired: Boolean(err?.reconnectRequired),
+    };
+}
+
 export async function sendApplicationStatusEmail({
     email,
     fullName,
@@ -30,7 +57,7 @@ export async function sendApplicationStatusEmail({
 
     if (!org?.id) {
         console.warn(`[MAIL BLOCKED] Org not found: ${orgId}`);
-        return { success: false, error: "Organization not found." };
+        return { success: false, error: "Organization not found.", code: "GMAIL_SEND_FAILED" };
     }
 
     const orgName = org.name || "Our Team";
@@ -107,7 +134,9 @@ export async function sendApplicationStatusEmail({
     if (!org.googleAccessToken) {
         return {
             success: false,
-            error: `Connect Gmail in onboarding to send emails for this workspace. orgId=${orgId}`
+            error: `Connect Gmail in onboarding to send emails for this workspace. orgId=${orgId}`,
+            code: "GMAIL_NOT_CONFIGURED",
+            reconnectRequired: true,
         };
     }
 
@@ -122,12 +151,8 @@ export async function sendApplicationStatusEmail({
         return { success: true };
     } catch (error) {
         console.error(`[MAIL GMAIL FAILED]`, error);
-        return {
-            success: false,
-            error: error instanceof Error
-                ? error.message
-                : `Failed to send email from the connected Gmail account for orgId=${orgId}`
-        };
+        const failure = buildMailFailure(error, `Failed to send email from the connected Gmail account for orgId=${orgId}`);
+        return failure;
     }
 }
 
@@ -164,7 +189,12 @@ export async function sendOrgWelcomeEmail({
     });
 
     if (!superAdmin) {
-        return { success: false, error: "Connect Gmail for the super-admin account before sending onboarding emails." };
+        return {
+            success: false,
+            error: "Connect Gmail for the super-admin account before sending onboarding emails.",
+            code: "GMAIL_NOT_CONFIGURED",
+            reconnectRequired: true,
+        };
     }
 
     try {
@@ -178,7 +208,10 @@ export async function sendOrgWelcomeEmail({
         return { success: true };
     } catch (error) {
         console.error(`[WELCOME EMAIL GMAIL FAILED]`, error);
-        return { success: false, error: "Failed to send onboarding email from the connected super-admin Gmail account." };
+        return buildMailFailure(
+            error,
+            "Failed to send onboarding email from the connected super-admin Gmail account."
+        );
     }
 }
 
@@ -227,7 +260,12 @@ export async function sendTeamInviteEmail({
         });
 
         if (!org?.googleAccessToken) {
-            return { success: false, error: "Connect Gmail in onboarding before inviting team members." };
+            return {
+                success: false,
+                error: "Connect Gmail in onboarding before inviting team members.",
+                code: "GMAIL_NOT_CONFIGURED",
+                reconnectRequired: true,
+            };
         }
         try {
             await sendGmailEmail({
@@ -240,9 +278,13 @@ export async function sendTeamInviteEmail({
             return { success: true };
         } catch (error) {
             console.error(`[INVITE EMAIL GMAIL FAILED]`, error);
-            return { success: false, error: "Failed to send invite from the connected Gmail account." };
+            return buildMailFailure(error, "Failed to send invite from the connected Gmail account.");
         }
     }
 
-    return { success: false, error: "No organization context available for invite emails." };
+    return {
+        success: false,
+        error: "No organization context available for invite emails.",
+        code: "GMAIL_SEND_FAILED",
+    };
 }

@@ -222,7 +222,7 @@ export default function DriveCandidatesPage() {
                             {quotaLocked ? "Upload Locked" : "Upload More"}
                         </button>
                         <Link
-                            href={`/admin/create-drive?id=${driveId}`}
+                            href={`/admin/create-drive?id=${driveId}&mode=edit`}
                             className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 text-sm font-semibold text-gray-700 shadow-none transition-colors hover:border-gray-300 hover:bg-gray-50 hover:shadow-none"
                         >
                             <Edit3 className="h-4 w-4" />

@@ -38,7 +38,7 @@ type SessionTokenPayload = SessionUser & {
 export function normalizeRole(role: string | null | undefined): SessionRole {
     const normalized = (role || "").toUpperCase();
     if (normalized === "SUPER_ADMIN") return "SUPER_ADMIN";
-    if (normalized === "ADMIN" || normalized === "ORG_ADMIN" || normalized === "HR") return "ADMIN";
+    if (normalized === "ADMIN" || normalized === "ORG_ADMIN" || normalized === "HR" || normalized === "TEAM") return "ADMIN";
     return "CANDIDATE";
 }
 
