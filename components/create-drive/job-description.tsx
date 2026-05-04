@@ -47,13 +47,13 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 
 const currencies = [
 
-    { code: "INR", symbol: "â‚¹", name: "Indian Rupee" },
+    { code: "INR", symbol: "₹", name: "Indian Rupee" },
 
     { code: "USD", symbol: "$", name: "US Dollar" },
 
-    { code: "EUR", symbol: "â‚¬", name: "Euro" },
+    { code: "EUR", symbol: "€", name: "Euro" },
 
-    { code: "GBP", symbol: "Â£", name: "British Pound" },
+    { code: "GBP", symbol: "£", name: "British Pound" },
 
     { code: "AUD", symbol: "A$", name: "Australian Dollar" },
 
@@ -61,11 +61,11 @@ const currencies = [
 
     { code: "SGD", symbol: "S$", name: "Singapore Dollar" },
 
-    { code: "AED", symbol: "Ø¯.Ø¥", name: "UAE Dirham" },
+    { code: "AED", symbol: "د.إ", name: "UAE Dirham" },
 
-    { code: "JPY", symbol: "Â¥", name: "Japanese Yen" },
+    { code: "JPY", symbol: "¥", name: "Japanese Yen" },
 
-    { code: "CNY", symbol: "Â¥", name: "Chinese Yuan" },
+    { code: "CNY", symbol: "¥", name: "Chinese Yuan" },
 
     { code: "CHF", symbol: "Fr", name: "Swiss Franc" },
 

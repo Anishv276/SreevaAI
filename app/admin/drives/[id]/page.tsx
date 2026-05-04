@@ -107,11 +107,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     screeningThreshold,
-                    screeningCriteria: JSON.stringify({
-                        threshold: screeningThreshold,
-                        inviteScheduleDays,
-                        criteria: sanitizeScreeningCriteria(screeningCriteria),
-                    }),
+                    screeningCriteria: sanitizeScreeningCriteria(screeningCriteria),
                     inviteScheduleDays,
                 }),
             });

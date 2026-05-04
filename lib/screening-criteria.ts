@@ -1,5 +1,8 @@
 export interface ScreeningCriteria {
     skills?: {
+        mustHave?: Array<{ name: string; weight?: number }>;
+        optional?: Array<{ name: string; weight?: number }>;
+        // Backward compatibility for older saved drives.
         required?: Array<{ name: string; weight?: number }>;
         niceToHave?: Array<{ name: string; weight?: number }>;
     };
@@ -47,16 +50,16 @@ function parseMaybeJson(value: unknown): Record<string, any> {
 
 function normalizeSkills(input: unknown) {
     const skills = isPlainObject(input) ? input : {};
-    const required = Array.isArray(skills.required) ? skills.required : [];
-    const niceToHave = Array.isArray(skills.niceToHave) ? skills.niceToHave : [];
+    const mustHave = Array.isArray(skills.mustHave) ? skills.mustHave : Array.isArray(skills.required) ? skills.required : [];
+    const optional = Array.isArray(skills.optional) ? skills.optional : Array.isArray(skills.niceToHave) ? skills.niceToHave : [];
     return {
-        required: required
+        mustHave: mustHave
             .map((item: any) => ({
                 name: String(item?.name || item?.skill || "").trim(),
                 weight: typeof item?.weight === "number" ? item.weight : undefined,
             }))
             .filter((item) => item.name),
-        niceToHave: niceToHave
+        optional: optional
             .map((item: any) => ({
                 name: String(item?.name || item?.skill || "").trim(),
                 weight: typeof item?.weight === "number" ? item.weight : undefined,
@@ -75,10 +78,25 @@ function normalizeCustomChecks(input: unknown) {
         .filter((item) => item.text);
 }
 
+function unwrapScreeningCriteriaSource(criteria: Record<string, any>): Record<string, any> {
+    // The frontend saves a wrapper object that looks like:
+    // { threshold, inviteScheduleDays, criteria: { skills, customChecks, ... } }
+    // Older records may store the raw criteria object directly.
+    if (isPlainObject(criteria.criteria)) {
+        return criteria.criteria;
+    }
+    return criteria;
+}
+
 export function sanitizeScreeningCriteria(criteria: ScreeningCriteria | Record<string, any> | null | undefined): ScreeningCriteria {
-    const source = isPlainObject(criteria) ? criteria : {};
+    const source = unwrapScreeningCriteriaSource(isPlainObject(criteria) ? criteria : {});
+    const mustHave = normalizeSkills(source.skills).mustHave || [];
+    const optional = normalizeSkills(source.skills).optional || [];
     return {
-        skills: normalizeSkills(source.skills),
+        skills: {
+            mustHave,
+            optional,
+        },
         customChecks: normalizeCustomChecks(source.customChecks),
         evaluationInstructions: typeof source.evaluationInstructions === "string" ? source.evaluationInstructions : undefined,
         experience: isPlainObject(source.experience) ? {
@@ -112,11 +130,11 @@ export function parseDriveScreeningSettings(
 }
 
 export function getRequiredSkillsText(criteria: ScreeningCriteria): string[] {
-    return (criteria.skills?.required || []).map((s) => s.name).filter(Boolean);
+    return (criteria.skills?.mustHave || criteria.skills?.required || []).map((s) => s.name).filter(Boolean);
 }
 
 export function getNiceToHaveSkillsText(criteria: ScreeningCriteria): string[] {
-    return (criteria.skills?.niceToHave || []).map((s) => s.name).filter(Boolean);
+    return (criteria.skills?.optional || criteria.skills?.niceToHave || []).map((s) => s.name).filter(Boolean);
 }
 
 export function getCustomChecksText(criteria: ScreeningCriteria): string[] {
@@ -128,12 +146,12 @@ export function criteriaToText(criteria: ScreeningCriteria): string {
 
     const required = getRequiredSkillsText(criteria);
     if (required.length > 0) {
-        parts.push(`Required skills: ${required.join(", ")}`);
+        parts.push(`Must-have skills: ${required.join(", ")}`);
     }
 
     const niceToHave = getNiceToHaveSkillsText(criteria);
     if (niceToHave.length > 0) {
-        parts.push(`Nice to have: ${niceToHave.join(", ")}`);
+        parts.push(`Optional skills: ${niceToHave.join(", ")}`);
     }
 
     const customChecks = getCustomChecksText(criteria);

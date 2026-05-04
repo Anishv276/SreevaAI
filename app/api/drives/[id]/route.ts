@@ -6,6 +6,7 @@ import { deleteUrlTargets } from "@/lib/delete-utils";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
 import { safeJsonParse } from "@/lib/utils";
 import { getSession } from "@/lib/auth";
+import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 
 export const dynamic = "force-dynamic";
 
@@ -84,11 +85,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
         const screeningThreshold = Number((drive as any).screeningThreshold ?? 60);
         const inviteScheduleDays = Number((drive as any).inviteScheduleDays ?? 1) || 1;
-        const parsedCriteria = safeJsonParse((drive as any).screeningCriteria, {}) as Record<string, any>;
-        const screeningCriteria = JSON.stringify({
-            threshold: screeningThreshold,
+        const parsedCriteria = parseDriveScreeningSettings(
+            (drive as any).screeningCriteria,
+            screeningThreshold,
             inviteScheduleDays,
-            criteria: parsedCriteria.criteria || {},
+        );
+        const screeningCriteria = JSON.stringify({
+            threshold: parsedCriteria.threshold,
+            inviteScheduleDays: parsedCriteria.inviteScheduleDays,
+            criteria: parsedCriteria.criteria,
         });
 
         return NextResponse.json({
@@ -209,8 +214,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             const parsedCriteria = typeof rawCriteria === "string"
                 ? safeJsonParse(rawCriteria, {})
                 : (rawCriteria || {});
+            const normalizedCriteria = sanitizeScreeningCriteria(parsedCriteria);
             const mergedCriteria = {
-                ...(parsedCriteria && typeof parsedCriteria === "object" ? parsedCriteria : {}),
+                ...normalizedCriteria,
                 ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
                 ...(data.inviteScheduleDays !== undefined ? { inviteScheduleDays: data.inviteScheduleDays } : {}),
             };

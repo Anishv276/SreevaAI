@@ -154,11 +154,7 @@ export default function DriveCandidatesPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     screeningThreshold,
-                    screeningCriteria: JSON.stringify({
-                        threshold: screeningThreshold,
-                        inviteScheduleDays,
-                        criteria: sanitizeScreeningCriteria(screeningCriteria),
-                    }),
+                    screeningCriteria: sanitizeScreeningCriteria(screeningCriteria),
                     inviteScheduleDays,
                 }),
             });

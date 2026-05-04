@@ -12,6 +12,7 @@ import { isDriveCreationLocked } from "@/lib/drive-limits";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { parseOrgLimitValue } from "@/lib/org-limits";
+import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 
 export async function GET(request: Request) {
     try {
@@ -114,18 +115,22 @@ export async function GET(request: Request) {
         const formattedDrives = drives.map((drive: any) => {
             const screeningThreshold = Number(drive.screeningThreshold ?? 60);
             const inviteScheduleDays = Number(drive.inviteScheduleDays ?? 1) || 1;
-            const screeningCriteriaJson = JSON.stringify({
-                threshold: screeningThreshold,
+            const parsedScreening = parseDriveScreeningSettings(
+                drive.screeningCriteria,
+                screeningThreshold,
                 inviteScheduleDays,
-                criteria: {},
-            });
+            );
 
             return {
                 ...drive,
                 applicants: drive._count?.applications || 0,
-                screeningThreshold,
-                inviteScheduleDays,
-                screeningCriteria: drive.screeningCriteria || screeningCriteriaJson,
+                screeningThreshold: parsedScreening.threshold,
+                inviteScheduleDays: parsedScreening.inviteScheduleDays,
+                screeningCriteria: JSON.stringify({
+                    threshold: parsedScreening.threshold,
+                    inviteScheduleDays: parsedScreening.inviteScheduleDays,
+                    criteria: parsedScreening.criteria,
+                }),
                 aiScreening: {
                     enabled: (drive as any).aiScreeningEnabled
                 },
@@ -227,8 +232,9 @@ export async function POST(request: Request) {
             }
             return raw;
         })();
+        const normalizedScreeningCriteria = sanitizeScreeningCriteria(screeningCriteria);
         const mergedScreeningCriteria = {
-            ...(screeningCriteria && typeof screeningCriteria === "object" ? screeningCriteria : {}),
+            ...normalizedScreeningCriteria,
             ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
             ...(data.inviteScheduleDays !== undefined ? { inviteScheduleDays: data.inviteScheduleDays } : {}),
         };
