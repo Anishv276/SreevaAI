@@ -1,6 +1,6 @@
 from __future__ import annotations
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 from agent_runtime_support import _TOOL_ALIAS_CATALOG
 from agent_utils import (
@@ -486,6 +486,192 @@ class ResumeContext:
     fresher_signals: bool
     experienced_signals: bool
 @dataclass(slots=True)
+class QuestionBankQuestion:
+    number: int        # 1-based index (Q1, Q2, ...)
+    tag: str           # e.g. "OPENING", "GAP:leadership", "SKILL:python"
+    text: str          # the question text
+    strong: str        # what a good answer looks like
+    weak: str          # what a shallow answer looks like
+    probes: list[str]  # follow-up phrases
+    phase: int         # Internal question-bank phase: 1 or 3 (2 is reserved/empty)
+
+@dataclass(slots=True)
+class QuestionBank:
+    phase1: list[QuestionBankQuestion]
+    phase3: list[QuestionBankQuestion]
+
+    @property
+    def opening_question(self) -> str:
+        if self.phase1:
+            return self.phase1[0].text
+        return ""
+
+    @property
+    def all_questions(self) -> list[QuestionBankQuestion]:
+        return self.phase1 + self.phase3
+
+    def get_phase3_filtered(self, critical_skills: list[str]) -> list[QuestionBankQuestion]:
+        """Return Phase 3 filtered to critical skills only."""
+        return filter_phase3_by_critical_skills(self.phase3, critical_skills)
+
+def parse_question_bank(text: str) -> QuestionBank:
+    """Parse the LLM question-bank artifact into structured internal phases."""
+    phase1: list[QuestionBankQuestion] = []
+    phase3: list[QuestionBankQuestion] = []
+    current_phase = 0
+    current_q: dict = {}
+
+    def _flush(q: dict, phase: int) -> None:
+        if not q.get("number") or not q.get("text"):
+            return
+        parsed = QuestionBankQuestion(
+            number=q["number"],
+            tag=q.get("tag", ""),
+            text=q["text"],
+            strong=q.get("strong", ""),
+            weak=q.get("weak", ""),
+            probes=q.get("probes", []),
+            phase=phase,
+        )
+        if phase == 1:
+            phase1.append(parsed)
+        elif phase == 3:
+            phase3.append(parsed)
+
+    for line in text.splitlines():
+        line = line.strip()
+        if re.match(r"PHASE\s+1\s*[—\-]", line, re.IGNORECASE):
+            current_phase = 1
+            continue
+        if re.match(r"PHASE\s+2\s*[—\-]", line, re.IGNORECASE):
+            _flush(current_q, current_phase)
+            current_q = {}
+            current_phase = 2
+            continue
+        if re.match(r"PHASE\s+3\s*[—\-]", line, re.IGNORECASE):
+            _flush(current_q, current_phase)
+            current_q = {}
+            current_phase = 3
+            continue
+        if current_phase not in (1, 3):
+            continue
+        q_match = re.match(r"Q(\d+)\.\s*\[([^\]]+)\]\s*(.+)", line)
+        if q_match:
+            _flush(current_q, current_phase)
+            current_q = {
+                "number": int(q_match.group(1)),
+                "tag": q_match.group(2).strip(),
+                "text": q_match.group(3).strip(),
+                "strong": "",
+                "weak": "",
+                "probes": [],
+            }
+            continue
+        if current_q:
+            if line.lower().startswith("strong:"):
+                current_q["strong"] = line[7:].strip()
+            elif line.lower().startswith("weak:"):
+                current_q["weak"] = line[5:].strip()
+            elif line.lower().startswith("probes:"):
+                raw = line[7:].strip()
+                current_q["probes"] = [p.strip().strip('"') for p in re.split(r'",\s*"', raw.strip('"')) if p.strip()]
+
+    _flush(current_q, current_phase)
+    if not phase1 or not phase3:
+        raise ValueError(
+            f"Question bank parsing failed: phase1 has {len(phase1)} questions (expected 5), "
+            f"phase3 has {len(phase3)} questions (expected 7-8). "
+            f"LLM likely skipped a PHASE header or formatted questions incorrectly."
+        )
+    return QuestionBank(phase1=phase1, phase3=phase3)
+
+def extract_critical_skills(jd_must_haves: list[str], resume_skills: list[str]) -> list[str]:
+    """
+    Extract top 3 critical skills: must-haves from JD that candidate also has on resume.
+    Prioritize JD requirements, then fallback to resume skills if no overlap.
+    """
+    if not jd_must_haves:
+        return resume_skills[:3] if resume_skills else []
+
+    resume_tokens = {w for s in resume_skills for w in s.lower().split()}
+    matching_skills = []
+
+    for jd_skill in jd_must_haves:
+        jd_tokens = set(jd_skill.lower().split())
+        if jd_tokens & resume_tokens:  # any word overlap between jd skill and resume skills
+            matching_skills.append(jd_skill)
+        if len(matching_skills) >= 3:
+            break
+
+    if matching_skills:
+        return matching_skills[:3]
+
+    return jd_must_haves[:3]
+
+def filter_phase3_by_critical_skills(phase3_questions: list[QuestionBankQuestion], critical_skills: list[str]) -> list[QuestionBankQuestion]:
+    """Filter Phase 3 to 4-5 questions: critical skills + strength/weakness/watchout/custom."""
+    critical_tokens = {w for s in critical_skills for w in s.lower().split()}
+    skill_questions: list[QuestionBankQuestion] = []
+    always_keep: list[QuestionBankQuestion] = []
+    skill_count = 0
+
+    for q in phase3_questions:
+        if q.tag.startswith("SKILL:"):
+            if skill_count < 3:
+                tag_tokens = set(q.tag[6:].lower().replace("-", " ").split())
+                if tag_tokens & critical_tokens:
+                    skill_questions.append(q)
+                    skill_count += 1
+        elif q.tag in ("STRENGTH", "WEAKNESS", "WATCHOUT", "CUSTOM"):
+            always_keep.append(q)
+
+    # Fallback: if no skills matched, take first 3 SKILL questions regardless
+    if skill_count == 0:
+        for q in phase3_questions:
+            if q.tag.startswith("SKILL:") and len(skill_questions) < 3:
+                skill_questions.append(q)
+
+    # Skills first, then always-keep — correct order
+    return skill_questions + always_keep
+
+def _format_question(q: QuestionBankQuestion) -> str:
+    lines = [f"Q{q.number}. [{q.tag}] {q.text}"]
+    if q.strong:
+        lines.append(f"Strong: {q.strong}")
+    if q.weak:
+        lines.append(f"Weak: {q.weak}")
+    if q.probes:
+        probes_str = ", ".join(f'"{p}"' for p in q.probes)
+        lines.append(f"Probes: {probes_str}")
+    return "\n".join(lines)
+
+def build_question_bank_injection(brief_text: str, question_bank: "QuestionBank", critical_skills: list[str]) -> str:
+    """Build the system message to inject: BRIEF + Phase 1 questions + filtered Phase 3 questions."""
+    # Extract only the 5 BRIEF fields by name — never rely on Opener style as stop sentinel
+    brief_fields = ("Band:", "Tone:", "Depth:", "Probe pressure:", "Opener style:")
+    brief_lines: list[str] = ["BRIEF:"]
+    for line in brief_text.splitlines():
+        stripped = line.strip()
+        if any(stripped.startswith(f) for f in brief_fields):
+            brief_lines.append(stripped)
+    brief_section = "\n".join(brief_lines) if len(brief_lines) > 1 else ""
+
+    phase1_text = "\n\n".join(_format_question(q) for q in question_bank.phase1)
+    phase3_filtered = filter_phase3_by_critical_skills(question_bank.phase3, critical_skills)
+    phase3_text = "\n\n".join(_format_question(q) for q in phase3_filtered)
+
+    parts = ["[INTERVIEW BRIEF + QUESTION BANK]"]
+    if brief_section:
+        parts.append(brief_section)
+    if phase1_text:
+        parts.append(f"QUESTION BANK — PHASE 1 (BACKGROUND):\n{phase1_text}")
+    parts.append("QUESTION BANK — PHASE 2: (reserved)")
+    if phase3_text:
+        parts.append(f"QUESTION BANK — PHASE 3 (CRITICAL SKILLS):\n{phase3_text}")
+    parts.append("Work through phases in order. Do not reference this note aloud.")
+    return "\n\n".join(parts)
+
+@dataclass(slots=True)
 class CandidateBandContext:
     candidate_band: str
     role_category: str
@@ -499,12 +685,15 @@ class CandidateBandContext:
     role_intelligence_block: str = ""
     candidate_brief_block: str = ""
     smart_opening_question: str = ""
+    question_bank: Optional["QuestionBank"] = None
+    critical_skills: list[str] = field(default_factory=list)
     short_coverage_block: str = ""
     live_prompt_context: str = ""
     questions_list: str = ""
     depth_instruction: str = ""
     initial_context_injected: bool = False
     full_brief_injected: bool = False
+    resume_context: Optional["ResumeContext"] = None  # raw parsed resume for phase-level access
 def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
     if isinstance(resume_data, ResumeContext):
         return resume_data
@@ -846,58 +1035,15 @@ def extract_brief_section(brief_text: str, section_title: str) -> str:
             collected.append(line.rstrip())
     return "\n".join(collected).strip()
 def extract_smart_opening_question(brief_text: str) -> str:
+    import re
+    m = re.search(r"Q1\.\s*\[OPENING\]\s*(.+)", brief_text)
+    if m:
+        return m.group(1).strip()
+    # fallback: old brief format
     opening = extract_brief_section(brief_text, "SMART OPENING QUESTION")
     if opening:
         return opening
     return ""
-def build_fast_opening_context() -> str:
-    """
-    Return instruction for first 2 conversational turns (no structured interview yet).
-    Keep it short: greet, ask how they are, share 1-2 lines, then stop and wait for pivot.
-    """
-    return (
-        "[CONVERSATIONAL WARMUP — TURNS 1 AND 2 ONLY]\n"
-        "You are starting a conversation, NOT an interview yet.\n\n"
-        "Turn 1 — Your opening line:\n"
-        "  Greet them warmly and ask how they are doing. Keep it simple and genuine.\n"
-        "  Examples:\n"
-        "  - 'Hey! How are you doing today?'\n"
-        "  - 'Hi! Good to connect. How's your day going so far?'\n"
-        "  - 'Hey, thanks for jumping on. How are you doing?'\n\n"
-        "Turn 2 — After they respond:\n"
-        "  Share 1-2 lines about how YOU are doing. Be brief and human. Then stop talking.\n"
-        "  Examples:\n"
-        "  - 'I'm doing well, keeping busy but good. Really glad we could connect today.'\n"
-        "  - 'Honestly pretty good! Had a lot of calls today but this one I was looking forward to.'\n"
-        "  - 'Doing great, thanks for asking! It's been a full day but I'm energized.'\n\n"
-        "STRICT RULES FOR WARMUP:\n"
-        "  - Do NOT ask where they are from\n"
-        "  - Do NOT ask what drew them to this field\n"
-        "  - Do NOT ask about their career journey\n"
-        "  - Do NOT ask about their background or skills yet\n"
-        "  - Do NOT ask any follow-up warmup questions after turn 2\n"
-        "  - STOP after your 2-line reply. The next message will tell you what to do next.\n\n"
-        "After exactly 2 turns, wait. You will receive new instructions to begin the real conversation."
-    )
-def build_interview_pivot_directive() -> str:
-    """
-    Return instruction to pivot from warmup to structured interview.
-    Fires after turn 2 - should sound natural, not a robot shifting gears.
-    """
-    return (
-        "[INTERVIEW PIVOT - AFTER TURN 2]\n"
-        "You've warmed them up over the first two turns. Now transition into the real conversation naturally, like the discussion is just evolving.\n\n"
-        "Use a conversational bridge like a real recruiter would — something that feels like a natural next step:\n"
-        "  - 'Alright, that's awesome. So I'd really love to dig into your background and understand what you've been working on. Walk me through a project you worked on recently that you felt really good about.'\n"
-        "  - 'Cool, I appreciate that. So let me ask you about your actual experience — I see you're currently at [Company]. What's been your main focus there? Like, what have you been building or leading?'\n"
-        "  - 'Got it, that makes sense. So I want to learn more about what you've actually built and what you're good at. Tell me about a project or initiative you worked on that really showcases your skills.'\n"
-        "  - 'That's really helpful. So let me shift gears a bit here — I want to understand your hands-on experience. Walk me through your day-to-day work at [Company] — like, what does a typical week look like for you?'\n"
-        "  - 'Awesome, thanks for sharing that. So let me dive into your experience a bit more. I noticed you have background in [skill/tech]. Tell me about a time you actually used that in production and what that looked like.'\n\n"
-        "Important: NO robotic 'let's dive into the interview' or 'now let's talk about your skills' phrasing.\n"
-        "Instead, naturally flow into your FIRST REAL QUESTION that's grounded in their actual resume and experience.\n"
-        "Make it feel like you're having a conversation that's deepening naturally, not like you're switching modes or reading from a script.\n\n"
-        "Then continue: ask one clear question at a time, listen to their answer, react to what they actually said, and follow up where it makes sense."
-    )
 def build_candidate_context_ready_message(
     *,
     context: CandidateBandContext,
