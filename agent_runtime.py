@@ -99,6 +99,7 @@ from agent_runtime_support import (
     GOOGLE_ANALYSIS_MODEL,
     GOOGLE_REALTIME_MODEL,
     LLM_MODEL,
+    FIXED_INTERVIEW_DURATION_MINUTES,
     PROCTORING_WEIGHTS,
     STT_MODEL,
     _DB_POOL,
@@ -586,7 +587,7 @@ async def entrypoint(ctx: JobContext):
     job_title = require_db_value("jobTitle")
     job_details = require_db_value("jd")
     interview_lang = require_db_value("language")
-    time_limit_mins = 20
+    time_limit_mins = FIXED_INTERVIEW_DURATION_MINUTES
     follow_up_depth = 2
     questions_raw = context.get("questions")
     custom_questions: list[Any] = (
@@ -822,6 +823,23 @@ async def entrypoint(ctx: JobContext):
         remove_system_messages(chat_ctx, "[CANDIDATE CONTEXT READY]")
         remove_system_messages(chat_ctx, "[INTERVIEW BRIEF + QUESTION BANK]")
         chat_ctx.add_message(role="system", content=injection)
+        # If we're still in runtime Phase 2, refresh the opening context with the now-available
+        # smart_opening_question so the LLM uses the brief's first question instead of the weak anchor.
+        if runtime_phase == 2 and session_context.smart_opening_question:
+            rc = session_context.resume_context
+            updated_phase_2 = build_phase_2_opening_context(
+                candidate_band=session_context.candidate_band,
+                projects=rc.projects if rc else [],
+                work_history=rc.work_history if rc else [],
+                education=rc.education if rc else [],
+                skills=rc.skills if rc else [],
+                jd_summary_block=session_context.jd_summary_block,
+                smart_opening_question=session_context.smart_opening_question,
+                coverage_items=session_context.coverage_items,
+            )
+            remove_system_messages(chat_ctx, "[RUNTIME PHASE 2:")
+            chat_ctx.add_message(role="system", content=updated_phase_2)
+            logger.info("[BRIEF] Phase 2 opening context refreshed with smart_opening_question from brief")
         session_context.full_brief_injected = True
         logger.info(
             f"[BRIEF] Deferred brief+question bank attached ({len(injection)} chars, "
@@ -1380,7 +1398,19 @@ async def entrypoint(ctx: JobContext):
             # Fires on every candidate response. Evaluates answer quality in real-time
             # and injects a NEXT_TURN_DIRECTIVE before Ishita generates her next response.
             # Decision: PROBE (which mode) or MOVE_ON - fully signal-driven, no fixed depth.
-            if _last_interviewer_question and turn_snapshot > 1:
+            # Warmup turns (before warmup_complete) are recorded as zero-scored placeholders
+            # so they never pollute the technical or communication score averages.
+            if not warmup_complete and _last_interviewer_question and turn_snapshot > 1:
+                async with _session_state_lock:
+                    answer_scores.append({
+                        "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0,
+                        "fluency": 0, "grammar": 0, "confidence": 0,
+                        "overall": 0.0, "signals": [], "concerns": [],
+                        "is_warmup": True,
+                        "turn": turn_snapshot,
+                        "question": _last_interviewer_question,
+                    })
+            if warmup_complete and _last_interviewer_question and turn_snapshot > 1:
                 answer_snap = content
                 question_snap = _last_interviewer_question
                 follow_up_snap = _topic_follow_up_count
@@ -1704,7 +1734,7 @@ async def entrypoint(ctx: JobContext):
                         warmup_complete = True
                         runtime_phase = 2
                         # End runtime Phase 1, inject runtime Phase 2 opening context
-                        remove_system_messages(chat_ctx, "[PHASE 1: WARMUP")
+                        remove_system_messages(chat_ctx, "[RUNTIME PHASE 1: WARMUP")
                         rc = session_context.resume_context
                         phase_2_context = build_phase_2_opening_context(
                             candidate_band=session_context.candidate_band,

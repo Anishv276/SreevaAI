@@ -3,7 +3,7 @@ import json
 import re
 import time
 import urllib.request
-from typing import Any, Optional
+from typing import Optional
 from agent_persistence import _extract_openai_completion_usage, persist_org_manual_billing_usage
 from agent_runtime_support import APP_BASE_URL, LLM_MODEL, logger
 async def score_answer_quality(
@@ -13,18 +13,25 @@ async def score_answer_quality(
     client,
     org_id: Optional[str] = None,
     llm_model: str = LLM_MODEL,
+    is_warmup: bool = False,
 ) -> dict:
-    """Structured answer quality scorer. Runs after every candidate response."""
+    """Structured answer quality scorer. Runs after every candidate response.
+
+    is_warmup=True skips scoring and returns a zero record so warmup turns
+    never pollute the technical or communication score averages.
+    """
+    if is_warmup:
+        return {
+            "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0,
+            "fluency": 0, "grammar": 0, "confidence": 0,
+            "overall": 0.0, "signals": [], "concerns": [],
+            "is_warmup": True,
+        }
     if not candidate_answer or not candidate_answer.strip():
         return {
-            "clarity": 2,
-            "depth": 0,
-            "specificity": 0,
-            "grounding": 0,
-            "overall": 0.5,
-            "signals": [],
-            "concerns": ["empty_answer"],
-            "turn": 0,
+            "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0,
+            "fluency": 0, "grammar": 0, "confidence": 0,
+            "overall": 0.0, "signals": [], "concerns": ["empty_answer"],
         }
     recent_context = "\n".join(transcript_lines[-8:]) if transcript_lines else ""
     try:
@@ -32,48 +39,66 @@ async def score_answer_quality(
             client.chat.completions.create(
                 model=llm_model,
                 temperature=0.0,
-                max_tokens=200,
+                max_tokens=280,
                 messages=[
                     {
                         "role": "system",
                         "content": (
-                            "Score a candidate's interview answer on 4 dimensions (0-10 each).\n"
+                            "Score a candidate's interview answer on 7 dimensions (0-10 each).\n"
                             "Output ONLY valid JSON with these exact fields:\n"
                             '{\n'
                             '  "clarity": 0-10,\n'
                             '  "depth": 0-10,\n'
                             '  "specificity": 0-10,\n'
                             '  "grounding": 0-10,\n'
+                            '  "fluency": 0-10,\n'
+                            '  "grammar": 0-10,\n'
+                            '  "confidence": 0-10,\n'
                             '  "signals": ["list", "of", "observed", "strengths"],\n'
                             '  "concerns": ["list", "of", "observed", "weaknesses"]\n'
                             '}\n\n'
                             "SCORING GUIDE:\n"
-                            "clarity (0-10): How easy to understand? Penalize fragmentation, run-ons, poor grammar.\n"
-                            "  0-2: Rambling, incoherent, hard to follow, fragmented sentences, poor grammar\n"
-                            "  3-5: Somewhat clear but has run-ons, fragment issues, or could be more direct\n"
-                            "  6-8: Clear and well-structured, mostly correct grammar\n"
-                            "  9-10: Crystal clear, perfectly articulated, excellent grammar and structure\n\n"
-                            "depth (0-10): How much reasoning/thinking shown?\n"
-                            "  0-2: Surface-level, pure facts\n"
-                            "  3-5: Some reasoning, but shallow\n"
+                            "clarity (0-10): How easy to follow the answer structurally?\n"
+                            "  0-2: Incoherent, impossible to follow\n"
+                            "  3-5: Somewhat clear but disjointed or meandering\n"
+                            "  6-8: Clear, logical structure\n"
+                            "  9-10: Crystal clear, perfectly structured\n\n"
+                            "depth (0-10): How much reasoning or thinking is shown?\n"
+                            "  0-2: No reasoning — 'I don't know' or single-word answers\n"
+                            "  3-5: Some reasoning but shallow\n"
                             "  6-8: Good reasoning, explores tradeoffs\n"
-                            "  9-10: Deep thinking, systems thinking, anticipates implications\n\n"
-                            "specificity (0-10): Real names, numbers, dates, examples?\n"
-                            "  0-2: All generic, no proper nouns or numbers\n"
-                            "  3-5: Some specifics but could be more concrete\n"
+                            "  9-10: Deep systems thinking, anticipates implications\n\n"
+                            "specificity (0-10): Real names, numbers, dates, concrete examples?\n"
+                            "  0-2: No specifics at all\n"
+                            "  3-5: Vague or generic\n"
                             "  6-8: Named real projects, companies, or numbers\n"
                             "  9-10: Heavily grounded in specific details\n\n"
-                            "grounding (0-10): Tied to real experience vs theory?\n"
-                            "  0-2: Sounds theoretical, no lived experience evident\n"
-                            "  3-5: Mix of theory and real experience\n"
+                            "grounding (0-10): Does it reflect real lived experience vs theory?\n"
+                            "  0-2: No evidence of real experience\n"
+                            "  3-5: Mix of theory and experience\n"
                             "  6-8: Clearly from real work\n"
                             "  9-10: Rich, textured description of lived experience\n\n"
+                            "fluency (0-10): Smoothness and natural flow of speech?\n"
+                            "  0-2: Very halting, many long pauses or incomplete sentences\n"
+                            "  3-5: Some hesitation but mostly complete\n"
+                            "  6-8: Mostly fluent with minor pauses\n"
+                            "  9-10: Naturally flowing, no notable hesitation\n\n"
+                            "grammar (0-10): Grammatical correctness?\n"
+                            "  0-2: Major grammar errors throughout\n"
+                            "  3-5: Several grammar issues\n"
+                            "  6-8: Mostly correct grammar\n"
+                            "  9-10: Grammatically correct\n\n"
+                            "confidence (0-10): Does the candidate sound assured and decisive?\n"
+                            "  0-2: Very uncertain, avoids committing to answers\n"
+                            "  3-5: Some tentativeness\n"
+                            "  6-8: Generally confident\n"
+                            "  9-10: Strongly confident, direct, and assertive\n\n"
                             "signals: Strengths observed. Pick from:\n"
                             '  "has_numbers", "has_names", "has_reasoning", "has_failure", '
                             '"has_tradeoff", "has_ownership", "has_emotion", "has_learning"\n\n'
                             "concerns: Weaknesses observed. Pick from:\n"
                             '  "vague", "rehearsed", "ownership_unclear", "contradiction", '
-                            '"incomplete", "generic", "bragging", "overly_cautious"'
+                            '"incomplete", "generic", "bragging", "overly_cautious", "refused_to_answer"'
                         ),
                     },
                     {
@@ -86,14 +111,14 @@ async def score_answer_quality(
                     },
                 ],
             ),
-            timeout=3.0,
+            timeout=4.0,
         )
         await persist_org_manual_billing_usage(
             org_id, "interview", _extract_openai_completion_usage(completion)
         )
         raw = completion.choices[0].message.content or ""
         parsed = json.loads(raw.strip())
-        for key in ("clarity", "depth", "specificity", "grounding"):
+        for key in ("clarity", "depth", "specificity", "grounding", "fluency", "grammar", "confidence"):
             parsed[key] = max(0, min(10, int(parsed.get(key, 5))))
         parsed["overall"] = (
             parsed["clarity"] + parsed["depth"] + parsed["specificity"] + parsed["grounding"]
@@ -104,24 +129,16 @@ async def score_answer_quality(
     except asyncio.TimeoutError:
         logger.warning("[SCORE] Answer scorer timed out - returning neutral scores")
         return {
-            "clarity": 5,
-            "depth": 5,
-            "specificity": 5,
-            "grounding": 5,
-            "overall": 5.0,
-            "signals": [],
-            "concerns": ["timeout"],
+            "clarity": 5, "depth": 5, "specificity": 5, "grounding": 5,
+            "fluency": 5, "grammar": 5, "confidence": 5,
+            "overall": 5.0, "signals": [], "concerns": ["timeout"],
         }
     except Exception as e:
         logger.warning(f"[SCORE] Answer scorer failed: {e}", exc_info=True)
         return {
-            "clarity": 5,
-            "depth": 5,
-            "specificity": 5,
-            "grounding": 5,
-            "overall": 5.0,
-            "signals": [],
-            "concerns": ["error"],
+            "clarity": 5, "depth": 5, "specificity": 5, "grounding": 5,
+            "fluency": 5, "grammar": 5, "confidence": 5,
+            "overall": 5.0, "signals": [], "concerns": ["error"],
         }
 async def evaluate_answer_and_decide(
     candidate_answer: str,

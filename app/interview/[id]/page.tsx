@@ -935,23 +935,25 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     </motion.div>
                 )}
             </AnimatePresence>
-            {/*  AI Face Proctoring (runs silently during interview)  */}
-            <FaceProctoring
-                applicationId={id}
-                interviewToken={interviewToken}
-                isActive={phase === "interview"}
-                referenceSnapshotUrl={referenceSnapshotUrl}
-                lastCandidateTranscriptAtRef={lastCandidateTranscriptAtRef}
-                onViolation={handleFaceViolation}
-            />
-            {/*  Hardware Heartbeat (MediaStreamTrack API camera/mic monitoring) */}
-            {(isCameraDisabledEnabled || isMicrophoneDisabledEnabled) && (
-                <HardwareHeartbeat
-                    applicationId={id}
-                    interviewToken={interviewToken}
-                    isActive={phase === "interview"}
-                    onViolation={handleHardwareViolation}
-                />
+            {phase === "interview" && (
+                <>
+                    <FaceProctoring
+                        applicationId={id}
+                        interviewToken={interviewToken}
+                        isActive={phase === "interview"}
+                        referenceSnapshotUrl={referenceSnapshotUrl}
+                        lastCandidateTranscriptAtRef={lastCandidateTranscriptAtRef}
+                        onViolation={handleFaceViolation}
+                    />
+                    {(isCameraDisabledEnabled || isMicrophoneDisabledEnabled) && (
+                        <HardwareHeartbeat
+                            applicationId={id}
+                            interviewToken={interviewToken}
+                            isActive={phase === "interview"}
+                            onViolation={handleHardwareViolation}
+                        />
+                    )}
+                </>
             )}
             {/* Interview room - outside AnimatePresence intentionally.
                 It pre-renders as soon as the launching phase has prepared a token
@@ -982,8 +984,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             interviewToken={interviewToken}
                             onAgentReady={handleAgentReady}
                             onFinish={(reason = "normal") => {
+                                setShouldConnect(false);
                                 setEndMode(reason);
                                 setPhase("completed");
+                                void exitFullscreenMode();
                             }}
                             onFinalizing={() => setPhase("finalizing")}
                             isInterviewActive={phase === "interview"}
