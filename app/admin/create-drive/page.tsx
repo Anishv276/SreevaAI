@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -405,7 +405,7 @@ function CreateDriveForm() {
                 .filter(Boolean)
             : [];
           const allSkills = [...mustHaveArr, ...goodToHaveArr]
-            .map((s) => (s.startsWith("Ã¢â‚¬Â¢") ? s : `Ã¢â‚¬Â¢ ${s}`))
+            .map((s) => (s.startsWith("•") ? s : `• ${s}`))
             .join("\n");
           // Description: use role_summary, fallback to raw extracted text
           const desc = extracted?.role_summary || text || prev.description;
@@ -433,7 +433,7 @@ function CreateDriveForm() {
             Array.isArray(extracted?.responsibilities) &&
             extracted.responsibilities.length > 0
               ? extracted.responsibilities
-                  .map((r: string) => (r.startsWith("Ã¢â‚¬Â¢") ? r : `Ã¢â‚¬Â¢ ${r}`))
+                  .map((r: string) => (r.startsWith("•") ? r : `• ${r}`))
                   .join("\n")
               : prev.responsibilities;
           // Requirements: flat string array + education fallback
@@ -468,7 +468,7 @@ function CreateDriveForm() {
           }
           const req =
             reqArr.length > 0
-              ? reqArr.map((r) => (r.startsWith("Ã¢â‚¬Â¢") ? r : `Ã¢â‚¬Â¢ ${r}`)).join("\n")
+              ? reqArr.map((r) => (r.startsWith("•") ? r : `• ${r}`)).join("\n")
               : prev.requirements;
           return {
             ...prev,

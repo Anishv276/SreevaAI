@@ -902,7 +902,7 @@ def _extract_jd_must_haves(jd_data: dict[str, Any], jd_text: str) -> list[str]:
         requirements = _extract_text_items(_deep_get(jd_data, "requirements"))
         capabilities.extend(requirements)
     if not capabilities and jd_text:
-        for line in re.split(r"[\nâ€¢\-]+", jd_text):
+        for line in re.split(r"[\n•\-]+", jd_text):
             text = _compact_text(line)
             if text:
                 capabilities.append(text)

@@ -12,6 +12,7 @@ from agent_runtime_support import (
     APP_BASE_URL,
     DATABASE_URL,
     LLM_MODEL,
+    FIXED_INTERVIEW_DURATION_MINUTES,
     _DB_POOL,
     _DB_POOL_INIT_TASK,
     _PENDING_MANUAL_BILLING,
@@ -555,7 +556,7 @@ async def get_interview_context(app_id: str):
         raise RuntimeError("DATABASE_URL is not set")
     query = """
     SELECT a."fullName", d.title, d.role AS "role", d.description, d.skills, d."orgId" AS "orgId",
-           d.location AS "driveLocation", d."interviewLanguage", d."interviewTime", d."interviewQuestions",
+           d.location AS "driveLocation", d."interviewLanguage", d."interviewQuestions",
            COALESCE(d."ttsProvider", o."ttsProvider") AS "ttsProvider",
            COALESCE(d."cartesiaVoiceId", o."cartesiaVoiceId") AS "cartesiaVoiceId", o."cartesiaModel",
            o."sarvamModel", COALESCE(d."sarvamVoice", o."sarvamVoice") AS "sarvamVoice",
@@ -594,7 +595,7 @@ async def get_interview_context(app_id: str):
                 "orgLocation": row["orgLocation"],
                 "driveLocation": row["driveLocation"],
                 "language": row["interviewLanguage"],
-                "timeLimit": row["interviewTime"],
+                "timeLimit": FIXED_INTERVIEW_DURATION_MINUTES,
                 "questions": questions if isinstance(questions, list) else [],
                 "ttsProvider": row["ttsProvider"],
                 "cartesiaVoiceId": row["cartesiaVoiceId"],

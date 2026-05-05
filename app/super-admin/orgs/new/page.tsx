@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Sparkles, Volume2, Mic2, BrainCircuit, Coins, Mic, ChevronDown, Infinity, Check, Search, AudioLines, Shield, Layers, Thermometer, Loader2, Zap } from "lucide-react";
@@ -20,10 +19,10 @@ function PremiumInput({ label, icon: Icon, error, ...props }: any) {
                 {label}
                 <span className="text-[#F97316] ml-0.5">*</span>
             </label>
-            <input 
-                {...props} 
+            <input
+                {...props}
                 onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                className={cn("h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md", error && "border-red-500")} 
+                className={cn("h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md", error && "border-red-500")}
             />
         </div>
     );
@@ -149,13 +148,13 @@ export default function NewOrgPage() {
         const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!EMAIL_REGEX.test(form.adminEmail)) { toast.error("Invalid admin email format"); return false; }
         if (!form.adminPassword) { toast.error("Password is required"); return false; }
-        
+
         if (form.adminPassword.length < 8) { toast.error("Password must be at least 8 characters long"); return false; }
         if (!/[a-z]/.test(form.adminPassword)) { toast.error("Password must contain at least one lowercase letter"); return false; }
         if (!/[A-Z]/.test(form.adminPassword)) { toast.error("Password must contain at least one uppercase letter"); return false; }
         if (!/[0-9]/.test(form.adminPassword)) { toast.error("Password must contain at least one number"); return false; }
         if (!/[^a-zA-Z0-9]/.test(form.adminPassword)) { toast.error("Password must contain at least one special character"); return false; }
-        
+
         return true;
     };
 
@@ -261,8 +260,8 @@ export default function NewOrgPage() {
 
             <Steps steps={["Identity", "Admin", "AI Engine", "Billing", "Security"]} currentStep={step} onStepClick={handleNext} />
 
-            <form 
-                onSubmit={handleSubmit} 
+            <form
+                onSubmit={handleSubmit}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
@@ -282,13 +281,13 @@ export default function NewOrgPage() {
                                     const previousName = p.orgName || "";
                                     const previousGenerated = previousName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
                                     const expectedPrevious = previousGenerated ? `${previousGenerated}-${(p as any).slugSuffix}` : "";
-                                    
-                                    return { 
-                                        ...p, 
-                                        orgName: newName, 
-                                        slug: (p.slug === expectedPrevious || !p.slug) 
+
+                                    return {
+                                        ...p,
+                                        orgName: newName,
+                                        slug: (p.slug === expectedPrevious || !p.slug)
                                             ? currentGenerated
-                                            : p.slug 
+                                            : p.slug
                                     };
                                 });
                             }} placeholder="e.g. Lumoscale" required />
@@ -364,18 +363,18 @@ export default function NewOrgPage() {
                             <div className="space-y-6">
                                 <div className="relative group space-y-4">
                                     <CustomSelect label="Transcription (STT)" icon={Mic} value={form.sttProvider} onChange={(v: any) => setForm(p => ({ ...p, sttProvider: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "GOOGLE", label: "Google Cloud STT" }] : [{ value: "DEEPGRAM", label: "Deepgram" }, { value: "SARVAM", label: "Sarvam (Regional)" }]} />
-                                    
+
                                     {form.sttProvider === "DEEPGRAM" && (
                                         <div className="animate-in fade-in slide-in-from-top-2">
-                                            <CustomSelect 
-                                                label="Deepgram Model" 
-                                                icon={Zap} 
-                                                value={form.deepgramModel} 
-                                                onChange={(v: any) => setForm(p => ({ ...p, deepgramModel: v }))} 
+                                            <CustomSelect
+                                                label="Deepgram Model"
+                                                icon={Zap}
+                                                value={form.deepgramModel}
+                                                onChange={(v: any) => setForm(p => ({ ...p, deepgramModel: v }))}
                                                 options={[
                                                     { value: "nova-3-general", label: "Nova-3 (Latest)" },
                                                     { value: "nova-2-general", label: "Nova-2 (Legacy)" },
-                                                ]} 
+                                                ]}
                                             />
                                         </div>
                                     )}
@@ -438,7 +437,7 @@ export default function NewOrgPage() {
                             <div className="md:col-span-1 space-y-4">
                                 <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Client Plan</label>
                                 {ORG_PLAN_OPTIONS.map(p => (
-                                <button key={p.id} type="button" onClick={() => setForm(prev => ({ ...prev, plan: p.id, proctoringSignals: getProctoringSignalsForPlan(p.id) }))} className={cn("w-full p-4 rounded-lg border text-left transition-all", form.plan === p.id ? "border-[#F97316] bg-orange-50 shadow-sm" : "border-gray-100 hover:border-gray-200")}>
+                                    <button key={p.id} type="button" onClick={() => setForm(prev => ({ ...prev, plan: p.id, proctoringSignals: getProctoringSignalsForPlan(p.id) }))} className={cn("w-full p-4 rounded-lg border text-left transition-all", form.plan === p.id ? "border-[#F97316] bg-orange-50 shadow-sm" : "border-gray-100 hover:border-gray-200")}>
                                         <p className="text-xs font-black uppercase text-gray-900">{p.label}</p>
                                         <p className="text-[10px] text-gray-400 font-bold mt-0.5">{p.desc}</p>
                                     </button>
