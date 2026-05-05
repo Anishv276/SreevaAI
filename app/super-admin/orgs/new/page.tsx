@@ -93,6 +93,7 @@ export default function NewOrgPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
     const [step, setStep] = useState(0);
+    const [highestStepReached, setHighestStepReached] = useState(0);
     const [success, setSuccess] = useState<any>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
@@ -137,6 +138,49 @@ export default function NewOrgPage() {
 
     const stopCurrentPreview = () => { if (activeAudio) { activeAudio.pause(); setActiveAudio(null); } setPlayingVoiceId(null); };
 
+    const validateStep0 = () => {
+        if (!form.orgName.trim()) { toast.error("Client Name is required"); return false; }
+        if (!form.slug.trim()) { toast.error("URL Identifier is required"); return false; }
+        return true;
+    };
+
+    const validateStep1 = () => {
+        if (!form.adminEmail.trim()) { toast.error("Login Email is required"); return false; }
+        const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!EMAIL_REGEX.test(form.adminEmail)) { toast.error("Invalid admin email format"); return false; }
+        if (!form.adminPassword) { toast.error("Password is required"); return false; }
+        
+        if (form.adminPassword.length < 8) { toast.error("Password must be at least 8 characters long"); return false; }
+        if (!/[a-z]/.test(form.adminPassword)) { toast.error("Password must contain at least one lowercase letter"); return false; }
+        if (!/[A-Z]/.test(form.adminPassword)) { toast.error("Password must contain at least one uppercase letter"); return false; }
+        if (!/[0-9]/.test(form.adminPassword)) { toast.error("Password must contain at least one number"); return false; }
+        if (!/[^a-zA-Z0-9]/.test(form.adminPassword)) { toast.error("Password must contain at least one special character"); return false; }
+        
+        return true;
+    };
+
+    const handleNext = (targetStep: number) => {
+        // Allow going backwards freely
+        if (targetStep < step) {
+            setStep(targetStep);
+            return;
+        }
+
+        // Do not allow skipping unreached steps (must fill each step during creation)
+        if (targetStep > highestStepReached + 1) {
+            toast.error("Please complete the steps sequentially.");
+            return;
+        }
+
+        for (let i = step; i < targetStep; i++) {
+            if (i === 0 && !validateStep0()) return;
+            if (i === 1 && !validateStep1()) return;
+        }
+
+        setHighestStepReached(Math.max(highestStepReached, targetStep));
+        setStep(targetStep);
+    };
+
     const getVoicesForProvider = () => {
         if (form.ttsProvider === "SARVAM") return SARVAM_VOICES;
         if (form.ttsProvider === "GOOGLE") return GOOGLE_VOICES;
@@ -179,7 +223,10 @@ export default function NewOrgPage() {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(form),
             });
-            if (!res.ok) throw new Error("Failed to create organization");
+            if (!res.ok) {
+                const data = await res.json().catch(() => null);
+                throw new Error(data?.error || "Failed to create organization");
+            }
             setSuccess({ orgName: form.orgName, adminEmail: form.adminEmail });
         } catch (err: any) { toast.error(err.message); }
         finally { setLoading(false); }
@@ -212,7 +259,7 @@ export default function NewOrgPage() {
                 </div>
             </div>
 
-            <Steps steps={["Identity", "Admin", "AI Engine", "Billing", "Security"]} currentStep={step} onStepClick={setStep} />
+            <Steps steps={["Identity", "Admin", "AI Engine", "Billing", "Security"]} currentStep={step} onStepClick={handleNext} />
 
             <form 
                 onSubmit={handleSubmit} 
@@ -253,7 +300,7 @@ export default function NewOrgPage() {
                                 <LocationAutocomplete value={form.location || ""} onChange={val => setForm({ ...form, location: val })} placeholder="Mumbai, India" />
                             </div>
                         </div>
-                        <div className="flex justify-end pt-8"><button type="button" onClick={() => setStep(1)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: ADMIN <ChevronRight className="h-4 w-4" /></button></div>
+                        <div className="flex justify-end pt-8"><button type="button" onClick={() => handleNext(1)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: ADMIN <ChevronRight className="h-4 w-4" /></button></div>
                     </div>
                 )}
 
@@ -266,8 +313,8 @@ export default function NewOrgPage() {
                             <PremiumInput label="Password" icon={Lock} type="password" value={form.adminPassword} onChange={(e: any) => setForm(p => ({ ...p, adminPassword: e.target.value }))} placeholder="••••••••" />
                         </div>
                         <div className="flex justify-between pt-8 border-t border-gray-100">
-                            <button type="button" onClick={() => setStep(0)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
-                            <button type="button" onClick={() => setStep(2)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: AI ENGINE <ChevronRight className="h-4 w-4" /></button>
+                            <button type="button" onClick={() => handleNext(0)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
+                            <button type="button" onClick={() => handleNext(2)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: AI ENGINE <ChevronRight className="h-4 w-4" /></button>
                         </div>
                     </div>
                 )}
@@ -363,8 +410,8 @@ export default function NewOrgPage() {
                             </div>
                         </div>
                         <div className="flex justify-between pt-8">
-                            <button type="button" onClick={() => setStep(1)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
-                            <button type="button" onClick={() => setStep(3)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: BILLING <ChevronRight className="h-4 w-4" /></button>
+                            <button type="button" onClick={() => handleNext(1)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
+                            <button type="button" onClick={() => handleNext(3)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: BILLING <ChevronRight className="h-4 w-4" /></button>
                         </div>
                     </div>
                 )}
@@ -378,8 +425,8 @@ export default function NewOrgPage() {
                             <PremiumInput label="Total Interviews Allocated" icon={Coins} type="number" value={form.interviewQuotaTotal} onChange={(e: any) => setForm(p => ({ ...p, interviewQuotaTotal: e.target.value }))} />
                         </div>
                         <div className="flex justify-between pt-8 border-t border-gray-100">
-                            <button type="button" onClick={() => setStep(2)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
-                            <button type="button" onClick={() => setStep(4)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: SECURITY <ChevronRight className="h-4 w-4" /></button>
+                            <button type="button" onClick={() => handleNext(2)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
+                            <button type="button" onClick={() => handleNext(4)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: SECURITY <ChevronRight className="h-4 w-4" /></button>
                         </div>
                     </div>
                 )}
@@ -402,7 +449,7 @@ export default function NewOrgPage() {
                             </div>
                         </div>
                         <div className="flex justify-between pt-10 border-t border-gray-100">
-                            <button type="button" onClick={() => setStep(3)} className="h-14 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
+                            <button type="button" onClick={() => handleNext(3)} className="h-14 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
                             <button type="submit" disabled={loading} className="h-14 px-12 rounded-lg bg-[#F97316] text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-orange-200 hover:bg-orange-700 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-3">
                                 {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Shield className="h-5 w-5" />} {loading ? "Creating..." : "Create"}
                             </button>
