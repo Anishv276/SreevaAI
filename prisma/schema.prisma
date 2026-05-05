@@ -192,6 +192,8 @@ model Application {
   interview        Interview?
 
   @@index([driveId, resumeStatus, hiringStatus, updatedAt])
+  @@index([createdAt(sort: Desc)])
+  @@index([updatedAt(sort: Desc)])
 }
 
 model Interview {
@@ -228,6 +230,9 @@ model Interview {
   recordingManifest     Json?       @default("{}")
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   supportTickets        SupportTicket[]
+
+  @@index([updatedAt(sort: Desc)])
+  @@index([status])
 }
 
 model VerificationToken {
