@@ -1,6 +1,6 @@
 from __future__ import annotations
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 from agent_runtime_support import _TOOL_ALIAS_CATALOG
 from agent_utils import (
@@ -14,6 +14,62 @@ from agent_utils import (
     _join_items,
     _safe_float,
 )
+
+# ── 5-Stage Interview Configuration ───────────────────────────────────────────
+@dataclass
+class InterviewStageConfig:
+    index: int
+    name: str
+    label: str
+    budget_secs: int    # soft time budget per stage
+    grace_secs: int     # allowed overtime before forced advance
+    goal: str           # what Ishitha is testing in this stage
+    bridge_to_next: str # natural transition phrase to the NEXT stage
+
+STAGE_CONFIGS: list["InterviewStageConfig"] = [
+    InterviewStageConfig(
+        index=0, name="resume", label="RESUME",
+        budget_secs=240, grace_secs=60,
+        goal="Confirm background using the candidate's ACTUAL projects, companies, and roles from their resume.",
+        bridge_to_next=(
+            "That project background is really helpful. I want to go one level deeper on the technical side — "
+            "tell me about a specific technology from your work where you really had to push beyond just using it."
+        ),
+    ),
+    InterviewStageConfig(
+        index=1, name="skill", label="SKILL",
+        budget_secs=240, grace_secs=60,
+        goal="Verify real depth behind claimed technologies. Move from 'used it' to 'owned it under real pressure'.",
+        bridge_to_next=(
+            "You clearly know your tools well. Let me put those skills into a real-world context — "
+            "imagine you are a few weeks into a new role and you run into a critical production problem. What is your first move?"
+        ),
+    ),
+    InterviewStageConfig(
+        index=2, name="situational", label="SITUATIONAL",
+        budget_secs=240, grace_secs=60,
+        goal="Test judgment and decision-making using a role-relevant hypothetical scenario.",
+        bridge_to_next=(
+            "Good thinking there. Real projects though always involve people too — "
+            "tell me about a time a technical or process decision caused friction with a teammate or stakeholder. How did you handle it?"
+        ),
+    ),
+    InterviewStageConfig(
+        index=3, name="behavioral", label="BEHAVIORAL",
+        budget_secs=240, grace_secs=60,
+        goal="Explore soft skills, conflict resolution, and collaboration through specific STAR-style past examples.",
+        bridge_to_next=(
+            "That gives me a strong sense of how you work with people. Let me shift to something more hands-on — "
+            "I want to walk you through a quick scenario and hear your thinking out loud as you work through it."
+        ),
+    ),
+    InterviewStageConfig(
+        index=4, name="practical", label="PRACTICAL",
+        budget_secs=240, grace_secs=90,
+        goal="Test live problem-solving through a verbal scenario. Evaluate reasoning process, not just the answer.",
+        bridge_to_next="",  # Last stage — no bridge needed
+    ),
+]
 def build_term_alias_hints(*text_blocks: str, max_lines: int = 10) -> str:
     combined = " ".join(block for block in text_blocks if isinstance(block, str)).lower()
     lines: list[str] = []
@@ -436,39 +492,47 @@ SENIORITY NOTE FOR THIS ROLE (MID-LEVEL):
   Look for growth trajectory - are they getting better, or plateauing?
 """
     return role_text + band_note
-def build_coverage_checklist(candidate_band: str) -> list[str]:
-    common = [
-        "Validate 2-3 core skills from the resume with one concrete example each.",
-        "Ask for measurable outcomes, not just tool names.",
-        "Cover one communication or collaboration moment from real work.",
-    ]
-    if candidate_band == "fresher":
-        return [
-            "Deep-dive one academic/internship project end-to-end (problem, build, result).",
-            "Check fundamentals behind tools they mentioned (what they configured, why, what failed).",
-            "Ask one college/teamwork story (ownership, deadlines, conflicts, learning).",
-            "Assess learning speed: what they learned recently and how.",
-        ] + common
-    if candidate_band == "senior":
-        return [
-            "Deep-dive one flagship initiative for scope, strategic choices, and measurable business impact.",
-            "Probe how they influenced direction across teams, not just what they delivered personally.",
-            "Assess decisions under constraint, tradeoffs, and what they would redesign today.",
-            "Verify leadership, mentoring, and judgment on difficult ambiguous problems.",
-        ] + common
-    if candidate_band == "experienced":
-        return [
-            "Deep-dive one recent role with scope, ownership, and business impact.",
-            "Probe decision-making, tradeoffs, and stakeholder management.",
-            "Assess leadership/mentoring/process ownership with a specific example.",
-            "Verify advanced role-critical skills with architecture-level depth.",
-        ] + common
-    return [
-        "Cover one strong project story and one role experience story.",
-        "Probe execution details and impact across both project and work experience.",
-        "Validate breadth and depth of claimed tools/skills.",
-        "Ask one growth/career reflection (what changed from college/projects to real-world work).",
-    ] + common
+def build_stage_coverage_plan(
+    resume_context: "ResumeContext",
+    jd_block: str = "",
+    context: Optional["CandidateBandContext"] = None,
+) -> list[str]:
+    """
+    Build a 5-stage coverage plan grounded in the candidate's actual resume.
+    Returns a flat list of coverage items (one per stage) for backwards compatibility.
+    Also populates context.stage_plan if context is provided.
+    """
+    # Stage 1: Resume — use actual projects/roles
+    s1_focus = resume_context.projects[0] if resume_context.projects else (
+        resume_context.work_history[0] if resume_context.work_history else "most recent role"
+    )
+    stage1 = [f"RESUME: Confirm scope and ownership in '{s1_focus}'."]
+
+    # Stage 2: Skill — use actual claimed skills
+    top_skills = resume_context.skills[:3]
+    skill_str = ", ".join(top_skills) if top_skills else "core claimed technologies"
+    stage2 = [f"SKILL: Verify production-depth in {skill_str}."]
+
+    # Stage 3: Situational — derived from JD
+    stage3 = ["SITUATIONAL: Ask a role-relevant 'what would you do if...' scenario from the JD."]
+
+    # Stage 4: Behavioral — use ownership risks / gaps
+    gap = resume_context.ownership_risks[0] if resume_context.ownership_risks else "collaboration or conflict moment"
+    stage4 = [f"BEHAVIORAL: Probe — {gap}."]
+
+    # Stage 5: Practical — live voice scenario
+    stage5 = ["PRACTICAL: Walk through a live verbal problem-solving scenario out loud."]
+
+    if context is not None:
+        context.stage_plan = [
+            {"stage": 0, "name": "RESUME",      "items": stage1},
+            {"stage": 1, "name": "SKILL",        "items": stage2},
+            {"stage": 2, "name": "SITUATIONAL",  "items": stage3},
+            {"stage": 3, "name": "BEHAVIORAL",   "items": stage4},
+            {"stage": 4, "name": "PRACTICAL",    "items": stage5},
+        ]
+
+    return stage1 + stage2 + stage3 + stage4 + stage5
 @dataclass(slots=True)
 class ResumeContext:
     resume_data: dict[str, Any]
@@ -505,6 +569,8 @@ class CandidateBandContext:
     depth_instruction: str = ""
     initial_context_injected: bool = False
     full_brief_injected: bool = False
+    stage_plan: list = field(default_factory=list)  # 5-stage structured plan
+    stage_history: list = field(default_factory=list)  # completed stage records
 def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
     if isinstance(resume_data, ResumeContext):
         return resume_data
@@ -879,24 +945,43 @@ def build_fast_opening_context() -> str:
         "  - STOP after your 2-line reply. The next message will tell you what to do next.\n\n"
         "After exactly 2 turns, wait. You will receive new instructions to begin the real conversation."
     )
-def build_interview_pivot_directive() -> str:
+def build_interview_pivot_directive(context: Optional["CandidateBandContext"] = None) -> str:
     """
-    Return instruction to pivot from warmup to structured interview.
-    Fires after turn 2 - should sound natural, not a robot shifting gears.
+    Return instruction to pivot from warmup to Stage 1 (RESUME) naturally.
+    Fires after turn 2. Uses actual resume data from context to avoid generic placeholders.
     """
+    opening_hint = ""
+    if context and context.smart_opening_question:
+        opening_hint = (
+            f"\n\nYOUR FIRST QUESTION (from the candidate brief — use this or adapt it naturally):\n"
+            f"{context.smart_opening_question}"
+        )
+    elif context and context.stage_plan:
+        s1 = next((s for s in context.stage_plan if s["stage"] == 0), None)
+        if s1 and s1["items"]:
+            opening_hint = f"\n\nFIRST FOCUS: {s1['items'][0]}"
+    elif context and context.candidate_summary_block:
+        # Fallback: pull first project or role from candidate summary
+        lines = [l.strip() for l in context.candidate_summary_block.splitlines() if l.strip()]
+        for line in lines:
+            if line.lower().startswith(("projects:", "work history:", "current role:")):
+                opening_hint = f"\n\nHINT: {line}"
+                break
+
     return (
-        "[INTERVIEW PIVOT - AFTER TURN 2]\n"
-        "You've warmed them up over the first two turns. Now transition into the real conversation naturally, like the discussion is just evolving.\n\n"
-        "Use a conversational bridge like a real recruiter would — something that feels like a natural next step:\n"
-        "  - 'Alright, that's awesome. So I'd really love to dig into your background and understand what you've been working on. Walk me through a project you worked on recently that you felt really good about.'\n"
-        "  - 'Cool, I appreciate that. So let me ask you about your actual experience — I see you're currently at [Company]. What's been your main focus there? Like, what have you been building or leading?'\n"
-        "  - 'Got it, that makes sense. So I want to learn more about what you've actually built and what you're good at. Tell me about a project or initiative you worked on that really showcases your skills.'\n"
-        "  - 'That's really helpful. So let me shift gears a bit here — I want to understand your hands-on experience. Walk me through your day-to-day work at [Company] — like, what does a typical week look like for you?'\n"
-        "  - 'Awesome, thanks for sharing that. So let me dive into your experience a bit more. I noticed you have background in [skill/tech]. Tell me about a time you actually used that in production and what that looked like.'\n\n"
-        "Important: NO robotic 'let's dive into the interview' or 'now let's talk about your skills' phrasing.\n"
-        "Instead, naturally flow into your FIRST REAL QUESTION that's grounded in their actual resume and experience.\n"
-        "Make it feel like you're having a conversation that's deepening naturally, not like you're switching modes or reading from a script.\n\n"
-        "Then continue: ask one clear question at a time, listen to their answer, react to what they actually said, and follow up where it makes sense."
+        "[STAGE 1 — RESUME — STARTING NOW]\n"
+        "Warmup complete. Transition into Stage 1 (RESUME) naturally — like the conversation is just deepening.\n\n"
+        "Your job in Stage 1 (~4 minutes):\n"
+        "  - Reference ACTUAL projects, companies, or roles from the candidate's resume.\n"
+        "  - NEVER use generic placeholders like '[Company]' or '[Project]' — use the real names.\n"
+        "  - Ask ONE specific, grounded question that shows you've read their background.\n\n"
+        "Good opening examples (adapt to their REAL details):\n"
+        "  - 'So I noticed you worked on [REAL PROJECT NAME] — what was your specific role and what were you responsible for?'\n"
+        "  - 'I see you were at [REAL COMPANY] for [X] years — what was your main focus there, like what were you actually building day to day?'\n"
+        "  - 'I saw [REAL SKILL] on your resume — walk me through a specific project where you used that in production.'\n\n"
+        "Ask one question at a time. React to what they actually say. "
+        "You will receive a [STAGE_BRIDGE_DIRECTIVE] when it is time to move to Stage 2 (SKILL)."
+        f"{opening_hint}"
     )
 def build_candidate_context_ready_message(
     *,

@@ -35,12 +35,14 @@ from agent_utils import (
 from agent_profile_context import (
     CandidateBandContext,
     ResumeContext,
+    InterviewStageConfig,
+    STAGE_CONFIGS,
     _build_context_vars_block,
     _ensure_resume_context,
     _extract_years_of_experience,
     build_candidate_context_ready_message,
     build_candidate_summary,
-    build_coverage_checklist,
+    build_stage_coverage_plan,
     build_fast_opening_context,
     build_interview_pivot_directive,
     build_jd_summary,
@@ -282,55 +284,43 @@ async def generate_candidate_brief(
                         "role": "system",
                         "content": (
                             "You are a senior interview coach preparing a personalized interview brief for an AI interviewer named Ishita. "
-                            "Your output is Ishita's private prep sheet - it tells her exactly what to ask, how to probe, and what hidden gaps to verify. "
-                            "Be specific and direct. Reference actual items from the resume. Every section must be grounded in the real data provided.\n\n"
+                            "Your output is Ishita's PRIVATE 5-STAGE INTERVIEW BRIEF — a personalized prep sheet organized into 5 sections matching the 5-stage interview flow.\n\n"
+                            "Be specific and direct. Reference actual items from the resume. Ground every question in real data.\n\n"
                             "Output format (use this exact structure, all sections required):\n\n"
                             "CANDIDATE PROFILE SUMMARY:\n"
                             "2-3 sentences: who this person is, their seniority level, and what stands out most (positive or concerning).\n\n"
                             "SMART OPENING QUESTION:\n"
-                            "One highly specific question grounded in their actual resume - a real project, company, or skill they listed. "
+                            "One highly specific question grounded in their actual resume — a real project, company, or skill they listed. "
                             "Not 'tell me about yourself'. Not generic. Reference something real from their background that connects to the JD.\n\n"
-                            "INTERVIEW PLAN (ordered by priority):\n"
-                            "List 4-6 specific questions Ishita should ask, each tied to either:\n"
-                            "  (a) a skill/project/company from the resume vs. a JD requirement, or\n"
-                            "  (b) a gap or thin area in the AI screening report.\n"
-                            "Format each as: [TOPIC]: [specific question]. Vary types - technical depth, situational, ownership probe, behavioural.\n\n"
-                            "RESUME-JD GAPS (hidden agenda - Ishita must never reveal these directly):\n"
+                            "STAGE 1 — RESUME:\n"
+                            "2 specific questions to confirm background and scope. Each must reference an actual project, company, or role from the resume.\n"
+                            "Format: [QUESTION]: [specific question]\n\n"
+                            "STAGE 2 — SKILL:\n"
+                            "2 questions that test depth behind specific claimed technologies. Move from 'used it' to 'owned it under pressure'.\n"
+                            "Format: [SKILL]: [specific depth-check question]\n\n"
+                            "STAGE 3 — SITUATIONAL:\n"
+                            "1 'what would you do if...' scenario derived from a realistic challenge in the JD or role.\n"
+                            "Format: [SCENARIO]: [situational question]\n\n"
+                            "STAGE 4 — BEHAVIORAL:\n"
+                            "1 STAR-style question tied to a gap or risk identified in the AI screening report.\n"
+                            "Format: [TOPIC]: [behavioral question]\n\n"
+                            "STAGE 5 — PRACTICAL:\n"
+                            "1 live voice scenario — think-aloud problem solving. Must be answerable by voice with no typing needed.\n"
+                            "Format: [SCENARIO]: [practical scenario question]\n\n"
+                            "RESUME-JD GAPS (hidden agenda — Ishita must never reveal these directly):\n"
                             "For each place where the JD requires something the resume does not clearly show:\n"
                             "  - JD requires: [what the role needs]\n"
                             "  - Resume shows: [what candidate has, or 'not mentioned']\n"
-                            "  - Sideways probe: [a scenario or question that reveals depth WITHOUT asking directly. e.g. not 'do you know Kubernetes?' but 'walk me through how you would handle zero-downtime deploys across 10 services']\n"
-                            "  - Strong answer sounds like: [what genuine knowledge would include - specific terms, constraints, tradeoffs]\n"
-                            "  - Red flag answer: [what a name-dropper or faker would say]\n"
-                            "List every significant gap. These are Ishita's hidden verification agenda.\n\n"
-                            "PERSONALITY AND INTEREST SIGNALS:\n"
-                            "Look for hobbies, side projects, volunteer work, or non-work activities in the resume. For each:\n"
-                            "  - Signal: [what they listed]\n"
-                            "  - Bridge question: [a natural question that connects this to a work insight - must sound like genuine curiosity, not a test]\n"
-                            "  - Reveals: [what work trait or thinking style this may expose]\n"
-                            "Example: chess -> 'when you are designing a system, do you find yourself thinking ahead to states that haven't happened yet?' -> reveals systems thinking and anticipation.\n"
-                            "If no hobbies or interests are listed, skip this section.\n\n"
-                            "TOOL/TECH VALIDATION FLAGS:\n"
-                            "For each tool, platform, or technology the candidate claims to know:\n"
-                            "  - Tool: [name]\n"
-                            "  - Validation question: [one specific question that proves real depth vs name-dropping - must require hands-on experience to answer well]\n"
-                            "If a tool sounds like a mispronunciation of a known tool, note the likely intended tool.\n\n"
-                            "QUICK PROBES — RESUME-GROUNDED FOLLOW-UPS (Phase 4):\n"
-                            "Pre-build 5-8 targeted follow-up questions that Ishita can use when she needs specificity.\n"
-                            "Each probe must reference a specific technology, project, or skill from the resume.\n"
-                            "Format:\n"
-                            "  - [TECHNOLOGY/PROJECT]: [one specific question about hands-on use or experience]\n"
-                            "These are NOT main interview questions. Use these when:\n"
-                            "  (a) candidate gives a vague answer and Ishita needs to probe deeper with specifics\n"
-                            "  (b) evaluator signals 'need evidence' or 'need specificity'\n"
-                            "  (c) Ishita wants to verify depth on a resume skill claim\n"
-                            "Example: If resume lists 'PostgreSQL', probe could be: 'Tell me about the largest table you've scaled. What was the approach?'\n"
-                            "Ensure each probe is answerable only by someone with real hands-on experience with that tech.\n\n"
+                            "  - Sideways probe: [a scenario or question that reveals depth WITHOUT asking directly]\n"
+                            "  - Strong answer sounds like: [what genuine knowledge would include]\n"
+                            "  - Red flag answer: [what a name-dropper or faker would say]\n\n"
+                            "QUICK PROBES — RESUME-GROUNDED FOLLOW-UPS:\n"
+                            "Pre-build 4-6 targeted follow-up questions Ishita can use when she needs specificity within any stage.\n"
+                            "Format: - [TECHNOLOGY/PROJECT]: [specific hands-on follow-up question]\n\n"
                             "WATCH-OUTS:\n"
                             "2-3 red flags or thin areas from the resume or report that Ishita must probe carefully. Be blunt.\n\n"
                             "OWNERSHIP RISKS:\n"
-                            "Note any resume language that suggests inflated ownership - exclusive use of 'we', no personal verbs, vague contribution descriptions, "
-                            "titles that do not match the scope described. For each risk: name the claim and suggest the ownership probe question."
+                            "Note any resume language that suggests inflated ownership. For each: name the claim and suggest the ownership probe question."
                         ),
                     },
                     {
@@ -657,9 +647,11 @@ async def entrypoint(ctx: JobContext):
         ),
     )
     session_context.role_subtype = detect_role_subtype(job_title, session_context.role_category)
-    session_context.coverage_items = build_coverage_checklist(session_context.candidate_band)
+    session_context.coverage_items = build_stage_coverage_plan(
+        resume_context, jd_block, session_context
+    )
     session_context.short_coverage_block = "\n".join(
-        f"- {item}" for item in session_context.coverage_items[:5]
+        f"- {item}" for item in session_context.coverage_items
     )
     if custom_questions_list:
         session_context.questions_list = f"{session_context.short_coverage_block}\n{custom_questions_list}"
@@ -913,6 +905,12 @@ async def entrypoint(ctx: JobContext):
     last_injection_turn = 0  # tracks which turn last received a state injection
     warmup_responses_received = 0  # counts candidate responses during 2-turn warmup
     warmup_complete = False  # True after 2nd candidate response received
+    # ── 5-Stage interview tracker ──────────────────────────────────────────────
+    _current_stage_index: int = 0        # 0=Resume 1=Skill 2=Situational 3=Behavioral 4=Practical
+    _stage_start_time: float = 0.0       # wall-clock when current stage started
+    _stage_turn_count: int = 0           # assistant turns spent in current stage
+    _stage_bridge_pending: bool = False  # True when bridge directive has been injected
+    # ──────────────────────────────────────────────────────────────────────────
     environment_risk = 0     # browser-side proctoring signals
     integrity_risk = 0       # integrity-related proctoring signals
     depth_risk = 0           # surface answers / compression failures
@@ -1584,9 +1582,10 @@ async def entrypoint(ctx: JobContext):
                         warmup_complete = True
                         # Remove warmup directive, inject pivot + brief now
                         remove_system_messages(chat_ctx, "[CONVERSATIONAL WARMUP")
-                        pivot_directive = build_interview_pivot_directive()
+                        pivot_directive = build_interview_pivot_directive(session_context)
                         chat_ctx.add_message(role="system", content=pivot_directive)
-                        logger.info("[OPENING] Warmup complete — pivot directive injected")
+                        logger.info("[OPENING] Warmup complete — Stage 1 pivot directive injected")
+                        _stage_start_time = time.time()
                         spawn_background_task(attach_brief_when_ready(), "attach_brief_on_warmup_complete")
                 turn_snapshot = turn_count
                 spawn_background_task(
@@ -1616,6 +1615,42 @@ async def entrypoint(ctx: JobContext):
             if role == "assistant":
                 _question_asked_at = time.perf_counter()
                 turn_count += 1
+                _stage_turn_count += 1
+                # ── Stage advance check (flexible budget) ──────────────────────
+                if warmup_complete and _current_stage_index < len(STAGE_CONFIGS) - 1 and _stage_start_time > 0:
+                    stage_cfg = STAGE_CONFIGS[_current_stage_index]
+                    time_in_stage = time.time() - _stage_start_time
+                    budget_exceeded = time_in_stage >= (stage_cfg.budget_secs + stage_cfg.grace_secs)
+                    if budget_exceeded and not _stage_bridge_pending:
+                        _stage_bridge_pending = True
+                        next_stage = STAGE_CONFIGS[_current_stage_index + 1]
+                        bridge_directive = (
+                            f"[STAGE_BRIDGE_DIRECTIVE — DO NOT SAY ALOUD]\n"
+                            f"Current stage: {stage_cfg.label} (completed after {int(time_in_stage)}s)\n"
+                            f"Advance to: Stage {next_stage.index + 1} — {next_stage.label}\n"
+                            f"Goal of next stage: {next_stage.goal}\n\n"
+                            f"BRIDGE (use this or adapt it naturally when the candidate finishes their current thought):\n"
+                            f"{stage_cfg.bridge_to_next}\n\n"
+                            f"After bridging, continue with {next_stage.label} questions. "
+                            f"Signal detection (ownership, depth, contradiction) stays active."
+                        )
+                        # Update stage tracking state
+                        session_context.stage_history.append({
+                            "stage": _current_stage_index,
+                            "name": stage_cfg.label,
+                            "turns": _stage_turn_count,
+                            "duration_secs": round(time_in_stage),
+                        })
+                        _current_stage_index += 1
+                        _stage_start_time = time.time()
+                        _stage_turn_count = 0
+                        _stage_bridge_pending = False
+                        chat_ctx.add_message(role="system", content=bridge_directive)
+                        logger.info(
+                            "[STAGE] Advanced to stage %d (%s) after %ds",
+                            _current_stage_index, next_stage.label, int(time_in_stage)
+                        )
+                # ── Periodic state injection every 3 assistant turns ───────────
                 if turn_count % 3 == 0 and turn_count != last_injection_turn:
                     last_injection_turn = turn_count
                     lines_snap = list(transcript_lines)
@@ -1745,10 +1780,17 @@ async def entrypoint(ctx: JobContext):
                                         if secs_rem <= 300
                                         else f"TIME REMAINING: {mins_left}m {secs_left}s"
                                     )
+                                    current_stage_cfg = STAGE_CONFIGS[_current_stage_index] if _current_stage_index < len(STAGE_CONFIGS) else None
+                                    stage_label = current_stage_cfg.label if current_stage_cfg else "COMPLETE"
+                                    next_stage_label = STAGE_CONFIGS[_current_stage_index + 1].label if _current_stage_index + 1 < len(STAGE_CONFIGS) else "WRAP UP"
+                                    time_in_stage_secs = int(time.time() - _stage_start_time) if _stage_start_time > 0 else 0
+                                    stage_budget_secs = current_stage_cfg.budget_secs if current_stage_cfg else 0
                                     injection_text = (
                                         f"[INTERVIEW STATE UPDATE - Turn {t}]\n"
                                         f"ISHITA_MODE: {current_interview_mode.upper()}\n"
                                         f"COMPOSITE_RISK: {suspicion_score}\n"
+                                        f"CURRENT_STAGE: {stage_label} (stage {_current_stage_index + 1}/5, {time_in_stage_secs}s / {stage_budget_secs}s budget)\n"
+                                        f"NEXT_STAGE: {next_stage_label}\n"
                                         f"{time_flag}\n"
                                         f"{state}\n"
                                         "Use this to guide your next 3-4 exchanges. "
@@ -2227,6 +2269,8 @@ async def entrypoint(ctx: JobContext):
         "contradictions": _contradictions_found,
         "claim_index": _claim_index,
         "contradiction_state": summarize_contradiction_state(_contradiction_state),
+        "stage_history": session_context.stage_history,
+        "total_stages_covered": _current_stage_index + 1,
     }
     # Finalize Trust Engine and build recruiter summary before persisting
     _trust_state = finalize_trust_state(_trust_state)
