@@ -15,7 +15,7 @@ def extract_engagement_signals(
     candidate_turns = sum(1 for line in transcript_lines if line.startswith("Candidate:"))
     total_turns = len([line for line in transcript_lines if ":" in line])
     if candidate_turns < total_turns * 0.3:
-        signals.append("Candidate spoke very little relative to interviewer (possible disengagement or language barrier)")
+        signals.append("Candidate spoke very little relative to interviewer (possible lack of engagement or language barrier)")
     elif candidate_turns > total_turns * 0.6:
         signals.append("Candidate spoke frequently and engaged throughout interview")
     # Check for fatigue (short answers late in interview)
@@ -23,7 +23,7 @@ def extract_engagement_signals(
         early_avg = sum(s.get("overall", 5) for s in answer_scores[:max(1, len(answer_scores)//2)]) / max(1, len(answer_scores)//2)
         late_avg = sum(s.get("overall", 5) for s in answer_scores[len(answer_scores)//2:]) / max(1, len(answer_scores) - len(answer_scores)//2)
         if late_avg < early_avg - 2:
-            signals.append(f"Answer quality declined in final half of interview (early avg: {early_avg:.1f}, late avg: {late_avg:.1f}) — suggests fatigue or disengagement")
+            signals.append(f"Answer quality declined in final half of interview (early avg: {early_avg:.1f}, late avg: {late_avg:.1f}) — suggests fatigue or reduced engagement")
     # Check duration
     if total_duration_sec < 300:
         signals.append(f"Short interview duration ({total_duration_sec // 60} min) — limited evaluation window")
@@ -355,7 +355,7 @@ def _generate_behavioral_summary(
     """Generate 2-3 sentence behavioral summary for hiring context."""
     key_points = []
     # Engagement
-    if any("disengaged" in s.lower() or "little" in s.lower() for s in engagement):
+    if any("little" in s.lower() or "reduced engagement" in s.lower() for s in engagement):
         key_points.append("showed limited engagement")
     elif any("frequent" in s.lower() or "systematic" in s.lower() for s in engagement):
         key_points.append("engaged actively throughout")

@@ -815,7 +815,7 @@ async def generate_interview_summary(
                         "Bullet 3 — Communication quality: Describe how they communicated — fluency, clarity, confidence, grammar. "
                         "Be specific and honest. If they gave one-word answers or refused to engage, say that.\n\n"
                         "Bullet 4 — Key concern or recommendation: State the single most important flag for the hiring team. "
-                        "If the candidate was disengaged, unresponsive, or showed no relevant knowledge, say that directly.\n\n"
+                        "If the candidate was unresponsive or showed no relevant knowledge, say that directly.\n\n"
                         "RULES:\n"
                         "- Do NOT soften negative findings. If the interview was poor, say so professionally.\n"
                         "- Do NOT invent positives that are not in the transcript.\n"
@@ -915,7 +915,7 @@ async def generate_interview_report(
                     "content": (
                         f"You are analyzing an interview transcript for the '{job_title}' role.\n"
                         "Be accurate and honest — do NOT inflate scores or invent strengths that are not in the transcript.\n"
-                        "If the candidate refused to answer, gave one-word answers, or disengaged, reflect that truthfully.\n\n"
+                        "If the candidate refused to answer or gave one-word answers, reflect that truthfully.\n\n"
                         "Output ONLY valid JSON with these exact fields:\n\n"
                         "skills_covered: List every skill the candidate actually demonstrated (not just mentioned). "
                         "If the candidate gave no real answers, return only skills they explicitly referenced, rated low.\n\n"
@@ -934,7 +934,7 @@ async def generate_interview_report(
                         "top_strengths: List 2-4 real evidence-based strengths. "
                         "If there are none, return an empty array — do not invent strengths.\n\n"
                         "concerns: List 2-4 honest concerns with evidence. "
-                        "If the candidate was disengaged or refused to answer, say so explicitly.\n\n"
+                        "If the candidate refused to answer, say so explicitly.\n\n"
                         "OUTPUT FORMAT:\n"
                         "{\n"
                         '  "skills_covered": ["skill1", "skill2"],\n'

@@ -8,7 +8,7 @@ import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
 import { CARTESIA_VOICES, DEFAULT_GOOGLE_TTS_MODEL, GOOGLE_TTS_MODELS, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, normalizeOrgPlan } from "@/lib/org-plans";
-import { DEFAULT_PROCTORING_SIGNALS, getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
+import { getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { GEMINI_LLM_MODELS, OPENAI_LLM_MODELS } from "@/lib/llm-models";
 import { cn } from "@/lib/utils";
 import { Steps } from "@/components/create-drive/steps";
@@ -94,7 +94,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const [form, setForm] = useState({
         name: "", slug: "", plan: DEFAULT_ORG_PLAN,
         maxActiveDrives: "Unlimited",
-        proctoringSignals: { ...DEFAULT_PROCTORING_SIGNALS },
+        proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
         location: "", adminName: "", adminEmail: "", adminPassword: "",
         ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
         cartesiaModel: "cartesia/sonic-3", sarvamModel: "bulbul:v3", sarvamVoice: "shubh",
@@ -473,14 +473,27 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                             <div className="md:col-span-1 space-y-4">
                                 <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Partner Plan</label>
                                 {ORG_PLAN_OPTIONS.map(p => (
-                                    <button key={p.id} type="button" onClick={() => setForm(prev => ({ ...prev, plan: p.id, proctoringSignals: getProctoringSignalsForPlan(p.id) }))} className={cn("w-full p-4 rounded-lg border text-left transition-all", form.plan === p.id ? "border-[#F97316] bg-orange-50 shadow-sm" : "border-gray-100 hover:border-gray-200")}>
+                                    <button
+                                        key={p.id}
+                                        type="button"
+                                        onClick={() => setForm(prev => ({
+                                            ...prev,
+                                            plan: p.id,
+                                            proctoringSignals: getProctoringSignalsForPlan(p.id),
+                                        }))}
+                                        className={cn("w-full p-4 rounded-lg border text-left transition-all", form.plan === p.id ? "border-[#F97316] bg-orange-50 shadow-sm" : "border-gray-100 hover:border-gray-200")}
+                                    >
                                         <p className="text-xs font-black uppercase text-gray-900">{p.label}</p>
                                         <p className="text-[10px] text-gray-400 font-bold mt-0.5">{p.desc}</p>
                                     </button>
                                 ))}
                             </div>
                             <div className="md:col-span-3">
-                                <ProctoringSignalsSection signals={form.proctoringSignals as any} onChange={(k, v) => setForm(p => ({ ...p, proctoringSignals: { ...p.proctoringSignals, [k]: v } }))} />
+                                <ProctoringSignalsSection
+                                    signals={form.proctoringSignals as any}
+                                    disabled={form.plan === "STARTER"}
+                                    onChange={(k, v) => setForm(p => ({ ...p, proctoringSignals: { ...p.proctoringSignals, [k]: v } }))}
+                                />
                             </div>
                         </div>
 

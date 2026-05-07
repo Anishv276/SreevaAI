@@ -98,6 +98,7 @@ export async function PATCH(
         const existingOrg = await prisma.organization.findUnique({
             where: { id },
             select: {
+                plan: true,
                 ttsProvider: true,
                 cartesiaModel: true,
                 cartesiaVoiceId: true,
@@ -130,15 +131,18 @@ export async function PATCH(
                 return NextResponse.json({ error: "usageMetrics must be an object or JSON string" }, { status: 400 });
             }
         }
+        const normalizedPlan = plan !== undefined ? (normalizeOrgPlan(plan) || DEFAULT_ORG_PLAN) : null;
 
         // Build update - only write fields that were sent
         const updateData: any = {};
         if (name !== undefined) updateData.name = name;
-        if (plan !== undefined) updateData.plan = normalizeOrgPlan(plan) || plan;
+        if (plan !== undefined) updateData.plan = normalizedPlan || plan;
         if (maxActiveDrives !== undefined && String(maxActiveDrives).trim() !== "") {
             updateData.maxActiveDrives = normalizeOrgLimitInput(maxActiveDrives);
         }
-        if (proctoringSignals !== undefined) updateData.proctoringSignals = normalizeProctoringSignals(proctoringSignals);
+        if (proctoringSignals !== undefined) {
+            updateData.proctoringSignals = normalizeProctoringSignals(proctoringSignals);
+        }
         if (status !== undefined) updateData.status = status;
         if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
         if (slug !== undefined) updateData.slug = slug;

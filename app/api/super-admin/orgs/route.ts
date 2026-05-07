@@ -7,7 +7,7 @@ import { generateId } from "@/lib/ids";
 import { validatePasswordStrength } from "@/lib/validation";
 import { sendOrgWelcomeEmail as sendWelcomeViaResend } from "@/lib/mail";
 import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
-import { DEFAULT_PROCTORING_SIGNALS, getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
+import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 import { normalizeOrgLimitInput } from "@/lib/org-limits";
 
@@ -276,6 +276,11 @@ export async function POST(request: Request) {
         }
 
         const hashedPassword = await bcrypt.hash(adminPassword, 10);
+        const normalizedPlan = normalizeOrgPlan(plan) || DEFAULT_ORG_PLAN;
+        const resolvedSignals =
+            proctoringSignals !== undefined
+                ? normalizeProctoringSignals(proctoringSignals)
+                : undefined;
 
         console.log("[SuperAdmin] Provisioning Org with AI Config:", { ttsProvider, sttProvider });
 
@@ -285,18 +290,21 @@ export async function POST(request: Request) {
             const orgData: any = {
                 name: orgName,
                 slug: slug.toLowerCase().replace(/\s+/g, "-"),
-                plan: normalizeOrgPlan(plan) || DEFAULT_ORG_PLAN,
+                plan: normalizedPlan,
                 maxActiveDrives:
                     maxActiveDrives !== undefined && maxActiveDrives !== null && String(maxActiveDrives).trim() !== ""
                         ? normalizeOrgLimitInput(maxActiveDrives)
                         : "Unlimited",
                 interviewQuotaTotal: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
                 creditsUsed: 0,
-                proctoringSignals: normalizeProctoringSignals(proctoringSignals || getProctoringSignalsForPlan(plan || DEFAULT_ORG_PLAN)),
                 logoUrl: logoUrl || null,
                 usageMetrics: {},
                 location: location || null,
             };
+
+            if (resolvedSignals !== undefined) {
+                orgData.proctoringSignals = resolvedSignals;
+            }
 
             Object.assign(
                 orgData,

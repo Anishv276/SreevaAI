@@ -148,7 +148,6 @@ const featureComparison = [
     { feature: "Pre-qualifying Questions", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "AI Proctoring", starter: "—", pro: "Basic", scale: "Advanced", enterprise: "Advanced" },
     { feature: "Multilingual", starter: "—", pro: "Yes", scale: "Yes", enterprise: "Yes" },
-    { feature: "Team Members", starter: "1", pro: "3", scale: "10", enterprise: "Custom" },
     { feature: "Recording + Playback", starter: "7 days", pro: "14 days", scale: "30 days", enterprise: "Custom" },
     { feature: "Support", starter: "Email", pro: "Priority", scale: "Priority", enterprise: "Dedicated" }
 ];

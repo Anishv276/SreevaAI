@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-    Briefcase, Users, Laptop, Layers, Building2, ChevronDown, Check,
+    Briefcase, Laptop, Layers, Building2, ChevronDown, Check,
     ChevronLeft, ChevronRight, MapPin,
 } from "lucide-react";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
@@ -351,57 +351,6 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
     );
 }
 
-/*  Position counter  */
-function PositionCounter({ label, icon: Icon, value, onChange, error }: { label: string; icon: React.ElementType; value: number; onChange: (v: number) => void; error?: string }) {
-    const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const val = parseInt(e.target.value);
-        if (!isNaN(val) && val >= 1) onChange(val);
-        else if (e.target.value === "") onChange(1); // Default to 1
-    };
-
-    return (
-        <div className="space-y-2">
-            <Label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                <Icon className="h-3 w-3 text-[#F97316]" />
-                {label}
-                <span className="text-[#F97316] ml-0.5">*</span>
-            </Label>
-            <div className={cn(
-                "flex h-10 items-center rounded-lg border bg-white shadow-sm transition-all duration-150 overflow-hidden",
-                error 
-                    ? "border-red-500 ring-red-500/10" 
-                    : "border-gray-200 hover:border-orange-300 hover:shadow-md"
-            )}>
-                <button
-                    type="button"
-                    onClick={() => onChange(Math.max(1, value - 1))}
-                    className="flex h-full w-10 items-center justify-center text-gray-500 hover:bg-orange-50 hover:text-[#F97316] transition-colors duration-100 text-xl font-light flex-shrink-0 border-r border-gray-100"
-                >
-                    -
-                </button>
-                <input
-                    type="number"
-                    min="1"
-                    value={value}
-                    onChange={handleInput}
-                    onWheel={(e) => {
-                        e.currentTarget.blur();
-                    }}
-                    className="min-w-0 w-8 flex-1 text-center text-[15px] font-bold text-gray-900 bg-transparent border-none outline-none focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
-                <button
-                    type="button"
-                    onClick={() => onChange(value + 1)}
-                    className="flex h-full w-10 items-center justify-center text-gray-500 hover:bg-orange-50 hover:text-[#F97316] transition-colors duration-100 text-xl font-light flex-shrink-0 border-l border-gray-100"
-                >
-                    +
-                </button>
-            </div>
-            {error && <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest px-1">{error}</p>}
-        </div>
-    );
-}
-
 /*  Departments & options  */
 const DEPARTMENTS = [
     "Engineering", "Technology", "Product", "Design", "Marketing",
@@ -489,7 +438,7 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                     <span className="h-6 w-1 rounded-full bg-[#F97316]" />
                     <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest">Team &amp; Work Mode</p>
                 </div>
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-2">
                     <PremiumSelect
                         label="Department"
                         icon={Building2}
@@ -516,15 +465,6 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                         </div>
                         {getError("location") && <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest px-1">{getError("location")}</p>}
                     </div>
-                    <PremiumSelect
-                        label="Work Mode"
-                        icon={Laptop}
-                        options={WORK_MODES}
-                        value={formData.workMode || ""}
-                        onChange={(v) => { handleChange("workMode", v); handleBlur("workMode"); }}
-                        error={getError("workMode")}
-                        placeholder="Remote / Hybrid / On-site"
-                    />
                 </div>
             </section>
 
@@ -534,7 +474,7 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                     <span className="h-6 w-1 rounded-full bg-[#F97316]" />
                     <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest">Hiring Plan</p>
                 </div>
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-2">
                     <PremiumSelect
                         label="Employment Type"
                         icon={Briefcase}
@@ -544,12 +484,14 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                         error={getError("employmentType")}
                         placeholder="Select Type"
                     />
-                    <PositionCounter
-                        label="Open Positions"
-                        icon={Users}
-                        value={formData.positions || 1}
-                        onChange={(v: number) => { handleChange("positions", v); handleBlur("positions"); }}
-                        error={getError("positions")}
+                    <PremiumSelect
+                        label="Work Mode"
+                        icon={Laptop}
+                        options={WORK_MODES}
+                        value={formData.workMode || ""}
+                        onChange={(v) => { handleChange("workMode", v); handleBlur("workMode"); }}
+                        error={getError("workMode")}
+                        placeholder="Remote / Hybrid / On-site"
                     />
                 </div>
             </section>

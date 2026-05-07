@@ -95,9 +95,11 @@ const SIGNAL_GROUPS: Group[] = [
 export function ProctoringSignalsSection({
   signals,
   onChange,
+  disabled = false,
 }: {
   signals: ProctoringSignals;
   onChange: (key: SignalKey, checked: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <section className="space-y-6">
@@ -111,7 +113,13 @@ export function ProctoringSignalsSection({
         </div>
       </div>
 
-      <div className="space-y-5">
+      {disabled && (
+        <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-600">
+          Starter keeps all proctoring signals off. Switch to a higher plan to manage the signal groups below.
+        </div>
+      )}
+
+      <div className={disabled ? "space-y-5 opacity-70" : "space-y-5"}>
         {SIGNAL_GROUPS.map((group) => (
           <div key={group.title} className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
             <div className="mb-4">
@@ -127,6 +135,7 @@ export function ProctoringSignalsSection({
                 >
                   <Checkbox
                     checked={Boolean(signals[signal.key])}
+                    disabled={disabled}
                     onCheckedChange={(checked) => onChange(signal.key, Boolean(checked))}
                   />
                   <span className="text-sm font-semibold text-gray-800">{signal.label}</span>

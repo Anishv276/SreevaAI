@@ -44,10 +44,6 @@ const STEP_VALIDATION_HINTS: Record<number, string> = {
   1: "Job description is too short. Please add more details before continuing.",
   2: "Configure interview settings (optional).",
 };
-const MIN_JD_WORDS = 30;
-function countWords(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length;
-}
 export default function CreateDrivePage() {
   return (
     <div style={{ zoom: 0.75, transformOrigin: "top center" }}>
@@ -217,7 +213,6 @@ function CreateDriveForm() {
             (orgData.error ? null : orgData.ttsProvider) ||
             (drive as any).ttsProvider ||
             "CARTESIA";
-
           setFormData((prev: any) => ({
             ...prev,
             title: drive.title,
@@ -288,7 +283,11 @@ function CreateDriveForm() {
         try {
           const data = JSON.parse(draft);
           console.log("CreateDrive Sync - Structured Data:", data);
-          setFormData((prev: any) => ({ ...prev, ...data }));
+          setFormData((prev: any) => ({
+            ...prev,
+            ...data,
+            description: data.description,
+          }));
           setCreationMethod("manual");
           setSyncedFromAi(true);
           setCurrentStep(0);
@@ -388,14 +387,6 @@ function CreateDriveForm() {
           return;
         }
         console.log("Analysis success:", extracted);
-        const extractedDescriptionCandidate = (extracted?.role_summary || text || "").trim();
-        const extractedDescriptionWordCount = countWords(extractedDescriptionCandidate);
-        if (extractedDescriptionCandidate && extractedDescriptionWordCount < MIN_JD_WORDS) {
-          setAnalysisError(
-            `Extracted JD is only ${extractedDescriptionWordCount} words. Please provide at least ${MIN_JD_WORDS} words before continuing.`,
-          );
-          return;
-        }
         // Map extracted JD schema to form fields
         setFormData((prev: any) => {
           const experience = extracted?.experience;
@@ -483,7 +474,7 @@ function CreateDriveForm() {
             ...prev,
             title: `${extracted?.job_title || prev.role || "New"} Recruitment Drive`,
             role: extracted?.job_title || prev.role || "",
-            description: normalizedDescription || desc,
+            description: normalizedDescription,
             skills: allSkills || prev.skills,
             salary: salaryText,
             experience: expText,
@@ -540,8 +531,8 @@ function CreateDriveForm() {
       // Only allow proceeding if not currently mid-analysis
       if (isAnalyzing) return true;
       const description = formData.description?.trim() || "";
-      // Must have a description and it must meet the minimum word count
-      return countWords(description) >= MIN_JD_WORDS;
+      // Must have a description before proceeding
+      return !!description;
     }
     if (step === 2) {
       return true; // Interview always valid
@@ -570,7 +561,6 @@ function CreateDriveForm() {
       employmentType: currentFormData.employmentType || "",
       workMode: currentFormData.workMode || "",
       location: currentFormData.location || "",
-      positions: currentFormData.positions || 1,
       salary: currentFormData.salary || "",
       experience: currentFormData.experience || "",
       skills: currentFormData.skills || "",
@@ -684,11 +674,8 @@ function CreateDriveForm() {
     }
     setIsSavingDraft(true);
     const description = currentFormData.description?.trim() || "";
-    const jdWordCount = countWords(description);
-    if (jdWordCount < MIN_JD_WORDS) {
-      toast.error(
-        `Job description must be at least ${MIN_JD_WORDS} words before publishing.`,
-      );
+    if (!description) {
+      toast.error("Job description is required before publishing.");
       setCurrentStep(1);
       return;
     }
@@ -710,7 +697,6 @@ function CreateDriveForm() {
       employmentType: currentFormData.employmentType,
       workMode: currentFormData.workMode,
       location: currentFormData.location,
-      positions: currentFormData.positions,
       salary: (() => {
         const { amount, currency } = splitSalaryValue(currentFormData.salary, "INR");
         return amount ? formatSalaryValue(amount, currency) : currentFormData.salary;

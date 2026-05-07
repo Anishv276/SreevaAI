@@ -45,6 +45,10 @@ export const MANAGED_PROCTORING_SIGNALS: ManagedProctoringSignal[] = [
   "complexity_latency_mismatch",
 ];
 
+function createSignalMap(value: boolean): ProctoringSignalToggles {
+  return Object.fromEntries(MANAGED_PROCTORING_SIGNALS.map((signal) => [signal, value])) as ProctoringSignalToggles;
+}
+
 export const DEFAULT_PROCTORING_SIGNALS: ProctoringSignalToggles = {
   tab_switch: true,
   camera_disabled: true,
@@ -68,9 +72,12 @@ export const DEFAULT_PROCTORING_SIGNALS: ProctoringSignalToggles = {
   complexity_latency_mismatch: true,
 };
 
-// GROWTH / PRO Plan Signals
-export const PRO_PLAN_SIGNALS: ProctoringSignalToggles = {
-  ...Object.fromEntries(MANAGED_PROCTORING_SIGNALS.map(s => [s, false])),
+export const BASIC_PLAN_SIGNALS: ProctoringSignalToggles = createSignalMap(false);
+
+// GROWTH plan: cheap / light signals from the user-provided table.
+// "answer_compression" is represented here by the existing latency_mismatch signal.
+export const GROWTH_PLAN_SIGNALS: ProctoringSignalToggles = {
+  ...BASIC_PLAN_SIGNALS,
   tab_switch: true,
   camera_disabled: true,
   microphone_disabled: true,
@@ -81,18 +88,17 @@ export const PRO_PLAN_SIGNALS: ProctoringSignalToggles = {
   follow_up_collapse: true,
   depth_decay: true,
   latency_mismatch: true,
-} as ProctoringSignalToggles;
-
-// SCALE / BUSINESS / ENTERPRISE Plan Signals
-export const SCALE_PLAN_SIGNALS: ProctoringSignalToggles = {
-  ...PRO_PLAN_SIGNALS,
-  contradiction: true,
-  contradiction_resolved: true,
   complexity_latency_mismatch: true,
-  strong_under_pressure: true,
   ownership_clarified: true,
   example_given: true,
-  duplicate_ip: true,
+  strong_under_pressure: true,
+} as ProctoringSignalToggles;
+
+// SCALE / ENTERPRISE adds the heavy vision / contradiction checks.
+export const SCALE_PLAN_SIGNALS: ProctoringSignalToggles = {
+  ...GROWTH_PLAN_SIGNALS,
+  contradiction: true,
+  contradiction_resolved: true,
   face_absence: true,
   multiple_faces: true,
   identity_mismatch: true,
@@ -100,10 +106,11 @@ export const SCALE_PLAN_SIGNALS: ProctoringSignalToggles = {
 
 export function getProctoringSignalsForPlan(planId: string): ProctoringSignalToggles {
   const pid = planId.toUpperCase();
-  if (pid === "PRO") return { ...PRO_PLAN_SIGNALS };
+  if (pid === "STARTER" || pid === "BASIC") return { ...BASIC_PLAN_SIGNALS };
+  if (pid === "PRO") return { ...GROWTH_PLAN_SIGNALS };
   if (pid === "BUSINESS" || pid === "ENTERPRISE") return { ...SCALE_PLAN_SIGNALS };
-  // Default for STARTER or unknown: nothing enabled as requested
-  return Object.fromEntries(MANAGED_PROCTORING_SIGNALS.map(s => [s, false])) as ProctoringSignalToggles;
+  // Default for unknown: nothing enabled as requested
+  return { ...BASIC_PLAN_SIGNALS };
 }
 
 function toBoolean(value: unknown, fallback: boolean): boolean {

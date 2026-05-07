@@ -9,8 +9,8 @@ export const ORG_PLAN_OPTIONS: Array<{
   border: string;
 }> = [
   { id: "STARTER", label: "Starter", desc: "$99/mo • 120 mins", color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
-  { id: "PRO", label: "Pro", desc: "$299/mo • 480 mins", color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
-  { id: "BUSINESS", label: "Growth", desc: "$699/mo • 1,200 mins", color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
+  { id: "PRO", label: "Growth", desc: "$299/mo • 480 mins", color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
+  { id: "BUSINESS", label: "Scale", desc: "$699/mo • 1,200 mins", color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
   { id: "ENTERPRISE", label: "Enterprise", desc: "Custom • Unlimited", color: "text-rose-600", bg: "bg-rose-50", border: "border-rose-100" },
 ];
 
@@ -23,6 +23,7 @@ const LEGACY_PLAN_MAP: Record<string, OrgPlanId> = {
   PROFESSIONAL: "PRO",
   BUSINESS_PLUS: "BUSINESS",
   ENTERPRISE_CUSTOM: "ENTERPRISE",
+  BASIC: "STARTER",
 };
 
 const PLAN_LABELS: Record<OrgPlanId, string> = ORG_PLAN_OPTIONS.reduce((acc, plan) => {

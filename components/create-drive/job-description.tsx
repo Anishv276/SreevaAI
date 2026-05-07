@@ -305,12 +305,8 @@ export function JobDescription({
                                     />
                                     {/* Word Counter */}
                                     <div className="absolute right-3 bottom-2 flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-gray-50/80 backdrop-blur-sm border border-gray-100">
-                                        <p className={`text-[10px] font-black uppercase tracking-widest ${
-                                            (formData.description?.trim().split(/\s+/).filter(Boolean).length || 0) >= 30 
-                                                ? "text-green-500" 
-                                                : "text-gray-400"
-                                        }`}>
-                                            {formData.description?.trim().split(/\s+/).filter(Boolean).length || 0} / 30 Words
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                            {formData.description?.trim().split(/\s+/).filter(Boolean).length || 0} Words
                                         </p>
                                     </div>
                                 </div>
