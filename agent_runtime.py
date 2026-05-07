@@ -458,6 +458,9 @@ async def entrypoint(ctx: JobContext):
     # --- Fix 1: Session State ---
     transcript_lines: list[str] = []
     session_start_time: Optional[float] = None
+    runtime_phase: int = 2
+    _phase3_pending: bool = False
+    _phase4_pending: bool = False
     background_tasks: set[asyncio.Task[Any]] = set()
     def spawn_background_task(coro, label: str) -> asyncio.Task[Any]:
         task = asyncio.create_task(coro)
@@ -2028,6 +2031,7 @@ async def entrypoint(ctx: JobContext):
     awaiting_candidate_since: float | None = None
     inactivity_nudge_sent_for_current_prompt = False
     first_agent_turn_committed_at: float | None = None
+    llm_spoke_event = asyncio.Event()
     greeting_echo_suppression_secs = 6.0
     greeting_delivered_at: float | None = None  # Track when greeting finishes
     def reset_inactivity_clock(start_waiting: bool, preserve_nudge_flags: bool = False) -> None:
