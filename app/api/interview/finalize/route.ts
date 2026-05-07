@@ -502,8 +502,8 @@ export async function POST(req: Request) {
           });
 
           const turnRows = normalizeReportTurns(interviewTurns.length > 0 ? interviewTurns : buildInterviewTurns(transcriptForReport));
-          if (!Array.isArray(report?.qa_blocks) || report.qa_blocks.length === 0) {
-            report.qa_blocks = turnRows.map((row) => ({
+          if (report && (!Array.isArray(report.qa_blocks) || (report.qa_blocks?.length ?? 0) === 0)) {
+            report!.qa_blocks = turnRows.map((row) => ({
               q: row.q,
               title: row.question,
               tags: ["Transcript", "Interview"],
