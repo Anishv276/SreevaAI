@@ -248,6 +248,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [launchRecoveryMessage, setLaunchRecoveryMessage] = useState<string | null>(null);
     const [returnCountdown, setReturnCountdown] = useState<number | null>(null);
     const [isTabViolation, setIsTabViolation] = useState(false);
+    const [isFullscreenViolation, setIsFullscreenViolation] = useState(false);
     const tabViolationTimerRef = useRef<number | null>(null);
     //  AI Face Proctoring 
     const [referenceSnapshotUrl, setReferenceSnapshotUrl] = useState<string | null>(null);
@@ -748,8 +749,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         const onWindowFocus = () => clearDelayedViolation(tabViolationTimerRef);
         const onFullscreenChange = () => {
             const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
-            if (!isFS) handleViolation();
-            else clearDelayedViolation(tabViolationTimerRef);
+            if (!isFS) {
+                setIsFullscreenViolation(true);
+                handleViolation();
+            } else {
+                setIsFullscreenViolation(false);
+                clearDelayedViolation(tabViolationTimerRef);
+            }
         };
         document.addEventListener("visibilitychange", onVisibilityChange);
         window.addEventListener("blur", handleViolation);
