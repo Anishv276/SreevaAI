@@ -21,20 +21,19 @@ export async function POST(request: Request) {
             }, { status: 429 });
         }
 
-        // 1. Re-verify OTP for security in the final step (check both tables)
+        // 1. Re-verify OTP for security in the final step (check both account types)
         const user = await prisma.user.findUnique({
-            where: { email: email.toLowerCase().trim() },
+            where: { email: normalizedEmail },
             select: { 
                 id: true, 
                 resetOtp: true, 
-                resetOtpExpires: true,
-                role: true
+                resetOtpExpires: true
             }
         });
 
         const superAdmin = await prisma.superAdmin.findUnique({
-            where: { email: email.toLowerCase().trim() },
-            select: { id: true }
+            where: { email: normalizedEmail },
+            select: { id: true, resetOtp: true, resetOtpExpires: true }
         });
 
         // 2. Hash New Password
@@ -58,43 +57,27 @@ export async function POST(request: Request) {
             if (updatedUser.count > 0) {
                 isValidOtp = true;
                 await invalidateUserSessions(user.id);
-                
-                if (superAdmin) {
-                    await prisma.superAdmin.update({
-                        where: { id: superAdmin.id },
-                        data: { password: hashedPassword }
-                    });
-                }
             }
         }
 
         if (!isValidOtp && superAdmin) {
-            const deletedToken = await prisma.verificationToken.deleteMany({
-                where: {
-                    superAdminId: superAdmin.id,
-                    token: otp,
-                    expires: { gte: new Date() }
-                }
-            });
-            if (deletedToken.count > 0) {
+            if (
+                superAdmin.resetOtp &&
+                superAdmin.resetOtp === otp &&
+                superAdmin.resetOtpExpires &&
+                superAdmin.resetOtpExpires >= new Date()
+            ) {
                 isValidOtp = true;
                 await invalidateUserSessions(superAdmin.id);
                 
                 await prisma.superAdmin.update({
                     where: { id: superAdmin.id },
-                    data: { password: hashedPassword }
+                    data: {
+                        password: hashedPassword,
+                        resetOtp: null,
+                        resetOtpExpires: null
+                    }
                 });
-
-                if (user) {
-                    await prisma.user.update({
-                        where: { id: user.id },
-                        data: {
-                            password: hashedPassword,
-                            resetOtp: null,
-                            resetOtpExpires: null
-                        }
-                    });
-                }
             }
         }
 

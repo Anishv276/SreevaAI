@@ -17,6 +17,7 @@ import uuid
 import re
 import traceback
 from openai import AsyncOpenAI
+from collections.abc import AsyncGenerator, AsyncIterable
 from agent_utils import (
     _as_list,
     _cartesia_plugin_model,
@@ -153,6 +154,121 @@ from prompt_layers import (
 )
 from turn_decision import classify_short_utterance
 from probe_strategy import build_short_utterance_directive
+
+_TTS_MIN_FLUSH_WORDS = 8
+_TTS_MAX_FLUSH_WORDS = 22
+_TTS_SENTENCE_ENDINGS = {".", "?", "!"}
+_TTS_ATTACH_LEFT = {".", ",", "?", "!", ":", ";", "%", ")", "]", "}", "”", "’", '"', "'"}
+_TTS_WORD_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[’'\-][A-Za-z0-9]+)*")
+_TTS_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[’'\-][A-Za-z0-9]+)*|[^\w\s]", re.UNICODE)
+
+
+def _append_tts_token(text: str, token: str) -> str:
+    if not text:
+        return token
+
+    if token in _TTS_ATTACH_LEFT:
+        return text + token
+
+    if text[-1] in "([{\"“‘'":
+        return text + token
+
+    return text + " " + token
+
+
+def _rewrite_tts_text(text: str) -> str:
+    return _compact_text(text)
+
+
+class InterviewAgent(Agent):
+    async def tts_node(
+        self, text: AsyncIterable[str], model_settings: Any
+    ) -> AsyncGenerator[Any, None]:
+        activity = self._get_activity_or_raise()
+        if activity.tts is None:
+            raise RuntimeError(
+                "`tts_node` called but no TTS node is available. If audio output is not needed, disable it using "
+                "`session.output.set_audio_enabled(False)`."
+            )
+
+        conn_options = activity.session.conn_options.tts_conn_options
+        buffer_text = ""
+        buffer_word_count = 0
+
+        async def _synthesize_segment(segment_text: str) -> AsyncGenerator[Any, None]:
+            rewritten = _rewrite_tts_text(segment_text)
+            if not rewritten:
+                return
+
+            async with activity.tts.synthesize(
+                rewritten, conn_options=conn_options
+            ) as tts_stream:
+                async for audio in tts_stream:
+                    yield audio.frame
+
+        async def _flush_buffer() -> AsyncGenerator[Any, None]:
+            nonlocal buffer_text, buffer_word_count
+            if not buffer_text.strip():
+                buffer_text = ""
+                buffer_word_count = 0
+                return
+
+            segment = buffer_text
+            buffer_text = ""
+            buffer_word_count = 0
+
+            async for frame in _synthesize_segment(segment):
+                yield frame
+
+        async for chunk in text:
+            chunk = _compact_text(chunk)
+            if not chunk:
+                continue
+
+            for token in _TTS_TOKEN_RE.findall(chunk):
+                if _TTS_WORD_TOKEN_RE.fullmatch(token):
+                    buffer_word_count += 1
+
+                buffer_text = _append_tts_token(buffer_text, token)
+
+                if buffer_word_count >= _TTS_MAX_FLUSH_WORDS:
+                    async for frame in _flush_buffer():
+                        yield frame
+                    continue
+
+                if buffer_word_count >= _TTS_MIN_FLUSH_WORDS and token in _TTS_SENTENCE_ENDINGS:
+                    async for frame in _flush_buffer():
+                        yield frame
+
+        async for frame in _flush_buffer():
+            yield frame
+
+
+_TTS_MIN_FLUSH_WORDS = 8
+_TTS_MAX_FLUSH_WORDS = 22
+_TTS_SENTENCE_ENDINGS = {".", "?", "!"}
+_TTS_ATTACH_LEFT = {".", ",", "?", "!", ":", ";", "%", ")", "]", "}", '"', "'"}
+_TTS_WORD_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:['-][A-Za-z0-9]+)*")
+_TTS_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:['-][A-Za-z0-9]+)*|[^\w\s]", re.UNICODE)
+
+
+def _append_tts_token(text: str, token: str) -> str:
+    if not text:
+        return token
+
+    if token in _TTS_ATTACH_LEFT:
+        return text + token
+
+    if text[-1] in "([{\"'":
+        return text + token
+
+    return text + " " + token
+
+
+def _rewrite_tts_text(text: str) -> str:
+    return _compact_text(text)
+
+
 def prewarm(proc: JobProcess):
     logger.info("Prewarming worker process...")
     # Load VAD model (ONNX) - heaviest startup cost, must be synchronous
@@ -1012,7 +1128,7 @@ async def entrypoint(ctx: JobContext):
         logger.debug(
             f"[USAGE] Session usage updated (model buckets={len(event.usage.model_usage)})"
         )
-    agent = Agent(instructions=system_prompt, chat_ctx=chat_ctx)
+    agent = InterviewAgent(instructions=system_prompt, chat_ctx=chat_ctx)
     participant: Optional[Any] = None
     disconnect_event = asyncio.Event()
     interview_finished_event = asyncio.Event()

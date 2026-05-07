@@ -38,8 +38,9 @@ export async function POST() {
         const expires = new Date(Date.now() + 10 * 60 * 1000);
 
         if (isSuperAdmin) {
-            await prisma.verificationToken.create({
-                data: { superAdminId: session.userId, token: otp, expires }
+            await prisma.superAdmin.update({
+                where: { id: session.userId },
+                data: { resetOtp: otp, resetOtpExpires: expires }
             });
         } else {
             await prisma.user.update({

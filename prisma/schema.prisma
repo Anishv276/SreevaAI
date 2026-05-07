@@ -50,9 +50,10 @@ model SuperAdmin {
   email                String              @unique
   password             String
   name                 String
+  resetOtp             String?
+  resetOtpExpires      DateTime?
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
-  verificationTokens   VerificationToken[]
 }
 
 model User {
@@ -198,19 +199,6 @@ model Interview {
   @@index([updatedAt(sort: Desc)])
   @@index([status])
 }
-
-model VerificationToken {
-  id           String      @id @default(cuid())
-  token        String
-  expires      DateTime
-  createdAt    DateTime    @default(now())
-  superAdminId String?
-  superAdmin   SuperAdmin? @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
-
-  @@index([token, superAdminId])
-}
-
-
 
 model ResumeCandidate {
   id              String    @id @default(cuid())

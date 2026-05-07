@@ -407,17 +407,12 @@ export async function DELETE(
                 where: { orgId: id }
             });
 
-            // 7. Delete Org Invites
-            await tx.orgInvite.deleteMany({
-                where: { orgId: id }
-            });
-
-            // 8. Delete Users
+            // 7. Delete Users
             await tx.user.deleteMany({
                 where: { orgId: id }
             });
 
-            // 9. Delete Organization
+            // 8. Delete Organization
             await tx.organization.delete({
                 where: { id }
             });

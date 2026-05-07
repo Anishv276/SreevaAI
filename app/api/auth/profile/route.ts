@@ -73,15 +73,14 @@ export async function PATCH(request: Request) {
                 currentUser = await prisma.superAdmin.findUnique({ where: { id: session.userId } });
 
                 // Verify Super Admin OTP
-                const validToken = await prisma.verificationToken.findFirst({
-                    where: { 
-                        token: otp, 
-                        superAdminId: session.userId, 
-                        expires: { gt: new Date() } 
-                    }
+                if (!currentUser || currentUser.resetOtp !== otp || (currentUser.resetOtpExpires && currentUser.resetOtpExpires < new Date())) {
+                    return NextResponse.json({ error: "Invalid or expired security code" }, { status: 400 });
+                }
+
+                await prisma.superAdmin.update({
+                    where: { id: session.userId },
+                    data: { resetOtp: null, resetOtpExpires: null }
                 });
-                if (!validToken) return NextResponse.json({ error: "Invalid or expired security code" }, { status: 400 });
-                await prisma.verificationToken.delete({ where: { id: validToken.id } });
             } else {
                 currentUser = await prisma.user.findUnique({ where: { id: session.userId } });
 
