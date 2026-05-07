@@ -8,6 +8,7 @@ import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-si
 import { CARTESIA_VOICES, DEFAULT_GOOGLE_TTS_MODEL, GOOGLE_TTS_MODELS, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS } from "@/lib/org-plans";
 import { DEFAULT_PROCTORING_SIGNALS, getProctoringSignalsForPlan } from "@/lib/proctoring-signals";
+import { GEMINI_LLM_MODELS, OPENAI_LLM_MODELS } from "@/lib/llm-models";
 import { cn } from "@/lib/utils";
 
 // Exact UI Components from Create Drive
@@ -201,7 +202,7 @@ export default function NewOrgPage() {
             stopCurrentPreview();
             const res = await fetch("/api/admin/voice/preview", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ provider, voiceId, modelId, transcript: "Neural interface initialized." }),
+                body: JSON.stringify({ provider, voiceId, modelId, transcript: "Hello buddy, how are you doing? I'm ready to interview candidates." }),
             });
             if (!res.ok) throw new Error("Preview failed");
             const blob = await res.blob();
@@ -362,7 +363,7 @@ export default function NewOrgPage() {
                             {/* STT & LLM */}
                             <div className="space-y-6">
                                 <div className="relative group space-y-4">
-                                    <CustomSelect label="Transcription (STT)" icon={Mic} value={form.sttProvider} onChange={(v: any) => setForm(p => ({ ...p, sttProvider: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "GOOGLE", label: "Google Cloud STT" }] : [{ value: "DEEPGRAM", label: "Deepgram" }, { value: "SARVAM", label: "Sarvam (Regional)" }]} />
+                                    <CustomSelect label="Transcription (STT)" icon={Mic} value={form.sttProvider} onChange={(v: any) => setForm(p => ({ ...p, sttProvider: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "GOOGLE", label: "Google Cloud STT" }] : [{ value: "DEEPGRAM", label: "Deepgram (Nova-3)" }, { value: "SARVAM", label: "Sarvam (Regional)" }]} />
 
                                     {form.sttProvider === "DEEPGRAM" && (
                                         <div className="animate-in fade-in slide-in-from-top-2">
@@ -389,7 +390,7 @@ export default function NewOrgPage() {
                                     )}
                                 </div>
                                 <div className="relative group">
-                                    <CustomSelect label="Intelligence (LLM)" icon={BrainCircuit} value={form.llmModel} onChange={(v: any) => setForm(p => ({ ...p, llmModel: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" }, { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" }] : [{ value: "gpt-4o", label: "GPT-4o" }, { value: "gpt-4o-mini", label: "GPT-4o Mini" }]} />
+                                    <CustomSelect label="Intelligence (LLM)" icon={BrainCircuit} value={form.llmModel} onChange={(v: any) => setForm(p => ({ ...p, llmModel: v }))} options={form.ttsProvider === "GOOGLE" ? GEMINI_LLM_MODELS : OPENAI_LLM_MODELS} />
                                     {form.ttsProvider === "GOOGLE" && (
                                         <div className="absolute inset-0 pointer-events-none flex items-center justify-end pr-10">
                                             <div className="flex items-center gap-1 bg-blue-50/90 border border-blue-100 px-1.5 py-0.5 rounded shadow-sm translate-y-1">

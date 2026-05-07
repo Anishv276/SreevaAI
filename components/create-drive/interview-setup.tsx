@@ -37,12 +37,36 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
     const voiceDropdownRef = useRef<HTMLDivElement>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
+    const gainNodeRef = useRef<GainNode | null>(null);
     const bufferSourceRef = useRef<AudioBufferSourceNode | null>(null);
+    const mediaSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+    const currentPreviewUrlRef = useRef<string | null>(null);
 
     const stopCurrentPreview = () => {
         if (audioRef.current) {
             audioRef.current.pause();
+            audioRef.current.src = "";
             audioRef.current = null;
+        }
+        if (currentPreviewUrlRef.current) {
+            URL.revokeObjectURL(currentPreviewUrlRef.current);
+            currentPreviewUrlRef.current = null;
+        }
+        if (mediaSourceRef.current) {
+            try {
+                mediaSourceRef.current.disconnect();
+            } catch {
+                // ignore
+            }
+            mediaSourceRef.current = null;
+        }
+        if (gainNodeRef.current) {
+            try {
+                gainNodeRef.current.disconnect();
+            } catch {
+                // ignore
+            }
+            gainNodeRef.current = null;
         }
         if (bufferSourceRef.current) {
             try {
@@ -56,6 +80,10 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                 // ignore
             }
             bufferSourceRef.current = null;
+        }
+        if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+            audioContextRef.current.close().catch(() => { });
+            audioContextRef.current = null;
         }
         setActiveAudio(null);
         setPlayingVoiceId(null);
@@ -170,16 +198,28 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
             try {
                 const blob = new Blob([arrayBuffer], { type: mimeType });
                 const url = URL.createObjectURL(blob);
+                currentPreviewUrlRef.current = url;
                 const audio = new Audio(url);
+                const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+                if (!AudioContextClass) {
+                    throw new Error("AudioContext not supported");
+                }
+                const ctx = audioContextRef.current || new AudioContextClass();
+                audioContextRef.current = ctx;
+                const source = ctx.createMediaElementSource(audio);
+                const gainNode = ctx.createGain();
+                gainNode.gain.value = 2.5;
+                mediaSourceRef.current = source;
+                gainNodeRef.current = gainNode;
+                source.connect(gainNode);
+                gainNode.connect(ctx.destination);
 
                 audio.onended = () => {
                     stopCurrentPreview();
-                    if (url.startsWith("blob:")) {
-                        URL.revokeObjectURL(url);
-                    }
                 };
 
                 audioRef.current = audio;
+                await ctx.resume().catch(() => { });
                 await audio.play();
                 setActiveAudio(audio);
                 setPlayingVoiceId(voiceId);
@@ -198,12 +238,16 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
 
                 const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
                 const source = ctx.createBufferSource();
+                const gainNode = ctx.createGain();
+                gainNode.gain.value = 2.5;
                 source.buffer = decoded;
-                source.connect(ctx.destination);
+                source.connect(gainNode);
+                gainNode.connect(ctx.destination);
                 source.onended = () => {
                     stopCurrentPreview();
                 };
                 bufferSourceRef.current = source;
+                gainNodeRef.current = gainNode;
                 setActiveAudio(null);
                 setPlayingVoiceId(voiceId);
                 source.start(0);

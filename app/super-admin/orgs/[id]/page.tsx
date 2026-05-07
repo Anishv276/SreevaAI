@@ -2,13 +2,14 @@
 
 import { useEffect, useState, use, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Building2, User, Mail, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Sparkles, Volume2, BrainCircuit, Coins, Mic, ChevronDown, Loader2, Infinity, Shield, Layers, Mic2, AudioLines, Search, Thermometer, Lock } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Building2, User, Mail, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Sparkles, Volume2, BrainCircuit, Coins, Mic, ChevronDown, Loader2, Infinity, Shield, Layers, Mic2, AudioLines, Search, Thermometer, Lock, Zap } from "lucide-react";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
 import { CARTESIA_VOICES, DEFAULT_GOOGLE_TTS_MODEL, GOOGLE_TTS_MODELS, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, normalizeOrgPlan } from "@/lib/org-plans";
 import { DEFAULT_PROCTORING_SIGNALS, getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
+import { GEMINI_LLM_MODELS, OPENAI_LLM_MODELS } from "@/lib/llm-models";
 import { cn } from "@/lib/utils";
 import { Steps } from "@/components/create-drive/steps";
 import { formatOrgLimitValue } from "@/lib/org-limits";
@@ -81,6 +82,9 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const [voiceSearch, setVoiceSearch] = useState("");
     const [interviewQuotaTotalInput, setInterviewQuotaTotalInput] = useState("0");
     const [interviewTopUpInput, setInterviewTopUpInput] = useState("0");
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const gainNodeRef = useRef<GainNode | null>(null);
+    const previewUrlRef = useRef<string | null>(null);
     const [billingSnapshot, setBillingSnapshot] = useState({
         interviewQuotaTotal: 0,
         interviewQuotaUsed: 0,
@@ -121,7 +125,22 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         }
     };
 
-    const stopCurrentPreview = () => { if (activeAudio) { activeAudio.pause(); setActiveAudio(null); } setPlayingVoiceId(null); };
+    const stopCurrentPreview = () => {
+        if (activeAudio) {
+            activeAudio.pause();
+            activeAudio.src = "";
+            setActiveAudio(null);
+        }
+        if (previewUrlRef.current) {
+            URL.revokeObjectURL(previewUrlRef.current);
+            previewUrlRef.current = null;
+        }
+        gainNodeRef.current?.disconnect();
+        gainNodeRef.current = null;
+        audioContextRef.current?.close().catch(() => { });
+        audioContextRef.current = null;
+        setPlayingVoiceId(null);
+    };
 
     const getVoicesForProvider = () => {
         if (form.ttsProvider === "SARVAM") return SARVAM_VOICES;
@@ -144,12 +163,34 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
             stopCurrentPreview();
             const res = await fetch("/api/admin/voice/preview", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ provider, voiceId, modelId, transcript: "Configuration synchronized." }),
+                body: JSON.stringify({ provider, voiceId, modelId, transcript: "Hello buddy, how are you doing? I'm ready to interview candidates." }),
             });
             if (!res.ok) throw new Error("Preview failed");
             const blob = await res.blob();
-            const audio = new Audio(URL.createObjectURL(blob));
-            audio.onended = () => stopCurrentPreview();
+            const audioUrl = URL.createObjectURL(blob);
+            previewUrlRef.current = audioUrl;
+            const audio = new Audio(audioUrl);
+            const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+            if (AudioContextClass) {
+                const ctx = new AudioContextClass();
+                audioContextRef.current = ctx;
+                const source = ctx.createMediaElementSource(audio);
+                const gainNode = ctx.createGain();
+                gainNode.gain.value = 2.5;
+                gainNodeRef.current = gainNode;
+                source.connect(gainNode);
+                gainNode.connect(ctx.destination);
+                audio.onended = () => {
+                    stopCurrentPreview();
+                    URL.revokeObjectURL(audioUrl);
+                };
+                await ctx.resume().catch(() => { });
+            } else {
+                audio.onended = () => {
+                    stopCurrentPreview();
+                    URL.revokeObjectURL(audioUrl);
+                };
+            }
             await audio.play();
             setActiveAudio(audio);
             setPlayingVoiceId(voiceId);
@@ -318,7 +359,21 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                             </div>
                             <div className="space-y-6">
                                 <div className="relative group">
-                                    <CustomSelect label="Transcription (STT)" icon={Mic} value={form.sttProvider} onChange={(v: any) => setForm(p => ({ ...p, sttProvider: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "GOOGLE", label: "Google Cloud STT" }] : [{ value: "DEEPGRAM", label: "Deepgram (Flux)" }, { value: "SARVAM", label: "Sarvam (Regional)" }]} />
+                                    <CustomSelect label="Transcription (STT)" icon={Mic} value={form.sttProvider} onChange={(v: any) => setForm(p => ({ ...p, sttProvider: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "GOOGLE", label: "Google Cloud STT" }] : [{ value: "DEEPGRAM", label: "Deepgram (Nova-3)" }, { value: "SARVAM", label: "Sarvam (Regional)" }]} />
+                                    {form.sttProvider === "DEEPGRAM" && (
+                                        <div className="animate-in fade-in slide-in-from-top-2">
+                                            <CustomSelect
+                                                label="Deepgram Model"
+                                                icon={Zap}
+                                                value={form.deepgramModel}
+                                                onChange={(v: any) => setForm(p => ({ ...p, deepgramModel: v }))}
+                                                options={[
+                                                    { value: "nova-3-general", label: "Nova-3 (Latest)" },
+                                                    { value: "nova-2-general", label: "Nova-2 (Legacy)" },
+                                                ]}
+                                            />
+                                        </div>
+                                    )}
                                     {form.ttsProvider === "GOOGLE" && (
                                         <div className="absolute inset-0 pointer-events-none flex items-center justify-end pr-10">
                                             <div className="flex items-center gap-1 bg-blue-50/90 border border-blue-100 px-1.5 py-0.5 rounded shadow-sm translate-y-1">
@@ -329,7 +384,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                     )}
                                 </div>
                                 <div className="relative group">
-                                    <CustomSelect label="Intelligence (LLM)" icon={BrainCircuit} value={form.llmModel} onChange={(v: any) => setForm(p => ({ ...p, llmModel: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" }, { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" }] : [{ value: "gpt-4o", label: "GPT-4o" }, { value: "gpt-4o-mini", label: "GPT-4o Mini" }]} />
+                                    <CustomSelect label="Intelligence (LLM)" icon={BrainCircuit} value={form.llmModel} onChange={(v: any) => setForm(p => ({ ...p, llmModel: v }))} options={form.ttsProvider === "GOOGLE" ? GEMINI_LLM_MODELS : OPENAI_LLM_MODELS} />
                                     {form.ttsProvider === "GOOGLE" && (
                                         <div className="absolute inset-0 pointer-events-none flex items-center justify-end pr-10">
                                             <div className="flex items-center gap-1 bg-blue-50/90 border border-blue-100 px-1.5 py-0.5 rounded shadow-sm translate-y-1">

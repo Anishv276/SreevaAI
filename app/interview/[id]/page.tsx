@@ -2504,13 +2504,59 @@ function VideoTrack({ trackRef }: { trackRef: TrackReference }) {
 }
 function AudioTrack({ trackRef }: { trackRef: TrackReference }) {
     const audioRef = useRef<HTMLAudioElement>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const gainNodeRef = useRef<GainNode | null>(null);
     useEffect(() => {
         const track = getAttachableTrack(trackRef);
-        if (track && audioRef.current) {
-            track.attach(audioRef.current);
-            return () => { track.detach(audioRef.current!); };
+        const audio = audioRef.current;
+        if (!track || !audio) return;
+
+        const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioContextClass) {
+            track.attach(audio);
+            return () => { track.detach(audio); };
         }
+
+        const audioCtx = audioContextRef.current || new AudioContextClass();
+        audioContextRef.current = audioCtx;
+
+        const source = audioCtx.createMediaElementSource(audio);
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = 2.5;
+        gainNodeRef.current = gainNode;
+
+        source.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        track.attach(audio);
+
+        void audioCtx.resume().catch(() => { });
+
+        return () => {
+            try {
+                track.detach(audio);
+            } catch { }
+            try {
+                source.disconnect();
+            } catch { }
+            try {
+                gainNode.disconnect();
+            } catch { }
+            gainNodeRef.current = null;
+            audioContextRef.current?.close().catch(() => { });
+            audioContextRef.current = null;
+        };
     }, [trackRef]);
+
+    useEffect(() => {
+        return () => {
+            gainNodeRef.current?.disconnect();
+            gainNodeRef.current = null;
+            audioContextRef.current?.close().catch(() => { });
+            audioContextRef.current = null;
+        };
+    }, []);
+
     return <audio ref={audioRef} autoPlay />;
 }
 function TimeoutThankYouView({ candidateName }: { candidateName: string }) {

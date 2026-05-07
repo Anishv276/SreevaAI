@@ -590,6 +590,7 @@ export function HardwareCheck({
             if (preferredVoice) utter.voice = preferredVoice;
             utter.rate = 0.95; // Slightly slower for better clarity
             utter.pitch = 1.0;
+            utter.volume = 1.0; // Max browser-supported volume for speech synthesis
 
             utter.onend = () => {
                 setSpeakerPlaying(false);
