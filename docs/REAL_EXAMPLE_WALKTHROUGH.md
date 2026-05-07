@@ -653,7 +653,6 @@ _SIGNAL_TO_FAMILY = [
     ("example_evasion", "evidence"),
     ("latency_mismatch", "compression"),
     ("ownership_ambiguity", "ownership"),
-    ("meta_question", "rapport"),
     ("depth_decay", "depth"),  # ✅ BUG 2 FIXED!
     ("complexity_latency_mismatch", "evidence"),  # ✅ BUG 2 FIXED!
 ]

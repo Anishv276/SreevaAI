@@ -189,7 +189,6 @@ Run detect_signal_events():
 - contradiction: ❌ No
 - resume_claim_mismatch: ❌ No
 - latency_mismatch: ❌ No
-- meta_question: ❌ No
 
 Signal events: [] (clean)
 ```

@@ -11,6 +11,10 @@ import { getSession } from "@/lib/auth";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { prisma } from "@/lib/prisma";
 
+function countWords(text: string): number {
+    return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
 const extractQuerySchema = z.object({
     type: z.enum(["JD", "RESUME"]),
     url: z.string().url().optional(),
@@ -261,6 +265,22 @@ export async function POST(request: Request) {
                     error: result.error,
                     code: result.code || "EXTRACTION_ERROR"
                 }, { status: 422 });
+            }
+
+            if (type === "JD") {
+                const jdCandidateText =
+                    typeof result?.data?.role_summary === "string" && result.data.role_summary.trim()
+                        ? result.data.role_summary
+                        : typeof result?.text === "string" && result.text.trim()
+                            ? result.text
+                            : "";
+                const jdWordCount = countWords(jdCandidateText);
+                if (jdWordCount > 0 && jdWordCount < 30) {
+                    return NextResponse.json({
+                        error: `Extracted JD is only ${jdWordCount} words. Please provide a JD with at least 30 words.`,
+                        code: "EXTRACTION_INSUFFICIENT_JD",
+                    }, { status: 422 });
+                }
             }
 
             // Guard: ensure we got meaningful text back for JD/RESUME types

@@ -23,19 +23,9 @@ const EVENT_MAP: Record<string, string> = {
     multiple_faces:         "multiple_faces",
     multipleFaces:          "multiple_faces",
     MULTIPLE_FACES:         "multiple_faces",
-    gaze_violation:         "gaze_violation",
-    gazeViolation:          "gaze_violation",
-    GAZE_VIOLATION:         "gaze_violation",
-    head_pose_violation:    "head_pose_violation",
-    headPoseViolation:      "head_pose_violation",
-    HEAD_POSE_VIOLATION:    "head_pose_violation",
     identity_mismatch:      "identity_mismatch",
     identityMismatch:       "identity_mismatch",
     IDENTITY_MISMATCH:      "identity_mismatch",
-    // Audio proctoring (AudioProctoring.tsx)
-    AUDIO_FLAG:             "audio_flag",
-    audio_flag:             "audio_flag",
-    audioFlag:              "audio_flag",
     // Network / session signals
     DUPLICATE_IP:           "duplicate_ip",
     duplicate_ip:           "duplicate_ip",
@@ -51,14 +41,9 @@ const EVENT_MAP: Record<string, string> = {
     connection_lost:        "connection_lost",
     connectionLost:         "connection_lost",
     CONNECTION_LOST:        "connection_lost",
-    connection_restored:    "connection_restored",
-    connectionRestored:     "connection_restored",
-    CONNECTION_RESTORED:    "connection_restored",
     // Browser signals
     tab_switch:             "tab_switch",
     tabSwitch:              "tab_switch",
-    fullscreen_exit:        "fullscreen_exit",
-    fullscreenExit:         "fullscreen_exit",
     // Metadata-only - never a violation
     ip_registered:          "__skip__",
 };
@@ -195,20 +180,15 @@ export async function GET(req: NextRequest) {
         const ORDER = [
             "face_absence",
             "multiple_faces",
-            "gaze_violation",
-            "head_pose_violation",
             "identity_mismatch",
-            "audio_flag",
             "camera_disabled",
             "microphone_disabled",
             "tab_switch",
-            "fullscreen_exit",
             // Smart Collusion Detection - three tiers
             "duplicate_ip_simultaneous",
             "duplicate_ip_sequential",
             "duplicate_ip_network",
             "connection_lost",
-            "connection_restored",
         ];
         const LABELS: Record<string, { title: string; abbr: string; getDesc: (v: typeof violationCounts[string]) => string }> = {
             face_absence:               { title: "Face not visible",                   abbr: "FA", getDesc: v => {
@@ -216,25 +196,20 @@ export async function GET(req: NextRequest) {
                 return `${v.incidents} events${avgDur ? `, avg ${avgDur}s absence` : ""}`;
             }},
             multiple_faces:             { title: "Multiple faces detected",             abbr: "MF", getDesc: v => `${v.incidents} incidents flagged` },
-            gaze_violation:             { title: "Gaze off-screen",                     abbr: "GV", getDesc: v => `${v.incidents} gaze violations logged` },
-            head_pose_violation:        { title: "Head pose deviation",                 abbr: "HP", getDesc: v => `${v.incidents} head-turn events logged` },
             identity_mismatch:          { title: "Identity mismatch",                   abbr: "IM", getDesc: v => `${v.incidents} mismatch checks triggered` },
-            audio_flag:                 { title: "Background audio flags",              abbr: "AU", getDesc: v => `${v.incidents} secondary voice detections` },
             camera_disabled:            { title: "Camera disabled mid-session",          abbr: "CD", getDesc: v => `${v.incidents} camera disable events` },
             microphone_disabled:        { title: "Microphone disabled mid-session",      abbr: "MD", getDesc: v => `${v.incidents} mic disable events` },
             tab_switch:                 { title: "Tab switching / App switching",       abbr: "TS", getDesc: v => `${v.incidents} switch events recorded` },
-            fullscreen_exit:            { title: "Fullscreen Exit",                     abbr: "FE", getDesc: v => `${v.incidents} exits detected` },
             // Smart Collusion - 3 tiers
             duplicate_ip_simultaneous:  { title: "🔴 Simultaneous Device Match",        abbr: "SC", getDesc: v => `${v.incidents} HIGH-risk: same device, same time` },
             duplicate_ip_sequential:    { title: "🟡 Sequential Device Reuse",           abbr: "SR", getDesc: v => `${v.incidents} MEDIUM-risk: same device, different session` },
             duplicate_ip_network:       { title: "🟢 Shared Network Only",               abbr: "SN", getDesc: v => `${v.incidents} LOW-risk: campus/office shared IP` },
             connection_lost:            { title: "Connection drops",                   abbr: "CL", getDesc: v => `${v.incidents} connection loss events` },
-            connection_restored:        { title: "Connection restored",                abbr: "CR", getDesc: v => `${v.incidents} restoration events` },
         };
 
         // Severity determination per category using event data
-        const HIGH_SEVERITY_KEYS   = new Set(["face_absence", "multiple_faces", "identity_mismatch", "camera_disabled", "fullscreen_exit", "duplicate_ip_simultaneous"]);
-        const MEDIUM_SEVERITY_KEYS = new Set(["audio_flag", "gaze_violation", "head_pose_violation", "tab_switch", "microphone_disabled", "connection_lost", "duplicate_ip_sequential"]);
+        const HIGH_SEVERITY_KEYS   = new Set(["face_absence", "multiple_faces", "identity_mismatch", "camera_disabled", "duplicate_ip_simultaneous"]);
+        const MEDIUM_SEVERITY_KEYS = new Set(["tab_switch", "microphone_disabled", "connection_lost", "duplicate_ip_sequential"]);
 
         const violations = ORDER
             .filter((k: string) => violationCounts[k as keyof typeof violationCounts] && LABELS[k as keyof typeof LABELS])

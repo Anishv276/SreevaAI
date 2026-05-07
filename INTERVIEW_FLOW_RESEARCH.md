@@ -387,17 +387,12 @@ finalize_trust_state(trust_state)              → final behavioral narrative
 
 **Enabled via proctoringSignals:**
 - `tab_switch` - Detects tab changes
-- `fullscreen_exit` - Detects leaving fullscreen
 - `camera_disabled` - Monitors camera availability
 - `microphone_disabled` - Monitors mic availability
 - `connection_lost` - Network disconnection
 - `face_absence` - No face detected in frame
 - `multiple_faces` - Multiple people detected
-- `gaze_violation` - Eyes not looking at screen
-- `head_pose_violation` - Head angle suspicious
 - `identity_mismatch` - Face doesn't match reference
-- `mouse_erratic` - Erratic mouse patterns
-- `mouse_snap` - Suspicious mouse snap patterns
 
 ### Violation Handlers
 

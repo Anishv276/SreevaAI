@@ -4,16 +4,10 @@ export type ProctoringEventType =
   | "camera_disabled"
   | "microphone_disabled"
   | "connection_lost"
-  | "connection_restored"
-  | "mouse_erratic"
-  | "mouse_snap"
   | "duplicate_ip"
   | "tab_switch"
-  | "fullscreen_exit"
   | "face_absence"
   | "multiple_faces"
-  | "gaze_violation"
-  | "head_pose_violation"
   | "identity_mismatch"
   | "ownership_ambiguity"
   | "example_evasion"
@@ -25,7 +19,6 @@ export type ProctoringEventType =
   | "follow_up_collapse"
   | "contradiction"
   | "contradiction_resolved"
-  | "meta_question"
   | "depth_decay"
   | "complexity_latency_mismatch";
 
@@ -46,26 +39,14 @@ const EVENT_ALIASES: Record<string, ProctoringEventType> = {
   microphoneDisabled: "microphone_disabled",
   connection_lost: "connection_lost",
   connectionLost: "connection_lost",
-  connection_restored: "connection_restored",
-  connectionRestored: "connection_restored",
-  mouse_erratic: "mouse_erratic",
-  mouseErratic: "mouse_erratic",
-  mouse_snap: "mouse_snap",
-  mouseSnap: "mouse_snap",
   duplicate_ip: "duplicate_ip",
   duplicateIp: "duplicate_ip",
   tab_switch: "tab_switch",
   tabSwitch: "tab_switch",
-  fullscreen_exit: "fullscreen_exit",
-  fullscreenExit: "fullscreen_exit",
   face_absence: "face_absence",
   faceAbsence: "face_absence",
   multiple_faces: "multiple_faces",
   multipleFaces: "multiple_faces",
-  gaze_violation: "gaze_violation",
-  gazeViolation: "gaze_violation",
-  head_pose_violation: "head_pose_violation",
-  headPoseViolation: "head_pose_violation",
   identity_mismatch: "identity_mismatch",
   identityMismatch: "identity_mismatch",
   ownership_ambiguity: "ownership_ambiguity",
@@ -87,8 +68,6 @@ const EVENT_ALIASES: Record<string, ProctoringEventType> = {
   contradiction: "contradiction",
   contradiction_resolved: "contradiction_resolved",
   contradictionResolved: "contradiction_resolved",
-  meta_question: "meta_question",
-  metaQuestion: "meta_question",
   depth_decay: "depth_decay",
   depthDecay: "depth_decay",
   complexity_latency_mismatch: "complexity_latency_mismatch",
@@ -99,16 +78,10 @@ export const PROCTORING_SEVERITY_BY_TYPE: Record<ProctoringEventType, Proctoring
   camera_disabled: "high",
   microphone_disabled: "medium",
   connection_lost: "medium",
-  connection_restored: "low",
-  mouse_erratic: "medium",
-  mouse_snap: "medium",
   duplicate_ip: "high",
   tab_switch: "medium",
-  fullscreen_exit: "high",
   face_absence: "high",
   multiple_faces: "high",
-  gaze_violation: "medium",
-  head_pose_violation: "medium",
   identity_mismatch: "high",
   ownership_ambiguity: "medium",
   example_evasion: "high",
@@ -120,7 +93,6 @@ export const PROCTORING_SEVERITY_BY_TYPE: Record<ProctoringEventType, Proctoring
   follow_up_collapse: "high",
   contradiction: "high",
   contradiction_resolved: "low",
-  meta_question: "medium",
   depth_decay: "high",
   complexity_latency_mismatch: "high",
 };
@@ -129,16 +101,10 @@ export const PROCTORING_EVENT_ORDER: ProctoringEventType[] = [
   "camera_disabled",
   "microphone_disabled",
   "connection_lost",
-  "connection_restored",
-  "mouse_erratic",
-  "mouse_snap",
   "duplicate_ip",
   "tab_switch",
-  "fullscreen_exit",
   "face_absence",
   "multiple_faces",
-  "gaze_violation",
-  "head_pose_violation",
   "identity_mismatch",
   "ownership_ambiguity",
   "example_evasion",
@@ -150,7 +116,6 @@ export const PROCTORING_EVENT_ORDER: ProctoringEventType[] = [
   "follow_up_collapse",
   "contradiction",
   "contradiction_resolved",
-  "meta_question",
   "depth_decay",
   "complexity_latency_mismatch",
 ];

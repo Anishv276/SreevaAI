@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useState, use, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Star, Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User, MousePointer2, ChevronDown, MessageSquare, LifeBuoy } from "lucide-react";
+import { Star, Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User, ChevronDown, MessageSquare, LifeBuoy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -10,8 +10,6 @@ import { Label } from "@/components/ui/label";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
 import { HardwareCheck } from "@/components/careers/interview/HardwareCheck";
 import { FaceProctoring } from "@/components/careers/interview/FaceProctoring";
-import { AudioProctoring } from "@/components/careers/interview/AudioProctoring";
-import { MouseProctoring } from "@/components/careers/interview/MouseProctoring";
 import { HardwareHeartbeat } from "@/components/careers/interview/HardwareHeartbeat";
 import { ConnectionProctoring } from "@/components/careers/interview/ConnectionProctoring";
 import { collectDeviceFingerprint } from "@/lib/device-fingerprint";
@@ -250,9 +248,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [launchRecoveryMessage, setLaunchRecoveryMessage] = useState<string | null>(null);
     const [returnCountdown, setReturnCountdown] = useState<number | null>(null);
     const [isTabViolation, setIsTabViolation] = useState(false);
-    const [isFullscreenViolation, setIsFullscreenViolation] = useState(false);
     const tabViolationTimerRef = useRef<number | null>(null);
-    const fullscreenViolationTimerRef = useRef<number | null>(null);
     //  AI Face Proctoring 
     const [referenceSnapshotUrl, setReferenceSnapshotUrl] = useState<string | null>(null);
     // Selected Devices
@@ -266,9 +262,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     //  Connection Proctoring 
     const [connectionAlert, setConnectionAlert] = useState<{ eventType: string; reason: string } | null>(null);
     const connectionAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
-    // -- Mouse Proctoring (+ Deepgram Nova-3 cross-signal) ----------------
-    const [mouseViolationAlert, setMouseViolationAlert] = useState<{ eventType: string; reason: string; severity: string } | null>(null);
-    const mouseViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
     const [soundViolationAlert, setSoundViolationAlert] = useState<{ eventType: string; reason: string; severity: string } | null>(null);
     const soundViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
     const [proctoringSignals, setProctoringSignals] = useState(DEFAULT_PROCTORING_SIGNALS);
@@ -284,27 +277,16 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     });
     const SHOW_BACKGROUND_PROCTORING_ALERTS = false;
     const SHOW_TAB_FULLSCREEN_ALERTS = true;
-    /**
-     * Shared ref updated by InterviewRoomContent whenever a candidate transcript
-     * segment arrives from Deepgram Nova-3. MouseProctoring reads this to
-     * calculate candidate-silence windows for cross-signal correlation.
-     */
-    const lastCandidateTranscriptAtRef = useRef<number | null>(null);
     const searchParams = useSearchParams();
     const interviewToken = searchParams.get("token") || "";
     const requireInterviewToken = isInterviewTokenRequired();
     const isTabSwitchEnabled = Boolean(proctoringSignals.tab_switch);
-    const isFullscreenExitEnabled = Boolean(proctoringSignals.fullscreen_exit);
     const isCameraDisabledEnabled = Boolean(proctoringSignals.camera_disabled);
     const isMicrophoneDisabledEnabled = Boolean(proctoringSignals.microphone_disabled);
     const isConnectionLostEnabled = Boolean(proctoringSignals.connection_lost);
     const isFaceAbsenceEnabled = Boolean(proctoringSignals.face_absence);
     const isMultipleFacesEnabled = Boolean(proctoringSignals.multiple_faces);
-    const isGazeViolationEnabled = Boolean(proctoringSignals.gaze_violation);
-    const isHeadPoseViolationEnabled = Boolean(proctoringSignals.head_pose_violation);
     const isIdentityMismatchEnabled = Boolean(proctoringSignals.identity_mismatch);
-    const isMouseErraticEnabled = Boolean(proctoringSignals.mouse_erratic);
-    const isMouseSnapEnabled = Boolean(proctoringSignals.mouse_snap);
     const clearDelayedViolation = useCallback((ref: { current: number | null }) => {
         if (ref.current !== null) {
             window.clearTimeout(ref.current);
@@ -322,8 +304,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const handleFaceViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
         if (eventType === "face_absence" && !isFaceAbsenceEnabled) return;
         if (eventType === "multiple_faces" && !isMultipleFacesEnabled) return;
-        if (eventType === "gaze_violation" && !isGazeViolationEnabled) return;
-        if (eventType === "head_pose_violation" && !isHeadPoseViolationEnabled) return;
         if (eventType === "identity_mismatch" && !isIdentityMismatchEnabled) return;
         // 1. Keep the violation silent in the interview UI, but still record it.
         if (SHOW_BACKGROUND_PROCTORING_ALERTS) {
@@ -359,8 +339,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         interviewToken,
         isFaceAbsenceEnabled,
         isMultipleFacesEnabled,
-        isGazeViolationEnabled,
-        isHeadPoseViolationEnabled,
         isIdentityMismatchEnabled,
     ]);
     //  Hardware heartbeat violation handler 
@@ -401,7 +379,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const handleConnectionViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
         if (eventType === "connection_lost" && !isConnectionLostEnabled) return;
         // 1. Keep connection events silent in the interview UI, but still record them.
-        const displayMs = eventType === "connection_restored" ? 5000 : 8000;
+        const displayMs = severity === "high" ? 9000 : severity === "low" ? 5000 : 8000;
         if (SHOW_BACKGROUND_PROCTORING_ALERTS) {
             setConnectionAlert({ eventType, reason });
             if (connectionAlertTimerRef.current) clearTimeout(connectionAlertTimerRef.current);
@@ -423,44 +401,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             }),
         }).catch(() => { });
     }, [id, interviewToken, isConnectionLostEnabled]);
-    // -- Mouse violation handler (Deepgram Nova-3 cross-signal) -----------------
-    const handleMouseViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
-        if (eventType === "mouse_erratic" && !isMouseErraticEnabled) return;
-        if (eventType === "mouse_snap" && !isMouseSnapEnabled) return;
-        // Determine display duration by severity
-        const displayMs = severity === "high" ? 9000 : severity === "low" ? 5000 : 7000;
-        // 1. Keep the violation silent in the interview UI, but still record it.
-        if (SHOW_BACKGROUND_PROCTORING_ALERTS) {
-            setMouseViolationAlert({ eventType, reason, severity: severity ?? "medium" });
-            if (mouseViolationTimerRef.current) clearTimeout(mouseViolationTimerRef.current);
-            mouseViolationTimerRef.current = setTimeout(() => setMouseViolationAlert(null), displayMs);
-        }
-        // 2. Send to backend for audit trail
-        fetch("/api/interview/proctoring", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                applicationId: id,
-                interviewToken,
-                events: [{
-                    eventType,
-                    severity: severity ?? "medium",
-                    timestamp: Date.now(),
-                    reason,
-                }],
-            }),
-        }).catch(() => { });
-        // 3. Signal agent via data channel
-        const room = lkRoomRef.current;
-        if (room?.localParticipant) {
-            try {
-                const data = new TextEncoder().encode(
-                    JSON.stringify({ type: "mouse_proctoring_violation", eventType, severity, timestamp: Date.now() })
-                );
-                room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
-            } catch { }
-        }
-    }, [id, interviewToken, isMouseErraticEnabled, isMouseSnapEnabled]);
     // -- Generic Agent-Detected Violation handler (Syncs Agent events to Candidate UI) --
     const handleAgentDetectedViolation = useCallback((eventType: string, reason: string, severity?: string) => {
         // This is called when the Agent sends a 'proctoring_violation' packet over the data channel
@@ -806,13 +746,26 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             else clearDelayedViolation(tabViolationTimerRef);
         };
         const onWindowFocus = () => clearDelayedViolation(tabViolationTimerRef);
+        const onFullscreenChange = () => {
+            const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
+            if (!isFS) handleViolation();
+            else clearDelayedViolation(tabViolationTimerRef);
+        };
         document.addEventListener("visibilitychange", onVisibilityChange);
         window.addEventListener("blur", handleViolation);
         window.addEventListener("focus", onWindowFocus);
+        document.addEventListener("fullscreenchange", onFullscreenChange);
+        document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+        document.addEventListener("mozfullscreenchange", onFullscreenChange);
+        document.addEventListener("MSFullscreenChange", onFullscreenChange);
         return () => {
             document.removeEventListener("visibilitychange", onVisibilityChange);
             window.removeEventListener("blur", handleViolation);
             window.removeEventListener("focus", onWindowFocus);
+            document.removeEventListener("fullscreenchange", onFullscreenChange);
+            document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+            document.removeEventListener("mozfullscreenchange", onFullscreenChange);
+            document.removeEventListener("MSFullscreenChange", onFullscreenChange);
             clearDelayedViolation(tabViolationTimerRef);
         };
     }, [phase, id, clearDelayedViolation, isTabSwitchEnabled]);
@@ -820,65 +773,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         if (phase !== "completed" && phase !== "finalizing") return;
         void exitFullscreenMode();
     }, [phase, exitFullscreenMode]);
-    useEffect(() => {
-        if (phase !== "interview" || !isFullscreenExitEnabled) {
-            setIsFullscreenViolation(false);
-            clearDelayedViolation(fullscreenViolationTimerRef);
-            return;
-        }
-        const onFullscreenChange = () => {
-            const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
-            if (!isFS) {
-                if (fullscreenViolationTimerRef.current !== null) return;
-                fullscreenViolationTimerRef.current = window.setTimeout(() => {
-                    fullscreenViolationTimerRef.current = null;
-                    if (SHOW_TAB_FULLSCREEN_ALERTS) {
-                        setIsFullscreenViolation(true);
-                    }
-                    // Telemetry
-                    fetch("/api/interview/proctoring", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            applicationId: id,
-                            interviewToken: interviewToken,
-                            events: [{
-                                eventType: "fullscreen_exit",
-                                severity: "high",
-                                timestamp: Date.now(),
-                                reason: "Manually Exited Fullscreen"
-                            }]
-                        })
-                    }).catch(() => { });
-                    const room = lkRoomRef.current;
-                    if (room?.localParticipant) {
-                        const encoder = new TextEncoder();
-                        const data = encoder.encode(JSON.stringify({
-                            type: "candidate_out_of_screen",
-                            timestamp: Date.now()
-                        }));
-                        room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
-                    }
-                }, 250);
-            } else {
-                setIsFullscreenViolation(false);
-                clearDelayedViolation(fullscreenViolationTimerRef);
-            }
-        };
-        document.addEventListener("fullscreenchange", onFullscreenChange);
-        document.addEventListener("webkitfullscreenchange", onFullscreenChange);
-        document.addEventListener("mozfullscreenchange", onFullscreenChange);
-        document.addEventListener("MSFullscreenChange", onFullscreenChange);
-        // Immediate check on start
-        onFullscreenChange();
-        return () => {
-            document.removeEventListener("fullscreenchange", onFullscreenChange);
-            document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
-            document.removeEventListener("mozfullscreenchange", onFullscreenChange);
-            document.removeEventListener("MSFullscreenChange", onFullscreenChange);
-            clearDelayedViolation(fullscreenViolationTimerRef);
-        };
-    }, [phase, id, clearDelayedViolation, isFullscreenExitEnabled]);
     useEffect(() => {
         if (!isInterviewLocked) return;
         const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -1063,7 +957,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         interviewToken={interviewToken}
                         isActive={phase === "interview"}
                         referenceSnapshotUrl={referenceSnapshotUrl}
-                        lastCandidateTranscriptAtRef={lastCandidateTranscriptAtRef}
                         onViolation={handleFaceViolation}
                     />
                     {(isCameraDisabledEnabled || isMicrophoneDisabledEnabled) && (
@@ -1120,10 +1013,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             onRemoteAgentAudioTrack={handleRemoteAgentAudioTrack}
                             onRoomReady={(room) => { lkRoomRef.current = room; }}
                             candidateName={candidateDisplayName}
-                            onCandidateTranscript={() => {
-                                // Deepgram Nova-3 fired a candidate segment - update silence clock
-                                lastCandidateTranscriptAtRef.current = Date.now();
-                            }}
                             onAgentDetectedViolation={handleAgentDetectedViolation}
                             setSupportDialogOpen={setSupportDialogOpen}
                             setInstructionsDialogOpen={setInstructionsDialogOpen}
@@ -1174,39 +1063,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                     className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black uppercase tracking-widest py-6 rounded-2xl shadow-[0_10px_20px_-10px_rgba(249,115,22,0.5)] transition-all active:scale-95"
                                 >
                                     I Understand & Continue
-                                </Button>
-                                <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                                    Incident logged for review
-                                </div>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-            <AnimatePresence>
-                {SHOW_TAB_FULLSCREEN_ALERTS && isFullscreenViolation && phase === "interview" && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[210] bg-zinc-950/90 backdrop-blur-sm flex items-center justify-center p-6"
-                    >
-                        <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-6">
-                            <div className="mx-auto w-20 h-20 rounded-2xl bg-orange-500/10 flex items-center justify-center">
-                                <Zap className="w-10 h-10 text-orange-500" />
-                            </div>
-                            <div className="space-y-2">
-                                <h2 className="text-2xl font-black text-white uppercase tracking-tight">Fullscreen Required</h2>
-                                <p className="text-zinc-400 text-sm font-medium leading-relaxed">
-                                    The interview must be conducted in fullscreen mode for security and integrity purposes.
-                                </p>
-                            </div>
-                            <div className="pt-4 flex flex-col gap-3">
-                                <Button
-                                    onClick={requestFullscreenMode}
-                                    className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black uppercase tracking-widest py-6 rounded-2xl shadow-[0_10px_20px_-10px_rgba(249,115,22,0.5)] transition-all active:scale-95"
-                                >
-                                    Re-enter Fullscreen
                                 </Button>
                                 <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
                                     Incident logged for review
@@ -1288,104 +1144,16 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         exit={{ opacity: 0, y: -40 }}
                         className="fixed top-64 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
                     >
-                        <div className={`flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border ${connectionAlert.eventType === "connection_restored"
-                            ? "border-green-500/30"
-                            : "border-blue-500/30"
-                            }`}>
-                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${connectionAlert.eventType === "connection_restored"
-                                ? "bg-green-500/10"
-                                : "bg-blue-500/10"
-                                }`}>
-                                <WifiOff className={`w-4 h-4 ${connectionAlert.eventType === "connection_restored"
-                                    ? "text-green-400"
-                                    : "text-blue-400"
-                                    }`} />
+                        <div className="flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border border-blue-500/30">
+                            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-blue-500/10">
+                                <WifiOff className="w-4 h-4 text-blue-400" />
                             </div>
                             <div>
-                                <p className={`text-[10px] font-black uppercase tracking-widest ${connectionAlert.eventType === "connection_restored"
-                                    ? "text-green-400"
-                                    : "text-blue-400"
-                                    }`}>
-                                    {connectionAlert.eventType === "connection_restored" ? "Connection Restored" : "Connection Issue"}
+                                <p className="text-[10px] font-black uppercase tracking-widest text-blue-400">
+                                    Connection Issue
                                 </p>
                                 <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
                                     {connectionAlert.reason}
-                                </p>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-            {/* -- Behavior / Clipboard Violation Alert -- */}
-            <AnimatePresence>
-                {SHOW_BACKGROUND_PROCTORING_ALERTS && mouseViolationAlert && mouseViolationAlert.eventType === "behavior_flag" && phase === "interview" && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -40 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -40 }}
-                        className="fixed top-72 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
-                    >
-                        <div className="flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border border-orange-500/40">
-                            <div className="w-8 h-8 rounded-xl bg-orange-500/10 flex items-center justify-center shrink-0">
-                                <Zap className="w-4 h-4 text-orange-400" />
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-orange-400">Behavioral Flag</p>
-                                <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
-                                    {mouseViolationAlert.reason}
-                                </p>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-            {/* -- Mouse Proctoring Violation Alert (Deepgram Nova-3 correlated) -- */}
-            <AnimatePresence>
-                {SHOW_BACKGROUND_PROCTORING_ALERTS && mouseViolationAlert && mouseViolationAlert.eventType !== "behavior_flag" && phase === "interview" && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -40 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -40 }}
-                        className="fixed top-72 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
-                    >
-                        <div className={`flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md rounded-2xl px-5 py-3 shadow-2xl max-w-sm border ${mouseViolationAlert.severity === "high"
-                            ? "border-red-500/40"
-                            : mouseViolationAlert.severity === "low"
-                                ? "border-zinc-500/30"
-                                : "border-purple-500/30"
-                            }`}>
-                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${mouseViolationAlert.severity === "high"
-                                ? "bg-red-500/10"
-                                : mouseViolationAlert.severity === "low"
-                                    ? "bg-zinc-500/10"
-                                    : "bg-purple-500/10"
-                                }`}>
-                                <MousePointer2 className={`w-4 h-4 ${mouseViolationAlert.severity === "high"
-                                    ? "text-red-400"
-                                    : mouseViolationAlert.severity === "low"
-                                        ? "text-zinc-400"
-                                        : "text-purple-400"
-                                    }`} />
-                            </div>
-                            <div>
-                                <p className={`text-[10px] font-black uppercase tracking-widest ${mouseViolationAlert.severity === "high"
-                                    ? "text-red-400"
-                                    : mouseViolationAlert.severity === "low"
-                                        ? "text-zinc-400"
-                                        : "text-purple-400"
-                                    }`}>
-                                    {mouseViolationAlert.eventType === "mouse_erratic"
-                                        ? "Erratic Mouse Activity"
-                                        : mouseViolationAlert.eventType === "mouse_snap"
-                                            ? "Unnatural Mouse Snap"
-                                            : "Cursor Anomaly Detected"}
-                                </p>
-                                <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
-                                    {/* Strip the Deepgram note for display brevity if present */}
-                                    {mouseViolationAlert.reason.split(" [Deepgram")[0]}
-                                    {mouseViolationAlert.severity === "high" && (
-                                        <span className="ml-1 text-red-400">* Deepgram Nova-3 corroborated</span>
-                                    )}
                                 </p>
                             </div>
                         </div>
@@ -1546,7 +1314,6 @@ function InterviewRoomContent({
     onAgentReady,
     onRoomReady,
     candidateName,
-    onCandidateTranscript,
     onAgentDetectedViolation,
     setSupportDialogOpen,
     setInstructionsDialogOpen,
@@ -1566,11 +1333,8 @@ function InterviewRoomContent({
     onRoomReady?: (room: Room) => void,
     candidateName?: string;
     /**
-     * Called by InterviewRoomContent each time Deepgram Nova-3 emits a
-     * candidate transcript segment. The parent uses this to track silence
-     * windows for MouseProctoring cross-signal correlation.
+     * Candidate name shown in the interview room.
      */
-    onCandidateTranscript?: () => void;
     onAgentDetectedViolation?: (eventType: string, reason: string, severity?: string) => void;
     setSupportDialogOpen: (open: boolean) => void;
     setInstructionsDialogOpen: (open: boolean) => void;
@@ -2085,22 +1849,6 @@ function InterviewRoomContent({
         }
         return groups.filter(g => !g.isCandidate);
     }, [sanitizeTranscriptText, transcriptions, localIdentity]);
-    // -- Deepgram Nova-3 -> Mouse cross-signal: ping parent on candidate speech --
-    // Fires whenever a new transcript segment from the candidate arrives, resetting
-    // the silence window that MouseProctoring uses for cross-signal correlation.
-    const prevTranscriptCountRef = useRef(0);
-    useEffect(() => {
-        if (!onCandidateTranscript) return;
-        let candidateSegments = 0;
-        for (const seg of transcriptions as TranscriptionSegment[]) {
-            const identity = seg.participantInfo?.identity || "";
-            if (identity === localIdentity && sanitizeTranscriptText(seg.text)) candidateSegments++;
-        }
-        if (candidateSegments > prevTranscriptCountRef.current) {
-            onCandidateTranscript();
-        }
-        prevTranscriptCountRef.current = candidateSegments;
-    }, [sanitizeTranscriptText, transcriptions, localIdentity, onCandidateTranscript]);
     // Ensure camera is explicitly enabled when interview becomes active
     useEffect(() => {
         if (isInterviewActive && localParticipant && !localParticipant.isCameraEnabled) {

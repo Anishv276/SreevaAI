@@ -80,7 +80,7 @@ Skills Covered
 **Needs**:
 - ✅ Keep: Total count
 - ✅ Add: Severity breakdown (critical, medium, low)
-- ✅ Add: Type of alerts (tab switch, face detection, audio issue, etc.)
+- ✅ Add: Type of alerts (tab switch, face detection, etc.)
 - ✅ Add: Visual severity indicator
 - ✅ Color code by severity: Red=Critical, Orange=Medium, Yellow=Low
 

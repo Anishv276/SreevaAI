@@ -5,14 +5,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 type SignalKey =
   | "tab_switch"
-  | "fullscreen_exit"
   | "camera_disabled"
   | "microphone_disabled"
   | "connection_lost"
   | "face_absence"
   | "multiple_faces"
-  | "gaze_violation"
-  | "head_pose_violation"
   | "identity_mismatch"
   | "ownership_ambiguity"
   | "example_evasion"
@@ -24,11 +21,7 @@ type SignalKey =
   | "follow_up_collapse"
   | "contradiction"
   | "contradiction_resolved"
-  | "meta_question"
-  | "mouse_erratic"
-  | "mouse_snap"
   | "duplicate_ip"
-  | "connection_restored"
   | "depth_decay"
   | "complexity_latency_mismatch";
 
@@ -46,9 +39,7 @@ const SIGNAL_GROUPS: Group[] = [
     description: "Signals that show the candidate is leaving the test or switching environments.",
     items: [
       { key: "tab_switch", label: "Tab Switch" },
-      { key: "fullscreen_exit", label: "Fullscreen Exit" },
       { key: "connection_lost", label: "Connection Lost" },
-      { key: "connection_restored", label: "Connection Restored" },
       { key: "duplicate_ip", label: "Duplicate IP" },
     ],
   },
@@ -58,8 +49,6 @@ const SIGNAL_GROUPS: Group[] = [
     items: [
       { key: "camera_disabled", label: "Camera Disabled" },
       { key: "microphone_disabled", label: "Microphone Disabled" },
-      { key: "mouse_erratic", label: "Mouse Erratic" },
-      { key: "mouse_snap", label: "Mouse Snap" },
     ],
   },
   {
@@ -68,8 +57,6 @@ const SIGNAL_GROUPS: Group[] = [
     items: [
       { key: "face_absence", label: "Face Absence" },
       { key: "multiple_faces", label: "Multiple Faces" },
-      { key: "gaze_violation", label: "Gaze Violation" },
-      { key: "head_pose_violation", label: "Head Pose Violation" },
       { key: "identity_mismatch", label: "Identity Mismatch" },
     ],
   },
@@ -99,7 +86,6 @@ const SIGNAL_GROUPS: Group[] = [
       { key: "follow_up_collapse", label: "Follow-Up Collapse" },
       { key: "contradiction", label: "Contradiction" },
       { key: "contradiction_resolved", label: "Contradiction Resolved" },
-      { key: "meta_question", label: "Meta Question" },
       { key: "depth_decay", label: "Depth Decay" },
       { key: "complexity_latency_mismatch", label: "Complexity Latency Mismatch" },
     ],

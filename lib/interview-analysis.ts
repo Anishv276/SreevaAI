@@ -212,7 +212,7 @@ Guidelines:
    - Example (BAD): "Confidence level was medium"
 
    INTEGRITY FLAGS & PROCTORING SIGNALS:
-   - Correlate proctoring signals (tab switches, face detection, audio issues) with answer quality/topics
+   - Correlate proctoring signals (tab switches, face detection issues) with answer quality/topics
    - Behavioral red flags: Evasion, repeated inability to provide examples, inconsistent stories
    - Example (GOOD): "Checked browser tabs 7 times during technical questions (claimed areas of expertise), but 0 times during behavioral questions. Pattern suggests looking up answers for weak areas."
    - Example (BAD): "Tab switching detected"

@@ -18,7 +18,6 @@ class SignalFlags(TypedDict):
     latency_mismatch: bool           # answer is unnaturally compressed on a follow-up
     contradiction: bool              # conflicts with prior answer or resume claim
     follow_up_collapse: bool         # depth dropped sharply from first to follow-up answer
-    meta_question: bool              # candidate is checking if Ishita is a bot or if she's present
     depth_decay: bool                # cross-topic quality degradation across rolling window of turns
     complexity_latency_mismatch: bool  # inverted timing pattern — hard Q instant, easy Q slow
     ownership_clarified: bool        # recovery: candidate clarified personal ownership after ambiguity
@@ -141,14 +140,6 @@ _SHORT_UTTERANCE_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
         re.compile(r"^\s*(?:sorry\?|what\?|huh\?|pardon\?)\s*$", re.IGNORECASE),
     ),
 }
-_META_QUESTION_PATTERNS = (
-    re.compile(r"\bcan you hear me\b", re.IGNORECASE),
-    re.compile(r"\bhear me\b", re.IGNORECASE),
-    re.compile(r"\bare you there\b", re.IGNORECASE),
-    re.compile(r"\bare you a bot\b", re.IGNORECASE),
-    re.compile(r"\bdo you know me\b", re.IGNORECASE),
-    re.compile(r"\bhave any idea\b", re.IGNORECASE),
-)
 def _detect_ownership_ambiguity_event(
     answer: str,
     last_question: str,
@@ -544,29 +535,6 @@ def _detect_complexity_latency_mismatch_event(
             recruiter_visible=True,
         )
     return None
-def _detect_meta_question_event(
-    answer: str,
-    last_question: str,
-    current_depth: float,
-    prior_depth_scores: list[float],
-    topic_follow_up_count: int,
-    contradiction_detected: bool,
-) -> Optional[SignalEvent]:
-    del last_question, current_depth, prior_depth_scores, topic_follow_up_count, contradiction_detected
-    a_lower = answer.lower()
-    if not any(pattern.search(a_lower) for pattern in _META_QUESTION_PATTERNS):
-        return None
-    return _build_signal_event(
-        signal_name="meta_question",
-        signal_layer="rapport_repair",
-        confidence=0.91,
-        evidence="candidate asked a meta-checking question about presence, identity, or bot-ness",
-        trust_bucket_affected="rapport_repair",
-        score_delta=0.0,
-        probe_mode="rapport",
-        recoverable=True,
-        recruiter_visible=False,
-    )
 def detect_signal_events(
     *,
     candidate_answer: str,
@@ -608,7 +576,6 @@ def detect_signal_events(
         "latency_mismatch": _detect_latency_mismatch_event,
         "follow_up_collapse": _collapse_detector,
         "contradiction": _detect_contradiction_event,
-        "meta_question": _detect_meta_question_event,
         "depth_decay": _decay_detector,
         "complexity_latency_mismatch": _clm_detector,
         "ownership_clarified": _ownership_clarified_detector,
@@ -639,7 +606,6 @@ def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
         latency_mismatch="latency_mismatch" in names,
         contradiction="contradiction" in names,
         follow_up_collapse="follow_up_collapse" in names,
-        meta_question="meta_question" in names,
         depth_decay="depth_decay" in names,
         complexity_latency_mismatch="complexity_latency_mismatch" in names,
         ownership_clarified="ownership_clarified" in names,

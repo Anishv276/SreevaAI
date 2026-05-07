@@ -62,7 +62,6 @@ _TURN_DELTAS = {
 _PROCTOR_DELTAS = {
     "tab_switch":          -0.03,
     "face_absent":         -0.03,
-    "gaze_violation":       0.00,
     "multiple_faces":      -0.15,
     "contradiction_detected": -0.10,
     "answer_depth_surface":-0.02,

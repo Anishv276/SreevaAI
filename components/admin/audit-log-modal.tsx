@@ -38,14 +38,9 @@ interface AuditLogModalProps {
 const EVENT_LABELS: Record<string, string> = {
     face_absence: "Face Absence",
     multiple_faces: "Multiple Faces",
-    gaze_violation: "Gaze off-screen",
-    head_pose_violation: "Head Pose Deviation",
     identity_mismatch: "Identity Mismatch",
-    audio_flag: "Background Audio",
     tab_switch: "Tab Switch",
-    fullscreen_exit: "Fullscreen Exit",
     connection_lost: "Connection Lost",
-    connection_restored: "Connection Restored",
     camera_disabled: "Camera Disabled",
     microphone_disabled: "Microphone Disabled"
 };

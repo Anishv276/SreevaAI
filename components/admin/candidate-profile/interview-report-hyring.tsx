@@ -527,7 +527,6 @@ function _formatSignalSummary(signal: any): string {
     example_given: "Initially gave theoretical answer but provided concrete example when asked",
     contradiction: "Candidate made conflicting statements about a verifiable fact — needs recruiter review",
     contradiction_resolved: "Candidate clarified and resolved a contradiction convincingly when probed",
-    meta_question: "Candidate checked if interviewer could hear them — no integrity concern, informational only",
     depth_decay: "Answer quality declined progressively across topics — may indicate fatigue or rehearsed early answers",
   };
 

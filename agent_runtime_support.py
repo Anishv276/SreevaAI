@@ -135,7 +135,6 @@ _TOOL_ALIAS_CATALOG: dict[str, list[str]] = {
 PROCTORING_WEIGHTS: dict[str, int] = {
     "tab_switch": 5,
     "face_absent": 3,
-    "gaze_violation": 0,
     "multiple_faces": 30,
 }
 _COMPOSITE_RISK_WEIGHTS = {

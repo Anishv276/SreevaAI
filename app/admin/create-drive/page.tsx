@@ -388,6 +388,14 @@ function CreateDriveForm() {
           return;
         }
         console.log("Analysis success:", extracted);
+        const extractedDescriptionCandidate = (extracted?.role_summary || text || "").trim();
+        const extractedDescriptionWordCount = countWords(extractedDescriptionCandidate);
+        if (extractedDescriptionCandidate && extractedDescriptionWordCount < MIN_JD_WORDS) {
+          setAnalysisError(
+            `Extracted JD is only ${extractedDescriptionWordCount} words. Please provide at least ${MIN_JD_WORDS} words before continuing.`,
+          );
+          return;
+        }
         // Map extracted JD schema to form fields
         setFormData((prev: any) => {
           const experience = extracted?.experience;
@@ -408,7 +416,8 @@ function CreateDriveForm() {
             .map((s) => (s.startsWith("•") ? s : `• ${s}`))
             .join("\n");
           // Description: use role_summary, fallback to raw extracted text
-          const desc = extracted?.role_summary || text || prev.description;
+          const desc = extracted?.role_summary || text || prev.description || "";
+          const normalizedDescription = desc.trim();
           // Experience: convert to readable string e.g. "2+" or "2Ã¢â‚¬â€œ5"
           const minExp = experience?.min_years;
           const maxExp = experience?.max_years;
@@ -474,7 +483,7 @@ function CreateDriveForm() {
             ...prev,
             title: `${extracted?.job_title || prev.role || "New"} Recruitment Drive`,
             role: extracted?.job_title || prev.role || "",
-            description: desc,
+            description: normalizedDescription || desc,
             skills: allSkills || prev.skills,
             salary: salaryText,
             experience: expText,

@@ -96,7 +96,6 @@ _SIGNAL_TO_FAMILY = [
     ("example_evasion", "evidence"),
     ("latency_mismatch", "compression"),
     ("ownership_ambiguity", "ownership"),
-    ("meta_question", "rapport"),
     ("depth_decay", "normal"),
     ("complexity_latency_mismatch", "evidence"),
 ]
@@ -316,17 +315,6 @@ def build_directive(
             "If uncovered topics remain, bridge to the most important one now.",
             "Do not reference the quality decline to the candidate.",
         ])
-
-    if "meta_question" in active_signals:
-        lines.extend(
-            [
-                "META-QUESTION HANDLING: Respond as a human first.",
-                "Start with a brief, natural acknowledgment or reassurance.",
-                "Show that you remember who the candidate is and what they are talking about.",
-                "Do not pivot immediately into a fresh interview question.",
-                "If useful, bridge back only after the human acknowledgment is complete.",
-            ]
-        )
 
     if "ownership_ambiguity" in active_signals:
         lines.extend([

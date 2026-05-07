@@ -274,7 +274,6 @@ These signals are NOT yet fixed (25+ total signals exist):
 - depth_decay
 - complexity_latency_mismatch
 - contradiction
-- meta_question
 - And ~20 more...
 
 Can follow same pattern to fix remaining signals:

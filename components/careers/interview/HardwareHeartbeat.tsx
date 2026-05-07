@@ -104,7 +104,7 @@ interface HardwareHeartbeatProps {
 
   isActive: boolean;
 
-  /** Callback to parent - same signature as FaceProctoring / AudioProctoring */
+  /** Callback to parent - same signature as the other proctoring hooks */
 
   onViolation: (
 
@@ -438,7 +438,7 @@ export function HardwareHeartbeat({
 
         // width/height 1×1 and sampleRate 8000 minimise CPU overhead.
 
-        // echoCancellation:false keeps audio raw (mirrors AudioProctoring).
+        // echoCancellation:false keeps audio raw for detection.
 
         const stream = await navigator.mediaDevices.getUserMedia({
 

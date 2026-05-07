@@ -217,8 +217,6 @@ A: "Let me think... I started learning Python in 2019, so that's about... 5 year
 
 ---
 
-### 9. META_QUESTION
-- **Type**: Rapport repair (no penalty)
 - **Fires on**: Candidate asks meta-checking question about Ishita
   - "Can you hear me?"
   - "Are you there?"
@@ -290,12 +288,6 @@ _face_absent_streak = 2 (not applied to trust until streak >= 2)
 
 ---
 
-### 12. GAZE_VIOLATION
-- **Type**: Behavioral (low confidence)
-- **Detection**: Eye tracking detects candidate looking away from screen
-- **Trust impact**: 0.0 (no penalty, too noisy)
-- **Interview behavior**: Tracked but not weighted
-- **Weight in risk calculation**: 0
 - **Significance**: Candidate is human, sometimes looks away naturally
 
 ---
@@ -481,7 +473,6 @@ INTERVIEW FLOW:
     │ contradiction                           │
     │ depth_decay                             │
     │ complexity_latency_mismatch             │
-    │ meta_question                           │
     └─────────────┬────────────────────────────┘
                   │
                   ▼
@@ -553,7 +544,6 @@ evaluation_signal_toggles = {
     "contradiction": False,
     "depth_decay": False,
     "complexity_latency_mismatch": False,
-    "meta_question": False,
 }
 ```
 
@@ -599,7 +589,6 @@ evaluation_signal_toggles = {
     "contradiction": False,
     "depth_decay": False,
     "complexity_latency_mismatch": False,
-    "meta_question": False,
 }
 ```
 
@@ -806,7 +795,6 @@ evaluation_signal_toggles = {
     "contradiction": True,             # Enabled
     "depth_decay": True,               # Enabled
     "complexity_latency_mismatch": True, # Enabled
-    "meta_question": True,             # Enabled
 }
 ```
 
@@ -931,10 +919,8 @@ TRUST SCORE: Inflated by 0.36 points
 | 6 | contradiction | Proctoring | Toggle (disabled) | Conflict with resume/prior claim | -0.40 HI | Can't catch inconsistencies |
 | 7 | depth_decay | Proctoring | Toggle | Cross-topic quality drop ≥1.2 | -0.06/-0.12 IQ | Can't detect fatigue |
 | 8 | complexity_latency_mismatch | Proctoring | Toggle | Fast complex or slow simple timing | -0.14/-0.08 BC | Can't detect AI-assisted answers |
-| 9 | meta_question | Proctoring | Toggle | "Can you hear me?", "Are you a bot?" | 0.0 | Can't detect testing behavior |
 | 10 | tab_switch | Browser | Fixed | Tab switches detected | -0.03 HI | Can't track cheating behavior |
 | 11 | face_absent | Browser | Fixed | Face not in frame ≥1.2s | -0.03 HI | Can't track attention |
-| 12 | gaze_violation | Browser | Fixed | Eyes off screen (low confidence) | 0.0 | No impact anyway |
 | 13 | multiple_faces | Browser | Fixed | 2+ faces detected | -0.15 HI | **Can't catch collab cheating** |
 | 14 | deep_answer | Quality | Automatic | depth ≥ 7.5 | +0.04 IQ | Can't reward deep answers |
 | 15 | specific_answer | Quality | Automatic | overall ≥6, specificity ≥7 | +0.02 IQ | Can't reward details |

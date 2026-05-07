@@ -22,11 +22,7 @@
 
  *  2. Multiple faces      - > 1 face in frame
 
- *  3. Gaze violation      - iris looking left/right/up-off-screen for > 3 s
-
- *  4. Head pose violation - yaw/pitch deviation > threshold for > 3 s
-
- *  5. Identity mismatch   - face-aligned, grayscale, brightness-normalized
+ *  3. Identity mismatch   - face-aligned, grayscale, brightness-normalized
 
  *                           perceptual diff vs reference snapshot taken during
 
@@ -42,83 +38,9 @@ import type { FaceLandmarker, FaceLandmarkerResult } from "@mediapipe/tasks-visi
 
 
 
-//  Landmark indices (MediaPipe 478-point model) 
-
-// Iris   left eye:  468 (center), 469 R, 470 B, 471 L, 472 T
-
-// Iris  right eye:  473 (center), 474 R, 475 B, 476 L, 477 T
-
-// Eye corners (left):  33 outer, 133 inner
-
-// Eye corners (right): 362 inner, 263 outer
-
-// Nose tip:            4
-
-// Left ear:            454
-
-// Right ear:           234
-
-// Forehead (approx):   10
-
-// Chin (approx):       152
-
-
-
-const LEFT_IRIS_CENTER = 468;
-
-const RIGHT_IRIS_CENTER = 473;
-
-const LEFT_EYE_OUTER = 33;
-
-const LEFT_EYE_INNER = 133;
-
-const RIGHT_EYE_INNER = 362;
-
-const RIGHT_EYE_OUTER = 263;
-
-const NOSE_TIP = 4;
-
-const LEFT_EAR = 454;
-
-const RIGHT_EAR = 234;
-
-const FOREHEAD = 10;
-
-const CHIN = 152;
-
-
-
 //  Thresholds 
 
 const ABSENCE_GRACE_MS = 3_000;  // 3 s no face -> flag
-
-const GAZE_GRACE_MS = 3_500;  // require a longer sustained off-screen gaze before flagging
-
-const HEAD_POSE_GRACE_MS = 3_500;  // require a longer sustained head turn before flagging
-
-/** If transcript is updating recently, treat downward gaze/head tilt as normal reading. */
-const TRANSCRIPT_READING_SUPPRESSION_MS = 15_000;
-
-// Nose-offset thresholds (fraction of face width):
-
-//   |noseOffsetX| > GAZE_X_THRESHOLD  -> head turned left/right
-
-//   noseOffsetY  < GAZE_UP_THRESHOLD   -> head tilted up
-
-//   noseOffsetY  > GAZE_DOWN_THRESHOLD -> head tilted down
-
-const GAZE_X_THRESHOLD = 0.12;   // ~12% of face width off-center
-
-const GAZE_UP_THRESHOLD = -0.06;  // nose 6% above expected neutral Y
-
-const GAZE_DOWN_THRESHOLD = 0.14;  // nose 14% below expected neutral Y
-
-const YAW_THRESHOLD_DEG = 14;     // ~14° horizontal head turn (moderate)
-
-const PITCH_DOWN_THRESHOLD_DEG = 18;     // allow normal reading posture before flagging
-
-const PITCH_UP_THRESHOLD_DEG = 10;     // ~10° head looking up
-
 const DETECTION_INTERVAL_MS = 250;    // run detection 4 fps - fast enough for 3s grace
 
 const IDENTITY_CHECK_INTERVAL = 60_000; // face verify every 60 s throughout session
@@ -143,10 +65,6 @@ const COOLDOWNS: Record<string, number> = {
 
   multiple_faces: 8_000,  // re-alert every 8 s if extra face persists
 
-  gaze_violation: 30_000,
-
-  head_pose_violation: 30_000,
-
   identity_mismatch: 60_000,
 
 };
@@ -167,12 +85,6 @@ interface FaceProctoringProps {
 
   referenceSnapshotUrl: string | null;
 
-  /**
-   * Timestamp of the most recent candidate transcript segment.
-   * Used to suppress false gaze/head-pose flags while the candidate is reading the live transcript.
-   */
-  lastCandidateTranscriptAtRef?: React.RefObject<number | null>;
-
   /** Called whenever a violation is detected; parent handles UI + API call */
 
   onViolation: (eventType: string, reason: string, severity?: "low" | "medium" | "high") => void;
@@ -191,7 +103,6 @@ export function FaceProctoring({
 
   referenceSnapshotUrl,
 
-  lastCandidateTranscriptAtRef,
 
   onViolation,
 
@@ -218,14 +129,6 @@ export function FaceProctoring({
   // Absence tracking
 
   const absenceStartRef = useRef<number | null>(null);
-
-
-
-  // Sustained-violation timers
-
-  const gazeViolStartRef = useRef<number | null>(null);
-
-  const headPoseViolStartRef = useRef<number | null>(null);
 
 
 
@@ -280,137 +183,6 @@ export function FaceProctoring({
     onViolation(type, reason, severity);
 
   }, [canFire, onViolation]);
-
-
-  const getTranscriptRecencyMs = useCallback((): number => {
-    if (!lastCandidateTranscriptAtRef) return Number.POSITIVE_INFINITY;
-    const lastAt = lastCandidateTranscriptAtRef.current;
-    if (!lastAt) return Number.POSITIVE_INFINITY;
-    return Math.max(0, Date.now() - lastAt);
-  }, [lastCandidateTranscriptAtRef]);
-
-  //  Gaze classification (nose-offset - reliable, mirror-invariant) 
-
-  // Tracks where the NOSE TIP (lm 4) sits relative to the eye midpoint.
-
-  // This works perfectly for detecting head turns toward another screen/notes.
-
-  const classifyGaze = useCallback((landmarks: { x: number; y: number; z: number }[]): "center" | "left" | "right" | "up" | "down" => {
-
-    try {
-
-      const nose = landmarks[NOSE_TIP];        // 4
-
-      const leftOut = landmarks[LEFT_EYE_OUTER];  // 33
-
-      const rightOut = landmarks[RIGHT_EYE_OUTER]; // 263
-
-      const forehead = landmarks[FOREHEAD];        // 10
-
-      const chin = landmarks[CHIN];            // 152
-
-
-
-      // Horizontal: nose x offset from eye midpoint, normalised by face width
-
-      const eyeMidX = (leftOut.x + rightOut.x) / 2;
-
-      const faceWidth = Math.abs(leftOut.x - rightOut.x) || 0.1;
-
-      const noseOffsetX = (nose.x - eyeMidX) / faceWidth; // -0.5 to +0.5
-
-
-
-      // Vertical: nose y offset from neutral (~55% of face height)
-
-      const faceHeight = Math.abs(chin.y - forehead.y) || 0.1;
-
-      const neutralNoseY = forehead.y + faceHeight * 0.55;
-
-      const noseOffsetY = (nose.y - neutralNoseY) / faceHeight;
-
-
-
-      // Debug - open F12 DevTools -> Console to see live values
-
-      if (process.env.NODE_ENV !== "production") {
-
-        console.debug(`[Gaze] noseX=${noseOffsetX.toFixed(3)} noseY=${noseOffsetY.toFixed(3)} | xThr=±${GAZE_X_THRESHOLD}`);
-
-      }
-
-
-
-      if (noseOffsetY < GAZE_UP_THRESHOLD) return "up";
-
-      if (noseOffsetY > GAZE_DOWN_THRESHOLD) return "down";
-
-      if (Math.abs(noseOffsetX) > GAZE_X_THRESHOLD) return noseOffsetX > 0 ? "left" : "right";
-
-      return "center";
-
-    } catch {
-
-      return "center";
-
-    }
-
-  }, []);
-
-
-
-  //  Head pose calculation (simplified from landmarks) 
-
-  const classifyHeadPose = useCallback((landmarks: { x: number; y: number; z: number }[]): { yaw: number; pitch: number } => {
-
-    try {
-
-      const nose = landmarks[NOSE_TIP];
-
-      const leftEar = landmarks[LEFT_EAR];
-
-      const rightEar = landmarks[RIGHT_EAR];
-
-      const forehead = landmarks[FOREHEAD];
-
-      const chin = landmarks[CHIN];
-
-
-
-      // Yaw: asymmetry between nose and ear midpoint
-
-      const earMidX = (leftEar.x + rightEar.x) / 2;
-
-      const earSpan = Math.abs(rightEar.x - leftEar.x);
-
-      const yawNorm = earSpan < 0.001 ? 0 : (nose.x - earMidX) / earSpan;
-
-      const yaw = yawNorm * 90; // crude degree estimate
-
-
-
-      // Pitch: nose vertical position relative to forehead–chin span
-
-      const faceHeight = Math.abs(chin.y - forehead.y);
-
-      const noseRelY = faceHeight < 0.001 ? 0 : (nose.y - forehead.y) / faceHeight;
-
-      // When looking down noseRelY increases; normal ˜ 0.55
-
-      const pitch = (noseRelY - 0.55) * 100; // positive = looking down
-
-
-
-      return { yaw, pitch };
-
-    } catch {
-
-      return { yaw: 0, pitch: 0 };
-
-    }
-
-  }, []);
-
 
 
   //  Helpers: grayscale + brightness normalization 
@@ -747,12 +519,6 @@ export function FaceProctoring({
 
       }
 
-      // Reset other sustained timers
-
-      gazeViolStartRef.current = null;
-
-      headPoseViolStartRef.current = null;
-
       return;
 
     }
@@ -799,82 +565,7 @@ export function FaceProctoring({
 
 
 
-    //  3. Gaze Tracking 
-
-    const gazeDir = classifyGaze(landmarks);
-    const transcriptRecencyMs = getTranscriptRecencyMs();
-    const isReadingTranscript = transcriptRecencyMs <= TRANSCRIPT_READING_SUPPRESSION_MS;
-    const isTranscriptReadingDownward = isReadingTranscript && gazeDir === "down";
-
-    if (gazeDir !== "center" && !isTranscriptReadingDownward) {
-
-      if (!gazeViolStartRef.current) gazeViolStartRef.current = now;
-
-      if (now - gazeViolStartRef.current > GAZE_GRACE_MS) {
-
-        const dirLabel =
-
-          gazeDir === "left" ? "looking left (possible 2nd monitor or notes)" :
-
-            gazeDir === "right" ? "looking right (possible 2nd monitor or notes)" :
-
-              gazeDir === "up" ? "looking up off-screen" :
-
-                "looking down (possible phone or notes)";
-
-        fire("gaze_violation", `Candidate ${dirLabel} for >${GAZE_GRACE_MS / 1000}s`, "medium");
-
-      }
-
-    } else {
-
-      gazeViolStartRef.current = null;
-
-    }
-
-
-
-    //  4. Head Pose 
-
-    const { yaw, pitch } = classifyHeadPose(landmarks);
-
-    const isHeadPoseViolation =
-
-      Math.abs(yaw) > YAW_THRESHOLD_DEG ||
-
-      pitch > PITCH_DOWN_THRESHOLD_DEG ||
-
-      pitch < -PITCH_UP_THRESHOLD_DEG;
-
-    const isReadingPosture = isReadingTranscript && (gazeDir === "down" || pitch > 0);
-
-    if (isHeadPoseViolation && !isReadingPosture) {
-
-      if (!headPoseViolStartRef.current) headPoseViolStartRef.current = now;
-
-      if (now - headPoseViolStartRef.current > HEAD_POSE_GRACE_MS) {
-
-        let reason = "";
-
-        if (Math.abs(yaw) > YAW_THRESHOLD_DEG) reason = `Head turned ${yaw > 0 ? "right" : "left"} (yaw ${yaw.toFixed(0)}°)`;
-
-        else if (pitch > PITCH_DOWN_THRESHOLD_DEG) reason = `Looking down - possible phone/notes (pitch ${pitch.toFixed(0)}°)`;
-
-        else reason = `Head tilted up off-screen (pitch ${pitch.toFixed(0)}°)`;
-
-        fire("head_pose_violation", reason, "medium");
-
-      }
-
-    } else {
-
-      headPoseViolStartRef.current = null;
-
-    }
-
-
-
-    //  5. Periodic Identity Verification 
+    //  3. Periodic Identity Verification 
 
     // Runs every 60 s for the entire interview session (no arbitrary cap).
 
@@ -940,16 +631,7 @@ export function FaceProctoring({
 
     }
 
-  }, [
-    classifyGaze,
-    classifyHeadPose,
-    verifyIdentity,
-    fire,
-    referenceSnapshotUrl,
-    cropAndResize,
-    toNormalisedGrayscale,
-    getTranscriptRecencyMs,
-  ]);
+  }, [verifyIdentity, fire, referenceSnapshotUrl, cropAndResize, toNormalisedGrayscale]);
 
 
 

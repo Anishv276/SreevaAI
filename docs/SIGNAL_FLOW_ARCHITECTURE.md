@@ -12,7 +12,6 @@
   - `_detect_follow_up_collapse_event()` — sharp depth drop (6.0 → ≤3.0)
   - `_detect_latency_mismatch_event()` — follow-up compressed to <42 words
   - `_detect_contradiction_event()` — fact conflicts detected
-  - `_detect_meta_question_event()` — candidate asks "are you there?"
   - `_detect_depth_decay_event()` — cross-topic quality decline
   - `_detect_complexity_latency_mismatch_event()` — complex Q fast or simple Q slow
   - `_detect_ownership_clarified_event()` — **RECOVERY**: personal "I" + ownership terms

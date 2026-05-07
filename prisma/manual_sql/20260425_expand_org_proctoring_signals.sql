@@ -1,7 +1,7 @@
 -- Ensure the proctoringSignals default includes all managed signal toggles.
 ALTER TABLE "Organization"
   ALTER COLUMN "proctoringSignals"
-  SET DEFAULT '{"tab_switch":true,"fullscreen_exit":true,"camera_disabled":true,"microphone_disabled":true,"connection_lost":true,"connection_restored":true,"audio_flag":true,"duplicate_ip":true,"face_absence":true,"multiple_faces":true,"gaze_violation":true,"head_pose_violation":true,"identity_mismatch":true,"ownership_ambiguity":true,"example_evasion":true,"latency_mismatch":true,"resume_claim_mismatch":true,"ownership_clarified":true,"example_given":true,"strong_under_pressure":true,"follow_up_collapse":true,"contradiction":true,"contradiction_resolved":true,"meta_question":true}'::jsonb;
+  SET DEFAULT '{"tab_switch":true,"camera_disabled":true,"microphone_disabled":true,"connection_lost":true,"duplicate_ip":true,"face_absence":true,"multiple_faces":true,"identity_mismatch":true,"ownership_ambiguity":true,"example_evasion":true,"latency_mismatch":true,"resume_claim_mismatch":true,"ownership_clarified":true,"example_given":true,"strong_under_pressure":true,"follow_up_collapse":true,"contradiction":true,"contradiction_resolved":true}'::jsonb;
 
 -- Backfill missing keys on existing rows without overriding existing values.
 UPDATE "Organization"
@@ -9,20 +9,8 @@ SET "proctoringSignals" = jsonb_set(COALESCE("proctoringSignals", '{}'::jsonb), 
 WHERE "proctoringSignals" IS NULL OR NOT ("proctoringSignals" ? 'tab_switch');
 
 UPDATE "Organization"
-SET "proctoringSignals" = jsonb_set(COALESCE("proctoringSignals", '{}'::jsonb), '{connection_restored}', COALESCE("proctoringSignals"->'connection_restored', 'true'::jsonb), true)
-WHERE "proctoringSignals" IS NULL OR NOT ("proctoringSignals" ? 'connection_restored');
-
-UPDATE "Organization"
-SET "proctoringSignals" = jsonb_set(COALESCE("proctoringSignals", '{}'::jsonb), '{audio_flag}', COALESCE("proctoringSignals"->'audio_flag', 'true'::jsonb), true)
-WHERE "proctoringSignals" IS NULL OR NOT ("proctoringSignals" ? 'audio_flag');
-
-UPDATE "Organization"
 SET "proctoringSignals" = jsonb_set(COALESCE("proctoringSignals", '{}'::jsonb), '{duplicate_ip}', COALESCE("proctoringSignals"->'duplicate_ip', 'true'::jsonb), true)
 WHERE "proctoringSignals" IS NULL OR NOT ("proctoringSignals" ? 'duplicate_ip');
-
-UPDATE "Organization"
-SET "proctoringSignals" = jsonb_set(COALESCE("proctoringSignals", '{}'::jsonb), '{fullscreen_exit}', COALESCE("proctoringSignals"->'fullscreen_exit', 'true'::jsonb), true)
-WHERE "proctoringSignals" IS NULL OR NOT ("proctoringSignals" ? 'fullscreen_exit');
 
 UPDATE "Organization"
 SET "proctoringSignals" = jsonb_set(COALESCE("proctoringSignals", '{}'::jsonb), '{camera_disabled}', COALESCE("proctoringSignals"->'camera_disabled', 'true'::jsonb), true)
@@ -43,14 +31,6 @@ WHERE "proctoringSignals" IS NULL OR NOT ("proctoringSignals" ? 'face_absence');
 UPDATE "Organization"
 SET "proctoringSignals" = jsonb_set(COALESCE("proctoringSignals", '{}'::jsonb), '{multiple_faces}', COALESCE("proctoringSignals"->'multiple_faces', 'true'::jsonb), true)
 WHERE "proctoringSignals" IS NULL OR NOT ("proctoringSignals" ? 'multiple_faces');
-
-UPDATE "Organization"
-SET "proctoringSignals" = jsonb_set(COALESCE("proctoringSignals", '{}'::jsonb), '{gaze_violation}', COALESCE("proctoringSignals"->'gaze_violation', 'true'::jsonb), true)
-WHERE "proctoringSignals" IS NULL OR NOT ("proctoringSignals" ? 'gaze_violation');
-
-UPDATE "Organization"
-SET "proctoringSignals" = jsonb_set(COALESCE("proctoringSignals", '{}'::jsonb), '{head_pose_violation}', COALESCE("proctoringSignals"->'head_pose_violation', 'true'::jsonb), true)
-WHERE "proctoringSignals" IS NULL OR NOT ("proctoringSignals" ? 'head_pose_violation');
 
 UPDATE "Organization"
 SET "proctoringSignals" = jsonb_set(COALESCE("proctoringSignals", '{}'::jsonb), '{identity_mismatch}', COALESCE("proctoringSignals"->'identity_mismatch', 'true'::jsonb), true)
@@ -97,5 +77,3 @@ SET "proctoringSignals" = jsonb_set(COALESCE("proctoringSignals", '{}'::jsonb), 
 WHERE "proctoringSignals" IS NULL OR NOT ("proctoringSignals" ? 'contradiction_resolved');
 
 UPDATE "Organization"
-SET "proctoringSignals" = jsonb_set(COALESCE("proctoringSignals", '{}'::jsonb), '{meta_question}', COALESCE("proctoringSignals"->'meta_question', 'true'::jsonb), true)
-WHERE "proctoringSignals" IS NULL OR NOT ("proctoringSignals" ? 'meta_question');

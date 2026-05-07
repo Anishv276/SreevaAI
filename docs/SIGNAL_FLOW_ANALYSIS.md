@@ -376,12 +376,8 @@ Contradiction event fired with score_delta = -0.40 (highest penalty)
 
 ---
 
-## Signal 7: META_QUESTION
-
 **What it detects:**
 Candidate asks "Can you hear me?", "Are you there?", "Are you a bot?", checking if Ishita is real or testing the system.
-
-**Detection Code:** `_detect_meta_question_event()` (line 643)
 
 **Firing Rules:**
 ```python
@@ -609,7 +605,6 @@ def route(
 | example_evasion | PROBE | evidence | Ask for concrete example |
 | latency_mismatch | PROBE | compression | Ask for step-by-step |
 | ownership_ambiguity | PROBE | ownership | Ask "what did YOU do?" |
-| meta_question | PROBE | rapport | Reassure, continue |
 | depth_decay | PROBE | depth | Ask deeper ❌ **WRONG** |
 | complexity_latency_mismatch | PROBE | evidence | Ask for proof |
 

@@ -12,7 +12,6 @@
  * Events it listens to (from LiveKit's RoomEvent enum):
  * 
  *  RoomEvent.Reconnecting        - socket dropped, attempting to reconnect
- *  RoomEvent.Reconnected         - reconnection succeeded
  *  RoomEvent.Disconnected        - permanent disconnect (server closed room,
  *                                  token expired, or network unrecoverable)
  *  RoomEvent.ConnectionQualityChanged - quality changed for local participant
@@ -21,20 +20,16 @@
  * Proctoring signals produced:
  * 
  *  connection_lost      severity: medium  (temporary drop, reconnecting)
- *  connection_restored  severity: low     (successfully reconnected)
  *  connection_lost      severity: high    (permanent disconnect)
  *
  * Why this matters for recruiters:
  * 
- *  • A genuine internet outage produces:  connection_lost -> connection_restored
- *    -> recruiter sees LOW/MEDIUM flag - not suspicious.
- *
  *  • A candidate who force-closes the browser to cheat produces:  connection_lost
  *    with NO restoration - recruiter sees an UNRESOLVED HIGH flag next to the
  *    other proctoring violations.
  *
- *  • The timestamp delta between lost/restored shows the exact outage duration,
- *    giving the recruiter the full picture.
+ *  • We only log connection_lost events, with severity based on whether the
+ *    disconnect is temporary or permanent.
  */
 
 import { useEffect, useRef, useCallback } from "react";
@@ -77,8 +72,6 @@ export function ConnectionProctoring({
   //  State refs 
   const mountedRef            = useRef(false);
   const isActiveRef           = useRef(isActive);
-  const reconnectingTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const disconnectStartRef    = useRef<number | null>(null);  // timestamp of last connection_lost
   const lastLostFiredRef      = useRef(0);
   const poorCountRef          = useRef(0);
   const lastQualityFiredRef   = useRef(0);
@@ -106,12 +99,7 @@ export function ConnectionProctoring({
       if (!isActiveRef.current || !mountedRef.current) return;
       if (!canFireLost()) return;
 
-      // Record when the drop started (used to compute duration on restore)
-      disconnectStartRef.current = Date.now();
-
-      reconnectingTimerRef.current = setTimeout(() => {
-        reconnectingTimerRef.current = null;
-        // Only fire if we're STILL reconnecting (not already recovered)
+      setTimeout(() => {
         if (!isActiveRef.current || !mountedRef.current) return;
         lastLostFiredRef.current = Date.now();
         onViolation(
@@ -125,53 +113,11 @@ export function ConnectionProctoring({
       }, RECONNECTING_GRACE_MS);
     };
 
-    //  Handler: Reconnected 
-    // LiveKit fires this when the WebSocket is restored.
-    const onReconnected = () => {
-      if (!isActiveRef.current || !mountedRef.current) return;
-
-      // Cancel the grace timer - if it hadn't fired yet, the blip was too
-      // short to matter and we log NOTHING (no lost, no restored).
-      if (reconnectingTimerRef.current) {
-        clearTimeout(reconnectingTimerRef.current);
-        reconnectingTimerRef.current = null;
-        disconnectStartRef.current = null;
-        if (process.env.NODE_ENV !== "production") {
-          console.debug("[ConnectionProctoring] Reconnected within grace - no event logged");
-        }
-        return;
-      }
-
-      // If the lost event DID fire, compute the outage duration and log restoration
-      const outageStarted = disconnectStartRef.current;
-      disconnectStartRef.current = null;
-      const outageSec = outageStarted
-        ? Math.round((Date.now() - outageStarted) / 1000)
-        : 0;
-
-      onViolation(
-        "connection_restored",
-        outageSec > 0
-          ? `Connection restored after ${outageSec}s outage`
-          : "Connection restored successfully",
-        "low"
-      );
-      if (process.env.NODE_ENV !== "production") {
-        console.debug(`[ConnectionProctoring] connection_restored (${outageSec}s outage)`);
-      }
-    };
-
     //  Handler: Disconnected (permanent) 
     // This fires when the Room is permanently disconnected - the server closed
     // the room, the token expired, or the network is completely unrecoverable.
     const onDisconnected = (reason?: DisconnectReason) => {
       if (!isActiveRef.current || !mountedRef.current) return;
-
-      // Cancel any pending reconnecting grace timer
-      if (reconnectingTimerRef.current) {
-        clearTimeout(reconnectingTimerRef.current);
-        reconnectingTimerRef.current = null;
-      }
 
       const reasonLabel = reason != null
         ? ` (reason: ${DisconnectReason[reason] ?? reason})`
@@ -186,8 +132,6 @@ export function ConnectionProctoring({
           "high"
         );
       }
-      disconnectStartRef.current = null;
-
       if (process.env.NODE_ENV !== "production") {
         console.debug(`[ConnectionProctoring] Disconnected permanently${reasonLabel}`);
       }
@@ -223,7 +167,6 @@ export function ConnectionProctoring({
 
     //  Attach listeners 
     room.on(RoomEvent.Reconnecting,            onReconnecting);
-    room.on(RoomEvent.Reconnected,             onReconnected);
     room.on(RoomEvent.Disconnected,            onDisconnected);
     room.on(RoomEvent.ConnectionQualityChanged, onQualityChanged);
 
@@ -234,15 +177,8 @@ export function ConnectionProctoring({
     return () => {
       mountedRef.current = false;
 
-      // Cancel any pending grace timer
-      if (reconnectingTimerRef.current) {
-        clearTimeout(reconnectingTimerRef.current);
-        reconnectingTimerRef.current = null;
-      }
-
       // Detach all listeners
       room.off(RoomEvent.Reconnecting,            onReconnecting);
-      room.off(RoomEvent.Reconnected,             onReconnected);
       room.off(RoomEvent.Disconnected,            onDisconnected);
       room.off(RoomEvent.ConnectionQualityChanged, onQualityChanged);
 
