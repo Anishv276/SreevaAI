@@ -5,10 +5,6 @@ import sys
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 from agent_profile_context import (
-    build_interview_turns,
-    build_term_alias_hints,
-    detect_role_category,
-    detect_role_subtype,
     first_name_from_full_name,
     infer_candidate_band,
     parse_resume_context,

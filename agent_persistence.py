@@ -1046,17 +1046,6 @@ async def generate_interview_state_summary(
     last_lines = transcript_lines[-12:]
     transcript_text = "\n".join(transcript_lines[-40:])
     pct_done = int((turn_count / max(total_turns_expected, 1)) * 100)
-    mins_remaining = int(seconds_remaining // 60) if seconds_remaining is not None else None
-    time_critical = seconds_remaining is not None and seconds_remaining <= 300
-    time_critical_instruction = ""
-    if time_critical:
-        time_critical_instruction = (
-            "\n\nTIME CRITICAL OVERRIDE: Less than 5 minutes remain on the clock. "
-            "You MUST say 'TIME CRITICAL - RAPID FIRE MODE'. "
-            "List every UNTOUCHED or THIN topic as a rapid-fire queue in the format: "
-            "'RAPID_FIRE_QUEUE: [topic1] | [topic2] | [topic3]'. "
-            "Ishita must ask one direct question per topic with no follow-ups - move the moment she gets any answer."
-        )
     try:
         completion = await asyncio.wait_for(
             client.chat.completions.create(
@@ -1089,7 +1078,6 @@ async def generate_interview_state_summary(
                             "[SPECIFIC] = named a real project/tool/company OR gave a number; "
                             "[DEEP] = named specifics AND explained reasoning, tradeoff, or failure. "
                             "Output on its own line: 'ANSWER_DEPTH: [SURFACE|SPECIFIC|DEEP]'"
-                            f"{time_critical_instruction}"
                         ),
                     },
                     {
@@ -1098,7 +1086,6 @@ async def generate_interview_state_summary(
                             f"MANDATORY AREAS:\n{questions_list}\n\n"
                             f"CANDIDATE: {candidate_name} | ROLE: {job_title}\n"
                             f"INTERVIEW PROGRESS: ~{pct_done}% done (turn {turn_count})"
-                            + (f" | TIME REMAINING: {mins_remaining} min" if mins_remaining is not None else "")
                             + f"\n\nRECENT TRANSCRIPT (last 40 lines, for coverage/pace):\n{transcript_text}\n\n"
                             f"LAST 12 LINES (for stuck detection):\n{chr(10).join(last_lines)}"
                         ),

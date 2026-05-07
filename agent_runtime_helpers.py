@@ -1,12 +1,9 @@
-import asyncio
 import json
 import re
 import time
 from typing import Any
 from openai import AsyncOpenAI
-from agent_persistence import _create_db_pool
 from agent_persistence import get_db_pool
-from agent_providers import build_stt, build_tts, build_vad
 from agent_runtime_support import (
     CARTESIA_MODEL,
     CARTESIA_VOICE_ID,
@@ -96,36 +93,6 @@ def remove_system_messages(chat_ctx, marker: str) -> None:
                 messages.remove(old_msg)
             except (ValueError, AttributeError):
                 pass
-def prewarm(proc) -> None:
-    logger.info("Prewarming worker process...")
-    proc.userdata["vad"] = build_vad()
-    logger.info("VAD model prewarmed.")
-    proc.userdata["turn_detector"] = None
-    try:
-        proc.userdata["default_stt"] = build_stt()
-        logger.info("Default STT prewarmed.")
-    except Exception as e:
-        logger.warning(f"Failed to prewarm default STT: {e}")
-    try:
-        proc.userdata["default_tts"] = build_tts()
-        logger.info("Default TTS prewarmed.")
-    except Exception as e:
-        logger.warning(f"Failed to prewarm default TTS: {e}")
-    try:
-        loop = asyncio.get_running_loop()
-        db_pool_task = loop.create_task(_create_db_pool())
-        proc.userdata["db_pool_init_task"] = db_pool_task
-        def _store_db_pool(task):
-            try:
-                proc.userdata["db_pool"] = task.result()
-            except Exception as task_err:
-                logger.warning(f"Database pool warmup failed: {task_err}")
-        db_pool_task.add_done_callback(_store_db_pool)
-        global _DB_POOL_INIT_TASK
-        _DB_POOL_INIT_TASK = db_pool_task
-        logger.info("Database pool warmup scheduled.")
-    except RuntimeError:
-        logger.info("No running event loop in prewarm; DB pool will initialize lazily.")
 def append_transcript_line(transcript_lines: list[str], speaker: str, text: str) -> None:
     text = re.sub(r"<[^>]+>", "", text).strip()
     clean = " ".join(text.split()).strip()

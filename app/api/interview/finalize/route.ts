@@ -222,6 +222,70 @@ async function persistStrategicVerdictRaw(params: {
   );
 }
 
+function estimateInterviewReportUsage(params: {
+  transcript: string;
+  resumeText: string;
+  jdText: string;
+  report: unknown;
+  durationSeconds: number;
+}) {
+  const promptText = [
+    params.transcript,
+    params.resumeText,
+    params.jdText,
+    "Interview report generation",
+    String(params.durationSeconds || 0),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const reportText = JSON.stringify(params.report ?? {});
+  return {
+    model: "gpt-4o",
+    inputTokens: Math.max(1, Math.ceil(promptText.length / 4)),
+    outputTokens: Math.max(1, Math.ceil(reportText.length / 4)),
+    cachedInputTokens: 0,
+  };
+}
+
+function getExistingInterviewReportRuns(usageMetrics: unknown): number {
+  if (!usageMetrics || typeof usageMetrics !== "object") {
+    return 0;
+  }
+
+  const billing = (usageMetrics as Record<string, unknown>).billing;
+  if (!billing || typeof billing !== "object") {
+    return 0;
+  }
+
+  const interviewReport = (billing as Record<string, unknown>).interviewReport;
+  if (!interviewReport || typeof interviewReport !== "object") {
+    return 0;
+  }
+
+  return Number((interviewReport as Record<string, unknown>).runs || 0);
+}
+
+type InterviewReportShape = {
+  qa_blocks?: Array<{
+    q?: number;
+    title?: string;
+    tags?: string[];
+    score?: string;
+    scoreColor?: string;
+    verdict?: string;
+    confidence?: string;
+  }>;
+  recording?: {
+    summary?: string;
+  };
+  verdict?: {
+    summary?: string;
+    recommendation?: string;
+    recommendation_reason?: string;
+  };
+  strategic_verdict?: unknown;
+};
 
 export async function POST(req: Request) {
   try {
@@ -358,6 +422,14 @@ export async function POST(req: Request) {
       });
 
       if (app) {
+        const orgUsageRows = app.drive?.orgId
+          ? await prisma.organization.findUnique({
+              where: { id: app.drive.orgId },
+              select: { usageMetrics: true },
+            })
+          : null;
+        const existingInterviewReportRuns = getExistingInterviewReportRuns(orgUsageRows?.usageMetrics);
+
         const driveRows = await prisma.$queryRawUnsafe<Array<{ extractedDetails: string | null }>>(
           `
           SELECT "extractedDetails"
@@ -399,7 +471,16 @@ export async function POST(req: Request) {
           : [];
 
         // Use existing report from DB if available; otherwise generate new one using GPT-4o
-        let report = app.interview?.interviewReport as any;
+        let report = app.interview?.interviewReport as InterviewReportShape | null;
+        let interviewReportUsage:
+          | {
+              model?: string | null;
+              inputTokens?: number;
+              outputTokens?: number;
+              cachedInputTokens?: number;
+              sessionDuration?: number;
+            }
+          | null = null;
         if (!report && transcriptForReport) {
           const { data: generatedReport, usage: reportUsage } = await generateInterviewReport({
             transcript: transcriptForReport,
@@ -412,14 +493,13 @@ export async function POST(req: Request) {
             orgId: app.drive?.orgId || undefined,
           });
           report = generatedReport;
-
-          if (reportUsage && app.drive?.orgId) {
-            await recordOrgBillingUsage({
-              orgId: app.drive.orgId,
-              feature: "interviewReport",
-              usage: reportUsage,
-            }).catch(console.error);
-          }
+          interviewReportUsage = reportUsage || estimateInterviewReportUsage({
+            transcript: transcriptForReport,
+            resumeText,
+            jdText,
+            report,
+            durationSeconds: durationForReport,
+          });
 
           const turnRows = normalizeReportTurns(interviewTurns.length > 0 ? interviewTurns : buildInterviewTurns(transcriptForReport));
           if (!Array.isArray(report?.qa_blocks) || report.qa_blocks.length === 0) {
@@ -439,6 +519,22 @@ export async function POST(req: Request) {
             interviewReport: report,
             aiSummary: report?.recording?.summary || report?.verdict?.summary || null,
           });
+        } else if (report) {
+          interviewReportUsage = estimateInterviewReportUsage({
+            transcript: transcriptForReport,
+            resumeText,
+            jdText,
+            report,
+            durationSeconds: durationForReport,
+          });
+        }
+
+        if (app.drive?.orgId && existingInterviewReportRuns === 0 && interviewReportUsage) {
+          await recordOrgBillingUsage({
+            orgId: app.drive.orgId,
+            feature: "interviewReport",
+            usage: interviewReportUsage,
+          }).catch(console.error);
         }
         await persistStrategicVerdictRaw({
           applicationId,

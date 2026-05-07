@@ -11,6 +11,7 @@ import { putObject } from "./lib/s3";
 import { generateId } from "./lib/ids";
 import { isInterviewTokenRequired } from "./lib/interview-access";
 import { appendCandidateActivity } from "./lib/candidate-activity";
+import { deductInterviewQuota, getInterviewQuotaUnits, incrementOrgCreditsUsed } from "./lib/credits";
 // Load environment variables
 dotenv.config();
 console.log('DEBUG: REDIS_URL length:', process.env.REDIS_URL?.length || 0);
@@ -618,6 +619,23 @@ const interviewFinalizationWorker = new Worker(
     }
     console.log(`[JOB] Finalizing interview for ${applicationId}`);
     try {
+      const interviewBefore = await prisma.interview.findUnique({
+        where: { applicationId },
+        select: {
+          completedAt: true,
+          recordingDurationSec: true,
+          interviewDuration: true,
+          startedAt: true,
+          application: {
+            select: {
+              drive: {
+                select: { orgId: true },
+              },
+            },
+          },
+        },
+      });
+
       const updateData: any = { updatedAt: new Date() };
       if (recordingUrl) {
         updateData.interviewRecordingUrl = recordingUrl;
@@ -647,6 +665,33 @@ const interviewFinalizationWorker = new Worker(
       } catch {
         await persistInterviewUpdateRaw({ applicationId, recordingUrl, transcript, interviewStatus });
       }
+
+      const orgId = interviewBefore?.application?.drive?.orgId;
+      const isNewCompletion = !interviewBefore?.completedAt && interviewStatus === "COMPLETED";
+      const resolvedDurationSec = Number(
+        interviewBefore?.recordingDurationSec ??
+        interviewBefore?.interviewDuration ??
+        0
+      );
+      const fallbackDurationSec = Number.isFinite(resolvedDurationSec) && resolvedDurationSec > 0
+        ? resolvedDurationSec
+        : interviewBefore?.startedAt
+          ? Math.max(1, Math.round((Date.now() - new Date(interviewBefore.startedAt).getTime()) / 1000))
+          : 0;
+
+      if (orgId && isNewCompletion) {
+        const quotaUnits = getInterviewQuotaUnits(fallbackDurationSec);
+        if (quotaUnits > 0) {
+          await deductInterviewQuota(orgId, quotaUnits);
+        }
+        if (fallbackDurationSec > 0) {
+          const creditsDelta = Math.round((fallbackDurationSec / 60) * 100) / 100;
+          if (creditsDelta > 0) {
+            await incrementOrgCreditsUsed(orgId, creditsDelta);
+          }
+        }
+      }
+
       if (appStatus) {
         await prisma.$executeRawUnsafe(
           'UPDATE "Application" SET "resumeStatus" = $1, "updatedAt" = NOW() WHERE id = $2',

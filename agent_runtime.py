@@ -1,4 +1,4 @@
-import base64
+﻿import base64
 import os
 import sys
 import asyncio
@@ -42,33 +42,24 @@ from agent_profile_context import (
     _ensure_resume_context,
     build_candidate_context_ready_message,
     build_candidate_summary,
-    build_stage_coverage_plan,
-    build_fast_opening_context,
-    build_interview_pivot_directive,
+    build_resume_brief,
     build_jd_summary,
     build_live_prompt_context,
-    build_role_layer,
     build_screening_summary,
-    detect_role_category,
-    detect_role_subtype,
-    extract_brief_section,
-    extract_smart_opening_question,
-    parse_question_bank,
-    extract_critical_skills,
     _extract_jd_must_haves,
-    build_question_bank_injection,
     first_name_from_full_name,
     infer_candidate_band,
     parse_resume_context,
     refresh_candidate_band_context,
-    build_term_alias_hints,
 )
 from interview_phases import (
-    build_phase_1_greeting_text,
-    build_phase_1_warmup_directive,
-    build_phase_2_opening_context,
-    build_phase_3_bridge_directive,
-    build_phase_4_skills_directive,
+    build_greeting_text,
+    build_warmup_directive,
+    build_stage_1_resume_directive,
+    build_stage_2_skill_directive,
+    build_stage_3_situational_directive,
+    build_stage_4_behavioral_directive,
+    build_stage_5_practical_directive,
 )
 from agent_providers import (
     build_cartesia_tts,
@@ -244,31 +235,6 @@ class InterviewAgent(Agent):
             yield frame
 
 
-_TTS_MIN_FLUSH_WORDS = 8
-_TTS_MAX_FLUSH_WORDS = 22
-_TTS_SENTENCE_ENDINGS = {".", "?", "!"}
-_TTS_ATTACH_LEFT = {".", ",", "?", "!", ":", ";", "%", ")", "]", "}", '"', "'"}
-_TTS_WORD_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:['-][A-Za-z0-9]+)*")
-_TTS_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:['-][A-Za-z0-9]+)*|[^\w\s]", re.UNICODE)
-
-
-def _append_tts_token(text: str, token: str) -> str:
-    if not text:
-        return token
-
-    if token in _TTS_ATTACH_LEFT:
-        return text + token
-
-    if text[-1] in "([{\"'":
-        return text + token
-
-    return text + " " + token
-
-
-def _rewrite_tts_text(text: str) -> str:
-    return _compact_text(text)
-
-
 def prewarm(proc: JobProcess):
     logger.info("Prewarming worker process...")
     # Load VAD model (ONNX) - heaviest startup cost, must be synchronous
@@ -305,7 +271,6 @@ def prewarm(proc: JobProcess):
     except RuntimeError:
         logger.info("No running event loop in prewarm; DB pool will initialize lazily.")
 from agent_persistence import (
-    _extract_openai_completion_usage,
     flush_pending_manual_billing,
     generate_interview_report,
     generate_interview_state_summary,
@@ -314,7 +279,6 @@ from agent_persistence import (
     get_interview_context,
     mark_interview_started,
     persist_answer_scores,
-    persist_org_manual_billing_usage,
     persist_org_usage_metrics,
     persist_transcript,
     update_interview_status,
@@ -369,193 +333,6 @@ def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
         key: _toggle_bool(parsed.get(key), False)
         for key in _EVALUATION_SIGNAL_KEYS
     }
-async def generate_candidate_brief(
-    candidate_name: str,
-    job_title: str,
-    candidate_band: str,
-    jd_block: str,
-    resume_block: str,
-    ai_report_block: str,
-    questions_list: str,
-    time_limit_mins: int,
-    critical_skills: list[str],
-    client,
-    org_id: Optional[str] = None,
-    llm_model: str = LLM_MODEL,
-) -> str:
-    """
-    Pre-interview: generate a personalized interview plan from the candidate's actual
-    resume, the JD, and the AI screening report. This becomes Ishita's private briefing -
-    telling her exactly what to ask, in what order, tailored to this specific person.
-    Returns a formatted brief string to inject into the system prompt.
-    Falls back to empty string on failure (interview still works, just less personalized).
-    """
-    if resume_block == "No resume data provided." and ai_report_block == "No prior screening data.":
-        return ""  # No data to work with - skip
-    band = (candidate_band or "").strip().lower()
-    _band_phase1 = {
-        "fresher": (
-            "PHASE 1  -  BACKGROUND (exactly 5 questions, FRESHER band):\n"
-            "Q1 [OPENING]: Most specific question about their strongest academic project or internship  -  what they personally built, not what the team did.\n"
-            "Q2 [PROJECT-DEPTH]: Dig into one project from the resume  -  what was their exact contribution, what broke, what would they change.\n"
-            "Q3 [JD-RESPONSIBILITY]: A key JD responsibility  -  ask if they have done anything similar, even in a college or internship context.\n"
-            "Q4 [GAP]: A JD requirement not evident in resume  -  ask how they would approach it, probe their reasoning not just knowledge.\n"
-            "Q5 [LEARNING]: A question about how fast they ramp on something new  -  a real example, not a generic answer."
-        ),
-        "mid": (
-            "PHASE 1  -  BACKGROUND (exactly 5 questions, MID-LEVEL band):\n"
-            "Q1 [OPENING]: Most specific question about a feature or system they owned end-to-end  -  not what the team built.\n"
-            "Q2 [OWNERSHIP]: A decision they made alone  -  what options they considered, what they chose and why.\n"
-            "Q3 [JD-RESPONSIBILITY]: A core JD responsibility  -  ask for a concrete example from their past work.\n"
-            "Q4 [GAP]: A JD requirement missing or thin in the resume  -  ask for the closest thing they have done.\n"
-            "Q5 [IMPACT]: What changed because of their work  -  numbers, user impact, or business outcome."
-        ),
-        "experienced": (
-            "PHASE 1  -  BACKGROUND (exactly 5 questions, EXPERIENCED band):\n"
-            "Q1 [OPENING]: Most specific question about a system they owned at scale  -  size, complexity, real constraints.\n"
-            "Q2 [PRODUCTION]: An incident or failure they owned  -  what happened, how they diagnosed it, what they changed.\n"
-            "Q3 [JD-RESPONSIBILITY]: A core JD responsibility  -  ask for the hardest version of that problem they have faced.\n"
-            "Q4 [GAP]: A JD requirement not clearly shown in resume  -  ask for closest analogue and probe depth.\n"
-            "Q5 [TRADEOFF]: A significant technical tradeoff they drove  -  what the options were, who disagreed, what they decided."
-        ),
-        "senior": (
-            "PHASE 1  -  BACKGROUND (exactly 5 questions, SENIOR band):\n"
-            "Q1 [OPENING]: Most specific question about a system or team direction they set  -  not participated in, but shaped.\n"
-            "Q2 [ARCHITECTURE]: An architecture decision they led  -  what constraints they were working under, what they rejected and why.\n"
-            "Q3 [JD-RESPONSIBILITY]: A core JD responsibility at senior scope  -  ask how they would approach it and for a past parallel.\n"
-            "Q4 [GAP]: A JD requirement not clearly shown in resume  -  probe strategic judgment, not just experience.\n"
-            "Q5 [INFLUENCE]: A situation where they drove alignment across teams without direct authority  -  what the resistance was, how they handled it."
-        ),
-    }
-    _band_phase3 = {
-        "fresher": (
-            "PHASE 3  -  SKILLS (7-8 questions, FRESHER band):\n"
-            "Focus: core fundamentals from JD, tools they listed, reasoning ability, learning gaps.\n"
-            "Q-A [SKILL]: Hands-on question about the primary technical skill in the JD  -  not definition, but how they used it.\n"
-            "Q-B [SKILL]: Second key skill from JD  -  same approach, ask for a real use case.\n"
-            "Q-C [SKILL]: A tool or technology on their resume  -  what specifically did they do with it.\n"
-            "Q-D [FUNDAMENTALS]: A core CS concept directly relevant to the JD role  -  test understanding, not memorization.\n"
-            "Q-E [STRENGTH]: Ask them what they are strongest at technically  -  then immediately probe with a harder question on that topic.\n"
-            "Q-F [WEAKNESS]: Ask where they feel least confident  -  probe whether their self-assessment is accurate.\n"
-            "Q-G [WATCHOUT]: A thin or suspicious area on the resume  -  probe gently for real depth.\n"
-            "Q-H [CUSTOM]: One question from the mandatory coverage list."
-        ),
-        "mid": (
-            "PHASE 3  -  SKILLS (7-8 questions, MID-LEVEL band):\n"
-            "Focus: implementation depth, JD skills, measurable outcomes, collaboration under pressure.\n"
-            "Q-A [SKILL]: Primary JD skill  -  ask about the hardest problem they solved using it.\n"
-            "Q-B [SKILL]: Second JD skill  -  same approach.\n"
-            "Q-C [SKILL]: A tool on resume  -  what they built with it, what limitations they hit.\n"
-            "Q-D [METRICS]: How they measured success on a past project  -  what the number was and what drove it.\n"
-            "Q-E [STRENGTH]: Their strongest technical area  -  then probe with a real edge case or failure on that topic.\n"
-            "Q-F [WEAKNESS]: An area they are actively trying to improve  -  ask what they have done about it.\n"
-            "Q-G [WATCHOUT]: A contradiction or thin claim in the resume  -  probe for specifics.\n"
-            "Q-H [CUSTOM]: One question from the mandatory coverage list."
-        ),
-        "experienced": (
-            "PHASE 3  -  SKILLS (7-8 questions, EXPERIENCED band):\n"
-            "Focus: technical depth on JD stack, production judgment, cross-functional influence.\n"
-            "Q-A [SKILL]: Primary JD skill at scale  -  what broke, what they optimized, what they would do differently.\n"
-            "Q-B [SKILL]: Second JD skill  -  same approach, push for production-level specifics.\n"
-            "Q-C [SKILL]: A tool or platform on resume  -  deepest thing they did with it.\n"
-            "Q-D [DEPTH]: A nuanced technical question in the JD domain  -  test whether they have genuine depth.\n"
-            "Q-E [STRENGTH]: Their strongest technical domain  -  immediately probe with a failure or edge case in that domain.\n"
-            "Q-F [WEAKNESS]: A domain or skill they avoid or find hard  -  probe whether they know why.\n"
-            "Q-G [WATCHOUT]: A gap between what the resume implies and what they likely did  -  probe ownership.\n"
-            "Q-H [CUSTOM]: One question from the mandatory coverage list."
-        ),
-        "senior": (
-            "PHASE 3  -  SKILLS (7-8 questions, SENIOR band):\n"
-            "Focus: architecture judgment, strategic depth, mentoring, hiring bar, ambiguity.\n"
-            "Q-A [SKILL]: Primary JD skill at senior scope  -  what architectural decisions involved it.\n"
-            "Q-B [SKILL]: Second JD skill  -  how they set standards or best practices around it for a team.\n"
-            "Q-C [DESIGN]: A system design judgment call  -  build vs buy, adopt vs build, or similar.\n"
-            "Q-D [MENTORING]: How they raised the technical bar of someone on their team  -  concrete example.\n"
-            "Q-E [STRENGTH]: Their strongest technical domain  -  probe with a strategic or cross-team failure in that domain.\n"
-            "Q-F [WEAKNESS]: A gap in their senior scope  -  a type of problem they have not led before.\n"
-            "Q-G [WATCHOUT]: A claim in the resume that implies senior ownership but may be participation  -  probe for real accountability.\n"
-            "Q-H [CUSTOM]: One question from the mandatory coverage list."
-        ),
-    }
-    phase1_block = _band_phase1.get(band, _band_phase1["mid"])
-    phase3_block = _band_phase3.get(band, _band_phase3["mid"])
-    try:
-        completion = await asyncio.wait_for(
-            client.chat.completions.create(
-                model=llm_model,
-                temperature=0.2,
-                max_tokens=1800,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a senior interview coach preparing a personalized interview brief for an AI interviewer named Ishita. "
-                            "Your output is Ishita's PRIVATE 5-STAGE INTERVIEW BRIEF — a personalized prep sheet organized into 5 sections matching the 5-stage interview flow.\n\n"
-                            "Be specific and direct. Reference actual items from the resume. Ground every question in real data.\n\n"
-                            "Output format (use this exact structure, all sections required):\n\n"
-                            "CANDIDATE PROFILE SUMMARY:\n"
-                            "2-3 sentences: who this person is, their seniority level, and what stands out most (positive or concerning).\n\n"
-                            "SMART OPENING QUESTION:\n"
-                            "One highly specific question grounded in their actual resume — a real project, company, or skill they listed. "
-                            "Not 'tell me about yourself'. Not generic. Reference something real from their background that connects to the JD.\n\n"
-                            "STAGE 1 — RESUME:\n"
-                            "2 specific questions to confirm background and scope. Each must reference an actual project, company, or role from the resume.\n"
-                            "Format: [QUESTION]: [specific question]\n\n"
-                            "STAGE 2 — SKILL:\n"
-                            "2 questions that test depth behind specific claimed technologies. Move from 'used it' to 'owned it under pressure'.\n"
-                            "Format: [SKILL]: [specific depth-check question]\n\n"
-                            "STAGE 3 — SITUATIONAL:\n"
-                            "1 'what would you do if...' scenario derived from a realistic challenge in the JD or role.\n"
-                            "Format: [SCENARIO]: [situational question]\n\n"
-                            "STAGE 4 — BEHAVIORAL:\n"
-                            "1 STAR-style question tied to a gap or risk identified in the AI screening report.\n"
-                            "Format: [TOPIC]: [behavioral question]\n\n"
-                            "STAGE 5 — PRACTICAL:\n"
-                            "1 live voice scenario — think-aloud problem solving. Must be answerable by voice with no typing needed.\n"
-                            "Format: [SCENARIO]: [practical scenario question]\n\n"
-                            "RESUME-JD GAPS (hidden agenda — Ishita must never reveal these directly):\n"
-                            "For each place where the JD requires something the resume does not clearly show:\n"
-                            "  - JD requires: [what the role needs]\n"
-                            "  - Resume shows: [what candidate has, or 'not mentioned']\n"
-                            "  - Sideways probe: [a scenario or question that reveals depth WITHOUT asking directly]\n"
-                            "  - Strong answer sounds like: [what genuine knowledge would include]\n"
-                            "  - Red flag answer: [what a name-dropper or faker would say]\n\n"
-                            "QUICK PROBES — RESUME-GROUNDED FOLLOW-UPS:\n"
-                            "Pre-build 4-6 targeted follow-up questions Ishita can use when she needs specificity within any stage.\n"
-                            "Format: - [TECHNOLOGY/PROJECT]: [specific hands-on follow-up question]\n\n"
-                            "WATCH-OUTS:\n"
-                            "2-3 red flags or thin areas from the resume or report that Ishita must probe carefully. Be blunt.\n\n"
-                            "OWNERSHIP RISKS:\n"
-                            "Note any resume language that suggests inflated ownership. For each: name the claim and suggest the ownership probe question."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"CANDIDATE: {candidate_name}\n"
-                            f"ROLE: {job_title}\n"
-                            f"BAND: {band}\n"
-                            f"TIME: {time_limit_mins} minutes\n\n"
-                            f"CRITICAL SKILLS TO PROBE IN PHASE 3 (use these as SKILL tags  -  e.g. [SKILL:python]):\n"
-                            + ("\n".join(f"- {s}" for s in critical_skills) if critical_skills else "- Use top skills from resume and JD") + "\n\n"
-                            f"JOB DESCRIPTION / REQUIREMENTS:\n{jd_block}\n\n"
-                            f"CANDIDATE RESUME:\n{resume_block}\n\n"
-                            f"AI SCREENING REPORT:\n{ai_report_block}\n\n"
-                            f"MANDATORY AREAS TO COVER (embed as CUSTOM questions in Phase 3):\n{questions_list}"
-                        ),
-                    },
-                ],
-            ),
-            timeout=12.0,
-        )
-        await persist_org_manual_billing_usage(
-            org_id, "interview", _extract_openai_completion_usage(completion)
-        )
-        brief = completion.choices[0].message.content or ""
-        return brief.strip()
-    except Exception as e:
-        logger.warning(f"[BRIEF] Candidate brief generation failed: {e}")
-        return ""
 async def entrypoint(ctx: JobContext):
     entry_started_at = time.perf_counter()
     logger.info(f"Connecting to room {ctx.room.name}")
@@ -574,9 +351,6 @@ async def entrypoint(ctx: JobContext):
     # --- Fix 1: Session State ---
     transcript_lines: list[str] = []
     session_start_time: Optional[float] = None
-    runtime_phase: int = 2
-    _phase3_pending: bool = False
-    _phase4_pending: bool = False
     background_tasks: set[asyncio.Task[Any]] = set()
     def spawn_background_task(coro, label: str) -> asyncio.Task[Any]:
         task = asyncio.create_task(coro)
@@ -848,59 +622,25 @@ async def entrypoint(ctx: JobContext):
     ai_report_block = safe_parse(ai_report, "No prior screening data.")
     resume_context = parse_resume_context(structured_resume, resume_block)
     jd_block = build_jd_summary(extracted_details, job_details or "General professional role.")
+    jd_must_haves = _extract_jd_must_haves(extracted_details, job_details or "")
+    candidate_band = infer_candidate_band(resume_context, resume_block)
+    resume_brief = build_resume_brief(candidate_band, resume_context)
     session_context = CandidateBandContext(
-        candidate_band=infer_candidate_band(resume_context, resume_block),
-        role_category=detect_role_category(job_title),
-        role_subtype="",
+        candidate_band=candidate_band,
+        resume_brief=resume_brief,
         coverage_items=[],
         depth_instruction=(
             "Balance breadth and depth. Two follow-ups per key topic. Probe for reasoning but stay warm."
         ),
     )
-    session_context.role_subtype = detect_role_subtype(job_title, session_context.role_category)
-    session_context.coverage_items = build_stage_coverage_plan(
-        resume_context, jd_block, session_context
-    )
-    session_context.short_coverage_block = "\n".join(
-        f"- {item}" for item in session_context.coverage_items
-    )
     if custom_questions_list:
-        session_context.questions_list = f"{session_context.short_coverage_block}\n{custom_questions_list}"
+        session_context.questions_list = custom_questions_list
     else:
-        session_context.questions_list = session_context.short_coverage_block
+        session_context.questions_list = ""
 
-    jd_must_haves = _extract_jd_must_haves(extracted_details, job_details or "")
-    critical_skills = extract_critical_skills(jd_must_haves, resume_context.skills)
-    session_context.critical_skills = critical_skills
-
-    # Generate personalized candidate brief in the background.
-    # We wait only briefly so first greeting is not blocked by this network call.
-    candidate_brief_task = spawn_background_task(
-        generate_candidate_brief(
-            candidate_name=candidate_first_name or candidate_name,
-            job_title=job_title,
-            candidate_band=session_context.candidate_band,
-            jd_block=jd_block,
-            resume_block=resume_block,
-            ai_report_block=ai_report_block,
-            questions_list=session_context.questions_list,
-            time_limit_mins=time_limit_mins,
-            critical_skills=critical_skills,
-            client=analysis_client,
-            org_id=org_id,
-            llm_model=analysis_model,
-        ),
-        "candidate_brief_generation",
-    )
-    logger.info(
-        "[BRIEF] Candidate brief generation started in background; greeting will not wait for it"
-    )
     session_context.candidate_summary_block = build_candidate_summary(resume_context)
     session_context.jd_summary_block = jd_block
     session_context.screening_summary_block = build_screening_summary(ai_report, ai_report_block)
-    session_context.role_layer = build_role_layer(
-        session_context.role_category, session_context.role_subtype, session_context.candidate_band
-    )
     refresh_candidate_band_context(session_context)
     voice_layer_prompt = build_voice_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
@@ -931,67 +671,14 @@ async def entrypoint(ctx: JobContext):
     )
     chat_ctx = llm.ChatContext()
     chat_ctx.add_message(role="system", content=system_prompt)
-    # Runtime Phase 1 = greeting + 4-turn warmup.
-    # The question bank is a separate artifact that is injected later.
-    phase_1_context = build_phase_1_warmup_directive()
-    chat_ctx.add_message(role="system", content=phase_1_context)
-    logger.info("[RUNTIME PHASE 1] Warmup directive injected (will transition to runtime Phase 2 after 2 candidate responses)")
+    warmup_directive = build_warmup_directive()
+    chat_ctx.add_message(role="system", content=warmup_directive)
+    logger.info("[WARMUP] Warmup directive injected — Stage 1 fires after 2 candidate responses")
     ctx.proc.userdata["candidate_band_context"] = session_context
-    async def attach_brief_when_ready():
-        if session_context.full_brief_injected:
-            return
-        try:
-            delayed_brief = await candidate_brief_task
-        except Exception as brief_err:
-            logger.warning(
-                "[BRIEF] Deferred brief generation failed  -  interview proceeding without personalization. error=%s",
-                brief_err,
-            )
-            return
-        if not delayed_brief:
-            logger.warning("[BRIEF] Brief returned empty  -  interview proceeding without personalization")
-            return
-        if delayed_brief == session_context.candidate_brief_block:
-            logger.info("[BRIEF] Brief unchanged from initial block  -  no update needed")
-            return
-        session_context.candidate_brief_block = delayed_brief
-        session_context.smart_opening_question = extract_smart_opening_question(delayed_brief)
-        session_context.question_bank = parse_question_bank(delayed_brief)
-        refresh_candidate_band_context(session_context)
-        injection = build_question_bank_injection(delayed_brief, session_context.question_bank, session_context.critical_skills)
-        remove_system_messages(chat_ctx, "[CANDIDATE CONTEXT READY]")
-        remove_system_messages(chat_ctx, "[INTERVIEW BRIEF + QUESTION BANK]")
-        chat_ctx.add_message(role="system", content=injection)
-        # If we're still in runtime Phase 2, refresh the opening context with the now-available
-        # smart_opening_question so the LLM uses the brief's first question instead of the weak anchor.
-        if runtime_phase == 2 and session_context.smart_opening_question:
-            rc = session_context.resume_context
-            updated_phase_2 = build_phase_2_opening_context(
-                candidate_band=session_context.candidate_band,
-                projects=rc.projects if rc else [],
-                work_history=rc.work_history if rc else [],
-                education=rc.education if rc else [],
-                skills=rc.skills if rc else [],
-                jd_summary_block=session_context.jd_summary_block,
-                smart_opening_question=session_context.smart_opening_question,
-                coverage_items=session_context.coverage_items,
-            )
-            remove_system_messages(chat_ctx, "[RUNTIME PHASE 2:")
-            chat_ctx.add_message(role="system", content=updated_phase_2)
-            logger.info("[BRIEF] Phase 2 opening context refreshed with smart_opening_question from brief")
-        session_context.full_brief_injected = True
-        logger.info(
-            f"[BRIEF] Deferred brief+question bank attached ({len(injection)} chars, "
-            f"p1={len(session_context.question_bank.phase1)}q p3_filtered={len(session_context.question_bank.get_phase3_filtered(session_context.critical_skills))}q)"
-        )
-    # attach_brief_when_ready() is triggered after runtime Phase 1 completes.
-    # Do NOT spawn it here - it fires from on_conversation_item_added when warmup_complete=True.
     logger.info(
-        "[SESSION] brief_available=%s opening_question=%s band=%s role=%s",
-        bool(session_context.candidate_brief_block),
-        bool(session_context.smart_opening_question),
+        "[SESSION] band=%s anchor=%s",
         session_context.candidate_band,
-        session_context.role_category,
+        session_context.resume_brief.get("anchor_item", ""),
     )
     vad_instance = ctx.proc.userdata.get("vad") or build_vad()
     google_mode = org_tts_provider == "GOOGLE"
@@ -1211,10 +898,7 @@ async def entrypoint(ctx: JobContext):
             depth_risk, \
             suspicion_score, \
             proctoring_events, \
-            _trust_state, \
-            runtime_phase, \
-            _phase3_pending, \
-            _phase4_pending
+            _trust_state
         try:
             raw_data = None
             # Helper functions moved to entrypoint scope to prevent NameError
@@ -1287,33 +971,6 @@ async def entrypoint(ctx: JobContext):
                     logger.info(
                         f"[PROCTOR] {event_name} from browser. score={suspicion_score}"
                     )
-            elif payload.get("type") == "phase_transition":
-                # Frontend timer signals when to move to the next runtime phase.
-                # We only SET the pending flag here; the actual system-prompt swap
-                # happens in on_conversation_item_added at the next turn boundary
-                # (after the candidate finishes their current answer), so no
-                # question is ever cut off mid-flight.
-                target = payload.get("target_phase")
-                if target == 3 and runtime_phase == 2 and not _phase3_pending:
-                    _phase3_pending = True
-                    logger.info(
-                        "[PHASE] Frontend signalled phase_transition->3 "
-                        "(will execute at next turn boundary, current runtime_phase=%d)",
-                        runtime_phase,
-                    )
-                elif target == 4 and runtime_phase in (2, 3) and not _phase4_pending:
-                    _phase4_pending = True
-                    logger.info(
-                        "[PHASE] Frontend signalled phase_transition->4 "
-                        "(will execute at next turn boundary, current runtime_phase=%d)",
-                        runtime_phase,
-                    )
-                else:
-                    logger.debug(
-                        "[PHASE] phase_transition signal target=%s ignored "
-                        "(current runtime_phase=%d phase3_pending=%s phase4_pending=%s)",
-                        target, runtime_phase, _phase3_pending, _phase4_pending,
-                    )
         except Exception as e:
             logger.debug(f"Ignored malformed data packet: {e}")
             return
@@ -1350,64 +1007,15 @@ async def entrypoint(ctx: JobContext):
                 logger.info("[GREETING_BLOCK] Candidate spoke before greeting finished  -  ignoring until greeting delivered")
                 return
             async def _inject_candidate_context_before_first_question() -> None:
-                if session_context.full_brief_injected:
-                    session_context.initial_context_injected = True
-                    return
                 if session_context.initial_context_injected:
                     return
                 session_context.initial_context_injected = True
-                brief_text = session_context.candidate_brief_block.strip()
-                if not brief_text:
-                    if candidate_brief_task.done():
-                        try:
-                            brief_text = (candidate_brief_task.result() or "").strip()
-                        except Exception:
-                            brief_text = ""
-                    if not brief_text:
-                        try:
-                            brief_text = (
-                                await asyncio.wait_for(
-                                    asyncio.shield(candidate_brief_task),
-                                    timeout=1.5,
-                                )
-                                or ""
-                            ).strip()
-                        except asyncio.TimeoutError:
-                            brief_text = ""
-                        except Exception as brief_err:
-                            logger.warning(
-                                f"[BRIEF] First-question brief wait failed: {brief_err}"
-                            )
-                            brief_text = ""
-                if brief_text:
-                    session_context.candidate_brief_block = brief_text
-                    session_context.smart_opening_question = extract_smart_opening_question(brief_text)
-                    session_context.question_bank = parse_question_bank(brief_text)
-                    refresh_candidate_band_context(session_context)
-                    injection = build_question_bank_injection(brief_text, session_context.question_bank, session_context.critical_skills)
-                    remove_system_messages(chat_ctx, "[CANDIDATE CONTEXT READY]")
-                    remove_system_messages(chat_ctx, "[INTERVIEW BRIEF + QUESTION BANK]")
-                    chat_ctx.add_message(role="system", content=injection)
-                    session_context.full_brief_injected = True
-                    logger.info(
-                        "[BRIEF] Brief+question bank injected before first question (%d chars) p1=%dq p3_filtered=%dq opening_question=%s",
-                        len(injection), len(session_context.question_bank.phase1),
-                        len(session_context.question_bank.get_phase3_filtered(session_context.critical_skills)),
-                        bool(session_context.smart_opening_question),
-                    )
-                    return
                 remove_system_messages(chat_ctx, "[CANDIDATE CONTEXT READY]")
                 chat_ctx.add_message(
                     role="system",
-                    content=build_candidate_context_ready_message(
-                        context=session_context,
-                        smart_opening_question=session_context.smart_opening_question,
-                    ),
+                    content=build_candidate_context_ready_message(context=session_context),
                 )
-                logger.info(
-                    "[BRIEF] Lightweight candidate context injected brief_used=False opening_question=%s",
-                    bool(session_context.smart_opening_question),
-                )
+                logger.info("[CONTEXT] Candidate context injected before first question")
             # --- STT text cleanup / noise suppression ---
             def _clean_stt_text(raw_text: str) -> str:
                 text = re.sub(r"\s+", " ", (raw_text or "").strip())
@@ -1845,8 +1453,7 @@ async def entrypoint(ctx: JobContext):
     def on_conversation_item_added(event) -> None:
         nonlocal session_start_time, turn_count, last_injection_turn, \
             _last_interviewer_question, _topic_follow_up_count, \
-            _question_asked_at, _answer_received_at, warmup_responses_received, warmup_complete, llm_spoke_event, \
-            runtime_phase, _phase3_pending, _phase4_pending
+            _question_asked_at, _answer_received_at, warmup_responses_received, warmup_complete, llm_spoke_event
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -1864,35 +1471,15 @@ async def entrypoint(ctx: JobContext):
                     warmup_responses_received += 1
                     if warmup_responses_received >= 2:
                         warmup_complete = True
-                        # Remove warmup directive, inject pivot + brief now
-                        remove_system_messages(chat_ctx, "[CONVERSATIONAL WARMUP")
-                        pivot_directive = build_interview_pivot_directive(session_context)
-                        chat_ctx.add_message(role="system", content=pivot_directive)
-                        logger.info("[OPENING] Warmup complete — Stage 1 pivot directive injected")
-                        _stage_start_time = time.time()
-                        spawn_background_task(attach_brief_when_ready(), "attach_brief_on_warmup_complete")
-                # ── Phase 2/3 → Phase 3 bridge: frontend signalled ~35% elapsed ─────────
-                # Only fires after warmup is complete and current answer is done.
-                elif _phase3_pending and runtime_phase == 2:
-                    _phase3_pending = False
-                    runtime_phase = 3
-                    remove_system_messages(chat_ctx, "[RUNTIME PHASE 2:")
-                    bridge = build_phase_3_bridge_directive(
-                        candidate_band=session_context.candidate_band,
-                        coverage_items=session_context.coverage_items,
-                    )
-                    chat_ctx.add_message(role="system", content=bridge)
-                    logger.info("[PHASE 3] Bridge directive injected  -  transitioning from background to skills")
-                # ── Phase 3 → Phase 4 skills: frontend signalled ~70% elapsed ───────────
-                # Only fires after current answer is done, regardless of which phase we're in.
-                elif _phase4_pending and runtime_phase in (2, 3):
-                    _phase4_pending = False
-                    runtime_phase = 4
-                    remove_system_messages(chat_ctx, "[RUNTIME PHASE 2:")
-                    remove_system_messages(chat_ctx, "[RUNTIME PHASE 3:")
-                    skills_directive = build_phase_4_skills_directive()
-                    chat_ctx.add_message(role="system", content=skills_directive)
-                    logger.info("[PHASE 4] Skills directive injected  -  QB Phase 3 critical skills now active")
+                        # Remove warmup directive, inject Stage 1 directive
+                        remove_system_messages(chat_ctx, "[WARMUP PHASE]")
+                        stage1_directive = build_stage_1_resume_directive(
+                            band=session_context.candidate_band,
+                            resume_brief=session_context.resume_brief,
+                            jd_must_haves=jd_must_haves,
+                        )
+                        chat_ctx.add_message(role="system", content=stage1_directive)
+                        logger.info("[STAGE 1] Resume directive injected after warmup")
                 turn_snapshot = turn_count
                 spawn_background_task(
                     _process_user_conversation_item(event, content, role, turn_snapshot),
@@ -1922,39 +1509,46 @@ async def entrypoint(ctx: JobContext):
                 _question_asked_at = time.perf_counter()
                 turn_count += 1
                 _stage_turn_count += 1
-                # ── Stage advance check (flexible budget) ──────────────────────
-                if warmup_complete and _current_stage_index < len(STAGE_CONFIGS) - 1 and _stage_start_time > 0:
+                # ── Stage advance check (turn-based budget) ────────────────────
+                if warmup_complete and _current_stage_index < len(STAGE_CONFIGS) - 1:
                     stage_cfg = STAGE_CONFIGS[_current_stage_index]
-                    time_in_stage = time.time() - _stage_start_time
-                    budget_exceeded = time_in_stage >= (stage_cfg.budget_secs + stage_cfg.grace_secs)
-                    if budget_exceeded and not _stage_bridge_pending:
+                    if _stage_turn_count >= stage_cfg.turn_budget and not _stage_bridge_pending:
                         _stage_bridge_pending = True
                         next_stage = STAGE_CONFIGS[_current_stage_index + 1]
-                        bridge_directive = (
-                            f"[STAGE_BRIDGE_DIRECTIVE — DO NOT SAY ALOUD]\n"
-                            f"Current stage: {stage_cfg.label} (completed after {int(time_in_stage)}s)\n"
-                            f"Advance to: Stage {next_stage.index + 1} — {next_stage.label}\n"
-                            f"Goal of next stage: {next_stage.goal}\n\n"
-                            f"BRIDGE (use this or adapt it naturally when the candidate finishes their current thought):\n"
-                            f"{stage_cfg.bridge_to_next}\n\n"
-                            f"After bridging, continue with {next_stage.label} questions. "
-                            f"Signal detection (ownership, depth, contradiction) stays active."
-                        )
-                        # Update stage tracking state
+                        # Build stage-specific directive for the incoming stage
+                        _next_idx = _current_stage_index + 1
+                        if _next_idx == 1:
+                            stage_directive = build_stage_2_skill_directive(
+                                band=session_context.candidate_band,
+                                resume_brief=session_context.resume_brief,
+                                jd_must_haves=jd_must_haves,
+                            )
+                        elif _next_idx == 2:
+                            stage_directive = build_stage_3_situational_directive(
+                                band=session_context.candidate_band,
+                                resume_brief=session_context.resume_brief,
+                            )
+                        elif _next_idx == 3:
+                            stage_directive = build_stage_4_behavioral_directive(
+                                band=session_context.candidate_band,
+                            )
+                        else:
+                            stage_directive = build_stage_5_practical_directive(
+                                band=session_context.candidate_band,
+                                jd_must_haves=jd_must_haves,
+                            )
                         session_context.stage_history.append({
                             "stage": _current_stage_index,
                             "name": stage_cfg.label,
                             "turns": _stage_turn_count,
-                            "duration_secs": round(time_in_stage),
                         })
                         _current_stage_index += 1
-                        _stage_start_time = time.time()
                         _stage_turn_count = 0
                         _stage_bridge_pending = False
-                        chat_ctx.add_message(role="system", content=bridge_directive)
+                        chat_ctx.add_message(role="system", content=stage_directive)
                         logger.info(
-                            "[STAGE] Advanced to stage %d (%s) after %ds",
-                            _current_stage_index, next_stage.label, int(time_in_stage)
+                            "[STAGE] Advanced to stage %d (%s) after %d turns",
+                            _current_stage_index, next_stage.label, _stage_turn_count,
                         )
                 # ── Periodic state injection every 3 assistant turns ───────────
                 if turn_count % 3 == 0 and turn_count != last_injection_turn:
@@ -2217,7 +1811,7 @@ async def entrypoint(ctx: JobContext):
         # Phase 5: Mark interview as NO_SHOW in database
         try:
             proctoring_data = {
-                "role_category": session_context.role_category,
+                "role_category": session_context.candidate_band,
                 "candidate_band": session_context.candidate_band,
                 "total_turns": turn_count,
                 "suspicion_score": suspicion_score,
@@ -2270,7 +1864,7 @@ async def entrypoint(ctx: JobContext):
             getattr(session_context, "candidate_band", "unknown"),
         )
         ai_name = context.get("aiName") or "Ishita"
-        welcome_text = build_phase_1_greeting_text(
+        welcome_text = build_greeting_text(
             candidate_first_name or candidate_name,
             ai_name,
             job_title,
@@ -2555,7 +2149,7 @@ async def entrypoint(ctx: JobContext):
     await asyncio.sleep(2)
     # âœ… Final definitive save - Phase 5 includes proctoring report + answer scores
     proctoring_data = {
-        "role_category": session_context.role_category,
+        "role_category": session_context.candidate_band,
         "candidate_band": session_context.candidate_band,
         "total_turns": turn_count,
         "suspicion_score": suspicion_score,
@@ -2648,7 +2242,7 @@ async def entrypoint(ctx: JobContext):
                     answer_scores,
                     job_title,
                     proctoring_data={
-                        "role_category": session_context.role_category,
+                        "role_category": session_context.candidate_band,
                         "candidate_band": session_context.candidate_band,
                         "suspicion_score": suspicion_score,
                         "current_mode": current_interview_mode,

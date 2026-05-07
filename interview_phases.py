@@ -1,30 +1,18 @@
 """
-Interview phase helpers.
+Interview phase helpers — 5-stage turn-based flow.
 
-Live runtime phases (time-based, safe turn-boundary transitions):
-- Runtime Phase 1: greeting + warmup  (0 → PHASE2_RATIO of interview)
-- Runtime Phase 2: QB Phase 1 questions — background / resume / experience
-- Runtime Phase 3: bridge / intermediate (PHASE2_RATIO → PHASE4_RATIO)
-                   content TBD — currently a coverage-floor pass
-- Runtime Phase 4: QB Phase 3 questions — critical skills / strengths / watch-outs
+Flow: greeting → 2-turn warmup → Stage 1 (RESUME) → Stage 2 (SKILL) →
+      Stage 3 (SITUATIONAL) → Stage 4 (BEHAVIORAL) → Stage 5 (PRACTICAL)
 
-Phase boundaries (as fraction of total interview time):
-  PHASE2_START_RATIO = 0.35  → 7 min in a 20-min interview
-  PHASE4_START_RATIO = 0.70  → 14 min in a 20-min interview
-
-Transitions fire only at the END of a complete Q&A exchange (candidate finishes
-answering), so no question is ever cut off mid-flight.
-
-Separate from the live runtime, the generated question bank also contains
-internal phase labels (Phase 1, Phase 3). Those labels are for the LLM artifact
-only and must not be confused with the live session phases above.
+Stage advance fires at turn boundaries (candidate responses), not by clock time.
+Each stage is injected as a system directive into the agent's chat context.
 """
 
 from __future__ import annotations
 
 
-def build_phase_1_greeting_text(candidate_name: str, ai_name: str, job_title: str) -> str:
-    """Build the canonical greeting used before runtime Phase 1 starts."""
+def build_greeting_text(candidate_name: str, ai_name: str, job_title: str) -> str:
+    """Canonical greeting spoken before warmup begins."""
     return (
         f"Hi {candidate_name}, it's so good to meet you! I'm {ai_name}, "
         f"and I've been really looking forward to our chat about the {job_title} role.\n\n"
@@ -32,254 +20,303 @@ def build_phase_1_greeting_text(candidate_name: str, ai_name: str, job_title: st
     )
 
 
-def build_phase_1_warmup_directive() -> str:
+def build_warmup_directive() -> str:
     """
-    Runtime Phase 1: WARMUP (2 candidate responses, then hand off).
-    Rapport only — no resume, no JD, no probing, no interview questions whatsoever.
+    Warmup phase: 2 candidate responses before Stage 1 injects.
+    Rapport only — no interview questions, no resume, no JD.
     """
     return (
-        "[RUNTIME PHASE 1: WARMUP]\n"
-        "You are in a 2-exchange warmup. This is NOT the interview. Do not treat it as one.\n\n"
-        "WHAT HAPPENS IN THIS PHASE:\n"
-        "  Exchange 1: The candidate responds to the greeting question (how are you doing).\n"
-        "              YOUR ONLY JOB: give a short, genuine personal reply about yourself. 1-2 sentences. Then STOP.\n"
-        "  Exchange 2: The candidate responds to your reply.\n"
-        "              YOUR ONLY JOB: say nothing. Wait. The system will give you new instructions immediately.\n\n"
-        "YOUR PERSONAL REPLY (Exchange 1) — pick one style:\n"
-        "  - 'I'm good, thanks! It's been a total blur of interviews today, but I'm really happy to finally connect with you. I've been looking forward to this chat.'\n"
-        "  - 'Honestly pretty good! Been in back-to-back calls since morning, but this is one I was genuinely looking forward to.'\n"
-        "  - 'Doing well, thank you! It's been a packed day, but I'm glad we're finally here.'\n\n"
-        "ABSOLUTE RULES — BREAKING ANY OF THESE IS A FAILURE:\n"
-        "  x Do NOT ask any follow-up questions after your personal reply\n"
-        "  x Do NOT ask about their career, background, skills, or the role\n"
-        "  x Do NOT ask 'what have you been up to', 'what excites you', or anything like that\n"
+        "[WARMUP PHASE]\n"
+        "This is a 2-exchange warmup. This is NOT the interview. Do not treat it as one.\n\n"
+        "Exchange 1: Candidate responds to the greeting (how are you doing).\n"
+        "  YOUR ONLY JOB: give a short, genuine personal reply. 1-2 sentences. Then STOP.\n"
+        "Exchange 2: Candidate responds to your reply.\n"
+        "  YOUR ONLY JOB: say nothing. Wait. The system will inject Stage 1 instructions next.\n\n"
+        "PERSONAL REPLY OPTIONS (pick one):\n"
+        "  - 'I'm good, thanks! It's been a busy day of interviews, but I was genuinely looking forward to this one.'\n"
+        "  - 'Doing well, thank you! Packed day, but glad we're here.'\n"
+        "  - 'Pretty good! Been back-to-back since morning, but this is one I was excited about.'\n\n"
+        "ABSOLUTE RULES:\n"
+        "  x Do NOT ask follow-up questions after your reply\n"
+        "  x Do NOT ask about career, background, skills, or the role\n"
         "  x Do NOT transition to the interview on your own\n"
-        "  x STOP after Exchange 1. Say nothing more until the system updates your instructions.\n\n"
-        "The system will inject new instructions after Exchange 2. Follow those instructions, not these."
+        "  x STOP after Exchange 1. Say nothing more until Stage 1 injects.\n"
+        "  x Do NOT mention this note aloud"
     )
 
 
-def _pick_resume_anchor(
-    candidate_band: str,
-    projects: list[str],
-    work_history: list[str],
-    education: list[str],
-    skills: list[str],
-) -> tuple[str, str]:
-    """
-    Pick the single most relevant resume item to anchor the first question on.
-    Returns (anchor_label, anchor_value).
+# ---------------------------------------------------------------------------
+# Band-level probe blocks — reused across multiple stage directives
+# ---------------------------------------------------------------------------
 
-    Band logic:
-    - fresher     -> best college project first, then internship, then education
-    - mid         -> latest work experience first, then projects
-    - experienced -> latest work experience first
-    - senior      -> latest work experience first
-    """
-    if candidate_band == "fresher":
-        if projects:
-            return ("project", projects[0])
-        if work_history:
-            return ("internship", work_history[0])
-        if education:
-            return ("education", education[0])
-        return ("skills", ", ".join(skills[:5]) if skills else "your background")
-
-    # mid / experienced / senior - work history is primary
-    if work_history:
-        return ("role", work_history[0])
-    if projects:
-        return ("project", projects[0])
-    return ("skills", ", ".join(skills[:5]) if skills else "your background")
+_BAND_PROBE = {
+    "fresher": (
+        "CANDIDATE LEVEL: FRESHER (< 1.5 years)\n"
+        "Prioritise: what they built, why, what they learned. Test fundamentals behind claimed tools.\n"
+        "Be patient. Do NOT penalise missing industry jargon or production experience."
+    ),
+    "mid": (
+        "CANDIDATE LEVEL: MID-LEVEL (1.5–5 years)\n"
+        "Probe: what they personally owned vs what the team did. Specific results. Decisions and why.\n"
+        "Push past resume language — get the actual story."
+    ),
+    "experienced": (
+        "CANDIDATE LEVEL: EXPERIENCED (5–10 years)\n"
+        "Expect real depth. Probe end-to-end ownership, tradeoffs under constraint, influence beyond direct scope.\n"
+        "Do NOT accept vague answers — an experienced person has a specific story for everything."
+    ),
+    "senior": (
+        "CANDIDATE LEVEL: SENIOR (10+ years)\n"
+        "Expect strategic judgment. Probe flagship initiatives, strategic decisions, business impact.\n"
+        "How they influenced direction for others. Challenge their decisions — seniors should defend them."
+    ),
+}
 
 
-def build_phase_2_opening_context(
+def _band_probe(band: str) -> str:
+    return _BAND_PROBE.get(band, _BAND_PROBE["mid"])
+
+
+# ---------------------------------------------------------------------------
+# Stage directives (injected at turn boundaries by agent_runtime)
+# ---------------------------------------------------------------------------
+
+def build_stage_1_resume_directive(
     *,
-    candidate_band: str,
-    projects: list[str],
-    work_history: list[str],
-    education: list[str],
-    skills: list[str],
-    jd_summary_block: str,
-    smart_opening_question: str,
-    coverage_items: list[str],
+    band: str,
+    resume_brief: dict,
+    jd_must_haves: list[str],
 ) -> str:
     """
-    Runtime Phase 2: the first real interview after warmup.
-
-    This uses raw resume fields (not just a summary) so the opening question can
-    anchor on a specific project, company, or skill. The live flow is still one
-    question at a time, but the question style changes by band.
-
-    Band-specific:
-    - fresher     -> college project / internship / education
-    - mid         -> latest company project / ownership / results
-    - experienced -> end-to-end initiative, tradeoffs, scope
-    - senior      -> flagship initiative, strategic decisions, cross-team influence
+    Stage 1: RESUME — anchor on the candidate's most relevant resume item.
+    Goal: surface background, context, and genuine experience.
     """
+    anchor_item = resume_brief.get("anchor_item", "your background")
+    anchor_type = resume_brief.get("anchor_type", "background")
 
-    anchor_label, anchor_value = _pick_resume_anchor(
-        candidate_band, projects, work_history, education, skills
-    )
-
-    band_probe = {
-        "fresher": (
-            "CANDIDATE LEVEL: FRESHER\n"
-            "They are early career. Prioritise:\n"
-            "- What they actually built (problem -> what they made -> what they learned)\n"
-            "- Fundamentals behind tools they claim to know\n"
-            "- Learning speed and curiosity - NOT scale, production experience, or team size\n"
-            "Be patient. Don't penalise missing industry jargon."
-        ),
-        "mid": (
-            "CANDIDATE LEVEL: MID-LEVEL\n"
-            "They have real work experience. Probe for:\n"
-            "- What they personally owned vs what the team did\n"
-            "- Specific results or impact (numbers if possible)\n"
-            "- Decisions they made and why\n"
-            "Push past resume language - get the actual story."
-        ),
-        "experienced": (
-            "CANDIDATE LEVEL: EXPERIENCED\n"
-            "Expect real depth. Probe for:\n"
-            "- End-to-end ownership of a complex initiative\n"
-            "- Tradeoffs they made under constraint\n"
-            "- Evidence of influence beyond their direct scope\n"
-            "Do NOT accept vague answers. An experienced person has a specific story for everything."
-        ),
-        "senior": (
-            "CANDIDATE LEVEL: SENIOR\n"
-            "Expect strategic judgment. Probe for:\n"
-            "- Flagship initiative with real business/technical impact\n"
-            "- Strategic decisions under constraint - why, what tradeoffs\n"
-            "- What they would do differently today\n"
-            "- How they influenced direction for others (mentorship, cross-team)\n"
-            "Challenge their decisions. Seniors should be able to defend them."
-        ),
-    }
-
-    probe = band_probe.get(candidate_band, band_probe["mid"])
-
-    anchor_instruction = (
-        f"FIRST QUESTION ANCHOR - use this to open:\n"
-        f"Their resume shows this {anchor_label}: {anchor_value}\n\n"
-        f"Ask your first question directly about this. Be specific - reference the actual "
-        f"{anchor_label} name or company. Do NOT ask a generic 'tell me about yourself'.\n\n"
-        f"Example pattern:\n"
-    )
-
-    if anchor_label == "project":
-        project_name = anchor_value.split(" - ")[0] if " - " in anchor_value else anchor_value
-        anchor_instruction += (
-            f'  "I noticed you built **{project_name}** while you were in college - that\'s a cool project. '
-            'What was the most challenging part of getting that to actually work?"'
+    if anchor_type == "project":
+        project_name = anchor_item.split(" - ")[0] if " - " in anchor_item else anchor_item
+        anchor_hint = (
+            f"Open with: \"I noticed you built {project_name} — "
+            "what was the most challenging part of getting that to actually work?\""
         )
-    elif anchor_label in ("role", "internship"):
-        company = anchor_value.split(" at ")[-1].strip() if " at " in anchor_value else anchor_value
-        anchor_instruction += (
-            f'  "I see you were at **{company}** recently. To be honest, I\'m curious - '
-            'what was your day-to-day focus actually like there?"'
+    elif anchor_type in ("role", "internship"):
+        company = anchor_item.split(" at ")[-1].strip() if " at " in anchor_item else anchor_item
+        anchor_hint = (
+            f"Open with: \"I see you were at {company} recently — "
+            "what was your day-to-day focus actually like there?\""
         )
-    elif anchor_label == "education":
-        anchor_instruction += (
-            f'  "I saw you studied at **{anchor_value}**. Was there a specific project or '
-            'academic goal you hit there that you\'re still proud of?"'
+    elif anchor_type == "initiative":
+        anchor_hint = (
+            f"Open with: \"I'd love to start with {anchor_item} — "
+            "can you walk me through the scope and the decisions you owned there?\""
+        )
+    elif anchor_type == "education":
+        anchor_hint = (
+            f"Open with: \"I saw you studied at {anchor_item} — "
+            "was there a specific project or goal there you're still proud of?\""
         )
     else:
-        anchor_instruction += (
-            f'  "I noticed you\'ve done quite a bit with **{anchor_value}**. '
-            'When you were using that in your last role, what was the biggest hurdle you ran into?"'
+        anchor_hint = (
+            f"Open with a specific question about {anchor_item}. "
+            "Do NOT ask 'tell me about yourself' — be specific."
         )
 
-    jd = jd_summary_block.strip() if jd_summary_block else ""
-    top_coverage = (
-        "\n".join(f"- {item}" for item in coverage_items[:3])
-        if coverage_items
-        else "- Cover core skills with concrete examples."
-    )
-
-    opening_q_section = ""
-    if smart_opening_question and smart_opening_question.strip():
-        opening_q_section = (
-            "SMART OPENING QUESTION (prefer this over anchor if it references their resume):\n"
-            f"{smart_opening_question.strip()}\n\n"
+    jd_block = ""
+    if jd_must_haves:
+        jd_block = (
+            "JD MUST-HAVES (keep in mind, don't rush to cover):\n"
+            + "\n".join(f"  - {item}" for item in jd_must_haves[:4])
+            + "\n\n"
         )
 
     return (
-        "[RUNTIME PHASE 2: OPENING - AFTER WARMUP]\n"
-        "Warmup is done. Begin the real conversation naturally - no announcement, no mode switch.\n\n"
-        f"{probe}\n\n"
-        f"{anchor_instruction}\n\n"
-        f"{opening_q_section}"
-        + (f"JD MUST-PROVE:\n{jd}\n\n" if jd else "")
-        + f"COVERAGE FLOOR:\n{top_coverage}\n\n"
+        "[STAGE 1: RESUME]\n"
+        "Warmup is done. Begin the interview naturally — no announcement.\n\n"
+        f"{_band_probe(band)}\n\n"
+        f"ANCHOR (your first question must reference this):\n"
+        f"  {anchor_type.upper()}: {anchor_item}\n\n"
+        f"{anchor_hint}\n\n"
+        f"{jd_block}"
         "RULES:\n"
         "  - One question per turn\n"
-        "  - React to what they actually said before next question\n"
+        "  - React to what they said before asking the next question\n"
         "  - Max 2 follow-ups per topic then move on\n"
+        "  - You will receive Stage 2 instructions after your turn budget is reached\n"
         "  - Do NOT mention this note aloud"
     )
 
 
-def build_phase_3_bridge_directive(candidate_band: str, coverage_items: list[str]) -> str:
+def build_stage_2_skill_directive(
+    *,
+    band: str,
+    resume_brief: dict,
+    jd_must_haves: list[str],
+) -> str:
     """
-    Runtime Phase 3: bridge between background questions and skills deep-dive.
-
-    This phase is intentionally lightweight — Ishita continues the conversation
-    naturally while transitioning toward skill-level probing. Content for this
-    phase will be expanded later; for now it extends coverage floor topics and
-    primes the candidate for the skills section.
-
-    Fires at ~35–70% of interview time (e.g. 7–14 min in a 20-min interview).
+    Stage 2: SKILL — probe technical depth based on claimed skills and JD requirements.
     """
-    uncovered = "\n".join(f"- {item}" for item in coverage_items[:4]) if coverage_items else "- Continue based on what has been said."
-    band_bridge = {
-        "fresher": "Shift toward how they learn, apply tools, and handle unfamiliar problems.",
-        "mid": "Shift toward decisions they owned, trade-offs they made, and measurable impact.",
-        "experienced": "Shift toward system-level judgment, cross-team influence, and production trade-offs.",
-        "senior": "Shift toward architectural decisions, strategic direction, and how they raised the bar.",
-    }.get(candidate_band, "Shift toward depth — implementation, impact, and decisions.")
+    skills = resume_brief.get("skills", [])
+    skills_block = (
+        "CANDIDATE SKILLS TO PROBE:\n"
+        + "\n".join(f"  - {s}" for s in skills[:5])
+        + "\n\n"
+        if skills else ""
+    )
+
+    jd_block = (
+        "JD MUST-HAVES:\n"
+        + "\n".join(f"  - {item}" for item in jd_must_haves[:4])
+        + "\n\n"
+        if jd_must_haves else ""
+    )
+
+    band_direction = {
+        "fresher": "Ask: walk me through a project where you actually used [skill]. What broke? What did you learn?",
+        "mid": "Ask: describe the most complex system you've designed using [skill]. What were the tradeoffs?",
+        "experienced": "Ask: what's your deepest technical contribution in [skill area]? Own it end-to-end.",
+        "senior": "Ask: what's your architectural philosophy when using [skill] at scale? How do you make the call?",
+    }.get(band, "Probe depth in claimed technical skills with concrete examples.")
 
     return (
-        "[RUNTIME PHASE 3: BRIDGE]\n"
-        "You are in the mid-interview bridge phase. Continue naturally from the last answer.\n\n"
-        f"DIRECTION: {band_bridge}\n\n"
-        f"UNCOVERED AREAS (prioritise these):\n{uncovered}\n\n"
+        "[STAGE 2: SKILL]\n"
+        "Continue naturally from Stage 1. No announcement.\n\n"
+        f"{_band_probe(band)}\n\n"
+        f"{skills_block}"
+        f"{jd_block}"
+        f"DIRECTION: {band_direction}\n\n"
         "RULES:\n"
-        "  - Do NOT announce a phase change\n"
         "  - One question per turn\n"
-        "  - Still max 2 follow-ups per topic then move on\n"
-        "  - You will receive new instructions when the skills phase begins\n"
+        "  - Probe depth — don't accept surface-level answers\n"
+        "  - Max 2 follow-ups per skill then move on\n"
+        "  - You will receive Stage 3 instructions after your turn budget is reached\n"
         "  - Do NOT mention this note aloud"
     )
 
 
-def build_phase_4_skills_directive() -> str:
+def build_stage_3_situational_directive(
+    *,
+    band: str,
+    resume_brief: dict,
+) -> str:
     """
-    Runtime Phase 4: QB Phase 3 critical-skills questions.
-
-    Replaces all prior phase directives. Ishita should now work through the
-    QUESTION BANK — PHASE 3 (CRITICAL SKILLS) section of the already-injected
-    question bank, plus STRENGTH / WEAKNESS / WATCHOUT / CUSTOM questions.
-
-    Fires at ~70% of interview time (e.g. 14 min in a 20-min interview).
-    The full question bank (with Phase 3 filtered) is already in context from
-    the earlier injection; this directive tells Ishita to start that section now.
+    Stage 3: SITUATIONAL — present a realistic scenario anchored to their background.
+    Goal: test decision-making, problem-solving, and trade-off reasoning.
     """
+    anchor_item = resume_brief.get("anchor_item", "your recent work")
+
+    band_scenario = {
+        "fresher": (
+            f"Anchor the scenario to their project or internship work ({anchor_item}). "
+            "Ask: 'Imagine you're building your first production service — walk me through your approach.' "
+            "Test: how they think, not what they know."
+        ),
+        "mid": (
+            f"Use their recent role ({anchor_item}) as context. "
+            "Ask for a real example where they made a performance or design trade-off. "
+            "Test: decision ownership and reasoning, not just the outcome."
+        ),
+        "experienced": (
+            f"Present a scenario involving a system constraint (scale, reliability, team) "
+            f"anchored to their experience at {anchor_item}. "
+            "Ask: what technical decision had the biggest architectural impact? What would you do differently?"
+        ),
+        "senior": (
+            f"Ask about a strategic decision tied to {anchor_item} that affected the broader business or team. "
+            "Test: how they weighed trade-offs, influenced others, and owned the outcome."
+        ),
+    }.get(band, f"Present a realistic scenario tied to {anchor_item}. Test reasoning and judgment.")
+
     return (
-        "[RUNTIME PHASE 4: SKILLS DEEP-DIVE]\n"
-        "You have now entered the skills assessment phase. "
-        "Work through the QUESTION BANK — PHASE 3 (CRITICAL SKILLS) questions from your earlier instructions.\n\n"
-        "Cover in order:\n"
-        "  1. SKILL questions (hands-on, role-critical technical areas)\n"
-        "  2. STRENGTH question\n"
-        "  3. WEAKNESS question\n"
-        "  4. WATCHOUT question\n"
-        "  5. CUSTOM questions\n\n"
+        "[STAGE 3: SITUATIONAL]\n"
+        "Continue naturally from Stage 2. No announcement.\n\n"
+        f"{_band_probe(band)}\n\n"
+        f"SCENARIO DIRECTION:\n{band_scenario}\n\n"
         "RULES:\n"
-        "  - Do NOT announce this transition aloud\n"
-        "  - One question per turn\n"
-        "  - Max 2 follow-ups per skill topic then move on\n"
-        "  - Refer to Strong/Weak patterns and Probes from the question bank\n"
+        "  - One scenario or question per turn\n"
+        "  - Let them think — don't jump in too fast\n"
+        "  - Follow up on their reasoning, not just the answer\n"
+        "  - You will receive Stage 4 instructions after your turn budget is reached\n"
+        "  - Do NOT mention this note aloud"
+    )
+
+
+def build_stage_4_behavioral_directive(
+    *,
+    band: str,
+) -> str:
+    """
+    Stage 4: BEHAVIORAL — STAR-style questions on collaboration, growth, and impact.
+    Goal: surface how they actually work with others and handle adversity.
+    """
+    band_direction = {
+        "fresher": (
+            "Ask: how do you approach learning a new technology? Give me a real example. "
+            "Also: tell me about a time something didn't work out the way you expected."
+        ),
+        "mid": (
+            "Ask: tell me about a time you influenced a decision outside your direct scope. "
+            "Also: describe a conflict with a teammate or PM — what happened and how did you handle it?"
+        ),
+        "experienced": (
+            "Ask: how did you mentor or grow someone on your team? Specific example. "
+            "Also: tell me about a time a project failed — what was your role and what did you learn?"
+        ),
+        "senior": (
+            "Ask: how do you set technical direction for a team that doesn't report to you? "
+            "Also: describe a time you had to change your mind publicly on a major decision."
+        ),
+    }.get(band, "Ask STAR-style questions on collaboration, conflict, growth, and adversity.")
+
+    return (
+        "[STAGE 4: BEHAVIORAL]\n"
+        "Continue naturally from Stage 3. No announcement.\n\n"
+        f"{_band_probe(band)}\n\n"
+        f"DIRECTION: {band_direction}\n\n"
+        "RULES:\n"
+        "  - One question per turn — STAR format (Situation, Task, Action, Result)\n"
+        "  - Push for specifics — 'what exactly did you do' not 'what does your team do'\n"
+        "  - Max 2 follow-ups per story then move on\n"
+        "  - You will receive Stage 5 instructions after your turn budget is reached\n"
+        "  - Do NOT mention this note aloud"
+    )
+
+
+def build_stage_5_practical_directive(
+    *,
+    band: str,
+    jd_must_haves: list[str],
+) -> str:
+    """
+    Stage 5: PRACTICAL — candidate questions + closing.
+    Goal: give candidate space to ask questions, then close with a clean wrap-up.
+    """
+    jd_block = (
+        "REMAINING JD MUST-HAVES (address any uncovered):\n"
+        + "\n".join(f"  - {item}" for item in jd_must_haves[:3])
+        + "\n\n"
+        if jd_must_haves else ""
+    )
+
+    band_close = {
+        "fresher": "Acknowledge their learning mindset. Ask if they have questions about the team or growth path.",
+        "mid": "Acknowledge their ownership and impact. Ask if they have questions about the role or tech stack.",
+        "experienced": "Acknowledge their depth and leadership. Ask if they have questions about scope or architecture.",
+        "senior": "Acknowledge their strategic perspective. Ask if they have questions about the org or direction.",
+    }.get(band, "Wrap up warmly. Give them space to ask questions.")
+
+    return (
+        "[STAGE 5: PRACTICAL / CLOSING]\n"
+        "You are in the final stage. Continue naturally from Stage 4. No announcement.\n\n"
+        f"{jd_block}"
+        f"CLOSING DIRECTION: {band_close}\n\n"
+        "CLOSING SEQUENCE:\n"
+        "  1. Ask one final question if any JD must-have is still uncovered (natural, not forced)\n"
+        "  2. Invite candidate questions: 'Do you have any questions for me about the role or team?'\n"
+        "  3. After their questions (or if they have none): wrap up warmly\n"
+        "  4. End with: 'It was really great talking with you. We'll be in touch soon!'\n\n"
+        "RULES:\n"
+        "  - Keep the close warm and conversational — not scripted\n"
+        "  - Answer their questions briefly and honestly\n"
         "  - Do NOT mention this note aloud"
     )

@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import re
 import time
 from contextvars import ContextVar
 from typing import Any, Optional
