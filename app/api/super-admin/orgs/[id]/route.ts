@@ -74,7 +74,7 @@ export async function PATCH(
         const { id } = await params;
         const body = await request.json();
         const {
-            name, plan, status, logoUrl, slug, location, maxActiveDrives, maxTeamMembers,
+            name, plan, status, logoUrl, slug, location, maxActiveDrives,
             proctoringSignals,
             adminName, adminEmail,
             ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice, googleModel, googleVoiceName,
@@ -138,7 +138,6 @@ export async function PATCH(
         if (maxActiveDrives !== undefined && String(maxActiveDrives).trim() !== "") {
             updateData.maxActiveDrives = normalizeOrgLimitInput(maxActiveDrives);
         }
-        if (maxTeamMembers !== undefined) updateData.maxTeamMembers = normalizeOrgLimitInput(maxTeamMembers);
         if (proctoringSignals !== undefined) updateData.proctoringSignals = normalizeProctoringSignals(proctoringSignals);
         if (status !== undefined) updateData.status = status;
         if (logoUrl !== undefined) updateData.logoUrl = logoUrl;

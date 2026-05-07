@@ -93,7 +93,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
 
     const [form, setForm] = useState({
         name: "", slug: "", plan: DEFAULT_ORG_PLAN,
-        maxActiveDrives: "Unlimited", maxTeamMembers: "Unlimited",
+        maxActiveDrives: "Unlimited",
         proctoringSignals: { ...DEFAULT_PROCTORING_SIGNALS },
         location: "", adminName: "", adminEmail: "", adminPassword: "",
         ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
@@ -208,7 +208,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     name: data.name || "", slug: data.slug || "",
                     plan: normalizeOrgPlan(data.plan) || DEFAULT_ORG_PLAN,
                     maxActiveDrives: formatOrgLimitValue(data.maxActiveDrives),
-                    maxTeamMembers: formatOrgLimitValue(data.maxTeamMembers),
                     proctoringSignals: normalizeProctoringSignals(data.proctoringSignals),
                     location: data.location || "",
                     adminName: data.users && data.users.length > 0 ? data.users[0].name : "",
@@ -413,9 +412,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                 {step === 3 && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Billing & Quotas" />
-                        <div className="grid md:grid-cols-2 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
+                        <div className="grid md:grid-cols-1 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
                             <LimitControl label="Drive Limit" value={form.maxActiveDrives} onChange={val => setForm(p => ({ ...p, maxActiveDrives: val }))} />
-                            <LimitControl label="Team Limit" value={form.maxTeamMembers} onChange={val => setForm(p => ({ ...p, maxTeamMembers: val }))} />
                         </div>
                         <div className="rounded-2xl border border-orange-100 bg-orange-50/40 p-6 space-y-5">
                             <div className="flex items-center justify-between gap-4 flex-wrap">

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { sendGmailEmail } from "@/lib/google-auth";
+import { sendEmail } from "@/lib/resend";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
 
@@ -16,15 +16,14 @@ export async function POST(
         const { id } = await params;
         const orgId = session.orgId;
 
-        // -- AUTHORIZATION ---------------------------------
         if (session.role !== "SUPER_ADMIN" && !orgId) {
             return NextResponse.json({ error: "Unauthorized: Missing organization context" }, { status: 401 });
         }
 
         const application = await prisma.application.findFirst({
-            where: { 
-                id, 
-                ...(session.role !== "SUPER_ADMIN" ? { drive: { orgId: orgId! } } : {}) 
+            where: {
+                id,
+                ...(session.role !== "SUPER_ADMIN" ? { drive: { orgId: orgId! } } : {})
             },
             include: { drive: { select: { title: true, orgId: true } } },
         });
@@ -38,48 +37,40 @@ export async function POST(
             return NextResponse.json({ error: "Subject and body are required" }, { status: 400 });
         }
 
-        // -- XSS PROTECTION ---------------------------------
-        const escapeHtml = (unsafe: string) => {
-            return unsafe
-                 .replace(/&/g, "&amp;")
-                 .replace(/</g, "&lt;")
-                 .replace(/>/g, "&gt;")
-                 .replace(/"/g, "&quot;")
-                 .replace(/'/g, "&#039;");
-        };
-        const safeBody = escapeHtml(body);
+        const escapeHtml = (unsafe: string) =>
+            unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
 
-        // Resolve variables on sanitized output
-        const resolvedBody = safeBody
+        const resolvedBody = escapeHtml(body)
             .replace(/\{\{name\}\}/gi, application.fullName)
             .replace(/\{\{role\}\}/gi, (application as any).drive?.title || "the role")
             .replace(/\{\{email\}\}/gi, application.email);
 
         const targetOrgId = orgId || (application as any).drive?.orgId || undefined;
-        if (!targetOrgId) {
-            return NextResponse.json({
-                error: "No organization context available for this email."
-            }, { status: 502 });
-        }
 
         const [org, billing] = await Promise.all([
-            prisma.organization.findUnique({
-                where: { id: targetOrgId },
-                select: { status: true },
-            }),
-            getOrgBillingStatus(targetOrgId),
+            targetOrgId
+                ? prisma.organization.findUnique({ where: { id: targetOrgId }, select: { status: true } })
+                : Promise.resolve(null),
+            targetOrgId ? getOrgBillingStatus(targetOrgId) : Promise.resolve(null),
         ]);
 
-        const isSuspended = String(org?.status || "").toUpperCase() === "SUSPENDED" || String(org?.status || "").toUpperCase() === "CLOSED";
-        const quotaLocked = isInterviewQuotaLocked(billing);
-        if (isSuspended || quotaLocked) {
-            return NextResponse.json(
-                {
-                    error: getInterviewActionBlockedMessage(isSuspended),
-                    code: isSuspended ? "ACCOUNT_SUSPENDED" : "NO_INTERVIEWS",
-                },
-                { status: isSuspended ? 403 : 402 }
-            );
+        if (org && billing) {
+            const isSuspended = String(org.status || "").toUpperCase() === "SUSPENDED" || String(org.status || "").toUpperCase() === "CLOSED";
+            const quotaLocked = isInterviewQuotaLocked(billing);
+            if (isSuspended || quotaLocked) {
+                return NextResponse.json(
+                    {
+                        error: getInterviewActionBlockedMessage(isSuspended),
+                        code: isSuspended ? "ACCOUNT_SUSPENDED" : "NO_INTERVIEWS",
+                    },
+                    { status: isSuspended ? 403 : 402 }
+                );
+            }
         }
 
         const html = `
@@ -90,32 +81,11 @@ export async function POST(
             </div>
         `;
 
-        const orgCredentials = await prisma.organization.findUnique({
-            where: { id: targetOrgId },
-            select: { googleAccessToken: true, googleEmail: true }
-        });
-
-        if (!orgCredentials?.googleAccessToken || !orgCredentials.googleEmail) {
-            return NextResponse.json({
-                error: "Connect Gmail in onboarding before sending candidate emails."
-            }, { status: 400 });
-        }
-
-        await sendGmailEmail({ orgId: targetOrgId, to: application.email, subject, html });
+        await sendEmail({ to: application.email, subject, html });
 
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error("[send-email]", error);
-        const err = error as { message?: string; code?: string; reconnectRequired?: boolean };
-        const reconnectRequired = Boolean(err?.reconnectRequired);
-        const code = err?.code || "GMAIL_SEND_FAILED";
-        return NextResponse.json({
-            error: reconnectRequired
-                ? "Reconnect Gmail and grant the missing permissions so this email can be sent."
-                : "Failed to send email",
-            code,
-            reconnectRequired,
-            details: err?.message,
-        }, { status: reconnectRequired ? 502 : 500 });
+        return NextResponse.json({ error: "Failed to send email" }, { status: 500 });
     }
 }

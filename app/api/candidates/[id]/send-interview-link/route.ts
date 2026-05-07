@@ -111,25 +111,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             email: application.email,
             fullName: application.fullName,
             jobTitle: application.drive?.title || "Unknown Role",
-            orgId: application.drive?.orgId ?? undefined,
             status: "ACCEPTED",
-            score: application.aiScore || 0,
             interviewLink
         });
 
         if (!mailResult.success) {
-            const reason =
-                typeof mailResult.error === "string"
-                    ? mailResult.error
-                    : (mailResult.error as any)?.message || "Unknown email delivery error";
             return NextResponse.json({
-                error: mailResult.reconnectRequired
-                    ? "Reconnect Gmail and grant the missing permissions so the interview email can send."
-                    : `Interview token refreshed, but email could not be sent: ${reason}`,
-                code: mailResult.code || "GMAIL_SEND_FAILED",
-                reconnectRequired: Boolean(mailResult.reconnectRequired),
-                details: reason,
-            }, { status: mailResult.reconnectRequired ? 502 : 500 });
+                error: `Interview token refreshed, but email could not be sent: ${mailResult.error}`,
+            }, { status: 500 });
         }
 
         await appendCandidateActivity(applicationId, {

@@ -8,7 +8,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
-import { CandidateActivitySidebar } from "@/components/admin/candidate-activity-sidebar";
 import { PremiumFilter } from "@/components/admin/premium-filter";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { useCandidates } from "@/context/candidates-context";
@@ -36,7 +35,6 @@ import {
     Trash2,
     Radio,
     Loader2,
-    Activity,
 } from "lucide-react";
 import {
     DropdownMenu,
@@ -75,7 +73,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
     const [isSelectionMode, setIsSelectionMode] = useState(true);
     const [isBulkLoading, setIsBulkLoading] = useState(false);
     const [isDriveViewReady, setIsDriveViewReady] = useState(false);
-    const [activitySidebarCandidate, setActivitySidebarCandidate] = useState<{ id: string; name: string } | null>(null);
     const [pendingEmailBatch, setPendingEmailBatch] = useState<{
         ids: string[];
         emailType: "screening" | "hiring";
@@ -764,14 +761,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                         collisionPadding={12}
                                                         className="w-64 max-h-[70vh] overflow-y-auto origin-top-right p-2 rounded-2xl shadow-xl border-gray-100 bg-white"
                                                     >
-                                                        <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Activity</DropdownMenuLabel>
-                                                        <DropdownMenuItem
-                                                            onClick={() => setActivitySidebarCandidate({ id: candidate.id, name: displayName })}
-                                                            className="my-1 rounded-full border border-orange-200 bg-orange-50/80 px-3 py-2 text-sm font-bold cursor-pointer text-orange-700 shadow-sm transition-all hover:border-orange-300 hover:bg-orange-100 focus:text-orange-800 focus:bg-orange-100"
-                                                        >
-                                                            <Activity className="h-4 w-4 mr-2 shrink-0 text-orange-600" />
-                                                            Activity
-                                                        </DropdownMenuItem>
                                                         <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Shortlist</DropdownMenuLabel>
                                                         <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${displayName} shortlisted`)} className="rounded-xl px-2.5 py-2 text-sm font-semibold text-emerald-600 cursor-pointer transition-colors hover:bg-emerald-50 hover:text-emerald-700 focus:text-emerald-700 focus:bg-emerald-50 data-[highlighted]:bg-emerald-50 data-[highlighted]:text-emerald-700">
                                                             <Target className="h-4 w-4 mr-2 shrink-0" />
@@ -939,13 +928,6 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                 cancelText="No Thanks"
                 variant="info"
                 isLoading={isBulkLoading}
-            />
-            <CandidateActivitySidebar
-                open={activitySidebarCandidate !== null}
-                candidateId={activitySidebarCandidate?.id || null}
-                candidateName={activitySidebarCandidate?.name}
-                backHref={`/admin/candidates/drive/${driveId}`}
-                onClose={() => setActivitySidebarCandidate(null)}
             />
         </div>
     );

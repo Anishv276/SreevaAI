@@ -39,7 +39,6 @@ export async function GET() {
                 llmModel: true,
                 llmTemperature: true,
                 maxActiveDrives: true,
-                maxTeamMembers: true,
                 proctoringSignals: true,
             }
         });

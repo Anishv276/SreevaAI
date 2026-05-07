@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { generateId } from "@/lib/ids";
 import { validatePasswordStrength } from "@/lib/validation";
-import { sendSuperAdminGmailEmail } from "@/lib/google-auth";
+import { sendOrgWelcomeEmail as sendWelcomeViaResend } from "@/lib/mail";
 import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
 import { DEFAULT_PROCTORING_SIGNALS, getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
@@ -228,79 +228,6 @@ export async function GET(request: Request) {
     }
 }
 
-async function sendOrgWelcomeEmail({
-    email,
-    orgName,
-    adminName,
-}: {
-    email: string;
-    orgName: string;
-    adminName: string;
-}) {
-    const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || ''}/login`;
-    const subject = `Welcome to Sreeva AI: Your Workspace is Ready`;
-
-    const html = `
-        <div style="font-family: Inter, Arial, sans-serif; max-width: 620px; margin: 0 auto; padding: 40px; border: 1px solid #f1f5f9; border-radius: 24px; background: #ffffff; text-align: center;">
-            <div style="margin-bottom: 30px;">
-                <div style="display: inline-block; background: #FFF7ED; padding: 16px; border-radius: 20px;">
-                    <span style="font-size: 32px;">🚀</span>
-                </div>
-            </div>
-            <h1 style="margin: 0 0 12px; color: #111827; font-size: 26px; font-weight: 800; letter-spacing: -0.02em;">Welcome to the Future of Hiring</h1>
-            <p style="margin: 0 0 30px; color: #4b5563; font-size: 16px; line-height: 1.6;">
-                Hi ${adminName}, your workspace for <strong>${orgName}</strong> has been successfully provisioned on Sreeva AI Cloud.
-            </p>
-            
-            <div style="padding: 32px; border: 1px solid #f97316; border-radius: 20px; background: #fffaf5; margin-bottom: 30px; border-style: dashed;">
-                <p style="margin: 0 0 8px; color: #7c2d12; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em;">Next Step</p>
-                <p style="margin: 0 0 24px; color: #9a3412; font-size: 15px; font-weight: 500;">Please log in to your dashboard to complete your onboarding and start your first recruitment drive.</p>
-                <a href="${loginUrl}" style="display: inline-block; background: #f97316; color: #fff; text-decoration: none; font-weight: 800; font-size: 15px; padding: 16px 36px; border-radius: 14px; box-shadow: 0 10px 25px rgba(249,115,22,0.25);">
-                    Access Workspace
-                </a>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 30px; text-align: left;">
-                <div style="padding: 16px; background: #f8fafc; border-radius: 16px;">
-                    <p style="margin: 0 0 4px; color: #1e293b; font-size: 13px; font-weight: 700;">Support</p>
-                    <p style="margin: 0; color: #64748b; font-size: 11px;">24/7 Priority Assistance</p>
-                </div>
-                <div style="padding: 16px; background: #f8fafc; border-radius: 16px;">
-                    <p style="margin: 0 0 4px; color: #1e293b; font-size: 13px; font-weight: 700;">Infrastructure</p>
-                    <p style="margin: 0; color: #64748b; font-size: 11px;">Secure Cloud Provisioned</p>
-                </div>
-            </div>
-
-            <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">
-                If you have any questions, reply to this email or contact your platform administrator.
-            </p>
-        </div>
-    `;
-
-    const superAdmin = await prisma.superAdmin.findFirst({
-        where: { googleAccessToken: { not: null } },
-        select: { id: true }
-    });
-
-    if (!superAdmin) {
-        return { success: false, error: "No Google-connected super admin sender available." };
-    }
-
-    try {
-        await sendSuperAdminGmailEmail({
-            adminId: superAdmin.id,
-            to: email,
-            subject,
-            html,
-        });
-        console.log(`[WELCOME EMAIL] Sent to ${email} for org ${orgName}`);
-        return { success: true };
-    } catch (error) {
-        console.error(`[WELCOME EMAIL FAILED] ${email}:`, error);
-        return { success: false, error };
-    }
-}
-
 // POST /api/super-admin/orgs - create new org + HR admin user
 export async function POST(request: Request) {
     try {
@@ -313,7 +240,6 @@ export async function POST(request: Request) {
         const {
             orgName, slug, plan, logoUrl, adminEmail, adminName, adminPassword,
             maxActiveDrives,
-            maxTeamMembers,
             interviewQuotaTotal,
             proctoringSignals,
             ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice, googleModel, googleVoiceName,
@@ -364,7 +290,6 @@ export async function POST(request: Request) {
                     maxActiveDrives !== undefined && maxActiveDrives !== null && String(maxActiveDrives).trim() !== ""
                         ? normalizeOrgLimitInput(maxActiveDrives)
                         : "Unlimited",
-                maxTeamMembers: normalizeOrgLimitInput(maxTeamMembers ?? "Unlimited"),
                 interviewQuotaTotal: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
                 creditsUsed: 0,
                 proctoringSignals: normalizeProctoringSignals(proctoringSignals || getProctoringSignalsForPlan(plan || DEFAULT_ORG_PLAN)),
@@ -418,7 +343,7 @@ export async function POST(request: Request) {
         });
 
         // -- Phase 4: Send Welcome Email (Non-blocking) --------------
-        sendOrgWelcomeEmail({
+        sendWelcomeViaResend({
             email: result.admin.email,
             orgName: result.org.name,
             adminName: result.admin.name || adminName

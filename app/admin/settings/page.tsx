@@ -3,7 +3,6 @@
 
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 
@@ -14,8 +13,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
 import {
-    User, Building2, Bell, Users, CreditCard, Plug,
-    Camera, Check, ChevronRight, Plus, Trash2, Crown,
+    User, Building2, Bell, CreditCard,
+    Camera, Check, Trash2, Crown,
     MessageSquare, Calendar, Globe, Mail, Phone, Shield, ShieldAlert, Briefcase, History,
     BarChart3, AlertCircle, Zap, ExternalLink, Upload, Lock, Eye, EyeOff,
     Loader2, Copy, X, MapPin as MapPinIcon, CheckCircle2, Clock
@@ -49,8 +48,6 @@ import {
     Field,
     Toggle
 } from "@/components/admin/settings/settings-shared";
-import { formatOrgLimitValue } from "@/lib/org-limits";
-import { TEAM_LIMIT_REACHED_MESSAGE, formatTeamLimit, getTeamLimitRemaining, isTeamLimitReached } from "@/lib/team-limits";
 
 
 
@@ -60,49 +57,8 @@ import { TEAM_LIMIT_REACHED_MESSAGE, formatTeamLimit, getTeamLimitRemaining, isT
 const sections = [
     { id: "profile", icon: User, label: "Profile" },
     { id: "company", icon: Building2, label: "Company" },
-    { id: "team", icon: Users, label: "Team Members" },
     { id: "password", icon: Lock, label: "Password" },
 ];
-
-
-
-type TeamMember = {
-
-    id: string;
-
-    name: string | null;
-
-    email: string;
-
-    role: "ADMIN" | "HR" | "TEAM";
-
-};
-
-
-
-type PendingInvite = {
-
-    id: string;
-
-    email: string;
-
-    orgRole: "ADMIN" | "HR" | "TEAM";
-
-    expiresAt: string;
-
-    createdAt: string;
-
-};
-
-
-
-type TeamResponse = {
-
-    members: TeamMember[];
-
-    pendingInvites: PendingInvite[];
-
-};
 
 
 
@@ -117,7 +73,6 @@ type TeamResponse = {
 export default function SettingsPage() {
 
     const { user } = useAuth();
-    const router = useRouter();
 
     const searchParams = useSearchParams();
 
@@ -169,31 +124,11 @@ export default function SettingsPage() {
 
         customSenderEmail: "",
 
-        customSenderName: "",
-
-        maxTeamMembers: "Unlimited"
+        customSenderName: ""
 
     });
 
 
-
-
-
-    /* Team */
-
-    const [inviteEmail, setInviteEmail] = useState("");
-
-    const [inviteRole, setInviteRole] = useState("HR");
-
-    const [team, setTeam] = useState<TeamMember[]>([]);
-
-    const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
-
-    const [isInviting, setIsInviting] = useState(false);
-
-    const [inviteMessage, setInviteMessage] = useState("");
-
-    const [inviteError, setInviteError] = useState("");
 
 
 
@@ -202,14 +137,6 @@ export default function SettingsPage() {
     const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
 
     const [isLogoPreviewOpen, setIsLogoPreviewOpen] = useState(false);
-
-    const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
-
-    const [memberToRemoveId, setMemberToRemoveId] = useState<string | null>(null);
-
-    const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
-
-    const [inviteToCancelId, setInviteToCancelId] = useState<string | null>(null);
 
     const [isProcessingAction, setIsProcessingAction] = useState(false);
 
@@ -279,40 +206,6 @@ export default function SettingsPage() {
 
 
 
-    const loadTeamData = async () => {
-
-        const teamRes = await fetch("/api/admin/team");
-
-        if (!teamRes.ok) return;
-
-        const teamData = await teamRes.json();
-
-
-
-        if (Array.isArray(teamData)) {
-
-            // Backward-compatible fallback
-
-            setTeam(teamData);
-
-            setPendingInvites([]);
-
-            return;
-
-        }
-
-
-
-        const typedData = teamData as TeamResponse;
-
-        setTeam(Array.isArray(typedData.members) ? typedData.members : []);
-
-        setPendingInvites(Array.isArray(typedData.pendingInvites) ? typedData.pendingInvites : []);
-
-    };
-
-
-
     // Fetch initial data
 
     useEffect(() => {
@@ -345,9 +238,7 @@ export default function SettingsPage() {
 
                         customSenderEmail: data.customSenderEmail || "",
 
-                        customSenderName: data.customSenderName || "",
-
-                        maxTeamMembers: formatOrgLimitValue(data.maxTeamMembers)
+                        customSenderName: data.customSenderName || ""
 
                     });
 
@@ -386,19 +277,6 @@ export default function SettingsPage() {
                 setIsLoading(false);
 
             }
-
-
-
-            // Fetch secondary data in background
-            const syncResults = await Promise.allSettled([
-                loadTeamData(),
-            ]);
-            syncResults.forEach((res, i) => {
-                if (res.status === 'rejected') {
-                    console.error(`Settings data load [${i}] failed:`, res.reason);
-                }
-            });
-
         };
 
 
@@ -657,167 +535,6 @@ export default function SettingsPage() {
             setIsSaving(false);
         }
     };
-
-
-
-    const handleInviteSubmit = async () => {
-
-        if (!inviteEmail) return;
-
-        setInviteMessage("");
-
-        setInviteError("");
-
-        setIsInviting(true);
-
-        try {
-
-            const res = await fetch("/api/admin/team", {
-
-                method: "POST",
-
-                headers: { "Content-Type": "application/json" },
-
-                body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
-
-            });
-
-            const data = await res.json().catch(() => ({}));
-
-            if (res.ok) {
-
-                setInviteEmail("");
-
-                await loadTeamData();
-
-                setInviteMessage(data.warning || "Invitation sent successfully.");
-                if (data.code === "GMAIL_SCOPES_MISSING" || data.code === "GMAIL_RECONNECT_REQUIRED" || data.code === "GMAIL_NOT_CONFIGURED") {
-                    toast.error(data.warning || "Reconnect Gmail and grant the missing permissions so workspace emails can send.");
-                }
-                if (data.code === "TEAM_LIMIT_REACHED") {
-                    toast.error(data.error || TEAM_LIMIT_REACHED_MESSAGE);
-                    return;
-                }
-
-            } else {
-
-                setInviteError(data.error || "Failed to send invite.");
-                if (data.code === "GMAIL_SCOPES_MISSING" || data.code === "GMAIL_RECONNECT_REQUIRED" || data.code === "GMAIL_NOT_CONFIGURED") {
-                    toast.error(data.error || "Reconnect Gmail and grant the missing permissions so workspace emails can send.");
-                }
-                if (data.code === "TEAM_LIMIT_REACHED") {
-                    toast.error(data.error || TEAM_LIMIT_REACHED_MESSAGE);
-                }
-
-            }
-
-        } catch (error) { console.error(error); }
-
-        finally { setIsInviting(false); }
-
-    };
-
-
-
-    const cancelInvite = (id: string) => {
-
-        setInviteToCancelId(id);
-
-        setIsInviteModalOpen(true);
-
-    };
-
-
-
-    const confirmCancelInvite = async () => {
-
-        if (!inviteToCancelId) return;
-
-        setIsProcessingAction(true);
-
-        try {
-
-            const res = await fetch(`/api/admin/team/invites/${inviteToCancelId}`, { method: "DELETE" });
-
-            if (res.ok) {
-
-                setPendingInvites((current) => current.filter((invite) => invite.id !== inviteToCancelId));
-
-                setIsInviteModalOpen(false);
-
-                setInviteToCancelId(null);
-
-            }
-
-        } catch (error) {
-
-            console.error(error);
-
-        } finally {
-
-            setIsProcessingAction(false);
-
-        }
-
-    };
-
-
-
-    const removeMember = (id: string) => {
-
-        setMemberToRemoveId(id);
-
-        setIsMemberModalOpen(true);
-
-    };
-
-
-
-    const confirmRemoveMember = async () => {
-
-        if (!memberToRemoveId) return;
-
-        setIsProcessingAction(true);
-
-        try {
-
-            const res = await fetch(`/api/admin/team/${memberToRemoveId}`, { method: "DELETE" });
-
-            if (res.ok) {
-
-                setTeam(t => t.filter(m => m.id !== memberToRemoveId));
-
-                setMemberToRemoveId(null);
-
-                setIsMemberModalOpen(false);
-
-            }
-
-        } catch (error) {
-
-            console.error(error);
-
-        } finally {
-
-            setIsProcessingAction(false);
-
-        }
-
-    };
-
-
-
-    const roleBadge = (role: string) => ({
-        ADMIN: "bg-orange-50 text-[#F97316] ring-1 ring-orange-200/50",
-        HR: "bg-slate-50 text-slate-700 ring-1 ring-slate-200/50",
-        TEAM: "bg-gray-50 text-gray-500 ring-1 ring-gray-200/50",
-        RECRUITER: "bg-gray-50 text-gray-500 ring-1 ring-gray-200/50",
-    }[role] ?? "bg-gray-50 text-gray-400 ring-1 ring-gray-100/50");
-
-    const teamLimitLabel = formatTeamLimit(company.maxTeamMembers);
-    const teamAllocationCount = team.length + pendingInvites.length;
-    const teamSlotsRemaining = getTeamLimitRemaining(company.maxTeamMembers, teamAllocationCount);
-    const teamLimitReached = isTeamLimitReached(company.maxTeamMembers, teamAllocationCount);
 
 
 
@@ -1297,184 +1014,6 @@ export default function SettingsPage() {
 
 
 
-                        {/*  TEAM  */}
-
-                        {activeSection === "team" && (
-
-                            <div className="space-y-6">
-
-                                <SettingsCard title="Invite Team Member" description={`Send an invitation to join your workspace. Team cap: ${teamLimitLabel}.`}>
-                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-1.5 rounded-2xl bg-gray-50/50 border border-gray-100/80">
-                                        <div className="flex-1 relative group">
-                                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-gray-400 group-focus-within:text-[#F97316] transition-colors" />
-                                            <Input
-                                                className="pl-11 h-12 rounded-xl border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all text-sm"
-                                                placeholder="colleague@company.com"
-                                                value={inviteEmail}
-                                                onChange={e => setInviteEmail(e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="w-full sm:w-36 relative">
-                                            <select
-                                                value={inviteRole}
-                                                onChange={e => setInviteRole(e.target.value)}
-                                                className="w-full h-12 pl-4 pr-10 rounded-xl border border-gray-200 bg-white font-bold text-[13px] text-gray-700 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all appearance-none cursor-pointer"
-                                            >
-                                                {["ADMIN", "HR", "TEAM"].map(r => <option key={r} value={r}>{r}</option>)}
-                                            </select>
-                                            <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 transform rotate-90 pointer-events-none" />
-                                        </div>
-                                        <Button
-                                            disabled={isInviting || !inviteEmail || teamLimitReached}
-                                            onClick={handleInviteSubmit}
-                                            className="h-12 px-8 rounded-xl bg-gray-950 hover:bg-[#F97316] text-white font-bold text-sm transition-all shadow-xl shadow-gray-200/50 active:scale-95 disabled:grayscale"
-                                        >
-                                            {isInviting ? <Loader2 className="h-5 w-5 animate-spin" /> : teamLimitReached ? "Workspace Full" : "Invite"}
-                                        </Button>
-                                    </div>
-
-                                    {teamLimitReached && (
-                                        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-orange-100 bg-orange-50/60 px-4 py-3">
-                                            <div>
-                                                <p className="text-[11px] font-black uppercase tracking-widest text-[#F97316]">Team limit reached</p>
-                                                <p className="text-xs font-medium text-gray-600 mt-1">{TEAM_LIMIT_REACHED_MESSAGE}</p>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => router.push("/admin/billing")}
-                                                className="h-9 px-4 rounded-lg bg-[#F97316] text-white text-[11px] font-bold uppercase tracking-widest hover:bg-orange-600 transition-all"
-                                            >
-                                                Billing
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {inviteMessage && (
-                                        <div className="mt-4 flex items-center gap-2 p-3.5 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 animate-in fade-in slide-in-from-top-1">
-                                            <CheckCircle2 className="h-4 w-4 shrink-0" />
-                                            <span className="text-[12px] font-bold">{inviteMessage}</span>
-                                        </div>
-                                    )}
-
-                                    {inviteError && (
-                                        <div className="mt-4 flex items-center gap-2 p-3.5 rounded-xl bg-red-50 border border-red-100 text-red-600 animate-in fade-in slide-in-from-top-1">
-                                            <AlertCircle className="h-4 w-4 shrink-0" />
-                                            <span className="text-[12px] font-bold">{inviteError}</span>
-                                        </div>
-                                    )}
-                                </SettingsCard>
-
-
-
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                    <SettingsCard title="Pending Invitations" description={`${pendingInvites.length} pending invitation(s)`}>
-                                        {pendingInvites.length === 0 ? (
-                                            <p className="text-sm text-gray-400 font-medium">No pending invitations.</p>
-                                        ) : (
-                                            <Table>
-                                                <TableHeader className="bg-transparent border-0">
-                                                    <TableRow className="border-gray-100 hover:bg-transparent">
-                                                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-gray-400 h-8 px-0">User</TableHead>
-                                                        <TableHead className="text-[11px] font-bold uppercase tracking-wider text-gray-400 h-8 px-2">Role</TableHead>
-                                                        <TableHead className="text-right text-[11px] font-bold uppercase tracking-wider text-gray-400 h-8 px-0">Actions</TableHead>
-                                                    </TableRow>
-                                                </TableHeader>
-                                                <TableBody>
-                                                    {pendingInvites.map((invite) => (
-                                                        <TableRow key={invite.id} className="border-gray-50 hover:bg-gray-50/50 group transition-colors">
-                                                            <TableCell className="py-3 px-0">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className="h-8 w-8 rounded-lg bg-orange-50 text-[#F97316] font-bold text-xs flex items-center justify-center flex-shrink-0">
-                                                                        {invite.email[0].toUpperCase()}
-                                                                    </div>
-                                                                    <div className="min-w-0">
-                                                                        <p className="font-bold text-gray-900 text-sm truncate mb-0.5">{invite.email}</p>
-                                                                        <p className="text-xs text-gray-400 font-medium">
-                                                                            Exp: {new Date(invite.expiresAt).toLocaleDateString()}
-                                                                        </p>
-                                                                    </div>
-                                                                </div>
-                                                            </TableCell>
-                                                            <TableCell className="py-3 px-2">
-                                                                <Badge className={cn("text-[10px] font-bold uppercase tracking-wide border-0 rounded-md px-2 py-1 leading-none shadow-none", roleBadge(invite.orgRole))}>
-                                                                    {invite.orgRole}
-                                                                </Badge>
-                                                            </TableCell>
-                                                            <TableCell className="py-3 px-0 text-right">
-                                                                <button
-                                                                    onClick={() => cancelInvite(invite.id)}
-                                                                    className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100 ml-auto"
-                                                                >
-                                                                    <Trash2 className="h-4 w-4" />
-                                                                </button>
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    ))}
-                                                </TableBody>
-                                            </Table>
-                                        )}
-                                    </SettingsCard>
-
-                                    <SettingsCard title="Current Members" description={`${team.length} members in workspace`}>
-                                        <Table>
-                                            <TableHeader className="bg-transparent border-0">
-                                                <TableRow className="border-gray-100 hover:bg-transparent">
-                                                    <TableHead className="text-[11px] font-bold uppercase tracking-wider text-gray-400 h-8 px-0">Member</TableHead>
-                                                    <TableHead className="text-[11px] font-bold uppercase tracking-wider text-gray-400 h-8 px-2">Role</TableHead>
-                                                    <TableHead className="text-right text-[11px] font-bold uppercase tracking-wider text-gray-400 h-8 px-0">Actions</TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {team.map(member => (
-                                                    <TableRow key={member.id} className="border-gray-50 hover:bg-gray-50/50 group transition-colors">
-                                                        <TableCell className="py-3 px-0">
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="h-8 w-8 rounded-lg bg-gray-900 text-white font-bold text-xs flex items-center justify-center flex-shrink-0 shadow-sm">
-                                                                    {member.email[0].toUpperCase()}
-                                                                </div>
-                                                                <div className="min-w-0">
-                                                                    <p className="font-bold text-gray-900 text-sm truncate mb-0.5">{member.name || member.email.split("@")[0]}</p>
-                                                                    <p className="text-xs text-gray-400 font-medium truncate">{member.email}</p>
-                                                                </div>
-                                                            </div>
-                                                        </TableCell>
-                                                        <TableCell className="py-3 px-2">
-                                                            <Badge className={cn("text-[10px] font-bold uppercase tracking-wide border-0 rounded-md px-2 py-1 leading-none shadow-none", roleBadge(member.role))}>
-                                                                {member.role === "TEAM" ? "Team" : member.role === "ADMIN" ? "Admin" : member.role}
-                                                            </Badge>
-                                                        </TableCell>
-                                                        <TableCell className="py-3 px-0 text-right">
-                                                            {member.role !== "ADMIN" && (
-                                                                <button
-                                                                    onClick={() => removeMember(member.id)}
-                                                                    className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all ml-auto"
-                                                                >
-                                                                    <Trash2 className="h-4 w-4" />
-                                                                </button>
-                                                            )}
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))}
-                                            </TableBody>
-                                        </Table>
-
-                                        <div className="mt-4 pt-4 border-t border-gray-100 flex items-start gap-3">
-                                            <div className="h-7 w-7 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
-                                                <Shield className="h-3.5 w-3.5 text-slate-500" />
-                                            </div>
-                                            <div>
-                                                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Access Protocol</p>
-                                                <p className="text-xs font-medium text-slate-500 leading-relaxed">
-                                                    Admins manage workspace, HR handles recruitment, and Team members execute candidate reviews.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </SettingsCard>
-                                </div>
-
-                            </div>
-
-                        )}
 
 
 
@@ -1596,58 +1135,6 @@ export default function SettingsPage() {
                     description="Are you sure you want to remove your company logo? This will revert your portal header and branding."
 
                     confirmText="Confirm Remove"
-
-                    isLoading={isProcessingAction}
-
-                />
-
-
-
-                <ActionConfirmModal
-
-                    isOpen={isMemberModalOpen}
-
-                    onClose={() => {
-
-                        setIsMemberModalOpen(false);
-
-                        setMemberToRemoveId(null);
-
-                    }}
-
-                    onConfirm={confirmRemoveMember}
-
-                    title="Remove Team Member"
-
-                    description={`Are you sure you want to remove ${team.find(m => m.id === memberToRemoveId)?.name || 'this member'}? This will immediately terminate their access to the portal.`}
-
-                    confirmText="Terminate Access"
-
-                    isLoading={isProcessingAction}
-
-                />
-
-
-
-                <ActionConfirmModal
-
-                    isOpen={isInviteModalOpen}
-
-                    onClose={() => {
-
-                        setIsInviteModalOpen(false);
-
-                        setInviteToCancelId(null);
-
-                    }}
-
-                    onConfirm={confirmCancelInvite}
-
-                    title="Cancel Invitation"
-
-                    description="Are you sure you want to cancel this pending invitation? The recipient will no longer be able to use the previous invite link."
-
-                    confirmText="Cancel Invite"
 
                     isLoading={isProcessingAction}
 

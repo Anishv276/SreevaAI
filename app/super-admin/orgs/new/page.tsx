@@ -103,7 +103,7 @@ export default function NewOrgPage() {
 
     const [form, setForm] = useState({
         orgName: "", slug: "", location: "", plan: DEFAULT_ORG_PLAN,
-        maxActiveDrives: "Unlimited", maxTeamMembers: "Unlimited", interviewQuotaTotal: "100",
+        maxActiveDrives: "Unlimited", interviewQuotaTotal: "100",
         proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
         adminName: "", adminEmail: "", adminPassword: "",
         ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
@@ -419,9 +419,8 @@ export default function NewOrgPage() {
                 {step === 3 && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Billing & Quotas" />
-                        <div className="grid md:grid-cols-3 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
+                        <div className="grid md:grid-cols-2 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
                             <LimitControl label="Drive Limit" value={form.maxActiveDrives} onChange={val => setForm(p => ({ ...p, maxActiveDrives: val }))} />
-                            <LimitControl label="Team Limit" value={form.maxTeamMembers} onChange={val => setForm(p => ({ ...p, maxTeamMembers: val }))} />
                             <PremiumInput label="Total Interviews Allocated" icon={Coins} type="number" value={form.interviewQuotaTotal} onChange={(e: any) => setForm(p => ({ ...p, interviewQuotaTotal: e.target.value }))} />
                         </div>
                         <div className="flex justify-between pt-8 border-t border-gray-100">

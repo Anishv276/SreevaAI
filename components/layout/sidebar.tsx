@@ -7,7 +7,7 @@ import {
     FileText, PieChart, Sparkles, ChevronDown,
     LogOut, User, SlidersHorizontal,
     X, ShieldAlert, Loader2, ArrowLeft, Building2,
-    Briefcase, Globe, Database, HelpCircle, CreditCard, Mail, Plug
+    Briefcase, Globe, Database, HelpCircle, CreditCard, Mail
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
@@ -33,7 +33,6 @@ const NAV_GROUPS: { items: NavItem[] }[] = [
     {
         items: [
             { icon: CreditCard, label: "Subscription & Billing", href: "/admin/billing" },
-            { icon: Plug, label: "Integrations", href: "/admin/integrations" },
             { icon: Settings, label: "Settings", href: "/admin/settings" },
         ]
     }
@@ -241,7 +240,7 @@ export function Sidebar() {
                     {NAV_GROUPS.map((group, gIdx) => (
                         <div key={gIdx} className="space-y-1">
                             {group.items.map((item) => {
-                                if (quotaLocked && (item.href === "/admin/create-drive" || item.href === "/admin/integrations")) {
+                                if (quotaLocked && item.href === "/admin/create-drive") {
                                     return null;
                                 }
                                 const isActive = pathname === item.href;

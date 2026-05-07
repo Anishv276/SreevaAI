@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, Loader2, Lock, FileText, Eye, Send, Activity } from "lucide-react";
+import { Search, MoreHorizontal, Download, ChevronLeft, ChevronRight, SlidersHorizontal, Trash2, X, Briefcase, AlertCircle, UserX, Radio, Target, ShieldCheck, Award, Clock, Mail, Loader2, Lock, FileText, Eye, Send } from "lucide-react";
 
 import Link from "next/link";
 
@@ -72,7 +72,6 @@ import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { motion } from "framer-motion";
 
 import { PremiumFilter } from "@/components/admin/premium-filter";
-import { CandidateActivitySidebar } from "@/components/admin/candidate-activity-sidebar";
 
 
 
@@ -483,7 +482,6 @@ export default function CandidatesPage() {
     const [isCandidatesTableReady, setIsCandidatesTableReady] = useState(false);
 
     const [emailCandidate, setEmailCandidate] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
-    const [activitySidebarCandidate, setActivitySidebarCandidate] = useState<{ id: string; name: string } | null>(null);
 
     const [pendingEmailBatch, setPendingEmailBatch] = useState<{
         ids: string[];
@@ -1101,15 +1099,6 @@ export default function CandidatesPage() {
                             {selectedIds.size} selected
                         </span>
                     </div>
-
-                    <div className="rounded-2xl border border-red-100 bg-red-50/40 px-3 py-2.5">
-                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-red-500 mb-2">Remove</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Button size="sm" variant="outline" onClick={() => handleBulkAction("delete")} className="h-8 px-3 rounded-xl border-red-200 text-red-600 hover:bg-red-50 font-bold text-xs flex items-center gap-1.5">
-                                <Trash2 className="h-3.5 w-3.5" /> Delete
-                            </Button>
-                        </div>
-                    </div>
                 </div>
             )}
 
@@ -1240,6 +1229,17 @@ export default function CandidatesPage() {
                                 ]}
 
                             />
+
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleBulkAction("delete")}
+                                disabled={selectedIds.size === 0 || isBulkLoading}
+                                className="h-11 px-4 rounded-2xl border-red-200 bg-white text-red-600 hover:bg-red-50 font-bold text-xs flex items-center gap-2 shadow-sm disabled:opacity-40"
+                            >
+                                <Trash2 className="h-4 w-4" />
+                                Delete
+                            </Button>
 
                         </div>
 
@@ -1597,13 +1597,6 @@ export default function CandidatesPage() {
                                                             {/* Drive Group */}
                                                             <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Drive</DropdownMenuLabel>
                                                             <DropdownMenuItem
-                                                                onClick={() => setActivitySidebarCandidate({ id: candidate.id, name: candidate.fullName || candidate.name || "Candidate" })}
-                                                                className="my-1 rounded-full border border-orange-200 bg-orange-50/80 px-3 py-2 text-sm font-bold cursor-pointer text-orange-700 shadow-sm transition-all hover:border-orange-300 hover:bg-orange-100 focus:text-orange-800 focus:bg-orange-100"
-                                                            >
-                                                                <Activity className="h-4 w-4 mr-2 shrink-0 text-orange-600" />
-                                                                Activity
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuItem
                                                                 onClick={() => handleMoveToDrive(candidate.driveId)}
                                                                 disabled={!candidate.driveId}
                                                                 className={cn(
@@ -1787,16 +1780,9 @@ export default function CandidatesPage() {
                 blockedMessage={interviewActionBlockedMessage}
             />
 
-            <CandidateActivitySidebar
-                open={activitySidebarCandidate !== null}
-                candidateId={activitySidebarCandidate?.id || null}
-                candidateName={activitySidebarCandidate?.name}
-                backHref="/admin/candidates"
-                onClose={() => setActivitySidebarCandidate(null)}
-            />
-
         </div>
 
     );
 
 }
+

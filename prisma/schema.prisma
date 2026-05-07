@@ -15,7 +15,6 @@ model Organization {
   logoUrl              String?
   plan                 String      @default("STARTER")
   maxActiveDrives      String      @default("Unlimited")
-  maxTeamMembers       String      @default("Unlimited")
   proctoringSignals    Json?       @default("{\"tab_switch\":true,\"fullscreen_exit\":true,\"camera_disabled\":true,\"microphone_disabled\":true,\"connection_lost\":true,\"connection_restored\":true,\"audio_flag\":true,\"duplicate_ip\":true,\"face_absence\":true,\"multiple_faces\":true,\"gaze_violation\":true,\"head_pose_violation\":true,\"identity_mismatch\":true,\"ownership_ambiguity\":true,\"example_evasion\":true,\"latency_mismatch\":true,\"resume_claim_mismatch\":true,\"ownership_clarified\":true,\"example_given\":true,\"strong_under_pressure\":true,\"follow_up_collapse\":true,\"contradiction\":true,\"contradiction_resolved\":true,\"meta_question\":true}")
   status               String      @default("ACTIVE")
   createdAt            DateTime    @default(now())
@@ -42,13 +41,7 @@ model Organization {
   interviewQuotaUsed   Int         @default(0)
   creditsUsed          Float       @default(0)
   usageMetrics         Json?       @default("{}")
-  googleAccessToken    String?
-  googleEmail          String?
-  googleRefreshToken   String?
-  googleTokenExpiresAt DateTime?
-
   drives               Drive[]
-  invites              OrgInvite[]
   users                User[]
 }
 
@@ -59,11 +52,6 @@ model SuperAdmin {
   name                 String
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
-  googleAccessToken    String?
-  googleEmail          String?
-  googleRefreshToken   String?
-  googleTokenExpiresAt DateTime?
-
   verificationTokens   VerificationToken[]
 }
 
@@ -83,31 +71,7 @@ model User {
   resetOtpExpires DateTime?
   applications    Application[]
   drives          Drive[]       @relation("CreatedDrives")
-  acceptedInvites OrgInvite[]   @relation("AcceptedInvites")
-  sentInvites     OrgInvite[]   @relation("SentInvites")
   organization    Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
-}
-
-/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
-model OrgInvite {
-  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  orgId           String
-  email           String
-  orgRole         String
-  tokenHash       String       @unique
-  status          String       @default("PENDING")
-  invitedByUserId String
-  acceptedUserId  String?
-  expiresAt       DateTime
-  respondedAt     DateTime?
-  acceptedAt      DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  acceptedUser    User?        @relation("AcceptedInvites", fields: [acceptedUserId], references: [id])
-  invitedByUser   User         @relation("SentInvites", fields: [invitedByUserId], references: [id])
-  organization    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  @@index([orgId, status])
 }
 
 model SupportTicket {

@@ -330,9 +330,7 @@ const worker = new Worker('resume-processing', async (job) => {
         email: applicantEmail,
         fullName: applicantName,
         jobTitle: latestDrive?.title || drive.title,
-        orgId: latestDrive?.orgId || undefined,
         status: resumeStatus,
-        score: currentScore,
         interviewLink
       });
       if (emailResult?.success === false) {
@@ -346,10 +344,7 @@ const worker = new Worker('resume-processing', async (job) => {
         email: applicantEmail,
         fullName: applicantName,
         jobTitle: latestDrive?.title || drive.title,
-        orgId: latestDrive?.orgId || undefined,
         status: 'REJECTED',
-        score: currentScore
-        // No interviewLink -- email reflects resume status only
       });
       console.log(`[EMAIL] Status-only email sent to ${applicantEmail}  status: ${resumeStatus}`);
     }
@@ -470,27 +465,19 @@ const invitationDeliveryWorker = new Worker(
       email: application.email,
       fullName: application.fullName || "Candidate",
       jobTitle: application.drive?.title || "Unknown Role",
-      orgId: application.drive?.orgId ?? undefined,
+      orgName: undefined,
       status: emailStatus,
-      score: application.aiScore || 0,
       interviewLink,
     });
     if (!mailResult.success) {
-      const reason =
-        typeof mailResult.error === "string"
-          ? mailResult.error
-          : (mailResult.error as any)?.message || "Unknown email delivery error";
-      if (mailResult.reconnectRequired || mailResult.code === "GMAIL_SCOPES_MISSING" || mailResult.code === "GMAIL_RECONNECT_REQUIRED" || mailResult.code === "GMAIL_NOT_CONFIGURED") {
-        await appendCandidateActivity(applicationId, {
-          type: "email_failed",
-          label: "Email delivery blocked",
-          details: `${reason} Please reconnect Gmail and grant email permissions.`,
-          timestamp: new Date().toISOString(),
-          source: "worker",
-        });
-        console.warn(`[MAIL BLOCKED] ${reason}`);
-        return { success: false, handled: true, code: mailResult.code || "GMAIL_SEND_FAILED" };
-      }
+      const reason = mailResult.error || "Unknown email delivery error";
+      await appendCandidateActivity(applicationId, {
+        type: "email_failed",
+        label: "Email delivery failed",
+        details: reason,
+        timestamp: new Date().toISOString(),
+        source: "worker",
+      });
       throw new Error(reason);
     }
     await appendCandidateActivity(applicationId, {

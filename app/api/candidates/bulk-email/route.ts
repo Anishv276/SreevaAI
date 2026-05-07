@@ -326,17 +326,11 @@ export async function POST(request: Request) {
                     email: app.email,
                     fullName: app.fullName || "Candidate",
                     jobTitle: app.drive?.title || "Unknown Role",
-                    orgId: app.drive?.orgId ?? undefined,
                     status,
-                    score: app.fullName ? 0 : 0,
                 });
 
                 if (!mailResult.success) {
-                    throw new Error(
-                        typeof mailResult.error === "string"
-                            ? mailResult.error
-                            : (mailResult.error as any)?.message || "Unknown email delivery error"
-                    );
+                    throw new Error(mailResult.error || "Unknown email delivery error");
                 }
 
                 await appendCandidateActivity(app.id, {
