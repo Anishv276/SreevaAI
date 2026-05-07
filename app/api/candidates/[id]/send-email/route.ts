@@ -106,6 +106,16 @@ export async function POST(
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error("[send-email]", error);
-        return NextResponse.json({ error: "Failed to send email" }, { status: 500 });
+        const err = error as { message?: string; code?: string; reconnectRequired?: boolean };
+        const reconnectRequired = Boolean(err?.reconnectRequired);
+        const code = err?.code || "GMAIL_SEND_FAILED";
+        return NextResponse.json({
+            error: reconnectRequired
+                ? "Reconnect Gmail and grant the missing permissions so this email can be sent."
+                : "Failed to send email",
+            code,
+            reconnectRequired,
+            details: err?.message,
+        }, { status: reconnectRequired ? 502 : 500 });
     }
 }

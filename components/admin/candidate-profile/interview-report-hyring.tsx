@@ -340,39 +340,70 @@ function buildTopStrengthsRisks(args: {
   const answerCount = Math.max(1, strongN + fairN);
 
   const topStrengths: string[] = [];
+
+  // Tier 1 — fit
   if (args.fitPct >= 80) topStrengths.push("Overall fit is strong for this role");
   else if (args.fitPct >= 60) topStrengths.push("Overall fit is workable and worth advancing");
+  else if (args.fitPct >= 40) topStrengths.push("Partial fit detected — role-relevant signals present but incomplete");
 
+  // Tier 2 — technical
   if (args.technicalPct >= 70) topStrengths.push(`Technical answers are solid across ${answerCount} scored responses`);
   else if (args.technicalPct >= 55) topStrengths.push("Technical signal is steady, with room for stronger depth");
+  else if (args.technicalPct >= 35) topStrengths.push("Some technical grounding evident — depth needs further probing");
 
+  // Tier 3 — communication
   if (commAvg >= 70) topStrengths.push("Communication is clear, structured, and easy to follow");
   else if (commAvg >= 55) topStrengths.push("Communication is understandable and steady");
+  else if (commAvg >= 35) topStrengths.push("Communication came through, though structure could be tighter");
 
-  if (topSkill && topSkill.stars >= 4) topStrengths.push(`Best technical signal appears in ${topSkill.name}`);
-  if (strongN >= 2) topStrengths.push("Multiple answers landed in the top score band");
-  if (!anyProctoringBad) topStrengths.push("No material integrity or environment flags showed up in review");
+  // Bonus signals (only added if still under 3)
+  if (topStrengths.length < 3 && topSkill && topSkill.stars >= 4) topStrengths.push(`Best technical signal appears in ${topSkill.name}`);
+  if (topStrengths.length < 3 && strongN >= 2) topStrengths.push("Multiple answers landed in the top score band");
+  if (topStrengths.length < 3 && !anyProctoringBad) topStrengths.push("No material integrity or environment flags showed up in review");
 
-  if (topStrengths.length === 0) {
-    topStrengths.push("No clear strengths surfaced beyond the scored interview data");
+  // Hard pad to exactly 3
+  const STRENGTH_PADS = [
+    "Completed the full interview session without dropping off",
+    "Showed willingness to engage across all question areas",
+    "Resume background provides a starting point for further evaluation",
+  ];
+  for (const pad of STRENGTH_PADS) {
+    if (topStrengths.length >= 3) break;
+    topStrengths.push(pad);
   }
-  topStrengths.length = Math.min(topStrengths.length, 3);
+  topStrengths.length = 3;
 
   const topRisks: string[] = [];
-  if (args.technicalPct < 50) topRisks.push("Technical depth is below a typical pass line");
-  if (args.techTag === "WEAK") topRisks.push("Technical signal sits in the weak band and should be validated in practice");
+
+  // Tier 1 — technical
+  if (args.technicalPct < 35) topRisks.push("Technical depth is significantly below the pass threshold for this role");
+  else if (args.technicalPct < 50) topRisks.push("Technical depth is below a typical pass line");
+  else if (args.techTag === "WEAK") topRisks.push("Technical signal sits in the weak band and should be validated in practice");
+
+  // Tier 2 — answer quality
   if (fairN >= 2) topRisks.push("Several answers scored weakly, so probe the gaps in the next round");
+  else if (fairN === 1) topRisks.push("At least one answer area showed weak depth — verify before advancing");
+
+  // Tier 3 — proctoring / communication / fit
   if (anyProctoringBad) topRisks.push("Proctoring or environment flags need a human read before relying on this session alone");
   if (commAvg < 50) topRisks.push("Communication is soft for roles that need client-facing clarity or writing");
-  if (args.fitPct < 48) topRisks.push("Overall fit is on the low side for this requisition");
+  if (args.fitPct < 40) topRisks.push("Overall fit is low — requires a strong in-person or technical screen to verify");
+  else if (args.fitPct < 48) topRisks.push("Overall fit is on the low side for this requisition");
   if (args.fitPct >= 60 && args.fitPct < 80 && args.technicalPct < 60) {
     topRisks.push("Advancement is possible, but technical depth still needs a stronger proof point");
   }
 
-  if (topRisks.length === 0) {
-    topRisks.push("No major automated risk flags surfaced in this session");
+  // Hard pad to exactly 3
+  const RISK_PADS = [
+    "Recommend a structured follow-up round to validate skill depth before offer",
+    "Interview alone is not sufficient — cross-check with reference or take-home assessment",
+    "No automated blockers, but human review of the transcript is advised before deciding",
+  ];
+  for (const pad of RISK_PADS) {
+    if (topRisks.length >= 3) break;
+    topRisks.push(pad);
   }
-  topRisks.length = Math.min(topRisks.length, 3);
+  topRisks.length = 3;
 
   return { topStrengths, topRisks };
 }
@@ -701,39 +732,41 @@ export function buildHyringInterviewViewModel(i: {
   }
   const transcript: HyringInterviewViewModel["transcript"] = [];
   const questionAnalysis: HyringInterviewViewModel["questionAnalysis"] = [];
-  const rows = i.interviewQaRows?.length ? i.interviewQaRows : i.interviewSessionRows;
-  (rows as any[]).forEach((row, idx) => {
-    const q = String(row?.question || row?.title || "").trim() || `Question ${idx + 1}`;
-    const a = String(row?.answer || row?.reasoning || "").trim();
-    const reasoning = String(row?.reasoning || row?.analysis_reasoning || row?.answer || "").trim();
-    const score = String(row?.score || "--").trim();
-    const { q: b, bad } = scoreToBadge(score);
-    transcript.push({ from: "ai", text: q, time: `Q${idx + 1}` });
-    if (a) {
-      transcript.push({ from: "user", text: a, time: "Reply", qBadge: b, bad });
-    }
-    questionAnalysis.push({
-      id: idx,
-      question: q,
-      answer: a || "—",
-      reasoning: reasoning || "No reasoning was returned for this question.",
-      score,
-      qBadge: b,
-      bad,
-    });
-  });
-  if (transcript.length === 0 && i.interviewTranscript) {
-    i.interviewTranscript.split(/\n+/).slice(0, 24).forEach((line) => {
+
+  // ── Transcript: always built from DB interviewTranscript (raw "Interviewer:/Candidate:" lines) ──
+  if (i.interviewTranscript) {
+    i.interviewTranscript.split(/\n+/).forEach((line) => {
       const t = line.trim();
       if (!t) return;
-      if (/^interviewer:/i.test(t)) transcript.push({ from: "ai", text: t.replace(/^interviewer:\s*/i, ""), time: "—" });
-      else if (/^candidate:/i.test(t)) transcript.push({ from: "user", text: t.replace(/^candidate:\s*/i, ""), time: "—" });
-      else transcript.push({ from: "user", text: t, time: "—" });
+      if (/^interviewer:/i.test(t)) {
+        transcript.push({ from: "ai", text: t.replace(/^interviewer:\s*/i, ""), time: "—" });
+      } else if (/^candidate:/i.test(t)) {
+        transcript.push({ from: "user", text: t.replace(/^candidate:\s*/i, ""), time: "—" });
+      }
     });
   }
   if (transcript.length === 0) {
     transcript.push({ from: "ai", text: "No transcript is available for this session yet.", time: "—" });
   }
+
+  // ── Question Analysis: built from qa_blocks (scores + real question text + answer) ──
+  const rows = i.interviewQaRows?.length ? i.interviewQaRows : i.interviewSessionRows;
+  (rows as any[]).forEach((row, idx) => {
+    const q = String(row?.question || row?.title || "").trim() || `Question ${idx + 1}`;
+    const a = String(row?.answer || "").trim();
+    const reasoning = String(row?.reasoning || row?.verdict || row?.analysis_reasoning || "").trim();
+    const score = String(row?.score || "--").trim();
+    const { q: b, bad } = scoreToBadge(score);
+    questionAnalysis.push({
+      id: idx,
+      question: q,
+      answer: a || "—",
+      reasoning: reasoning || "No score breakdown available.",
+      score,
+      qBadge: b,
+      bad,
+    });
+  });
 
   const rec = i.interviewReportRecording || {};
   const doneAt = c.interview?.completedAt || c.interview?.endedAt;
@@ -1497,8 +1530,14 @@ function QuestionAnalysisCard({
                       {item.score}
                     </span>
                   </div>
-                  <div className="mt-3 rounded-xl bg-[#FAFBFC] p-3">
-                    <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Reasoning</p>
+                  {item.answer && item.answer !== "—" && (
+                    <div className="mt-3 rounded-xl bg-[#F4F8FF] p-3">
+                      <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#0B5FFF]">Candidate answer</p>
+                      <p className="mt-1 text-[11px] leading-5 text-[#1A1D22]">{item.answer}</p>
+                    </div>
+                  )}
+                  <div className="mt-2 rounded-xl bg-[#FAFBFC] p-3">
+                    <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Score breakdown</p>
                     <p className="mt-1 text-[11px] leading-5 text-[#1A1D22]">{item.reasoning}</p>
                   </div>
                 </div>

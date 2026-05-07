@@ -318,7 +318,7 @@ export default function DrivesPage() {
                                                         className="rounded-xl py-2.5 px-3 focus:bg-slate-100 text-slate-700 font-medium text-[13px]"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            router.push(`/admin/create-drive?id=${drive.id}${orgId ? `&orgId=${orgId}` : ''}`);
+                                                            router.push(`/admin/create-drive?id=${drive.id}&mode=edit${orgId ? `&orgId=${orgId}` : ""}`);
                                                         }}
                                                     >
                                                         <Edit className="h-4 w-4 mr-2" />

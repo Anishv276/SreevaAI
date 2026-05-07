@@ -550,6 +550,192 @@ class ResumeContext:
     fresher_signals: bool
     experienced_signals: bool
 @dataclass(slots=True)
+class QuestionBankQuestion:
+    number: int        # 1-based index (Q1, Q2, ...)
+    tag: str           # e.g. "OPENING", "GAP:leadership", "SKILL:python"
+    text: str          # the question text
+    strong: str        # what a good answer looks like
+    weak: str          # what a shallow answer looks like
+    probes: list[str]  # follow-up phrases
+    phase: int         # Internal question-bank phase: 1 or 3 (2 is reserved/empty)
+
+@dataclass(slots=True)
+class QuestionBank:
+    phase1: list[QuestionBankQuestion]
+    phase3: list[QuestionBankQuestion]
+
+    @property
+    def opening_question(self) -> str:
+        if self.phase1:
+            return self.phase1[0].text
+        return ""
+
+    @property
+    def all_questions(self) -> list[QuestionBankQuestion]:
+        return self.phase1 + self.phase3
+
+    def get_phase3_filtered(self, critical_skills: list[str]) -> list[QuestionBankQuestion]:
+        """Return Phase 3 filtered to critical skills only."""
+        return filter_phase3_by_critical_skills(self.phase3, critical_skills)
+
+def parse_question_bank(text: str) -> QuestionBank:
+    """Parse the LLM question-bank artifact into structured internal phases."""
+    phase1: list[QuestionBankQuestion] = []
+    phase3: list[QuestionBankQuestion] = []
+    current_phase = 0
+    current_q: dict = {}
+
+    def _flush(q: dict, phase: int) -> None:
+        if not q.get("number") or not q.get("text"):
+            return
+        parsed = QuestionBankQuestion(
+            number=q["number"],
+            tag=q.get("tag", ""),
+            text=q["text"],
+            strong=q.get("strong", ""),
+            weak=q.get("weak", ""),
+            probes=q.get("probes", []),
+            phase=phase,
+        )
+        if phase == 1:
+            phase1.append(parsed)
+        elif phase == 3:
+            phase3.append(parsed)
+
+    for line in text.splitlines():
+        line = line.strip()
+        if re.match(r"PHASE\s+1\s*[—\-]", line, re.IGNORECASE):
+            current_phase = 1
+            continue
+        if re.match(r"PHASE\s+2\s*[—\-]", line, re.IGNORECASE):
+            _flush(current_q, current_phase)
+            current_q = {}
+            current_phase = 2
+            continue
+        if re.match(r"PHASE\s+3\s*[—\-]", line, re.IGNORECASE):
+            _flush(current_q, current_phase)
+            current_q = {}
+            current_phase = 3
+            continue
+        if current_phase not in (1, 3):
+            continue
+        q_match = re.match(r"Q(\d+)\.\s*\[([^\]]+)\]\s*(.+)", line)
+        if q_match:
+            _flush(current_q, current_phase)
+            current_q = {
+                "number": int(q_match.group(1)),
+                "tag": q_match.group(2).strip(),
+                "text": q_match.group(3).strip(),
+                "strong": "",
+                "weak": "",
+                "probes": [],
+            }
+            continue
+        if current_q:
+            if line.lower().startswith("strong:"):
+                current_q["strong"] = line[7:].strip()
+            elif line.lower().startswith("weak:"):
+                current_q["weak"] = line[5:].strip()
+            elif line.lower().startswith("probes:"):
+                raw = line[7:].strip()
+                current_q["probes"] = [p.strip().strip('"') for p in re.split(r'",\s*"', raw.strip('"')) if p.strip()]
+
+    _flush(current_q, current_phase)
+    if not phase1 or not phase3:
+        raise ValueError(
+            f"Question bank parsing failed: phase1 has {len(phase1)} questions (expected 5), "
+            f"phase3 has {len(phase3)} questions (expected 7-8). "
+            f"LLM likely skipped a PHASE header or formatted questions incorrectly."
+        )
+    return QuestionBank(phase1=phase1, phase3=phase3)
+
+def extract_critical_skills(jd_must_haves: list[str], resume_skills: list[str]) -> list[str]:
+    """
+    Extract top 3 critical skills: must-haves from JD that candidate also has on resume.
+    Prioritize JD requirements, then fallback to resume skills if no overlap.
+    """
+    if not jd_must_haves:
+        return resume_skills[:3] if resume_skills else []
+
+    resume_tokens = {w for s in resume_skills for w in s.lower().split()}
+    matching_skills = []
+
+    for jd_skill in jd_must_haves:
+        jd_tokens = set(jd_skill.lower().split())
+        if jd_tokens & resume_tokens:  # any word overlap between jd skill and resume skills
+            matching_skills.append(jd_skill)
+        if len(matching_skills) >= 3:
+            break
+
+    if matching_skills:
+        return matching_skills[:3]
+
+    return jd_must_haves[:3]
+
+def filter_phase3_by_critical_skills(phase3_questions: list[QuestionBankQuestion], critical_skills: list[str]) -> list[QuestionBankQuestion]:
+    """Filter Phase 3 to 4-5 questions: critical skills + strength/weakness/watchout/custom."""
+    critical_tokens = {w for s in critical_skills for w in s.lower().split()}
+    skill_questions: list[QuestionBankQuestion] = []
+    always_keep: list[QuestionBankQuestion] = []
+    skill_count = 0
+
+    for q in phase3_questions:
+        if q.tag.startswith("SKILL:"):
+            if skill_count < 3:
+                tag_tokens = set(q.tag[6:].lower().replace("-", " ").split())
+                if tag_tokens & critical_tokens:
+                    skill_questions.append(q)
+                    skill_count += 1
+        elif q.tag in ("STRENGTH", "WEAKNESS", "WATCHOUT", "CUSTOM"):
+            always_keep.append(q)
+
+    # Fallback: if no skills matched, take first 3 SKILL questions regardless
+    if skill_count == 0:
+        for q in phase3_questions:
+            if q.tag.startswith("SKILL:") and len(skill_questions) < 3:
+                skill_questions.append(q)
+
+    # Skills first, then always-keep — correct order
+    return skill_questions + always_keep
+
+def _format_question(q: QuestionBankQuestion) -> str:
+    lines = [f"Q{q.number}. [{q.tag}] {q.text}"]
+    if q.strong:
+        lines.append(f"Strong: {q.strong}")
+    if q.weak:
+        lines.append(f"Weak: {q.weak}")
+    if q.probes:
+        probes_str = ", ".join(f'"{p}"' for p in q.probes)
+        lines.append(f"Probes: {probes_str}")
+    return "\n".join(lines)
+
+def build_question_bank_injection(brief_text: str, question_bank: "QuestionBank", critical_skills: list[str]) -> str:
+    """Build the system message to inject: BRIEF + Phase 1 questions + filtered Phase 3 questions."""
+    # Extract only the 5 BRIEF fields by name — never rely on Opener style as stop sentinel
+    brief_fields = ("Band:", "Tone:", "Depth:", "Probe pressure:", "Opener style:")
+    brief_lines: list[str] = ["BRIEF:"]
+    for line in brief_text.splitlines():
+        stripped = line.strip()
+        if any(stripped.startswith(f) for f in brief_fields):
+            brief_lines.append(stripped)
+    brief_section = "\n".join(brief_lines) if len(brief_lines) > 1 else ""
+
+    phase1_text = "\n\n".join(_format_question(q) for q in question_bank.phase1)
+    phase3_filtered = filter_phase3_by_critical_skills(question_bank.phase3, critical_skills)
+    phase3_text = "\n\n".join(_format_question(q) for q in phase3_filtered)
+
+    parts = ["[INTERVIEW BRIEF + QUESTION BANK]"]
+    if brief_section:
+        parts.append(brief_section)
+    if phase1_text:
+        parts.append(f"QUESTION BANK — PHASE 1 (BACKGROUND):\n{phase1_text}")
+    parts.append("QUESTION BANK — PHASE 2: (reserved)")
+    if phase3_text:
+        parts.append(f"QUESTION BANK — PHASE 3 (CRITICAL SKILLS):\n{phase3_text}")
+    parts.append("Work through phases in order. Do not reference this note aloud.")
+    return "\n\n".join(parts)
+
+@dataclass(slots=True)
 class CandidateBandContext:
     candidate_band: str
     role_category: str
@@ -563,6 +749,8 @@ class CandidateBandContext:
     role_intelligence_block: str = ""
     candidate_brief_block: str = ""
     smart_opening_question: str = ""
+    question_bank: Optional["QuestionBank"] = None
+    critical_skills: list[str] = field(default_factory=list)
     short_coverage_block: str = ""
     live_prompt_context: str = ""
     questions_list: str = ""
@@ -779,7 +967,7 @@ def _extract_jd_must_haves(jd_data: dict[str, Any], jd_text: str) -> list[str]:
         requirements = _extract_text_items(_deep_get(jd_data, "requirements"))
         capabilities.extend(requirements)
     if not capabilities and jd_text:
-        for line in re.split(r"[\nâ€¢\-]+", jd_text):
+        for line in re.split(r"[\n•\-]+", jd_text):
             text = _compact_text(line)
             if text:
                 capabilities.append(text)
@@ -912,6 +1100,11 @@ def extract_brief_section(brief_text: str, section_title: str) -> str:
             collected.append(line.rstrip())
     return "\n".join(collected).strip()
 def extract_smart_opening_question(brief_text: str) -> str:
+    import re
+    m = re.search(r"Q1\.\s*\[OPENING\]\s*(.+)", brief_text)
+    if m:
+        return m.group(1).strip()
+    # fallback: old brief format
     opening = extract_brief_section(brief_text, "SMART OPENING QUESTION")
     if opening:
         return opening

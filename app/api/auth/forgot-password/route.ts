@@ -116,12 +116,23 @@ export async function POST(request: Request) {
         `;
 
         if (senderFn && senderArgs) {
-            await senderFn({
-                ...senderArgs,
-                to: normalizedEmail,
-                subject,
-                html
-            });
+            try {
+                await senderFn({
+                    ...senderArgs,
+                    to: normalizedEmail,
+                    subject,
+                    html
+                });
+            } catch (error) {
+                const err = error as { message?: string; code?: string; reconnectRequired?: boolean };
+                return NextResponse.json({
+                    error: err.reconnectRequired
+                        ? "Reconnect Gmail and grant the missing permissions so password reset emails can send."
+                        : err.message || "Failed to send recovery email",
+                    code: err.code || "GMAIL_SEND_FAILED",
+                    reconnectRequired: Boolean(err.reconnectRequired),
+                }, { status: err.reconnectRequired ? 502 : 500 });
+            }
         }
 
         return NextResponse.json({ success: true, message: "Verification code sent to your mail." });

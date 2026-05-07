@@ -11,6 +11,7 @@ import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, normalizeOrgPlan } from "@/lib/org-
 import { DEFAULT_PROCTORING_SIGNALS, getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { cn } from "@/lib/utils";
 import { Steps } from "@/components/create-drive/steps";
+import { formatOrgLimitValue } from "@/lib/org-limits";
 
 // UI Components
 function PremiumInput({ label, icon: Icon, error, required = true, ...props }: any) {
@@ -35,17 +36,18 @@ function SectionHeader({ title }: { title: string }) {
     );
 }
 
-function LimitControl({ value, onChange, label }: { value: number, onChange: (val: number) => void, label: string }) {
-    const isUnlimited = value === 0;
+function LimitControl({ value, onChange, label }: { value: string, onChange: (val: string) => void, label: string }) {
+    const isUnlimited = String(value).toLowerCase() === "unlimited" || Number(value) === 0;
+    const inputValue = isUnlimited ? "" : String(value);
     return (
         <div className="space-y-2">
             <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Layers className="h-3 w-3 text-[#F97316]" /> {label}</label>
             <div className="flex items-center gap-1.5">
                 <div className="flex bg-gray-100/50 p-1 rounded-lg border border-gray-100 w-fit shrink-0">
-                    <button type="button" onClick={() => onChange(0)} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
-                    <button type="button" onClick={() => { if (isUnlimited) onChange(1); }} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Limited</button>
+                    <button type="button" onClick={() => onChange("Unlimited")} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
+                    <button type="button" onClick={() => { if (isUnlimited) onChange("1"); }} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Limited</button>
                 </div>
-                {!isUnlimited && <input type="number" min="1" value={value} onChange={(e) => onChange(Math.max(1, Number(e.target.value) || 1))} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
+                {!isUnlimited && <input type="number" min="1" value={inputValue} onChange={(e) => onChange(String(Math.max(1, Number(e.target.value) || 1)))} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
             </div>
         </div>
     );
@@ -87,7 +89,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
 
     const [form, setForm] = useState({
         name: "", slug: "", plan: DEFAULT_ORG_PLAN,
-        maxActiveDrives: 0, maxTeamMembers: 0,
+        maxActiveDrives: "Unlimited", maxTeamMembers: "Unlimited",
         proctoringSignals: { ...DEFAULT_PROCTORING_SIGNALS },
         location: "", adminName: "", adminEmail: "", adminPassword: "",
         ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
@@ -164,8 +166,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                 setForm({
                     name: data.name || "", slug: data.slug || "",
                     plan: normalizeOrgPlan(data.plan) || DEFAULT_ORG_PLAN,
-                    maxActiveDrives: Number(data.maxActiveDrives || 0),
-                    maxTeamMembers: Number(data.maxTeamMembers || 0),
+                    maxActiveDrives: formatOrgLimitValue(data.maxActiveDrives),
+                    maxTeamMembers: formatOrgLimitValue(data.maxTeamMembers),
                     proctoringSignals: normalizeProctoringSignals(data.proctoringSignals),
                     location: data.location || "",
                     adminName: data.users && data.users.length > 0 ? data.users[0].name : "",

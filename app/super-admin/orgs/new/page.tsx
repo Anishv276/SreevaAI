@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Sparkles, Volume2, Mic2, BrainCircuit, Coins, Mic, ChevronDown, Infinity, Check, Search, AudioLines, Shield, Layers, Thermometer, Loader2, Zap } from "lucide-react";
@@ -20,10 +19,10 @@ function PremiumInput({ label, icon: Icon, error, ...props }: any) {
                 {label}
                 <span className="text-[#F97316] ml-0.5">*</span>
             </label>
-            <input 
-                {...props} 
+            <input
+                {...props}
                 onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                className={cn("h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md", error && "border-red-500")} 
+                className={cn("h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md", error && "border-red-500")}
             />
         </div>
     );
@@ -58,17 +57,18 @@ function Steps({ steps, currentStep, onStepClick }: { steps: string[], currentSt
     );
 }
 
-function LimitControl({ value, onChange, label }: { value: any, onChange: (v: any) => void, label: string }) {
-    const isUnlimited = Number(value) === 0;
+function LimitControl({ value, onChange, label }: { value: string, onChange: (v: string) => void, label: string }) {
+    const isUnlimited = String(value).toLowerCase() === "unlimited" || Number(value) === 0;
+    const inputValue = isUnlimited ? "" : String(value);
     return (
         <div className="space-y-2">
             <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Layers className="h-3 w-3 text-[#F97316]" /> {label}</label>
             <div className="flex items-center gap-1.5">
                 <div className="flex bg-gray-100/50 p-1 rounded-lg border border-gray-100 w-fit shrink-0">
-                    <button type="button" onClick={() => onChange("0")} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
+                    <button type="button" onClick={() => onChange("Unlimited")} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
                     <button type="button" onClick={() => { if (isUnlimited) onChange("1"); }} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Limited</button>
                 </div>
-                {!isUnlimited && <input type="number" min="1" value={value} onChange={(e) => onChange(e.target.value)} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
+                {!isUnlimited && <input type="number" min="1" value={inputValue} onChange={(e) => onChange(String(Math.max(1, Number(e.target.value) || 1)))} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
             </div>
         </div>
     );
@@ -92,6 +92,7 @@ export default function NewOrgPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
     const [step, setStep] = useState(0);
+    const [highestStepReached, setHighestStepReached] = useState(0);
     const [success, setSuccess] = useState<any>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
@@ -101,7 +102,7 @@ export default function NewOrgPage() {
 
     const [form, setForm] = useState({
         orgName: "", slug: "", location: "", plan: DEFAULT_ORG_PLAN,
-        maxActiveDrives: "0", maxTeamMembers: "0", interviewQuotaTotal: "100",
+        maxActiveDrives: "Unlimited", maxTeamMembers: "Unlimited", interviewQuotaTotal: "100",
         proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
         adminName: "", adminEmail: "", adminPassword: "",
         ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
@@ -135,6 +136,49 @@ export default function NewOrgPage() {
     };
 
     const stopCurrentPreview = () => { if (activeAudio) { activeAudio.pause(); setActiveAudio(null); } setPlayingVoiceId(null); };
+
+    const validateStep0 = () => {
+        if (!form.orgName.trim()) { toast.error("Client Name is required"); return false; }
+        if (!form.slug.trim()) { toast.error("URL Identifier is required"); return false; }
+        return true;
+    };
+
+    const validateStep1 = () => {
+        if (!form.adminEmail.trim()) { toast.error("Login Email is required"); return false; }
+        const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!EMAIL_REGEX.test(form.adminEmail)) { toast.error("Invalid admin email format"); return false; }
+        if (!form.adminPassword) { toast.error("Password is required"); return false; }
+
+        if (form.adminPassword.length < 8) { toast.error("Password must be at least 8 characters long"); return false; }
+        if (!/[a-z]/.test(form.adminPassword)) { toast.error("Password must contain at least one lowercase letter"); return false; }
+        if (!/[A-Z]/.test(form.adminPassword)) { toast.error("Password must contain at least one uppercase letter"); return false; }
+        if (!/[0-9]/.test(form.adminPassword)) { toast.error("Password must contain at least one number"); return false; }
+        if (!/[^a-zA-Z0-9]/.test(form.adminPassword)) { toast.error("Password must contain at least one special character"); return false; }
+
+        return true;
+    };
+
+    const handleNext = (targetStep: number) => {
+        // Allow going backwards freely
+        if (targetStep < step) {
+            setStep(targetStep);
+            return;
+        }
+
+        // Do not allow skipping unreached steps (must fill each step during creation)
+        if (targetStep > highestStepReached + 1) {
+            toast.error("Please complete the steps sequentially.");
+            return;
+        }
+
+        for (let i = step; i < targetStep; i++) {
+            if (i === 0 && !validateStep0()) return;
+            if (i === 1 && !validateStep1()) return;
+        }
+
+        setHighestStepReached(Math.max(highestStepReached, targetStep));
+        setStep(targetStep);
+    };
 
     const getVoicesForProvider = () => {
         if (form.ttsProvider === "SARVAM") return SARVAM_VOICES;
@@ -178,7 +222,10 @@ export default function NewOrgPage() {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(form),
             });
-            if (!res.ok) throw new Error("Failed to create organization");
+            if (!res.ok) {
+                const data = await res.json().catch(() => null);
+                throw new Error(data?.error || "Failed to create organization");
+            }
             setSuccess({ orgName: form.orgName, adminEmail: form.adminEmail });
         } catch (err: any) { toast.error(err.message); }
         finally { setLoading(false); }
@@ -211,10 +258,10 @@ export default function NewOrgPage() {
                 </div>
             </div>
 
-            <Steps steps={["Identity", "Admin", "AI Engine", "Billing", "Security"]} currentStep={step} onStepClick={setStep} />
+            <Steps steps={["Identity", "Admin", "AI Engine", "Billing", "Security"]} currentStep={step} onStepClick={handleNext} />
 
-            <form 
-                onSubmit={handleSubmit} 
+            <form
+                onSubmit={handleSubmit}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                         e.preventDefault();
@@ -234,13 +281,13 @@ export default function NewOrgPage() {
                                     const previousName = p.orgName || "";
                                     const previousGenerated = previousName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
                                     const expectedPrevious = previousGenerated ? `${previousGenerated}-${(p as any).slugSuffix}` : "";
-                                    
-                                    return { 
-                                        ...p, 
-                                        orgName: newName, 
-                                        slug: (p.slug === expectedPrevious || !p.slug) 
+
+                                    return {
+                                        ...p,
+                                        orgName: newName,
+                                        slug: (p.slug === expectedPrevious || !p.slug)
                                             ? currentGenerated
-                                            : p.slug 
+                                            : p.slug
                                     };
                                 });
                             }} placeholder="e.g. Lumoscale" required />
@@ -252,7 +299,7 @@ export default function NewOrgPage() {
                                 <LocationAutocomplete value={form.location || ""} onChange={val => setForm({ ...form, location: val })} placeholder="Mumbai, India" />
                             </div>
                         </div>
-                        <div className="flex justify-end pt-8"><button type="button" onClick={() => setStep(1)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: ADMIN <ChevronRight className="h-4 w-4" /></button></div>
+                        <div className="flex justify-end pt-8"><button type="button" onClick={() => handleNext(1)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: ADMIN <ChevronRight className="h-4 w-4" /></button></div>
                     </div>
                 )}
 
@@ -265,8 +312,8 @@ export default function NewOrgPage() {
                             <PremiumInput label="Password" icon={Lock} type="password" value={form.adminPassword} onChange={(e: any) => setForm(p => ({ ...p, adminPassword: e.target.value }))} placeholder="••••••••" />
                         </div>
                         <div className="flex justify-between pt-8 border-t border-gray-100">
-                            <button type="button" onClick={() => setStep(0)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
-                            <button type="button" onClick={() => setStep(2)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: AI ENGINE <ChevronRight className="h-4 w-4" /></button>
+                            <button type="button" onClick={() => handleNext(0)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
+                            <button type="button" onClick={() => handleNext(2)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: AI ENGINE <ChevronRight className="h-4 w-4" /></button>
                         </div>
                     </div>
                 )}
@@ -316,18 +363,18 @@ export default function NewOrgPage() {
                             <div className="space-y-6">
                                 <div className="relative group space-y-4">
                                     <CustomSelect label="Transcription (STT)" icon={Mic} value={form.sttProvider} onChange={(v: any) => setForm(p => ({ ...p, sttProvider: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "GOOGLE", label: "Google Cloud STT" }] : [{ value: "DEEPGRAM", label: "Deepgram" }, { value: "SARVAM", label: "Sarvam (Regional)" }]} />
-                                    
+
                                     {form.sttProvider === "DEEPGRAM" && (
                                         <div className="animate-in fade-in slide-in-from-top-2">
-                                            <CustomSelect 
-                                                label="Deepgram Model" 
-                                                icon={Zap} 
-                                                value={form.deepgramModel} 
-                                                onChange={(v: any) => setForm(p => ({ ...p, deepgramModel: v }))} 
+                                            <CustomSelect
+                                                label="Deepgram Model"
+                                                icon={Zap}
+                                                value={form.deepgramModel}
+                                                onChange={(v: any) => setForm(p => ({ ...p, deepgramModel: v }))}
                                                 options={[
                                                     { value: "nova-3-general", label: "Nova-3 (Latest)" },
                                                     { value: "nova-2-general", label: "Nova-2 (Legacy)" },
-                                                ]} 
+                                                ]}
                                             />
                                         </div>
                                     )}
@@ -362,8 +409,8 @@ export default function NewOrgPage() {
                             </div>
                         </div>
                         <div className="flex justify-between pt-8">
-                            <button type="button" onClick={() => setStep(1)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
-                            <button type="button" onClick={() => setStep(3)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: BILLING <ChevronRight className="h-4 w-4" /></button>
+                            <button type="button" onClick={() => handleNext(1)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
+                            <button type="button" onClick={() => handleNext(3)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: BILLING <ChevronRight className="h-4 w-4" /></button>
                         </div>
                     </div>
                 )}
@@ -377,8 +424,8 @@ export default function NewOrgPage() {
                             <PremiumInput label="Total Interviews Allocated" icon={Coins} type="number" value={form.interviewQuotaTotal} onChange={(e: any) => setForm(p => ({ ...p, interviewQuotaTotal: e.target.value }))} />
                         </div>
                         <div className="flex justify-between pt-8 border-t border-gray-100">
-                            <button type="button" onClick={() => setStep(2)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
-                            <button type="button" onClick={() => setStep(4)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: SECURITY <ChevronRight className="h-4 w-4" /></button>
+                            <button type="button" onClick={() => handleNext(2)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
+                            <button type="button" onClick={() => handleNext(4)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: SECURITY <ChevronRight className="h-4 w-4" /></button>
                         </div>
                     </div>
                 )}
@@ -390,7 +437,7 @@ export default function NewOrgPage() {
                             <div className="md:col-span-1 space-y-4">
                                 <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Client Plan</label>
                                 {ORG_PLAN_OPTIONS.map(p => (
-                                <button key={p.id} type="button" onClick={() => setForm(prev => ({ ...prev, plan: p.id, proctoringSignals: getProctoringSignalsForPlan(p.id) }))} className={cn("w-full p-4 rounded-lg border text-left transition-all", form.plan === p.id ? "border-[#F97316] bg-orange-50 shadow-sm" : "border-gray-100 hover:border-gray-200")}>
+                                    <button key={p.id} type="button" onClick={() => setForm(prev => ({ ...prev, plan: p.id, proctoringSignals: getProctoringSignalsForPlan(p.id) }))} className={cn("w-full p-4 rounded-lg border text-left transition-all", form.plan === p.id ? "border-[#F97316] bg-orange-50 shadow-sm" : "border-gray-100 hover:border-gray-200")}>
                                         <p className="text-xs font-black uppercase text-gray-900">{p.label}</p>
                                         <p className="text-[10px] text-gray-400 font-bold mt-0.5">{p.desc}</p>
                                     </button>
@@ -401,7 +448,7 @@ export default function NewOrgPage() {
                             </div>
                         </div>
                         <div className="flex justify-between pt-10 border-t border-gray-100">
-                            <button type="button" onClick={() => setStep(3)} className="h-14 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
+                            <button type="button" onClick={() => handleNext(3)} className="h-14 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
                             <button type="submit" disabled={loading} className="h-14 px-12 rounded-lg bg-[#F97316] text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-orange-200 hover:bg-orange-700 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-3">
                                 {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Shield className="h-5 w-5" />} {loading ? "Creating..." : "Create"}
                             </button>

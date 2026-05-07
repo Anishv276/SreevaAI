@@ -4,6 +4,7 @@ import { getSession, isAdminRole } from "@/lib/auth";
 import { buildInviteUrl, generateInviteToken, getInviteExpiry, normalizeOrgRole } from "@/lib/invite";
 import { sendTeamInviteEmail } from "@/lib/mail";
 import { TEAM_LIMIT_REACHED_MESSAGE, isTeamLimitReached } from "@/lib/team-limits";
+import { parseOrgLimitValue } from "@/lib/org-limits";
 
 async function hasInviteTable() {
     const result = await prisma.$queryRawUnsafe<Array<{ exists: boolean }>>(
@@ -117,7 +118,7 @@ export async function GET() {
         return NextResponse.json({
             members: normalizedMembers,
             pendingInvites,
-            maxTeamMembers: Number(org?.maxTeamMembers || 0),
+            maxTeamMembers: org?.maxTeamMembers ?? "Unlimited",
             currentTeamCount,
             pendingInviteCount,
             teamAllocationCount: allocationCount,
@@ -172,21 +173,70 @@ export async function POST(request: Request) {
             }
         }
 
+        const [org, organization, inviter] = await Promise.all([
+            prisma.organization.findUnique({
+                where: { id: session.orgId },
+                select: { name: true, maxTeamMembers: true },
+            }),
+            prisma.organization.findUnique({ where: { id: session.orgId }, select: { name: true } }),
+            prisma.user.findUnique({ where: { id: session.userId }, select: { name: true, email: true } }),
+        ]);
+
+        if (!org) throw new Error("ORG_NOT_FOUND");
+
+        const currentTeamRows = await prisma.$queryRawUnsafe<Array<{ count: number }>>(
+            `
+            SELECT COUNT(*)::INT AS count
+            FROM "User"
+            WHERE "orgId" = $1 AND role <> 'CANDIDATE'
+            `,
+            session.orgId
+        );
+        const currentTeamCount = Number(currentTeamRows?.[0]?.count || 0);
+
+        const pendingInviteRows = await prisma.$queryRawUnsafe<Array<{ count: number }>>(
+            `
+            SELECT COUNT(*)::INT AS count
+            FROM "OrgInvite"
+            WHERE "orgId" = $1 AND status = 'PENDING'
+            `,
+            session.orgId
+        );
+        const pendingInviteCount = Number(pendingInviteRows?.[0]?.count || 0);
+        const allocationCount = currentTeamCount + pendingInviteCount;
+
+        if (isTeamLimitReached(parseOrgLimitValue(org.maxTeamMembers), allocationCount)) {
+            throw new Error("TEAM_LIMIT_REACHED");
+        }
+
+        const { rawToken, tokenHash } = generateInviteToken();
+        const expiresAt = getInviteExpiry(72);
+        const inviteUrl = buildInviteUrl(rawToken);
+        const inviterName = inviter?.name || inviter?.email || "Your team";
+        const organizationName = organization?.name || org.name || "your organization";
+
+        const mailResult = await sendTeamInviteEmail({
+            email: normalizedEmail,
+            inviterName,
+            organizationName,
+            orgId: session.orgId,
+            role: normalizedRole,
+            inviteUrl,
+            expiresAt,
+        });
+
+        if (!mailResult.success) {
+            return NextResponse.json({
+                error: mailResult.reconnectRequired
+                    ? "Reconnect Gmail and grant the missing permissions so the invite can be sent."
+                    : "Invite could not be sent. Please check Google OAuth email configuration.",
+                code: mailResult.code || "GMAIL_SEND_FAILED",
+                reconnectRequired: Boolean(mailResult.reconnectRequired),
+                details: mailResult.error,
+            }, { status: mailResult.reconnectRequired ? 502 : 500 });
+        }
+
         const inviteResult = await prisma.$transaction(async (tx) => {
-            const orgRows = await tx.$queryRawUnsafe<Array<{ name: string; maxTeamMembers: number | null }>>(
-                `
-                SELECT name, "maxTeamMembers"
-                FROM "Organization"
-                WHERE id = $1
-                LIMIT 1
-                FOR UPDATE
-                `,
-                session.orgId
-            );
-
-            const org = orgRows?.[0];
-            if (!org) throw new Error("ORG_NOT_FOUND");
-
             await tx.$executeRawUnsafe(
                 `
                 UPDATE "OrgInvite"
@@ -198,34 +248,6 @@ export async function POST(request: Request) {
                 session.orgId,
                 normalizedEmail
             );
-
-            const currentTeamRows = await tx.$queryRawUnsafe<Array<{ count: number }>>(
-                `
-                SELECT COUNT(*)::INT AS count
-                FROM "User"
-                WHERE "orgId" = $1 AND role <> 'CANDIDATE'
-                `,
-                session.orgId
-            );
-            const currentTeamCount = Number(currentTeamRows?.[0]?.count || 0);
-
-            const pendingInviteRows = await tx.$queryRawUnsafe<Array<{ count: number }>>(
-                `
-                SELECT COUNT(*)::INT AS count
-                FROM "OrgInvite"
-                WHERE "orgId" = $1 AND status = 'PENDING'
-                `,
-                session.orgId
-            );
-            const pendingInviteCount = Number(pendingInviteRows?.[0]?.count || 0);
-            const allocationCount = currentTeamCount + pendingInviteCount;
-
-            if (isTeamLimitReached(org.maxTeamMembers, allocationCount)) {
-                throw new Error("TEAM_LIMIT_REACHED");
-            }
-
-            const { rawToken, tokenHash } = generateInviteToken();
-            const expiresAt = getInviteExpiry(72);
 
             const inserted = await tx.$queryRawUnsafe<Array<{
                 id: string;
@@ -249,39 +271,14 @@ export async function POST(request: Request) {
                 expiresAt
             );
 
-            return {
-                invite: inserted[0] || null,
-                rawToken,
-                expiresAt,
-                orgName: org.name,
-            };
-        });
-
-        const [organization, inviter] = await Promise.all([
-            prisma.organization.findUnique({ where: { id: session.orgId }, select: { name: true } }),
-            prisma.user.findUnique({ where: { id: session.userId }, select: { name: true, email: true } }),
-        ]);
-
-        const inviteUrl = buildInviteUrl(inviteResult.rawToken);
-        const inviterName = inviter?.name || inviter?.email || "Your team";
-        const organizationName = organization?.name || inviteResult.orgName || "your organization";
-
-        const mailResult = await sendTeamInviteEmail({
-            email: normalizedEmail,
-            inviterName,
-            organizationName,
-            orgId: session.orgId,
-            role: normalizedRole,
-            inviteUrl,
-            expiresAt: inviteResult.expiresAt,
+            return inserted[0] || null;
         });
 
         return NextResponse.json({
             success: true,
-            invite: inviteResult.invite,
-            emailSent: Boolean(mailResult?.success),
+            invite: inviteResult,
+            emailSent: true,
             inviteUrl: process.env.NODE_ENV === "development" ? inviteUrl : undefined,
-            warning: mailResult?.success ? null : "Invite stored but email delivery failed. Check Google OAuth email configuration.",
         });
     } catch (error) {
         console.error("Invite team error:", error);

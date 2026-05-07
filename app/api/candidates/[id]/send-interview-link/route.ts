@@ -123,8 +123,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                     ? mailResult.error
                     : (mailResult.error as any)?.message || "Unknown email delivery error";
             return NextResponse.json({
-                error: `Interview token refreshed, but email could not be sent: ${reason}`
-            }, { status: 502 });
+                error: mailResult.reconnectRequired
+                    ? "Reconnect Gmail and grant the missing permissions so the interview email can send."
+                    : `Interview token refreshed, but email could not be sent: ${reason}`,
+                code: mailResult.code || "GMAIL_SEND_FAILED",
+                reconnectRequired: Boolean(mailResult.reconnectRequired),
+                details: reason,
+            }, { status: mailResult.reconnectRequired ? 502 : 500 });
         }
 
         await appendCandidateActivity(applicationId, {

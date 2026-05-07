@@ -148,7 +148,19 @@ export default function CandidateProfilePage() {
     const interviewReportCommunication = interviewReportData?.communication || {};
     const interviewReportCognitiveInsights = interviewReportData?.cognitive_insights || {};
     const interviewReportBehavioralAnalysis = interviewReportData?.behavioral_analysis || {};
-    const interviewReportSkills = Array.isArray(interviewReportData?.skills_proof) ? interviewReportData.skills_proof : [];
+    // Build skill objects from skill_ratings (score per skill) + skills_proof (skill name list)
+    const skillRatings: Record<string, number> = interviewReportData?.skill_ratings || {};
+    const skillsProof: string[] = Array.isArray(interviewReportData?.skills_proof) ? interviewReportData.skills_proof : [];
+    const interviewReportSkills = skillsProof.map((skillName: string) => ({
+        name: String(skillName).trim(),
+        skill: String(skillName).trim(),
+        score: skillRatings[skillName] != null ? String(skillRatings[skillName]) : "—",
+        status: skillRatings[skillName] != null
+            ? skillRatings[skillName] >= 7 ? "STRONG"
+            : skillRatings[skillName] >= 4 ? "MODERATE"
+            : "WEAK"
+            : "NOT TESTED",
+    }));
     const interviewReportSummary = interviewReportRecording.summary || interviewReportData?.verdict?.summary || interviewAiSummary || "";
     const groupedProctoringSignals = Array.isArray(candidate?.interview?.proctoringEvents)
         ? candidate.interview.proctoringEvents.reduce((acc: any[], ev: any) => {
@@ -181,10 +193,10 @@ export default function CandidateProfilePage() {
     const interviewQaRows = aiQaBlocks.length > 0
         ? aiQaBlocks.map((block: any, i: number) => ({
             q: Number(block?.q || i + 1),
-            question: String(block?.title || "Question " + (i + 1)).trim(),
-            answer: "",
+            question: String(block?.question || block?.title || "Question " + (i + 1)).trim(),
+            answer: String(block?.answer || "").trim(),
             score: String(block?.score || "--"),
-            reasoning: String(block?.verdict || "").trim(),
+            reasoning: String(block?.reasoning || block?.verdict || "").trim(),
           }))
         : interviewSessionRows;
     const wordCount = interviewTranscript ? interviewTranscript.split(/\s+/).filter(Boolean).length : 0;

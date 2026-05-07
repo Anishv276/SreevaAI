@@ -45,19 +45,19 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
         const label = newSkill.trim();
         if (!label) return;
 
-        const currentRequired = criteria.skills?.required || [];
-        const currentNice = criteria.skills?.niceToHave || [];
+        const currentMustHave = criteria.skills?.mustHave || [];
+        const currentOptional = criteria.skills?.optional || [];
         const skill: SkillItem = { name: label, weight: newSkillMustHave ? 8 : 4 };
 
         updateCriteria({
             skills: newSkillMustHave
                 ? {
                     ...criteria.skills,
-                    required: [...currentRequired, skill],
+                    mustHave: [...currentMustHave, skill],
                 }
                 : {
                     ...criteria.skills,
-                    niceToHave: [...currentNice, skill],
+                    optional: [...currentOptional, skill],
                 },
         });
 
@@ -65,42 +65,42 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
         setNewSkillMustHave(true);
     };
 
-    const removeSkill = (kind: "required" | "niceToHave", index: number) => {
-        if (kind === "required") {
-            const current = criteria.skills?.required || [];
-            updateCriteria({ skills: { ...criteria.skills, required: current.filter((_, i) => i !== index) } });
+    const removeSkill = (kind: "mustHave" | "optional", index: number) => {
+        if (kind === "mustHave") {
+            const current = criteria.skills?.mustHave || [];
+            updateCriteria({ skills: { ...criteria.skills, mustHave: current.filter((_, i) => i !== index) } });
             return;
         }
 
-        const current = criteria.skills?.niceToHave || [];
-        updateCriteria({ skills: { ...criteria.skills, niceToHave: current.filter((_, i) => i !== index) } });
+        const current = criteria.skills?.optional || [];
+        updateCriteria({ skills: { ...criteria.skills, optional: current.filter((_, i) => i !== index) } });
     };
 
-    const setSkillRequired = (kind: "required" | "niceToHave", index: number, required: boolean) => {
-        const currentRequired = criteria.skills?.required || [];
-        const currentNice = criteria.skills?.niceToHave || [];
+    const setSkillMustHave = (kind: "mustHave" | "optional", index: number, mustHave: boolean) => {
+        const currentMustHave = criteria.skills?.mustHave || [];
+        const currentOptional = criteria.skills?.optional || [];
 
-        if (kind === "required" && !required) {
-            const moved = currentRequired[index];
+        if (kind === "mustHave" && !mustHave) {
+            const moved = currentMustHave[index];
             if (!moved) return;
             updateCriteria({
                 skills: {
                     ...criteria.skills,
-                    required: currentRequired.filter((_, i) => i !== index),
-                    niceToHave: [...currentNice, { name: moved.name, weight: 4 }],
+                    mustHave: currentMustHave.filter((_, i) => i !== index),
+                    optional: [...currentOptional, { name: moved.name, weight: 4 }],
                 },
             });
             return;
         }
 
-        if (kind === "niceToHave" && required) {
-            const moved = currentNice[index];
+        if (kind === "optional" && mustHave) {
+            const moved = currentOptional[index];
             if (!moved) return;
             updateCriteria({
                 skills: {
                     ...criteria.skills,
-                    required: [...currentRequired, { name: moved.name, weight: 8 }],
-                    niceToHave: currentNice.filter((_, i) => i !== index),
+                    mustHave: [...currentMustHave, { name: moved.name, weight: 8 }],
+                    optional: currentOptional.filter((_, i) => i !== index),
                 },
             });
         }
@@ -268,14 +268,14 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
 
                             <div className="space-y-2">
                                 <div className="space-y-2">
-                                    {(criteria.skills?.required || []).map((skill, i) => (
+                                    {(criteria.skills?.mustHave || []).map((skill, i) => (
                                         <div
-                                            key={`required-${i}`}
+                                            key={`must-have-${i}`}
                                             className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-gradient-to-r from-white to-slate-50 px-4 py-3 transition-all hover:border-slate-300 hover:shadow-sm"
                                         >
                                             <Checkbox
                                                 checked
-                                                onCheckedChange={(checked) => setSkillRequired("required", i, Boolean(checked))}
+                                                onCheckedChange={(checked) => setSkillMustHave("mustHave", i, Boolean(checked))}
                                             />
                                             <div className="flex-1 min-w-0">
                                                 <p className="truncate text-sm font-semibold text-slate-900">{skill.name}</p>
@@ -283,21 +283,21 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
                                             </div>
                                             <button
                                                 type="button"
-                                                onClick={() => removeSkill("required", i)}
+                                                onClick={() => removeSkill("mustHave", i)}
                                                 className="rounded-md p-1 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
                                             >
                                                 <X className="h-4 w-4" />
                                             </button>
                                         </div>
                                     ))}
-                                    {(criteria.skills?.niceToHave || []).map((skill, i) => (
+                                    {(criteria.skills?.optional || []).map((skill, i) => (
                                         <div
-                                            key={`nice-${i}`}
+                                            key={`optional-${i}`}
                                             className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 transition-all hover:border-slate-300 hover:shadow-sm"
                                         >
                                             <Checkbox
                                                 checked={false}
-                                                onCheckedChange={(checked) => setSkillRequired("niceToHave", i, Boolean(checked))}
+                                                onCheckedChange={(checked) => setSkillMustHave("optional", i, Boolean(checked))}
                                             />
                                             <div className="flex-1 min-w-0">
                                                 <p className="truncate text-sm font-semibold text-slate-900">{skill.name}</p>
@@ -305,7 +305,7 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
                                             </div>
                                             <button
                                                 type="button"
-                                                onClick={() => removeSkill("niceToHave", i)}
+                                                onClick={() => removeSkill("optional", i)}
                                                 className="rounded-md p-1 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
                                             >
                                                 <X className="h-4 w-4" />

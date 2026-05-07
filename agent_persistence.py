@@ -9,9 +9,10 @@ from agent_profile_context import build_interview_turns
 from agent_providers import build_google_analysis_client
 from behavioral_analysis import synthesize_behavioral_report
 from agent_runtime_support import (
-    APP_BASE_URL,
+
     DATABASE_URL,
     LLM_MODEL,
+    FIXED_INTERVIEW_DURATION_MINUTES,
     _DB_POOL,
     _DB_POOL_INIT_TASK,
     _PENDING_MANUAL_BILLING,
@@ -555,7 +556,7 @@ async def get_interview_context(app_id: str):
         raise RuntimeError("DATABASE_URL is not set")
     query = """
     SELECT a."fullName", d.title, d.role AS "role", d.description, d.skills, d."orgId" AS "orgId",
-           d.location AS "driveLocation", d."interviewLanguage", d."interviewTime", d."interviewQuestions",
+           d.location AS "driveLocation", d."interviewLanguage", d."interviewQuestions",
            COALESCE(d."ttsProvider", o."ttsProvider") AS "ttsProvider",
            COALESCE(d."cartesiaVoiceId", o."cartesiaVoiceId") AS "cartesiaVoiceId", o."cartesiaModel",
            o."sarvamModel", COALESCE(d."sarvamVoice", o."sarvamVoice") AS "sarvamVoice",
@@ -594,7 +595,7 @@ async def get_interview_context(app_id: str):
                 "orgLocation": row["orgLocation"],
                 "driveLocation": row["driveLocation"],
                 "language": row["interviewLanguage"],
-                "timeLimit": row["interviewTime"],
+                "timeLimit": FIXED_INTERVIEW_DURATION_MINUTES,
                 "questions": questions if isinstance(questions, list) else [],
                 "ttsProvider": row["ttsProvider"],
                 "cartesiaVoiceId": row["cartesiaVoiceId"],
@@ -794,26 +795,36 @@ async def generate_interview_summary(
         transcript_text = "\n".join(transcript_lines)
         transcript_text = truncate_to_tokens(transcript_text, 2500)
         logger.info(f"[SUMMARY] Generating narrative summary for {app_id}...")
+        # Strip warmup lines before summarising — first 4 lines are rapport only
+        interview_lines_for_summary = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines
+        summary_transcript = truncate_to_tokens("\n".join(interview_lines_for_summary), 2500)
         completion = await client.chat.completions.create(
             model=llm_model,
-            temperature=0.2,
+            temperature=0.1,
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        "You are a senior talent partner writing a confidential post-interview evaluation for the hiring team. "
-                        "Your language must be professional, bias-free, and constructive at all times - never dismissive or harsh. "
-                        f"Analyze the provided interview transcript for the role of '{job_title}'. "
-                        "Write a structured narrative evaluation (2-3 sentences) that covers: "
-                        "(1) The candidate's key strengths with specific evidence from the conversation. "
-                        "(2) Any gaps or areas of concern, written constructively - framed as 'areas to explore further' rather than weaknesses. "
-                        "(3) How well the candidate's communication style, depth of knowledge, and attitude fit the role. "
-                        "(4) A clear, final hiring recommendation (Strong Yes / Yes / Maybe / No) with a one-sentence justification. "
-                        "RULES: Do not use JSON. Do not use numeric scores. Do not reveal the AI screening score. "
-                        "Never use gender-biased language. Never make personal remarks. Focus only on professional evidence from the conversation."
+                        "You are a senior talent partner writing a confidential post-interview evaluation for the hiring team.\n"
+                        f"Role being assessed: {job_title}\n\n"
+                        "Write 4 bullet points. Each bullet is ONE sentence. Use plain language.\n\n"
+                        "Bullet 1 — Overall fit: State clearly whether the candidate demonstrated strong, moderate, weak, or no fit for the role. "
+                        "Base this only on what was said in the interview — not assumptions.\n\n"
+                        "Bullet 2 — Strongest demonstrated skill: Name the one area where they showed the most depth or clarity. "
+                        "If they showed nothing, say so — do not invent strengths.\n\n"
+                        "Bullet 3 — Communication quality: Describe how they communicated — fluency, clarity, confidence, grammar. "
+                        "Be specific and honest. If they gave one-word answers or refused to engage, say that.\n\n"
+                        "Bullet 4 — Key concern or recommendation: State the single most important flag for the hiring team. "
+                        "If the candidate was disengaged, unresponsive, or showed no relevant knowledge, say that directly.\n\n"
+                        "RULES:\n"
+                        "- Do NOT soften negative findings. If the interview was poor, say so professionally.\n"
+                        "- Do NOT invent positives that are not in the transcript.\n"
+                        "- Do NOT use JSON. Do not include scores.\n"
+                        "- Never use gender-biased language. Focus only on professional evidence.\n"
+                        "- Each bullet must start with a dash (-)."
                     ),
                 },
-                {"role": "user", "content": f"Interview Transcript:\n{transcript_text}"},
+                {"role": "user", "content": f"Interview Transcript:\n{summary_transcript}"},
             ],
         )
         await persist_org_manual_billing_usage(org_id, "interview", _extract_openai_completion_usage(completion))
@@ -854,70 +865,89 @@ async def generate_interview_report(
         logger.warning("[REPORT] Skipping: missing OPENAI_API_KEY for non-Google report")
         return
     try:
-        # Generate behavioral analysis (includes LLM call for ownership_ambiguity signal)
+        # Exclude warmup turns from all scoring — they skew every average
+        interview_scores = [s for s in answer_scores if not s.get("is_warmup", False)]
+
+        # Generate behavioral analysis
         behavioral_report = await synthesize_behavioral_report(
             transcript_lines=transcript_lines,
-            answer_scores=answer_scores,
+            answer_scores=interview_scores,
             total_duration_sec=int(proctoring_data.get("session_duration", 0)) if proctoring_data else 0,
             proctoring_events=proctoring_data.get("events", []) if proctoring_data else [],
             contradictions_found=proctoring_data.get("contradictions", []) if proctoring_data else [],
         )
         client = build_google_analysis_client() if is_google_model else AsyncOpenAI()
-        transcript_text = "\n".join(transcript_lines)
+        # Strip warmup lines from transcript before sending to report LLM
+        # Warmup is the first 4 lines (2 interviewer + 2 candidate exchanges)
+        interview_lines = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines
+        transcript_text = "\n".join(interview_lines)
         transcript_text = truncate_to_tokens(transcript_text, 3000)
-        # Calculate technical score from answer scores
+
+        # ── Technical score: avg of interview-only turns ──────────────────────
         technical_score = 0
-        if answer_scores:
-            avg_overall = sum(s.get("overall", 5) for s in answer_scores) / len(answer_scores)
+        if interview_scores:
+            avg_overall = sum(s.get("overall", 0.0) for s in interview_scores) / len(interview_scores)
             technical_score = int(min(100, max(0, avg_overall * 10)))
-        else:
-            technical_score = 0
-        logger.info(f"[REPORT] Generating report for {app_id}, technical_score={technical_score}...")
-        # Generate skills and strengths analysis
+
+        # ── Communication score: avg of fluency/grammar/clarity/confidence ────
+        comm_scores: dict[str, int] = {"clarity": 0, "fluency": 0, "grammar": 0, "confidence": 0}
+        if interview_scores:
+            for key in comm_scores:
+                comm_scores[key] = int(
+                    sum(s.get(key, 0) for s in interview_scores) / len(interview_scores) * 10
+                )
+        communication_score = int(sum(comm_scores.values()) / 4)
+
+        logger.info(
+            f"[REPORT] Generating report for {app_id} "
+            f"technical={technical_score} communication={communication_score} "
+            f"interview_turns={len(interview_scores)}"
+        )
+
+        # ── LLM: skills, role_fit, strengths, concerns ────────────────────────
         completion = await client.chat.completions.create(
             model=llm_model,
-            temperature=0.2,
+            temperature=0.1,
             max_tokens=2000,
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        f"You are analyzing a technical interview for the '{job_title}' role. "
-                        "Extract comprehensive insights from the transcript:\n\n"
-                        "RULES:\n"
-                        "1. SKILLS_COVERED: List ALL key skills this candidate demonstrated or attempted (minimum 4-6 skills).\n"
-                        "   Look for: Technical skills, domain expertise, soft skills, process knowledge, tool proficiency.\n"
-                        "   Be specific: 'CRM Systems' not just 'CRM', 'Data Analysis' not 'analytics'\n\n"
-                        "2. SKILL_RATINGS: Rate each skill 1-10 based on how well they demonstrated it:\n"
-                        "   - 1-3: Mentioned but showed no understanding or contradicted themselves\n"
-                        "   - 4-6: Basic understanding, but vague or surface-level\n"
-                        "   - 7-8: Good understanding with examples\n"
-                        "   - 9-10: Deep expertise with specific projects/details\n\n"
-                        "3. TOP_STRENGTHS: List 4-5 specific, evidence-based strengths (not generic):\n"
-                        "   Examples: 'Provides specific examples with numbers', 'Takes ownership of problems', 'Shows learning from failures'\n"
-                        "   Each strength MUST have 1 sentence of evidence from transcript.\n\n"
-                        "4. CONCERNS: List 2-3 specific concerns if present:\n"
-                        "   Examples: 'Avoided giving specific numbers', 'Contradicted earlier statements about team size'\n\n"
-                        "OUTPUT FORMAT (valid JSON):\n"
+                        f"You are analyzing an interview transcript for the '{job_title}' role.\n"
+                        "Be accurate and honest — do NOT inflate scores or invent strengths that are not in the transcript.\n"
+                        "If the candidate refused to answer, gave one-word answers, or disengaged, reflect that truthfully.\n\n"
+                        "Output ONLY valid JSON with these exact fields:\n\n"
+                        "skills_covered: List every skill the candidate actually demonstrated (not just mentioned). "
+                        "If the candidate gave no real answers, return only skills they explicitly referenced, rated low.\n\n"
+                        "skill_ratings: Rate each skill 1-10:\n"
+                        "  1-2: Refused to answer or said 'I don't know'\n"
+                        "  3-4: Mentioned but vague or surface-level\n"
+                        "  5-6: Basic understanding with weak examples\n"
+                        "  7-8: Good understanding with concrete examples\n"
+                        "  9-10: Deep expertise with specific projects and outcomes\n\n"
+                        "role_fit: A number 0-100. How well did the candidate demonstrate fit for this specific role?\n"
+                        "  0-20: Did not engage, refused questions, or showed no relevant knowledge\n"
+                        "  21-40: Minimal engagement, very weak signal\n"
+                        "  41-60: Some relevant background but significant gaps\n"
+                        "  61-80: Good fit with minor gaps\n"
+                        "  81-100: Excellent fit, strong evidence across all areas\n\n"
+                        "top_strengths: List 2-4 real evidence-based strengths. "
+                        "If there are none, return an empty array — do not invent strengths.\n\n"
+                        "concerns: List 2-4 honest concerns with evidence. "
+                        "If the candidate was disengaged or refused to answer, say so explicitly.\n\n"
+                        "OUTPUT FORMAT:\n"
                         "{\n"
-                        '  "skills_covered": ["Operations Management", "CRM Systems", "Data Analysis", "Team Coordination", "Process Improvement"],\n'
-                        '  "skill_ratings": {"Operations Management": 6, "CRM Systems": 5, "Data Analysis": 4, "Team Coordination": 7, "Process Improvement": 5},\n'
-                        '  "top_strengths": [\n'
-                        '    "Detail-oriented in tracking metrics: mentioned specific numbers like 120 complaints and 10-12 per technician",\n'
-                        '    "Takes systematic approach to problem-solving: described step-by-step process for prioritizing work",\n'
-                        '    "Communicates with concrete examples: referenced actual CRM systems and specific workflow",\n'
-                        '    "Shows ownership of operational challenges: took responsibility for managing service centers"\n'
-                        '  ],\n'
-                        '  "concerns": [\n'
-                        '    "Communication clarity: answers are fragmented with run-on sentences, hard to follow structure",\n'
-                        '    "Lack of specific metrics in some areas: struggled to quantify impact or improvements made"\n'
-                        '  ]\n'
+                        '  "skills_covered": ["skill1", "skill2"],\n'
+                        '  "skill_ratings": {"skill1": 4, "skill2": 2},\n'
+                        '  "role_fit": 35,\n'
+                        '  "top_strengths": ["strength with evidence"],\n'
+                        '  "concerns": ["concern with evidence"]\n'
                         "}"
                     ),
                 },
                 {
                     "role": "user",
-                    "content": f"Interview Transcript for {job_title} role:\n{transcript_text}",
+                    "content": f"Interview Transcript for '{job_title}':\n{transcript_text}",
                 },
             ],
         )
@@ -927,41 +957,60 @@ async def generate_interview_report(
             report_data = json.loads(raw_report.strip())
         except json.JSONDecodeError:
             logger.warning(f"[REPORT] Failed to parse report JSON for {app_id}")
-            report_data = {
-                "skills_covered": [],
-                "skill_ratings": {},
-                "top_strengths": [],
-                "qa_blocks": []
-            }
-        # Merge scores data
-        if answer_scores:
-            qa_blocks = []
-            for i, score in enumerate(answer_scores, 1):
-                qa_blocks.append({
-                    "q": i,
-                    "title": f"Question {i}",
-                    "score": int(score.get("overall", 5)),
-                    "verdict": f"Clarity: {score.get('clarity', 5)}/10, Depth: {score.get('depth', 5)}/10"
-                })
-            report_data["qa_blocks"] = qa_blocks
-        # Build final report
+            report_data = {"skills_covered": [], "skill_ratings": {}, "role_fit": 0, "top_strengths": [], "concerns": []}
+
+        # Build qa_blocks from interview-only scores
+        # Transcript Q&A is read directly from DB interviewTranscript on the frontend
+        qa_blocks = []
+        for idx, score in enumerate(interview_scores, 1):
+            q_text = score.get("question", "").strip()
+            overall_pct = int(score.get("overall", 0) * 10)
+            qa_blocks.append({
+                "q": idx,
+                "question": q_text or f"Question {idx}",
+                "title": q_text or f"Question {idx}",
+                "score": overall_pct,
+                "reasoning": (
+                    f"Clarity: {score.get('clarity', 0)}/10 · "
+                    f"Depth: {score.get('depth', 0)}/10 · "
+                    f"Fluency: {score.get('fluency', 0)}/10 · "
+                    f"Confidence: {score.get('confidence', 0)}/10"
+                ),
+                "verdict": (
+                    f"Clarity: {score.get('clarity', 0)}/10  "
+                    f"Depth: {score.get('depth', 0)}/10  "
+                    f"Fluency: {score.get('fluency', 0)}/10"
+                ),
+            })
+
         skills_covered = report_data.get("skills_covered", [])
         top_strengths = report_data.get("top_strengths", [])
         concerns = report_data.get("concerns", [])
+        role_fit = int(min(100, max(0, report_data.get("role_fit", 0))))
+
         final_report = {
             "technical_score": technical_score,
+            "role_fit": role_fit,
             "scores": {
                 "technical": technical_score,
-                "communication": int(sum(s.get("clarity", 5) for s in answer_scores) / max(len(answer_scores), 1) * 10) if answer_scores else 0,
+                "role_fit": role_fit,
+                "communication": communication_score,
+                "communication_breakdown": comm_scores,
             },
             "skills_proof": skills_covered,
             "skill_ratings": report_data.get("skill_ratings", {}),
             "top_strengths": top_strengths if isinstance(top_strengths, list) else [],
             "concerns": concerns if isinstance(concerns, list) else [],
-            "qa_blocks": report_data.get("qa_blocks", []),
+            "qa_blocks": qa_blocks,
             "behavioral_analysis": behavioral_report,
             "verdict": {
-                "summary": f"Candidate demonstrated {len(skills_covered)} key skills with overall technical score of {technical_score}%. Strengths include {len(top_strengths)} notable areas. {len(concerns)} concern(s) noted in evaluation. {behavioral_report.get('summary', '')}"
+                "summary": (
+                    f"Technical score: {technical_score}%. "
+                    f"Role fit (JD): {role_fit}%. "
+                    f"Communication: {communication_score}/100. "
+                    f"{len(skills_covered)} skill(s) assessed. "
+                    f"{behavioral_report.get('summary', '')}"
+                )
             },
         }
         # Save to database

@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { formatOrgLimitValue } from "@/lib/org-limits";
 
 // Define the Job type
 export type Job = {
@@ -17,7 +18,6 @@ export type Job = {
     requirements?: string;
     skills?: string;
     workMode?: string;
-    registrationFields?: string;
     slug?: string;
     role?: string;
     createdAt: string;
@@ -33,7 +33,7 @@ interface Pagination {
 interface OrganizationSettings {
     status?: string;
     plan?: string;
-    maxActiveDrives?: number;
+    maxActiveDrives?: string;
     activeDriveCount?: number;
 }
 
@@ -78,7 +78,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             setOrganization({
                 status: data.status || "ACTIVE",
                 plan: data.plan || undefined,
-                maxActiveDrives: Number(data.maxActiveDrives || 0),
+                maxActiveDrives: formatOrgLimitValue(data.maxActiveDrives),
                 activeDriveCount: Number(data.activeDriveCount || 0),
             });
         } catch {

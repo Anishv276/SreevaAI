@@ -11,6 +11,8 @@ import { getOrgBillingStatus } from "@/lib/credits";
 import { isDriveCreationLocked } from "@/lib/drive-limits";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
+import { parseOrgLimitValue } from "@/lib/org-limits";
+import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 
 export async function GET(request: Request) {
     try {
@@ -87,10 +89,8 @@ export async function GET(request: Request) {
                     requirements: true,
                     salary: true,
                     skills: true,
-                    extractedDetails: true,
                     screeningCriteria: true,
                     interviewLanguage: true,
-                    proctoringLevel: true,
                     interviewQuestions: true,
                     jdFileName: true,
                     jdPreviewUrl: true,
@@ -115,22 +115,25 @@ export async function GET(request: Request) {
         const formattedDrives = drives.map((drive: any) => {
             const screeningThreshold = Number(drive.screeningThreshold ?? 60);
             const inviteScheduleDays = Number(drive.inviteScheduleDays ?? 1) || 1;
-            const screeningCriteriaJson = JSON.stringify({
-                threshold: screeningThreshold,
+            const parsedScreening = parseDriveScreeningSettings(
+                drive.screeningCriteria,
+                screeningThreshold,
                 inviteScheduleDays,
-                criteria: {},
-            });
+            );
 
             return {
                 ...drive,
                 applicants: drive._count?.applications || 0,
-                screeningThreshold,
-                inviteScheduleDays,
-                screeningCriteria: drive.screeningCriteria || screeningCriteriaJson,
+                screeningThreshold: parsedScreening.threshold,
+                inviteScheduleDays: parsedScreening.inviteScheduleDays,
+                screeningCriteria: JSON.stringify({
+                    threshold: parsedScreening.threshold,
+                    inviteScheduleDays: parsedScreening.inviteScheduleDays,
+                    criteria: parsedScreening.criteria,
+                }),
                 aiScreening: {
                     enabled: (drive as any).aiScreeningEnabled
                 },
-                extractedDetails: drive.extractedDetails ? JSON.parse(drive.extractedDetails) : {},
                 interviewQuestions: drive.interviewQuestions ? JSON.parse(drive.interviewQuestions) : []
             };
         });
@@ -175,8 +178,8 @@ export async function POST(request: Request) {
                 );
             }
 
-            const maxActiveDrives = Number(org?.maxActiveDrives || 0);
-            if (maxActiveDrives > 0) {
+            const maxActiveDrives = parseOrgLimitValue(org?.maxActiveDrives);
+            if (maxActiveDrives !== null) {
                 const activeDriveCount = await prisma.drive.count({
                     where: { orgId: session.orgId }
                 });
@@ -229,8 +232,9 @@ export async function POST(request: Request) {
             }
             return raw;
         })();
+        const normalizedScreeningCriteria = sanitizeScreeningCriteria(screeningCriteria);
         const mergedScreeningCriteria = {
-            ...(screeningCriteria && typeof screeningCriteria === "object" ? screeningCriteria : {}),
+            ...normalizedScreeningCriteria,
             ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
             ...(data.inviteScheduleDays !== undefined ? { inviteScheduleDays: data.inviteScheduleDays } : {}),
         };
@@ -254,7 +258,6 @@ export async function POST(request: Request) {
                 skills: data.skills || null,
                 responsibilities: data.responsibilities || null,
                 requirements: data.requirements || null,
-                extractedDetails: JSON.stringify(data.extractedDetails || {}),
                 jdFileName: data.jdFileName || null,
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
                 screeningCriteria: JSON.stringify(mergedScreeningCriteria),
@@ -263,7 +266,7 @@ export async function POST(request: Request) {
 
                 // Interview configuration
                 interviewLanguage: data.interviewLanguage || "English",
-                proctoringLevel: data.interviewAntiCheat || "Medium",
+
                 interviewQuestions: data.interviewQuestions ? JSON.stringify(data.interviewQuestions) : "[]",
 
                 aiName: data.aiName || "Ishitha",

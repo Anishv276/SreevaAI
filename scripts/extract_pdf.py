@@ -500,12 +500,14 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     hr_criteria_skills = screening_criteria.get("skills", {})
     hr_custom_checks = screening_criteria.get("customChecks", []) or screening_criteria.get("custom_checks", [])
     if hr_criteria_skills:
-        hr_required = hr_criteria_skills.get("required", [])
+        # mustHave is the current field name; fall back to legacy "required" for older saved drives
+        hr_required = hr_criteria_skills.get("mustHave") or hr_criteria_skills.get("required", [])
         if hr_required and isinstance(hr_required[0], dict):
             jd_must_have = [(s.get("name", ""), s.get("weight", "high") or "high") for s in hr_required]
         else:
             jd_must_have = [(s, "high") for s in hr_required] if hr_required else []
-        hr_nice = hr_criteria_skills.get("niceToHave", [])
+        # optional is the current field name; fall back to legacy "niceToHave" for older saved drives
+        hr_nice = hr_criteria_skills.get("optional") or hr_criteria_skills.get("niceToHave", [])
         jd_good_to_have = [s.get("name", "") if isinstance(s, dict) else s for s in hr_nice] if hr_nice else []
     else:
         jd_skills = jd_data.get("skills", {})

@@ -42,6 +42,8 @@ function colorForType(type: CandidateActivityEvent["type"]) {
             return "bg-slate-50 text-slate-700 border-slate-200";
         case "email_sent":
             return "bg-emerald-50 text-emerald-700 border-emerald-100";
+        case "email_failed":
+            return "bg-rose-50 text-rose-700 border-rose-100";
         case "interview_invite_sent":
         case "interview_link_resent":
             return "bg-blue-50 text-blue-700 border-blue-100";
@@ -59,6 +61,8 @@ function iconForType(type: CandidateActivityEvent["type"]) {
         case "status_changed":
             return Briefcase;
         case "email_sent":
+            return Mail;
+        case "email_failed":
             return Mail;
         case "interview_invite_sent":
         case "interview_link_resent":

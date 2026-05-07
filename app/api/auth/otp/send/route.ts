@@ -138,7 +138,15 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true, message: `Security code sent to ${targetEmail}` });
         } catch (dispatchError) {
             console.error("OTP Dispatch Failed:", dispatchError);
-            return NextResponse.json({ error: "Failed to send security code. Please check your email configuration." }, { status: 502 });
+            const err = dispatchError as { message?: string; code?: string; reconnectRequired?: boolean };
+            return NextResponse.json({
+                error: err.reconnectRequired
+                    ? "Reconnect Gmail and grant the missing permissions so the security code can be sent."
+                    : "Failed to send security code. Please check your email configuration.",
+                code: err.code || "GMAIL_SEND_FAILED",
+                reconnectRequired: Boolean(err.reconnectRequired),
+                details: err.message,
+            }, { status: err.reconnectRequired ? 502 : 500 });
         }
     } catch (error: any) {
         console.error("Critical OTP Send Error:", error);

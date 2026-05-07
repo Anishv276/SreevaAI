@@ -2,6 +2,7 @@ export type CandidateActivityType =
     | "resume_screened"
     | "status_changed"
     | "email_sent"
+    | "email_failed"
     | "interview_invite_sent"
     | "interview_link_resent"
     | "bulk_action";

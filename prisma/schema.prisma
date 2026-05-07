@@ -14,8 +14,8 @@ model Organization {
   slug                 String      @unique
   logoUrl              String?
   plan                 String      @default("STARTER")
-  maxActiveDrives      Int         @default(0)
-  maxTeamMembers       Int         @default(0)
+  maxActiveDrives      String      @default("Unlimited")
+  maxTeamMembers       String      @default("Unlimited")
   proctoringSignals    Json?       @default("{\"tab_switch\":true,\"fullscreen_exit\":true,\"camera_disabled\":true,\"microphone_disabled\":true,\"connection_lost\":true,\"connection_restored\":true,\"audio_flag\":true,\"duplicate_ip\":true,\"face_absence\":true,\"multiple_faces\":true,\"gaze_violation\":true,\"head_pose_violation\":true,\"identity_mismatch\":true,\"ownership_ambiguity\":true,\"example_evasion\":true,\"latency_mismatch\":true,\"resume_claim_mismatch\":true,\"ownership_clarified\":true,\"example_given\":true,\"strong_under_pressure\":true,\"follow_up_collapse\":true,\"contradiction\":true,\"contradiction_resolved\":true,\"meta_question\":true}")
   status               String      @default("ACTIVE")
   createdAt            DateTime    @default(now())
@@ -146,10 +146,9 @@ model Drive {
   requirements       String?
   salary             String?
   skills             String?
-  extractedDetails   String?       @default("{}")
   screeningCriteria  String?       @default("{}")
+  extractedDetails   String?       @default("{}")
   interviewLanguage  String?       @default("English")
-  proctoringLevel    String?       @default("Medium")
   interviewQuestions String?       @default("[]")
   jdFileName         String?
   jdPreviewUrl       String?
@@ -159,7 +158,7 @@ model Drive {
   aiName             String?       @default("Ishitha")
   cartesiaVoiceId    String?       @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
   sarvamVoice        String?       @default("shubh")
-  sarvamModel        String?       @default("bulbul:v3")
+  sarvamModel        String?        @default("bulbul:v3")
   googleModel        String?       @default("gemini-3.1-flash-tts-preview")
   googleVoiceName    String?       @default("Puck")
   ttsProvider        String?       @default("CARTESIA")
@@ -193,6 +192,8 @@ model Application {
   interview        Interview?
 
   @@index([driveId, resumeStatus, hiringStatus, updatedAt])
+  @@index([createdAt(sort: Desc)])
+  @@index([updatedAt(sort: Desc)])
 }
 
 model Interview {
@@ -229,6 +230,9 @@ model Interview {
   recordingManifest     Json?       @default("{}")
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   supportTickets        SupportTicket[]
+
+  @@index([updatedAt(sort: Desc)])
+  @@index([status])
 }
 
 model VerificationToken {

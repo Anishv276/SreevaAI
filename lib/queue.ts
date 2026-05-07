@@ -1,5 +1,5 @@
-import { Queue } from 'bullmq';
 import redisConnection from "./redis";
+import { Queue } from 'bullmq';
 
 /**
  * QUEUE DEFINITIONS

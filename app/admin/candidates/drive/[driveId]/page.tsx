@@ -23,7 +23,6 @@ interface DriveDetails {
     applicants?: number | null;
     screeningThreshold?: number | null;
     inviteScheduleDays?: number | null;
-    proctoringLevel?: string | null;
     interviewLanguage?: string | null;
     type?: string | null;
     description?: string | null;
@@ -73,7 +72,6 @@ export default function DriveCandidatesPage() {
                     applicants: data.applicants ?? data._count?.applications ?? 0,
                     screeningThreshold: data.screeningThreshold ?? null,
                     inviteScheduleDays: data.inviteScheduleDays ?? null,
-                    proctoringLevel: data.proctoringLevel || null,
                     interviewLanguage: data.interviewLanguage || null,
                     type: data.type || null,
                     description: data.description || null,
@@ -156,11 +154,7 @@ export default function DriveCandidatesPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     screeningThreshold,
-                    screeningCriteria: JSON.stringify({
-                        threshold: screeningThreshold,
-                        inviteScheduleDays,
-                        criteria: sanitizeScreeningCriteria(screeningCriteria),
-                    }),
+                    screeningCriteria: sanitizeScreeningCriteria(screeningCriteria),
                     inviteScheduleDays,
                 }),
             });
@@ -222,7 +216,7 @@ export default function DriveCandidatesPage() {
                             {quotaLocked ? "Upload Locked" : "Upload More"}
                         </button>
                         <Link
-                            href={`/admin/create-drive?id=${driveId}`}
+                            href={`/admin/create-drive?id=${driveId}&mode=edit`}
                             className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 text-sm font-semibold text-gray-700 shadow-none transition-colors hover:border-gray-300 hover:bg-gray-50 hover:shadow-none"
                         >
                             <Edit3 className="h-4 w-4" />
