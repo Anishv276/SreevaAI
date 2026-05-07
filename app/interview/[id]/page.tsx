@@ -25,7 +25,6 @@ import {
     useTracks,
     AudioVisualizer,
     TrackReference,
-    RoomAudioRenderer,
     ControlBar,
     useParticipantInfo,
     useConnectionState,
@@ -99,8 +98,130 @@ function getAttachableTrack(trackRef: TrackReference): AttachableTrack | null {
     }
     return candidate;
 }
-const StableRoomAudioRenderer = memo(function StableRoomAudioRenderer() {
-    return <RoomAudioRenderer />;
+type VoiceOutputProfile = {
+    targetRms: number;
+    maxGain: number;
+    limiter: number;
+    compression: number;
+};
+
+const INTERVIEW_WEB_VOICE_PROFILE: VoiceOutputProfile = {
+    targetRms: 0.07,
+    maxGain: 1.45,
+    limiter: 0.9,
+    compression: 1.1,
+};
+
+function clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+}
+
+function computeRms(timeDomainData: Float32Array): number {
+    let sum = 0;
+    for (let i = 0; i < timeDomainData.length; i += 1) {
+        const sample = timeDomainData[i] || 0;
+        sum += sample * sample;
+    }
+    return Math.sqrt(sum / Math.max(1, timeDomainData.length));
+}
+
+const InterviewVoiceOutputProcessor = memo(function InterviewVoiceOutputProcessor({
+    audioTrack,
+}: {
+    audioTrack: MediaStreamTrack | null;
+}) {
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const rafRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (!audioTrack) {
+            return;
+        }
+
+        const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioContextClass) {
+            return;
+        }
+
+        const audioCtx = audioContextRef.current || new AudioContextClass();
+        audioContextRef.current = audioCtx;
+
+        const source = audioCtx.createMediaStreamSource(new MediaStream([audioTrack]));
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 1024;
+        const compressor = audioCtx.createDynamicsCompressor();
+        compressor.threshold.value = -22;
+        compressor.knee.value = 18;
+        compressor.ratio.value = INTERVIEW_WEB_VOICE_PROFILE.compression;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.18;
+        const normalizationGain = audioCtx.createGain();
+        normalizationGain.gain.value = 1;
+        const limiter = audioCtx.createGain();
+        limiter.gain.value = INTERVIEW_WEB_VOICE_PROFILE.limiter;
+
+        source.connect(analyser);
+        analyser.connect(compressor);
+        compressor.connect(normalizationGain);
+        normalizationGain.connect(limiter);
+        limiter.connect(audioCtx.destination);
+
+        const rmsBuffer = new Float32Array(analyser.fftSize);
+        const updateNormalization = () => {
+            if (audioCtx.state === "closed") return;
+            analyser.getFloatTimeDomainData(rmsBuffer);
+            const currentRms = computeRms(rmsBuffer);
+            const desiredGain = currentRms > 0.00001
+                ? clamp(
+                    INTERVIEW_WEB_VOICE_PROFILE.targetRms / currentRms,
+                    1 / INTERVIEW_WEB_VOICE_PROFILE.maxGain,
+                    INTERVIEW_WEB_VOICE_PROFILE.maxGain,
+                )
+                : INTERVIEW_WEB_VOICE_PROFILE.maxGain;
+            normalizationGain.gain.setTargetAtTime(desiredGain, audioCtx.currentTime, 0.08);
+            rafRef.current = window.setTimeout(updateNormalization, 50);
+        };
+
+        void audioCtx.resume().catch(() => { });
+        rafRef.current = window.setTimeout(updateNormalization, 50);
+
+        return () => {
+            if (rafRef.current !== null) {
+                window.clearTimeout(rafRef.current);
+                rafRef.current = null;
+            }
+            try {
+                source.disconnect();
+            } catch { }
+            try {
+                analyser.disconnect();
+            } catch { }
+            try {
+                compressor.disconnect();
+            } catch { }
+            try {
+                normalizationGain.disconnect();
+            } catch { }
+            try {
+                limiter.disconnect();
+            } catch { }
+            audioContextRef.current?.close().catch(() => { });
+            audioContextRef.current = null;
+        };
+    }, [audioTrack]);
+
+    useEffect(() => {
+        return () => {
+            if (rafRef.current !== null) {
+                window.clearTimeout(rafRef.current);
+                rafRef.current = null;
+            }
+            audioContextRef.current?.close().catch(() => { });
+            audioContextRef.current = null;
+        };
+    }, []);
+
+    return null;
 });
 function InterviewContent({ id, params }: { id: string, params: Promise<{ id: string }> }) {
     const [phase, setPhase] = useState<"check" | "launching" | "interview" | "finalizing" | "completed">("check");
@@ -2106,7 +2227,7 @@ function InterviewRoomContent({
         <div className="flex-1 flex flex-col h-full w-full relative bg-[#121214] text-white overflow-hidden">
             {/* Ambient Background Glow */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,_rgba(249,115,22,0.04)_0%,_transparent_50%)] pointer-events-none" />
-            {isInterviewActive && <StableRoomAudioRenderer />}
+            {isInterviewActive && <InterviewVoiceOutputProcessor audioTrack={agentAudioTrack} />}
             {/* Role Context - TOP LEFT */}
             <div className="absolute top-10 left-10 z-[60]">
                 <div className="flex items-center gap-4 bg-zinc-900/90 px-6 py-4 rounded-[2rem] border border-white/5 shadow-2xl">
@@ -2502,63 +2623,7 @@ function VideoTrack({ trackRef }: { trackRef: TrackReference }) {
         />
     );
 }
-function AudioTrack({ trackRef }: { trackRef: TrackReference }) {
-    const audioRef = useRef<HTMLAudioElement>(null);
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const gainNodeRef = useRef<GainNode | null>(null);
-    useEffect(() => {
-        const track = getAttachableTrack(trackRef);
-        const audio = audioRef.current;
-        if (!track || !audio) return;
 
-        const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-        if (!AudioContextClass) {
-            track.attach(audio);
-            return () => { track.detach(audio); };
-        }
-
-        const audioCtx = audioContextRef.current || new AudioContextClass();
-        audioContextRef.current = audioCtx;
-
-        const source = audioCtx.createMediaElementSource(audio);
-        const gainNode = audioCtx.createGain();
-        gainNode.gain.value = 2.5;
-        gainNodeRef.current = gainNode;
-
-        source.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-
-        track.attach(audio);
-
-        void audioCtx.resume().catch(() => { });
-
-        return () => {
-            try {
-                track.detach(audio);
-            } catch { }
-            try {
-                source.disconnect();
-            } catch { }
-            try {
-                gainNode.disconnect();
-            } catch { }
-            gainNodeRef.current = null;
-            audioContextRef.current?.close().catch(() => { });
-            audioContextRef.current = null;
-        };
-    }, [trackRef]);
-
-    useEffect(() => {
-        return () => {
-            gainNodeRef.current?.disconnect();
-            gainNodeRef.current = null;
-            audioContextRef.current?.close().catch(() => { });
-            audioContextRef.current = null;
-        };
-    }, []);
-
-    return <audio ref={audioRef} autoPlay />;
-}
 function TimeoutThankYouView({ candidateName }: { candidateName: string }) {
     return (
         <div className="w-full max-w-xl mx-auto px-6 text-center">
