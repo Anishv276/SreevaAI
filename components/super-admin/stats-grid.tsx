@@ -85,7 +85,7 @@ export function SuperAdminStatsGrid() {
             iconBg: "bg-blue-100/50 text-blue-600",
         },
         {
-            label: "Global Drives",
+            label: "Global Jobs",
             value: s.totalDrives,
             trend: s.trends?.drives || 0,
             icon: Briefcase,

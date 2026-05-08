@@ -8,10 +8,10 @@ export const ORG_PLAN_OPTIONS: Array<{
   bg: string;
   border: string;
 }> = [
-  { id: "STARTER", label: "Starter", desc: "$99/mo • 120 mins", color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
-  { id: "PRO", label: "Growth", desc: "$299/mo • 480 mins", color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
-  { id: "BUSINESS", label: "Scale", desc: "$699/mo • 1,200 mins", color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
-  { id: "ENTERPRISE", label: "Enterprise", desc: "Custom • Unlimited", color: "text-rose-600", bg: "bg-rose-50", border: "border-rose-100" },
+  { id: "STARTER", label: "Starter", desc: "$99/mo • 30 Interviews", color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
+  { id: "PRO", label: "Growth", desc: "$299/mo • 100 Interviews", color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
+  { id: "BUSINESS", label: "Scale", desc: "$699/mo • 300 Interviews", color: "text-violet-600", bg: "bg-violet-50", border: "border-violet-100" },
+  { id: "ENTERPRISE", label: "Business", desc: "Custom • 600+ Interviews", color: "text-rose-600", bg: "bg-rose-50", border: "border-rose-100" },
 ];
 
 const LEGACY_PLAN_MAP: Record<string, OrgPlanId> = {

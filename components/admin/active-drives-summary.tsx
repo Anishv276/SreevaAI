@@ -86,12 +86,12 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
             {/* Header */}
             <div className="flex items-center justify-between px-8 py-6 border-b border-slate-200">
                 <div>
-                    <h3 className="text-xl font-black text-gray-900 tracking-tight text-premium">Drives</h3>
+                    <h3 className="text-xl font-black text-gray-900 tracking-tight text-premium">Active Jobs</h3>
                     <p className="text-[11px] font-bold text-slate-400 mt-1 uppercase tracking-[0.2em]">Neural Pipeline Sync</p>
                 </div>
                 <Link href="/admin/drives">
                     <button className="text-[11px] font-black text-slate-500 border border-slate-200 rounded-xl px-5 py-2 hover:border-slate-300 hover:text-slate-950 hover:bg-slate-50 transition-all shadow-sm uppercase tracking-widest">
-                        View All Drives
+                        View All Jobs
                     </button>
                 </Link>
             </div>
@@ -119,14 +119,14 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                 animate={{ opacity: 1, y: 0 }}
                                 className="flex items-center justify-center h-full py-12"
                             >
-                                {/* Card 1: Create Drive */}
+                                {/* Card 1: Create Job */}
                                 <Link href="/admin/create-drive" className="group/card w-full max-w-md">
                                     <div className="h-full min-h-[220px] p-8 rounded-[2.5rem] border-2 border-dashed border-slate-200 bg-slate-50/60 flex flex-col items-center justify-center text-center gap-4 group-hover/card:border-slate-300 group-hover/card:bg-white transition-all duration-500">
                                         <div className="h-16 w-16 rounded-[1.5rem] bg-white flex items-center justify-center text-slate-700 border border-slate-200 group-hover/card:scale-110 group-hover/card:rotate-6 transition-all duration-500">
                                             <Plus className="h-8 w-8" />
                                         </div>
                                         <div>
-                                            <h4 className="text-[14px] font-black text-gray-900 uppercase tracking-tight mb-1">Create Drive</h4>
+                                            <h4 className="text-[14px] font-black text-gray-900 uppercase tracking-tight mb-1">Create Job</h4>
                                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-relaxed px-4">
                                                 Initialize your first AI-driven recruitment pipeline
                                             </p>

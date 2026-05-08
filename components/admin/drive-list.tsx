@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useJobs } from "@/context/jobs-context";
 import { useRouter } from "next/navigation";
@@ -18,7 +18,7 @@ export function DriveList() {
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 group">
                     <div className="h-8 w-1 bg-slate-900 rounded-full shadow-[0_0_8px_rgba(15,23,42,0.15)] transition-all duration-300 group-hover:h-10" />
-                    <h2 className="text-xl font-bold text-gray-900 tracking-tight">Drives</h2>
+                    <h2 className="text-xl font-bold text-gray-900 tracking-tight">Active Jobs</h2>
                 </div>
                 <Link
                     href="/admin/drives"
@@ -35,12 +35,12 @@ export function DriveList() {
                         <Briefcase className="h-8 w-8" />
                     </div>
                     <div>
-                        <p className="text-lg font-bold text-gray-900">No drives yet</p>
-                        <p className="text-sm text-gray-400 mt-1 max-w-[280px]">Ready to hire? Launch your first recruitment drive.</p>
+                        <p className="text-lg font-bold text-gray-900">No jobs yet</p>
+                        <p className="text-sm text-gray-400 mt-1 max-w-[280px]">Ready to hire? Launch your first job.</p>
                     </div>
                     <Link href="/admin/create-drive">
                         <Button className="bg-slate-950 hover:bg-slate-800 text-white font-bold rounded-xl px-6 shadow-lg shadow-slate-900/10 hover:shadow-md transition-all">
-                            <Plus className="h-4 w-4 mr-2" /> Create Drive
+                            <Plus className="h-4 w-4 mr-2" /> Create Job
                         </Button>
                     </Link>
                 </Card>
@@ -100,4 +100,3 @@ export function DriveList() {
         </div>
     );
 }
-

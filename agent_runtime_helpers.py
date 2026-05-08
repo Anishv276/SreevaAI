@@ -69,6 +69,24 @@ async def _single_question_transform(text_stream):
     async for chunk in text_stream:
         buffer += chunk
     result = sanitize_candidate_facing_text(buffer)
+    result = buffer.replace("<wait for response>", "").strip()
+    # Strip any leaked internal directive blocks — these always start with [DO NOT SAY ALOUD
+    # and run until the first real conversational sentence (capital letter after a bracket block).
+    # Handle both line-based and inline/paragraph leakage.
+    result = re.sub(r'\[DO NOT SAY ALOUD[^\]]*\]', '', result)
+    result = re.sub(r'\[STAGE\s+\d+[^\]]*\]', '', result)
+    result = re.sub(r'\[WARMUP[^\]]*\]', '', result)
+    result = re.sub(r'\[BEGIN STAGE[^\]]*\]', '', result)
+    # Strip any remaining bracket-prefixed instruction sentences
+    # (e.g. "Begin... Your goal is to confirm..." that followed a stripped bracket)
+    # Only strip if it looks like instruction text (imperative, no personal address)
+    result = re.sub(
+        r'(?:^|\n)((?:Begin|Your goal|Remember:|Note:|RULE|DO NOT|ABSOLUTE)[^\n]*)',
+        '',
+        result,
+        flags=re.IGNORECASE,
+    )
+    result = result.strip()
     # Only truncate if there are genuinely 2+ questions — never truncate to empty
     sentence_pattern = re.compile(r"[^.!?]*[.!?]")
     sentences = sentence_pattern.findall(result)

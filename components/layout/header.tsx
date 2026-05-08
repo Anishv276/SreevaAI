@@ -1,4 +1,4 @@
-﻿import { Search } from "lucide-react";
+import { Search } from "lucide-react";
 
 export function Header() {
     return (
@@ -8,7 +8,7 @@ export function Header() {
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
                     <input
                         type="search"
-                        placeholder="Search drives, candidates..."
+                        placeholder="Search jobs, candidates..."
                         className="h-9 w-full rounded-md border border-gray-200 bg-white pl-9 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     />
                 </div>

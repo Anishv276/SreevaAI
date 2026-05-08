@@ -7,7 +7,7 @@ from typing import Any, Optional
 from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger("interview-agent")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 class JsonFormatter(logging.Formatter):
     def format(self, record):
         log_record = {

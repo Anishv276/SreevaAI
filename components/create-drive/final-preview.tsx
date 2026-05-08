@@ -44,9 +44,9 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
                         </svg>
                     </div>
                 </div>
-                <h2 className="text-xl font-black tracking-tight text-orange-700">Ready to Create Drive</h2>
+                <h2 className="text-xl font-black tracking-tight text-orange-700">Ready to Create Job</h2>
                 <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-orange-600">
-                    Review the summary below. Once you create the drive, you can upload resumes and start screening.
+                    Review the summary below. Once you create the job, you can upload resumes and start screening.
                 </p>
             </div>
 
@@ -106,7 +106,7 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
                                 </div>
                             ) : (
                                 <p className="text-sm leading-6 text-gray-600">
-                                    Screening criteria will be configured on the resume screening page after the drive is created.
+                                    Screening criteria will be configured on the resume screening page after the job is created.
                                 </p>
                             )}
                         </div>
@@ -162,8 +162,8 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
                         </p>
                         <p className="mt-2 text-sm leading-6 text-orange-700">
                             {weights
-                                ? "Resume screening is configured and ready to run once the drive is created."
-                                : "Resume screening will be configured after publishing this drive."}
+                                ? "Resume screening is configured and ready to run once the job is created."
+                                : "Resume screening will be configured after publishing this job."}
                         </p>
                     </div>
                 </div>

@@ -137,9 +137,8 @@ const heroMetrics = [
     },
 ];
 const featureComparison = [
-    { feature: "Drives", starter: "1", pro: "5", scale: "10+", enterprise: "Unlimited" },
+    { feature: "Active Jobs", starter: "1", pro: "5", scale: "10+", enterprise: "Unlimited" },
     { feature: "AI Voices", starter: "3", pro: "10+", scale: "20+", enterprise: "Unlimited" },
-    { feature: "Interview Duration", starter: "20 min", pro: "20 min", scale: "20 min", enterprise: "Unlimited" },
     { feature: "Ask Sreeva AI", starter: "—", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Adaptive AI Interview", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Resume + JD Based Questions", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
