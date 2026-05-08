@@ -1515,6 +1515,8 @@ async def entrypoint(ctx: JobContext):
                     if _stage_turn_count >= stage_cfg.turn_budget and not _stage_bridge_pending:
                         _stage_bridge_pending = True
                         next_stage = STAGE_CONFIGS[_current_stage_index + 1]
+                        # Remove current stage directive before injecting next
+                        remove_system_messages(chat_ctx, f"[STAGE {_current_stage_index + 1}:")
                         # Build stage-specific directive for the incoming stage
                         _next_idx = _current_stage_index + 1
                         if _next_idx == 1:
