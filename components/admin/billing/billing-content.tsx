@@ -225,25 +225,6 @@ export function BillingContent({
             Manage interview quota, review usage, and keep track of internal billing totals.
           </div>
         </div>
-
-        <button
-          type="button"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "10px 14px",
-            borderRadius: 10,
-            border: `1px solid ${LINE}`,
-            background: "#fff",
-            color: INK,
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          <ReceiptText size={15} /> Invoices
-        </button>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: showCreditInternals ? "1.35fr 1fr" : "1.35fr .95fr", gap: 20 }}>
@@ -252,6 +233,7 @@ export function BillingContent({
             <div>
               <Eyebrow>Interview quota</Eyebrow>
               <div style={{ fontSize: 13, color: MUTED, marginTop: 6 }}>1 interview is deducted after each completed session.</div>
+
             </div>
             <div
               style={{

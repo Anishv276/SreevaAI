@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import base64
+import importlib
 import json
 import os
 import urllib.error
@@ -259,16 +260,53 @@ class _GoogleChatCompletions:
 class _GoogleChatNamespace:
     def __init__(self, client: Any) -> None:
         self.completions = _GoogleChatCompletions(client)
+class _FallbackAnalysisCompletions:
+    def __init__(self, client: Any, fallback_model: str) -> None:
+        self._client = client
+        self._fallback_model = fallback_model
+    async def create(self, *, model: str, **kwargs: Any) -> Any:
+        # Keep the Google-mode call sites working even when the Google SDK is
+        # unavailable by routing analysis through OpenAI instead.
+        return await self._client.chat.completions.create(
+            model=self._fallback_model,
+            **kwargs,
+        )
+class _FallbackAnalysisChatNamespace:
+    def __init__(self, client: Any, fallback_model: str) -> None:
+        self.completions = _FallbackAnalysisCompletions(client, fallback_model)
+class _FallbackAnalysisClient:
+    def __init__(self, *, fallback_model: str) -> None:
+        from openai import AsyncOpenAI
+        self._client = AsyncOpenAI()
+        self.chat = _FallbackAnalysisChatNamespace(self._client, fallback_model)
 class GoogleAnalysisClient:
     def __init__(self, api_key: str) -> None:
-        from google import genai as google_genai
+        google_genai = importlib.import_module("google.genai")
         self._client = google_genai.Client(api_key=api_key)
         self.chat = _GoogleChatNamespace(self._client)
-def build_google_analysis_client() -> GoogleAnalysisClient:
+def build_google_analysis_client() -> Any:
+    try:
+        importlib.import_module("google.genai")
+    except (ModuleNotFoundError, ImportError) as exc:
+        logger.warning(
+            "[GOOGLE_ANALYSIS] google-genai is unavailable; falling back to OpenAI analysis model %s: %s",
+            LLM_MODEL,
+            exc,
+        )
+        return _FallbackAnalysisClient(fallback_model=LLM_MODEL)
+
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError("GOOGLE_API_KEY is not set")
-    return GoogleAnalysisClient(api_key=api_key)
+    try:
+        return GoogleAnalysisClient(api_key=api_key)
+    except (ModuleNotFoundError, ImportError) as exc:
+        logger.warning(
+            "[GOOGLE_ANALYSIS] google-genai import failed during client init; falling back to OpenAI analysis model %s: %s",
+            LLM_MODEL,
+            exc,
+        )
+        return _FallbackAnalysisClient(fallback_model=LLM_MODEL)
 def build_google_realtime_llm(
     *,
     model: str = GOOGLE_REALTIME_MODEL,
