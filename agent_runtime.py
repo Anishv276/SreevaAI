@@ -83,6 +83,7 @@ from agent_runtime_helpers import (
     _sanitize_claim_value,
     _single_question_transform,
     remove_system_messages,
+    sanitize_candidate_facing_text,
 )
 from agent_runtime_support import (
     AGENT_NAME,
@@ -152,6 +153,16 @@ _TTS_SENTENCE_ENDINGS = {".", "?", "!"}
 _TTS_ATTACH_LEFT = {".", ",", "?", "!", ":", ";", "%", ")", "]", "}", "”", "’", '"', "'"}
 _TTS_WORD_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[’'\-][A-Za-z0-9]+)*")
 _TTS_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[’'\-][A-Za-z0-9]+)*|[^\w\s]", re.UNICODE)
+
+GREETING_FIXED_SECONDS = 60
+WARMUP_FIXED_SECONDS = 120
+NO_NEW_QUESTION_CUTOFF_SECONDS = 25
+STAGE_PERCENT_SPLIT: dict[str, float] = {
+    "skill": 0.35,
+    "situational": 0.25,
+    "behavioral": 0.25,
+    "practical": 0.15,
+}
 
 
 def _append_tts_token(text: str, token: str) -> str:
@@ -500,7 +511,8 @@ async def entrypoint(ctx: JobContext):
     job_details = require_db_value("jd")
     interview_lang = require_db_value("language")
     time_limit_mins = FIXED_INTERVIEW_DURATION_MINUTES
-    follow_up_depth = 2
+    # Keep follow-up loops tight so stage transitions happen reliably.
+    follow_up_depth = 1
     questions_raw = context.get("questions")
     custom_questions: list[Any] = (
         questions_raw if isinstance(questions_raw, list) else []
@@ -518,6 +530,8 @@ async def entrypoint(ctx: JobContext):
             "time_limit_mins": time_limit_mins,
         }
     )
+    # Stage budgets are initialized once and then dynamically rebalanced after each stage.
+    _initialize_stage_budgets_called = False
     ctx.log_context_fields = session_log_context
     _LOG_CONTEXT_FIELDS.set(session_log_context)
     started_at = time.perf_counter()
@@ -826,9 +840,14 @@ async def entrypoint(ctx: JobContext):
     warmup_complete = False  # True after 2nd candidate response received
     # ── 5-Stage interview tracker ──────────────────────────────────────────────
     _current_stage_index: int = 0        # 0=Resume 1=Skill 2=Situational 3=Behavioral 4=Practical
-    _stage_start_time: float = 0.0       # wall-clock when current stage started
-    _stage_turn_count: int = 0           # assistant turns spent in current stage
+    _stage_start_time: float = 0.0       # monotonic timestamp when current stage started
     _stage_bridge_pending: bool = False  # True when bridge directive has been injected
+    _stage_budgets_secs: dict[int, int] = {}
+    _blocked_follow_up_count: int = 0
+    _final_no_new_question_guard = False
+    _candidate_turn_since_last_assistant = True
+    _consecutive_low_signal_move_on = 0
+    _stage_transition_events: list[dict[str, Any]] = []
     # ──────────────────────────────────────────────────────────────────────────
     environment_risk = 0     # browser-side proctoring signals
     integrity_risk = 0       # integrity-related proctoring signals
@@ -864,6 +883,181 @@ async def entrypoint(ctx: JobContext):
         nonlocal suspicion_score
         suspicion_score = compose_risk_score(integrity_risk, depth_risk)
         return suspicion_score
+    def _stage_index_by_name(name: str) -> Optional[int]:
+        target = (name or "").strip().lower()
+        for cfg in STAGE_CONFIGS:
+            if cfg.name == target:
+                return cfg.index
+        return None
+    _resume_stage_idx = _stage_index_by_name("resume")
+    _skill_stage_idx = _stage_index_by_name("skill")
+    _situational_stage_idx = _stage_index_by_name("situational")
+    _behavioral_stage_idx = _stage_index_by_name("behavioral")
+    _practical_stage_idx = _stage_index_by_name("practical")
+    _percent_stage_indices = [
+        idx for idx in (
+            _skill_stage_idx,
+            _situational_stage_idx,
+            _behavioral_stage_idx,
+            _practical_stage_idx,
+        )
+        if idx is not None
+    ]
+    _stage_weight_by_index = {
+        _skill_stage_idx: STAGE_PERCENT_SPLIT["skill"],
+        _situational_stage_idx: STAGE_PERCENT_SPLIT["situational"],
+        _behavioral_stage_idx: STAGE_PERCENT_SPLIT["behavioral"],
+        _practical_stage_idx: STAGE_PERCENT_SPLIT["practical"],
+    }
+    def _allocate_stage_budgets(remaining_seconds: float, stage_indices: list[int]) -> dict[int, int]:
+        if remaining_seconds <= 0 or not stage_indices:
+            return {idx: 0 for idx in stage_indices}
+        total_weight = sum(float(_stage_weight_by_index.get(idx, 0.0)) for idx in stage_indices)
+        if total_weight <= 0:
+            equal_share = max(0, int(remaining_seconds // len(stage_indices)))
+            return {idx: equal_share for idx in stage_indices}
+        budgets: dict[int, int] = {}
+        assigned = 0
+        for pos, idx in enumerate(stage_indices):
+            weight = float(_stage_weight_by_index.get(idx, 0.0))
+            if pos == len(stage_indices) - 1:
+                budget = max(0, int(round(remaining_seconds - assigned)))
+            else:
+                budget = max(0, int(round(remaining_seconds * (weight / total_weight))))
+                assigned += budget
+            budgets[idx] = budget
+        return budgets
+    def _remaining_total_seconds_now() -> float:
+        if session_start_time is None:
+            return float(time_limit_mins * 60)
+        elapsed = max(0.0, time.time() - session_start_time)
+        return max(0.0, float(time_limit_mins * 60) - elapsed)
+    def _initialize_stage_budgets() -> None:
+        nonlocal _stage_budgets_secs
+        total_seconds_local = float(time_limit_mins * 60)
+        distributed_seconds = max(
+            0.0,
+            total_seconds_local - GREETING_FIXED_SECONDS - WARMUP_FIXED_SECONDS,
+        )
+        _stage_budgets_secs = {cfg.index: 0 for cfg in STAGE_CONFIGS}
+        if _resume_stage_idx is not None:
+            _stage_budgets_secs[_resume_stage_idx] = 0
+        _stage_budgets_secs.update(
+            _allocate_stage_budgets(distributed_seconds, _percent_stage_indices)
+        )
+        logger.info(
+            "[STAGE_TIMING] initial budgets=%s distributed_seconds=%d",
+            _stage_budgets_secs,
+            int(distributed_seconds),
+        )
+    def _rebalance_remaining_stage_budgets() -> None:
+        nonlocal _stage_budgets_secs
+        remaining_seconds = _remaining_total_seconds_now()
+        remaining_indices = [
+            idx
+            for idx in _percent_stage_indices
+            if idx > _current_stage_index
+        ]
+        if not remaining_indices:
+            return
+        rebalanced = _allocate_stage_budgets(remaining_seconds, remaining_indices)
+        for idx, secs in rebalanced.items():
+            _stage_budgets_secs[idx] = secs
+        logger.info(
+            "[STAGE_TIMING] rebalance current_stage=%d remaining_seconds=%d budgets=%s",
+            _current_stage_index,
+            int(remaining_seconds),
+            {idx: _stage_budgets_secs.get(idx, 0) for idx in sorted(_stage_budgets_secs)},
+        )
+    def _build_stage_directive_by_index(stage_idx: int) -> Optional[str]:
+        if stage_idx == 1:
+            return build_stage_2_skill_directive(
+                band=session_context.candidate_band,
+                resume_brief=session_context.resume_brief,
+                jd_must_haves=jd_must_haves,
+            )
+        if stage_idx == 2:
+            return build_stage_3_situational_directive(
+                band=session_context.candidate_band,
+                resume_brief=session_context.resume_brief,
+            )
+        if stage_idx == 3:
+            return build_stage_4_behavioral_directive(
+                band=session_context.candidate_band,
+            )
+        if stage_idx == 4:
+            return build_stage_5_practical_directive(
+                band=session_context.candidate_band,
+                jd_must_haves=jd_must_haves,
+            )
+        return None
+    def _advance_stage(reason: str, now_mono: float) -> bool:
+        nonlocal _current_stage_index, _stage_start_time, _stage_bridge_pending
+        if not warmup_complete or _current_stage_index >= len(STAGE_CONFIGS) - 1 or _stage_start_time <= 0:
+            return False
+        stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
+        time_in_stage = max(0.0, now_mono - _stage_start_time)
+        if _stage_bridge_pending:
+            return False
+        _stage_bridge_pending = True
+        stage_cfg = STAGE_CONFIGS[_current_stage_index]
+        next_stage = STAGE_CONFIGS[_current_stage_index + 1]
+        remove_system_messages(chat_ctx, f"[STAGE {_current_stage_index + 1}:")
+        stage_directive = _build_stage_directive_by_index(_current_stage_index + 1)
+        session_context.stage_history.append(
+            {
+                "stage": _current_stage_index,
+                "name": stage_cfg.label,
+                "seconds": int(time_in_stage),
+                "budget_seconds": stage_budget,
+                "transition_reason": reason,
+            }
+        )
+        _stage_transition_events.append(
+            {
+                "from_stage": stage_cfg.label,
+                "to_stage": next_stage.label,
+                "from_index": _current_stage_index,
+                "to_index": _current_stage_index + 1,
+                "time_in_stage_seconds": int(time_in_stage),
+                "budget_seconds": stage_budget,
+                "transition_reason": reason,
+                "at_turn": turn_count,
+                "timestamp": int(time.time() * 1000),
+            }
+        )
+        _current_stage_index += 1
+        _stage_start_time = now_mono
+        _stage_bridge_pending = False
+        if stage_directive:
+            chat_ctx.add_message(role="system", content=stage_directive)
+            # Add a short mandatory bridge so stage changes are audible and natural.
+            chat_ctx.add_message(
+                role="system",
+                content=(
+                    "[STAGE_BRIDGE_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                    f"Transition to {next_stage.label} with one short bridge sentence, then ask exactly "
+                    "one concise question aligned to the new stage. Do not continue the previous topic."
+                ),
+            )
+        _rebalance_remaining_stage_budgets()
+        logger.info(
+            "[STAGE] Advanced to stage %d (%s) after %ds (budget=%ds, reason=%s)",
+            _current_stage_index,
+            next_stage.label,
+            int(time_in_stage),
+            stage_budget,
+            reason,
+        )
+        return True
+    def _advance_stage_if_due(now_mono: float) -> bool:
+        if not warmup_complete or _current_stage_index >= len(STAGE_CONFIGS) - 1 or _stage_start_time <= 0:
+            return False
+        stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
+        time_in_stage = max(0.0, now_mono - _stage_start_time)
+        if time_in_stage < stage_budget:
+            return False
+        return _advance_stage("time_cap", now_mono)
     @ctx.room.on("disconnected")
     def on_disconnected(reason):
         disconnect_event.set()
@@ -1103,6 +1297,29 @@ async def entrypoint(ctx: JobContext):
                     f"[SHORT_REPLY] dropping acknowledgment filler: '{content[:60]}'"
                 )
                 return
+            # Candidate meta-question handling:
+            # if they ask "why these questions / what stage", answer briefly and continue.
+            meta_q = content.lower()
+            if any(
+                marker in meta_q
+                for marker in (
+                    "what stage",
+                    "which stage",
+                    "why are you asking",
+                    "what are you trying to collect",
+                    "what information you are trying",
+                )
+            ):
+                remove_system_messages(chat_ctx, "[META_QUESTION_DIRECTIVE]")
+                chat_ctx.add_message(
+                    role="system",
+                    content=(
+                        "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                        "Candidate asked why/stage. Respond in one short sentence: "
+                        "you are mapping fit for the GTM role. Then ask exactly one concise "
+                        "question from the current stage objective. Do not keep explaining."
+                    ),
+                )
             speaker = "Candidate"
             append_transcript_line(speaker, content)
             logger.info(f"[TRANSCRIPT] {speaker}: {content[:60]}...")
@@ -1183,7 +1400,7 @@ async def entrypoint(ctx: JobContext):
                     nonlocal _topic_follow_up_count, environment_risk, integrity_risk, depth_risk, suspicion_score, current_interview_mode, \
                         answer_scores, _claim_index, _contradictions_found, \
                         _topic_depth_history, _trust_state, _contradiction_state, _collapse_stage, \
-                        _last_depth_decay_turn, _depth_decay_ever_fired
+                        _last_depth_decay_turn, _depth_decay_ever_fired, _blocked_follow_up_count, _consecutive_low_signal_move_on
                     try:
                         # Step 1: Extract claims and check consistency (before quality eval)
                         # Only runs when contradiction signal is enabled  -  adds 1 LLM call/turn
@@ -1255,6 +1472,20 @@ async def entrypoint(ctx: JobContext):
                             directive = "\nContinue with standard conversational depth."
                         action = td["decision"]["action"]
                         signal_events = td.get("signal_events", [])
+                        if warmup_complete and _stage_start_time > 0:
+                            _advance_stage_if_due(time.monotonic())
+                            stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
+                            time_in_stage = max(0.0, time.monotonic() - _stage_start_time)
+                            stage_expired = stage_budget >= 0 and time_in_stage >= stage_budget
+                            if stage_expired and _current_stage_index < len(STAGE_CONFIGS) - 1:
+                                if action in ("PROBE", "VERIFY"):
+                                    _blocked_follow_up_count += 1
+                                action = "MOVE_ON"
+                                td["decision"]["action"] = "MOVE_ON"
+                                td["decision"]["mode"] = "normal"
+                                td["decision"]["next_goal"] = (
+                                    "Current stage time exhausted. Bridge to the next stage now."
+                                )
                         depth_signal = "SURFACE"
                         quality_avg = (
                             td["quality"]["clarity"] + td["quality"]["depth"] +
@@ -1264,6 +1495,21 @@ async def entrypoint(ctx: JobContext):
                             depth_signal = "DEEP"
                         elif quality_avg >= 4.5:
                             depth_signal = "SPECIFIC"
+                        if action == "MOVE_ON" and quality_avg < 3.5:
+                            _consecutive_low_signal_move_on += 1
+                        else:
+                            _consecutive_low_signal_move_on = 0
+                        if (
+                            _consecutive_low_signal_move_on >= 2
+                            and warmup_complete
+                            and _stage_start_time > 0
+                            and _current_stage_index < len(STAGE_CONFIGS) - 1
+                        ):
+                            stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
+                            time_in_stage = max(0.0, time.monotonic() - _stage_start_time)
+                            if time_in_stage >= max(60, int(stage_budget * 0.4)):
+                                _advance_stage("low_signal_move_on", time.monotonic())
+                                _consecutive_low_signal_move_on = 0
                         # All I/O is done. Acquire lock before mutating any shared session state.
                         # This prevents _inject_state() (fires every 3 turns) from interleaving
                         # with this function at async await points and corrupting shared counters.
@@ -1453,19 +1699,26 @@ async def entrypoint(ctx: JobContext):
     def on_conversation_item_added(event) -> None:
         nonlocal session_start_time, turn_count, last_injection_turn, \
             _last_interviewer_question, _topic_follow_up_count, \
-            _question_asked_at, _answer_received_at, warmup_responses_received, warmup_complete, llm_spoke_event
+            _question_asked_at, _answer_received_at, warmup_responses_received, warmup_complete, llm_spoke_event, _stage_start_time, _candidate_turn_since_last_assistant
         try:
             item = event.item
             role = getattr(item, "role", None)
             content = item.text_content
+            if role == "assistant":
+                content = sanitize_candidate_facing_text(content)
             if not content or not role:
                 return
             if role == "assistant":
+                if not _candidate_turn_since_last_assistant:
+                    # Prevent interviewer chaining multiple questions before candidate speaks.
+                    logger.warning("[TURN_GUARD] Suppressing consecutive assistant turn without candidate reply")
+                    return
                 if not llm_spoke_event.is_set():
                     llm_spoke_event.set()
                     logger.info("[GREETING_GUARD] LLM spoke for first time  -  greeting will skip if not already delivered")
             if role == "user":
                 _answer_received_at = time.perf_counter()
+                _candidate_turn_since_last_assistant = True
                 # ── Phase 1 → Phase 2: warmup complete after 2 candidate responses ──────
                 if not warmup_complete:
                     warmup_responses_received += 1
@@ -1480,10 +1733,8 @@ async def entrypoint(ctx: JobContext):
                             jd_must_haves=jd_must_haves,
                         )
                         chat_ctx.add_message(role="system", content=stage1_directive)
-                        logger.info("[STAGE 1] Resume directive injected after first warmup response")
-                    elif warmup_responses_received >= 2:
-                        warmup_complete = True
-                        logger.info("[STAGE 1] Warmup complete — interview begins")
+                        _stage_start_time = time.monotonic()
+                        logger.info("[STAGE 1] Resume directive injected after warmup")
                 turn_snapshot = turn_count
                 spawn_background_task(
                     _process_user_conversation_item(event, content, role, turn_snapshot),
@@ -1492,7 +1743,10 @@ async def entrypoint(ctx: JobContext):
                 return
             speaker = "Interviewer" if role == "assistant" else "Candidate"
             # Strip the <wait for response> marker from transcript (it's an internal signal, not dialogue)
-            clean_content = content.replace("<wait for response>", "").strip()
+            if role == "assistant":
+                clean_content = sanitize_candidate_facing_text(content)
+            else:
+                clean_content = content.replace("<wait for response>", "").strip()
             append_transcript_line(speaker, clean_content)
             logger.info(f"[TRANSCRIPT] {speaker}: {clean_content[:60]}...")
             # --- Track last Ishita question (for per-turn evaluator) ---
@@ -1511,51 +1765,10 @@ async def entrypoint(ctx: JobContext):
             # thin/untouched, and whether she needs to move on immediately.
             if role == "assistant":
                 _question_asked_at = time.perf_counter()
+                _candidate_turn_since_last_assistant = False
                 turn_count += 1
-                _stage_turn_count += 1
-                # ── Stage advance check (turn-based budget) ────────────────────
-                if warmup_complete and _current_stage_index < len(STAGE_CONFIGS) - 1:
-                    stage_cfg = STAGE_CONFIGS[_current_stage_index]
-                    if _stage_turn_count >= stage_cfg.turn_budget and not _stage_bridge_pending:
-                        _stage_bridge_pending = True
-                        next_stage = STAGE_CONFIGS[_current_stage_index + 1]
-                        # Remove current stage directive before injecting next
-                        remove_system_messages(chat_ctx, f"[STAGE {_current_stage_index + 1}:")
-                        # Build stage-specific directive for the incoming stage
-                        _next_idx = _current_stage_index + 1
-                        if _next_idx == 1:
-                            stage_directive = build_stage_2_skill_directive(
-                                band=session_context.candidate_band,
-                                resume_brief=session_context.resume_brief,
-                                jd_must_haves=jd_must_haves,
-                            )
-                        elif _next_idx == 2:
-                            stage_directive = build_stage_3_situational_directive(
-                                band=session_context.candidate_band,
-                                resume_brief=session_context.resume_brief,
-                            )
-                        elif _next_idx == 3:
-                            stage_directive = build_stage_4_behavioral_directive(
-                                band=session_context.candidate_band,
-                            )
-                        else:
-                            stage_directive = build_stage_5_practical_directive(
-                                band=session_context.candidate_band,
-                                jd_must_haves=jd_must_haves,
-                            )
-                        session_context.stage_history.append({
-                            "stage": _current_stage_index,
-                            "name": stage_cfg.label,
-                            "turns": _stage_turn_count,
-                        })
-                        _current_stage_index += 1
-                        _stage_turn_count = 0
-                        _stage_bridge_pending = False
-                        chat_ctx.add_message(role="system", content=stage_directive)
-                        logger.info(
-                            "[STAGE] Advanced to stage %d (%s) after %d turns",
-                            _current_stage_index, next_stage.label, _stage_turn_count,
-                        )
+                # ── Stage advance check (time-budgeted) ────────────────────────
+                _advance_stage_if_due(time.monotonic())
                 # ── Periodic state injection every 3 assistant turns ───────────
                 if turn_count % 3 == 0 and turn_count != last_injection_turn:
                     last_injection_turn = turn_count
@@ -1689,8 +1902,8 @@ async def entrypoint(ctx: JobContext):
                                     current_stage_cfg = STAGE_CONFIGS[_current_stage_index] if _current_stage_index < len(STAGE_CONFIGS) else None
                                     stage_label = current_stage_cfg.label if current_stage_cfg else "COMPLETE"
                                     next_stage_label = STAGE_CONFIGS[_current_stage_index + 1].label if _current_stage_index + 1 < len(STAGE_CONFIGS) else "WRAP UP"
-                                    time_in_stage_secs = int(time.time() - _stage_start_time) if _stage_start_time > 0 else 0
-                                    stage_budget_secs = current_stage_cfg.budget_secs if current_stage_cfg else 0
+                                    time_in_stage_secs = int(time.monotonic() - _stage_start_time) if _stage_start_time > 0 else 0
+                                    stage_budget_secs = int(_stage_budgets_secs.get(_current_stage_index, 0)) if current_stage_cfg else 0
                                     injection_text = (
                                         f"[INTERVIEW STATE UPDATE - Turn {t}]\n"
                                         f"ISHITA_MODE: {current_interview_mode.upper()}\n"
@@ -1829,6 +2042,9 @@ async def entrypoint(ctx: JobContext):
                 "exit_reason": "no_show_timeout",
                 "events": proctoring_events,
                 "contradiction_state": summarize_contradiction_state(_contradiction_state),
+                "stage_history": session_context.stage_history,
+                "stage_transition_events": _stage_transition_events,
+                "total_stages_covered": _current_stage_index + 1,
             }
             await persist_transcript(
                 app_id,
@@ -1864,6 +2080,9 @@ async def entrypoint(ctx: JobContext):
     await _warm_greeting_tts(tts_plugin)
     if ready_event.is_set() and not disconnect_event.is_set():
         session_start_time = time.time()
+        if not _initialize_stage_budgets_called:
+            _initialize_stage_budgets()
+            _initialize_stage_budgets_called = True
         logger.info(
             "[SESSION_START] app_id=%s candidate=%s role=%s band=%s",
             app_id, candidate_name, job_title,
@@ -1961,6 +2180,7 @@ async def entrypoint(ctx: JobContext):
     INACTIVITY_END_SECS = 60
     CANDIDATE_Q_TRIGGER_SECS = max(10, min(120, int(total_seconds * 0.2)))
     FINAL_THANKS_TRIGGER_SECS = 10
+    final_timeout_announced = False
     MIN_CANDIDATE_LINES_FOR_WRAPUP = 3
     inactivity_nudge_count = 0
     async def _deliver_nudge(text: str) -> None:
@@ -2019,6 +2239,23 @@ async def entrypoint(ctx: JobContext):
             break
         if remaining <= 0:
             break
+        if (
+            remaining <= NO_NEW_QUESTION_CUTOFF_SECONDS
+            and not _final_no_new_question_guard
+            and not is_agent_speaking
+        ):
+            _final_no_new_question_guard = True
+            chat_ctx.add_message(
+                role="system",
+                content=(
+                    "[SYSTEM ALERT: FINAL WINDOW] Less than 25 seconds remain. "
+                    "Do not ask any new questions. Briefly wrap up and close naturally."
+                ),
+            )
+            logger.info(
+                "[TIMING] Activated final no-new-question guard (remaining=%.1fs)",
+                remaining,
+            )
         # --- 2-3 min remaining: wrap-up / candidate questions nudge ---
         # Fire when close to the end. Tailor text based on how much the candidate said.
         candidate_line_count = sum(
@@ -2027,6 +2264,7 @@ async def entrypoint(ctx: JobContext):
         if (
             not candidate_questions_asked
             and remaining <= CANDIDATE_Q_TRIGGER_SECS
+            and not is_agent_speaking
         ):
             candidate_questions_asked = True
             if not wrap_up_signal_sent:
@@ -2057,8 +2295,18 @@ async def entrypoint(ctx: JobContext):
                 logger.warning(
                     f"[TIMING] Failed to deliver candidate-questions nudge: {e}"
                 )
-        # --- Final 10 seconds: warm thank-you ---
+        # --- Final 10 seconds: strict timeout announcement + force close ---
         if remaining <= FINAL_THANKS_TRIGGER_SECS:
+            if not final_timeout_announced:
+                final_timeout_announced = True
+                try:
+                    await session.say(
+                        f"We have reached the end of the interview time, {candidate_first_name or candidate_name}. "
+                        "I need to close the session now. Thank you for your time.",
+                        allow_interruptions=True,
+                    )
+                except Exception as e:
+                    logger.warning(f"[TIMING] Final timeout announcement failed: {e}")
             break
         # --- Strict Inactivity Handling ---
         # Suppressed after wrap-up nudge to avoid piling on messages near end.
@@ -2170,6 +2418,7 @@ async def entrypoint(ctx: JobContext):
         "claim_index": _claim_index,
         "contradiction_state": summarize_contradiction_state(_contradiction_state),
         "stage_history": session_context.stage_history,
+        "stage_transition_events": _stage_transition_events,
         "total_stages_covered": _current_stage_index + 1,
     }
     # Finalize Trust Engine and build recruiter summary before persisting

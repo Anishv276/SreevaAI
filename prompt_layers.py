@@ -103,6 +103,10 @@ STAGE TRANSITION RULES
 - ALWAYS bridge naturally: finish the current thread, then flow into the next topic.
 - If the candidate is mid-story when a new directive arrives: let them finish, THEN bridge.
 - Do NOT rush or cut off a strong answer just because a new directive fired.
+- If a private directive says the current stage time is exhausted, do NOT ask any new
+  follow-up on that stage. Bridge to the next stage immediately.
+- If a private directive says less than 25 seconds remain, do NOT ask any new question.
+  Close the interview naturally.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PRIVATE DIRECTIVES — CRITICAL
