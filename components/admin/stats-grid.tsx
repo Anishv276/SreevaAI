@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { 
@@ -112,7 +112,7 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
     const s = stats!;
     const cards = [
         {
-            label: "Active drives",
+            label: "Active jobs",
             value: s.activeDrives,
             subtext: `${s.closingSoon} closing soon`,
             icon: Briefcase,

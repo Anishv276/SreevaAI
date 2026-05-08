@@ -25,8 +25,8 @@ const NAV_GROUPS: { items: NavItem[] }[] = [
     {
         items: [
             { icon: LayoutDashboard, label: "Dashboard", href: "/admin" },
-            { icon: Briefcase, label: "All Drives", href: "/admin/drives" },
-            { icon: PlusCircle, label: "Create Drive", href: "/admin/create-drive" },
+            { icon: Briefcase, label: "Active Jobs", href: "/admin/drives" },
+            { icon: PlusCircle, label: "Create Job", href: "/admin/create-drive" },
             { icon: Users, label: "Candidates", href: "/admin/candidates" },
         ]
     },
@@ -159,7 +159,7 @@ export function Sidebar() {
                                 <div className="space-y-2">
                                     <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Sign Out?</h2>
                                     <p className="text-sm font-medium text-gray-500 leading-relaxed">
-                                        You are about to end your session. Any unsaved changes in current drive configurations might be lost.
+                                        You are about to end your session. Any unsaved changes in current job configurations might be lost.
                                     </p>
                                 </div>
                                 <div className="grid grid-cols-2 gap-3 pt-2">
@@ -348,4 +348,3 @@ export function Sidebar() {
         </>
     );
 }
-

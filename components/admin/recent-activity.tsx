@@ -1,4 +1,4 @@
-﻿import { cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { UserPlus, FileCheck, Calendar, XCircle, ChevronRight } from "lucide-react";
 
 const activities = [
@@ -50,7 +50,7 @@ export function RecentActivity() {
             {/* Header */}
             <div>
                 <h2 className="text-[15px] font-semibold text-[#111827]">Recent Activity</h2>
-                <p className="text-[12px] text-[#6B7280] mt-0.5">Latest updates across your drives</p>
+                <p className="text-[12px] text-[#6B7280] mt-0.5">Latest updates across your jobs</p>
             </div>
 
             {/* Feed card */}
