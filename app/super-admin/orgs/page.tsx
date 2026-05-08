@@ -377,7 +377,7 @@ export default function OrgsPage() {
                                 <tr className="border-b border-gray-100 bg-gray-50/30">
                                     <th className="pl-5 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Organization</th>
                                     <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Admins</th>
-                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Drives</th>
+                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Jobs</th>
                                     <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Candidates</th>
                                     <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Credits Used</th>
                                     <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Remaining</th>
@@ -912,7 +912,7 @@ export default function OrgsPage() {
                                                     {/* Right Side Stats */}
                                                     <div className="grid grid-cols-2 sm:grid-cols-2 gap-8 text-right">
                                                         <div className="space-y-1.5">
-                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Live Drives</div>
+                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Active Jobs</div>
                                                             <div className="text-[28px] font-[800] text-gray-900 tabular-nums">{(metricsOrg as any).driveCount || 0}</div>
                                                         </div>
                                                         <div className="space-y-1.5">

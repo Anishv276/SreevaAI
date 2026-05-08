@@ -239,7 +239,7 @@ export default function SuperAdminSupportPage() {
                                         <th className="pl-5 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Candidate</th>
                                         <th className="px-4 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Application ID</th>
                                         <th className="px-4 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Organization</th>
-                                        <th className="px-4 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Drive</th>
+                                        <th className="px-4 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Job</th>
                                         <th className="px-4 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Issue</th>
                                         <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Reported At</th>
                                         <th className="pr-5 py-3 text-right font-bold text-[10px] text-gray-400 uppercase tracking-wider">Status</th>

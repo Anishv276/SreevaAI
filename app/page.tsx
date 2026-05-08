@@ -138,16 +138,16 @@ const heroMetrics = [
 ];
 const featureComparison = [
     { feature: "Active Jobs", starter: "1", pro: "5", scale: "10+", enterprise: "Unlimited" },
-    { feature: "AI Voices", starter: "3", pro: "10+", scale: "20+", enterprise: "Unlimited" },
+    { feature: "Interviewer Voices", starter: "3", pro: "10+", scale: "20+", enterprise: "Unlimited" },
     { feature: "Ask Sreeva AI", starter: "—", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Adaptive AI Interview", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Resume + JD Based Questions", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Smart Follow-ups", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
-    { feature: "AI Evaluation Report", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
+    { feature: "AI Interview Report", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "Pre-qualifying Questions", starter: "Yes", pro: "Yes", scale: "Yes", enterprise: "Yes" },
     { feature: "AI Proctoring", starter: "—", pro: "Basic", scale: "Advanced", enterprise: "Advanced" },
     { feature: "Multilingual", starter: "—", pro: "Yes", scale: "Yes", enterprise: "Yes" },
-    { feature: "Recording + Playback", starter: "7 days", pro: "14 days", scale: "30 days", enterprise: "Custom" },
+    { feature: "Recording Storage", starter: "7 days", pro: "14 days", scale: "30 days", enterprise: "Custom" },
     { feature: "Support", starter: "Email", pro: "Priority", scale: "Priority", enterprise: "Dedicated" }
 ];
 const faqs = [

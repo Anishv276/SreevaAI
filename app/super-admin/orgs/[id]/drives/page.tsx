@@ -56,7 +56,7 @@ export default function OrgDrivesPage({ params }: { params: Promise<{ id: string
                     <div className="flex items-center gap-4">
                         <div className="h-14 w-1 flex bg-[#F97316] rounded-full shadow-[0_0_15px_rgba(249,115,22,0.3)]" />
                         <div>
-                            <h1 className="text-4xl font-black text-gray-900 tracking-tighter leading-none">Job Drives</h1>
+                            <h1 className="text-4xl font-black text-gray-900 tracking-tighter leading-none">Active Jobs</h1>
                             <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2">Active roles for <span className="text-[#F97316]">{org?.name}</span></p>
                         </div>
                     </div>
