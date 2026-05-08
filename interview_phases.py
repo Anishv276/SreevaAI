@@ -3,6 +3,7 @@ Interview phase helpers — 5-stage turn-based flow.
 
 Flow: greeting → 2-turn warmup → Stage 1 (RESUME) → Stage 2 (SKILL) →
       Stage 3 (SITUATIONAL) → Stage 4 (BEHAVIORAL) → Stage 5 (PRACTICAL)
+Runtime enforces strict time budgets and stage cutover; directives are stage-scoped.
 
 Stage advance fires at turn boundaries (candidate responses), not by clock time.
 Each stage is injected as a system directive into the agent's chat context.

@@ -655,6 +655,9 @@ async def persist_transcript(
                 "contradictions": proctoring_data.get("contradictions", []),
                 "claim_index": proctoring_data.get("claim_index", {}),
                 "contradiction_state": proctoring_data.get("contradiction_state", {}),
+                "stage_history": proctoring_data.get("stage_history", []),
+                "stage_transition_events": proctoring_data.get("stage_transition_events", []),
+                "total_stages_covered": proctoring_data.get("total_stages_covered", 0),
                 "trust": recruiter_summary if recruiter_summary else {},
             }
         pool = await get_db_pool()

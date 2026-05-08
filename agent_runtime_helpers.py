@@ -13,6 +13,49 @@ from agent_runtime_support import (
     _DB_POOL_INIT_TASK,
     logger,
 )
+_CONTROL_PHRASES = (
+    "DO NOT SAY ALOUD",
+    "INTERNAL INTERVIEWER INSTRUCTION",
+    "NEXT_TURN_DIRECTIVE",
+    "SHORT_RESPONSE_DIRECTIVE",
+    "INTERVIEW STATE UPDATE",
+    "SYSTEM ALERT",
+    "BEGIN STAGE",
+)
+
+
+def sanitize_candidate_facing_text(text: str) -> str:
+    """
+    Remove internal control directives from any model-generated text that can be
+    spoken or shown to the candidate.
+    """
+    result = (text or "").replace("<wait for response>", "").strip()
+    if not result:
+        return ""
+    # Remove bracketed control blocks anywhere in the sentence.
+    result = re.sub(r"\[(?:[^\[\]]|\[[^\]]*\]){0,2000}\]", " ", result)
+    # Remove known control phrases if they leak unbracketed.
+    for phrase in _CONTROL_PHRASES:
+        result = re.sub(re.escape(phrase), " ", result, flags=re.IGNORECASE)
+    # Remove legacy line-prefixed directive markers.
+    cleaned_lines = []
+    for line in result.splitlines():
+        stripped = line.strip()
+        if (
+            stripped.startswith("[DO NOT SAY ALOUD")
+            or stripped.startswith("[STAGE")
+            or stripped.startswith("[WARMUP")
+            or stripped.startswith("[NEXT_TURN_DIRECTIVE")
+            or stripped.startswith("[SHORT_RESPONSE_DIRECTIVE")
+            or stripped.startswith("[INTERVIEW STATE UPDATE")
+        ):
+            continue
+        cleaned_lines.append(line)
+    result = "\n".join(cleaned_lines).strip()
+    result = re.sub(r"\s{2,}", " ", result).strip()
+    return result
+
+
 async def _single_question_transform(text_stream):
     """
     TTS text transform: buffers the full LLM output and:
@@ -25,16 +68,7 @@ async def _single_question_transform(text_stream):
     buffer = ""
     async for chunk in text_stream:
         buffer += chunk
-    # Strip any internal instruction markers that leaked into the LLM output
-    result = buffer.replace("<wait for response>", "").strip()
-    # Remove any lines that start with [DO NOT SAY ALOUD or [STAGE or [WARMUP
-    cleaned_lines = []
-    for line in result.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("[DO NOT SAY ALOUD") or stripped.startswith("[STAGE") or stripped.startswith("[WARMUP"):
-            continue
-        cleaned_lines.append(line)
-    result = "\n".join(cleaned_lines).strip()
+    result = sanitize_candidate_facing_text(buffer)
     # Only truncate if there are genuinely 2+ questions — never truncate to empty
     sentence_pattern = re.compile(r"[^.!?]*[.!?]")
     sentences = sentence_pattern.findall(result)
@@ -56,11 +90,10 @@ async def _single_question_transform(text_stream):
     if result:
         yield result
     else:
-        # Safety fallback: if transform produced nothing, yield the original cleaned buffer
-        fallback = buffer.replace("<wait for response>", "").strip()
-        if fallback:
-            logger.warning(f"[SINGLE_Q] Transform yielded empty — falling back to raw. Original: {buffer[:80]!r}")
-            yield fallback
+        # Never fall back to raw text because it can leak internal directives.
+        logger.warning(
+            "[SINGLE_Q] Transform yielded empty after directive sanitization; suppressing output."
+        )
 def _sanitize_claim_value(value: str, max_len: int = 80) -> str:
     """Strip characters that could break prompt structure when injected into system messages."""
     if not value:
