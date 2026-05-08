@@ -19,6 +19,7 @@ import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { DEFAULT_PROCTORING_SIGNALS, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import {
     LiveKitRoom,
+    RoomAudioRenderer,
     useLocalParticipant,
     useTracks,
     AudioVisualizer,
@@ -147,36 +148,14 @@ const InterviewVoiceOutputProcessor = memo(function InterviewVoiceOutputProcesso
         const source = audioCtx.createMediaStreamSource(new MediaStream([audioTrack]));
         const analyser = audioCtx.createAnalyser();
         analyser.fftSize = 1024;
-        const compressor = audioCtx.createDynamicsCompressor();
-        compressor.threshold.value = -22;
-        compressor.knee.value = 18;
-        compressor.ratio.value = INTERVIEW_WEB_VOICE_PROFILE.compression;
-        compressor.attack.value = 0.003;
-        compressor.release.value = 0.18;
-        const normalizationGain = audioCtx.createGain();
-        normalizationGain.gain.value = 1;
-        const limiter = audioCtx.createGain();
-        limiter.gain.value = INTERVIEW_WEB_VOICE_PROFILE.limiter;
 
         source.connect(analyser);
-        analyser.connect(compressor);
-        compressor.connect(normalizationGain);
-        normalizationGain.connect(limiter);
-        limiter.connect(audioCtx.destination);
 
         const rmsBuffer = new Float32Array(analyser.fftSize);
         const updateNormalization = () => {
             if (audioCtx.state === "closed") return;
             analyser.getFloatTimeDomainData(rmsBuffer);
             const currentRms = computeRms(rmsBuffer);
-            const desiredGain = currentRms > 0.00001
-                ? clamp(
-                    INTERVIEW_WEB_VOICE_PROFILE.targetRms / currentRms,
-                    1 / INTERVIEW_WEB_VOICE_PROFILE.maxGain,
-                    INTERVIEW_WEB_VOICE_PROFILE.maxGain,
-                )
-                : INTERVIEW_WEB_VOICE_PROFILE.maxGain;
-            normalizationGain.gain.setTargetAtTime(desiredGain, audioCtx.currentTime, 0.08);
             rafRef.current = window.setTimeout(updateNormalization, 50);
         };
 
@@ -193,15 +172,6 @@ const InterviewVoiceOutputProcessor = memo(function InterviewVoiceOutputProcesso
             } catch { }
             try {
                 analyser.disconnect();
-            } catch { }
-            try {
-                compressor.disconnect();
-            } catch { }
-            try {
-                normalizationGain.disconnect();
-            } catch { }
-            try {
-                limiter.disconnect();
             } catch { }
             audioContextRef.current?.close().catch(() => { });
             audioContextRef.current = null;
@@ -670,6 +640,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         void (async () => {
             try {
                 void requestFullscreenMode();
+                if (lkRoomRef.current) {
+                    void lkRoomRef.current.startAudio().catch(() => { });
+                }
                 const isWarmReady = await ensureWarmConnection();
                 if (!isWarmReady) {
                     setJoinError("Interview connection could not be prepared. Please retry.");
@@ -687,10 +660,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     setTimerExpired(false);
                 }
                 setShouldConnect(true);
-                // Unlock audio context...
-                if (lkRoomRef.current) {
-                    lkRoomRef.current.startAudio().catch(() => { });
-                }
             } catch (err) {
                 console.error("Phase transition failed:", err);
                 setJoinError(err instanceof Error ? err.message : "Unable to start interview.");
@@ -999,6 +968,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         data-lk-theme="default"
                         className="flex-1 flex flex-col w-full h-full"
                     >
+                        <RoomAudioRenderer />
                         <InterviewRoomContent
                             id={id}
                             interviewToken={interviewToken}

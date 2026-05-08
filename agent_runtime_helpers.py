@@ -16,14 +16,26 @@ from agent_runtime_support import (
 async def _single_question_transform(text_stream):
     """
     TTS text transform: buffers the full LLM output and:
-    1. Drops everything after the first complete question (sentence ending in '?')
-    2. Strips the <wait for response> marker so it's not spoken
+    1. Strips internal instruction markers so they are never spoken
+    2. Drops everything after the first complete question (sentence ending in '?')
+       ONLY if a second question exists — never truncates to empty
+    3. Strips the <wait for response> marker so it's not spoken
     Prevents Ishita from asking two questions in one turn.
     """
     buffer = ""
     async for chunk in text_stream:
         buffer += chunk
+    # Strip any internal instruction markers that leaked into the LLM output
     result = buffer.replace("<wait for response>", "").strip()
+    # Remove any lines that start with [DO NOT SAY ALOUD or [STAGE or [WARMUP
+    cleaned_lines = []
+    for line in result.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[DO NOT SAY ALOUD") or stripped.startswith("[STAGE") or stripped.startswith("[WARMUP"):
+            continue
+        cleaned_lines.append(line)
+    result = "\n".join(cleaned_lines).strip()
+    # Only truncate if there are genuinely 2+ questions — never truncate to empty
     sentence_pattern = re.compile(r"[^.!?]*[.!?]")
     sentences = sentence_pattern.findall(result)
     question_count = 0
@@ -31,15 +43,24 @@ async def _single_question_transform(text_stream):
     pos = 0
     for s in sentences:
         pos += len(s)
-        if s.rstrip().rstrip('"\'' ).endswith("?"):
+        if s.rstrip().rstrip('"\'').endswith("?"):
             question_count += 1
             if question_count == 1:
                 cutoff = pos
     if cutoff > 0 and "?" in result[cutoff:]:
-        result = result[:cutoff].rstrip()
-        logger.debug(f"[SINGLE_Q] Truncated double question. Original: {buffer[:120]!r}")
+        truncated = result[:cutoff].rstrip()
+        # Only apply truncation if result is non-empty after cut
+        if truncated:
+            result = truncated
+            logger.debug(f"[SINGLE_Q] Truncated double question. Original: {buffer[:120]!r}")
     if result:
         yield result
+    else:
+        # Safety fallback: if transform produced nothing, yield the original cleaned buffer
+        fallback = buffer.replace("<wait for response>", "").strip()
+        if fallback:
+            logger.warning(f"[SINGLE_Q] Transform yielded empty — falling back to raw. Original: {buffer[:80]!r}")
+            yield fallback
 def _sanitize_claim_value(value: str, max_len: int = 80) -> str:
     """Strip characters that could break prompt structure when injected into system messages."""
     if not value:
