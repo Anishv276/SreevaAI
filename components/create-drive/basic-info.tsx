@@ -419,14 +419,14 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                         required
                     />
                     <PremiumInput
-                        label="Drive Title"
+                        label="Job Title"
                         icon={Briefcase}
                         id="title"
                         value={formData.title || ""}
                         onChange={(e) => handleChange("title", e.target.value)}
                         onBlur={() => handleBlur("title")}
                         error={getError("title")}
-                        placeholder="e.g. Senior Backend Engineer Drive"
+                        placeholder="e.g. Senior Backend Engineer Job"
                         required
                     />
                 </div>

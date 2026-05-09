@@ -254,7 +254,7 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
                     <span className="h-5 w-1 rounded-full bg-slate-900" />
                     <div>
                         <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-900">Screening Criteria</h2>
-                        <p className="text-xs text-slate-500">Only skills and custom checks are used for resume scoring in this drive.</p>
+                        <p className="text-xs text-slate-500">Only skills and custom checks are used for resume scoring in this job.</p>
                     </div>
                 </div>
 

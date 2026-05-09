@@ -146,7 +146,7 @@ async function persistInterviewUpdateRaw(params: {
     recordingCompletedAt,
     recordingDurationSec 
   } = params;
-  const finalStatus = interviewStatus || "COMPLETED";
+  const finalStatus = interviewStatus || "IN_PROGRESS";
 
   const app = await prisma.application.findUnique({
     where: { id: applicationId },
@@ -158,10 +158,10 @@ async function persistInterviewUpdateRaw(params: {
   await prisma.$executeRawUnsafe(
     `
     INSERT INTO "Interview" (id, "applicationId", "accessToken", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "interviewTurns", "snapshots", "recordingCompletedAt", "recordingDurationSec", "completedAt", "createdAt", "updatedAt")
-    VALUES ($1, $2, $3, COALESCE($4::text, 'COMPLETED'), $5, CASE WHEN $5::text IS NOT NULL THEN NOW() ELSE NULL END, $6, COALESCE($7::jsonb, '[]'::jsonb), $8, $9, $10, CASE WHEN COALESCE($4::text, 'COMPLETED') = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
+    VALUES ($1, $2, $3, COALESCE($4::text, 'IN_PROGRESS'), $5, CASE WHEN $5::text IS NOT NULL THEN NOW() ELSE NULL END, $6, COALESCE($7::jsonb, '[]'::jsonb), $8, $9, $10, CASE WHEN COALESCE($4::text, 'IN_PROGRESS') = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
     ON CONFLICT ("applicationId")
     DO UPDATE SET
-      status = COALESCE($4::text, 'COMPLETED'),
+      status = COALESCE($4::text, "Interview".status),
       "interviewRecordingUrl" = COALESCE($5::text, "Interview"."interviewRecordingUrl"),
       "interviewRecordedAt" = CASE WHEN $5::text IS NOT NULL THEN NOW() ELSE "Interview"."interviewRecordedAt" END,
       "interviewTranscript" = COALESCE($6::text, "Interview"."interviewTranscript"),
@@ -169,7 +169,7 @@ async function persistInterviewUpdateRaw(params: {
       "snapshots" = COALESCE($8, "Interview"."snapshots"),
       "recordingCompletedAt" = COALESCE($9, "Interview"."recordingCompletedAt"),
       "recordingDurationSec" = COALESCE($10, "Interview"."recordingDurationSec"),
-      "completedAt" = CASE WHEN COALESCE($4::text, 'COMPLETED') = 'COMPLETED' THEN NOW() ELSE "Interview"."completedAt" END,
+      "completedAt" = CASE WHEN COALESCE($4::text, "Interview".status) = 'COMPLETED' THEN NOW() ELSE "Interview"."completedAt" END,
       "updatedAt" = NOW()
     `,
     interviewId,
@@ -248,24 +248,6 @@ function estimateInterviewReportUsage(params: {
   };
 }
 
-function getExistingInterviewReportRuns(usageMetrics: unknown): number {
-  if (!usageMetrics || typeof usageMetrics !== "object") {
-    return 0;
-  }
-
-  const billing = (usageMetrics as Record<string, unknown>).billing;
-  if (!billing || typeof billing !== "object") {
-    return 0;
-  }
-
-  const interviewReport = (billing as Record<string, unknown>).interviewReport;
-  if (!interviewReport || typeof interviewReport !== "object") {
-    return 0;
-  }
-
-  return Number((interviewReport as Record<string, unknown>).runs || 0);
-}
-
 type InterviewReportShape = {
   qa_blocks?: Array<{
     q?: number;
@@ -299,18 +281,20 @@ export async function POST(req: Request) {
       );
     }
 
-    const { 
-      applicationId, 
-      interviewToken, 
-      recordingUrl, 
-      transcript, 
-      interviewStatus, 
-      appStatus, 
+    const {
+      applicationId,
+      interviewToken,
+      recordingUrl,
+      transcript,
+      interviewStatus,
+      status,
+      appStatus,
       duration,
       snapshots,
       recordingCompletedAt,
       recordingDurationSec
     } = result.data;
+    const finalInterviewStatus = interviewStatus || status || "IN_PROGRESS";
     const requireInterviewToken = isInterviewTokenRequired();
 
     // -- AUTHENTICATION --------------------------------
@@ -321,20 +305,20 @@ export async function POST(req: Request) {
     if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid finalization token" }, { status: 401 });
     }
-    const isNewCompletion = !interview?.completedAt;
+    const isNewCompletion = finalInterviewStatus === "COMPLETED" && !interview?.completedAt;
 
     const transcriptRaw = transcript;
     const finalTranscript = transcriptRaw?.trim();
     const interviewTurns = finalTranscript ? buildInterviewTurns(finalTranscript) : [];
     const finalDuration = typeof duration === 'number' ? duration : (duration ? parseInt(String(duration)) : null);
 
-    console.log(`[FINALIZE] ${applicationId} | status=${interviewStatus} | duration=${finalDuration}s`);
+    console.log(`[FINALIZE] ${applicationId} | status=${finalInterviewStatus} | duration=${finalDuration}s`);
 
     await persistInterviewUpdateRaw({
       applicationId,
       recordingUrl,
       transcript: finalTranscript,
-      interviewStatus,
+      interviewStatus: finalInterviewStatus,
       interviewTurns,
       snapshots,
       recordingCompletedAt,
@@ -378,7 +362,7 @@ export async function POST(req: Request) {
         const quotaUnits = resolvedDuration !== null && !isNaN(resolvedDuration as number)
           ? getInterviewQuotaUnits(resolvedDuration)
           : 0;
-        if (quotaUnits > 0) {
+        if (isNewCompletion && quotaUnits > 0) {
           await deductInterviewQuota(orgId, quotaUnits);
         }
         if (isNewCompletion && resolvedDuration !== null && !isNaN(resolvedDuration as number)) {
@@ -422,14 +406,6 @@ export async function POST(req: Request) {
       });
 
       if (app) {
-        const orgUsageRows = app.drive?.orgId
-          ? await prisma.organization.findUnique({
-              where: { id: app.drive.orgId },
-              select: { usageMetrics: true },
-            })
-          : null;
-        const existingInterviewReportRuns = getExistingInterviewReportRuns(orgUsageRows?.usageMetrics);
-
         const driveRows = await prisma.$queryRawUnsafe<Array<{ extractedDetails: string | null }>>(
           `
           SELECT "extractedDetails"
@@ -529,7 +505,7 @@ export async function POST(req: Request) {
           });
         }
 
-        if (app.drive?.orgId && existingInterviewReportRuns === 0 && interviewReportUsage) {
+        if (app.drive?.orgId && interviewReportUsage) {
           await recordOrgBillingUsage({
             orgId: app.drive.orgId,
             feature: "interviewReport",
@@ -557,10 +533,10 @@ export async function POST(req: Request) {
 
   let jobId: string | number | undefined;
   try {
-    const job = await interviewFinalizationQueue.add(
-      "finalize-interview",
-      { applicationId, recordingUrl, transcript: finalTranscript, interviewStatus, appStatus },
-      {
+      const job = await interviewFinalizationQueue.add(
+        "finalize-interview",
+        { applicationId, recordingUrl, transcript: finalTranscript, interviewStatus: finalInterviewStatus, appStatus },
+        {
         attempts: 3,
         backoff: { type: "exponential", delay: 1000 },
         removeOnComplete: true,

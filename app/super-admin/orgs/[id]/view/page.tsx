@@ -469,13 +469,10 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                 <div>
 
-                                    <h1 className="text-4xl font-black text-gray-900 tracking-tighter leading-none uppercase italic">
+                                    <h1 className="text-4xl font-black text-gray-900 tracking-tighter leading-none">Active Jobs</h1>
 
-                                        {view === "drives" ? "Drives" : "Candidates"}
+                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name}  {formatOrgPlan(org?.plan) || "Enterprise"} Panel</p>
 
-                                    </h1>
-
-                                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name} � {formatOrgPlan(org?.plan) || "Enterprise"} Panel</p>
                                 </div>
 
                             </div>
@@ -570,7 +567,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                             <Briefcase className={`h-4 w-4 ${view === "drives" ? "text-[#F97316]" : "text-gray-300"}`} />
 
-                            Drives
+                            Active Jobs
 
                         </button>
 
@@ -605,15 +602,25 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                             <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
 
                                 {drives.map((drive) => (
+
                                     <div key={drive.id} className="relative group">
+
                                         <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+
                                             <h3 className="font-bold text-gray-900">{drive.title}</h3>
+
                                             <p className="text-sm text-gray-500">{(drive as any).location || 'Remote'}</p>
+
                                         </div>
+
                                         <div className="absolute top-4 right-4 text-[9px] font-black uppercase tracking-widest px-3 py-1 bg-white/90 backdrop-blur border rounded-full text-gray-900 shadow-sm opacity-60">
+
                                             {(drive as any).status}
+
                                         </div>
+
                                     </div>
+
                                 ))}
 
                             </div>
@@ -746,7 +753,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                         <div className="flex items-center justify-between px-12 py-8 mt-4">
 
-                             <p className="text-gray-300 text-[10px] font-black uppercase tracking-[0.2em] italic">SHOWING {candidates.length} CANDIDATES � PAGE {page} OF {totalPages || 1}</p>
+                             <p className="text-gray-300 text-[10px] font-black uppercase tracking-[0.2em] italic">SHOWING {candidates.length} CANDIDATES  PAGE {page} OF {totalPages || 1}</p>
 
                              <div className="flex items-center gap-4">
 
@@ -848,7 +855,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                             <div>
 
-                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Metrics</div>
+                                <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Active Jobs</div>
 
                                 <h3 className="text-xl font-black text-gray-900">AI usage overview</h3>
 
@@ -881,8 +888,11 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 { label: "JD Extraction", key: "jdExtraction" },
 
                                 { label: "Chatbot", key: "chatbot" },
+
                                 { label: "Resume Report", key: "resumeReport" },
+
                                 { label: "Interview Report", key: "interviewReport" },
+
                             ].map((section) => {
 
                                 const usage = (org?.usageMetrics ?? {}) as Record<string, unknown>;
@@ -936,8 +946,11 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                             ? (org?.sarvamModel || "bulbul:v3")
 
                                             : (org?.ttsProvider || "").toUpperCase() === "GOOGLE"
+
                                                 ? (org?.googleModel || "gemini-3.1-flash-tts-preview")
+
                                                 : (org?.cartesiaModel || "cartesia/sonic-3"),
+
                                     )
 
                                     : null;
@@ -989,6 +1002,8 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         {interviewMinutes !== null && (
 
                                             <div className="mt-3 text-xs font-bold text-gray-500 uppercase tracking-wider">
+
+                                                <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Jobs</th>
 
                                                 Interview time: <span className="text-gray-900">{interviewMinutes} min</span>
 

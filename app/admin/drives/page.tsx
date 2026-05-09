@@ -155,7 +155,7 @@ export default function DrivesPage() {
                 <div className="flex items-center gap-5 group">
                     <div className="h-12 w-1.5 bg-slate-900 rounded-full shadow-[0_0_15px_rgba(15,23,42,0.15)]" />
                     <div className="space-y-1">
-                        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 tracking-tight">Drives</h1>
+                        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 tracking-tight">Active Jobs</h1>
                         <div className="flex items-center gap-3">
                             <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-pulse" />
                             <p className="text-gray-400 font-bold text-[11px] uppercase tracking-widest">{pagination.total || 0} Total Campaigns</p>
@@ -167,13 +167,13 @@ export default function DrivesPage() {
                     {isSuspended ? (
                         <Button disabled className="bg-gray-100/50 border border-gray-200 text-gray-400 h-12 px-6 font-bold rounded-2xl cursor-not-allowed opacity-70">
                             <Lock className="h-4 w-4 mr-2" />
-                            New Drive
+                            New Job
                         </Button>
                     ) : driveCreationLocked ? (
                         <div className="flex items-center gap-3">
                             <button disabled className="bg-gray-100 text-gray-400 border border-gray-200 h-12 px-6 font-bold rounded-2xl cursor-not-allowed opacity-70 flex items-center gap-2">
                                 <Lock className="h-4 w-4" />
-                                {quotaLocked ? "Drive Locked" : "New Drive"}
+                                {quotaLocked ? "Job Locked" : "New Job"}
                             </button>
                             {quotaLocked ? (
                                 <a
@@ -197,7 +197,7 @@ export default function DrivesPage() {
                         <Link href="/admin/create-drive">
                             <Button className="bg-slate-950 hover:bg-slate-800 transition-all duration-300 h-12 px-6 font-bold rounded-2xl text-white shadow-lg shadow-slate-900/10">
                                 <Plus className="h-5 w-5 mr-2" />
-                                New Drive
+                                New Job
                             </Button>
                         </Link>
                     )}
@@ -237,7 +237,7 @@ export default function DrivesPage() {
                 {isLoading ? (
                     <div className="col-span-full flex w-full flex-col items-center justify-center py-24 min-h-[320px]">
                         <Loader2 className="h-10 w-10 text-slate-500 animate-spin mb-3" />
-                        <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Loading drives...</p>
+                        <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Loading jobs...</p>
                     </div>
                 ) : jobs.length === 0 ? (
                     <div className="col-span-full">
@@ -245,7 +245,7 @@ export default function DrivesPage() {
                             <div className="h-20 w-20 bg-slate-50 text-slate-600 rounded-3xl flex items-center justify-center mb-8 shadow-sm border border-slate-200">
                                 <Rocket className="h-10 w-10" />
                             </div>
-                            <h3 className="text-2xl font-bold text-gray-900 tracking-tight mb-2">Create your first recruitment drive</h3>
+                            <h3 className="text-2xl font-bold text-gray-900 tracking-tight mb-2">Create your first recruitment job</h3>
                             <p className="text-gray-500 font-medium text-sm mb-10 leading-relaxed max-w-sm text-center">
                                 Post a job role to start screening candidates with AI. Upload resumes in bulk and configure screening rules.
                             </p>
@@ -253,7 +253,7 @@ export default function DrivesPage() {
                                 <div className="flex flex-col items-center gap-3">
                                     <Button disabled className="bg-gray-100 text-gray-400 transition-all duration-300 h-14 px-10 font-bold rounded-2xl border border-gray-200 cursor-not-allowed gap-3">
                                         <Lock className="h-5 w-5" />
-                                        {quotaLocked ? "Drive Locked" : "Create Locked"}
+                                        {quotaLocked ? "Job Locked" : "Create Locked"}
                                     </Button>
                                     {quotaLocked ? (
                                         <a
@@ -277,7 +277,7 @@ export default function DrivesPage() {
                                 <Link href="/admin/create-drive">
                                     <Button className="bg-slate-950 hover:bg-slate-800 transition-all duration-300 h-14 px-10 font-bold rounded-2xl text-white shadow-lg shadow-slate-900/10 gap-3 group">
                                         <Plus className="h-5 w-5" />
-                                        Create New Drive
+                                        Create New Job
                                         <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                                     </Button>
                                 </Link>
@@ -345,7 +345,7 @@ export default function DrivesPage() {
                                         </h3>
                                         <div className="flex flex-wrap items-center gap-2">
                                             <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                                                Drive
+                                                Job
                                             </span>
                                         </div>
                                     </div>
@@ -407,7 +407,7 @@ export default function DrivesPage() {
             {!isLoading && jobs.length > 0 && (
                 <div className="flex items-center justify-between px-4 py-6 border-t border-slate-200 bg-white rounded-2xl shadow-sm">
                     <p className="text-[13px] font-medium text-gray-500">
-                        Showing <span className="text-gray-900 font-bold">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="text-gray-900 font-bold">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="text-gray-900 font-bold">{pagination.total}</span> drives
+                        Showing <span className="text-gray-900 font-bold">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="text-gray-900 font-bold">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="text-gray-900 font-bold">{pagination.total}</span> jobs
                     </p>
                     <div className="flex gap-3">
                         <Button
@@ -432,13 +432,14 @@ export default function DrivesPage() {
                 </div>
             )}
 
+
             {/* Delete Modal */}
             <ActionConfirmModal
                 isOpen={isDeleteModalOpen}
                 onClose={() => setIsDeleteModalOpen(false)}
                 onConfirm={confirmDelete}
-                title="Delete Drive"
-                description="Are you sure you want to delete this drive? This will permanently remove all candidates and data."
+                title="Delete Job"
+                description="Are you sure you want to delete this job? This will permanently remove all candidates and data."
                 confirmText="Confirm Delete"
                 isLoading={isDeleting}
             />

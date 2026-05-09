@@ -351,7 +351,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
         }
         return false;
     };
-    const driveTitle = jobs.find((job) => job.id === driveId)?.title || "Drive";
+    const driveTitle = jobs.find((job) => job.id === driveId)?.title || "Job";
 
     if (!isDriveViewReady) {
         return (
@@ -359,7 +359,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                 <div className="flex flex-col items-center gap-3">
                     <Loader2 className="h-10 w-10 animate-spin text-orange-500" />
                     <p className="text-xs font-black uppercase tracking-[0.24em] text-gray-400">
-                        Loading drive candidates...
+                        Loading job candidates...
                     </p>
                 </div>
             </div>
@@ -607,7 +607,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                             ) : filteredCandidates.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-12 text-center text-sm font-bold text-gray-400">
-                                        No candidates found for this drive
+                                        No candidates found for this job
                                     </TableCell>
                                 </TableRow>
                             ) : (

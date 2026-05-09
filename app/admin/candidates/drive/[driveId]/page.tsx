@@ -131,7 +131,7 @@ export default function DriveCandidatesPage() {
     if (!driveId) {
         return (
             <div className="min-h-[50vh] flex items-center justify-center">
-                <p className="text-sm font-bold uppercase tracking-widest text-gray-400">Drive not found</p>
+                <p className="text-sm font-bold uppercase tracking-widest text-gray-400">Job not found</p>
             </div>
         );
     }
@@ -141,7 +141,7 @@ export default function DriveCandidatesPage() {
             <div className="min-h-[50vh] flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
                     <Loader2 className="h-10 w-10 animate-spin text-orange-500" />
-                    <p className="text-sm font-bold uppercase tracking-widest text-gray-400">Loading drive...</p>
+                    <p className="text-sm font-bold uppercase tracking-widest text-gray-400">Loading job...</p>
                 </div>
             </div>
         );
@@ -177,13 +177,13 @@ export default function DriveCandidatesPage() {
                     <div className="min-w-0 space-y-2.5">
                         <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-400">
                             <Badge className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#F97316] shadow-none">
-                                Drive Candidates
+                                Job Candidates
                               </Badge>
                             <span>{drive?.department || "Recruitment"}</span>
                         </div>
                         <div className="space-y-1">
                             <h1 className="truncate text-lg font-bold tracking-tight text-gray-900 sm:text-xl">
-                                {drive?.title || "Drive Candidates"}
+                                {drive?.title || "Job Candidates"}
                             </h1>
                             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-500">
                                 <span className="inline-flex items-center gap-1.5">
@@ -227,7 +227,7 @@ export default function DriveCandidatesPage() {
                             className="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 text-sm font-semibold text-gray-600 shadow-none transition-colors hover:border-gray-300 hover:bg-gray-50 hover:shadow-none"
                         >
                             <ArrowLeft className="h-4 w-4" />
-                            Back to Drives
+                            Back to Jobs
                         </Link>
                     </div>
                 </div>
@@ -277,7 +277,7 @@ export default function DriveCandidatesPage() {
                                     <p className="text-[10px] font-black uppercase tracking-[0.28em] text-gray-400">Screening settings</p>
                                     <h2 className="mt-1 text-xl font-black tracking-tight text-gray-900">Configure AI screening criteria</h2>
                                     <p className="mt-2 text-sm text-gray-500 font-medium">
-                                        These values are stored in the Drive screening criteria JSON and used for resume scoring.
+                                        These values are stored in the Job screening criteria JSON and used for resume scoring.
                                     </p>
                                 </div>
                             </div>
@@ -345,7 +345,7 @@ export default function DriveCandidatesPage() {
                 open={uploadOpen}
                 onOpenChange={setUploadOpen}
                 driveId={driveId}
-                driveName={drive?.title || "Drive"}
+                driveName={drive?.title || "Job"}
                 onUploaded={() => setRefreshKey((v) => v + 1)}
             />
         </div>
