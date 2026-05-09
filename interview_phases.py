@@ -81,11 +81,21 @@ def _band_probe(band: str) -> str:
 # Stage directives (injected at turn boundaries by agent_runtime)
 # ---------------------------------------------------------------------------
 
+_RESUME_OPEN_HINTS = (
+    "Reference one named item from the anchor line verbatim (project, course, or school).",
+    "Start from the anchor, then connect to one JD must-have that relates to it.",
+    "Ask what decisions they owned on the anchor — tools, scope, tradeoffs — not generic motivation.",
+    "Pick the strongest overlap between anchor + JD list and ask for a concrete story there.",
+)
+
+
 def build_stage_1_resume_directive(
     *,
     band: str,
     resume_brief: dict,
     jd_must_haves: list[str],
+    alignment_block: str = "",
+    variation_slot: int = 0,
 ) -> str:
     """
     Stage 1: RESUME — anchor on the candidate's most relevant resume item.
@@ -125,20 +135,41 @@ def build_stage_1_resume_directive(
     jd_block = ""
     if jd_must_haves:
         jd_block = (
-            "JD MUST-HAVES (keep in mind, don't rush to cover):\n"
-            + "\n".join(f"  - {item}" for item in jd_must_haves[:4])
+            "JD MUST-HAVES (tie questions to these — paraphrase, never quote lists aloud):\n"
+            + "\n".join(f"  - {item}" for item in jd_must_haves[:6])
             + "\n\n"
         )
+
+    open_hint = _RESUME_OPEN_HINTS[variation_slot % len(_RESUME_OPEN_HINTS)]
+    fresher_rule = ""
+    if band == "fresher":
+        fresher_rule = (
+            "FRESHER RULE:\n"
+            "  - Lead with projects, coursework, internships, or academics — NOT \"years of professional experience\"\n"
+            "  - If they have no jobs listed, do NOT ask behavioral-style \"tell me about your role at company X\"\n\n"
+        )
+
+    align = alignment_block.strip()
+    if align:
+        align = align + "\n"
 
     return (
         "[DO NOT SAY ALOUD — INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[STAGE 1: RESUME]\n"
         "Warmup is done. Begin the interview naturally — no announcement.\n\n"
         f"{_band_probe(band)}\n\n"
-        f"ANCHOR (your first question must reference this):\n"
+        f"{align}"
+        f"{fresher_rule}"
+        f"ANCHOR (your first substantive question MUST name or clearly imply this):\n"
         f"  {anchor_type.upper()}: {anchor_item}\n\n"
         f"{anchor_hint}\n\n"
+        f"OPENING VARIATION (session-specific):\n  - {open_hint}\n\n"
         f"{jd_block}"
+        "GROUNDING (non-negotiable):\n"
+        "  - Questions must cite specifics from the candidate summary / anchor OR map to a JD must-have.\n"
+        "  - Forbidden as the first substantive question: generic-only motivation with no resume/JD tie "
+        '(e.g. only "what drew you to this role?" with no reference to their background).\n'
+        "  - Allowed: motivation linked to something they actually wrote or a JD requirement.\n\n"
         "RULES:\n"
         "  - One question per turn\n"
         "  - React to what they said before asking the next question\n"
@@ -148,11 +179,21 @@ def build_stage_1_resume_directive(
     )
 
 
+_SKILL_PROBE_HINTS = (
+    "Rotate which JD/resume skill you stress — prioritize overlap items before gaps.",
+    "Start from a resume skill, then ask how it maps to a JD must-have.",
+    "Pick one JD must-have that is thin on the resume and ask for depth OR learning plan.",
+    "Ask them to compare two skills they listed — where they're strongest vs growing.",
+)
+
+
 def build_stage_2_skill_directive(
     *,
     band: str,
     resume_brief: dict,
     jd_must_haves: list[str],
+    alignment_block: str = "",
+    variation_slot: int = 0,
 ) -> str:
     """
     Stage 2: SKILL — probe technical depth based on claimed skills and JD requirements.
@@ -166,28 +207,46 @@ def build_stage_2_skill_directive(
     )
 
     jd_block = (
-        "JD MUST-HAVES:\n"
-        + "\n".join(f"  - {item}" for item in jd_must_haves[:4])
+        "JD MUST-HAVES (skills/themes to validate against resume):\n"
+        + "\n".join(f"  - {item}" for item in jd_must_haves[:6])
         + "\n\n"
         if jd_must_haves else ""
     )
 
     band_direction = {
-        "fresher": "Ask: walk me through a project where you actually used [skill]. What broke? What did you learn?",
-        "mid": "Ask: describe the most complex system you've designed using [skill]. What were the tradeoffs?",
-        "experienced": "Ask: what's your deepest technical contribution in [skill area]? Own it end-to-end.",
-        "senior": "Ask: what's your architectural philosophy when using [skill] at scale? How do you make the call?",
+        "fresher": (
+            "Ask about a project, lab, or coursework where they used [skill from resume or JD]. "
+            "What broke, what did they learn? If [skill] is only on the JD, ask how they'd learn it / what they've started."
+        ),
+        "mid": "Ask: describe the most complex thing you've built using [skill]. Tradeoffs and your ownership.",
+        "experienced": "Ask: deepest technical contribution in [skill area] — end-to-end ownership.",
+        "senior": "Ask: architectural judgment with [skill] at scale — how you decide and influence others.",
     }.get(band, "Probe depth in claimed technical skills with concrete examples.")
+
+    skill_hint = _SKILL_PROBE_HINTS[variation_slot % len(_SKILL_PROBE_HINTS)]
+    align = alignment_block.strip()
+    if align:
+        align = align + "\n"
+
+    gap_rule = (
+        "If a JD must-have has little or no evidence on the resume, ask fairly: "
+        "whether they're actively learning it, how they'd ramp, or what they'd do in the first 90 days — "
+        "not as accusation.\n\n"
+    )
 
     return (
         "[DO NOT SAY ALOUD — INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[STAGE 2: SKILL]\n"
         "Continue naturally from Stage 1. No announcement.\n\n"
         f"{_band_probe(band)}\n\n"
+        f"{align}"
         f"{skills_block}"
         f"{jd_block}"
+        f"SESSION SKILL FOCUS:\n  - {skill_hint}\n\n"
         f"DIRECTION: {band_direction}\n\n"
+        f"{gap_rule}"
         "RULES:\n"
+        "  - Pick skills that appear in BOTH resume list and JD when possible; otherwise JD gap + learning appetite.\n"
         "  - One question per turn\n"
         "  - Probe depth — don't accept surface-level answers\n"
         "  - Max 2 follow-ups per skill then move on\n"
@@ -200,6 +259,9 @@ def build_stage_3_situational_directive(
     *,
     band: str,
     resume_brief: dict,
+    jd_must_haves: list[str] | None = None,
+    alignment_block: str = "",
+    variation_slot: int = 0,
 ) -> str:
     """
     Stage 3: SITUATIONAL — present a realistic scenario anchored to their background.
@@ -207,11 +269,23 @@ def build_stage_3_situational_directive(
     """
     anchor_item = resume_brief.get("anchor_item", "your recent work")
 
+    jd_theme = ""
+    if jd_must_haves:
+        idx = variation_slot % len(jd_must_haves)
+        jd_theme = (
+            f"Wrap the scenario around a JD theme such as: {jd_must_haves[idx]}. "
+            "Keep it realistic for their level.\n\n"
+        )
+
+    align = alignment_block.strip()
+    if align:
+        align = align + "\n"
+
     band_scenario = {
         "fresher": (
-            f"Anchor the scenario to their project or internship work ({anchor_item}). "
-            "Ask: 'Imagine you're building your first production service — walk me through your approach.' "
-            "Test: how they think, not what they know."
+            f"Anchor the scenario to their project, coursework, or internship ({anchor_item}) — not hypothetical senior job titles. "
+            "Example shape: tight deadline + unfamiliar tool from the JD — how do they prioritize and learn? "
+            "Test judgment, not trivia."
         ),
         "mid": (
             f"Use their recent role ({anchor_item}) as context. "
@@ -234,6 +308,8 @@ def build_stage_3_situational_directive(
         "[STAGE 3: SITUATIONAL]\n"
         "Continue naturally from Stage 2. No announcement.\n\n"
         f"{_band_probe(band)}\n\n"
+        f"{align}"
+        f"{jd_theme}"
         f"SCENARIO DIRECTION:\n{band_scenario}\n\n"
         "RULES:\n"
         "  - One scenario or question per turn\n"
@@ -247,15 +323,39 @@ def build_stage_3_situational_directive(
 def build_stage_4_behavioral_directive(
     *,
     band: str,
+    resume_brief: dict | None = None,
+    alignment_block: str = "",
+    variation_slot: int = 0,
 ) -> str:
     """
     Stage 4: BEHAVIORAL — STAR-style questions on collaboration, growth, and impact.
     Goal: surface how they actually work with others and handle adversity.
     """
+    collab_themes = (
+        "collaboration on a shared deliverable",
+        "disagreement with a teammate or stakeholder",
+        "a setback or mistake",
+        "leading without authority",
+    )
+    theme = collab_themes[variation_slot % len(collab_themes)]
+
+    proj_hint = ""
+    if resume_brief and band == "fresher":
+        pr = resume_brief.get("projects") or []
+        if pr:
+            proj_hint = (
+                f"When asking about teamwork, prefer their real project context (e.g. {pr[0][:120]}) "
+                "over hypothetical corporate roles.\n\n"
+            )
+
+    align = alignment_block.strip()
+    if align:
+        align = align + "\n"
+
     band_direction = {
         "fresher": (
-            "Ask: how do you approach learning a new technology? Give me a real example. "
-            "Also: tell me about a time something didn't work out the way you expected."
+            f"Ask for a real example tied to learning or teamwork — theme: {theme}. "
+            "Use projects, coursework, or internships — not fictional job titles."
         ),
         "mid": (
             "Ask: tell me about a time you influenced a decision outside your direct scope. "
@@ -276,6 +376,8 @@ def build_stage_4_behavioral_directive(
         "[STAGE 4: BEHAVIORAL]\n"
         "Continue naturally from Stage 3. No announcement.\n\n"
         f"{_band_probe(band)}\n\n"
+        f"{align}"
+        f"{proj_hint}"
         f"DIRECTION: {band_direction}\n\n"
         "RULES:\n"
         "  - One question per turn — STAR format (Situation, Task, Action, Result)\n"

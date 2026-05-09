@@ -1,4 +1,4 @@
-import base64
+﻿import base64
 import os
 import sys
 import asyncio
@@ -46,6 +46,8 @@ from agent_profile_context import (
     build_jd_summary,
     build_live_prompt_context,
     build_screening_summary,
+    build_jd_resume_alignment_block,
+    interview_variation_slot,
     _extract_jd_must_haves,
     first_name_from_full_name,
     infer_candidate_band,
@@ -637,6 +639,8 @@ async def entrypoint(ctx: JobContext):
     resume_context = parse_resume_context(structured_resume, resume_block)
     jd_block = build_jd_summary(extracted_details, job_details or "General professional role.")
     jd_must_haves = _extract_jd_must_haves(extracted_details, job_details or "")
+    alignment_block = build_jd_resume_alignment_block(jd_must_haves, resume_context.skills)
+    variation_slot = interview_variation_slot(app_id)
     candidate_band = infer_candidate_band(resume_context, resume_block)
     resume_brief = build_resume_brief(candidate_band, resume_context)
     session_context = CandidateBandContext(
@@ -975,15 +979,23 @@ async def entrypoint(ctx: JobContext):
                 band=session_context.candidate_band,
                 resume_brief=session_context.resume_brief,
                 jd_must_haves=jd_must_haves,
+                alignment_block=alignment_block,
+                variation_slot=variation_slot,
             )
         if stage_idx == 2:
             return build_stage_3_situational_directive(
                 band=session_context.candidate_band,
                 resume_brief=session_context.resume_brief,
+                jd_must_haves=jd_must_haves,
+                alignment_block=alignment_block,
+                variation_slot=variation_slot,
             )
         if stage_idx == 3:
             return build_stage_4_behavioral_directive(
                 band=session_context.candidate_band,
+                resume_brief=session_context.resume_brief,
+                alignment_block=alignment_block,
+                variation_slot=variation_slot,
             )
         if stage_idx == 4:
             return build_stage_5_practical_directive(
@@ -1730,6 +1742,8 @@ async def entrypoint(ctx: JobContext):
                             band=session_context.candidate_band,
                             resume_brief=session_context.resume_brief,
                             jd_must_haves=jd_must_haves,
+                            alignment_block=alignment_block,
+                            variation_slot=variation_slot,
                         )
                         chat_ctx.add_message(role="system", content=stage1_directive)
                         _stage_start_time = time.monotonic()

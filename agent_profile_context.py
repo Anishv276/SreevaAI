@@ -1,4 +1,5 @@
 from __future__ import annotations
+import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -63,11 +64,19 @@ def build_resume_brief(band: str, resume_context: "ResumeContext") -> dict:
     Used by stage directives to create band-specific opening questions.
     """
     if band == "fresher":
-        anchor = resume_context.projects[0] if resume_context.projects else (
-            resume_context.work_history[0] if resume_context.work_history else (
-                resume_context.education[0] if resume_context.education else "your background"
-            )
-        )
+        # Prefer projects and academics over "years of experience" framing.
+        if resume_context.projects:
+            anchor = resume_context.projects[0]
+            anchor_type = "project"
+        elif resume_context.education:
+            anchor = resume_context.education[0]
+            anchor_type = "education"
+        elif resume_context.work_history:
+            anchor = resume_context.work_history[0]
+            anchor_type = "internship"
+        else:
+            anchor = "your background"
+            anchor_type = "background"
         return {
             "band": "fresher",
             "education": resume_context.education[:2],
@@ -75,7 +84,7 @@ def build_resume_brief(band: str, resume_context: "ResumeContext") -> dict:
             "internships": resume_context.work_history[:2],
             "skills": resume_context.skills[:5],
             "anchor_item": anchor,
-            "anchor_type": "project" if resume_context.projects else ("internship" if resume_context.work_history else "education"),
+            "anchor_type": anchor_type,
         }
     elif band == "mid":
         anchor = resume_context.work_history[0] if resume_context.work_history else (
@@ -120,6 +129,58 @@ def build_resume_brief(band: str, resume_context: "ResumeContext") -> dict:
             "anchor_type": "initiative" if resume_context.projects else "role",
         }
 
+# ── JD ↔ resume alignment (for grounded questioning) ─────────────────────────────
+def _skill_tokens(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9][a-z0-9.+#]*", (text or "").lower()))
+
+
+def _jd_line_matches_resume_skill(jd_line: str, resume_skills: list[str]) -> bool:
+    """True if this JD line plausibly matches something on the resume skill list."""
+    if not jd_line or not resume_skills:
+        return False
+    jtokens = _skill_tokens(jd_line)
+    jd_low = jd_line.lower().strip()
+    for rs in resume_skills:
+        if not rs:
+            continue
+        rs_low = (rs or "").lower().strip()
+        rt = _skill_tokens(rs)
+        if jtokens and rt and (jtokens & rt):
+            return True
+        if len(jd_low) >= 4 and (jd_low in rs_low or rs_low in jd_low):
+            return True
+        if len(rs_low) >= 3 and rs_low in jd_low:
+            return True
+    return False
+
+
+def build_jd_resume_alignment_block(jd_must_haves: list[str], resume_skills: list[str]) -> str:
+    """
+    Compact block for stage directives: overlap vs gaps between JD must-haves and resume skills.
+    """
+    jd_list = _extract_text_items(list(jd_must_haves))[:12]
+    rs_list = _extract_text_items(list(resume_skills))[:15]
+    if not jd_list and not rs_list:
+        return ""
+    overlap = [j for j in jd_list if _jd_line_matches_resume_skill(j, rs_list)]
+    jd_gap = [j for j in jd_list if j not in overlap]
+    lines = [
+        "JD ↔ RESUME ALIGNMENT (internal — never read aloud):",
+        f"- Deepen with concrete examples (JD asks + resume shows signal): {_join_items(overlap, 5) or '—'}",
+        f"- JD asks for this but resume does not show it — ask learning appetite / how they'd close the gap: {_join_items(jd_gap, 5) or '—'}",
+        f"- Resume-listed skills to cross-check against the role: {_join_items(rs_list[:7], 7)}",
+    ]
+    return "\n".join(lines) + "\n\n"
+
+
+def interview_variation_slot(session_key: str, modulo: int = 8) -> int:
+    """Stable per-session slot so question templates rotate across interviews."""
+    if not session_key:
+        return 0
+    digest = hashlib.md5(session_key.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % max(modulo, 1)
+
+
 # ── JD brief extraction ────────────────────────────────────────────────────────
 def _extract_jd_must_haves(jd_data: dict[str, Any], jd_text: str) -> list[str]:
     must_have_entries = _as_list(_deep_get(jd_data, "skills.must_have"))
@@ -142,13 +203,24 @@ def _extract_jd_must_haves(jd_data: dict[str, Any], jd_text: str) -> list[str]:
         requirements = _extract_text_items(_deep_get(jd_data, "requirements"))
         capabilities.extend(requirements)
     if not capabilities and jd_text:
-        for line in re.split(r"[\n•\-]+", jd_text):
-            text = _compact_text(line)
-            if text:
-                capabilities.append(text)
-            if len(capabilities) >= 5:
-                break
-    return _extract_text_items(capabilities)[:5]
+        skills_line = re.search(
+            r"(?im)^\s*skills?\s*:\s*(.+?)(?:\n\s*[A-Za-z][A-Za-z\s]*\s*:|$)",
+            jd_text,
+        )
+        if skills_line:
+            raw = skills_line.group(1).replace("\n", " ")
+            for part in re.split(r"[,;|•]|(?:\s{2,})", raw):
+                text = _compact_text(part)
+                if text:
+                    capabilities.append(text)
+        if not capabilities:
+            for line in re.split(r"[\n•\-]+", jd_text):
+                text = _compact_text(line)
+                if text:
+                    capabilities.append(text)
+                if len(capabilities) >= 5:
+                    break
+    return _extract_text_items(capabilities)[:8]
 
 def build_jd_summary(jd_details: Any, jd_text: str = "") -> str:
     jd_data = _coerce_jsonish(jd_details)
