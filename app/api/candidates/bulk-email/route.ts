@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { sendApplicationStatusEmail } from "@/lib/mail";
 import { getOrgBillingStatus } from "@/lib/credits";
-import { getInterviewActionBlockedMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
+import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { invitationDeliveryQueue } from "@/lib/queue";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
 
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
             getOrgBillingStatus(orgId),
         ]);
 
-        const isSuspended = String(org?.status || "").toUpperCase() === "SUSPENDED" || String(org?.status || "").toUpperCase() === "CLOSED";
+        const isSuspended = isOrgRestrictedStatus(org?.status);
         const quotaLocked = isInterviewQuotaLocked(billing);
         if (isSuspended || quotaLocked) {
             return NextResponse.json(

@@ -6,7 +6,7 @@ import { getSession, isAdminRole } from "@/lib/auth";
 import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { getOrgBillingStatus } from "@/lib/credits";
-import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
+import { getInterviewQuotaSupportMessage, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -45,7 +45,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 where: { id: session.orgId },
                 select: { status: true }
             });
-            if (org?.status === "SUSPENDED" || org?.status === "CLOSED") {
+            if (isOrgRestrictedStatus(org?.status)) {
                 return NextResponse.json({ error: "Interview links are blocked because your organization is restricted." }, { status: 403 });
             }
 

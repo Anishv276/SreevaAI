@@ -7,7 +7,7 @@ import { deleteUrlTargets } from "@/lib/delete-utils";
 import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
-import { syncOrgStatusWithInterviewQuota } from "@/lib/credits";
+import { ORG_STATUS_CONTROL_MANUAL, ORG_STATUS_CONTROL_QUOTA, getEffectiveOrgStatus, normalizeOrgStatusControl, syncOrgStatusWithInterviewQuota } from "@/lib/credits";
 import { normalizeOrgLimitInput } from "@/lib/org-limits";
 
 // GET /api/super-admin/orgs/[id] - fetch org for editing
@@ -47,9 +47,11 @@ export async function GET(
         if (!org) {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
+        const effectiveStatus = await getEffectiveOrgStatus(id);
 
         return NextResponse.json({
             ...org,
+            status: String(effectiveStatus || org.status || "ACTIVE").toUpperCase(),
             interviewQuotaTotal: billingRows[0]?.interviewQuotaTotal ?? 0,
             interviewQuotaUsed: billingRows[0]?.interviewQuotaUsed ?? 0,
             creditsUsed: billingRows[0]?.creditsUsed ?? 0,
@@ -72,7 +74,8 @@ export async function PATCH(
         }
 
         const { id } = await params;
-        const body = await request.json();
+        const rawBody = await request.text();
+        const body = rawBody.trim() ? JSON.parse(rawBody) : {};
         const {
             name, plan, status, logoUrl, slug, location, maxActiveDrives,
             proctoringSignals,
@@ -90,14 +93,13 @@ export async function PATCH(
             interviewQuotaTotal !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTotal) || 0)) : undefined;
         const shouldApplyInterviewQuotaTopUp =
             parsedInterviewQuotaTopUp !== undefined && parsedInterviewQuotaTopUp > 0;
-        const shouldUpdateInterviewQuotaTotal =
-            parsedInterviewQuotaTotal !== undefined &&
-            !isNaN(parsedInterviewQuotaTotal) &&
-            parsedInterviewQuotaTotal >= 0;
 
-        const existingOrg = await prisma.organization.findUnique({
+        const existingOrg = await (prisma.organization as any).findUnique({
             where: { id },
             select: {
+                status: true,
+                interviewQuotaTotal: true,
+                interviewQuotaUsed: true,
                 plan: true,
                 ttsProvider: true,
                 cartesiaModel: true,
@@ -119,6 +121,24 @@ export async function PATCH(
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
 
+        const statusControlRows = await prisma.$queryRaw<Array<{ statusControl: string | null }>>(
+            Prisma.sql`
+                SELECT "statusControl"
+                FROM "Organization"
+                WHERE id = ${id}
+                LIMIT 1
+            `
+        );
+        const currentStatusControl = normalizeOrgStatusControl(statusControlRows[0]?.statusControl);
+
+        const directStatus = status !== undefined ? String(status || "").trim().toUpperCase() : undefined;
+        const nextStatusControl =
+            directStatus === "SUSPENDED"
+                ? ORG_STATUS_CONTROL_MANUAL
+                : directStatus === "ACTIVE"
+                    ? ORG_STATUS_CONTROL_QUOTA
+                    : undefined;
+
         // -- INPUT VALIDATION --------------------------------
         if (plan && !isOrgPlan(plan)) {
             return NextResponse.json({ error: "Invalid organization plan" }, { status: 400 });
@@ -130,6 +150,54 @@ export async function PATCH(
             if (typeof usageMetrics !== "object" && typeof usageMetrics !== "string") {
                 return NextResponse.json({ error: "usageMetrics must be an object or JSON string" }, { status: 400 });
             }
+        }
+        const currentInterviewQuotaTotal = Math.max(0, Math.round(Number(existingOrg.interviewQuotaTotal || 0)));
+        const shouldUpdateInterviewQuotaTotal =
+            parsedInterviewQuotaTotal !== undefined &&
+            !isNaN(parsedInterviewQuotaTotal) &&
+            parsedInterviewQuotaTotal >= 0 &&
+            parsedInterviewQuotaTotal !== currentInterviewQuotaTotal;
+        const statusOnlyFieldsPresent =
+            status !== undefined &&
+            name === undefined &&
+            plan === undefined &&
+            logoUrl === undefined &&
+            slug === undefined &&
+            location === undefined &&
+            maxActiveDrives === undefined &&
+            proctoringSignals === undefined &&
+            adminName === undefined &&
+            adminEmail === undefined &&
+            ttsProvider === undefined &&
+            cartesiaVoiceId === undefined &&
+            cartesiaModel === undefined &&
+            sarvamModel === undefined &&
+            sarvamVoice === undefined &&
+            googleModel === undefined &&
+            googleVoiceName === undefined &&
+            sttProvider === undefined &&
+            deepgramModel === undefined &&
+            sarvamSttModel === undefined &&
+            llmProvider === undefined &&
+            llmModel === undefined &&
+            llmTemperature === undefined &&
+            interviewQuotaTopUp === undefined;
+        const shouldSyncQuotaStatus = shouldUpdateInterviewQuotaTotal || shouldApplyInterviewQuotaTopUp;
+
+        if (statusOnlyFieldsPresent && !shouldSyncQuotaStatus) {
+            await prisma.$executeRaw(
+                Prisma.sql`
+                    UPDATE "Organization"
+                    SET "status" = ${directStatus},
+                        "statusControl" = ${nextStatusControl ?? currentStatusControl}
+                    WHERE id = ${id}
+                `
+            );
+            return NextResponse.json({
+                ...(existingOrg as any),
+                status: directStatus,
+                statusControl: nextStatusControl ?? currentStatusControl,
+            });
         }
         const normalizedPlan = plan !== undefined ? (normalizeOrgPlan(plan) || DEFAULT_ORG_PLAN) : null;
 
@@ -143,7 +211,9 @@ export async function PATCH(
         if (proctoringSignals !== undefined) {
             updateData.proctoringSignals = normalizeProctoringSignals(proctoringSignals);
         }
-        if (status !== undefined) updateData.status = status;
+        if (status !== undefined) {
+            updateData.status = directStatus;
+        }
         if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
         if (slug !== undefined) updateData.slug = slug;
         if (location !== undefined) updateData.location = location;
@@ -224,10 +294,20 @@ export async function PATCH(
         // -- TRANSACTION: Update Org & Admin ------------------
         const updated = await prisma.$transaction(async (tx) => {
             // 1. Update Org
-            const org = await tx.organization.update({
+            const org = await (tx.organization as any).update({
                 where: { id },
                 data: updateData,
             });
+
+            if (status !== undefined) {
+                await tx.$executeRaw(
+                    Prisma.sql`
+                        UPDATE "Organization"
+                        SET "statusControl" = ${nextStatusControl ?? currentStatusControl}
+                        WHERE id = ${id}
+                    `
+                );
+            }
 
             // 2. Clear stale Google overrides on all drives under this org
             if (shouldClearDriveGoogleFields) {
@@ -292,11 +372,15 @@ export async function PATCH(
             };
         });
 
-        if (shouldUpdateInterviewQuotaTotal || shouldApplyInterviewQuotaTopUp) {
+        if (shouldSyncQuotaStatus || directStatus === "ACTIVE") {
             const syncedStatus = await syncOrgStatusWithInterviewQuota(id);
             if (syncedStatus) {
-                updated.status = syncedStatus;
+                updated.status = String(syncedStatus).toUpperCase();
             }
+            updated.statusControl =
+                directStatus === "ACTIVE"
+                    ? ORG_STATUS_CONTROL_QUOTA
+                    : nextStatusControl ?? currentStatusControl;
         }
 
         return NextResponse.json(updated);

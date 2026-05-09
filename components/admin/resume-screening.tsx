@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
-import { INTERVIEW_SUPPORT_EMAIL, isInterviewQuotaLocked, getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
+import { INTERVIEW_SUPPORT_EMAIL, getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 // ── Types ────────────────────────────────────────────────────────────────────
 interface ResumeCandidate {
     id: string;
@@ -45,6 +45,7 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
     const [batches, setBatches] = useState<ResumeBatch[]>([]);
     const [loadingData, setLoadingData] = useState(true);
     const [quotaLocked, setQuotaLocked] = useState(false);
+    const [orgStatus, setOrgStatus] = useState<string>("ACTIVE");
     const refresh = useCallback(async () => {
         try {
             const res = await fetch(`/api/drives/${driveId}/resume-screening`);
@@ -75,6 +76,25 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
             cancelled = true;
         };
     }, []);
+    useEffect(() => {
+        let cancelled = false;
+        const loadOrgStatus = async () => {
+            try {
+                const res = await fetch("/api/admin/organization", { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setOrgStatus(String(data.status || "ACTIVE"));
+            } catch {
+                // ignore
+            }
+        };
+        loadOrgStatus();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+    const isSuspended = isOrgRestrictedStatus(orgStatus);
+    const interviewAccessLocked = quotaLocked || isSuspended;
     return (
         <div className="space-y-6">
             {/* Header row */}
@@ -96,11 +116,11 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
                             </Button>
                         </Link>
                     )}
-                    {quotaLocked ? (
+                    {interviewAccessLocked ? (
                         <Button
                             disabled
                             className="h-10 px-5 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 font-bold flex items-center gap-2 shadow-sm cursor-not-allowed"
-                            title={getInterviewQuotaSupportMessage("interviews")}
+                            title={getInterviewActionBlockedMessage(isSuspended)}
                         >
                             <Lock className="h-4 w-4" />
                             Upload Locked
@@ -127,10 +147,10 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
                 <EmptyState onUpload={() => setModalOpen(true)} />
             ) : null}
             {/* Upload + progress modal */}
-            {quotaLocked ? (
+            {interviewAccessLocked ? (
                 <div className="rounded-3xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-950 shadow-sm">
                     <div className="font-black uppercase tracking-[0.2em] text-amber-700">Upload locked</div>
-                    <p className="mt-2 font-medium text-amber-900">{getInterviewQuotaSupportMessage("interviews")}</p>
+                    <p className="mt-2 font-medium text-amber-900">{getInterviewActionBlockedMessage(isSuspended)}</p>
                     <div className="mt-4 flex flex-wrap gap-3">
                         <Link href="/admin/billing" className="rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-bold text-white">
                             Go to Billing

@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/context/auth-context";
 import { motion, AnimatePresence } from "framer-motion";
-import { isInterviewQuotaLocked } from "@/lib/interview-quota";
+import { isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 
 interface NavItem {
     icon: any;
@@ -50,6 +50,7 @@ export function Sidebar() {
     const [mounted, setMounted] = useState(false);
     const [orgInfo, setOrgInfo] = useState<{ name: string; logoUrl: string | null } | null>(null);
     const [quotaLocked, setQuotaLocked] = useState(false);
+    const [orgStatus, setOrgStatus] = useState("ACTIVE");
     const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
     useEffect(() => {
@@ -61,6 +62,7 @@ export function Sidebar() {
                     if (res.ok) {
                         const data = await res.json();
                         setOrgInfo({ name: data.name, logoUrl: data.logoUrl });
+                        setOrgStatus(String(data.status || "ACTIVE").toUpperCase());
                         return;
                     }
                 }
@@ -68,6 +70,7 @@ export function Sidebar() {
                 if (res.ok) {
                     const data = await res.json();
                     setOrgInfo({ name: data.name, logoUrl: data.logoUrl });
+                    setOrgStatus(String(data.status || "ACTIVE").toUpperCase());
                 }
                 const billingRes = await fetch(
                     isSuperAdmin && orgId ? `/api/admin/credits?orgId=${encodeURIComponent(orgId)}` : "/api/admin/credits"
@@ -84,6 +87,7 @@ export function Sidebar() {
     }, [user, orgId, isSuperAdmin]);
 
     const modalRef = useRef<HTMLDivElement>(null);
+    const isSuspended = isOrgRestrictedStatus(orgStatus);
 
     useEffect(() => {
         if (!showLogoutConfirm) return;
@@ -240,7 +244,7 @@ export function Sidebar() {
                     {NAV_GROUPS.map((group, gIdx) => (
                         <div key={gIdx} className="space-y-1">
                             {group.items.map((item) => {
-                                if (quotaLocked && item.href === "/admin/create-drive") {
+                                if ((quotaLocked || isSuspended) && item.href === "/admin/create-drive") {
                                     return null;
                                 }
                                 const isActive = pathname === item.href;

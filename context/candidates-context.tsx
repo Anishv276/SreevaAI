@@ -122,7 +122,9 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const orgIdFromUrl = searchParams.get("orgId");
-    const isCandidatesRoute = pathname.startsWith("/admin") || pathname.startsWith("/super-admin");
+    const isCandidatesRoute =
+        pathname.startsWith("/admin/candidates") ||
+        /^\/super-admin\/orgs\/[^/]+\/(candidates|view)$/.test(pathname);
 
     const eventSourceRef = useRef<EventSource | null>(null);
     const paginationRef = useRef<Pagination>(pagination);
@@ -406,7 +408,10 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         eventSource.onmessage = (event: MessageEvent<string>) => {
             try {
                 const data = JSON.parse(event.data);
-                if (data.type === "NEW_APPLICATIONS" || data.type === "UPDATED_APPLICATIONS") {
+                if (
+                    hasFetchedAdminDataRef.current &&
+                    (data.type === "NEW_APPLICATIONS" || data.type === "UPDATED_APPLICATIONS")
+                ) {
                     // Debounced, non-blocking refresh
                     scheduleStreamRefresh();
                 }
@@ -421,7 +426,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
 
         // Refresh immediately when user switches back to this tab
         const handleVisibility = () => {
-            if (document.visibilityState === "visible") {
+            if (document.visibilityState === "visible" && hasFetchedAdminDataRef.current) {
                 scheduleStreamRefresh();
             }
         };

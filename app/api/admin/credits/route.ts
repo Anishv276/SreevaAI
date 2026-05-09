@@ -3,6 +3,25 @@ import { getSession, isAdminRole } from "@/lib/auth";
 import { isSuperAdminRole } from "@/lib/auth";
 import { getOrgBillingStatus } from "@/lib/credits";
 
+function getRequestedOrgId(request: Request) {
+    const url = new URL(request.url);
+    const explicitOrgId = url.searchParams.get("orgId")?.trim() || "";
+    if (explicitOrgId) {
+        return explicitOrgId;
+    }
+
+    const referer = request.headers.get("referer") || "";
+    if (!referer) {
+        return "";
+    }
+
+    try {
+        return new URL(referer).searchParams.get("orgId")?.trim() || "";
+    } catch {
+        return "";
+    }
+}
+
 export async function GET(request: Request) {
     try {
         const session = await getSession();
@@ -11,7 +30,7 @@ export async function GET(request: Request) {
         }
 
         const { searchParams } = new URL(request.url);
-        const requestedOrgId = searchParams.get("orgId")?.trim() || null;
+        const requestedOrgId = searchParams.get("orgId")?.trim() || getRequestedOrgId(request) || null;
         const orgId = isSuperAdminRole(session.role) ? (requestedOrgId || session.orgId) : session.orgId;
         if (!orgId) {
             return NextResponse.json({ error: "Organization required" }, { status: 400 });

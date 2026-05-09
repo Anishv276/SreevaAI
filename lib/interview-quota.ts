@@ -16,6 +16,11 @@ export function getInterviewActionBlockedMessage(isSuspended?: boolean) {
   return isSuspended ? INTERVIEW_SUSPENDED_MESSAGE : getInterviewQuotaSupportMessage("interviews");
 }
 
+export function isOrgRestrictedStatus(status?: string | null) {
+  const normalized = String(status || "").trim().toUpperCase();
+  return normalized === "SUSPENDED" || normalized === "CLOSED";
+}
+
 export function isInterviewQuotaLocked(status?: {
   interviewQuotaTotal?: number | null;
   hasSufficientInterviews?: boolean | null;

@@ -6,11 +6,12 @@ import { cn } from "@/lib/utils";
 import { OnboardingRedirect } from "@/components/admin/onboarding-redirect";
 import { RecruiterAssistant } from "@/components/admin/RecruiterAssistant";
 import { Toaster } from "@/components/ui/toast-custom";
-import { AccountStatusHandler } from "@/components/admin/AccountStatusHandler";
+import { AdminStatusGate } from "@/components/admin/AdminStatusGate";
 import { LowCreditsBanner } from "../../components/admin/LowCreditsBanner";
 import { prisma } from "@/lib/prisma";
-import { syncOrgStatusWithInterviewQuota } from "@/lib/credits";
 import { canUseRecruiterAssistant } from "@/lib/org-plans";
+import { getEffectiveOrgStatus } from "@/lib/credits";
+import { AdminOrgProvider } from "@/context/admin-org-context";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
     const session = await getSession();
@@ -35,11 +36,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             });
 
             if (org) {
-                orgData = org;
-                const syncedStatus = await syncOrgStatusWithInterviewQuota(session.orgId);
-                if (syncedStatus) {
-                    orgData.status = syncedStatus as typeof orgData.status;
-                }
+                const effectiveStatus = await getEffectiveOrgStatus(session.orgId);
+                orgData = {
+                    ...org,
+                    status: String(effectiveStatus || org.status || "ACTIVE").toUpperCase(),
+                };
             }
         } catch (error) {
             console.error("[admin/layout] Failed to load org state:", error);
@@ -60,7 +61,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
     return (
         <>
-        <AccountStatusHandler status={orgData.status} />
+        <AdminOrgProvider status={orgData.status} orgId={session.orgId}>
+        <AdminStatusGate initialStatus={orgData.status}>
         <div className="flex min-h-screen bg-[#F8F9FB] relative font-sans">
             {/*  Background Deck: Aurora Blobs  */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
@@ -95,7 +97,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                         body.reports-mode .recruiter-assistant-btn { display: none !important; }
                     ` }} />
                     <main className="min-h-screen">
-                        {orgData.status === "ACTIVE" && <LowCreditsBanner />}
+                        <LowCreditsBanner orgStatus={orgData.status} />
                         <div className="max-w-full mx-auto px-4 pb-4 pt-4 md:px-8 md:pb-8 lg:px-10 lg:pb-10">
                             {children}
                         </div>
@@ -106,6 +108,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             {/* Premium AI Assistant */}
             {showRecruiterAssistant && <RecruiterAssistant />}
         </div>
+        </AdminStatusGate>
+        </AdminOrgProvider>
         <Toaster />
         </>
     );

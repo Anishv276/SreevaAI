@@ -10,6 +10,7 @@ import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 import { normalizeOrgLimitInput } from "@/lib/org-limits";
+import { normalizeOrgStatusControl, ORG_STATUS_CONTROL_MANUAL } from "@/lib/credits";
 
 // GET /api/super-admin/orgs - list organizations with stats, pagination, and search
 export async function GET(request: Request) {
@@ -217,8 +218,25 @@ export async function GET(request: Request) {
             }
         };
 
+        const toEffectiveStatus = (org: Record<string, any>) => {
+            const status = String(org.status || "ACTIVE").toUpperCase();
+            const statusControl = normalizeOrgStatusControl(org.statusControl);
+            if (statusControl === ORG_STATUS_CONTROL_MANUAL) {
+                return "SUSPENDED";
+            }
+            const total = Math.max(0, Number(org.interviewQuotaTotal || 0));
+            const used = Math.max(0, Number(org.interviewQuotaUsed || 0));
+            const remaining = Math.max(0, total - used);
+            if (total > 0 && remaining <= 0) return "SUSPENDED";
+            if (total > 0 && remaining > 0) return "ACTIVE";
+            return status;
+        };
+
         return NextResponse.json({
-            orgs,
+            orgs: orgs.map((org: any) => ({
+                ...org,
+                status: toEffectiveStatus(org),
+            })),
             pagination: { total, page, limit, totalPages },
             stats,
         });

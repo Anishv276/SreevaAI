@@ -7,6 +7,7 @@ import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
 import { safeJsonParse } from "@/lib/utils";
 import { getSession } from "@/lib/auth";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
+import { isOrgRestrictedStatus } from "@/lib/interview-quota";
 
 export const dynamic = "force-dynamic";
 
@@ -79,7 +80,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
         }
 
-        if ((drive as any).organization && (drive as any).organization.status !== "ACTIVE") {
+        if ((drive as any).organization && isOrgRestrictedStatus((drive as any).organization.status)) {
             return NextResponse.json({ error: "This organization is currently suspended. Access is restricted." }, { status: 403 });
         }
 

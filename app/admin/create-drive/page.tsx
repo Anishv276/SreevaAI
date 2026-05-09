@@ -11,7 +11,7 @@ import { FinalPreview } from "@/components/create-drive/final-preview";
 import { InterviewSetup } from "@/components/create-drive/interview-setup";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
-import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked } from "@/lib/interview-quota";
+import { getInterviewActionBlockedMessage, getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { canUseMultilingual } from "@/lib/org-plans";
 import { formatSalaryValue, splitSalaryValue } from "@/lib/salary-format";
 import {
@@ -36,6 +36,7 @@ import {
   Loader2,
   Lock,
 } from "lucide-react";
+import { useAdminOrg } from "@/context/admin-org-context";
 const STEPS = ["Basic Info", "Job Description", "Interview", "Preview"];
 // const CANDIDATE_LINK = "sreevaai.com/careers/jobs/backend-engineer-2024";
 // Per-step validation messages shown when fields appear incomplete
@@ -100,6 +101,8 @@ function CreateDriveForm() {
   const [syncedFromAi, setSyncedFromAi] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [quotaLocked, setQuotaLocked] = useState(false);
+  const adminOrg = useAdminOrg();
+  const [orgStatus, setOrgStatus] = useState<string>(() => String(adminOrg?.status || "ACTIVE").toUpperCase());
   const formRef = useRef<HTMLDivElement>(null);
   const analysisAbortRef = useRef<AbortController | null>(null);
   const hasInitialLoadedRef = useRef<string | null>(null);
@@ -108,8 +111,11 @@ function CreateDriveForm() {
     organization?.activeDriveCount ?? getActiveDriveCount(jobs);
   const maxActiveDrives = organization?.maxActiveDrives;
   const allowLanguageSelection = canUseMultilingual(organization?.plan);
+  const isSuspended = isOrgRestrictedStatus(orgStatus);
+  const interviewAccessLocked = quotaLocked || isSuspended;
+  const billingLocked = isDriveCreationLocked(maxActiveDrives, activeDriveCount);
   const driveCreationLocked =
-    !isEditMode && (isDriveCreationLocked(maxActiveDrives, activeDriveCount) || quotaLocked);
+    !isEditMode && (billingLocked || interviewAccessLocked);
   // Keep ref in sync with state for use in async handlers
   useEffect(() => {
     formDataRef.current = formData;
@@ -128,6 +134,26 @@ function CreateDriveForm() {
       }
     };
     loadQuota();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditMode]);
+  useEffect(() => {
+    if (isEditMode) return;
+    let cancelled = false;
+    const loadOrgStatus = async () => {
+      try {
+        const res = await fetch("/api/admin/organization", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) {
+          setOrgStatus(String(data.status || "ACTIVE"));
+        }
+      } catch {
+        // ignore
+      }
+    };
+    loadOrgStatus();
     return () => {
       cancelled = true;
     };
@@ -625,7 +651,7 @@ function CreateDriveForm() {
       return;
     }
     if (driveCreationLocked && !isEditMode) {
-      toast.error(quotaLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached. Go to Billing to upgrade your plan.");
+      toast.error(interviewAccessLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached. Go to Billing to upgrade your plan.");
       return;
     }
     if (!isStepValid(currentStep)) {
@@ -643,7 +669,7 @@ function CreateDriveForm() {
   const handleStepClick = async (index: number) => {
     if (isSavingDraft) return;
     if (driveCreationLocked && !isEditMode) {
-      toast.error(quotaLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached. Go to Billing to upgrade your plan.");
+      toast.error(interviewAccessLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached. Go to Billing to upgrade your plan.");
       return;
     }
     // In edit mode or if the step was previously reached/completed, just jump
@@ -669,7 +695,7 @@ function CreateDriveForm() {
   const handlePublish = async () => {
     const currentFormData = formDataRef.current;
     if (driveCreationLocked && !isEditMode) {
-      toast.error(quotaLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached. Go to Billing to upgrade your plan.");
+      toast.error(interviewAccessLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached. Go to Billing to upgrade your plan.");
       return;
     }
     setIsSavingDraft(true);
@@ -971,23 +997,25 @@ function CreateDriveForm() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#F97316]">
-                    {quotaLocked ? "Interview quota locked" : "Drive limit reached"}
+                    {interviewAccessLocked ? (isSuspended ? "Account suspended" : "Interview quota locked") : "Drive limit reached"}
                   </p>
                   <h2 className="text-lg font-bold text-gray-900">
-                    {quotaLocked ? "Contact support@sreevaai.com for further interviews" : "Go to Billing to upgrade your plan"}
+                    {interviewAccessLocked ? getInterviewQuotaSupportMessage("interviews") : "Go to Billing to upgrade your plan"}
                   </h2>
                   <p className="text-sm font-medium text-gray-600">
-                    {quotaLocked
-                      ? getInterviewQuotaSupportMessage("interviews")
+                    {interviewAccessLocked
+                      ? getInterviewActionBlockedMessage(isSuspended)
                       : `Your plan allows ${formatDriveLimit(maxActiveDrives)} active drives and you currently have ${activeDriveCount} active drives.`}
                   </p>
                 </div>
               </div>
-              {quotaLocked ? (
+              {interviewAccessLocked ? (
                 <a
                   href={getSupportComposeUrl({
                     subject: "Interview quota support request",
-                    body: "Hi support team,\n\nPlease help us restore interview access for our account.\n",
+                    body: isSuspended
+                      ? "Hi support team,\n\nOur account is suspended by Super Admin. Please help us restore access.\n"
+                      : "Hi support team,\n\nPlease help us restore interview access for our account.\n",
                   })}
                   target="_blank"
                   rel="noreferrer"
@@ -1092,11 +1120,13 @@ function CreateDriveForm() {
           {currentStep === STEPS.length - 1 ? (
             <div className="flex gap-3">
               {driveCreationLocked && !isEditMode ? (
-            quotaLocked ? (
+            interviewAccessLocked ? (
               <a
                 href={getSupportComposeUrl({
                   subject: "Interview quota support request",
-                  body: "Hi support team,\n\nPlease help us restore interview access for our account.\n",
+                  body: isSuspended
+                    ? "Hi support team,\n\nOur account is suspended by Super Admin. Please help us restore access.\n"
+                    : "Hi support team,\n\nPlease help us restore interview access for our account.\n",
                 })}
                 target="_blank"
                 rel="noreferrer"
@@ -1140,11 +1170,13 @@ function CreateDriveForm() {
               )}
             </div>
           ) : driveCreationLocked && !isEditMode ? (
-            quotaLocked ? (
+            interviewAccessLocked ? (
               <a
                 href={getSupportComposeUrl({
                   subject: "Interview quota support request",
-                  body: "Hi support team,\n\nPlease help us restore interview access for our account.\n",
+                  body: isSuspended
+                    ? "Hi support team,\n\nOur account is suspended by Super Admin. Please help us restore access.\n"
+                    : "Hi support team,\n\nPlease help us restore interview access for our account.\n",
                 })}
                 target="_blank"
                 rel="noreferrer"

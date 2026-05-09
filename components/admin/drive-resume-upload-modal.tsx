@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
 import { AlertCircle, CheckCircle2, FileText, Loader2, Mail, Upload, X, XCircle, Lock } from "lucide-react";
-import { getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
+import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 
 type UploadPhase = "idle" | "uploading" | "processing" | "summary" | "failed";
 
@@ -39,6 +39,7 @@ export function DriveResumeUploadModal({
     const [sendingFollowUp, setSendingFollowUp] = useState(false);
     const [displayPct, setDisplayPct] = useState(0);
     const [quotaLocked, setQuotaLocked] = useState(false);
+    const [orgStatus, setOrgStatus] = useState<string>("ACTIVE");
     const inputRef = useRef<HTMLInputElement>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const pctAnimRef = useRef<number | null>(null);
@@ -165,10 +166,29 @@ export function DriveResumeUploadModal({
             cancelled = true;
         };
     }, []);
+    useEffect(() => {
+        let cancelled = false;
+        const loadOrgStatus = async () => {
+            try {
+                const res = await fetch("/api/admin/organization", { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setOrgStatus(String(data.status || "ACTIVE"));
+            } catch {
+                // ignore
+            }
+        };
+        loadOrgStatus();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+    const isSuspended = isOrgRestrictedStatus(orgStatus);
+    const accessLocked = quotaLocked || isSuspended;
 
     const startUpload = async () => {
-        if (quotaLocked) {
-            toast.error(getInterviewQuotaSupportMessage("interviews"));
+        if (accessLocked) {
+            toast.error(getInterviewActionBlockedMessage(isSuspended));
             return;
         }
         if (!files.length) {
@@ -393,12 +413,12 @@ export function DriveResumeUploadModal({
                             )}
                     </div>
 
-                    {quotaLocked && (
+                    {accessLocked && (
                         <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
                             <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
                             <div className="space-y-1">
                                 <p className="font-bold">Resume upload locked</p>
-                                <p className="font-medium">{getInterviewQuotaSupportMessage("interviews")}</p>
+                                <p className="font-medium">{getInterviewActionBlockedMessage(isSuspended)}</p>
                             </div>
                         </div>
                     )}
@@ -422,7 +442,7 @@ export function DriveResumeUploadModal({
                             <Button
                                 type="button"
                                 onClick={startUpload}
-                                disabled={!files.length || phase === "uploading" || quotaLocked}
+                                disabled={!files.length || phase === "uploading" || accessLocked}
                                 className="h-11 rounded-2xl bg-orange-600 px-5 font-bold text-white hover:bg-orange-700"
                             >
                                 {phase === "uploading" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

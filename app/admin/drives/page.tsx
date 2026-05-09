@@ -37,8 +37,9 @@ import { useJobs } from "@/context/jobs-context";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
-import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked } from "@/lib/interview-quota";
+import { getSupportComposeUrl, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import Link from "next/link";
+import { useAdminOrg } from "@/context/admin-org-context";
 
 export default function DrivesPage() {
     const router = useRouter();
@@ -47,7 +48,8 @@ export default function DrivesPage() {
     const { jobs, pagination, deleteJob, fetchJobs, organization } = useJobs();
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
-    const [orgStatus, setOrgStatus] = useState<string>("ACTIVE");
+    const adminOrg = useAdminOrg();
+    const [orgStatus, setOrgStatus] = useState<string>(() => String(adminOrg?.status || "ACTIVE").toUpperCase());
     const [typeFilter, setTypeFilter] = useState("all");
     const [timeline, setTimeline] = useState<DateRange>({ type: "month" });
 
@@ -62,7 +64,7 @@ export default function DrivesPage() {
                 const res = await fetch("/api/admin/organization");
                 if (res.ok) {
                     const data = await res.json();
-                    setOrgStatus(data.status || "ACTIVE");
+                    setOrgStatus(String(data.status || "ACTIVE").toUpperCase());
                 }
                 const billingRes = await fetch("/api/admin/credits");
                 if (billingRes.ok) {
@@ -129,9 +131,10 @@ export default function DrivesPage() {
         }
     };
 
-    const isSuspended = orgStatus === "SUSPENDED" || orgStatus === "CLOSED";
+    const isSuspended = isOrgRestrictedStatus(orgStatus);
     const activeDriveCount = organization?.activeDriveCount ?? getActiveDriveCount(jobs);
-    const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount) || quotaLocked;
+    const interviewAccessLocked = quotaLocked || isSuspended;
+    const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount) || interviewAccessLocked;
 
     const confirmDelete = async () => {
         if (!driveToDelete) return;
@@ -164,22 +167,19 @@ export default function DrivesPage() {
                 </div>
 
                 <div className="flex items-center gap-3 flex-wrap">
-                    {isSuspended ? (
-                        <Button disabled className="bg-gray-100/50 border border-gray-200 text-gray-400 h-12 px-6 font-bold rounded-2xl cursor-not-allowed opacity-70">
-                            <Lock className="h-4 w-4 mr-2" />
-                            New Job
-                        </Button>
-                    ) : driveCreationLocked ? (
+                    {driveCreationLocked ? (
                         <div className="flex items-center gap-3">
                             <button disabled className="bg-gray-100 text-gray-400 border border-gray-200 h-12 px-6 font-bold rounded-2xl cursor-not-allowed opacity-70 flex items-center gap-2">
                                 <Lock className="h-4 w-4" />
-                                {quotaLocked ? "Job Locked" : "New Job"}
+                                {interviewAccessLocked ? "Job Locked" : "New Job"}
                             </button>
-                            {quotaLocked ? (
+                            {interviewAccessLocked ? (
                                 <a
                                     href={getSupportComposeUrl({
                                         subject: "Interview quota support request",
-                                        body: "Hi support team,\n\nPlease help us restore interview access for our account.\n",
+                                        body: isSuspended
+                                            ? "Hi support team,\n\nOur account is suspended by Super Admin. Please help us restore access.\n"
+                                            : "Hi support team,\n\nPlease help us restore interview access for our account.\n",
                                     })}
                                     target="_blank"
                                     rel="noreferrer"
@@ -253,13 +253,15 @@ export default function DrivesPage() {
                                 <div className="flex flex-col items-center gap-3">
                                     <Button disabled className="bg-gray-100 text-gray-400 transition-all duration-300 h-14 px-10 font-bold rounded-2xl border border-gray-200 cursor-not-allowed gap-3">
                                         <Lock className="h-5 w-5" />
-                                        {quotaLocked ? "Job Locked" : "Create Locked"}
+                                        {interviewAccessLocked ? "Job Locked" : "Create Locked"}
                                     </Button>
-                                    {quotaLocked ? (
+                                    {interviewAccessLocked ? (
                                         <a
                                             href={getSupportComposeUrl({
                                                 subject: "Interview quota support request",
-                                                body: "Hi support team,\n\nPlease help us restore interview access for our account.\n",
+                                                body: isSuspended
+                                                    ? "Hi support team,\n\nOur account is suspended by Super Admin. Please help us restore access.\n"
+                                                    : "Hi support team,\n\nPlease help us restore interview access for our account.\n",
                                             })}
                                             target="_blank"
                                             rel="noreferrer"

@@ -1,20 +1,47 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession, isAdminRole } from "@/lib/auth";
+import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
+import { getEffectiveOrgStatus } from "@/lib/credits";
 
-export async function GET() {
+function getRequestedOrgId(request: Request) {
+    const url = new URL(request.url);
+    const explicitOrgId = url.searchParams.get("orgId")?.trim() || "";
+    if (explicitOrgId) {
+        return explicitOrgId;
+    }
+
+    const referer = request.headers.get("referer") || "";
+    if (!referer) {
+        return "";
+    }
+
+    try {
+        return new URL(referer).searchParams.get("orgId")?.trim() || "";
+    } catch {
+        return "";
+    }
+}
+
+export async function GET(request: Request) {
     try {
         const session = await getSession();
-        if (!session?.orgId) {
+        if (!session?.orgId && !getRequestedOrgId(request)) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        const requestedOrgId = getRequestedOrgId(request);
+        const isSuperAdminContext = isSuperAdminRole(session?.role);
+        const orgId = isSuperAdminContext ? (requestedOrgId || session.orgId || "") : (session.orgId || "");
+        if (!orgId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
         const activeDriveCount = await prisma.drive.count({
-            where: { orgId: session.orgId }
+            where: { orgId }
         });
 
         const org = await prisma.organization.findUnique({
-            where: { id: session.orgId },
+            where: { id: orgId },
             select: {
                 name: true,
                 plan: true,
@@ -47,8 +74,11 @@ export async function GET() {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
 
+        const effectiveStatus = await getEffectiveOrgStatus(orgId);
+
         return NextResponse.json({
             ...org,
+            status: String(effectiveStatus || org.status || "ACTIVE").toUpperCase(),
             activeDriveCount,
         });
     } catch (error) {

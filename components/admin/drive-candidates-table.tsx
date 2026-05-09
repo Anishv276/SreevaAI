@@ -14,7 +14,7 @@ import { useCandidates } from "@/context/candidates-context";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
-import { getInterviewActionBlockedMessage, getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
+import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     AlertCircle,
@@ -82,7 +82,7 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
         confirmText: string;
     } | null>(null);
     const [quotaLocked, setQuotaLocked] = useState(false);
-    const isSuspended = String(organization?.status || "").toUpperCase() === "SUSPENDED" || String(organization?.status || "").toUpperCase() === "CLOSED";
+    const isSuspended = isOrgRestrictedStatus(organization?.status);
     const isInterviewActionBlocked = isSuspended || quotaLocked;
     const interviewActionBlockedMessage = getInterviewActionBlockedMessage(isSuspended);
     useEffect(() => {
@@ -493,11 +493,11 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                             <Button
                                 size="sm"
                                 onClick={handleBulkSendInterviewLink}
-                                disabled={isBulkLoading || quotaLocked}
-                                title={quotaLocked ? getInterviewQuotaSupportMessage("interviews") : undefined}
+                                disabled={isBulkLoading || isInterviewActionBlocked}
+                                title={isInterviewActionBlocked ? interviewActionBlockedMessage : undefined}
                                 className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
                             >
-                                {quotaLocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Link
+                                {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Link
                             </Button>
                         </div>
                     </div>

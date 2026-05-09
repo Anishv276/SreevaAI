@@ -1,31 +1,65 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AlertTriangle, X } from "lucide-react";
-import { INTERVIEW_SUPPORT_EMAIL, getSupportComposeUrl } from "@/lib/interview-quota";
+import { INTERVIEW_SUPPORT_EMAIL, getSupportComposeUrl, isOrgRestrictedStatus } from "@/lib/interview-quota";
 
 type BannerState = "low" | "empty" | null;
 
-export function LowCreditsBanner() {
+export function LowCreditsBanner({ orgStatus }: { orgStatus?: string }) {
     const [state, setState] = useState<BannerState>(null);
     const [interviewsRemaining, setInterviewsRemaining] = useState(0);
     const [dismissed, setDismissed] = useState(false);
+    const searchParams = useSearchParams();
+    const orgId = searchParams.get("orgId");
+    const [liveStatus, setLiveStatus] = useState<string>(String(orgStatus || "").trim().toUpperCase());
+    const isSuspended = isOrgRestrictedStatus(liveStatus || orgStatus);
 
     useEffect(() => {
-        fetch("/api/admin/credits")
-            .then(r => r.json())
-            .then(data => {
+        let cancelled = false;
+
+        const load = async () => {
+            try {
+                const orgUrl = orgId ? `/api/admin/organization?orgId=${encodeURIComponent(orgId)}` : "/api/admin/organization";
+                const orgRes = await fetch(orgUrl, { cache: "no-store" });
+                if (orgRes.ok) {
+                    const orgData = await orgRes.json();
+                    if (!cancelled && orgData?.status) {
+                        setLiveStatus(String(orgData.status).trim().toUpperCase());
+                    }
+                }
+
+                if (isSuspended) {
+                    if (!cancelled) setState("empty");
+                    return;
+                }
+
+                const creditsUrl = orgId ? `/api/admin/credits?orgId=${encodeURIComponent(orgId)}` : "/api/admin/credits";
+                const res = await fetch(creditsUrl, { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
                 const total = Number(data.interviewQuotaTotal ?? 0);
                 const remaining = Number(data.interviewQuotaRemaining ?? 0);
+                if (cancelled) return;
                 setInterviewsRemaining(remaining);
                 if (total > 0 && remaining === 0) {
                     setState("empty");
                 } else if (total > 0 && remaining > 0 && remaining <= Math.max(1, Math.ceil(total * 0.1))) {
                     setState("low");
+                } else {
+                    setState(null);
                 }
-            })
-            .catch(() => {});
-    }, []);
+            } catch {
+                // ignore
+            }
+        };
+
+        void load();
+        return () => {
+            cancelled = true;
+        };
+    }, [isSuspended, orgId]);
 
     if (!state || dismissed) return null;
 

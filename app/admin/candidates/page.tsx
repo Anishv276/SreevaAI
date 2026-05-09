@@ -34,6 +34,7 @@ import { getInterviewActionBlockedMessage, getInterviewQuotaSupportMessage, isIn
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { motion } from "framer-motion";
 import { PremiumFilter } from "@/components/admin/premium-filter";
+import { useAdminOrg } from "@/context/admin-org-context";
 //  Email Composer Modal 
 const VARIABLES = [
     { label: "{{name}}", desc: "Candidate full name" },
@@ -250,7 +251,8 @@ export default function CandidatesPage() {
     const driveIdParam = searchParams.get("driveId");
     const orgIdParam = searchParams.get("orgId");
     // Organization Status
-    const [orgStatus, setOrgStatus] = useState<string>("ACTIVE");
+    const adminOrg = useAdminOrg();
+    const [orgStatus, setOrgStatus] = useState<string>(() => String(adminOrg?.status || "ACTIVE").toUpperCase());
     const [quotaLocked, setQuotaLocked] = useState(false);
     useEffect(() => {
         const fetchOrgStatus = async () => {
@@ -258,7 +260,7 @@ export default function CandidatesPage() {
                 const res = await fetch("/api/admin/organization");
                 if (res.ok) {
                     const data = await res.json();
-                    setOrgStatus(data.status || "ACTIVE");
+                    setOrgStatus(String(data.status || "ACTIVE").toUpperCase());
                 }
                 const billingRes = await fetch("/api/admin/credits");
                 if (billingRes.ok) {
@@ -271,7 +273,8 @@ export default function CandidatesPage() {
         };
         fetchOrgStatus();
     }, []);
-    const isSuspended = orgStatus === "SUSPENDED" || orgStatus === "CLOSED";
+    const normalizedOrgStatus = String(orgStatus || "").toUpperCase();
+    const isSuspended = normalizedOrgStatus === "SUSPENDED" || normalizedOrgStatus === "CLOSED";
     const isInterviewActionBlocked = isSuspended || quotaLocked;
     const interviewActionBlockedMessage = getInterviewActionBlockedMessage(isSuspended);
     const tableIsLoading = isLoading || !isCandidatesTableReady;

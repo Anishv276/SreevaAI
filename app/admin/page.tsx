@@ -7,7 +7,7 @@ import { Plus, Lock, ArrowRight } from "lucide-react";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import { getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
-import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked } from "@/lib/interview-quota";
+import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { StatsGrid } from "@/components/admin/stats-grid";
@@ -16,20 +16,29 @@ import { ScoreDistribution } from "@/components/admin/score-distribution";
 import { ActiveDrivesSummary } from "@/components/admin/active-drives-summary";
 import { TopCandidates } from "@/components/admin/top-candidates";
 import { LiveFeed } from "@/components/admin/live-feed";
+import { useAdminOrg } from "@/context/admin-org-context";
 
 export default function DashboardPage() {
     const [dateRange, setDateRange] = useState<DateRange>({ type: "month" });
     const [quotaLocked, setQuotaLocked] = useState(false);
+    const adminOrg = useAdminOrg();
+    const [orgStatus, setOrgStatus] = useState(() => String(adminOrg?.status || "ACTIVE").toUpperCase());
 
     const { jobs, organization } = useJobs();
     const hasNoDrives = jobs.length === 0;
     const activeDriveCount = organization?.activeDriveCount ?? getActiveDriveCount(jobs);
-    const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount) || quotaLocked;
+    const isSuspended = isOrgRestrictedStatus(orgStatus);
+    const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount) || quotaLocked || isSuspended;
 
     useEffect(() => {
         let cancelled = false;
         const loadQuota = async () => {
             try {
+                const orgRes = await fetch("/api/admin/organization", { cache: "no-store" });
+                if (orgRes.ok) {
+                    const org = await orgRes.json();
+                    if (!cancelled) setOrgStatus(String(org?.status || "ACTIVE"));
+                }
                 const res = await fetch("/api/admin/credits", { cache: "no-store" });
                 if (!res.ok) return;
                 const data = await res.json();
@@ -75,14 +84,14 @@ export default function DashboardPage() {
                             <button
                                 className="cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-[13.5px] font-semibold text-slate-400 shadow-sm"
                                 disabled
-                                title={quotaLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached"}
+                                title={quotaLocked || isSuspended ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached"}
                             >
                                 <span className="flex items-center gap-2">
                                     <Lock className="h-4 w-4" />
-                                    {quotaLocked ? "Create Locked" : "Create New Drive"}
+                                    {quotaLocked || isSuspended ? "Create Locked" : "Create New Drive"}
                                 </span>
                             </button>
-                            {quotaLocked ? (
+                            {quotaLocked || isSuspended ? (
                                 <a
                                     href={getSupportComposeUrl({
                                         subject: "Interview quota support request",

@@ -10,7 +10,7 @@ import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { isDriveCreationLocked } from "@/lib/drive-limits";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
-import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
+import { getInterviewQuotaSupportMessage, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { parseOrgLimitValue } from "@/lib/org-limits";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 
@@ -163,7 +163,7 @@ export async function POST(request: Request) {
                 where: { id: session.orgId },
                 select: { status: true, maxActiveDrives: true }
             });
-            if (org?.status === "SUSPENDED" || org?.status === "CLOSED") {
+            if (isOrgRestrictedStatus(org?.status)) {
                 return NextResponse.json({ error: "Drive creation is blocked because your organization is restricted." }, { status: 403 });
             }
 

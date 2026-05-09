@@ -348,6 +348,7 @@ export default function OrgsPage() {
             else if (normalizedStatus === "ACTIVE") toast.success(`${orgName} is now active.`);
             else if (normalizedStatus === "CLOSED") toast.error(`${orgName} has been closed.`);
             else toast.success(`${orgName} status updated to ${newStatus.toLowerCase()}`);
+            await fetchOrgs(page, search, timeFilter);
         } catch (error) {
             setOrgs(prev => prev.map(o => o.id === orgId ? { ...o, status: previousStatus } : o));
             toast.error("Cloud sync failed. Reverting status.");
