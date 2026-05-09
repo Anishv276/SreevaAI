@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import os
 import sys
 import asyncio
@@ -784,8 +784,8 @@ async def entrypoint(ctx: JobContext):
                 turn_detection=turn_detector,
                 endpointing=EndpointingOptions(
                     # Slightly longer endpointing to avoid cutting candidates mid-thought.
-                    min_delay=0.5,
-                    max_delay=1.0,
+                    min_delay=1.5,
+                    max_delay=3.0,
                     mode="dynamic",
                 ),
                 interruption=InterruptionOptions(
@@ -1722,10 +1722,9 @@ async def entrypoint(ctx: JobContext):
                 # ── Phase 1 → Phase 2: warmup complete after 2 candidate responses ──────
                 if not warmup_complete:
                     warmup_responses_received += 1
-                    if warmup_responses_received == 1:
-                        # Inject Stage 1 after the FIRST candidate response so it is
-                        # already in context when the LLM generates its reply to
-                        # the second response — prevents the "stops mid-sentence" gap.
+                    if warmup_responses_received >= 2:
+                        warmup_complete = True
+                        # Remove warmup directive, inject Stage 1 directive
                         remove_system_messages(chat_ctx, "[WARMUP PHASE]")
                         stage1_directive = build_stage_1_resume_directive(
                             band=session_context.candidate_band,
