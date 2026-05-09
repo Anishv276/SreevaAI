@@ -11,6 +11,7 @@ import { putObject } from "./lib/s3";
 import { generateId } from "./lib/ids";
 import { isInterviewTokenRequired } from "./lib/interview-access";
 import { appendCandidateActivity } from "./lib/candidate-activity";
+import { getPythonExecutable } from "./lib/python-exec";
 import { deductInterviewQuota, getInterviewQuotaUnits, incrementOrgCreditsUsed } from "./lib/credits";
 // Load environment variables
 dotenv.config();
@@ -33,7 +34,7 @@ if (!process.env.REDIS_URL) {
   console.error('â Œ FATAL: REDIS_URL is missing from environment variables!');
   process.exit(1);
 }
-const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+const pythonCmd = getPythonExecutable();
 async function persistInterviewUpdateRaw(params: {
   applicationId: string;
   recordingUrl?: string;

@@ -9,6 +9,7 @@ import { generateId } from "@/lib/ids";
 import { safeJsonParse } from "@/lib/utils";
 import { parseDriveScreeningSettings } from "@/lib/screening-criteria";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
+import { getPythonExecutable } from "@/lib/python-exec";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -96,11 +97,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         let aiResult: any = { score: 0, status: "Pending", reasoning: "Processing failed" };
 
-        const pythonCmd = process.platform === "win32" ? "python" : "python3";
         const reportModel = "gpt-4o";
         console.log(`[AI RE-SCAN] Executing for ${application.email} | threshold=${threshold}`);
 
-        const pythonProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempInputPath, "SCORE", reportModel]);
+        const pythonProcess = spawn(getPythonExecutable(), ["scripts/extract_pdf.py", tempInputPath, "SCORE", reportModel]);
 
         let outputData = "";
         let errorData = "";
