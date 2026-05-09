@@ -6,6 +6,7 @@ import { writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { safeJsonParse } from "@/lib/utils";
+import { getPythonExecutable } from "@/lib/python-exec";
 
 export async function POST(
     request: Request,
@@ -92,8 +93,7 @@ export async function POST(
         const tempInputPath = join(tmpdir(), `rescan_${id}_${Date.now()}.json`);
         await writeFile(tempInputPath, JSON.stringify(scoringInput));
 
-        const pythonCmd = process.platform === "win32" ? "python" : "python3";
-        const pythonProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempInputPath, "SCORE"]);
+        const pythonProcess = spawn(getPythonExecutable(), ["scripts/extract_pdf.py", tempInputPath, "SCORE"]);
 
         let outputData = "";
         let errorData = "";

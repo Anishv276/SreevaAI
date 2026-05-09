@@ -10,6 +10,7 @@ import { extractionLimiter } from "@/lib/rate-limit";
 import { getSession } from "@/lib/auth";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { prisma } from "@/lib/prisma";
+import { getPythonExecutable } from "@/lib/python-exec";
 
 const extractQuerySchema = z.object({
     type: z.enum(["JD", "RESUME"]),
@@ -182,8 +183,7 @@ export async function POST(request: Request) {
         let fileUrl: string | null = null;
 
         console.log("[PYTHON_EXEC]: Starting scripts/extract_pdf.py for", file.name);
-        const pythonCommand = process.platform === "win32" ? "python" : "python3";
-        const pythonProcess = spawn(pythonCommand, ["scripts/extract_pdf.py", tempFilePath, type, orgOpenAIModel]);
+        const pythonProcess = spawn(getPythonExecutable(), ["scripts/extract_pdf.py", tempFilePath, type, orgOpenAIModel]);
 
         pythonProcess.stdout.on("data", (data) => { outputData += data.toString(); });
         pythonProcess.stderr.on("data", (data) => { errorData += data.toString(); });

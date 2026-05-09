@@ -11,16 +11,16 @@ import { parseDriveScreeningSettings } from "@/lib/screening-criteria";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
+import { getPythonExecutable } from "@/lib/python-exec";
 
 const CHUNK_SIZE = 5;
-const pythonCmd = process.platform === "win32" ? "python" : "python3";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function runPython(args: string[], timeoutMs = 180000): Promise<string> {
     return new Promise((resolve, reject) => {
         let out = "", err = "";
-        const p = spawn(pythonCmd, args);
+        const p = spawn(getPythonExecutable(), args);
         const timer = setTimeout(() => {
             p.kill();
             reject(new Error(`python timed out after ${timeoutMs}ms`));
@@ -99,6 +99,52 @@ async function scoreResume(
     }
 }
 
+/** Structured JD must include must-have skills or deterministic scoring degenerates (empty list → keyword fallback ~20/45). */
+function structuredJdHasMustHaves(jd: Record<string, any>): boolean {
+    const mh = jd?.skills?.must_have;
+    return Array.isArray(mh) && mh.length > 0;
+}
+
+/** Full JD text for scoring + GPT narrative — not just `description`. */
+function buildJdRawText(d: {
+    title?: string | null;
+    role?: string | null;
+    description?: string | null;
+    responsibilities?: string | null;
+    requirements?: string | null;
+    skills?: string | null;
+    experience?: string | null;
+}): string {
+    const parts: string[] = [];
+    if (d.title?.trim()) parts.push(`Title: ${d.title.trim()}`);
+    if (d.role?.trim()) parts.push(`Role: ${d.role.trim()}`);
+    if (d.description?.trim()) parts.push(d.description.trim());
+    if (d.responsibilities?.trim()) parts.push(`Responsibilities:\n${d.responsibilities.trim()}`);
+    if (d.requirements?.trim()) parts.push(`Requirements:\n${d.requirements.trim()}`);
+    if (d.skills?.trim()) parts.push(`Skills:\n${d.skills.trim()}`);
+    if (d.experience?.trim()) parts.push(`Experience:\n${d.experience.trim()}`);
+    return parts.join("\n\n").trim();
+}
+
+async function extractJDStructuredFromText(
+    jdRawText: string,
+    model: string
+): Promise<{ data: Record<string, any>; usage: any }> {
+    const tmpTxt = join(tmpdir(), `jd_${Date.now()}_${Math.random().toString(36).slice(2)}.txt`);
+    try {
+        await writeFile(tmpTxt, jdRawText, "utf-8");
+        const raw = await runPython(["scripts/extract_pdf.py", tmpTxt, "JD", model]);
+        const parsed = JSON.parse(raw);
+        if (parsed.error) throw new Error(parsed.error);
+        return {
+            data: parsed.data || {},
+            usage: parsed.usage || {},
+        };
+    } finally {
+        await unlink(tmpTxt).catch(() => {});
+    }
+}
+
 // ── Routes ─────────────────────────────────────────────────────────────────
 
 // POST /api/drives/[id]/resume-screening — start a batch
@@ -135,16 +181,6 @@ export async function POST(
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
         if (!drive.orgId)
             return NextResponse.json({ error: "Drive has no organisation" }, { status: 400 });
-
-        const driveRows = await prisma.$queryRawUnsafe<Array<{ extractedDetails: string | null }>>(
-            `
-            SELECT "extractedDetails"
-            FROM "Drive"
-            WHERE id = $1
-            LIMIT 1
-            `,
-            driveId
-        );
 
         const billingStatus = await getOrgBillingStatus(drive.orgId);
         if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
@@ -237,19 +273,70 @@ async function processBatch(
             1
         );
         const threshold: number = Number(parsed.threshold ?? drive.screeningThreshold ?? 60);
-        // Parse the drive's extracted JD once — reuse for every resume
-        const driveRows = await prisma.$queryRawUnsafe<Array<{ extractedDetails: string | null }>>(
-            `
-            SELECT "extractedDetails"
-            FROM "Drive"
-            WHERE id = $1
-            LIMIT 1
-            `,
-            driveId
-        );
-        const structuredJD = safeJsonParse(driveRows?.[0]?.extractedDetails, {});
-        const jdRawText: string = drive.description || "";
         const screeningCriteria = parsed.criteria;
+
+        const fullDrive = await prisma.drive.findUnique({
+            where: { id: driveId },
+            select: {
+                extractedDetails: true,
+                description: true,
+                responsibilities: true,
+                requirements: true,
+                skills: true,
+                experience: true,
+                role: true,
+                title: true,
+            },
+        });
+        if (!fullDrive) {
+            throw new Error(`Drive ${driveId} not found`);
+        }
+
+        let structuredJD = safeJsonParse<Record<string, any>>(fullDrive.extractedDetails, {});
+        const jdRawText = buildJdRawText(fullDrive);
+
+        if (!structuredJdHasMustHaves(structuredJD) && jdRawText.length >= 80) {
+            console.warn(
+                "[RESUME-SCREENING] No JD must-haves in extractedDetails — extracting structured JD from full drive text"
+            );
+            try {
+                const { data: extractedJd, usage: jdUsage } = await extractJDStructuredFromText(
+                    jdRawText,
+                    extractModel
+                );
+                if (structuredJdHasMustHaves(extractedJd)) {
+                    structuredJD = extractedJd;
+                    await prisma.drive
+                        .update({
+                            where: { id: driveId },
+                            data: { extractedDetails: JSON.stringify(extractedJd) },
+                        })
+                        .catch((e) =>
+                            console.warn("[RESUME-SCREENING] Could not persist extractedDetails:", e)
+                        );
+                    if ((jdUsage?.inputTokens || jdUsage?.outputTokens) && drive.orgId) {
+                        await recordOrgBillingUsage({
+                            orgId: drive.orgId,
+                            feature: "resumeExtraction",
+                            usage: {
+                                model: jdUsage?.model || extractModel,
+                                inputTokens: jdUsage?.inputTokens || 0,
+                                outputTokens: jdUsage?.outputTokens || 0,
+                                cachedInputTokens: jdUsage?.cachedInputTokens || 0,
+                            },
+                        }).catch(() => {});
+                    }
+                }
+            } catch (e) {
+                console.error("[RESUME-SCREENING] JD extraction fallback failed:", e);
+            }
+        }
+
+        if (!structuredJdHasMustHaves(structuredJD)) {
+            console.warn(
+                "[RESUME-SCREENING] Structured JD still lacks must-haves — skill scores use sparse-keyword fallback only"
+            );
+        }
 
         for (let i = 0; i < files.length; i += CHUNK_SIZE) {
             const chunk = files.slice(i, i + CHUNK_SIZE);
