@@ -102,6 +102,20 @@ type BillingFeatureMetrics = {
     ttsByModel?: Record<string, any>;
     sttByModel?: Record<string, any>;
 };
+type InterviewHistoryRow = {
+    id: string;
+    interviewName: string;
+    candidate: string;
+    role: string;
+    durationSec: number;
+    llmCostUsd: number;
+    ttsCostUsd: number;
+    sttCostUsd: number;
+    totalCostUsd: number;
+    status: string;
+    date: string;
+    hasBillingSnapshot: boolean;
+};
 export default function OrgsPage() {
     const [orgs, setOrgs] = useState<Org[]>([]);
     const [stats, setStats] = useState<any>({});
@@ -126,6 +140,9 @@ export default function OrgsPage() {
     const [usdToInr, setUsdToInr] = useState<number>(84.5);
     const [rateLoading, setRateLoading] = useState(false);
     const [rateUpdatedAt, setRateUpdatedAt] = useState<string>('');
+    const [historyRows, setHistoryRows] = useState<InterviewHistoryRow[]>([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyError, setHistoryError] = useState("");
     const fetchExchangeRate = async () => {
         setRateLoading(true);
         try {
@@ -147,6 +164,50 @@ export default function OrgsPage() {
         setCurrency('USD'); // reset to USD on open
         fetchExchangeRate();
     };
+    useEffect(() => {
+        if (!metricsOrg) {
+            setHistoryRows([]);
+            setHistoryError("");
+            setHistoryLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+
+        const loadHistory = async () => {
+            setHistoryLoading(true);
+            setHistoryError("");
+
+            try {
+                const res = await fetch(`/api/super-admin/orgs/interview-history?orgId=${encodeURIComponent(metricsOrg.id)}`, {
+                    cache: "no-store",
+                });
+                if (!res.ok) {
+                    throw new Error(`Failed to load interview history (${res.status})`);
+                }
+                const data = await res.json();
+                if (!cancelled) {
+                    setHistoryRows(Array.isArray(data.rows) ? data.rows : []);
+                }
+            } catch (error) {
+                console.error("Error fetching interview history:", error);
+                if (!cancelled) {
+                    setHistoryRows([]);
+                    setHistoryError("Unable to load interview history.");
+                }
+            } finally {
+                if (!cancelled) {
+                    setHistoryLoading(false);
+                }
+            }
+        };
+
+        loadHistory();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [metricsOrg]);
     // Format a USD value according to the current currency toggle
     const fmt = (usd: number) => {
         if (currency === 'INR') {
@@ -987,21 +1048,93 @@ export default function OrgsPage() {
                                     </div>
                                 );
                             })()}
-                        </div>
-                        <div className="border-t border-gray-200 px-8 py-6 bg-gray-50 flex items-center justify-between font-sans">
-                            <div className="text-[12px] font-bold uppercase tracking-[0.15em] text-gray-500">Total org cost</div>
-                            <div className="text-[28px] font-[800] text-gray-900 tracking-[-0.03em]">
-                                {(() => {
-                                    const allLlmCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).costUsd || 0), 0);
-                                    const allTtsCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).ttsCostUsd || 0), 0);
-                                    const allSttCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).sttCostUsd || 0), 0);
-                                    const grandTotal = allLlmCost + allTtsCost + allSttCost;
-                                    return fmt(grandTotal);
-                                })()}
+                            <div className="border-t border-gray-200 px-8 py-6 bg-gray-50 flex items-center justify-between font-sans">
+                                <div className="text-[12px] font-bold uppercase tracking-[0.15em] text-gray-500">Total org cost</div>
+                                <div className="text-[28px] font-[800] text-gray-900 tracking-[-0.03em]">
+                                    {(() => {
+                                        const allLlmCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).costUsd || 0), 0);
+                                        const allTtsCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).ttsCostUsd || 0), 0);
+                                        const allSttCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).sttCostUsd || 0), 0);
+                                        const grandTotal = allLlmCost + allTtsCost + allSttCost;
+                                        return fmt(grandTotal);
+                                    })()}
+                                </div>
                             </div>
+                            <div className="border-t border-gray-200 px-8 py-6 bg-gray-50">
+                                <div className="bg-white border border-gray-200 rounded-[18px] shadow-sm overflow-hidden">
+                                    <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-100 bg-gray-50/60">
+                                        <div>
+                                            <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-400">Interview history</div>
+                                            <h4 className="text-lg font-black text-gray-900">Recent interview usage</h4>
+                                        </div>
+                                        {historyLoading && (
+                                            <div className="rounded-full border border-gray-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">
+                                                Loading
+                                            </div>
+                                        )}
+                                    </div>
+                                    {historyError ? (
+                                        <div className="px-6 py-6 text-sm font-semibold text-amber-700 bg-amber-50">
+                                            {historyError}
+                                        </div>
+                                    ) : historyRows.length === 0 ? (
+                                        <div className="px-6 py-8 text-center text-sm font-semibold text-gray-400">
+                                            No interview history found yet.
+                                        </div>
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full">
+                                                <thead className="bg-gray-50/80">
+                                                    <tr className="text-left text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                                        <th className="px-6 py-3">Interview</th>
+                                                        <th className="px-6 py-3 text-center">Duration</th>
+                                                        <th className="px-6 py-3 text-right">LLM</th>
+                                                        <th className="px-6 py-3 text-right">TTS</th>
+                                                        <th className="px-6 py-3 text-right">STT</th>
+                                                        <th className="px-6 py-3 text-right">Total</th>
+                                                        <th className="px-6 py-3 text-right">Completed</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100 bg-white">
+                                                    {historyRows.map((row) => (
+                                                        <tr key={row.id} className="hover:bg-gray-50/70">
+                                                            <td className="px-6 py-4">
+                                                                <div className="font-bold text-gray-900">{row.interviewName}</div>
+                                                                <div className="text-[11px] font-medium text-gray-500">{row.candidate} - {row.role}</div>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center text-sm font-bold text-gray-900">
+                                                                {(Number(row.durationSec || 0) / 60).toFixed(1)} min
+                                                            </td>
+                                                            <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">
+                                                                {row.hasBillingSnapshot ? `$${Number(row.llmCostUsd || 0).toFixed(2)}` : "-"}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">
+                                                                {row.hasBillingSnapshot ? `$${Number(row.ttsCostUsd || 0).toFixed(2)}` : "-"}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">
+                                                                {row.hasBillingSnapshot ? `$${Number(row.sttCostUsd || 0).toFixed(2)}` : "-"}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-right text-sm font-black text-gray-900">
+                                                                {row.hasBillingSnapshot ? `$${Number(row.totalCostUsd || 0).toFixed(2)}` : "-"}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-right text-[11px] font-semibold text-gray-500">
+                                                                {new Date(row.date).toLocaleDateString(undefined, {
+                                                                    year: "numeric",
+                                                                    month: "short",
+                                                                    day: "numeric",
+                                                                })}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
                         </div>
                     </div>
                 </div>
+            </div>
             )}
         </div>
     );

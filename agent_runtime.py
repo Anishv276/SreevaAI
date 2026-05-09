@@ -292,6 +292,7 @@ from agent_persistence import (
     get_interview_context,
     mark_interview_started,
     persist_answer_scores,
+    persist_interview_billing_snapshot,
     persist_org_usage_metrics,
     persist_transcript,
     update_interview_status,
@@ -2483,7 +2484,6 @@ async def entrypoint(ctx: JobContext):
         stt_provider=org_stt_provider,
         stt_model=selected_stt_model,
     )
-    await flush_pending_manual_billing(org_id)
     # ðŸ¤- AI Scorecard (NEW)
     if session_start_time:
         try:
@@ -2528,6 +2528,22 @@ async def entrypoint(ctx: JobContext):
             logger.warning(f"[REPORT] Timed out for {app_id}; skipped after 10s")
         except Exception as e:
             logger.error(f"[REPORT] Failed post-interview for {app_id}: {e}")
+    try:
+        await persist_interview_billing_snapshot(
+            app_id,
+            latest_session_usage or session.usage,
+            org_id=org_id,
+            candidate_name=candidate_name,
+            job_title=job_title,
+            duration_seconds=(time.time() - session_start_time) if session_start_time else None,
+            tts_provider=org_tts_provider,
+            tts_model=selected_tts_model,
+            stt_provider=org_stt_provider,
+            stt_model=selected_stt_model,
+        )
+    except Exception as e:
+        logger.error(f"[USAGE] Failed to persist interview billing snapshot for {app_id}: {e}")
+    await flush_pending_manual_billing(org_id)
     # Sync with dashboard: Application COMPLETED
     if finished_task.done():
         await update_interview_status(app_id)

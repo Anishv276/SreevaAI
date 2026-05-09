@@ -550,6 +550,115 @@ async def persist_org_usage_metrics(
             )
     except Exception as e:
         logger.error(f"[USAGE] Failed to save org usage metrics for {org_id}: {e}")
+async def persist_interview_billing_snapshot(
+    app_id: str,
+    session_usage: AgentSessionUsage | None,
+    *,
+    org_id: Optional[str] = None,
+    candidate_name: Optional[str] = None,
+    job_title: Optional[str] = None,
+    duration_seconds: Optional[float] = None,
+    tts_provider: Optional[str] = None,
+    tts_model: Optional[str] = None,
+    stt_provider: Optional[str] = None,
+    stt_model: Optional[str] = None,
+) -> None:
+    """Persist a per-interview billing snapshot on Interview for the usage table."""
+    if not app_id or not DATABASE_URL:
+        return
+
+    session_summary = summarize_session_usage(session_usage)
+    has_session_usage = any(bucket.get("sessions") for bucket in session_summary.values())
+    has_manual_usage = bool(org_id and _PENDING_MANUAL_BILLING.get(org_id))
+    if not has_session_usage and not has_manual_usage and not duration_seconds:
+        return
+
+    snapshot_billing = merge_interview_billing(
+        {},
+        session_summary,
+        tts_config={"provider": tts_provider or "", "model": tts_model or ""},
+        stt_config={"provider": stt_provider or "", "model": stt_model or ""},
+    )
+    interview_bucket = _coerce_jsonish(_coerce_jsonish(snapshot_billing.get("billing")).get("interview"))
+
+    # Include any in-process manual billing that was attributed to this interview
+    # before the org-wide flush happens.
+    if org_id:
+        pending_manual = _PENDING_MANUAL_BILLING.get(org_id, [])
+        for feature, usage in pending_manual:
+            if feature != "interview":
+                continue
+            model_name = str(usage.get("model", "unknown") or "unknown")
+            input_tokens = int(usage.get("inputTokens", 0) or 0)
+            cached_tokens = int(usage.get("cachedInputTokens", 0) or 0)
+            output_tokens = int(usage.get("outputTokens", 0) or 0)
+            model_cost = _estimate_openai_cost(model_name, input_tokens, cached_tokens, output_tokens)
+            model_key = f"openai:{model_name}"
+            interview_bucket["runs"] = int(interview_bucket.get("runs", 0)) + 1
+            interview_bucket["inputTokens"] = int(interview_bucket.get("inputTokens", 0)) + input_tokens
+            interview_bucket["cachedInputTokens"] = int(interview_bucket.get("cachedInputTokens", 0)) + cached_tokens
+            interview_bucket["outputTokens"] = int(interview_bucket.get("outputTokens", 0)) + output_tokens
+            interview_bucket["costUsd"] = float(interview_bucket.get("costUsd", 0.0)) + model_cost
+            by_model = _coerce_jsonish(interview_bucket.get("byModel"))
+            current = _coerce_jsonish(by_model.get(model_key))
+            current["runs"] = int(current.get("runs", 0)) + 1
+            current["inputTokens"] = int(current.get("inputTokens", 0)) + input_tokens
+            current["cachedInputTokens"] = int(current.get("cachedInputTokens", 0)) + cached_tokens
+            current["outputTokens"] = int(current.get("outputTokens", 0)) + output_tokens
+            current["costUsd"] = float(current.get("costUsd", 0.0)) + model_cost
+            by_model[model_key] = current
+            interview_bucket["byModel"] = by_model
+
+    total_cost = float(interview_bucket.get("costUsd", 0.0)) + float(interview_bucket.get("ttsCostUsd", 0.0)) + float(interview_bucket.get("sttCostUsd", 0.0))
+    snapshot = {
+        "candidateName": candidate_name or "",
+        "jobTitle": job_title or "",
+        "interviewName": f"{candidate_name or 'Candidate'} - {job_title or 'Interview'}",
+        "durationSec": int(duration_seconds or 0),
+        "llmCostUsd": float(interview_bucket.get("costUsd", 0.0)),
+        "ttsCostUsd": float(interview_bucket.get("ttsCostUsd", 0.0)),
+        "sttCostUsd": float(interview_bucket.get("sttCostUsd", 0.0)),
+        "totalCostUsd": total_cost,
+        "inputTokens": int(interview_bucket.get("inputTokens", 0)),
+        "outputTokens": int(interview_bucket.get("outputTokens", 0)),
+        "cachedInputTokens": int(interview_bucket.get("cachedInputTokens", 0)),
+        "sessionDuration": float(interview_bucket.get("sessionDuration", 0)),
+        "ttsCharacters": int(interview_bucket.get("ttsCharacters", 0)),
+        "sttAudioSeconds": float(interview_bucket.get("sttAudioSeconds", 0)),
+        "llmByModel": interview_bucket.get("byModel", {}),
+        "ttsByModel": interview_bucket.get("ttsByModel", {}),
+        "sttByModel": interview_bucket.get("sttByModel", {}),
+        "updatedAt": time.time(),
+    }
+
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT i.id
+                FROM "Interview" i
+                JOIN "Application" a ON a.id = i."applicationId"
+                WHERE a.id = $1
+                LIMIT 1
+                """,
+                app_id,
+            )
+            if not row:
+                return
+            await conn.execute(
+                """
+                UPDATE "Interview"
+                SET "billingSnapshot" = $1::jsonb,
+                    "updatedAt" = NOW()
+                WHERE "applicationId" = $2
+                """,
+                json.dumps(snapshot),
+                app_id,
+            )
+        logger.info(f"[USAGE] Saved interview billing snapshot for {app_id}")
+    except Exception as e:
+        logger.error(f"[USAGE] Failed to save interview billing snapshot for {app_id}: {e}")
 async def get_interview_context(app_id: str):
     """Fetch Candidate and Job Description context from PostgreSQL via asyncpg."""
     if not DATABASE_URL:
