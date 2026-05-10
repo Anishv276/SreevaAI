@@ -30,8 +30,9 @@ export async function GET(request: Request) {
         }
 
         const requestedOrgId = getRequestedOrgId(request);
+        const sessionOrgId = session?.orgId || "";
         const isSuperAdminContext = isSuperAdminRole(session?.role);
-        const orgId = isSuperAdminContext ? (requestedOrgId || session.orgId || "") : (session.orgId || "");
+        const orgId = isSuperAdminContext ? (requestedOrgId || sessionOrgId) : sessionOrgId;
         if (!orgId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
