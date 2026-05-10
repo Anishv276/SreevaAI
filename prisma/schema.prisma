@@ -149,6 +149,7 @@ model Application {
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
   resumeText       String?
+  resumeData       String?
   driveId          String
   resumeStatus     String     @default("pending")
   interviewStatus  String     @default("pending")
@@ -213,6 +214,7 @@ model ResumeCandidate {
   resumeText      String?
   aiScore         Int?
   aiReport        String?
+  resumeData      String?
   resumeStatus    String    @default("pending")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

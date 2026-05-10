@@ -486,6 +486,7 @@ async function processOneResume(
                 resumeText: resumeRawText,
                 aiScore: score,
                 aiReport: JSON.stringify(aiResult),
+                resumeData: JSON.stringify(structuredResume),
                 resumeStatus,
             },
         });
@@ -499,6 +500,7 @@ async function processOneResume(
                 resumeUrl: `/api/drives/${driveId}/resume-screening/download?candidateId=${screeningCandidate.id}`,
                 aiScore: score,
                 aiReport: JSON.stringify(aiResult),
+                resumeData: JSON.stringify(structuredResume),
                 resumeText: resumeRawText,
                 driveId,
                 resumeStatus: resumeStatus.toLowerCase(),
