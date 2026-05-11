@@ -252,28 +252,10 @@ export default function CandidatesPage() {
     const orgIdParam = searchParams.get("orgId");
     // Organization Status
     const adminOrg = useAdminOrg();
-    const [orgStatus, setOrgStatus] = useState<string>(() => String(adminOrg?.status || "ACTIVE").toUpperCase());
-    const [quotaLocked, setQuotaLocked] = useState(false);
-    useEffect(() => {
-        const fetchOrgStatus = async () => {
-            try {
-                const res = await fetch("/api/admin/organization");
-                if (res.ok) {
-                    const data = await res.json();
-                    setOrgStatus(String(data.status || "ACTIVE").toUpperCase());
-                }
-                const billingRes = await fetch("/api/admin/credits");
-                if (billingRes.ok) {
-                    const billing = await billingRes.json();
-                    setQuotaLocked(isInterviewQuotaLocked(billing));
-                }
-            } catch (error) {
-                console.error("Failed to fetch organization status:", error);
-            }
-        };
-        fetchOrgStatus();
-    }, []);
-    const normalizedOrgStatus = String(orgStatus || "").toUpperCase();
+    // Read from shared context - no fetch needed (was 2 API calls per load)
+    const orgStatus = String(adminOrg?.status || "ACTIVE").toUpperCase();
+    const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
+    const normalizedOrgStatus = orgStatus;
     const isSuspended = normalizedOrgStatus === "SUSPENDED" || normalizedOrgStatus === "CLOSED";
     const isInterviewActionBlocked = isSuspended || quotaLocked;
     const interviewActionBlockedMessage = getInterviewActionBlockedMessage(isSuspended);

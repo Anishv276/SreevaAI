@@ -49,34 +49,17 @@ export default function DrivesPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
     const adminOrg = useAdminOrg();
-    const [orgStatus, setOrgStatus] = useState<string>(() => String(adminOrg?.status || "ACTIVE").toUpperCase());
     const [typeFilter, setTypeFilter] = useState("all");
     const [timeline, setTimeline] = useState<DateRange>({ type: "month" });
+
+    // ⚡ Read from shared context — no fetch needed (was 2 API calls per load)
+    const orgStatus = String(adminOrg?.status || "ACTIVE").toUpperCase();
+    const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
 
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [driveToDelete, setDriveToDelete] = useState<string | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
-    const [quotaLocked, setQuotaLocked] = useState(false);
 
-    useEffect(() => {
-        const fetchOrgStatus = async () => {
-            try {
-                const res = await fetch("/api/admin/organization");
-                if (res.ok) {
-                    const data = await res.json();
-                    setOrgStatus(String(data.status || "ACTIVE").toUpperCase());
-                }
-                const billingRes = await fetch("/api/admin/credits");
-                if (billingRes.ok) {
-                    const billing = await billingRes.json();
-                    setQuotaLocked(isInterviewQuotaLocked(billing));
-                }
-            } catch (error) {
-                console.error("Failed to fetch organization status:", error);
-            }
-        };
-        fetchOrgStatus();
-    }, []);
 
     useEffect(() => {
         const handler = setTimeout(() => {

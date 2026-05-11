@@ -20,11 +20,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         redirect("/login?from=admin");
     }
 
-    // Fetch account status and onboarding completion in real-time
-    let orgData = { status: "ACTIVE", onboardingComplete: session.onboardingComplete === true };
+    // Fetch all org data server-side so the client context is pre-seeded (zero client fetches on load)
+    let orgData: Record<string, any> = { status: "ACTIVE", onboardingComplete: session.onboardingComplete === true };
     if (session.orgId) {
         try {
-            // ⚡ PARALLEL: Both DB calls run simultaneously (was sequential = 2x slower)
             const [org, effectiveStatus] = await Promise.all([
                 prisma.organization.findUnique({
                     where: { id: session.orgId },
@@ -32,6 +31,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                         status: true,
                         onboardingComplete: true,
                         plan: true,
+                        name: true,
+                        logoUrl: true,
                         interviewQuotaTotal: true,
                         interviewQuotaUsed: true,
                     },
@@ -64,7 +65,21 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
     return (
         <>
-        <AdminOrgProvider status={orgData.status} orgId={session.orgId}>
+        <AdminOrgProvider
+            status={orgData.status}
+            orgId={session.orgId}
+            initialData={{
+                status: orgData.status,
+                name: orgData.name,
+                logoUrl: orgData.logoUrl,
+                plan: orgData.plan,
+                interviewQuotaTotal: orgData.interviewQuotaTotal != null ? Number(orgData.interviewQuotaTotal) : undefined,
+                interviewQuotaUsed: orgData.interviewQuotaUsed != null ? Number(orgData.interviewQuotaUsed) : undefined,
+                interviewQuotaRemaining: orgData.interviewQuotaTotal != null 
+                    ? Math.max(0, Number(orgData.interviewQuotaTotal) - Number(orgData.interviewQuotaUsed || 0)) 
+                    : undefined,
+            }}
+        >
         <AdminStatusGate initialStatus={orgData.status}>
         <div className="flex min-h-screen bg-[#F8F9FB] relative font-sans">
             {/*  Background Deck: Aurora Blobs  */}

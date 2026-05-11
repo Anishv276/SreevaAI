@@ -14,6 +14,7 @@ import { ScreeningSettings } from "@/components/create-drive/screening-settings"
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import { toast } from "@/components/ui/toast-custom";
 import { getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
+import { useAdminOrg } from "@/context/admin-org-context";
 
 interface DriveDetails {
     id: string;
@@ -49,7 +50,10 @@ export default function DriveCandidatesPage() {
     const [screeningThreshold, setScreeningThreshold] = useState(60);
     const [screeningCriteria, setScreeningCriteria] = useState<Record<string, any>>({});
     const [inviteScheduleDays, setInviteScheduleDays] = useState(1);
-    const [quotaLocked, setQuotaLocked] = useState(false);
+
+    // ⚡ Read from shared context — no fetch needed (was 1 API call per load)
+    const adminOrg = useAdminOrg();
+    const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
 
     useEffect(() => {
         if (!driveId) return;
@@ -110,23 +114,7 @@ export default function DriveCandidatesPage() {
         };
     }, [driveId, refreshKey]);
 
-    useEffect(() => {
-        let cancelled = false;
-        const loadQuota = async () => {
-            try {
-                const res = await fetch("/api/admin/credits", { cache: "no-store" });
-                if (!res.ok) return;
-                const data = await res.json();
-                if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
-            } catch {
-                // ignore
-            }
-        };
-        loadQuota();
-        return () => {
-            cancelled = true;
-        };
-    }, []);
+
 
     if (!driveId) {
         return (

@@ -25,38 +25,42 @@ type AdminOrgContextValue = OrgData & {
 const AdminOrgContext = createContext<AdminOrgContextValue | null>(null);
 
 // ─── Provider ────────────────────────────────────────────────────────────────
-// This is the SINGLE source of truth for org + credits data across all admin pages.
-// All components (Sidebar, LowCreditsBanner, AdminStatusGate, pages) must READ from
-// this context instead of making independent fetch() calls to /api/admin/organization
-// or /api/admin/credits. This reduces 4-8 API calls per page to exactly 1.
+// Single source of truth for org + credits data across all admin pages.
+// Accepts server-fetched `initialData` so the browser makes ZERO fetch calls
+// on the initial page load. Only fetches on demand (refresh) or when orgId
+// is a super-admin override that needs fresh data.
 
 export function AdminOrgProvider({
     status: initialStatus,
     orgId,
+    initialData,
     children,
 }: {
     status: string;
     orgId?: string | null;
+    initialData?: Partial<OrgData>;
     children: React.ReactNode;
 }) {
     const [orgData, setOrgData] = useState<OrgData>({
         status: String(initialStatus || "ACTIVE").toUpperCase(),
         orgId: orgId || null,
+        // ⚡ Seed with server-fetched data — no client fetch needed on first paint
+        ...initialData,
     });
 
-    const fetchedRef = useRef(false);
-    const orgIdRef = useRef(orgId);
+    // Only fetch when this flag is set (e.g. super-admin orgId override or explicit refresh)
+    const needsFetchRef = useRef(!!orgId && !initialData);
 
     const fetchOrgAndCredits = async (signal?: AbortSignal) => {
         try {
-            const orgUrl = orgIdRef.current
-                ? `/api/admin/organization?orgId=${encodeURIComponent(orgIdRef.current)}`
+            const orgUrl = orgId
+                ? `/api/admin/organization?orgId=${encodeURIComponent(orgId)}`
                 : "/api/admin/organization";
-            const creditsUrl = orgIdRef.current
-                ? `/api/admin/credits?orgId=${encodeURIComponent(orgIdRef.current)}`
+            const creditsUrl = orgId
+                ? `/api/admin/credits?orgId=${encodeURIComponent(orgId)}`
                 : "/api/admin/credits";
 
-            // ⚡ Fetch org AND credits in PARALLEL — one round instead of 4-8 separate fetches
+            // ⚡ Fetch org AND credits in PARALLEL — single round-trip
             const [orgRes, creditsRes] = await Promise.all([
                 fetch(orgUrl, { signal }),
                 fetch(creditsUrl, { signal }),
@@ -87,13 +91,14 @@ export function AdminOrgProvider({
                 }),
             }));
         } catch {
-            // Ignore AbortError and network errors — server-side values are the fallback
+            // Ignore AbortError and network errors — server values are the fallback
         }
     };
 
     useEffect(() => {
-        if (fetchedRef.current) return;
-        fetchedRef.current = true;
+        // Skip the fetch if we already have server-seeded data and no orgId override
+        if (!needsFetchRef.current) return;
+        needsFetchRef.current = false;
 
         const controller = new AbortController();
         void fetchOrgAndCredits(controller.signal);
@@ -103,7 +108,6 @@ export function AdminOrgProvider({
     }, []);
 
     const refresh = () => {
-        fetchedRef.current = false;
         const controller = new AbortController();
         void fetchOrgAndCredits(controller.signal);
     };

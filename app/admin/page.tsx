@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Plus, Lock, ArrowRight } from "lucide-react";
 
@@ -20,38 +20,17 @@ import { useAdminOrg } from "@/context/admin-org-context";
 
 export default function DashboardPage() {
     const [dateRange, setDateRange] = useState<DateRange>({ type: "month" });
-    const [quotaLocked, setQuotaLocked] = useState(false);
+
+    // ⚡ Read from shared context — no fetch needed (was 2 API calls per load)
     const adminOrg = useAdminOrg();
-    const [orgStatus, setOrgStatus] = useState(() => String(adminOrg?.status || "ACTIVE").toUpperCase());
+    const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
+    const orgStatus = String(adminOrg?.status || "ACTIVE").toUpperCase();
 
     const { jobs, organization } = useJobs();
     const hasNoDrives = jobs.length === 0;
     const activeDriveCount = organization?.activeDriveCount ?? getActiveDriveCount(jobs);
     const isSuspended = isOrgRestrictedStatus(orgStatus);
     const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount) || quotaLocked || isSuspended;
-
-    useEffect(() => {
-        let cancelled = false;
-        const loadQuota = async () => {
-            try {
-                const orgRes = await fetch("/api/admin/organization", { cache: "no-store" });
-                if (orgRes.ok) {
-                    const org = await orgRes.json();
-                    if (!cancelled) setOrgStatus(String(org?.status || "ACTIVE"));
-                }
-                const res = await fetch("/api/admin/credits", { cache: "no-store" });
-                if (!res.ok) return;
-                const data = await res.json();
-                if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
-            } catch {
-                // ignore
-            }
-        };
-        loadQuota();
-        return () => {
-            cancelled = true;
-        };
-    }, []);
 
     return (
         <div className="space-y-10 pb-12 animate-fade-slide" style={{ zoom: 0.88, transformOrigin: "top center" }}>

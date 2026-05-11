@@ -58,7 +58,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         limit: 10,
         totalPages: 0
     });
-    const [organization, setOrganization] = useState<OrganizationSettings | null>(null);
+    // organization state kept for backwards compat with any consumers,
+    // but we no longer fetch it here — AdminOrgContext handles that.
+    const [organization] = useState<OrganizationSettings | null>(null);
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const orgIdFromUrl = searchParams.get("orgId");
@@ -67,25 +69,6 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const hasLoadedOnceRef = useRef({ admin: false, careers: false });
     const inFlightRef = useRef<Promise<void> | null>(null);
 
-    const refreshOrganization = async () => {
-        try {
-            const res = await fetch("/api/admin/organization");
-            if (!res.ok) {
-                setOrganization(null);
-                return;
-            }
-            const data = await res.json();
-            setOrganization({
-                status: data.status || "ACTIVE",
-                plan: data.plan || undefined,
-                maxActiveDrives: formatOrgLimitValue(data.maxActiveDrives),
-                activeDriveCount: Number(data.activeDriveCount || 0),
-            });
-        } catch {
-            setOrganization(null);
-        }
-    };
-
     const fetchJobs = async (page: number = 1, limit: number = 10, search: string = "", status: string = "all", type: string = "all", startDate: string = "", endDate: string = "") => {
         if (inFlightRef.current) {
             await inFlightRef.current;
@@ -93,31 +76,31 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         }
 
         const requestPromise = (async () => {
-        try {
-            let url = `/api/drives?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&status=${status}&type=${type}&startDate=${startDate}&endDate=${endDate}`;
-            if (orgIdFromUrl) {
-                url += `&orgId=${orgIdFromUrl}`;
-            }
-            const res = await fetch(url);
-            if (res.ok) {
-                const result = await res.json();
-                const { drives, pagination: pagData } = result;
-                setJobs(drives);
-                setPagination(pagData);
-                return;
-            }
+            try {
+                let url = `/api/drives?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&status=${status}&type=${type}&startDate=${startDate}&endDate=${endDate}`;
+                if (orgIdFromUrl) {
+                    url += `&orgId=${orgIdFromUrl}`;
+                }
+                const res = await fetch(url);
+                if (res.ok) {
+                    const result = await res.json();
+                    const { drives, pagination: pagData } = result;
+                    setJobs(drives);
+                    setPagination(pagData);
+                    return;
+                }
 
-            if (res.status === 401 || res.status === 403) {
-                setJobs([]);
-                return;
-            } else {
-                console.error("Failed to fetch jobs:", res.status, res.statusText);
+                if (res.status === 401 || res.status === 403) {
+                    setJobs([]);
+                    return;
+                } else {
+                    console.error("Failed to fetch jobs:", res.status, res.statusText);
+                    setJobs([]);
+                }
+            } catch (error) {
+                console.error("Failed to fetch jobs:", error);
                 setJobs([]);
             }
-        } catch (error) {
-            console.error("Failed to fetch jobs:", error);
-            setJobs([]);
-        }
         })();
 
         inFlightRef.current = requestPromise;
@@ -129,12 +112,12 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    // Load data once per section (admin/careers), no re-fetch per sub-route click
+    // Load jobs once per section (admin/careers), no re-fetch per sub-route click
+    // NOTE: refreshOrganization() removed — org data is now server-seeded via AdminOrgContext
     useEffect(() => {
         if (isAdminRoute && !hasLoadedOnceRef.current.admin) {
             hasLoadedOnceRef.current.admin = true;
             fetchJobs().catch(() => undefined);
-            refreshOrganization();
             return;
         }
 
@@ -155,9 +138,6 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             if (res.ok) {
                 const data = await res.json();
                 fetchJobs(); // Refresh list
-                if (isAdminRoute) {
-                    refreshOrganization();
-                }
                 return data;
             } else {
                 const errorData = await res.json();
@@ -181,17 +161,13 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             });
 
             if (res.ok) {
-                // Optimistic update or refetch
                 setJobs((prev) => prev.filter((job) => job.id !== id));
-                if (isAdminRoute) {
-                    refreshOrganization();
-                }
             } else {
                 throw new Error("Failed to delete drive");
             }
         } catch (error) {
             console.error("Failed to delete job:", error);
-            throw error; // Re-throw so component can handle UI feedback
+            throw error;
         }
     };
 
@@ -206,13 +182,9 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             if (res.ok) {
                 const data = await res.json();
                 fetchJobs(); // Refresh list
-                if (isAdminRoute) {
-                    refreshOrganization();
-                }
                 return data;
             } else {
                 const errorData = await res.json();
-                // Log exact field errors so we can debug validation failures
                 console.error("[updateJob] Validation details:", JSON.stringify(errorData.details, null, 2));
                 const error = new Error(errorData.error || "Failed to update job") as any;
                 error.details = errorData.details;
