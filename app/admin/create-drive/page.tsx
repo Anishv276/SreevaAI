@@ -100,9 +100,10 @@ function CreateDriveForm() {
   const [maxStepReached, setMaxStepReached] = useState(isEditMode ? 3 : 0);
   const [syncedFromAi, setSyncedFromAi] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
-  const [quotaLocked, setQuotaLocked] = useState(false);
   const adminOrg = useAdminOrg();
-  const [orgStatus, setOrgStatus] = useState<string>(() => String(adminOrg?.status || "ACTIVE").toUpperCase());
+  // ⚡ Read from shared context — no fetch needed
+  const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
+  const orgStatus = String(adminOrg?.status || "ACTIVE").toUpperCase();
   const formRef = useRef<HTMLDivElement>(null);
   const analysisAbortRef = useRef<AbortController | null>(null);
   const hasInitialLoadedRef = useRef<string | null>(null);
@@ -120,44 +121,6 @@ function CreateDriveForm() {
   useEffect(() => {
     formDataRef.current = formData;
   }, [formData]);
-  useEffect(() => {
-    if (isEditMode) return;
-    let cancelled = false;
-    const loadQuota = async () => {
-      try {
-        const res = await fetch("/api/admin/credits", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
-      } catch {
-        // ignore
-      }
-    };
-    loadQuota();
-    return () => {
-      cancelled = true;
-    };
-  }, [isEditMode]);
-  useEffect(() => {
-    if (isEditMode) return;
-    let cancelled = false;
-    const loadOrgStatus = async () => {
-      try {
-        const res = await fetch("/api/admin/organization", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) {
-          setOrgStatus(String(data.status || "ACTIVE"));
-        }
-      } catch {
-        // ignore
-      }
-    };
-    loadOrgStatus();
-    return () => {
-      cancelled = true;
-    };
-  }, [isEditMode]);
   // Cleanup blob URLs to prevent memory leaks
   useEffect(() => {
     const url = formData.jdPreviewUrl;

@@ -17,6 +17,7 @@ import {
     Lock,
 } from "lucide-react";
 import { useJobs } from "@/context/jobs-context";
+import { useAdminOrg } from "@/context/admin-org-context";
 import { cn } from "@/lib/utils";
 import { ResumeScreening } from "@/components/admin/resume-screening";
 
@@ -29,7 +30,10 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
     const [screeningThreshold, setScreeningThreshold] = useState(60);
     const [screeningCriteria, setScreeningCriteria] = useState<Record<string, any>>({});
     const [inviteScheduleDays, setInviteScheduleDays] = useState(1);
-    const [quotaLocked, setQuotaLocked] = useState(false);
+    
+    // ⚡ Read from shared context — no fetch needed
+    const adminOrg = useAdminOrg();
+    const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
 
     const [drive, setDrive] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -82,23 +86,6 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
 
 
 
-    useEffect(() => {
-        let cancelled = false;
-        const loadQuota = async () => {
-            try {
-                const res = await fetch("/api/admin/credits", { cache: "no-store" });
-                if (!res.ok) return;
-                const data = await res.json();
-                if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
-            } catch {
-                // ignore
-            }
-        };
-        loadQuota();
-        return () => {
-            cancelled = true;
-        };
-    }, []);
 
     const handleSaveScreeningCriteria = async () => {
         try {
