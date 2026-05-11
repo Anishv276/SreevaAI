@@ -1,65 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { INTERVIEW_SUPPORT_EMAIL, getSupportComposeUrl, isOrgRestrictedStatus } from "@/lib/interview-quota";
+import { useAdminOrg } from "@/context/admin-org-context";
 
 type BannerState = "low" | "empty" | null;
 
 export function LowCreditsBanner({ orgStatus }: { orgStatus?: string }) {
-    const [state, setState] = useState<BannerState>(null);
-    const [interviewsRemaining, setInterviewsRemaining] = useState(0);
+    const adminOrg = useAdminOrg();
     const [dismissed, setDismissed] = useState(false);
-    const searchParams = useSearchParams();
-    const orgId = searchParams.get("orgId");
-    const [liveStatus, setLiveStatus] = useState<string>(String(orgStatus || "").trim().toUpperCase());
-    const isSuspended = isOrgRestrictedStatus(liveStatus || orgStatus);
 
-    useEffect(() => {
-        let cancelled = false;
+    // ⚡ Read from shared context — no fetch needed (was 2 API calls per page load)
+    const liveStatus = adminOrg?.status || String(orgStatus || "").trim().toUpperCase();
+    const isSuspended = isOrgRestrictedStatus(liveStatus);
+    const total = Number(adminOrg?.interviewQuotaTotal ?? 0);
+    const remaining = Number(adminOrg?.interviewQuotaRemaining ?? 0);
 
-        const load = async () => {
-            try {
-                const orgUrl = orgId ? `/api/admin/organization?orgId=${encodeURIComponent(orgId)}` : "/api/admin/organization";
-                const orgRes = await fetch(orgUrl, { cache: "no-store" });
-                if (orgRes.ok) {
-                    const orgData = await orgRes.json();
-                    if (!cancelled && orgData?.status) {
-                        setLiveStatus(String(orgData.status).trim().toUpperCase());
-                    }
-                }
-
-                if (isSuspended) {
-                    if (!cancelled) setState("empty");
-                    return;
-                }
-
-                const creditsUrl = orgId ? `/api/admin/credits?orgId=${encodeURIComponent(orgId)}` : "/api/admin/credits";
-                const res = await fetch(creditsUrl, { cache: "no-store" });
-                if (!res.ok) return;
-                const data = await res.json();
-                const total = Number(data.interviewQuotaTotal ?? 0);
-                const remaining = Number(data.interviewQuotaRemaining ?? 0);
-                if (cancelled) return;
-                setInterviewsRemaining(remaining);
-                if (total > 0 && remaining === 0) {
-                    setState("empty");
-                } else if (total > 0 && remaining > 0 && remaining <= Math.max(1, Math.ceil(total * 0.1))) {
-                    setState("low");
-                } else {
-                    setState(null);
-                }
-            } catch {
-                // ignore
-            }
-        };
-
-        void load();
-        return () => {
-            cancelled = true;
-        };
-    }, [isSuspended, orgId]);
+    let state: BannerState = null;
+    if (isSuspended) {
+        state = "empty";
+    } else if (total > 0 && remaining === 0) {
+        state = "empty";
+    } else if (total > 0 && remaining > 0 && remaining <= Math.max(1, Math.ceil(total * 0.1))) {
+        state = "low";
+    }
 
     if (!state || dismissed) return null;
 
@@ -82,7 +47,7 @@ export function LowCreditsBanner({ orgStatus }: { orgStatus?: string }) {
                         <p className={`truncate text-sm font-semibold ${isEmpty ? "text-red-700" : "text-orange-700"}`}>
                             {isEmpty
                                 ? "Your account got suspended because no interviews are left."
-                                : `You have only ${interviewsRemaining.toFixed(0)} interviews left.`}
+                                : `You have only ${remaining.toFixed(0)} interviews left.`}
                         </p>
                         <p className={`truncate text-xs ${isEmpty ? "text-red-600/90" : "text-orange-600/90"}`}>
                             {isEmpty

@@ -58,24 +58,69 @@ export async function createSession(user: SessionUser): Promise<string> {
         .sign(getSecretKey());
 }
 
-export async function verifySession(token: string): Promise<SessionUser | null> {
-    try {
-        if (redis) {
-            const isBlacklisted = await redis.get(`blacklist:${token}`);
-            if (isBlacklisted) return null;
-        }
-        const { payload } = await jwtVerify(token, getSecretKey());
-        const sessionUser = payload as unknown as any;
+// ─── Request-Level Session Cache ───────────────────────────────────────────────
+// Prevents the same token from being verified more than once per request.
+// This eliminates duplicate Redis + JWT calls that were causing 30s hangs.
+// The cache is flushed every 5 seconds to prevent memory growth.
+const _sessionCache = new Map<string, SessionUser | null>();
+let _cacheFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
+function scheduleCacheFlush() {
+    if (_cacheFlushTimer) return;
+    _cacheFlushTimer = setTimeout(() => {
+        _sessionCache.clear();
+        _cacheFlushTimer = null;
+    }, 5000);
+}
+// ───────────────────────────────────────────────────────────────────────────────
+
+export async function verifySession(token: string): Promise<SessionUser | null> {
+    // 1. Check in-memory cache first (zero network cost — eliminates duplicate trips)
+    if (_sessionCache.has(token)) {
+        return _sessionCache.get(token) ?? null;
+    }
+
+    try {
+        // 2. Verify JWT cryptographically first (no network needed)
+        const { payload } = await jwtVerify(token, getSecretKey());
+        const sessionUser = payload as unknown as SessionTokenPayload;
+
+        // 3. DEV MODE FAST PATH: Skip cloud Redis entirely to avoid 200-500ms latency
+        //    This is the primary fix for the 30-second local dev hang.
+        if (process.env.NODE_ENV !== "production") {
+            const result = sessionUser as unknown as SessionUser;
+            _sessionCache.set(token, result);
+            scheduleCacheFlush();
+            return result;
+        }
+
+        // 4. PRODUCTION: Batch BOTH Redis checks into ONE single round-trip (was 2 separate trips)
         if (redis && sessionUser?.userId) {
-            const lastPwdChange = await redis.get(`auth:pwd_change:${sessionUser.userId}`);
+            const [isBlacklisted, lastPwdChange] = await redis.mget(
+                `blacklist:${token}`,
+                `auth:pwd_change:${sessionUser.userId}`
+            );
+
+            if (isBlacklisted) {
+                _sessionCache.set(token, null);
+                scheduleCacheFlush();
+                return null;
+            }
+
             if (lastPwdChange && sessionUser.iat && sessionUser.iat * 1000 < Number(lastPwdChange)) {
+                _sessionCache.set(token, null);
+                scheduleCacheFlush();
                 return null;
             }
         }
 
-        return sessionUser as unknown as SessionUser;
+        const result = sessionUser as unknown as SessionUser;
+        _sessionCache.set(token, result);
+        scheduleCacheFlush();
+        return result;
     } catch {
+        _sessionCache.set(token, null);
+        scheduleCacheFlush();
         return null;
     }
 }
@@ -101,7 +146,6 @@ export async function refreshSessionCookie(request: NextRequest, response: NextR
     const sessionCookie = request.cookies.get("session")?.value;
     if (!sessionCookie) return response;
 
-    // Refresh the session token
     const parsed = await verifySession(sessionCookie);
     if (!parsed) return response;
 
@@ -115,14 +159,13 @@ export async function refreshSessionCookie(request: NextRequest, response: NextR
         }
     }
 
-    // Remove existing timestamps to prevent conflicts when re-signing
     const { exp, iat, ...userData } = tokenPayload;
     void exp;
     void iat;
-    
+
     const expiresIn = 7 * 24 * 60 * 60 * 1000; // 7 days
     const newSessionToken = await createSession(userData);
-    
+
     response.cookies.set("session", newSessionToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",

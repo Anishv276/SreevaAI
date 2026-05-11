@@ -24,19 +24,22 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     let orgData = { status: "ACTIVE", onboardingComplete: session.onboardingComplete === true };
     if (session.orgId) {
         try {
-            const org = await prisma.organization.findUnique({
-                where: { id: session.orgId },
-                select: {
-                    status: true,
-                    onboardingComplete: true,
-                    plan: true,
-                    interviewQuotaTotal: true,
-                    interviewQuotaUsed: true,
-                },
-            });
+            // ⚡ PARALLEL: Both DB calls run simultaneously (was sequential = 2x slower)
+            const [org, effectiveStatus] = await Promise.all([
+                prisma.organization.findUnique({
+                    where: { id: session.orgId },
+                    select: {
+                        status: true,
+                        onboardingComplete: true,
+                        plan: true,
+                        interviewQuotaTotal: true,
+                        interviewQuotaUsed: true,
+                    },
+                }),
+                getEffectiveOrgStatus(session.orgId),
+            ]);
 
             if (org) {
-                const effectiveStatus = await getEffectiveOrgStatus(session.orgId);
                 orgData = {
                     ...org,
                     status: String(effectiveStatus || org.status || "ACTIVE").toUpperCase(),

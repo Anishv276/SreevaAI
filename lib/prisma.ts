@@ -6,7 +6,7 @@ function createPrismaClient() {
     }).$extends({
         query: {
             async $allOperations({ model, operation, args, query }) {
-                const TIMEOUT_MS = 20000;
+                const TIMEOUT_MS = 5000;
                 let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
                 const timeoutPromise = new Promise((_, reject) => {

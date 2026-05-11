@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "cross-env NODE_OPTIONS='--dns-result-order=ipv4first' next dev --webpack",
+    "dev": "cross-env NODE_OPTIONS='--dns-result-order=ipv4first' next dev --turbo",
     "worker": "tsx worker.ts",
     "clean": "node scripts/clean-next.mjs",
     "prebuild": "npm run clean",

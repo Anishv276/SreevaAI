@@ -14,6 +14,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/context/auth-context";
 import { motion, AnimatePresence } from "framer-motion";
 import { isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
+import { useAdminOrg } from "@/context/admin-org-context";
 
 interface NavItem {
     icon: any;
@@ -48,46 +49,20 @@ export function Sidebar() {
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const { logout, user } = useAuth();
     const [mounted, setMounted] = useState(false);
-    const [orgInfo, setOrgInfo] = useState<{ name: string; logoUrl: string | null } | null>(null);
-    const [quotaLocked, setQuotaLocked] = useState(false);
-    const [orgStatus, setOrgStatus] = useState("ACTIVE");
     const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
-    useEffect(() => {
-        setMounted(true);
-        const fetchOrg = async () => {
-            try {
-                if (isSuperAdmin && orgId) {
-                    const res = await fetch(`/api/super-admin/orgs/${orgId}`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        setOrgInfo({ name: data.name, logoUrl: data.logoUrl });
-                        setOrgStatus(String(data.status || "ACTIVE").toUpperCase());
-                        return;
-                    }
-                }
-                const res = await fetch("/api/admin/organization");
-                if (res.ok) {
-                    const data = await res.json();
-                    setOrgInfo({ name: data.name, logoUrl: data.logoUrl });
-                    setOrgStatus(String(data.status || "ACTIVE").toUpperCase());
-                }
-                const billingRes = await fetch(
-                    isSuperAdmin && orgId ? `/api/admin/credits?orgId=${encodeURIComponent(orgId)}` : "/api/admin/credits"
-                );
-                if (billingRes.ok) {
-                    const billing = await billingRes.json();
-                    setQuotaLocked(isInterviewQuotaLocked(billing));
-                }
-            } catch (err) {
-                console.error("Failed to sync branding:", err);
-            }
-        };
-        if (user) fetchOrg();
-    }, [user, orgId, isSuperAdmin]);
+    // ⚡ Read from shared context — no fetch needed (was 2 API calls per page load)
+    const adminOrg = useAdminOrg();
+    const orgInfo = (adminOrg?.name || adminOrg?.logoUrl)
+        ? { name: adminOrg.name || "Sreeva AI", logoUrl: adminOrg.logoUrl || null }
+        : null;
+    const orgStatus = adminOrg?.status || "ACTIVE";
+    const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
 
     const modalRef = useRef<HTMLDivElement>(null);
     const isSuspended = isOrgRestrictedStatus(orgStatus);
+
+    useEffect(() => { setMounted(true); }, []);
 
     useEffect(() => {
         if (!showLogoutConfirm) return;
