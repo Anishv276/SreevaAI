@@ -103,7 +103,6 @@ export async function GET(request: Request) {
                     googleModel: true,
                     googleVoiceName: true,
                     ttsProvider: true,
-                    inviteScheduleDays: true,
                     _count: {
                         select: { applications: true },
                     },
@@ -114,21 +113,17 @@ export async function GET(request: Request) {
 
         const formattedDrives = drives.map((drive: any) => {
             const screeningThreshold = Number(drive.screeningThreshold ?? 60);
-            const inviteScheduleDays = Number(drive.inviteScheduleDays ?? 1) || 1;
             const parsedScreening = parseDriveScreeningSettings(
                 drive.screeningCriteria,
                 screeningThreshold,
-                inviteScheduleDays,
             );
 
             return {
                 ...drive,
                 applicants: drive._count?.applications || 0,
                 screeningThreshold: parsedScreening.threshold,
-                inviteScheduleDays: parsedScreening.inviteScheduleDays,
                 screeningCriteria: JSON.stringify({
                     threshold: parsedScreening.threshold,
-                    inviteScheduleDays: parsedScreening.inviteScheduleDays,
                     criteria: parsedScreening.criteria,
                 }),
                 aiScreening: {
@@ -236,9 +231,7 @@ export async function POST(request: Request) {
         const mergedScreeningCriteria = {
             ...normalizedScreeningCriteria,
             ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
-            ...(data.inviteScheduleDays !== undefined ? { inviteScheduleDays: data.inviteScheduleDays } : {}),
         };
-        const inviteScheduleDays = data.inviteScheduleDays ?? 1;
 
         const driveId = generateId("drv", data.title);
 
@@ -262,7 +255,6 @@ export async function POST(request: Request) {
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
                 screeningCriteria: JSON.stringify(mergedScreeningCriteria),
                 screeningThreshold: data.screeningThreshold ?? 60,
-                inviteScheduleDays,
 
                 // Interview configuration
                 interviewLanguage: data.interviewLanguage || "English",

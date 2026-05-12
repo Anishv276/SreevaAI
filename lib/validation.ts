@@ -60,11 +60,6 @@ export const createDriveSchema = z.object({
   aiName: z.string().optional(),
   screeningThreshold: z.coerce.number().int().optional(),
   screeningCriteria: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
-  inviteScheduleDays: z.preprocess((val) => {
-    if (val === null || val === undefined || val === "") return undefined;
-    const n = Number(val);
-    return Number.isNaN(n) ? undefined : n;
-  }, z.coerce.number().int().min(1).max(30).optional()),
 });
 
 export const updateDriveSchema = createDriveSchema.partial();

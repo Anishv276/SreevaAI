@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
 import { INTERVIEW_SUPPORT_EMAIL, getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
+import { useAdminOrg } from "@/context/admin-org-context";
 // ── Types ────────────────────────────────────────────────────────────────────
 interface ResumeCandidate {
     id: string;
@@ -44,8 +45,6 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
     const [candidates, setCandidates] = useState<ResumeCandidate[]>([]);
     const [batches, setBatches] = useState<ResumeBatch[]>([]);
     const [loadingData, setLoadingData] = useState(true);
-    const [quotaLocked, setQuotaLocked] = useState(false);
-    const [orgStatus, setOrgStatus] = useState<string>("ACTIVE");
     const refresh = useCallback(async () => {
         try {
             const res = await fetch(`/api/drives/${driveId}/resume-screening`);
@@ -58,41 +57,10 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
         }
     }, [driveId]);
     useEffect(() => { refresh(); }, [refresh]);
-
-    useEffect(() => {
-        let cancelled = false;
-        const loadQuota = async () => {
-            try {
-                const res = await fetch("/api/admin/credits", { cache: "no-store" });
-                if (!res.ok) return;
-                const data = await res.json();
-                if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
-            } catch {
-                // ignore
-            }
-        };
-        loadQuota();
-        return () => {
-            cancelled = true;
-        };
-    }, []);
-    useEffect(() => {
-        let cancelled = false;
-        const loadOrgStatus = async () => {
-            try {
-                const res = await fetch("/api/admin/organization", { cache: "no-store" });
-                if (!res.ok) return;
-                const data = await res.json();
-                if (!cancelled) setOrgStatus(String(data.status || "ACTIVE"));
-            } catch {
-                // ignore
-            }
-        };
-        loadOrgStatus();
-        return () => {
-            cancelled = true;
-        };
-    }, []);
+    // ⚡ Read from shared context — no fetch needed
+    const adminOrg = useAdminOrg();
+    const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
+    const orgStatus = String(adminOrg?.status || "ACTIVE");
     const isSuspended = isOrgRestrictedStatus(orgStatus);
     const interviewAccessLocked = quotaLocked || isSuspended;
     return (

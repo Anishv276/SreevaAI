@@ -7,13 +7,17 @@ import { cn } from "@/lib/utils";
 
 export default function SchedulePage({ params }: { params: Promise<{ id: string }> }) {
     const [id, setId] = useState<string | null>(null);
-    const [phase, setPhase] = useState<"loading" | "booking" | "booking_confirmed" | "already_booked">("loading");
+    const [phase, setPhase] = useState<"loading" | "booking" | "details" | "booking_confirmed" | "already_booked">("loading");
     const [slots, setSlots] = useState<any[]>([]);
     const [bookedSlot, setBookedSlot] = useState<number | null>(null);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [currentMonthDate, setCurrentMonthDate] = useState<Date>(new Date());
     const [bookingCompany, setBookingCompany] = useState<string>("Company");
     const [interviewRoleLabel, setInterviewRoleLabel] = useState<string>("Interview");
+    const [candidateName, setCandidateName] = useState<string>("");
+    const [candidateEmail, setCandidateEmail] = useState<string>("");
+    const [bookingError, setBookingError] = useState<string | null>(null);
+    const [pendingSlotTime, setPendingSlotTime] = useState<string | null>(null);
 
     useEffect(() => {
         params.then(p => setId(p.id));
@@ -193,7 +197,6 @@ export default function SchedulePage({ params }: { params: Promise<{ id: string 
                                         : "Select a Date"
                                     }
                                 </h3>
-                                
                                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3 max-h-[420px]">
                                     {!selectedDate ? (
                                         <div className="h-full flex flex-col items-center justify-center text-center text-gray-400 space-y-4 py-12">
@@ -221,23 +224,10 @@ export default function SchedulePage({ params }: { params: Promise<{ id: string 
                                                         key={i}
                                                         variant="outline"
                                                         className="w-full justify-center h-auto py-4 px-4 rounded-xl border-orange-200 text-orange-700 font-bold text-base hover:bg-orange-500 hover:text-white hover:border-orange-500 transition-all shadow-sm"
-                                                        onClick={async () => {
-                                                            try {
-                                                                const res = await fetch(`/api/interview/${id}/book`, {
-                                                                    method: "POST",
-                                                                    headers: { "Content-Type": "application/json" },
-                                                                    body: JSON.stringify({ startTime: s.startTime })
-                                                                });
-                                                                if (!res.ok) {
-                                                                    const error = await res.json();
-                                                                    alert(error.error || "Failed to book slot");
-                                                                    return;
-                                                                }
-                                                                setBookedSlot(start.getTime());
-                                                                setPhase("booking_confirmed");
-                                                            } catch (e) {
-                                                                alert("Failed to book slot");
-                                                            }
+                                                        onClick={() => {
+                                                            setBookingError(null);
+                                                            setPendingSlotTime(s.startTime);
+                                                            setPhase("details");
                                                         }}
                                                     >
                                                         {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -247,6 +237,111 @@ export default function SchedulePage({ params }: { params: Promise<{ id: string 
                                         })()
                                     )}
                                 </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+
+                {phase === "details" && (
+                    <motion.div
+                        key="details"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.98 }}
+                        className="flex-1 flex items-center justify-center p-4 z-10"
+                    >
+                        <div className="max-w-md w-full bg-white border border-gray-100 shadow-xl rounded-3xl p-8 space-y-5">
+                            <h2 className="text-2xl font-black text-gray-900 tracking-tight">Confirm Your Slot</h2>
+                            <p className="text-sm text-gray-600 font-medium">
+                                Selected Time:{" "}
+                                <strong>
+                                    {pendingSlotTime
+                                        ? new Date(pendingSlotTime).toLocaleString("en-US", {
+                                              weekday: "short",
+                                              month: "short",
+                                              day: "numeric",
+                                              hour: "numeric",
+                                              minute: "2-digit",
+                                          })
+                                        : "-"}
+                                </strong>
+                            </p>
+                            <div className="space-y-3">
+                                <div className="space-y-1">
+                                    <label className="text-[11px] font-black uppercase tracking-wider text-gray-500">Name</label>
+                                    <input
+                                        type="text"
+                                        value={candidateName}
+                                        onChange={(e) => setCandidateName(e.target.value)}
+                                        placeholder="Enter your full name"
+                                        className="w-full rounded-xl border border-orange-200 px-3 py-2 text-sm font-medium text-gray-800 outline-none focus:ring-2 focus:ring-orange-200"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[11px] font-black uppercase tracking-wider text-gray-500">Application Email</label>
+                                    <input
+                                        type="email"
+                                        value={candidateEmail}
+                                        onChange={(e) => setCandidateEmail(e.target.value)}
+                                        placeholder="Enter the same email used in your application"
+                                        className="w-full rounded-xl border border-orange-200 px-3 py-2 text-sm font-medium text-gray-800 outline-none focus:ring-2 focus:ring-orange-200"
+                                    />
+                                </div>
+                                {bookingError ? <p className="text-xs font-semibold text-red-600">{bookingError}</p> : null}
+                            </div>
+                            <div className="flex gap-3 pt-2">
+                                <Button
+                                    variant="outline"
+                                    className="flex-1 rounded-xl"
+                                    onClick={() => {
+                                        setBookingError(null);
+                                        setPhase("booking");
+                                    }}
+                                >
+                                    Back
+                                </Button>
+                                <Button
+                                    className="flex-1 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold"
+                                    onClick={async () => {
+                                        const normalizedEmail = candidateEmail.trim().toLowerCase();
+                                        const normalizedName = candidateName.trim();
+                                        if (!pendingSlotTime) {
+                                            setBookingError("Please select a slot first.");
+                                            return;
+                                        }
+                                        if (!normalizedName) {
+                                            setBookingError("Please enter your name.");
+                                            return;
+                                        }
+                                        if (!normalizedEmail) {
+                                            setBookingError("Please enter your application email.");
+                                            return;
+                                        }
+                                        setBookingError(null);
+                                        try {
+                                            const res = await fetch(`/api/interview/${id}/book`, {
+                                                method: "POST",
+                                                headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({
+                                                    startTime: pendingSlotTime,
+                                                    name: normalizedName,
+                                                    email: normalizedEmail,
+                                                }),
+                                            });
+                                            if (!res.ok) {
+                                                const error = await res.json();
+                                                setBookingError(error.error || "Failed to book slot");
+                                                return;
+                                            }
+                                            setBookedSlot(new Date(pendingSlotTime).getTime());
+                                            setPhase("booking_confirmed");
+                                        } catch (_e) {
+                                            setBookingError("Failed to book slot");
+                                        }
+                                    }}
+                                >
+                                    Schedule
+                                </Button>
                             </div>
                         </div>
                     </motion.div>
@@ -270,7 +365,7 @@ export default function SchedulePage({ params }: { params: Promise<{ id: string 
                             </p>
                             <div className="bg-orange-50 rounded-2xl p-4 mt-6">
                                 <p className="text-sm text-orange-800 font-medium leading-relaxed">
-                                    We've sent a confirmation email to you. Please check your inbox and use the unique link provided to join at your scheduled time.
+                                    We&apos;ve sent a confirmation email to you. Please check your inbox and use the unique link provided to join at your scheduled time.
                                 </p>
                             </div>
                         </div>

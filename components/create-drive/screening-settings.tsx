@@ -10,7 +10,6 @@ import type { ScreeningCriteria } from "@/lib/screening-criteria";
 export interface ScreeningConfig {
     threshold: number;
     criteria?: ScreeningCriteria;
-    inviteScheduleDays?: number;
 }
 
 interface ScreeningSettingsProps {
@@ -24,7 +23,6 @@ type CustomCheckItem = { text: string; required?: boolean };
 export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps) {
     const threshold = config?.threshold ?? 60;
     const criteria = config?.criteria ?? {};
-    const inviteScheduleDays = config?.inviteScheduleDays ?? 1;
     const [expandedSection, setExpandedSection] = useState<"skills" | "custom" | null>("skills");
     const [newSkill, setNewSkill] = useState("");
     const [newSkillMustHave, setNewSkillMustHave] = useState(true);
@@ -203,48 +201,6 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
                             <span>Balanced</span>
                             <span>Strict</span>
                         </div>
-                    </div>
-                </div>
-            </section>
-
-            <section className="space-y-5 rounded-3xl border border-slate-200/80 bg-gradient-to-b from-white to-slate-50/60 p-5 shadow-[0_8px_30px_rgba(15,23,42,0.06)] md:p-6">
-                <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
-                        <Zap className="h-4 w-4" />
-                    </div>
-                    <div>
-                        <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-slate-900">
-                            <Sparkles className="h-4 w-4 text-orange-500" />
-                            Invitation Timing
-                        </p>
-                        <p className="text-xs text-slate-500">Choose how many days to spread shortlisted invitations across.</p>
-                    </div>
-                </div>
-
-                <div className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-sm">
-                    <div className="flex items-center justify-between gap-4">
-                        <div className="space-y-1">
-                            <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                <Zap className="h-4 w-4 text-orange-500" />
-                                Spread invitations over
-                            </p>
-                            <p className="text-xs font-medium text-slate-500">Recruiters can drip interview invites instead of sending every shortlisted email at once.</p>
-                        </div>
-                        <div className="flex items-baseline gap-1 text-slate-950">
-                            <span className="text-3xl font-black tracking-tight">{inviteScheduleDays}</span>
-                            <span className="text-sm font-semibold text-slate-500">day{inviteScheduleDays === 1 ? "" : "s"}</span>
-                        </div>
-                    </div>
-
-                    <div className="mt-5 px-1">
-                        <Slider
-                            value={[inviteScheduleDays]}
-                            onValueChange={([v]) => setConfig((prev) => ({ ...prev, inviteScheduleDays: v }))}
-                            max={30}
-                            min={1}
-                            step={1}
-                            className="cursor-pointer"
-                        />
                     </div>
                 </div>
             </section>

@@ -160,16 +160,25 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
 }
 
 export async function getEffectiveOrgStatus(orgId: string): Promise<string | null> {
-    const current = await prisma.organization.findUnique({
-        where: { id: orgId },
-        select: { status: true, interviewQuotaTotal: true, interviewQuotaUsed: true },
-    });
+    // ⚡ Single query — fetch all needed columns in one round-trip
+    const rows = await prisma.$queryRaw<Array<{
+        status: string | null;
+        interviewQuotaTotal: number | null;
+        interviewQuotaUsed: number | null;
+        statusControl: string | null;
+    }>>(
+        Prisma.sql`
+            SELECT "status", "interviewQuotaTotal", "interviewQuotaUsed", "statusControl"
+            FROM "Organization"
+            WHERE id = ${orgId}
+            LIMIT 1
+        `
+    );
 
-    if (!current) {
-        return null;
-    }
+    const current = rows[0];
+    if (!current) return null;
 
-    const statusControl = await getOrgStatusControlRaw(orgId);
+    const statusControl = normalizeOrgStatusControl(current.statusControl);
     if (statusControl === ORG_STATUS_CONTROL_MANUAL) {
         return "SUSPENDED";
     }

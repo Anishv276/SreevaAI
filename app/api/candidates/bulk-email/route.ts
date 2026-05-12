@@ -20,7 +20,6 @@ type BulkEmailTarget = {
         title: string;
         orgId: string | null;
         status: string;
-        inviteScheduleDays: number | null;
     } | null;
 };
 
@@ -95,12 +94,10 @@ export async function POST(request: Request) {
             ids,
             emailType = "screening",
             targetAction,
-            scheduleDays,
         }: {
             ids: string[];
             emailType?: "screening" | "hiring";
             targetAction?: "shortlist" | "reject" | "hire" | "nothired";
-            scheduleDays?: number;
         } = await request.json();
 
         if (!ids?.length) {
@@ -122,7 +119,6 @@ export async function POST(request: Request) {
                         title: true,
                         orgId: true,
                         status: true,
-                        inviteScheduleDays: true,
                     },
                 },
             },
@@ -180,7 +176,6 @@ export async function POST(request: Request) {
                                 title: true,
                                 orgId: true,
                                 status: true,
-                                inviteScheduleDays: true,
                             },
                         },
                     },
@@ -224,7 +219,6 @@ export async function POST(request: Request) {
         const plannedDeliveries: Array<{
             app: BulkEmailTarget;
             action: Exclude<BulkEmailAction, null>;
-            scheduleDays: number;
         }> = [];
         const skipReasons: string[] = [];
 
@@ -254,7 +248,6 @@ export async function POST(request: Request) {
             plannedDeliveries.push({
                 app,
                 action,
-                scheduleDays: 1,
             });
         }
 
@@ -274,34 +267,23 @@ export async function POST(request: Request) {
         const failures: Array<{ id: string; reason: string }> = [];
         const shortlistApps = plannedDeliveries.filter(({ action }) => action === "shortlist");
         const directDeliveries = plannedDeliveries.filter(({ action }) => action !== "shortlist");
-        const shortlistSpreadDays = Math.max(
-            1,
-            Number(scheduleDays ?? orderedApplications[0]?.drive?.inviteScheduleDays ?? 1) || 1
-        );
-        const shortlistWindowMs = Math.max(0, shortlistSpreadDays - 1) * 24 * 60 * 60 * 1000;
 
-        for (let index = 0; index < shortlistApps.length; index += 1) {
-            const { app } = shortlistApps[index];
+        for (const { app } of shortlistApps) {
             try {
-                const delayMs = shortlistApps.length > 1 && shortlistWindowMs > 0
-                    ? Math.round((index / Math.max(1, shortlistApps.length - 1)) * shortlistWindowMs)
-                    : 0;
-
                 await invitationDeliveryQueue.add(
                     "send-shortlist-email",
                     {
                         applicationId: app.id,
                         action: "shortlist",
                         emailType: "screening",
-                        scheduledAt: new Date(Date.now() + delayMs).toISOString(),
                     },
-                    { delay: delayMs }
+                    {}
                 );
                 queued += 1;
                 await appendCandidateActivity(app.id, {
                     type: "email_sent",
                     label: "Shortlisted email queued",
-                    details: `Scheduled for ${new Date(Date.now() + delayMs).toISOString()}`,
+                    details: `Queued at ${new Date().toISOString()}`,
                     timestamp: new Date().toISOString(),
                     source: "worker",
                 });

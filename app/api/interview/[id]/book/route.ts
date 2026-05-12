@@ -1,28 +1,36 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { invitationDeliveryQueue } from "@/lib/queue";
+import { generateId } from "@/lib/ids";
+import { v4 as uuidv4 } from "uuid";
+import { sendApplicationStatusEmail } from "@/lib/mail";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     console.error("[BOOKING API] POST request received");
     try {
+        const prismaAny = prisma as any;
         const { id } = await params;
         const body = await request.json();
         const startTime = new Date(body.startTime);
+        const providedName = String(body.name || "").trim();
 
         if (isNaN(startTime.getTime())) {
             return NextResponse.json({ error: "Invalid start time" }, { status: 400 });
         }
+        if (!providedName) {
+            return NextResponse.json({ error: "Name is required to book a slot" }, { status: 400 });
+        }
 
-        const app = await prisma.application.findUnique({
+        const app = await prismaAny.application.findUnique({
             where: { id },
             include: { drive: true, interview: true }
         });
 
-        if (!app || !app.interview) {
-            return NextResponse.json({ error: "Interview not found" }, { status: 404 });
+        if (!app) {
+            return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
 
-        if (app.interview.slotId) {
+        if (app.interview?.slotId) {
             return NextResponse.json({ error: "Slot already booked" }, { status: 400 });
         }
 
@@ -34,7 +42,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: "Incomplete application data" }, { status: 400 });
         }
 
-        const slot = await prisma.$transaction(async (tx) => {
+        const bookingResult = await prismaAny.$transaction(async (tx: any) => {
             let slot = await tx.interviewSlot.findFirst({
                 where: {
                     orgId,
@@ -64,13 +72,36 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 });
             }
 
-            await tx.interview.update({
-                where: { id: app.interview.id },
-                data: {
-                    slotId: slot.id,
-                    scheduledAt: startTime,
-                }
-            });
+            const interviewToken = app.interview?.accessToken || uuidv4();
+            const expiresAt = new Date(startTime.getTime() + 48 * 60 * 60 * 1000);
+            const interviewId = app.interview?.id || generateId("int", app.fullName || app.id);
+
+            if (app.interview) {
+                await tx.interview.update({
+                    where: { id: app.interview.id },
+                    data: {
+                        accessToken: interviewToken,
+                        expiresAt,
+                        slotId: slot.id,
+                        scheduledAt: startTime,
+                        status: "PENDING",
+                        startedAt: null,
+                        completedAt: null,
+                    }
+                });
+            } else {
+                await tx.interview.create({
+                    data: {
+                        id: interviewId,
+                        applicationId: app.id,
+                        accessToken: interviewToken,
+                        expiresAt,
+                        status: "PENDING",
+                        slotId: slot.id,
+                        scheduledAt: startTime,
+                    }
+                });
+            }
 
             await tx.application.update({
                 where: { id: app.id },
@@ -79,23 +110,31 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 }
             });
 
-            return slot;
+            return {
+                slot,
+                interviewToken,
+            };
         });
 
-        // Dispatch confirmation email
-        console.error(`[BOOKING API] Dispatching confirmation for ${app.id}`);
-        await invitationDeliveryQueue.add(
-            "confirm-interview",
-            {
-                applicationId: app.id,
-                action: "confirm",
-                scheduledAt: startTime.toISOString()
-            },
-            { removeOnComplete: true, removeOnFail: false, attempts: 3, backoff: { type: "exponential", delay: 5000 } }
-        );
+        // Send confirmation directly from API to avoid queue action/template mismatch.
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+        const interviewBase = `${baseUrl}/interview/${app.id}`;
+        const interviewLink = isInterviewTokenRequired() && bookingResult.interviewToken
+            ? `${interviewBase}?token=${bookingResult.interviewToken}`
+            : interviewBase;
+        const mailResult = await sendApplicationStatusEmail({
+            email: app.email,
+            fullName: app.fullName,
+            jobTitle: app.drive?.title || "Unknown Role",
+            status: "CONFIRMED",
+            interviewLink,
+            scheduledAt: startTime,
+        });
+        if (!mailResult.success) {
+            console.error("[BOOKING API] Confirmation email failed:", mailResult.error);
+        }
 
-        console.error("[BOOKING API] Job added to queue successfully");
-        return NextResponse.json({ success: true, slot });
+        return NextResponse.json({ success: true, slot: bookingResult.slot });
     } catch (err: any) {
         if (err.message === "SLOT_FULL") {
             return NextResponse.json({ error: "This slot is full. Please choose another." }, { status: 409 });

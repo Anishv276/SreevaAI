@@ -28,7 +28,7 @@ interface Message {
     content: string;
 }
 
-export function RecruiterAssistant() {
+export function RecruiterAssistant({ logoUrl, name }: { logoUrl?: string; name?: string }) {
     const [isOpen, setIsOpen] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
     const [input, setInput] = useState("");
@@ -39,33 +39,11 @@ export function RecruiterAssistant() {
         }
     ]);
     const [isLoading, setIsLoading] = useState(false);
-    const [company, setCompany] = useState<{ logoUrl?: string; name?: string }>({});
+    // ⚡ Company branding is now passed as props from layout — no fetch needed
+    const company = { logoUrl, name };
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    // Fetch Organization Branding
-    useEffect(() => {
-        const controller = new AbortController();
-        const signal = controller.signal;
 
-        const fetchOrg = async () => {
-            try {
-                const res = await fetch("/api/admin/organization", { signal });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (!signal.aborted) setCompany({ logoUrl: data.logoUrl, name: data.name });
-                }
-            } catch (err: any) {
-                if (err.name !== "AbortError") {
-                    console.error("Failed to fetch org branding", err);
-                }
-            }
-        };
-
-        fetchOrg();
-        return () => controller.abort();
-    }, []);
-
-    // Auto-scroll to bottom on message change
     useEffect(() => {
         if (scrollRef.current) {
             scrollRef.current.scrollTop = scrollRef.current.scrollHeight;

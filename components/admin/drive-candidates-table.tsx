@@ -15,6 +15,7 @@ import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
+import { useAdminOrg } from "@/context/admin-org-context";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     AlertCircle,
@@ -81,7 +82,9 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         description: string;
         confirmText: string;
     } | null>(null);
-    const [quotaLocked, setQuotaLocked] = useState(false);
+    // ⚡ Read from shared context — no fetch needed
+    const adminOrg = useAdminOrg();
+    const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
     const isSuspended = isOrgRestrictedStatus(organization?.status);
     const isInterviewActionBlocked = isSuspended || quotaLocked;
     const interviewActionBlockedMessage = getInterviewActionBlockedMessage(isSuspended);
@@ -151,23 +154,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         return () => clearInterval(timer);
     }, [candidates, isDriveViewReady, pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, scoreSort, fetchCandidates]);
 
-    useEffect(() => {
-        let cancelled = false;
-        const loadQuota = async () => {
-            try {
-                const res = await fetch("/api/admin/credits", { cache: "no-store" });
-                if (!res.ok) return;
-                const data = await res.json();
-                if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
-            } catch {
-                // ignore
-            }
-        };
-        loadQuota();
-        return () => {
-            cancelled = true;
-        };
-    }, []);
+
     const handlePageChange = (newPage: number) => {
         if (newPage < 1 || newPage > pagination.totalPages) return;
         let startDate: string | undefined;
@@ -820,7 +807,11 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                                     toast.error(interviewActionBlockedMessage);
                                                                     return;
                                                                 }
-                                                                window.location.href = `mailto:${candidate.email}`;
+                                                                handleSendInterviewLink({
+                                                                    id: candidate.id,
+                                                                    name: displayName,
+                                                                    interviewStatus: candidate.interviewStatus,
+                                                                });
                                                             }}
                                                             disabled={isInterviewActionBlocked}
                                                             className={cn(
@@ -829,7 +820,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                             )}
                                                         >
                                                             {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <Mail className="h-4 w-4 mr-2 shrink-0" />}
-                                                            Send Mail
+                                                            Send Schedule Link
                                                         </DropdownMenuItem>
                                                         <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Hire</DropdownMenuLabel>
                                                         <DropdownMenuItem
@@ -861,7 +852,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                             )}
                                                         >
                                                             {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <Mail className="h-4 w-4 mr-2 shrink-0" />}
-                                                            Send Mail
+                                                            Compose Email
                                                         </DropdownMenuItem>
                                                         <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Manage</DropdownMenuLabel>
                                                         <DropdownMenuItem

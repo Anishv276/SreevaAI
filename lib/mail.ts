@@ -11,6 +11,7 @@ export async function sendApplicationStatusEmail({
     orgName: orgNameProp,
     status,
     interviewLink,
+    scheduledAt,
 }: {
     email: string;
     fullName: string;
@@ -32,7 +33,7 @@ export async function sendApplicationStatusEmail({
     const subject = isHired
         ? `Offer Letter: You've been selected for ${jobTitle}!`
         : isConfirmed
-        ? `Interview Confirmed: Your AI Interview for ${jobTitle}`
+        ? `Interview Booked: Your AI Interview for ${jobTitle}`
         : isAccepted
         ? `Action Required: Schedule your AI Interview for ${jobTitle}`
         : `Update regarding your application for ${jobTitle}`;
@@ -53,26 +54,29 @@ export async function sendApplicationStatusEmail({
             <p style="color: #374151; font-weight: 700; margin-top: 0;">${orgName} Recruitment Team</p>
         </div>
     ` : isConfirmed ? `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px; background-color: #ffffff;">
-            <div style="text-align: center; margin-bottom: 25px;">
-                <div style="display: inline-block; background-color: #F0FDF4; padding: 12px; border-radius: 16px;">
-                    <span style="font-size: 24px;">📅</span>
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #E5E7EB; border-radius: 18px; background-color: #ffffff;">
+            <div style="text-align: center; margin-bottom: 22px;">
+                <div style="display: inline-block; background-color: #ECFDF5; padding: 14px; border-radius: 18px;">
+                    <span style="font-size: 26px;">📌</span>
                 </div>
             </div>
-            <h1 style="color: #111827; text-align: center; font-size: 24px; font-weight: 800; margin-bottom: 10px;">Interview Confirmed</h1>
-            <p style="color: #4B5563; text-align: center; font-size: 16px; line-height: 1.5;">Hi ${fullName}, your AI Voice Interview for the <strong>${jobTitle}</strong> position has been successfully scheduled.</p>
-            <div style="background-color: #F9FAFB; border-radius: 16px; padding: 20px; margin: 30px 0; border: 1px solid #F3F4F6;">
-                <h3 style="color: #111827; font-size: 14px; font-weight: 700; margin-top: 0; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 15px; text-align: center;">Your Scheduled Time</h3>
-                <p style="color: #4B5563; font-size: 18px; font-weight: bold; margin-bottom: 20px; text-align: center;">
+            <h1 style="color: #111827; text-align: center; font-size: 26px; font-weight: 800; margin-bottom: 12px;">Interview Slot Confirmed</h1>
+            <p style="color: #4B5563; text-align: center; font-size: 16px; line-height: 1.6; margin-bottom: 18px;">Hi ${fullName}, your AI Voice Interview for the <strong>${jobTitle}</strong> position is booked.</p>
+            <div style="background-color: #F9FAFB; border-radius: 18px; padding: 22px; margin: 24px 0; border: 1px solid #F3F4F6;">
+                <h3 style="color: #111827; font-size: 13px; font-weight: 800; margin-top: 0; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; text-align: center;">Booked Time</h3>
+                <p style="color: #111827; font-size: 18px; font-weight: 800; margin-bottom: 18px; text-align: center;">
                     ${scheduledAt ? scheduledAt.toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : 'Your selected time'}
                 </p>
-                <div style="text-align: center;">
-                    <a href="${interviewLink}" style="background-color: #F97316; color: white; padding: 14px 35px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 15px; display: inline-block; box-shadow: 0 4px 12px rgba(249,115,22,0.25);">Join Interview Link</a>
+                <div style="text-align: center; margin-bottom: 14px;">
+                    <a href="${interviewLink}" style="background-color: #111827; color: white; padding: 14px 34px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 15px; display: inline-block;">Open Interview</a>
                 </div>
-                <p style="color: #9CA3AF; font-size: 11px; margin-top: 20px; text-align: center;">Please join using the link above exactly at your scheduled time. The link will only be active during your 20-minute slot.</p>
+                <p style="color: #6B7280; font-size: 12px; margin-top: 8px; text-align: center;">Use this link to enter the interview page. Hardware check is available now, and the start button will unlock at the correct time.</p>
             </div>
-            <p style="color: #4B5563; font-size: 14px;">We recommend logging in 5 minutes early to complete your hardware check.</p>
-            <hr style="border: none; border-top: 1px solid #F3F4F6; margin: 25px 0;" />
+            <div style="background-color: #FFF7ED; border: 1px solid #FED7AA; border-radius: 16px; padding: 16px 18px; margin: 24px 0;">
+                <p style="color: #9A3412; font-size: 13px; font-weight: 700; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.06em;">What to expect</p>
+                <p style="color: #7C2D12; font-size: 14px; line-height: 1.6; margin: 0;">You can complete the hardware check before your slot begins. When your interview window opens, the <strong>Begin Interview</strong> button will activate automatically.</p>
+            </div>
+            <hr style="border: none; border-top: 1px solid #F3F4F6; margin: 24px 0;" />
             <p style="color: #9CA3AF; font-size: 12px; margin-bottom: 5px;">Best Regards,</p>
             <p style="color: #374151; font-weight: 700; margin-top: 0;">${orgName} Recruitment Team</p>
         </div>

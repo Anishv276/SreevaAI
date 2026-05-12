@@ -305,8 +305,7 @@ async function processBatch(
 
         const parsed = parseDriveScreeningSettings(
             drive.screeningCriteria,
-            Number(drive.screeningThreshold ?? 60),
-            1
+            Number(drive.screeningThreshold ?? 60)
         );
         const threshold: number = Number(parsed.threshold ?? drive.screeningThreshold ?? 60);
         const screeningCriteria = parsed.criteria;

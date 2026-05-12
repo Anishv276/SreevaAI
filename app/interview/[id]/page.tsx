@@ -192,7 +192,7 @@ const InterviewVoiceOutputProcessor = memo(function InterviewVoiceOutputProcesso
     return null;
 });
 function InterviewContent({ id, params }: { id: string, params: Promise<{ id: string }> }) {
-    const [phase, setPhase] = useState<"loading" | "waiting" | "check" | "launching" | "interview" | "finalizing" | "completed">("loading");
+    const [phase, setPhase] = useState<"loading" | "check" | "launching" | "interview" | "finalizing" | "completed">("loading");
     const [slots, setSlots] = useState<any[]>([]);
     const [bookedSlot, setBookedSlot] = useState<number | null>(null);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -288,12 +288,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 setSlots(data.slots || []);
                 if (data.bookedSlot) {
                     setBookedSlot(data.bookedSlot);
-                    const timeUntil = data.bookedSlot - Date.now();
-                    if (timeUntil > 10 * 60 * 1000) {
-                        setPhase("waiting");
-                    } else {
-                        setPhase("check");
-                    }
+                    setPhase("check");
                 } else {
                     const searchParams = window.location.search;
                     window.location.href = `/interview/${id}/schedule${searchParams}`;
@@ -308,17 +303,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         return () => { isMounted = false; };
     }, [id]);
 
-    useEffect(() => {
-        if (phase === "waiting" && bookedSlot) {
-            const timer = setInterval(() => {
-                const timeUntil = bookedSlot - Date.now();
-                if (timeUntil <= 10 * 60 * 1000) {
-                    setPhase("check");
-                }
-            }, 1000);
-            return () => clearInterval(timer);
-        }
-    }, [phase, bookedSlot]);
     //  Face violation handler 
     const handleFaceViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
         if (eventType === "face_absence" && !isFaceAbsenceEnabled) return;
@@ -844,33 +828,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     </motion.div>
                 )}
 
-                {phase === "waiting" && (
-                    <motion.div
-                        key="waiting"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className="flex-1 w-full bg-white z-50 absolute inset-0 overflow-y-auto flex items-center justify-center p-4"
-                    >
-                        <div className="max-w-md w-full bg-white border border-gray-100 shadow-xl rounded-3xl p-8 space-y-6 text-center">
-                            <div className="mx-auto w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mb-6 shadow-inner">
-                                <Loader2 className="w-8 h-8 animate-spin-slow" />
-                            </div>
-                            <h2 className="text-2xl font-black text-gray-900 tracking-tight">You're Early!</h2>
-                            <p className="text-gray-500 font-medium leading-relaxed">
-                                Your AI interview is scheduled for <strong className="text-gray-900">{bookedSlot ? new Date(bookedSlot).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}</strong>.
-                            </p>
-                            <div className="bg-orange-50 rounded-2xl p-5 mt-6 border border-orange-100/50">
-                                <p className="text-sm text-orange-800 font-bold leading-relaxed mb-1">
-                                    Hardware Check Locked
-                                </p>
-                                <p className="text-xs text-orange-700/80 font-medium">
-                                    The pre-interview hardware check will automatically unlock <strong className="text-orange-900">10 minutes</strong> before your scheduled start time. Please leave this tab open or check back later!
-                                </p>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
                 {phase === "check" && (
                     <motion.div
                         key="check"

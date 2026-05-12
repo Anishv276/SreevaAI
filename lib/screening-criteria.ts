@@ -29,7 +29,6 @@ export interface ScreeningCriteria {
 
 export interface DriveScreeningSettings {
     threshold: number;
-    inviteScheduleDays: number;
     criteria: ScreeningCriteria;
 }
 
@@ -80,7 +79,7 @@ function normalizeCustomChecks(input: unknown) {
 
 function unwrapScreeningCriteriaSource(criteria: Record<string, any>): Record<string, any> {
     // The frontend saves a wrapper object that looks like:
-    // { threshold, inviteScheduleDays, criteria: { skills, customChecks, ... } }
+    // { threshold, criteria: { skills, customChecks, ... } }
     // Older records may store the raw criteria object directly.
     if (isPlainObject(criteria.criteria)) {
         return criteria.criteria;
@@ -118,13 +117,11 @@ export function sanitizeScreeningCriteria(criteria: ScreeningCriteria | Record<s
 
 export function parseDriveScreeningSettings(
     screeningCriteria: unknown,
-    threshold: number,
-    inviteScheduleDays: number
+    threshold: number
 ): DriveScreeningSettings {
     const parsed = sanitizeScreeningCriteria(parseMaybeJson(screeningCriteria));
     return {
         threshold: Number.isFinite(threshold) ? threshold : 60,
-        inviteScheduleDays: Number.isFinite(inviteScheduleDays) && inviteScheduleDays > 0 ? inviteScheduleDays : 1,
         criteria: parsed,
     };
 }

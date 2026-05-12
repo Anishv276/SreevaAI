@@ -29,7 +29,6 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
     const [activeTab, setActiveTab] = useState<"upload" | "settings">("upload");
     const [screeningThreshold, setScreeningThreshold] = useState(60);
     const [screeningCriteria, setScreeningCriteria] = useState<Record<string, any>>({});
-    const [inviteScheduleDays, setInviteScheduleDays] = useState(1);
     
     // ⚡ Read from shared context — no fetch needed
     const adminOrg = useAdminOrg();
@@ -53,11 +52,9 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                 const parsed = parseDriveScreeningSettings(
                     data.screeningCriteria,
                     Number(data.screeningThreshold ?? 60),
-                    Number(data.inviteScheduleDays ?? 1),
                 );
 
                 setScreeningThreshold(parsed.threshold);
-                setInviteScheduleDays(parsed.inviteScheduleDays);
                 setScreeningCriteria(parsed.criteria as Record<string, any>);
             } catch (err) {
                 console.error("Load drive error:", err);
@@ -76,11 +73,9 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
         const parsed = parseDriveScreeningSettings(
             currentDrive.screeningCriteria,
             Number(currentDrive.screeningThreshold ?? 60),
-            Number(currentDrive.inviteScheduleDays ?? 1),
         );
 
         setScreeningThreshold(parsed.threshold);
-        setInviteScheduleDays(parsed.inviteScheduleDays);
         setScreeningCriteria(parsed.criteria as Record<string, any>);
     }, [drive]);
 
@@ -95,7 +90,6 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                 body: JSON.stringify({
                     screeningThreshold,
                     screeningCriteria: sanitizeScreeningCriteria(screeningCriteria),
-                    inviteScheduleDays,
                 }),
             });
 
@@ -259,17 +253,15 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                 <p className="mt-1 text-sm text-slate-500">Configure AI screening criteria. The system will automatically score and rank candidates based on these settings.</p>
                             </div>
                             <ScreeningSettings
-                                config={{ threshold: screeningThreshold, criteria: screeningCriteria, inviteScheduleDays }}
+                                config={{ threshold: screeningThreshold, criteria: screeningCriteria }}
                                 setConfig={(cfg) => {
                                     if (typeof cfg === "function") {
-                                        const next = cfg({ threshold: screeningThreshold, criteria: screeningCriteria, inviteScheduleDays });
+                                        const next = cfg({ threshold: screeningThreshold, criteria: screeningCriteria });
                                         setScreeningThreshold(next.threshold ?? 60);
                                         setScreeningCriteria(next.criteria || {});
-                                        setInviteScheduleDays(Number(next.inviteScheduleDays ?? 1));
                                     } else {
                                         setScreeningThreshold(cfg.threshold ?? 60);
                                         setScreeningCriteria(cfg.criteria || {});
-                                        setInviteScheduleDays(Number(cfg.inviteScheduleDays ?? 1));
                                     }
                                 }}
                             />
@@ -282,10 +274,8 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                         const next = parseDriveScreeningSettings(
                                             currentDrive?.screeningCriteria,
                                             Number(currentDrive?.screeningThreshold ?? 60),
-                                            Number(currentDrive?.inviteScheduleDays ?? 1),
                                         );
                                         setScreeningThreshold(next.threshold);
-                                        setInviteScheduleDays(next.inviteScheduleDays);
                                         setScreeningCriteria(next.criteria as Record<string, any>);
                                     }}
                                 >

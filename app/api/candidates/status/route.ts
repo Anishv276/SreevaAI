@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 
 const emailSchema = z.string().email("Valid email required");
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export async function GET(request: Request) {
     try {
@@ -58,8 +59,8 @@ export async function GET(request: Request) {
                         !!app.interview.expiresAt &&
                         new Date() < new Date(app.interview.expiresAt),
                     interviewLink: isInterviewTokenRequired()
-                        ? `http://localhost:3000/interview/${app.id}?token=${encodeURIComponent(app.interview.accessToken)}`
-                        : `http://localhost:3000/interview/${app.id}`,
+                        ? `${appUrl}/interview/${app.id}?token=${encodeURIComponent(app.interview.accessToken)}`
+                        : `${appUrl}/interview/${app.id}`,
                 }
                 : null;
 

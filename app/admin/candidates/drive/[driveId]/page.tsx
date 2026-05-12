@@ -23,7 +23,6 @@ interface DriveDetails {
     department?: string | null;
     applicants?: number | null;
     screeningThreshold?: number | null;
-    inviteScheduleDays?: number | null;
     interviewLanguage?: string | null;
     type?: string | null;
     description?: string | null;
@@ -49,7 +48,6 @@ export default function DriveCandidatesPage() {
     const [refreshKey, setRefreshKey] = useState(0);
     const [screeningThreshold, setScreeningThreshold] = useState(60);
     const [screeningCriteria, setScreeningCriteria] = useState<Record<string, any>>({});
-    const [inviteScheduleDays, setInviteScheduleDays] = useState(1);
 
     // ⚡ Read from shared context — no fetch needed (was 1 API call per load)
     const adminOrg = useAdminOrg();
@@ -75,7 +73,6 @@ export default function DriveCandidatesPage() {
                     department: data.department || null,
                     applicants: data.applicants ?? data._count?.applications ?? 0,
                     screeningThreshold: data.screeningThreshold ?? null,
-                    inviteScheduleDays: data.inviteScheduleDays ?? null,
                     interviewLanguage: data.interviewLanguage || null,
                     type: data.type || null,
                     description: data.description || null,
@@ -94,11 +91,9 @@ export default function DriveCandidatesPage() {
                 const parsed = parseDriveScreeningSettings(
                     data.screeningCriteria,
                     Number(data.screeningThreshold ?? 60),
-                    Number(data.inviteScheduleDays ?? 1),
                 );
 
                 setScreeningThreshold(parsed.threshold);
-                setInviteScheduleDays(parsed.inviteScheduleDays);
                 setScreeningCriteria(parsed.criteria as Record<string, any>);
             } catch (error) {
                 console.error("Failed to fetch drive:", error);
@@ -143,7 +138,6 @@ export default function DriveCandidatesPage() {
                 body: JSON.stringify({
                     screeningThreshold,
                     screeningCriteria: sanitizeScreeningCriteria(screeningCriteria),
-                    inviteScheduleDays,
                 }),
             });
 
@@ -271,17 +265,15 @@ export default function DriveCandidatesPage() {
                             </div>
 
                             <ScreeningSettings
-                                config={{ threshold: screeningThreshold, criteria: screeningCriteria, inviteScheduleDays }}
+                                config={{ threshold: screeningThreshold, criteria: screeningCriteria }}
                                 setConfig={(cfg) => {
                                     if (typeof cfg === "function") {
-                                        const next = cfg({ threshold: screeningThreshold, criteria: screeningCriteria, inviteScheduleDays });
+                                        const next = cfg({ threshold: screeningThreshold, criteria: screeningCriteria });
                                         setScreeningThreshold(next.threshold ?? 60);
                                         setScreeningCriteria(next.criteria || {});
-                                        setInviteScheduleDays(Number(next.inviteScheduleDays ?? 1));
                                     } else {
                                         setScreeningThreshold(cfg.threshold ?? 60);
                                         setScreeningCriteria(cfg.criteria || {});
-                                        setInviteScheduleDays(Number(cfg.inviteScheduleDays ?? 1));
                                     }
                                 }}
                             />
@@ -307,10 +299,8 @@ export default function DriveCandidatesPage() {
                                         const next = parseDriveScreeningSettings(
                                             parsed,
                                             Number(current?.screeningThreshold ?? 60),
-                                            Number(current?.inviteScheduleDays ?? 1),
                                         );
                                         setScreeningThreshold(next.threshold);
-                                        setInviteScheduleDays(next.inviteScheduleDays);
                                         setScreeningCriteria(next.criteria as Record<string, any>);
                                     }}
                                     className="h-10 rounded-xl border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 shadow-sm hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"

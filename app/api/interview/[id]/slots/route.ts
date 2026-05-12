@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
+        const prismaAny = prisma as any;
         const { id } = await params;
-        const app = await prisma.application.findUnique({
+        const app = await prismaAny.application.findUnique({
             where: { id },
             include: { drive: { include: { organization: true } }, interview: true }
         });
@@ -26,7 +27,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         const end = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
         // Get existing slots for the entire org to enforce org-level concurrency
-        const existingSlots = await prisma.interviewSlot.findMany({
+        const existingSlots = await prismaAny.interviewSlot.findMany({
             where: {
                 orgId,
                 startTime: { gte: now, lte: end }
@@ -51,6 +52,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             
             if (!existing || existing.bookedCount < existing.maxCapacity) {
                 availableSlots.push({
+                    slotId: existing?.id || `slot_${orgId}_${timeMs}`,
                     startTime: new Date(timeMs),
                     endTime: new Date(timeMs + 20 * 60000),
                     available: existing ? existing.maxCapacity - existing.bookedCount : 5

@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
 import { AlertCircle, CheckCircle2, FileText, Loader2, Mail, Upload, X, XCircle, Lock } from "lucide-react";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
+import { useAdminOrg } from "@/context/admin-org-context";
 
 type UploadPhase = "idle" | "uploading" | "processing" | "summary" | "failed";
 
@@ -38,8 +39,12 @@ export function DriveResumeUploadModal({
     } | null>(null);
     const [sendingFollowUp, setSendingFollowUp] = useState(false);
     const [displayPct, setDisplayPct] = useState(0);
-    const [quotaLocked, setQuotaLocked] = useState(false);
-    const [orgStatus, setOrgStatus] = useState<string>("ACTIVE");
+    // ⚡ Read from shared context — no fetch needed
+    const adminOrg = useAdminOrg();
+    const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
+    const orgStatus = String(adminOrg?.status || "ACTIVE");
+    const isSuspended = isOrgRestrictedStatus(orgStatus);
+    const accessLocked = quotaLocked || isSuspended;
     const inputRef = useRef<HTMLInputElement>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const pctAnimRef = useRef<number | null>(null);
@@ -149,42 +154,7 @@ export function DriveResumeUploadModal({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
-    useEffect(() => {
-        let cancelled = false;
-        const loadQuota = async () => {
-            try {
-                const res = await fetch("/api/admin/credits", { cache: "no-store" });
-                if (!res.ok) return;
-                const data = await res.json();
-                if (!cancelled) setQuotaLocked(isInterviewQuotaLocked(data));
-            } catch {
-                // ignore
-            }
-        };
-        loadQuota();
-        return () => {
-            cancelled = true;
-        };
-    }, []);
-    useEffect(() => {
-        let cancelled = false;
-        const loadOrgStatus = async () => {
-            try {
-                const res = await fetch("/api/admin/organization", { cache: "no-store" });
-                if (!res.ok) return;
-                const data = await res.json();
-                if (!cancelled) setOrgStatus(String(data.status || "ACTIVE"));
-            } catch {
-                // ignore
-            }
-        };
-        loadOrgStatus();
-        return () => {
-            cancelled = true;
-        };
-    }, []);
-    const isSuspended = isOrgRestrictedStatus(orgStatus);
-    const accessLocked = quotaLocked || isSuspended;
+
 
     const startUpload = async () => {
         if (accessLocked) {

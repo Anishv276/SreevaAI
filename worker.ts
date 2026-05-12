@@ -4,7 +4,6 @@ import { join } from 'path';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
 import { writeFile, unlink } from 'fs/promises';
-import { randomUUID } from 'crypto';
 import { prisma } from './lib/prisma';
 import * as dotenv from 'dotenv';
 import { putObject } from "./lib/s3";
@@ -313,23 +312,10 @@ const worker = new Worker('resume-processing', async (job) => {
     // 4. Interview invite / status email flow
     const { sendApplicationStatusEmail } = await import('./lib/mail');
         if (resumeStatus === 'SHORTLISTED') {
-      // Voice interview is ENABLED -> create interview record and send link
-      const interview = await (prisma as any).interview.upsert({
-        where: { applicationId },
-        update: {
-          expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-          status: "PENDING",
-        },
-        create: {
-          id: generateId("int", applicantName),
-          applicationId,
-          expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-          status: "PENDING",
-        },
-      });
-      // Force localhost since we are testing locally and dotenv is being overwritten
-      const baseUrl = 'http://localhost:3000';
-      const interviewLink = `${baseUrl}/interview/${applicationId}/schedule?token=${interview.accessToken}`;
+      // New flow: shortlist only sends scheduling URL.
+      // Interview row/token are created later during slot booking.
+      const baseUrl = appUrl;
+      const interviewLink = `${baseUrl}/interview/${applicationId}/schedule`;
       const emailResult = await sendApplicationStatusEmail({
         email: applicantEmail,
         fullName: applicantName,
@@ -340,7 +326,7 @@ const worker = new Worker('resume-processing', async (job) => {
       if (emailResult?.success === false) {
         console.warn(`[EMAIL WARN] Interview invite not sent to ${applicantEmail}:`, emailResult.error);
       } else {
-        console.log(`[EMAIL] Interview invite sent to ${applicantEmail} (voice interview enabled)`);
+        console.log(`[EMAIL] Interview scheduling invite sent to ${applicantEmail}`);
       }
     } else {
       // Voice interview DISABLED or candidate REJECTED -> plain status email only, no interview link
@@ -428,43 +414,28 @@ const invitationDeliveryWorker = new Worker(
     const scheduledDate = scheduledAt ? new Date(scheduledAt) : now;
     let interviewLink: string | undefined;
     if (action === "shortlist") {
-      const newToken = randomUUID();
-      const expiresAt = new Date(now.getTime() + 48 * 60 * 60 * 1000);
-      if (application.interview) {
-        await (prisma.interview as any).update({
-          where: { id: application.interview.id },
-          data: {
-            accessToken: newToken,
-            inviteSentAt: now,
-            expiresAt,
-            status: "PENDING",
-            startedAt: null,
-            completedAt: null,
-            scheduledAt: null,
-            slotId: null,
-          },
-        });
-      } else {
-        await (prisma.interview as any).create({
-          data: {
-            id: generateId("int", application.fullName || applicationId),
-            applicationId,
-            accessToken: newToken,
-            inviteSentAt: now,
-            expiresAt,
-            status: "PENDING",
-          },
-        });
-      }
-      // Force localhost since we are testing locally
-      const baseUrl = 'http://localhost:3000';
-      const interviewBase = `${baseUrl}/interview/${applicationId}/schedule`;
-      interviewLink = isInterviewTokenRequired()
-        ? `${interviewBase}?token=${newToken}`
-        : interviewBase;
+      await prisma.interview.upsert({
+        where: { applicationId },
+        update: {
+          inviteSentAt: now,
+          status: "PENDING",
+          startedAt: null,
+          completedAt: null,
+          scheduledAt: null,
+          slotId: null,
+        },
+        create: {
+          id: generateId("int", application.fullName || applicationId),
+          applicationId,
+          inviteSentAt: now,
+          status: "PENDING",
+        },
+      });
+      // Create interview row first, generate token only at slot booking.
+      const baseUrl = appUrl;
+      interviewLink = `${baseUrl}/interview/${applicationId}/schedule`;
     } else if (action === "confirm") {
-      // Force localhost since we are testing locally
-      const baseUrl = 'http://localhost:3000';
+      const baseUrl = appUrl;
       const interviewBase = `${baseUrl}/interview/${applicationId}`;
       interviewLink = isInterviewTokenRequired() && application.interview?.accessToken
         ? `${interviewBase}?token=${application.interview.accessToken}`
@@ -472,13 +443,19 @@ const invitationDeliveryWorker = new Worker(
       console.log(`[Invitation Worker] Generated confirmation link: ${interviewLink}`);
     }
     const { sendApplicationStatusEmail } = await import('./lib/mail');
-    const emailStatus = action === "shortlist"
-      ? "SHORTLISTED"
-      : action === "hire"
-        ? "Hired"
-        : action === "confirm"
-          ? "CONFIRMED"
-          : "REJECTED";
+    const actionStatusMap: Record<"shortlist" | "reject" | "hire" | "nothired" | "confirm", "SHORTLISTED" | "REJECTED" | "Hired" | "CONFIRMED"> = {
+      shortlist: "SHORTLISTED",
+      reject: "REJECTED",
+      nothired: "REJECTED",
+      hire: "Hired",
+      confirm: "CONFIRMED",
+    };
+    // Scheduling flow must never send rejection content:
+    // shortlist + confirm emails stay in the shortlisted pipeline.
+    const emailStatus = action === "confirm" ? "SHORTLISTED" : actionStatusMap[action];
+    if (!emailStatus) {
+      throw new Error(`Unsupported invitation action: ${action}`);
+    }
     console.log(`[Invitation Worker] Mapped status: action=${action} -> emailStatus=${emailStatus}`);
     const mailResult = await sendApplicationStatusEmail({
       email: application.email,
@@ -566,7 +543,6 @@ const backupWorker = new Worker(
           googleModel: true,
           googleVoiceName: true,
           ttsProvider: true,
-          inviteScheduleDays: true,
         },
       });
       const applications = await prisma.application.findMany();

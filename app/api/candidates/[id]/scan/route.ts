@@ -5,7 +5,6 @@ import { join } from "path";
 import { spawn } from "child_process";
 import { tmpdir } from "os";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
-import { generateId } from "@/lib/ids";
 import { safeJsonParse } from "@/lib/utils";
 import { parseDriveScreeningSettings } from "@/lib/screening-criteria";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
@@ -159,23 +158,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             timestamp: new Date().toISOString(),
             source: "system",
         });
-
-        // Manual only: We still create/upsert the interview record so it's ready, but we DON'T send the email here.
-        if (resumeStatus === "SHORTLISTED") {
-            await (prisma as any).interview.upsert({
-                where: { applicationId: id },
-                update: {
-                    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-                    status: "PENDING",
-                },
-                create: {
-                    id: generateId("int", application?.fullName || id),
-                    applicationId: id,
-                    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-                    status: "PENDING",
-                },
-            });
-        }
 
         return NextResponse.json(updated);
 

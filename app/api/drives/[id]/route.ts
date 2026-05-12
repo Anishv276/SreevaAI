@@ -59,7 +59,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                     googleModel: true,
                     googleVoiceName: true,
                     ttsProvider: true,
-                    inviteScheduleDays: true,
                     organization: {
                         select: {
                             status: true,
@@ -85,15 +84,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         }
 
         const screeningThreshold = Number((drive as any).screeningThreshold ?? 60);
-        const inviteScheduleDays = Number((drive as any).inviteScheduleDays ?? 1) || 1;
         const parsedCriteria = parseDriveScreeningSettings(
             (drive as any).screeningCriteria,
             screeningThreshold,
-            inviteScheduleDays,
         );
         const screeningCriteria = JSON.stringify({
             threshold: parsedCriteria.threshold,
-            inviteScheduleDays: parsedCriteria.inviteScheduleDays,
             criteria: parsedCriteria.criteria,
         });
 
@@ -101,7 +97,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             ...drive,
             orgId: (drive as any).orgId,
             screeningThreshold,
-            inviteScheduleDays,
             screeningCriteria,
             applicants: (drive as any)._count?.applications || 0,
             aiScreening: {
@@ -208,7 +203,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
 
 
-        if (data.screeningThreshold !== undefined || (data as any).screeningCriteria !== undefined || data.inviteScheduleDays !== undefined) {
+        if (data.screeningThreshold !== undefined || (data as any).screeningCriteria !== undefined) {
             if (data.screeningThreshold !== undefined) updateData.screeningThreshold = data.screeningThreshold;
 
             const rawCriteria = (data as any).screeningCriteria;
@@ -219,11 +214,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             const mergedCriteria = {
                 ...normalizedCriteria,
                 ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
-                ...(data.inviteScheduleDays !== undefined ? { inviteScheduleDays: data.inviteScheduleDays } : {}),
             };
             updateData.screeningCriteria = JSON.stringify(mergedCriteria);
         }
-        if (data.inviteScheduleDays !== undefined) updateData.inviteScheduleDays = data.inviteScheduleDays;
 
         // Add new interview fields to PATCH
 

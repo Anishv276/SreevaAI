@@ -124,7 +124,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             </div>
 
             {/* Premium AI Assistant */}
-            {showRecruiterAssistant && <RecruiterAssistant />}
+            {showRecruiterAssistant && <RecruiterAssistant logoUrl={orgData.logoUrl} name={orgData.name} />}
         </div>
         </AdminStatusGate>
         </AdminOrgProvider>

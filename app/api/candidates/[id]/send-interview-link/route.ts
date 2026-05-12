@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendApplicationStatusEmail } from "@/lib/mail";
-import { v4 as uuidv4 } from "uuid";
 import { getSession, isAdminRole } from "@/lib/auth";
-import { generateId } from "@/lib/ids";
-import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
+import { generateId } from "@/lib/ids";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
     try {
@@ -76,57 +74,44 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             return NextResponse.json({ error: "Candidate email is missing" }, { status: 400 });
         }
 
-        const newToken = uuidv4();
-        const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+        await prisma.interview.upsert({
+            where: { applicationId },
+            update: {
+                inviteSentAt: new Date(),
+                status: "PENDING",
+                startedAt: null,
+                completedAt: null,
+                scheduledAt: null,
+                slotId: null,
+            },
+            create: {
+                id: generateId("int", application.fullName || applicationId),
+                applicationId,
+                inviteSentAt: new Date(),
+                status: "PENDING",
+            },
+        });
 
-        if (application.interview) {
-            await prisma.interview.update({
-                where: { id: application.interview.id },
-                data: {
-                    accessToken: newToken,
-                    expiresAt,
-                    status: "PENDING",
-                    startedAt: null,
-                    completedAt: null,
-                    scheduledAt: null,
-                    slotId: null,
-                }
-            });
-        } else {
-            await prisma.interview.create({
-                data: {
-                    id: generateId("int", application.fullName || applicationId),
-                    applicationId,
-                    accessToken: newToken,
-                    expiresAt,
-                    status: "PENDING",
-                }
-            });
-        }
-
-        const baseUrl = 'http://localhost:3000';
-        const interviewBase = `${baseUrl}/interview/${applicationId}/schedule`;
-        const interviewLink = isInterviewTokenRequired()
-            ? `${interviewBase}?token=${newToken}`
-            : interviewBase;
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        const interviewLink = `${baseUrl}/interview/${applicationId}/schedule`;
 
         const mailResult = await sendApplicationStatusEmail({
             email: application.email,
             fullName: application.fullName,
             jobTitle: application.drive?.title || "Unknown Role",
-            status: "ACCEPTED",
+            status: "SHORTLISTED",
             interviewLink
         });
 
         if (!mailResult.success) {
             return NextResponse.json({
-                error: `Interview token refreshed, but email could not be sent: ${mailResult.error}`,
+                error: `Interview schedule link email could not be sent: ${mailResult.error}`,
             }, { status: 500 });
         }
 
         await appendCandidateActivity(applicationId, {
             type: "interview_invite_sent",
-            label: "Interview link sent",
+            label: "Interview scheduling link sent",
             details: `Sent at ${new Date().toISOString()}`,
             timestamp: new Date().toISOString(),
             source: "system",
@@ -134,8 +119,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
         return NextResponse.json({
             success: true,
-            message: "Interview link sent successfully",
-            expiresAt: expiresAt.toISOString()
+            message: "Scheduling link sent successfully"
         });
     } catch (error) {
         console.error("[INTERVIEW LINK ERROR]:", error);
