@@ -78,8 +78,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         const screeningSettings = parseDriveScreeningSettings(
             application.drive.screeningCriteria,
-            Number(application.drive.screeningThreshold ?? 0),
-            1
+            Number(application.drive.screeningThreshold ?? 0)
         );
         const threshold = Number(screeningSettings.threshold ?? application.drive.screeningThreshold ?? 0);
         const scoringInput = {

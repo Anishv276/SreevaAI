@@ -410,6 +410,7 @@ const invitationDeliveryWorker = new Worker(
       console.warn(`[Invitation Worker] Drive ${application.drive.id} is ${application.drive.status}. Skipping.`);
       return { skipped: true, reason: "drive_inactive" };
     }
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
     const now = new Date();
     const scheduledDate = scheduledAt ? new Date(scheduledAt) : now;
     let interviewLink: string | undefined;
