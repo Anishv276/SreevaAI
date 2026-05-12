@@ -88,6 +88,7 @@ interface CandidatesContextType {
         endDate?: string,
         search?: string,
         sort?: "default" | "score_desc" | "score_asc",
+        options?: { force?: boolean; background?: boolean }
     ) => Promise<void>;
     clearError: () => void;
     bulkDeleteCandidates: (ids: string[]) => Promise<void>;
@@ -361,8 +362,9 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         endDate?: string,
         search?: string,
         sort?: "default" | "score_desc" | "score_asc",
+        options?: { force?: boolean; background?: boolean }
     ) => {
-        await fetchCandidatesInternal(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search, sort);
+        await fetchCandidatesInternal(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search, sort, options);
     }, [fetchCandidatesInternal]);
 
     const scheduleStreamRefresh = useCallback(() => {

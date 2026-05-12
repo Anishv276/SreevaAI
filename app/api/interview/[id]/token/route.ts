@@ -37,6 +37,25 @@ export async function POST(
         if (interview?.expiresAt && interview.expiresAt < new Date()) {
             return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
         }
+
+        // Enforce -5 / +5 min join window based on slot schedule
+        if (interview?.scheduledAt) {
+            const now = Date.now();
+            const slotStart = interview.scheduledAt.getTime();
+            const slotEnd = slotStart + 20 * 60000;
+            const joinWindowStart = slotStart - 5 * 60000;
+            const joinWindowEnd = slotStart + 5 * 60000;
+
+            if (now < joinWindowStart) {
+                return NextResponse.json({ error: `Access Denied: Your interview slot hasn't started yet. You can join 5 minutes before ${new Date(slotStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.` }, { status: 403 });
+            }
+            if (now > joinWindowEnd && !interview.startedAt) {
+                return NextResponse.json({ error: "Access Denied: You missed your selected interview slot. Please contact HR to reschedule." }, { status: 403 });
+            }
+            if (now > slotEnd) {
+                return NextResponse.json({ error: "Access Denied: Your interview slot has ended." }, { status: 403 });
+            }
+        }
         // -------------------------------------------------
 
         const application = await prisma.application.findUnique({

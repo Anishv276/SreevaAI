@@ -88,6 +88,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                     status: "PENDING",
                     startedAt: null,
                     completedAt: null,
+                    scheduledAt: null,
+                    slotId: null,
                 }
             });
         } else {
@@ -102,7 +104,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             });
         }
 
-        const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com"}/interview/${applicationId}`;
+        const baseUrl = 'http://localhost:3000';
+        const interviewBase = `${baseUrl}/interview/${applicationId}/schedule`;
         const interviewLink = isInterviewTokenRequired()
             ? `${interviewBase}?token=${newToken}`
             : interviewBase;

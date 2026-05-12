@@ -327,7 +327,9 @@ const worker = new Worker('resume-processing', async (job) => {
           status: "PENDING",
         },
       });
-      const interviewLink = `${process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com'}/interview/${applicationId}?token=${interview.accessToken}`;
+      // Force localhost since we are testing locally and dotenv is being overwritten
+      const baseUrl = 'http://localhost:3000';
+      const interviewLink = `${baseUrl}/interview/${applicationId}/schedule?token=${interview.accessToken}`;
       const emailResult = await sendApplicationStatusEmail({
         email: applicantEmail,
         fullName: applicantName,
@@ -378,10 +380,12 @@ const invitationDeliveryWorker = new Worker(
       scheduledAt,
     }: {
       applicationId?: string;
-      action?: "shortlist" | "reject" | "hire" | "nothired";
+      action?: "shortlist" | "reject" | "hire" | "nothired" | "confirm";
       emailType?: "screening" | "hiring";
       scheduledAt?: string;
     } = job.data || {};
+    
+    console.log(`[Invitation Worker] Job received: action=${action}, applicationId=${applicationId}`);
     if (!applicationId || !action) {
       throw new Error("Missing applicationId or action in invitation-delivery-queue job");
     }
@@ -431,12 +435,13 @@ const invitationDeliveryWorker = new Worker(
           where: { id: application.interview.id },
           data: {
             accessToken: newToken,
-            scheduledAt: scheduledDate,
             inviteSentAt: now,
             expiresAt,
             status: "PENDING",
             startedAt: null,
             completedAt: null,
+            scheduledAt: null,
+            slotId: null,
           },
         });
       } else {
@@ -445,24 +450,36 @@ const invitationDeliveryWorker = new Worker(
             id: generateId("int", application.fullName || applicationId),
             applicationId,
             accessToken: newToken,
-            scheduledAt: scheduledDate,
             inviteSentAt: now,
             expiresAt,
             status: "PENDING",
           },
         });
       }
-      const interviewBase = `${process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com"}/interview/${applicationId}`;
+      // Force localhost since we are testing locally
+      const baseUrl = 'http://localhost:3000';
+      const interviewBase = `${baseUrl}/interview/${applicationId}/schedule`;
       interviewLink = isInterviewTokenRequired()
         ? `${interviewBase}?token=${newToken}`
         : interviewBase;
+    } else if (action === "confirm") {
+      // Force localhost since we are testing locally
+      const baseUrl = 'http://localhost:3000';
+      const interviewBase = `${baseUrl}/interview/${applicationId}`;
+      interviewLink = isInterviewTokenRequired() && application.interview?.accessToken
+        ? `${interviewBase}?token=${application.interview.accessToken}`
+        : interviewBase;
+      console.log(`[Invitation Worker] Generated confirmation link: ${interviewLink}`);
     }
     const { sendApplicationStatusEmail } = await import('./lib/mail');
     const emailStatus = action === "shortlist"
       ? "SHORTLISTED"
       : action === "hire"
         ? "Hired"
-        : "REJECTED";
+        : action === "confirm"
+          ? "CONFIRMED"
+          : "REJECTED";
+    console.log(`[Invitation Worker] Mapped status: action=${action} -> emailStatus=${emailStatus}`);
     const mailResult = await sendApplicationStatusEmail({
       email: application.email,
       fullName: application.fullName || "Candidate",
@@ -470,6 +487,7 @@ const invitationDeliveryWorker = new Worker(
       orgName: undefined,
       status: emailStatus,
       interviewLink,
+      scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined,
     });
     if (!mailResult.success) {
       const reason = mailResult.error || "Unknown email delivery error";
@@ -484,7 +502,7 @@ const invitationDeliveryWorker = new Worker(
     }
     await appendCandidateActivity(applicationId, {
       type: "email_sent",
-      label: action === "shortlist" ? "Shortlisted email sent" : action === "hire" ? "Hire email sent" : "Rejection email sent",
+      label: action === "shortlist" ? "Shortlisted email sent" : action === "hire" ? "Hire email sent" : action === "confirm" ? "Interview confirmation email sent" : "Rejection email sent",
       details: `Delivered at ${new Date().toISOString()}`,
       timestamp: new Date().toISOString(),
       source: "worker",

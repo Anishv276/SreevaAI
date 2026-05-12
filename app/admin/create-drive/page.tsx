@@ -398,12 +398,12 @@ function CreateDriveForm() {
           // Description: use role_summary, fallback to raw extracted text
           const desc = extracted?.role_summary || text || prev.description || "";
           const normalizedDescription = desc.trim();
-          // Experience: convert to readable string e.g. "2+" or "2Ã¢â‚¬â€œ5"
+          // Experience: convert to readable string e.g. "2+" or "2-5"
           const minExp = experience?.min_years;
           const maxExp = experience?.max_years;
           const expText =
             typeof minExp === "number"
-              ? `${minExp}${maxExp ? `Ã¢â‚¬â€œ${maxExp}` : "+"}`
+              ? `${minExp}${maxExp ? `-${maxExp}` : "+"}`
               : prev.experience;
           // Salary: convert large INR numbers to LPA
           const salaryMin = salary?.min;
@@ -908,7 +908,7 @@ function CreateDriveForm() {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
-            Your Drive is {isEditAction ? "Updated" : "Created"}! Ã°Å¸Å½â€°
+            Your Drive is {isEditAction ? "Updated" : "Created"}! 🎉
           </h1>
           <p className="text-gray-500 mt-2 text-[15px]">
             Your recruitment drive is ready. Go to your drives list to start

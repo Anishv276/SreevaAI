@@ -44,6 +44,7 @@ model Organization {
   usageMetrics         Json?       @default("{}")
   drives               Drive[]
   users                User[]
+  interviewSlots       InterviewSlot[]
 }
 
 model SuperAdmin {
@@ -131,6 +132,7 @@ model Drive {
   applications       Application[]
   resumeCandidates   ResumeCandidate[]
   resumeBatches      ResumeBatch[]
+  interviewSlots     InterviewSlot[]
   creator            User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
   organization       Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -198,6 +200,8 @@ model Interview {
   billingSnapshot       Json?       @default("{}")
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   supportTickets        SupportTicket[]
+  slotId                String?
+  slot                  InterviewSlot? @relation(fields: [slotId], references: [id], onDelete: SetNull)
 
   @@index([updatedAt(sort: Desc)])
   @@index([status])
@@ -240,4 +244,24 @@ model ResumeBatch {
   candidates     ResumeCandidate[]
 
   @@index([driveId, status])
+}
+
+model InterviewSlot {
+  id          String      @id @default(cuid())
+  orgId       String
+  driveId     String
+  startTime   DateTime
+  endTime     DateTime
+  maxCapacity Int         @default(5)
+  bookedCount Int         @default(0)
+  status      String      @default("ACTIVE")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  drive        Drive        @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  interviews   Interview[]
+  
+  @@index([orgId, startTime])
+  @@index([driveId, startTime])
 }

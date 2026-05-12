@@ -214,43 +214,10 @@ export function DriveResumeUploadModal({
             }
 
             const { batchId, totalCount } = await res.json();
-            setProgress({ processed: 0, total: totalCount || files.length });
-            setPhase("processing");
-            syncDisplayPct(6);
-
-            clearPolling();
-            pollRef.current = setInterval(async () => {
-                try {
-                    const pollRes = await fetch(`/api/drives/${driveId}/resume-screening?batchId=${batchId}`);
-                    if (!pollRes.ok) return;
-
-                    const data = await pollRes.json();
-                    setProgress({
-                        processed: Number(data.processedCount || 0),
-                        total: Number(data.totalCount || 0),
-                    });
-
-                    if (data.status === "COMPLETED") {
-                        clearPolling();
-                        toast.success(`${data.processedCount || 0} resumes screened successfully`);
-                        try {
-                            const nextSummary = await loadBatchSummary(batchId);
-                            setSummary(nextSummary);
-                            setPhase("summary");
-                        } catch (summaryError) {
-                            setPhase("failed");
-                            setError((summaryError as Error).message || "Failed to build screening summary");
-                        }
-                    } else if (data.status === "FAILED") {
-                        clearPolling();
-                        setPhase("failed");
-                        setError("Processing failed. Please try again.");
-                        toast.error("Resume screening failed");
-                    }
-                } catch {
-                    // Ignore transient poll issues and keep trying.
-                }
-            }, 2500);
+            toast.success("Upload successful! Resumes are now processing in the background.");
+            onUploaded?.();
+            reset();
+            onOpenChange(false);
         } catch (err) {
             const message = err instanceof Error ? err.message : "Upload failed";
             setPhase("failed");

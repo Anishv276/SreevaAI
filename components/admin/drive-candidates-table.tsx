@@ -58,7 +58,7 @@ function formatCandidateStatusLabel(value?: string) {
 function normalizeStatusKey(value?: string) {
     return String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
 }
-export function DriveCandidatesTable({ driveId }: { driveId: string }) {
+export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string, refreshKey?: number }) {
     const { candidates, pagination, isLoading, error, fetchCandidates, clearError } = useCandidates();
     const { jobs, organization } = useJobs();
     const [searchTerm, setSearchTerm] = useState("");
@@ -117,7 +117,39 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
             cancelled = true;
             clearTimeout(handler);
         };
-    }, [driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, pageSize, fetchCandidates, scoreSort]);
+    }, [driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, pageSize, fetchCandidates, scoreSort, refreshKey]);
+
+    useEffect(() => {
+        let timer: NodeJS.Timeout;
+        const hasProcessing = candidates.some((c: any) => normalizeStatusKey(c.resumeStatus || c.status) === "processing");
+        if (hasProcessing && isDriveViewReady) {
+            timer = setInterval(() => {
+                let startDate: string | undefined;
+                let endDate: string | undefined;
+                if (timeline.type === "today") {
+                    startDate = new Date().toISOString().split("T")[0];
+                    endDate = startDate;
+                } else if (timeline.type === "week") {
+                    const date = new Date();
+                    date.setDate(date.getDate() - 7);
+                    startDate = date.toISOString().split("T")[0];
+                } else if (timeline.type === "month") {
+                    const date = new Date();
+                    date.setMonth(date.getMonth() - 1);
+                    startDate = date.toISOString().split("T")[0];
+                } else if (timeline.type === "custom") {
+                    startDate = timeline.from;
+                    endDate = timeline.to;
+                }
+                void fetchCandidates(
+                    pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, 
+                    startDate, endDate, searchTerm, scoreSort,
+                    { force: true, background: true }
+                );
+            }, 3000);
+        }
+        return () => clearInterval(timer);
+    }, [candidates, isDriveViewReady, pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, scoreSort, fetchCandidates]);
 
     useEffect(() => {
         let cancelled = false;
@@ -672,11 +704,16 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                 <div className="flex justify-center">
                                                     <Badge className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm pointer-events-none",
+                                                        statusKey === "processing" ? "bg-orange-50 text-orange-700 w-full" :
                                                         score >= 80 ? "bg-emerald-50 text-emerald-700" :
                                                             score >= 50 ? "bg-amber-50 text-amber-700" :
                                                                 "bg-rose-50 text-rose-700"
                                                     )}>
-                                                        {score ? `${score}%` : "No score"}
+                                                        {statusKey === "processing" ? (
+                                                            <div className="w-full h-1.5 bg-orange-200 rounded-full overflow-hidden mt-0.5 mb-0.5">
+                                                                <div className="bg-orange-500 h-full transition-all duration-500" style={{ width: `${score || 5}%` }} />
+                                                            </div>
+                                                        ) : (score ? `${score}%` : "No score")}
                                                     </Badge>
                                                 </div>
                                             </TableCell>
@@ -684,10 +721,11 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                 <div className="flex justify-center items-center h-full">
                                                     <Badge variant="secondary" className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all pointer-events-none",
+                                                        statusKey === "processing" ? "bg-orange-50 text-orange-700" :
                                                         statusKey === "rejected" ? "bg-rose-50 text-rose-700" :
                                                             statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"
                                                     )}>
-                                                        {statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
+                                                        {statusKey === "processing" ? "Processing" : statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
                                                     </Badge>
                                                 </div>
                                             </TableCell>
@@ -718,14 +756,20 @@ export function DriveCandidatesTable({ driveId }: { driveId: string }) {
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
-                                                <Link
-                                                    href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`}
-                                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#F97316] transition-colors hover:bg-orange-50"
-                                                    title="Open resume report"
-                                                    aria-label="Open resume report"
-                                                >
-                                                    <Eye className="h-4 w-4" />
-                                                </Link>
+                                                {statusKey === "processing" ? (
+                                                    <div className="inline-flex h-8 w-8 items-center justify-center rounded-full text-orange-500 bg-orange-50">
+                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                    </div>
+                                                ) : (
+                                                    <Link
+                                                        href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`}
+                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#F97316] transition-colors hover:bg-orange-50"
+                                                        title="Open resume report"
+                                                        aria-label="Open resume report"
+                                                    >
+                                                        <Eye className="h-4 w-4" />
+                                                    </Link>
+                                                )}
                                             </TableCell>
                                             <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
                                                 {interviewStatusKey === "pending" ? (

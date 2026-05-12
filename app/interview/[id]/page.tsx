@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useState, use, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Star, Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User, ChevronDown, MessageSquare, LifeBuoy } from "lucide-react";
+import { Star, Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronLeft, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User, ChevronDown, MessageSquare, LifeBuoy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -192,7 +192,12 @@ const InterviewVoiceOutputProcessor = memo(function InterviewVoiceOutputProcesso
     return null;
 });
 function InterviewContent({ id, params }: { id: string, params: Promise<{ id: string }> }) {
-    const [phase, setPhase] = useState<"check" | "launching" | "interview" | "finalizing" | "completed">("check");
+    const [phase, setPhase] = useState<"loading" | "waiting" | "check" | "launching" | "interview" | "finalizing" | "completed">("loading");
+    const [slots, setSlots] = useState<any[]>([]);
+    const [bookedSlot, setBookedSlot] = useState<number | null>(null);
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const [currentMonthDate, setCurrentMonthDate] = useState<Date>(new Date());
+    const [bookingCompany, setBookingCompany] = useState<string>("Company");
     const [endMode, setEndMode] = useState<"normal" | "timeout">("normal");
     const [token, setToken] = useState<string | null>(null);
     const [serverUrl, setServerUrl] = useState<string | null>(null);
@@ -271,6 +276,49 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             if (snap) setReferenceSnapshotUrl(snap);
         } catch { }
     }, []);
+
+    useEffect(() => {
+        let isMounted = true;
+        fetch(`/api/interview/${id}/slots`)
+            .then(res => res.json())
+            .then(data => {
+                if (!isMounted) return;
+                if (data.role) setInterviewRoleLabel(data.role);
+                if (data.company) setBookingCompany(data.company);
+                setSlots(data.slots || []);
+                if (data.bookedSlot) {
+                    setBookedSlot(data.bookedSlot);
+                    const timeUntil = data.bookedSlot - Date.now();
+                    if (timeUntil > 10 * 60 * 1000) {
+                        setPhase("waiting");
+                    } else {
+                        setPhase("check");
+                    }
+                } else {
+                    const searchParams = window.location.search;
+                    window.location.href = `/interview/${id}/schedule${searchParams}`;
+                }
+            })
+            .catch(() => {
+                if (isMounted) {
+                    const searchParams = window.location.search;
+                    window.location.href = `/interview/${id}/schedule${searchParams}`;
+                }
+            });
+        return () => { isMounted = false; };
+    }, [id]);
+
+    useEffect(() => {
+        if (phase === "waiting" && bookedSlot) {
+            const timer = setInterval(() => {
+                const timeUntil = bookedSlot - Date.now();
+                if (timeUntil <= 10 * 60 * 1000) {
+                    setPhase("check");
+                }
+            }, 1000);
+            return () => clearInterval(timer);
+        }
+    }, [phase, bookedSlot]);
     //  Face violation handler 
     const handleFaceViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
         if (eventType === "face_absence" && !isFaceAbsenceEnabled) return;
@@ -784,6 +832,45 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     return (
         <div ref={containerRef} className="min-h-screen bg-white text-gray-900 flex flex-col font-sans relative overflow-hidden" style={{ transform: 'translateZ(0)' }}>
             <AnimatePresence mode="wait">
+                {phase === "loading" && (
+                    <motion.div
+                        key="loading"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="flex-1 flex items-center justify-center bg-white absolute inset-0 z-50"
+                    >
+                        <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+                    </motion.div>
+                )}
+
+                {phase === "waiting" && (
+                    <motion.div
+                        key="waiting"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="flex-1 w-full bg-white z-50 absolute inset-0 overflow-y-auto flex items-center justify-center p-4"
+                    >
+                        <div className="max-w-md w-full bg-white border border-gray-100 shadow-xl rounded-3xl p-8 space-y-6 text-center">
+                            <div className="mx-auto w-16 h-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mb-6 shadow-inner">
+                                <Loader2 className="w-8 h-8 animate-spin-slow" />
+                            </div>
+                            <h2 className="text-2xl font-black text-gray-900 tracking-tight">You're Early!</h2>
+                            <p className="text-gray-500 font-medium leading-relaxed">
+                                Your AI interview is scheduled for <strong className="text-gray-900">{bookedSlot ? new Date(bookedSlot).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}</strong>.
+                            </p>
+                            <div className="bg-orange-50 rounded-2xl p-5 mt-6 border border-orange-100/50">
+                                <p className="text-sm text-orange-800 font-bold leading-relaxed mb-1">
+                                    Hardware Check Locked
+                                </p>
+                                <p className="text-xs text-orange-700/80 font-medium">
+                                    The pre-interview hardware check will automatically unlock <strong className="text-orange-900">10 minutes</strong> before your scheduled start time. Please leave this tab open or check back later!
+                                </p>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
                 {phase === "check" && (
                     <motion.div
                         key="check"
@@ -824,6 +911,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             applicationId={id}
                             interviewToken={interviewToken}
                             title={`${interviewRoleLabel} Interview Check`}
+                            bookedSlot={bookedSlot}
                         />
                     </motion.div>
                 )}

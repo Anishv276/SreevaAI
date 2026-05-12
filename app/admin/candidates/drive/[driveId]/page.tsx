@@ -254,7 +254,7 @@ export default function DriveCandidatesPage() {
                 </TabsList>
 
                 <TabsContent value="candidates" className="mt-0">
-                    <DriveCandidatesTable driveId={driveId} />
+                    <DriveCandidatesTable driveId={driveId} refreshKey={refreshKey} />
                 </TabsContent>
 
                 <TabsContent value="screening" className="mt-0">

@@ -58,8 +58,8 @@ export async function GET(request: Request) {
                         !!app.interview.expiresAt &&
                         new Date() < new Date(app.interview.expiresAt),
                     interviewLink: isInterviewTokenRequired()
-                        ? `${process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com"}/interview/${app.id}?token=${encodeURIComponent(app.interview.accessToken)}`
-                        : `${process.env.NEXT_PUBLIC_APP_URL || "https://sreevaai.com"}/interview/${app.id}`,
+                        ? `http://localhost:3000/interview/${app.id}?token=${encodeURIComponent(app.interview.accessToken)}`
+                        : `http://localhost:3000/interview/${app.id}`,
                 }
                 : null;
 
