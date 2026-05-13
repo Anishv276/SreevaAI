@@ -1,12 +1,10 @@
 import { Queue } from 'bullmq';
-import IORedis from 'ioredis';
 import * as dotenv from 'dotenv';
+import { createRedisConnection } from '../lib/redis';
 
 dotenv.config();
 
-const connection = new IORedis(process.env.REDIS_URL!, {
-    maxRetriesPerRequest: null,
-});
+const connection = createRedisConnection();
 
 async function retryFailedJobs() {
     const queues = ['resume-processing', 'interview-finalization'];

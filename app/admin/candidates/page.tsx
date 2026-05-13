@@ -692,6 +692,7 @@ export default function CandidatesPage() {
                                     const mainStatusLabel = formatCandidateStatusLabel(candidate.status);
                                     const interviewStage = normalizeStatusKey(candidate.interviewStatus) || "pending";
                                     const interviewStageLabel = formatCandidateStatusLabel(candidate.interviewStatus);
+                                    const interviewReportUnlocked = interviewStage === "completed" || interviewStage === "finished";
                                     const hiringDecision = normalizeStatusKey(candidate.hiringStatus) || "pending";
                                     const hiringDecisionLabel = formatCandidateStatusLabel(candidate.hiringStatus);
                                     const isHiredResult = hiringDecision === 'hired';
@@ -827,15 +828,7 @@ export default function CandidatesPage() {
                                             </TableCell>
                                             <TableCell className="py-5 text-center w-[110px]" onClick={(e) => e.stopPropagation()}>
                                                 <div className="flex items-center justify-center">
-                                                    {interviewStage === "pending" ? (
-                                                        <span
-                                                            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-300"
-                                                            title="Interview report is locked until the interview happens"
-                                                            aria-label="Interview report locked"
-                                                        >
-                                                            <Lock className="h-4 w-4" />
-                                                        </span>
-                                                    ) : (
+                                                    {interviewReportUnlocked ? (
                                                         <Link
                                                             href={
                                                                 orgIdParam
@@ -848,6 +841,14 @@ export default function CandidatesPage() {
                                                         >
                                                             <FileText className="h-4 w-4" />
                                                         </Link>
+                                                    ) : (
+                                                        <span
+                                                            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-300"
+                                                            title="Interview report is locked until the interview is finished"
+                                                            aria-label="Interview report locked"
+                                                        >
+                                                            <Lock className="h-4 w-4" />
+                                                        </span>
                                                     )}
                                                 </div>
                                             </TableCell>

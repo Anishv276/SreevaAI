@@ -53,6 +53,12 @@ export async function GET(request: Request) {
                     return ["not qualified", "NOT QUALIFIED", "Not Qualified"];
                 case "pending":
                     return ["pending", "PENDING", "Pending"];
+                case "waiting":
+                    return ["waiting", "WAITING", "Waiting"];
+                case "processing":
+                    return ["processing", "PROCESSING", "Processing"];
+                case "failed":
+                    return ["failed", "FAILED", "Failed"];
                 default:
                     return [value, normalized];
             }
@@ -170,6 +176,17 @@ export async function GET(request: Request) {
         }
 
         const formattedCandidates = (candidates as any[]).map((app: any) => {
+            let progress = null as number | null;
+            let stage = null as string | null;
+            try {
+                const report = app.aiReport ? JSON.parse(app.aiReport) : null;
+                const p = Number(report?.processing?.progress);
+                progress = Number.isFinite(p) ? p : null;
+                stage = typeof report?.processing?.stage === "string" ? report.processing.stage : null;
+            } catch {
+                progress = null;
+                stage = null;
+            }
             return {
                 id: app.id,
                 driveId: app.driveId,
@@ -181,6 +198,8 @@ export async function GET(request: Request) {
                 status: app.resumeStatus,
                 interviewStatus: app.interviewStatus,
                 hiringStatus: app.hiringStatus,
+                screeningProgress: progress,
+                screeningStage: stage,
                 experienceYears: app.experienceYears,
                 relevantYears: app.relevantYears,
                 date: new Date(app.createdAt).toLocaleDateString(),

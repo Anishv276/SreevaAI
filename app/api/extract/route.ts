@@ -4,13 +4,12 @@ import { join } from "path";
 import { spawn } from "child_process";
 import { v4 as uuidv4 } from "uuid";
 import os from "os";
-import { extractJDFromText } from "@/lib/openai";
 import { z } from "zod";
 import { extractionLimiter } from "@/lib/rate-limit";
 import { getSession } from "@/lib/auth";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
-import { prisma } from "@/lib/prisma";
 import { getPythonExecutable } from "@/lib/python-exec";
+import { queueJdExtraction } from "@/lib/jd-extraction";
 
 const extractQuerySchema = z.object({
     type: z.enum(["JD", "RESUME"]),
@@ -86,43 +85,45 @@ export async function POST(request: Request) {
         }
 
         const type = typeRaw as "JD" | "RESUME";
+        const isJd = typeRaw === "JD";
 
-        if (url) {
-            if (type !== "JD") {
-                return NextResponse.json({ error: "URL extraction only supported for JD type" }, { status: 400 });
-            }
-
+        if (isJd) {
             try {
-                console.log("[SCRAPE_START]: Fetching URL:", url);
-                const { load } = await import("cheerio");
-                const response = await fetch(url);
-                if (!response.ok) {
-                    console.error("[SCRAPE_FETCH_FAILED]:", { url, status: response.status });
-                    return NextResponse.json({ error: "Failed to fetch URL" }, { status: 400 });
-                }
-                const html = await response.text();
-                const $ = load(html);
+                if (url) {
+                    console.log("[SCRAPE_START]: Fetching URL:", url);
+                    const { load } = await import("cheerio");
+                    const response = await fetch(url);
+                    if (!response.ok) {
+                        console.error("[SCRAPE_FETCH_FAILED]:", { url, status: response.status });
+                        return NextResponse.json({ error: "Failed to fetch URL" }, { status: 400 });
+                    }
+                    const html = await response.text();
+                    const $ = load(html);
 
-                // Remove non-content elements
-                $("script, style, nav, footer, header, noscript, iframe").remove();
+                    // Remove non-content elements
+                    $("script, style, nav, footer, header, noscript, iframe").remove();
 
-                const text = $("body")
-                    .text()
-                    .replace(/\s+/g, " ")
-                    .trim()
-                    .slice(0, 15000); // Increased limit as Cheerio is cleaner
+                    const text = $("body")
+                        .text()
+                        .replace(/\s+/g, " ")
+                        .trim()
+                        .slice(0, 15000); // Increased limit as Cheerio is cleaner
 
-                console.log("[SCRAPE_SUCCESS]: Text extracted, length:", text.length);
-
-                const { data, usage } = await extractJDFromText(text, orgOpenAIModel);
-                if (orgId && usage) {
-                    await recordOrgBillingUsage({
-                        orgId,
-                        feature: "jdExtraction",
-                        usage,
+                    console.log("[SCRAPE_SUCCESS]: Text extracted, length:", text.length);
+                    const { data, usage } = await queueJdExtraction({
+                        kind: "text",
+                        text,
+                        orgOpenAIModel,
                     });
+                    if (orgId && usage) {
+                        await recordOrgBillingUsage({
+                            orgId,
+                            feature: "jdExtraction",
+                            usage,
+                        });
+                    }
+                    return NextResponse.json({ data, text });
                 }
-                return NextResponse.json({ data, text });
             } catch (err: any) {
                 console.error("[SCRAPE_FATAL_ERROR]:", { url, error: err.message });
                 return NextResponse.json({ error: "Failed to scrape JD from URL" }, { status: 500 });
@@ -131,6 +132,55 @@ export async function POST(request: Request) {
 
         if (!file) {
             return NextResponse.json({ error: "File required" }, { status: 400 });
+        }
+
+        if (isJd) {
+            const MAX_SIZE = 20 * 1024 * 1024;
+            if (file.size > MAX_SIZE) {
+                return NextResponse.json({
+                    error: "File size exceeds 20MB limit.",
+                    code: "FILE_TOO_LARGE",
+                }, { status: 413 });
+            }
+
+            const allowedTypes = [
+                "application/pdf",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "text/plain",
+            ];
+            const isMimeAllowed = allowedTypes.some((t) => file.type.includes(t));
+            if (!isMimeAllowed) {
+                const validExts = /\.(pdf|docx|txt)$/i;
+                if (!file.name.match(validExts)) {
+                    return NextResponse.json({
+                        error: "Invalid file type for JD.",
+                        code: "INVALID_FILE_TYPE",
+                    }, { status: 415 });
+                }
+            }
+
+            const bytes = await file.arrayBuffer();
+            const buffer = Buffer.from(bytes);
+            const byteLength = buffer.length;
+            console.log("[FILE_EXTRACT_START]:", { name: file.name, size: byteLength, type });
+            const { data, usage, text } = await queueJdExtraction({
+                kind: "file",
+                fileName: file.name,
+                buffer,
+                orgOpenAIModel,
+            });
+            if (orgId && usage) {
+                await recordOrgBillingUsage({
+                    orgId,
+                    feature: "jdExtraction",
+                    usage,
+                });
+            }
+            return NextResponse.json({
+                data,
+                text: text || null,
+                url: null,
+            });
         }
 
         // -- SERVER-SIDE VALIDATION ---------------------------
@@ -173,11 +223,11 @@ export async function POST(request: Request) {
         let outputData = "";
         let errorData = "";
 
-        const bucket = type === "JD" 
+        const bucket = isJd 
             ? (process.env.R2_JDS_BUCKET || "jds")
             : (process.env.R2_RESUMES_BUCKET || "resumes");
 
-        const prefix = type === "JD" ? "jds/" : "resumes/";
+        const prefix = isJd ? "jds/" : "resumes/";
         const fileName = `${prefix}${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
 
         let fileUrl: string | null = null;
@@ -220,7 +270,7 @@ export async function POST(request: Request) {
                     console.log("[STORAGE_SUCCESS]:", { type, fileName, url: fileUrl });
                 } catch (storageErr: any) {
                     console.error("[STORAGE_FATAL_ERROR]:", { type, fileName, error: storageErr.message });
-                    if (type === "JD") {
+                    if (isJd) {
                         throw { code: "STORAGE_VULNERABILITY", message: storageErr.message };
                     }
                 }
@@ -263,7 +313,7 @@ export async function POST(request: Request) {
                 }, { status: 422 });
             }
 
-            if (type === "JD") {
+            if (isJd) {
                 const jdCandidateText =
                     typeof result?.data?.role_summary === "string" && result.data.role_summary.trim()
                         ? result.data.role_summary
@@ -280,7 +330,7 @@ export async function POST(request: Request) {
                 }, { status: 422 });
             }
 
-            const feature = type === "JD" ? "jdExtraction" : type === "RESUME" ? "resumeExtraction" : null;
+            const feature = isJd ? "jdExtraction" : type === "RESUME" ? "resumeExtraction" : null;
             if (feature && orgId && result.usage) {
                 await recordOrgBillingUsage({
                     orgId,

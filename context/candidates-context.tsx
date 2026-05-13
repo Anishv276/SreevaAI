@@ -23,6 +23,8 @@ export type Candidate = {
     interviewStatus?: string;
     hiringStatus?: string;
     score: number;
+    screeningProgress?: number | null;
+    screeningStage?: string | null;
     date: string;
     experienceYears?: number;
     resumeUrl?: string;
@@ -306,6 +308,8 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                         interviewStatus: c.interviewStatus,
                         hiringStatus: c.hiringStatus,
                         score: c.score || 0,
+                        screeningProgress: c.screeningProgress ?? null,
+                        screeningStage: c.screeningStage ?? null,
                         date: c.date,
                         resumeUrl: c.resumeUrl,
                         experienceYears: c.experienceYears,

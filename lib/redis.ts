@@ -1,10 +1,24 @@
+import "dotenv/config";
 import IORedis from "ioredis";
 
-const REDIS_URL = process.env.REDIS_URL?.trim();
+export const DEFAULT_LOCAL_REDIS_URL = "redis://localhost:6379";
+export const DEFAULT_DOCKER_REDIS_URL = "redis://redis:6379";
+
+export function getRedisUrl() {
+  const configuredRedisUrl = process.env.REDIS_URL?.trim();
+  if (configuredRedisUrl) {
+    return configuredRedisUrl;
+  }
+
+  return process.env.NODE_ENV === "production"
+    ? DEFAULT_DOCKER_REDIS_URL
+    : DEFAULT_LOCAL_REDIS_URL;
+}
+
 const DEFAULT_REDIS_URL =
   process.env.NODE_ENV === "production"
-    ? "redis://redis:6379"
-    : "redis://localhost:6379";
+    ? DEFAULT_DOCKER_REDIS_URL
+    : DEFAULT_LOCAL_REDIS_URL;
 
 // --- Silence BullMQ's built-in eviction-policy warning ---
 // BullMQ internally logs "IMPORTANT! Eviction policy is volatile-lru" on every
@@ -22,13 +36,15 @@ console.warn = (...args: any[]) => {
 // ---------------------------------------------------------
 
 function createRedisConnection(): IORedis {
-  return new IORedis(REDIS_URL || DEFAULT_REDIS_URL, {
+  return new IORedis(getRedisUrl() || DEFAULT_REDIS_URL, {
     maxRetriesPerRequest: null,
     lazyConnect: true,
     retryStrategy: (times: number) => Math.min(times * 500, 10_000),
     enableReadyCheck: false,
   });
 }
+
+export { createRedisConnection };
 
 let redisConnection: IORedis;
 

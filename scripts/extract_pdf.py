@@ -530,6 +530,9 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     # ── 1. Build resume skill pool ──────────────────────────────────────────
     resume_skills = resume_data.get("skills", {})
     work_history = resume_data.get("work_history", [])
+    evidence_items = resume_data.get("evidence_items", []) or []
+    if not isinstance(evidence_items, list):
+        evidence_items = []
     domain_skills = resume_skills.get("domain_skills", [])
     skill_evidence_map = {}
     priority_rank = {"work_history": 4, "project": 3, "listed": 2, "keyword": 1}
@@ -605,6 +608,16 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     must_total_weight = 0
     good_matched_weight = 0
     good_total_weight = 0
+    matched_must = []
+    missing_must = []
+    partial_must = []
+    matched_good = []
+    must_have_details = []
+    
+    # Initialize custom check counters
+    custom_required_total = 0
+    custom_required_missing = []
+    custom_required_hits = []
 
     for criterion in jd_criteria:
         cname = criterion.get("name")
@@ -718,19 +731,6 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
             if cpriority != "medium":
                 partial_must.append(cname)
             must_have_details.append({"name": cname, "weight": cpriority, "status": "mentioned", "match_level": result})
-        else:
-            if cpriority != "medium":
-                missing_must.append(cname)
-            must_have_details.append({"name": cname, "weight": cpriority, "status": "not_found", "match_level": "none"})
-
-    # HR custom checks
-    custom_required_hits = []
-    for item in hr_custom_checks:
-        if isinstance(item, dict):
-            check_text = str(item.get("text") or item.get("label") or item.get("name") or "").strip()
-            required = bool(item.get("required"))
-        else:
-            check_text = str(item).strip()
             required = False
         if not check_text:
             continue

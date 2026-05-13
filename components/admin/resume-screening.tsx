@@ -250,34 +250,13 @@ function UploadModal({
             files.forEach(f => fd.append("files", f));
             const res = await fetch(`/api/drives/${driveId}/resume-screening`, { method: "POST", body: fd });
             if (!res.ok) throw new Error((await res.json()).error || "Upload failed");
-            const { batchId: nextBatchId, totalCount } = await res.json();
-            setProgress({ processed: 0, total: totalCount });
-            setPhase("processing");
-            pollRef.current = setInterval(async () => {
-                try {
-                    const pr = await fetch(`/api/drives/${driveId}/resume-screening?batchId=${nextBatchId}`);
-                    const data = await pr.json();
-                    setProgress({ processed: data.processedCount, total: data.totalCount });
-                    if (data.status === "COMPLETED") {
-                        clearInterval(pollRef.current!);
-                        try {
-                            const nextSummary = await loadBatchSummary(nextBatchId);
-                            setSummary(nextSummary);
-                            setPhase("summary");
-                            toast.success(`${data.processedCount} resumes screened successfully`);
-                        } catch (summaryError) {
-                            clearInterval(pollRef.current!);
-                            setPhase("failed");
-                            setError((summaryError as Error).message || "Failed to build screening summary");
-                        }
-                    } else if (data.status === "FAILED") {
-                        clearInterval(pollRef.current!);
-                        setPhase("failed"); setError("Processing failed. Try again.");
-                    }
-                } catch { /* ignore */ }
-            }, 5000);
+            await res.json();
+            toast.success("Upload successful! Resumes now appear in the table while the worker processes them.");
+            reset();
+            onComplete();
         } catch (err) {
-            setPhase("failed"); setError((err as Error).message);
+            setPhase("failed");
+            setError((err as Error).message);
             toast.error((err as Error).message);
         }
     };

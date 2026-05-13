@@ -47,6 +47,9 @@ import {
 function formatCandidateStatusLabel(value?: string) {
     const normalized = String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
     if (!normalized) return "Pending";
+    if (normalized === "waiting") return "Waiting";
+    if (normalized === "processing") return "Processing";
+    if (normalized === "failed") return "Failed";
     if (normalized === "inprogress" || normalized === "in progress") return "In Progress";
     if (normalized === "finished" || normalized === "completed") return "Completed";
     if (normalized === "shortlisted") return "Shortlisted";
@@ -636,13 +639,33 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                     const statusValue = candidate.resumeStatus || candidate.status;
                                     const statusKey = normalizeStatusKey(statusValue) || "pending";
                                     const statusLabel = formatCandidateStatusLabel(statusValue);
+                                    const isWaiting = statusKey === "waiting";
+                                    const isProcessing = statusKey === "processing";
+                                    const isFailed = statusKey === "failed";
                                     const interviewStatusValue = candidate.interviewStatus;
                                     const interviewStatusKey = normalizeStatusKey(interviewStatusValue) || "pending";
                                     const interviewStatusLabel = formatCandidateStatusLabel(interviewStatusValue);
+                                    const interviewReportUnlocked =
+                                        interviewStatusKey === "completed" ||
+                                        interviewStatusKey === "finished";
                                     const hiringStatusValue = candidate.hiringStatus;
                                     const hiringStatusKey = normalizeStatusKey(hiringStatusValue) || "pending";
                                     const hiringStatusLabel = formatCandidateStatusLabel(hiringStatusValue);
                                     const score = Number(candidate.score ?? candidate.aiScore ?? 0);
+                                    const progressValue = Math.max(0, Math.min(100, Number(candidate.screeningProgress ?? (isProcessing ? score : 0) ?? 0)));
+                                    const stageLabelRaw = String(candidate.screeningStage || "").trim().toLowerCase();
+                                    const stageLabel =
+                                        stageLabelRaw === "extracting"
+                                            ? "Extracting"
+                                            : stageLabelRaw === "scoring"
+                                                ? "Scoring"
+                                                : stageLabelRaw === "finalizing"
+                                                    ? "Finalizing"
+                                                    : isWaiting
+                                                        ? "Waiting"
+                                                        : isProcessing
+                                                            ? "Processing"
+                                                            : "";
                                     const canResendInterview =
                                         interviewStatusKey === "pending" ||
                                         interviewStatusKey === "in progress" ||
@@ -691,16 +714,18 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                 <div className="flex justify-center">
                                                     <Badge className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm pointer-events-none",
-                                                        statusKey === "processing" ? "bg-orange-50 text-orange-700 w-full" :
+                                                        isWaiting ? "bg-slate-100 text-slate-600 w-full" :
+                                                        isProcessing ? "bg-orange-50 text-orange-700 w-full" :
+                                                        isFailed ? "bg-rose-50 text-rose-700 w-full" :
                                                         score >= 80 ? "bg-emerald-50 text-emerald-700" :
                                                             score >= 50 ? "bg-amber-50 text-amber-700" :
                                                                 "bg-rose-50 text-rose-700"
                                                     )}>
-                                                        {statusKey === "processing" ? (
+                                                        {isWaiting || isProcessing ? (
                                                             <div className="w-full h-1.5 bg-orange-200 rounded-full overflow-hidden mt-0.5 mb-0.5">
-                                                                <div className="bg-orange-500 h-full transition-all duration-500" style={{ width: `${score || 5}%` }} />
+                                                                <div className={cn("h-full transition-all duration-500", isWaiting ? "bg-slate-400" : "bg-orange-500")} style={{ width: `${Math.max(progressValue, isWaiting ? 5 : 0)}%` }} />
                                                             </div>
-                                                        ) : (score ? `${score}%` : "No score")}
+                                                        ) : isFailed ? "Failed" : (score ? `${score}%` : "No score")}
                                                     </Badge>
                                                 </div>
                                             </TableCell>
@@ -708,11 +733,13 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                 <div className="flex justify-center items-center h-full">
                                                     <Badge variant="secondary" className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all pointer-events-none",
-                                                        statusKey === "processing" ? "bg-orange-50 text-orange-700" :
+                                                        isWaiting ? "bg-slate-50 text-slate-600" :
+                                                        isProcessing ? "bg-orange-50 text-orange-700" :
+                                                        isFailed ? "bg-rose-50 text-rose-700" :
                                                         statusKey === "rejected" ? "bg-rose-50 text-rose-700" :
                                                             statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"
                                                     )}>
-                                                        {statusKey === "processing" ? "Processing" : statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
+                                                        {isWaiting || isProcessing ? `${stageLabel || "Processing"} ${progressValue}%` : statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
                                                     </Badge>
                                                 </div>
                                             </TableCell>
@@ -743,10 +770,18 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                 </div>
                                             </TableCell>
                                             <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
-                                                {statusKey === "processing" ? (
+                                                {isWaiting || isProcessing ? (
                                                     <div className="inline-flex h-8 w-8 items-center justify-center rounded-full text-orange-500 bg-orange-50">
-                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                        <Loader2 className={cn("h-4 w-4", isWaiting ? "animate-pulse text-slate-500" : "animate-spin")} />
                                                     </div>
+                                                ) : isFailed ? (
+                                                    <span
+                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-rose-400 bg-rose-50"
+                                                        title="Resume processing failed"
+                                                        aria-label="Resume processing failed"
+                                                    >
+                                                        <XCircle className="h-4 w-4" />
+                                                    </span>
                                                 ) : (
                                                     <Link
                                                         href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`}
@@ -759,15 +794,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                 )}
                                             </TableCell>
                                             <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
-                                                {interviewStatusKey === "pending" ? (
-                                                    <span
-                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-300"
-                                                        title="Interview report is locked until the interview happens"
-                                                        aria-label="Interview report locked"
-                                                    >
-                                                        <Lock className="h-4 w-4" />
-                                                    </span>
-                                                ) : (
+                                                {interviewReportUnlocked ? (
                                                     <Link
                                                         href={`/admin/candidates/${candidate.id}?back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`}
                                                         className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#0D4D2E] transition-colors hover:bg-emerald-50"
@@ -776,6 +803,14 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                     >
                                                         <FileText className="h-4 w-4" />
                                                     </Link>
+                                                ) : (
+                                                    <span
+                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-300"
+                                                        title="Interview report is locked until the interview is finished"
+                                                        aria-label="Interview report locked"
+                                                    >
+                                                        <Lock className="h-4 w-4" />
+                                                    </span>
                                                 )}
                                             </TableCell>
                                             <TableCell className="py-5 pr-8 text-right" onClick={(e) => e.stopPropagation()}>

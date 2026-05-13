@@ -160,6 +160,12 @@ export default function CandidateProfilePage() {
             : "NOT TESTED",
     }));
     const interviewReportSummary = interviewReportRecording.summary || interviewReportData?.verdict?.summary || interviewAiSummary || "";
+    const interviewStatusNormalized = String(candidate?.interview?.status || candidate?.interviewStatus || "").trim().toUpperCase();
+    const interviewIsFinished =
+        interviewStatusNormalized === "COMPLETED" ||
+        interviewStatusNormalized === "FINISHED" ||
+        Boolean(candidate?.interview?.completedAt);
+    const interviewReportLocked = !interviewIsFinished;
     const groupedProctoringSignals = Array.isArray(candidate?.interview?.proctoringEvents)
         ? candidate.interview.proctoringEvents.reduce((acc: any[], ev: any) => {
             const key = String(ev?.eventType || ev?.type || "signal");
@@ -378,6 +384,28 @@ export default function CandidateProfilePage() {
         );
     }
 
+    if (reportMode === "interview" && interviewReportLocked) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+                <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+                    <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
+                        <FileText className="h-6 w-6" />
+                    </div>
+                    <p className="text-sm font-black uppercase tracking-[0.18em] text-amber-700">Interview report locked</p>
+                    <h1 className="mt-3 text-2xl font-black text-slate-900">Available after the interview is finished</h1>
+                    <p className="mt-3 text-sm leading-6 text-slate-600">
+                        This report opens only when the interview status is marked completed and the session has a completed timestamp.
+                    </p>
+                    <div className="mt-6 flex items-center justify-center gap-3">
+                        <Button asChild variant="outline" className="rounded-xl">
+                            <a href={backHref}>Back to candidates</a>
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
 
     return (
         <>
@@ -388,6 +416,7 @@ export default function CandidateProfilePage() {
                         type="button"
                         variant="outline"
                         size="sm"
+                        disabled={interviewReportLocked}
                         onClick={() => setResumeReportOpen(true)}
                         className="h-8 rounded-lg border-[#DDE1E5] bg-white px-3 text-[11px] font-bold text-[#0D4D2E] hover:bg-[#F7FAF8]"
                     >
