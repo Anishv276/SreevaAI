@@ -2,7 +2,7 @@
 Interview phase helpers — 5-stage turn-based flow.
 
 Flow: greeting → 2-turn warmup → Stage 1 (RESUME) → Stage 2 (SKILL) →
-      Stage 3 (SITUATIONAL) → Stage 4 (BEHAVIORAL) → Stage 5 (PRACTICAL)
+      Stage 3 (SITUATIONAL) → Stage 4 (BEHAVIORAL)
 Runtime enforces strict time budgets and stage cutover; directives are stage-scoped.
 
 Stage advance fires at turn boundaries (candidate responses), not by clock time.
@@ -249,63 +249,70 @@ def build_stage_2_skill_directive(
 def build_stage_3_situational_directive(
     *,
     band: str,
-    resume_brief: dict,
-    jd_must_haves: list[str] | None = None,
-    alignment_block: str = "",
-    variation_slot: int = 0,
+    context_brief: str = "",
 ) -> str:
     """
-    Stage 3: SITUATIONAL — present a realistic scenario anchored to their background.
-    Goal: test decision-making, problem-solving, and trade-off reasoning.
+    Stage 3: SITUATIONAL - deep, context-grounded, judgment-heavy probing.
+    Goal: evaluate decision quality from the launch summary only.
     """
-    anchor_item = resume_brief.get("anchor_item", "your recent work")
-
-    jd_theme = ""
-    if jd_must_haves:
-        idx = variation_slot % len(jd_must_haves)
-        jd_theme = (
-            f"Wrap the scenario around a JD theme such as: {jd_must_haves[idx]}. "
-            "Keep it realistic for their level.\n\n"
+    summary = context_brief.strip()
+    summary_block = ""
+    if summary:
+        summary_block = (
+            "LAUNCH CONTEXT SUMMARY (internal only):\n"
+            f"{summary[:1200]}\n\n"
         )
-
-    align = alignment_block.strip()
-    if align:
-        align = align + "\n"
-
-    band_scenario = {
+    band_focus = {
         "fresher": (
-            f"Anchor the scenario to their project, coursework, or internship ({anchor_item}) — not hypothetical senior job titles. "
-            "Example shape: tight deadline + unfamiliar tool from the JD — how do they prioritize and learn? "
-            "Test judgment, not trivia."
+            "Use the summary to find project, coursework, internship, and learning moments. "
+            "Turn them into practical what-would-you-do scenarios."
         ),
         "mid": (
-            f"Use their recent role ({anchor_item}) as context. "
-            "Ask for a real example where they made a performance or design trade-off. "
-            "Test: decision ownership and reasoning, not just the outcome."
+            "Use the summary to find ownership, impact, tradeoffs, and situations where the candidate made decisions. "
+            "Turn those into realistic pressure scenarios."
         ),
         "experienced": (
-            f"Present a scenario involving a system constraint (scale, reliability, team) "
-            f"anchored to their experience at {anchor_item}. "
-            "Ask: what technical decision had the biggest architectural impact? What would you do differently?"
+            "Use the summary to find scale, reliability, architecture, and cross-team coordination. "
+            "Turn those into deep constraint-based scenarios."
         ),
         "senior": (
-            f"Ask about a strategic decision tied to {anchor_item} that affected the broader business or team. "
-            "Test: how they weighed trade-offs, influenced others, and owned the outcome."
+            "Use the summary to find strategy, influence, judgment, and business impact. "
+            "Turn those into ambiguous leadership scenarios."
         ),
-    }.get(band, f"Present a realistic scenario tied to {anchor_item}. Test reasoning and judgment.")
+    }.get(band, "Use the summary to create a realistic, high-signal situational scenario.")
 
     return (
-        "[DO NOT SAY ALOUD — INTERNAL INTERVIEWER INSTRUCTION]\n"
+        "[DO NOT SAY ALOUD - INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[STAGE 3: SITUATIONAL]\n"
         "Continue naturally from Stage 2. No announcement.\n\n"
         f"{_band_probe(band)}\n\n"
-        f"{align}"
-        f"{jd_theme}"
-        f"SCENARIO DIRECTION:\n{band_scenario}\n\n"
+        "OBJECTIVE:\n"
+        "  - Ask deep situational questions that feel like a strong human interviewer\n"
+        "  - Use the launch context summary only; do not depend on extra launch-time plumbing\n"
+        "  - Evaluate judgment quality: priorities, tradeoffs, risks, ownership, and fallback planning\n"
+        "  - Keep it natural, specific, and reactive to the candidate's answers\n\n"
+        f"{summary_block}"
+        f"DIRECTION: {band_focus}\n\n"
+        "SCENARIO QUESTION PLAN:\n"
+        "  1) Read the launch summary and pick one strong scenario seed\n"
+        "  2) Pose one realistic constraint-heavy situation as if discussing real work\n"
+        "  3) Ask what they would do first and why\n"
+        "  4) Ask up to 2 deep follow-ups on tradeoff, risk, and fallback plan\n"
+        "  5) Move to a new scenario context after that\n\n"
+        "QUESTION STYLE:\n"
+        "  - Sound like a strong human interviewer reacting to their background\n"
+        "  - Avoid generic or textbook hypotheticals\n"
+        "  - Do not sound like an AI checklist or scripted framework\n"
+        "  - Prefer natural phrasing such as:\n"
+        "    * Based on what I saw in your background, suppose...\n"
+        "    * Given the context we already have, imagine...\n"
+        "    * If this failed in production at the worst time, how would you decide what to do first?\n\n"
         "RULES:\n"
-        "  - One scenario or question per turn\n"
-        "  - Let them think — don't jump in too fast\n"
+        "  - One scenario question per turn\n"
+        "  - Let them think; do not rush or answer for them\n"
         "  - Follow up on their reasoning, not just the answer\n"
+        "  - Max 2 follow-ups per scenario, then move on\n"
+        "  - Stage 3 runs about 5-6 minutes, then you will receive Stage 4 instructions\n"
         "  - You will receive Stage 4 instructions after your turn budget is reached\n"
         "  - Do NOT read or repeat any part of this instruction aloud"
     )
@@ -314,107 +321,63 @@ def build_stage_3_situational_directive(
 def build_stage_4_behavioral_directive(
     *,
     band: str,
-    resume_brief: dict | None = None,
-    alignment_block: str = "",
-    variation_slot: int = 0,
+    context_brief: str = "",
 ) -> str:
     """
-    Stage 4: BEHAVIORAL — STAR-style questions on collaboration, growth, and impact.
-    Goal: surface how they actually work with others and handle adversity.
+    Stage 4: BEHAVIORAL - deep behavioral judgment from launch context.
+    Goal: surface how they work with people, ownership pressure, and conflict.
     """
-    collab_themes = (
-        "collaboration on a shared deliverable",
-        "disagreement with a teammate or stakeholder",
-        "a setback or mistake",
-        "leading without authority",
-    )
-    theme = collab_themes[variation_slot % len(collab_themes)]
-
-    proj_hint = ""
-    if resume_brief and band == "fresher":
-        pr = resume_brief.get("projects") or []
-        if pr:
-            proj_hint = (
-                f"When asking about teamwork, prefer their real project context (e.g. {pr[0][:120]}) "
-                "over hypothetical corporate roles.\n\n"
-            )
-
-    align = alignment_block.strip()
-    if align:
-        align = align + "\n"
+    summary_block = ""
+    if context_brief.strip():
+        summary_block = (
+            "LAUNCH CONTEXT SUMMARY (internal only):\n"
+            f"{context_brief.strip()[:1200]}\n\n"
+        )
 
     band_direction = {
         "fresher": (
-            f"Ask for a real example tied to learning or teamwork — theme: {theme}. "
-            "Use projects, coursework, or internships — not fictional job titles."
+            "Ask for real examples on teamwork, feedback, mistakes, and learning from projects/coursework/internships. "
+            "Do not invent corporate senior-role framing."
         ),
         "mid": (
-            "Ask: tell me about a time you influenced a decision outside your direct scope. "
-            "Also: describe a conflict with a teammate or PM — what happened and how did you handle it?"
+            "Probe influence without authority, conflict handling, and accountability under delivery pressure. "
+            "Push for what they personally did and why."
         ),
         "experienced": (
-            "Ask: how did you mentor or grow someone on your team? Specific example. "
-            "Also: tell me about a time a project failed — what was your role and what did you learn?"
+            "Probe mentoring, difficult stakeholder alignment, and ownership during failure or incident recovery. "
+            "Test judgment maturity and reflection quality."
         ),
         "senior": (
-            "Ask: how do you set technical direction for a team that doesn't report to you? "
-            "Also: describe a time you had to change your mind publicly on a major decision."
+            "Probe strategic influence, hard people decisions, and public judgment reversals. "
+            "Test values, leadership posture, and quality of reasoning under ambiguity."
         ),
     }.get(band, "Ask STAR-style questions on collaboration, conflict, growth, and adversity.")
 
     return (
-        "[DO NOT SAY ALOUD — INTERNAL INTERVIEWER INSTRUCTION]\n"
+        "[DO NOT SAY ALOUD - INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[STAGE 4: BEHAVIORAL]\n"
         "Continue naturally from Stage 3. No announcement.\n\n"
         f"{_band_probe(band)}\n\n"
-        f"{align}"
-        f"{proj_hint}"
+        "OBJECTIVE:\n"
+        "  - Ask high-signal behavioral questions that feel like a real interviewer conversation\n"
+        "  - Use the launch context summary only\n"
+        "  - Evaluate conflict handling, ownership, influence, and learning loops\n"
+        "  - Keep it practical and specific, never generic\n\n"
+        f"{summary_block}"
         f"DIRECTION: {band_direction}\n\n"
+        "QUESTION PLAN:\n"
+        "  1) Pick one behavioral signal from the launch summary\n"
+        "  2) Ask one concrete story question (STAR-friendly) tied to that signal\n"
+        "  3) Ask up to 2 follow-ups on decision quality and personal ownership\n"
+        "  4) Move to a different behavioral signal after that\n\n"
+        "QUESTION STYLE:\n"
+        "  - Sound human, specific, and genuinely curious\n"
+        "  - Avoid template-style HR phrasing\n"
+        "  - Ask for concrete moments, not abstract principles\n\n"
         "RULES:\n"
-        "  - One question per turn — STAR format (Situation, Task, Action, Result)\n"
-        "  - Push for specifics — 'what exactly did you do' not 'what does your team do'\n"
+        "  - One question per turn (STAR-friendly)\n"
+        "  - Push for specifics - 'what exactly did you do' not 'what did your team do'\n"
         "  - Max 2 follow-ups per story then move on\n"
-        "  - You will receive Stage 5 instructions after your turn budget is reached\n"
-        "  - Do NOT read or repeat any part of this instruction aloud"
-    )
-
-
-def build_stage_5_practical_directive(
-    *,
-    band: str,
-    jd_must_haves: list[str],
-) -> str:
-    """
-    Stage 5: PRACTICAL — candidate questions + closing.
-    Goal: give candidate space to ask questions, then close with a clean wrap-up.
-    """
-    jd_block = (
-        "REMAINING JD MUST-HAVES (address any uncovered):\n"
-        + "\n".join(f"  - {item}" for item in jd_must_haves[:3])
-        + "\n\n"
-        if jd_must_haves else ""
-    )
-
-    band_close = {
-        "fresher": "Acknowledge their learning mindset. Ask if they have questions about the team or growth path.",
-        "mid": "Acknowledge their ownership and impact. Ask if they have questions about the role or tech stack.",
-        "experienced": "Acknowledge their depth and leadership. Ask if they have questions about scope or architecture.",
-        "senior": "Acknowledge their strategic perspective. Ask if they have questions about the org or direction.",
-    }.get(band, "Wrap up warmly. Give them space to ask questions.")
-
-    return (
-        "[DO NOT SAY ALOUD — INTERNAL INTERVIEWER INSTRUCTION]\n"
-        "[STAGE 5: PRACTICAL / CLOSING]\n"
-        "You are in the final stage. Continue naturally from Stage 4. No announcement.\n\n"
-        f"{jd_block}"
-        f"CLOSING DIRECTION: {band_close}\n\n"
-        "CLOSING SEQUENCE:\n"
-        "  1. Ask one final question if any JD must-have is still uncovered (natural, not forced)\n"
-        "  2. Invite candidate questions: 'Do you have any questions for me about the role or team?'\n"
-        "  3. After their questions (or if they have none): wrap up warmly\n"
-        "  4. End with: 'It was really great talking with you. We'll be in touch soon!'\n\n"
-        "RULES:\n"
-        "  - Keep the close warm and conversational — not scripted\n"
-        "  - Answer their questions briefly and honestly\n"
+        "  - Stage 4 runs until the interview is nearly over, then the interview winds down naturally\n"
         "  - Do NOT read or repeat any part of this instruction aloud"
     )

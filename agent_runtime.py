@@ -46,8 +46,6 @@ from agent_profile_context import (
     build_candidate_context_ready_message,
     build_merged_interview_brief,
     build_resume_brief,
-    build_jd_resume_alignment_block,
-    interview_variation_slot,
     _extract_jd_must_haves,
     first_name_from_full_name,
     infer_candidate_band,
@@ -61,7 +59,6 @@ from interview_phases import (
     build_stage_2_skill_directive,
     build_stage_3_situational_directive,
     build_stage_4_behavioral_directive,
-    build_stage_5_practical_directive,
 )
 from agent_providers import (
     build_cartesia_tts,
@@ -160,12 +157,11 @@ _LOCAL_STAGE_DIRECTIVE_CACHE: dict[str, dict[str, str]] = {}
 
 GREETING_FIXED_SECONDS = 60
 WARMUP_FIXED_SECONDS = 120
-NO_NEW_QUESTION_CUTOFF_SECONDS = 25
+NO_NEW_QUESTION_CUTOFF_SECONDS = 15
+BEHAVIORAL_RESERVED_SECONDS = NO_NEW_QUESTION_CUTOFF_SECONDS
 STAGE_PERCENT_SPLIT: dict[str, float] = {
     "skill": 0.35,
     "situational": 0.25,
-    "behavioral": 0.25,
-    "practical": 0.15,
 }
 
 
@@ -678,8 +674,6 @@ async def entrypoint(ctx: JobContext):
         resume_text_from_db or resume_block,
     )
     jd_must_haves = _extract_jd_must_haves(extracted_details, job_details or "")
-    alignment_block = build_jd_resume_alignment_block(jd_must_haves, resume_context.skills)
-    variation_slot = interview_variation_slot(app_id)
     candidate_band = infer_candidate_band(resume_context, resume_block)
     resume_brief = build_resume_brief(candidate_band, resume_context)
     session_context = CandidateBandContext(
@@ -711,10 +705,22 @@ async def entrypoint(ctx: JobContext):
         band=session_context.candidate_band,
         resume_brief=session_context.resume_brief,
     )
+    stage3_directive_cached = build_stage_3_situational_directive(
+        band=session_context.candidate_band,
+        context_brief=session_context.merged_brief_block,
+    )
+    stage4_directive_cached = build_stage_4_behavioral_directive(
+        band=session_context.candidate_band,
+        context_brief=session_context.merged_brief_block,
+    )
     await _cache_stage_directive("stage1", stage1_directive_cached)
     await _cache_stage_directive("stage2", stage2_directive_cached)
+    await _cache_stage_directive("stage3", stage3_directive_cached)
+    await _cache_stage_directive("stage4", stage4_directive_cached)
     stage1_directive_cached = await _read_stage_directive("stage1") or stage1_directive_cached
     stage2_directive_cached = await _read_stage_directive("stage2") or stage2_directive_cached
+    stage3_directive_cached = await _read_stage_directive("stage3") or stage3_directive_cached
+    stage4_directive_cached = await _read_stage_directive("stage4") or stage4_directive_cached
     voice_layer_prompt = build_voice_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
@@ -952,21 +958,16 @@ async def entrypoint(ctx: JobContext):
     _skill_stage_idx = _stage_index_by_name("skill")
     _situational_stage_idx = _stage_index_by_name("situational")
     _behavioral_stage_idx = _stage_index_by_name("behavioral")
-    _practical_stage_idx = _stage_index_by_name("practical")
     _percent_stage_indices = [
         idx for idx in (
             _skill_stage_idx,
             _situational_stage_idx,
-            _behavioral_stage_idx,
-            _practical_stage_idx,
         )
         if idx is not None
     ]
     _stage_weight_by_index = {
         _skill_stage_idx: STAGE_PERCENT_SPLIT["skill"],
         _situational_stage_idx: STAGE_PERCENT_SPLIT["situational"],
-        _behavioral_stage_idx: STAGE_PERCENT_SPLIT["behavioral"],
-        _practical_stage_idx: STAGE_PERCENT_SPLIT["practical"],
     }
     def _allocate_stage_budgets(remaining_seconds: float, stage_indices: list[int]) -> dict[int, int]:
         if remaining_seconds <= 0 or not stage_indices:
@@ -1022,15 +1023,22 @@ async def entrypoint(ctx: JobContext):
             _stage_budgets_secs[_skill_stage_idx] = skill_budget_seconds
             remaining_for_stages = max(0.0, remaining_for_stages - skill_budget_seconds)
 
-        trailing_stage_indices = [
-            idx for idx in _percent_stage_indices if idx != _skill_stage_idx
-        ]
-        _stage_budgets_secs.update(
-            _allocate_stage_budgets(
-                remaining_for_stages,
-                trailing_stage_indices,
+        situational_budget_seconds = 0
+        if _situational_stage_idx is not None:
+            if remaining_for_stages >= 360:
+                situational_budget_seconds = 330
+            elif remaining_for_stages >= 300:
+                situational_budget_seconds = int(remaining_for_stages)
+            else:
+                situational_budget_seconds = int(max(0.0, remaining_for_stages))
+            _stage_budgets_secs[_situational_stage_idx] = situational_budget_seconds
+            remaining_for_stages = max(0.0, remaining_for_stages - situational_budget_seconds)
+
+        if _behavioral_stage_idx is not None:
+            _stage_budgets_secs[_behavioral_stage_idx] = min(
+                BEHAVIORAL_RESERVED_SECONDS,
+                int(max(0.0, remaining_for_stages)),
             )
-        )
         logger.info(
             "[STAGE_TIMING] initial budgets=%s distributed_seconds=%d",
             _stage_budgets_secs,
@@ -1042,7 +1050,7 @@ async def entrypoint(ctx: JobContext):
         remaining_indices = [
             idx
             for idx in _percent_stage_indices
-            if idx > _current_stage_index
+            if idx > _current_stage_index and idx != _behavioral_stage_idx
         ]
         if not remaining_indices:
             return
@@ -1061,22 +1069,13 @@ async def entrypoint(ctx: JobContext):
                 band=session_context.candidate_band,
                 resume_brief=session_context.resume_brief,
             ),
-            2: lambda: build_stage_3_situational_directive(
+            2: lambda: stage3_directive_cached or build_stage_3_situational_directive(
                 band=session_context.candidate_band,
-                resume_brief=session_context.resume_brief,
-                jd_must_haves=jd_must_haves,
-                alignment_block=alignment_block,
-                variation_slot=variation_slot,
+                context_brief=session_context.merged_brief_block,
             ),
-            3: lambda: build_stage_4_behavioral_directive(
+            3: lambda: stage4_directive_cached or build_stage_4_behavioral_directive(
                 band=session_context.candidate_band,
-                resume_brief=session_context.resume_brief,
-                alignment_block=alignment_block,
-                variation_slot=variation_slot,
-            ),
-            4: lambda: build_stage_5_practical_directive(
-                band=session_context.candidate_band,
-                jd_must_haves=jd_must_haves,
+                context_brief=session_context.merged_brief_block,
             ),
         }
         builder = stage_directive_builders.get(stage_idx)
@@ -1090,10 +1089,22 @@ async def entrypoint(ctx: JobContext):
         if _stage_bridge_pending:
             return False
         _stage_bridge_pending = True
+        next_stage_index = _current_stage_index + 1
+        remaining_now = _remaining_total_seconds_now()
+        if (
+            _behavioral_stage_idx is not None
+            and next_stage_index == _behavioral_stage_idx
+            and remaining_now <= NO_NEW_QUESTION_CUTOFF_SECONDS
+        ):
+            logger.info(
+                "[STAGE] Skipping behavioral stage because only %.1fs remain",
+                remaining_now,
+            )
+            return False
         stage_cfg = STAGE_CONFIGS[_current_stage_index]
-        next_stage = STAGE_CONFIGS[_current_stage_index + 1]
+        next_stage = STAGE_CONFIGS[next_stage_index]
         remove_system_messages(chat_ctx, f"[STAGE {_current_stage_index + 1}:")
-        stage_directive = _build_stage_directive_by_index(_current_stage_index + 1)
+        stage_directive = _build_stage_directive_by_index(next_stage_index)
         session_context.stage_history.append(
             {
                 "stage": _current_stage_index,
@@ -1108,7 +1119,7 @@ async def entrypoint(ctx: JobContext):
                 "from_stage": stage_cfg.label,
                 "to_stage": next_stage.label,
                 "from_index": _current_stage_index,
-                "to_index": _current_stage_index + 1,
+                "to_index": next_stage_index,
                 "time_in_stage_seconds": int(time_in_stage),
                 "budget_seconds": stage_budget,
                 "transition_reason": reason,
@@ -1116,7 +1127,7 @@ async def entrypoint(ctx: JobContext):
                 "timestamp": int(time.time() * 1000),
             }
         )
-        _current_stage_index += 1
+        _current_stage_index = next_stage_index
         _stage_start_time = now_mono
         _stage_bridge_pending = False
         if stage_directive:
@@ -1146,6 +1157,16 @@ async def entrypoint(ctx: JobContext):
         stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
         time_in_stage = max(0.0, now_mono - _stage_start_time)
         if time_in_stage < stage_budget:
+            return False
+        if (
+            _behavioral_stage_idx is not None
+            and _current_stage_index + 1 == _behavioral_stage_idx
+            and _remaining_total_seconds_now() <= NO_NEW_QUESTION_CUTOFF_SECONDS
+        ):
+            logger.info(
+                "[STAGE] Skipping behavioral stage due to late-session cutoff (remaining=%.1fs)",
+                _remaining_total_seconds_now(),
+            )
             return False
         return _advance_stage("time_cap", now_mono)
     @ctx.room.on("disconnected")

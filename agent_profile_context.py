@@ -28,7 +28,6 @@ STAGE_CONFIGS: list["InterviewStageConfig"] = [
     InterviewStageConfig(index=1, name="skill", label="SKILL", turn_budget=5),
     InterviewStageConfig(index=2, name="situational", label="SITUATIONAL", turn_budget=5),
     InterviewStageConfig(index=3, name="behavioral", label="BEHAVIORAL", turn_budget=5),
-    InterviewStageConfig(index=4, name="practical", label="PRACTICAL", turn_budget=6),
 ]
 
 # -- Band detection -------------------------------------------------------------
