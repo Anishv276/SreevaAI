@@ -167,16 +167,34 @@ def build_stage_2_skill_directive(
     *,
     band: str,
     resume_brief: dict,
+    context_brief: str = "",
 ) -> str:
     """
-    Stage 2: SKILL - human, resume-skill led technical depth.
-    Goal: validate practical skill depth from what the candidate has already claimed.
+    Stage 2: SKILL - role-guided technical depth.
+    Goal: validate practical skill depth from what the candidate has already claimed
+    and the role signals in the launch brief, without sounding mechanical.
     """
     skills = resume_brief.get("skills", [])
     projects = resume_brief.get("projects", []) or []
     work_history = resume_brief.get("work_history", []) or resume_brief.get("internships", []) or []
+    brief_lines = [line.strip() for line in (context_brief or "").splitlines() if line.strip()]
 
-    skill_anchors = [str(s).strip() for s in skills if str(s).strip()][:6]
+    def _brief_values(prefix: str) -> list[str]:
+        for line in brief_lines:
+            if line.lower().startswith(prefix.lower()):
+                rhs = line.split(":", 1)[1].strip() if ":" in line else ""
+                if rhs:
+                    return [part.strip() for part in rhs.split(",") if part.strip()]
+        return []
+
+    jd_must_haves = _brief_values("JD must-haves")
+    jd_strengths = _brief_values("Screening strengths")
+    jd_gaps = _brief_values("Screening gaps")
+    resume_context_items = _brief_values("Key projects/work")
+
+    skill_anchors = [str(s).strip() for s in skills if str(s).strip()]
+    skill_anchors.extend(jd_must_haves)
+    skill_anchors = list(dict.fromkeys(skill_anchors))[:6]
     anchors_block = (
         "SKILL ANCHORS TO ROTATE THROUGH:\n"
         + "\n".join(f"  - {s}" for s in skill_anchors)
@@ -185,7 +203,7 @@ def build_stage_2_skill_directive(
     )
 
     context_items = []
-    for item in list(projects)[:2] + list(work_history)[:2]:
+    for item in list(projects)[:2] + list(work_history)[:2] + resume_context_items[:2]:
         text = str(item).strip()
         if text:
             context_items.append(text)
@@ -198,27 +216,28 @@ def build_stage_2_skill_directive(
 
     band_direction = {
         "fresher": (
-            "Ask where they used each listed skill in projects/coursework/internships. "
+            "Ask where they used each listed skill in projects/coursework/internships, then check whether it connects to the role signals. "
             "Probe fundamentals, what went wrong, and what they learned."
         ),
-        "mid": "Ask for concrete ownership using listed skills: what they built, why that design, and tradeoffs.",
-        "experienced": "Probe deepest technical contribution from listed skills: scale, reliability, and decisions.",
-        "senior": "Probe strategic technical judgment: architecture, constraints, and influence across teams.",
+        "mid": "Ask for concrete ownership using listed skills and role signals: what they built, why that design, and tradeoffs.",
+        "experienced": "Probe deepest technical contribution using listed skills and role needs: scale, reliability, and decisions.",
+        "senior": "Probe strategic technical judgment against both the launch context and role priorities: architecture, constraints, and influence across teams.",
     }.get(band, "Probe practical depth in listed skills with concrete examples.")
 
     objective_block = (
         "OBJECTIVE:\n"
-        "  - Validate real skill depth from resume claims\n"
-        "  - Understand where they used each skill, what they personally owned, and what tradeoffs they made\n"
+        "  - Validate real skill depth from the launch brief and role priorities\n"
+        "  - Understand where they used each skill, what they personally owned, what tradeoffs they made, and what the role still needs\n"
         "  - Keep the conversation practical and human\n\n"
     )
 
     question_plan_block = (
         "QUESTION PLAN (per skill):\n"
-        "  1) Ground it in one real resume context (project/role)\n"
-        "  2) Ask what they personally implemented or decided\n"
-        "  3) Ask one depth follow-up on tradeoff/debugging/performance\n"
-        "  4) Move to next skill after max 2 follow-ups\n\n"
+        "  1) Ground it in one real work context (project/role)\n"
+        "  2) Tie that context to a role priority or skill gap\n"
+        "  3) Ask what they personally implemented or decided\n"
+        "  4) Ask one depth follow-up on tradeoff/debugging/performance or why that skill matters for the role\n"
+        "  5) Move to next skill after max 2 follow-ups\n\n"
     )
 
     return (
@@ -229,13 +248,16 @@ def build_stage_2_skill_directive(
         f"{objective_block}"
         f"{anchors_block}"
         f"{context_block}"
+        f"{'ROLE PRIORITIES: ' + ', '.join(jd_must_haves) + '\\n\\n' if jd_must_haves else ''}"
+        f"{'ROLE STRENGTHS TO LEVERAGE: ' + ', '.join(jd_strengths) + '\\n\\n' if jd_strengths else ''}"
+        f"{'ROLE GAPS TO TEST: ' + ', '.join(jd_gaps) + '\\n\\n' if jd_gaps else ''}"
         f"DIRECTION: {band_direction}\n\n"
         f"{question_plan_block}"
         "QUESTION STYLE:\n"
         "  - Ask skill questions through real resume situations, not checklist quiz questions\n"
         "  - Do NOT ask: 'Do you know X?'\n"
         "  - Use varied natural wording based on what the candidate just said; avoid repeating one template\n"
-        "  - Example tone: 'I saw X in your resume - where did you use it, and what part did you own?'\n"
+        "  - Example tone: 'I noticed you’ve used X before - where did that show up in your work, and what part did you personally handle?'\n"
         "  - Keep wording natural, personal, and reactive to their previous answer\n\n"
         "RULES:\n"
         "  - Pick one skill anchor at a time\n"

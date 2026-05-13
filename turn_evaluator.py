@@ -68,6 +68,7 @@ async def run_turn_evaluation(
     session_score_history: Optional[list[float]] = None,
     turns_since_last_decay: int = 999,
     response_latency_sec: Optional[float] = None,
+    current_stage: str = "",
 ) -> tuple[TurnDecision, str]:
     """
     Run full per-turn evaluation pipeline.
@@ -152,6 +153,7 @@ async def run_turn_evaluation(
         topic_follow_up_count=topic_follow_up_count,
         collapse_stage=collapse_stage,
         uncovered_topics=uncovered_topics,
+        current_stage=current_stage,
     )
 
     logger.info(

@@ -46,7 +46,6 @@ from agent_profile_context import (
     build_candidate_context_ready_message,
     build_merged_interview_brief,
     build_resume_brief,
-    _extract_jd_must_haves,
     first_name_from_full_name,
     infer_candidate_band,
     parse_resume_context,
@@ -284,7 +283,6 @@ def prewarm(proc: JobProcess):
 from agent_persistence import (
     flush_pending_manual_billing,
     generate_interview_report,
-    generate_interview_state_summary,
     generate_interview_summary,
     get_db_pool,
     get_interview_context,
@@ -414,20 +412,47 @@ async def entrypoint(ctx: JobContext):
             if redis_client is not None:
                 await redis_client.hset(stage_cache_key, stage_key, content)
                 await redis_client.expire(stage_cache_key, max(900, int(time_limit_mins * 120)))
+                logger.info(
+                    "[STAGE_CACHE] Redis write ok key=%s field=%s bytes=%d",
+                    stage_cache_key,
+                    stage_key,
+                    len(content.encode("utf-8", errors="ignore")),
+                )
                 return
         except Exception as e:
             logger.warning(f"[STAGE_CACHE] Redis write failed for {stage_key}: {e}")
         _LOCAL_STAGE_DIRECTIVE_CACHE.setdefault(app_id, {})[stage_key] = content
+        logger.info(
+            "[STAGE_CACHE] Local fallback write key=%s field=%s bytes=%d",
+            stage_cache_key,
+            stage_key,
+            len(content.encode("utf-8", errors="ignore")),
+        )
 
     async def _read_stage_directive(stage_key: str) -> Optional[str]:
         try:
             if redis_client is not None:
                 cached = await redis_client.hget(stage_cache_key, stage_key)
                 if cached:
+                    logger.info(
+                        "[STAGE_CACHE] Redis read hit key=%s field=%s bytes=%d",
+                        stage_cache_key,
+                        stage_key,
+                        len(str(cached).encode("utf-8", errors="ignore")),
+                    )
                     return str(cached)
+                logger.info("[STAGE_CACHE] Redis read miss key=%s field=%s", stage_cache_key, stage_key)
         except Exception as e:
             logger.warning(f"[STAGE_CACHE] Redis read failed for {stage_key}: {e}")
-        return _LOCAL_STAGE_DIRECTIVE_CACHE.get(app_id, {}).get(stage_key)
+        local_cached = _LOCAL_STAGE_DIRECTIVE_CACHE.get(app_id, {}).get(stage_key)
+        if local_cached:
+            logger.info(
+                "[STAGE_CACHE] Local fallback read hit key=%s field=%s bytes=%d",
+                stage_cache_key,
+                stage_key,
+                len(local_cached.encode("utf-8", errors="ignore")),
+            )
+        return local_cached
     if dispatch_metadata:
         session_log_context.update({
             "dispatch_application_id": dispatch_metadata.get("applicationId", app_id),
@@ -673,13 +698,19 @@ async def entrypoint(ctx: JobContext):
         structured_resume if structured_resume else {},
         resume_text_from_db or resume_block,
     )
-    jd_must_haves = _extract_jd_must_haves(extracted_details, job_details or "")
     candidate_band = infer_candidate_band(resume_context, resume_block)
     resume_brief = build_resume_brief(candidate_band, resume_context)
+    base_coverage_items = [
+        *[str(s).strip() for s in resume_context.skills[:6] if str(s).strip()],
+        *[str(p).strip() for p in resume_context.projects[:4] if str(p).strip()],
+        *[str(w).strip() for w in resume_context.work_history[:3] if str(w).strip()],
+    ]
+    # Keep deterministic order while de-duplicating.
+    base_coverage_items = list(dict.fromkeys(base_coverage_items))
     session_context = CandidateBandContext(
         candidate_band=candidate_band,
         resume_brief=resume_brief,
-        coverage_items=[],
+        coverage_items=base_coverage_items,
         depth_instruction=(
             "Balance breadth and depth. Two follow-ups per key topic. Probe for reasoning but stay warm."
         ),
@@ -696,6 +727,12 @@ async def entrypoint(ctx: JobContext):
         resume_brief=resume_brief,
     )
     refresh_candidate_band_context(session_context)
+    logger.info(
+        "[CONTEXT] band=%s anchor=%s coverage_items=%d",
+        session_context.candidate_band,
+        str(session_context.resume_brief.get("anchor_item", ""))[:100],
+        len(session_context.coverage_items),
+    )
     await _init_redis_client()
     stage1_directive_cached = build_stage_1_resume_directive(
         band=session_context.candidate_band,
@@ -704,6 +741,7 @@ async def entrypoint(ctx: JobContext):
     stage2_directive_cached = build_stage_2_skill_directive(
         band=session_context.candidate_band,
         resume_brief=session_context.resume_brief,
+        context_brief=session_context.merged_brief_block,
     )
     stage3_directive_cached = build_stage_3_situational_directive(
         band=session_context.candidate_band,
@@ -721,6 +759,17 @@ async def entrypoint(ctx: JobContext):
     stage2_directive_cached = await _read_stage_directive("stage2") or stage2_directive_cached
     stage3_directive_cached = await _read_stage_directive("stage3") or stage3_directive_cached
     stage4_directive_cached = await _read_stage_directive("stage4") or stage4_directive_cached
+    if redis_client is not None:
+        try:
+            stage_fields = await redis_client.hkeys(stage_cache_key)
+            logger.info("[STAGE_CACHE] Redis stage fields key=%s fields=%s", stage_cache_key, stage_fields)
+        except Exception as e:
+            logger.warning(f"[STAGE_CACHE] Redis hkeys failed for {stage_cache_key}: {e}")
+    else:
+        logger.info(
+            "[STAGE_CACHE] Running without Redis client; local stage fields=%s",
+            list(_LOCAL_STAGE_DIRECTIVE_CACHE.get(app_id, {}).keys()),
+        )
     voice_layer_prompt = build_voice_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
@@ -903,17 +952,15 @@ async def entrypoint(ctx: JobContext):
     last_injection_turn = 0  # tracks which turn last received a state injection
     warmup_responses_received = 0  # counts candidate responses during 2-turn warmup
     warmup_complete = False  # True after 2nd candidate response received
-    # ── 5-Stage interview tracker ──────────────────────────────────────────────
-    _current_stage_index: int = 0        # 0=Resume 1=Skill 2=Situational 3=Behavioral 4=Practical
+    # Stage interview tracker
+    _current_stage_index: int = 0        # 0=Resume 1=Skill 2=Situational 3=Behavioral
     _stage_start_time: float = 0.0       # monotonic timestamp when current stage started
     _stage_bridge_pending: bool = False  # True when bridge directive has been injected
     _stage_budgets_secs: dict[int, int] = {}
-    _blocked_follow_up_count: int = 0
     _final_no_new_question_guard = False
     _candidate_turn_since_last_assistant = True
     _consecutive_low_signal_move_on = 0
     _stage_transition_events: list[dict[str, Any]] = []
-    # ──────────────────────────────────────────────────────────────────────────
     environment_risk = 0     # browser-side proctoring signals
     integrity_risk = 0       # integrity-related proctoring signals
     depth_risk = 0           # surface answers / compression failures
@@ -941,8 +988,6 @@ async def entrypoint(ctx: JobContext):
     _claim_index: dict[str, list[dict]] = {}  # claims indexed by type for contradiction checks
     _contradictions_found: list[dict] = [] # all detected contradictions for final report
     # Lock protecting all shared session state that is written by background tasks.
-    # Both _evaluate_and_inject() and _inject_state() modify the same variables;
-    # this lock ensures they never interleave at async await points.
     _session_state_lock = asyncio.Lock()
     def refresh_composite_risk() -> int:
         nonlocal suspicion_score
@@ -1068,6 +1113,7 @@ async def entrypoint(ctx: JobContext):
             1: lambda: stage2_directive_cached or build_stage_2_skill_directive(
                 band=session_context.candidate_band,
                 resume_brief=session_context.resume_brief,
+                context_brief=session_context.merged_brief_block,
             ),
             2: lambda: stage3_directive_cached or build_stage_3_situational_directive(
                 band=session_context.candidate_band,
@@ -1080,6 +1126,40 @@ async def entrypoint(ctx: JobContext):
         }
         builder = stage_directive_builders.get(stage_idx)
         return builder() if builder else None
+    def _topics_for_stage(stage_idx: int) -> list[str]:
+        stage_name = ""
+        if 0 <= stage_idx < len(STAGE_CONFIGS):
+            stage_name = STAGE_CONFIGS[stage_idx].name
+        rb = session_context.resume_brief if isinstance(session_context.resume_brief, dict) else {}
+        topics: list[str] = []
+        if stage_name == "resume":
+            for key in ("projects", "work_history", "internships", "education", "anchor_item"):
+                raw = rb.get(key)
+                if isinstance(raw, list):
+                    topics.extend(str(v).strip() for v in raw if str(v).strip())
+                elif raw:
+                    topics.append(str(raw).strip())
+        elif stage_name == "skill":
+            raw = rb.get("skills")
+            if isinstance(raw, list):
+                topics.extend(str(v).strip() for v in raw if str(v).strip())
+        elif stage_name == "situational":
+            for line in (session_context.merged_brief_block or "").splitlines():
+                line = line.strip()
+                if line.startswith("JD must-haves:") or line.startswith("Key projects/work:"):
+                    rhs = line.split(":", 1)[1].strip() if ":" in line else ""
+                    if rhs:
+                        topics.extend([part.strip() for part in rhs.split(",") if part.strip()])
+        elif stage_name == "behavioral":
+            for line in (session_context.merged_brief_block or "").splitlines():
+                line = line.strip()
+                if line.startswith("Screening strengths:") or line.startswith("Screening gaps:"):
+                    rhs = line.split(":", 1)[1].strip() if ":" in line else ""
+                    if rhs:
+                        topics.extend([part.strip() for part in rhs.split(",") if part.strip()])
+        if not topics:
+            topics = list(session_context.coverage_items)
+        return list(dict.fromkeys([t for t in topics if t]))[:6]
     def _advance_stage(reason: str, now_mono: float) -> bool:
         nonlocal _current_stage_index, _stage_start_time, _stage_bridge_pending
         if not warmup_complete or _current_stage_index >= len(STAGE_CONFIGS) - 1 or _stage_start_time <= 0:
@@ -1511,7 +1591,7 @@ async def entrypoint(ctx: JobContext):
                     nonlocal _topic_follow_up_count, environment_risk, integrity_risk, depth_risk, suspicion_score, current_interview_mode, \
                         answer_scores, _claim_index, _contradictions_found, \
                         _topic_depth_history, _trust_state, _contradiction_state, _collapse_stage, \
-                        _last_depth_decay_turn, _depth_decay_ever_fired, _blocked_follow_up_count, _consecutive_low_signal_move_on
+                        _last_depth_decay_turn, _depth_decay_ever_fired, _consecutive_low_signal_move_on
                     try:
                         # Step 1: Extract claims and check consistency (before quality eval)
                         # Only runs when contradiction signal is enabled  -  adds 1 LLM call/turn
@@ -1546,7 +1626,12 @@ async def entrypoint(ctx: JobContext):
                         # arrives before directive is injected  -  Ishita answers with no context.
                         try:
                             # Build uncovered topics list for directive bridging (Phase 3)
-                            uncovered_topics = session_context.coverage_items[:3]  # Top 3 uncovered areas
+                            uncovered_topics = _topics_for_stage(_current_stage_index)[:3]
+                            current_stage_name = (
+                                STAGE_CONFIGS[_current_stage_index].name
+                                if 0 <= _current_stage_index < len(STAGE_CONFIGS)
+                                else ""
+                            )
                             td, directive = await asyncio.wait_for(
                                 run_turn_evaluation(
                                     candidate_answer=answer,
@@ -1567,6 +1652,7 @@ async def entrypoint(ctx: JobContext):
                                     session_score_history=score_history,
                                     turns_since_last_decay=turns_since_decay,
                                     response_latency_sec=response_latency,
+                                    current_stage=current_stage_name,
                                 ),
                                 timeout=6.0,
                             )
@@ -1589,8 +1675,6 @@ async def entrypoint(ctx: JobContext):
                             time_in_stage = max(0.0, time.monotonic() - _stage_start_time)
                             stage_expired = stage_budget >= 0 and time_in_stage >= stage_budget
                             if stage_expired and _current_stage_index < len(STAGE_CONFIGS) - 1:
-                                if action in ("PROBE", "VERIFY"):
-                                    _blocked_follow_up_count += 1
                                 action = "MOVE_ON"
                                 td["decision"]["action"] = "MOVE_ON"
                                 td["decision"]["mode"] = "normal"
@@ -1622,8 +1706,7 @@ async def entrypoint(ctx: JobContext):
                                 _advance_stage("low_signal_move_on", time.monotonic())
                                 _consecutive_low_signal_move_on = 0
                         # All I/O is done. Acquire lock before mutating any shared session state.
-                        # This prevents _inject_state() (fires every 3 turns) from interleaving
-                        # with this function at async await points and corrupting shared counters.
+                        # This keeps background turn processing from interleaving shared counters.
                         async with _session_state_lock:
                             # Log quality score for DB persistence
                             quality_record = {
@@ -1868,173 +1951,12 @@ async def entrypoint(ctx: JobContext):
             # Fires on every candidate response. Evaluates answer quality in real-time
             # and injects a NEXT_TURN_DIRECTIVE before Ishita generates her next response.
             # Decision: PROBE (which mode) or MOVE_ON - fully signal-driven, no fixed depth.
-            # --- Dynamic Interview State Injection (every 3 assistant turns) ---
-            # Every 3 turns, a lightweight LLM call generates a coverage + pace summary
-            # and injects it as a system message so Ishita knows what she's covered, what's
-            # thin/untouched, and whether she needs to move on immediately.
             if role == "assistant":
                 _question_asked_at = time.perf_counter()
                 _candidate_turn_since_last_assistant = False
                 turn_count += 1
                 # ── Stage advance check (time-budgeted) ────────────────────────
                 _advance_stage_if_due(time.monotonic())
-                # ── Periodic state injection every 3 assistant turns ───────────
-                if turn_count % 3 == 0 and turn_count != last_injection_turn:
-                    last_injection_turn = turn_count
-                    lines_snap = list(transcript_lines)
-                    current_turn = turn_count
-                    # Estimate total expected turns from time limit (avg ~2 turns/min)
-                    expected_total = max(time_limit_mins * 2, 10)
-                    # Compute wall-clock seconds remaining at snapshot time
-                    _elapsed = time.time() - session_start_time if session_start_time else 0
-                    _secs_remaining = max(0.0, time_limit_mins * 60 - _elapsed)
-                    mode_snap = current_interview_mode
-                    async def _inject_state(
-                        snap=lines_snap, t=current_turn, exp=expected_total,
-                        mode=mode_snap, secs_rem=_secs_remaining
-                    ):
-                        nonlocal environment_risk, integrity_risk, depth_risk, suspicion_score, current_interview_mode
-                        try:
-                            state = await generate_interview_state_summary(
-                                snap,
-                                candidate_name,
-                                job_title,
-                                _oai_eval_client,
-                                org_id=org_id,
-                                turn_count=t,
-                                total_turns_expected=exp,
-                                seconds_remaining=secs_rem,
-                                llm_model=analysis_model,
-                            )
-                            if state:
-                                # All I/O done  -  acquire lock before writing shared state.
-                                async with _session_state_lock:
-                                    # --- Parse proctoring signals from state text ---
-                                    if "CONTRADICTION DETECTED" in state:
-                                        proctoring_events.append({
-                                            "event": "contradiction_detected",
-                                            "turn": t,
-                                            "score_delta": 0,
-                                            "score_after": suspicion_score,
-                                            "note": "state summary surfaced a contradiction; trust handled in formal state machine",
-                                        })
-                                        logger.info(f"[PROCTOR] contradiction_detected turn={t} (formal state handles trust)")
-                                    depth_match = re.search(r"ANSWER_DEPTH:\s*\[(SURFACE|SPECIFIC|DEEP)\]", state)
-                                    if depth_match:
-                                        depth_level = depth_match.group(1)
-                                        if depth_level == "SURFACE":
-                                            depth_risk = min(100, depth_risk + 5)
-                                            refresh_composite_risk()
-                                            proctoring_events.append({
-                                                "event": "answer_surface",
-                                                "turn": t,
-                                                "risk_bucket": "depth",
-                                                "score_delta": 5,
-                                                "score_after": suspicion_score,
-                                            })
-                                        logger.info(f"[PROCTOR] answer_depth={depth_level} turn={t} score={suspicion_score}")
-                                    if "MOVE ON NOW" in state:
-                                        proctoring_events.append({
-                                            "event": "stuck_alert",
-                                            "turn": t,
-                                            "score_delta": 0,
-                                            "score_after": suspicion_score,
-                                        })
-                                        logger.info(f"[PROCTOR] stuck_alert turn={t}")
-                                    if "PACE CRITICAL" in state:
-                                        proctoring_events.append({
-                                            "event": "pace_critical",
-                                            "turn": t,
-                                            "score_delta": 0,
-                                            "score_after": suspicion_score,
-                                        })
-                                        logger.info(f"[PROCTOR] pace_critical turn={t}")
-                                    if "TIME CRITICAL" in state or secs_rem <= 300:
-                                        proctoring_events.append({
-                                            "event": "time_critical_rapid_fire",
-                                            "turn": t,
-                                            "seconds_remaining": secs_rem,
-                                            "score_delta": 0,
-                                            "score_after": suspicion_score,
-                                        })
-                                        logger.info(f"[PROCTOR] time_critical_rapid_fire turn={t} secs_rem={secs_rem:.0f}")
-                                    # --- Determine interview mode from proctoring risk only ---
-                                    mode_risk_score = compose_mode_risk_score(
-                                        integrity_risk,
-                                        depth_risk,
-                                    )
-                                    if integrity_risk >= 15 or mode_risk_score >= 28:
-                                        new_mode = "verification"
-                                    elif mode_risk_score >= 16 or depth_risk >= 18:
-                                        new_mode = "pressure"
-                                    else:
-                                        new_mode = mode  # keep existing (could be "deep" from genuine depth)
-                                    if new_mode != current_interview_mode:
-                                        logger.info(
-                                            f"[PROCTOR] mode_change {current_interview_mode}->{new_mode} "
-                                            f"proctoring_score={mode_risk_score} "
-                                            f"env={environment_risk} integrity={integrity_risk} depth={depth_risk} turn={t}"
-                                        )
-                                        current_interview_mode = new_mode
-                                        proctoring_events.append({
-                                            "event": "mode_change",
-                                            "turn": t,
-                                            "from": mode,
-                                            "to": new_mode,
-                                            "score": mode_risk_score,
-                                        })
-                                    # --- Remove old state injections - keep only the latest 2 ---
-                                    messages = chat_ctx.messages() if callable(getattr(chat_ctx, "messages", None)) else chat_ctx.messages
-                                    state_msgs = [
-                                        m
-                                        for m in messages
-                                        if getattr(m, "role", "") == "system"
-                                        and "[INTERVIEW STATE UPDATE" in (
-                                            getattr(m, "content", "") or ""
-                                        )
-                                    ]
-                                    if len(state_msgs) >= 2:
-                                        for old_msg in state_msgs[:-1]:
-                                            try:
-                                                messages.remove(old_msg)
-                                            except (ValueError, AttributeError):
-                                                pass
-                                    mins_left = int(secs_rem // 60)
-                                    secs_left = int(secs_rem % 60)
-                                    time_flag = (
-                                        f"TIME CRITICAL  -  {mins_left}m {secs_left}s remaining. RAPID FIRE MODE ACTIVE."
-                                        if secs_rem <= 300
-                                        else f"TIME REMAINING: {mins_left}m {secs_left}s"
-                                    )
-                                    current_stage_cfg = STAGE_CONFIGS[_current_stage_index] if _current_stage_index < len(STAGE_CONFIGS) else None
-                                    stage_label = current_stage_cfg.label if current_stage_cfg else "COMPLETE"
-                                    next_stage_label = STAGE_CONFIGS[_current_stage_index + 1].label if _current_stage_index + 1 < len(STAGE_CONFIGS) else "WRAP UP"
-                                    time_in_stage_secs = int(time.monotonic() - _stage_start_time) if _stage_start_time > 0 else 0
-                                    stage_budget_secs = int(_stage_budgets_secs.get(_current_stage_index, 0)) if current_stage_cfg else 0
-                                    injection_text = (
-                                        f"[INTERVIEW STATE UPDATE - Turn {t}]\n"
-                                        f"ISHITA_MODE: {current_interview_mode.upper()}\n"
-                                        f"COMPOSITE_RISK: {suspicion_score}\n"
-                                        f"CURRENT_STAGE: {stage_label} (stage {_current_stage_index + 1}/5, {time_in_stage_secs}s / {stage_budget_secs}s budget)\n"
-                                        f"NEXT_STAGE: {next_stage_label}\n"
-                                        f"{time_flag}\n"
-                                        f"{state}\n"
-                                        "Use this to guide your next 3-4 exchanges. "
-                                        "Do not reference this note aloud."
-                                    )
-                                    chat_ctx.add_message(
-                                        role="system", content=injection_text
-                                    )
-                                    logger.info(
-                                        f"[STATE_INJECT] Injected state at turn {t} "
-                                        f"mode={current_interview_mode} composite_risk={suspicion_score}: "
-                                        f"{state[:80]}..."
-                                    )
-                        except Exception as e:
-                            logger.warning(
-                                f"[STATE_INJECT] Injection failed at turn {t}: {e}"
-                            )
-                    spawn_background_task(_inject_state(), f"inject_state_turn_{current_turn}")
             # --- Periodic auto-save every 5 turns to prevent data loss ---
             if len(transcript_lines) > 0:
                 start_t = session_start_time

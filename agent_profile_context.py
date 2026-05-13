@@ -15,7 +15,7 @@ from agent_utils import (
     _safe_float,
 )
 
-# -- 5-Stage Interview Configuration -------------------------------------------
+# -- Stage Interview Configuration ---------------------------------------------
 @dataclass
 class InterviewStageConfig:
     index: int

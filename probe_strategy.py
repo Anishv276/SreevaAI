@@ -282,6 +282,7 @@ def build_directive(
     topic_follow_up_count: int,
     collapse_stage: int = 0,
     uncovered_topics: Optional[list[str]] = None,
+    current_stage: str = "",
 ) -> str:
     """
     Build the NEXT_TURN_DIRECTIVE string injected into Ishita's context.
@@ -299,6 +300,7 @@ def build_directive(
     lines = [
         "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]",
         f"DECISION: {action}" + (f" ({mode.upper()})" if action != "MOVE_ON" else ""),
+        f"CURRENT STAGE: {current_stage or 'unknown'}",
         f"ANSWER DEPTH: {depth_signal}",
         f"QUALITY: clarity={quality['clarity']:.0f} depth={quality['depth']:.0f} "
         f"specificity={quality['specificity']:.0f} grounding={quality['grounding']:.0f}",
@@ -350,5 +352,9 @@ def build_directive(
     elif action == "MOVE_ON" and uncovered_topics:
         next_topic = uncovered_topics[0] if uncovered_topics else "next area"
         lines.append(f"BRIDGE NOW to: {next_topic}")
+    if current_stage:
+        lines.append(
+            f"STAGE GUARD: Keep your next question strictly within {current_stage.upper()} stage intent."
+        )
 
     return "\n".join(lines)
