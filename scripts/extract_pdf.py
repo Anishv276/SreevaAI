@@ -732,23 +732,43 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
                 partial_must.append(cname)
             must_have_details.append({"name": cname, "weight": cpriority, "status": "mentioned", "match_level": result})
             required = False
+
+    # Custom HR screening checks are handled separately from JD criteria.
+    for check in hr_custom_checks:
+        check_text = ""
+        required = False
+        if isinstance(check, dict):
+            check_text = str(check.get("text") or check.get("label") or "").strip()
+            required = bool(check.get("required"))
+        else:
+            check_text = str(check or "").strip()
         if not check_text:
             continue
+
+        custom_required_total += 1 if required else 0
         level, multiplier = _custom_check_match(check_text, resume_normalized, resume_raw_text_corpus)
-        if required:
-            custom_required_total += 1
-            if level in ("full", "partial", "mentioned"):
-                custom_required_hits.append(check_text)
+        if level in ("full", "partial", "mentioned"):
+            custom_required_hits.append(check_text)
+            if required:
                 must_matched_weight += 10 * multiplier
                 must_total_weight += 10
-                must_have_details.append({"name": f"Custom: {check_text}", "weight": "high",
-                                          "status": "found" if level == "full" else "mentioned", "match_level": level})
-            else:
+            must_have_details.append({
+                "name": f"Custom: {check_text}",
+                "weight": "high",
+                "status": "found" if level == "full" else "mentioned",
+                "match_level": level,
+            })
+        else:
+            if required:
                 custom_required_missing.append(check_text)
                 missing_must.append(f"Custom: {check_text}")
                 must_total_weight += 10
-                must_have_details.append({"name": f"Custom: {check_text}", "weight": "high",
-                                          "status": "not_found", "match_level": level})
+            must_have_details.append({
+                "name": f"Custom: {check_text}",
+                "weight": "high",
+                "status": "not_found",
+                "match_level": level,
+            })
     # Final score normalization
     skills_score = round((must_matched_weight / must_total_weight) * 50) if must_total_weight else 50
     skills_score = min(50, max(0, skills_score))
