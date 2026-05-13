@@ -470,69 +470,67 @@ def _custom_check_match(check_text, resume_normalized, resume_raw_text):
     return "none", 0.0
 def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     """
-    Deterministic scoring engine. Same input = same score, every time.
-    LLM never touches this function.
-    Score breakdown (100 pts total):
-      Must-have skills    : 45 pts  (depth-weighted: keyword + evidence quality)
-      Experience          : 25 pts  (years + seniority alignment)
-      Good-to-have skills : 10 pts
-      Career quality      : 10 pts  (progression, red flags, impact signals)
-      Domain fit          : 10 pts  (JD scoring hints, domain skills, non-tech roles)
-    Deterministic scoring engine. Same input = same score, every time.
-    LLM never touches this function.
-    Score breakdown (100 pts total):
-      Must-have skills    : 45 pts  (weight × evidence depth × transferable credit)
-      Experience          : 25 pts  (years gap + seniority alignment)
-      Good-to-have skills : 10 pts  (partial credit for transferable skills)
-      Career quality      : 10 pts  (impact signals, ownership, progression, red flags)
-      Domain fit          : 10 pts  (scoring hints, domain skills, background match)
-    Precision goals:
-      - No false rejections: transferable skills, text hits, and fuzzy synonyms all
-        get partial credit so strong candidates with non-standard terminology aren't dropped.
-      - No false shortlists: hard rejection gates catch fundamental mismatches before
-        the score is considered. Depth multipliers penalise "mentioned only" skills.
-      - Overqualified != bad: seniority gap is capped at +-3 pts, never a hard reject.
-      - Evidence quality matters: work history > project > listed only.
+    Deterministic evidence-based scoring engine. LLM never touches this function.
+    Score breakdown (100 pts):
+      Criteria match (critical/high) : 50 pts  (evidence_items weight x result x evidence quality)
+      Experience + Seniority         : 15 pts  (years gap + seniority alignment)
+      Good-to-have criteria (medium) : 10 pts  (same criteria loop, medium priority pool)
+      Career quality                 : 15 pts  (ownership, impact signals, progression, red flags)
+      Domain fit                     : 10 pts  (JD keywords vs domain_skills + scoring hints)
+    Evidence quality: work_history_outcome > work_history > project > listed > inferred
     """
+
     if screening_criteria is None:
         screening_criteria = {}
-    # ── 0. Resolve skill/experience requirements (HR criteria overrides JD) ─
-    hr_criteria_skills = screening_criteria.get("skills", {})
+    # ── 0. Resolve JD Criteria (new) + legacy skill fallback ─────────────────
+    jd_criteria = jd_data.get("criteria", [])
     hr_custom_checks = screening_criteria.get("customChecks", []) or screening_criteria.get("custom_checks", [])
+
+    # If HR has overridden skills via screening_criteria, inject as criteria items
+    hr_criteria_skills = screening_criteria.get("skills", {})
     if hr_criteria_skills:
-        # mustHave is the current field name; fall back to legacy "required" for older saved drives
         hr_required = hr_criteria_skills.get("mustHave") or hr_criteria_skills.get("required", [])
-        if hr_required and isinstance(hr_required[0], dict):
-            jd_must_have = [(s.get("name", ""), s.get("weight", "high") or "high") for s in hr_required]
-        else:
-            jd_must_have = [(s, "high") for s in hr_required] if hr_required else []
-        # optional is the current field name; fall back to legacy "niceToHave" for older saved drives
-        hr_nice = hr_criteria_skills.get("optional") or hr_criteria_skills.get("niceToHave", [])
-        jd_good_to_have = [s.get("name", "") if isinstance(s, dict) else s for s in hr_nice] if hr_nice else []
-    else:
+        if hr_required:
+            # Convert HR override skills into criteria format
+            hr_skill_criteria = []
+            for s in hr_required:
+                name = s.get("name", s) if isinstance(s, dict) else s
+                w = s.get("weight", "high") if isinstance(s, dict) else "high"
+                weight_pts = {"critical": 20, "high": 15, "medium": 10}.get(w, 15)
+                hr_skill_criteria.append({
+                    "id": f"hr_{name}", "category": "skill", "name": name,
+                    "priority": w, "weight": weight_pts,
+                    "evidence_required": "any", "source_text": f"HR required: {name}"
+                })
+            if hr_skill_criteria:
+                jd_criteria = hr_skill_criteria  # HR overrides JD criteria
+
+    # Legacy fallback: if old JD format (no criteria), convert must_have skills to criteria
+    if not jd_criteria:
         jd_skills = jd_data.get("skills", {})
         raw_must = jd_skills.get("must_have", [])
-        if raw_must and isinstance(raw_must[0], dict):
-            jd_must_have = [(s["skill"], s.get("weight", "high")) for s in raw_must]
-        else:
-            jd_must_have = [(s, "high") for s in raw_must]
-        raw_good = jd_skills.get("good_to_have", [])
-        if raw_good and isinstance(raw_good[0], dict):
-            jd_good_to_have = [s["skill"] for s in raw_good]
-        else:
-            jd_good_to_have = raw_good
+        for s in raw_must:
+            name = s["skill"] if isinstance(s, dict) else s
+            w = s.get("weight", "high") if isinstance(s, dict) else "high"
+            weight_pts = {"critical": 20, "high": 15, "medium": 10}.get(w, 15)
+            jd_criteria.append({
+                "id": f"legacy_{name}", "category": "skill", "name": name,
+                "priority": w, "weight": weight_pts,
+                "evidence_required": "any", "source_text": name
+            })
+
+
     jd_experience = _as_dict(jd_data.get("experience", {}))
     jd_min_years = jd_experience.get("min_years")
     jd_max_years = jd_experience.get("max_years")
-    jd_seniority = _as_dict(jd_data.get("role_context", {})).get("seniority")
+    # New JD format uses role_level, old uses role_context.seniority
+    jd_seniority = jd_data.get("role_level") or _as_dict(jd_data.get("role_context", {})).get("seniority")
     has_tech = jd_data.get("has_technical_requirements", True)
     scoring_hints = _as_dict(jd_data.get("scoring_hints", {}))
     # ── 1. Build resume skill pool ──────────────────────────────────────────
     resume_skills = resume_data.get("skills", {})
     work_history = resume_data.get("work_history", [])
     domain_skills = resume_skills.get("domain_skills", [])
-    # skill_evidence_map: normalized -> {evidence, confidence, source, years}
-    # Priority: work_history(4) > project(3) > listed(2) > keyword(1)
     skill_evidence_map = {}
     priority_rank = {"work_history": 4, "project": 3, "listed": 2, "keyword": 1}
     def _add_skill(name, evidence, confidence, source, years=None):
@@ -546,7 +544,9 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     all_resume_skill_names = []
     for s in (resume_skills.get("technical", []) or []):
         if isinstance(s, dict) and s.get("skill"):
-            _add_skill(s["skill"], s.get("evidence", ""), "high", "listed", s.get("years_of_use"))
+            src = s.get("source_strength", "listed")
+            mapped_src = "work_history" if src in ("work_history_outcome", "work_history") else ("project" if src == "project" else "listed")
+            _add_skill(s["skill"], s.get("evidence", ""), "high", mapped_src, s.get("years_of_use"))
             all_resume_skill_names.append(s["skill"])
         elif isinstance(s, str) and s:
             _add_skill(s, "", "high", "listed")
@@ -555,15 +555,16 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
         if isinstance(s, dict):
             tool, conf = s.get("tool"), s.get("confidence", "high")
             if tool and conf != "low":
-                _add_skill(tool, s.get("evidence", ""), conf, "listed")
+                src = s.get("source_strength", "listed")
+                mapped_src = "work_history" if src in ("work_history_outcome", "work_history") else ("project" if src == "project" else "listed")
+                _add_skill(tool, s.get("evidence", ""), conf, mapped_src)
                 all_resume_skill_names.append(tool)
         elif isinstance(s, str) and s:
             _add_skill(s, "", "high", "listed")
             all_resume_skill_names.append(s)
     for job in work_history:
         company = job.get("company", "work history")
-        impact = job.get("impact_strength", "low")
-        src = "work_history" if job.get("is_current") or impact == "high" else "project"
+        src = "work_history" if job.get("impact_strength") in ("high", "medium") else "project"
         for tech in (job.get("technologies_used", []) or []):
             if tech and isinstance(tech, str):
                 _add_skill(tech, company, "high", src)
@@ -592,41 +593,138 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
         " ".join(s for s in domain_skills if s),
         " ".join(c.get("claim", "") for c in (resume_data.get("core_claims", []) or [])),
     ])).lower()
-    # ── 2. Must-have skill scoring (45 pts) ────────────────────────────────
-    # critical=3, high=2, medium=1
-    # Evidence depth multiplier: work_history=1.2x, project/listed=1.0x, mentioned_only=0.85x
-    # Transferable skill = 0.40-0.50x partial credit (not a full match, not zero)
-    weight_map = {"critical": 3, "high": 2, "medium": 1}
-    matched_must = []
-    missing_must = []
-    partial_must = []
-    must_have_details = []
-    total_weight = 0.0
-    matched_weight = 0.0
-    for skill, weight in jd_must_have:
-        if not skill:
+    # ── 2. Criteria-Based Scoring (50 pts) ─────────────────────────────────
+    # Each JD criterion is evaluated against resume evidence.
+    # result_multiplier: meets=1.0, partially_meets=0.55, unclear=0.25, does_not_meet=0.0
+    # evidence_multiplier: work_history+outcome=1.0, work_history=0.85, project=0.65, listed/any=0.30
+    RESULT_MULT = {"meets": 1.0, "partially_meets": 0.55, "unclear": 0.25, "does_not_meet": 0.0}
+    EVIDENCE_MULT = {"work_history_outcome": 1.0, "work_history": 0.85, "project": 0.65, "listed": 0.30, "inferred": 0.15}
+    criteria_results = []
+    # Separate pools: critical/high -> 50 pts, medium -> 10 pts
+    must_matched_weight = 0
+    must_total_weight = 0
+    good_matched_weight = 0
+    good_total_weight = 0
+
+    for criterion in jd_criteria:
+        cname = criterion.get("name")
+        ccategory = criterion.get("category", "skill")
+        cpriority = criterion.get("priority", "high")
+        cweight = max(criterion.get("weight", 10), 1)
+        cev_required = criterion.get("evidence_required", "any")
+        if not cname:
             continue
-        w = weight_map.get(weight, 2)
-        total_weight += w
-        norm = normalize_skill(str(skill))
-        level, multiplier = _skill_match_level(norm, resume_normalized, skill_evidence_map, resume_raw_text_corpus)
-        if level in ("full", "confirmed", "mentioned", "text_hit"):
-            matched_must.append(skill)
-            matched_weight += w * multiplier
-            match_status = "found" if level in ("full", "confirmed") else "mentioned"
-        elif level == "transferable":
-            partial_must.append(skill)
-            matched_weight += w * multiplier
-            match_status = "transferable"
+        if cpriority == "medium":
+            good_total_weight += cweight
         else:
-            missing_must.append(skill)
-            match_status = "not_found"
-        must_have_details.append({"name": skill, "weight": weight, "status": match_status, "match_level": level})
+            must_total_weight += cweight
+        # Per-criterion state
+        norm_cname = normalize_skill(cname)
+        result = "does_not_meet"
+        ev_type = "none"
+        matched_evidence_text = ""
+        confidence = 0.0
+        best_ev_level = 0
+        for ev in evidence_items:
+            proves = [normalize_skill(p) for p in ev.get("proves", [])]
+            ev_text = ev.get("text", "").lower()
+            ev_level = ev.get("evidence_level", 1)
+            ev_ownership = ev.get("ownership", "unclear")
+            if norm_cname in proves or norm_cname in ev_text:
+                if ev_level > best_ev_level:
+                    best_ev_level = ev_level
+                    confidence = float(ev.get("confidence", 0.7))
+                    matched_evidence_text = ev.get("text", "")
+                    if ev_level >= 5:
+                        result = "meets"
+                        ev_type = "work_history_outcome"
+                    elif ev_level >= 4 and ev_ownership == "owner":
+                        result = "meets"
+                        ev_type = "work_history_outcome"
+                    elif ev_level >= 3:
+                        result = "meets"
+                        ev_type = "work_history"
+                    elif ev_level == 2:
+                        result = "partially_meets"
+                        ev_type = "project"
+                    else:
+                        result = "unclear"
+                        ev_type = "listed"
+
+        # Fallback: match against traditional skill_evidence_map + raw text corpus
+        if result == "does_not_meet":
+            level, multiplier = _skill_match_level(norm_cname, resume_normalized, skill_evidence_map, resume_raw_text_corpus)
+            if level in ("full", "confirmed"):
+                ev_src_raw = skill_evidence_map.get(norm_cname, {}).get("source", "listed")
+                if ev_src_raw == "work_history":
+                    result = "meets"
+                    ev_type = "work_history"
+                    confidence = 0.85
+                elif ev_src_raw == "project":
+                    result = "partially_meets"
+                    ev_type = "project"
+                    confidence = 0.65
+                else:
+                    result = "unclear" if ccategory == "responsibility" else "partially_meets"
+                    ev_type = "listed"
+                    confidence = 0.40
+            elif level == "transferable":
+                result = "partially_meets"
+                ev_type = "listed"
+                confidence = 0.50
+            elif level in ("mentioned", "text_hit"):
+                result = "unclear"
+                ev_type = "inferred"
+                confidence = 0.25
+            else:
+                # For non-skill categories (responsibility/ownership/domain), check raw text
+                if ccategory in ("responsibility", "ownership", "domain"):
+                    words = [w for w in cname.lower().split() if len(w) > 3]
+                    hits = sum(1 for w in words if w in resume_raw_text_corpus)
+                    if hits >= max(2, len(words) // 2):
+                        result = "unclear"
+                        ev_type = "inferred"
+                        confidence = 0.20
+
+        # Apply evidence_required constraint
+        if cev_required == "work_history" and ev_type not in ("work_history", "work_history_outcome"):
+            if result == "meets":
+                result = "partially_meets"
+                confidence *= 0.6
+
+        # Compute weighted contribution
+        r_mult = RESULT_MULT.get(result, 0.0)
+        e_mult = EVIDENCE_MULT.get(ev_type, 0.15)
+        contribution = cweight * r_mult * e_mult
+
+        if cpriority == "medium":
+            good_matched_weight += contribution
+        else:
+            must_matched_weight += contribution
+
+        # Track for reporting + legacy compat
+        criteria_results.append({
+            "criterion": cname, "category": ccategory, "priority": cpriority,
+            "weight": cweight, "result": result, "confidence": round(confidence, 2),
+            "evidence": matched_evidence_text, "ev_type": ev_type,
+        })
+        if result == "meets":
+            if cpriority == "medium":
+                matched_good.append(cname)
+            else:
+                matched_must.append(cname)
+            must_have_details.append({"name": cname, "weight": cpriority, "status": "found", "match_level": "full"})
+        elif result in ("partially_meets", "unclear"):
+            if cpriority != "medium":
+                partial_must.append(cname)
+            must_have_details.append({"name": cname, "weight": cpriority, "status": "mentioned", "match_level": result})
+        else:
+            if cpriority != "medium":
+                missing_must.append(cname)
+            must_have_details.append({"name": cname, "weight": cpriority, "status": "not_found", "match_level": "none"})
+
+    # HR custom checks
     custom_required_hits = []
-    custom_required_missing = []
-    custom_optional_hits = []
-    custom_optional_total = 0
-    custom_required_total = 0
     for item in hr_custom_checks:
         if isinstance(item, dict):
             check_text = str(item.get("text") or item.get("label") or item.get("name") or "").strip()
@@ -639,41 +737,26 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
         level, multiplier = _custom_check_match(check_text, resume_normalized, resume_raw_text_corpus)
         if required:
             custom_required_total += 1
-            total_weight += 2
             if level in ("full", "partial", "mentioned"):
                 custom_required_hits.append(check_text)
-                matched_weight += 2 * multiplier
-                must_have_details.append({"name": f"Custom: {check_text}", "weight": "high", "status": "found" if level == "full" else "mentioned", "match_level": level})
+                must_matched_weight += 10 * multiplier
+                must_total_weight += 10
+                must_have_details.append({"name": f"Custom: {check_text}", "weight": "high",
+                                          "status": "found" if level == "full" else "mentioned", "match_level": level})
             else:
                 custom_required_missing.append(check_text)
                 missing_must.append(f"Custom: {check_text}")
-                must_have_details.append({"name": f"Custom: {check_text}", "weight": "high", "status": "not_found", "match_level": level})
-        else:
-            custom_optional_total += 1
-            if level != "none":
-                custom_optional_hits.append(check_text)
-    if total_weight > 0:
-        skills_score = round((matched_weight / total_weight) * 45)
-    elif not has_tech:
-        jd_keywords = [k for k in (jd_data.get("keywords", []) or []) if k]
-        if jd_keywords:
-            kw_matched = sum(1 for k in jd_keywords if normalize_skill(k) in resume_normalized or k.lower() in resume_raw_text_corpus)
-            skills_score = round((kw_matched / len(jd_keywords)) * 45)
-            for k in jd_keywords:
-                (matched_must if normalize_skill(k) in resume_normalized or k.lower() in resume_raw_text_corpus else missing_must).append(k)
-        else:
-            skills_score = 25
-    else:
-        jd_keywords = [k for k in (jd_data.get("keywords", []) or []) if k]
-        if jd_keywords:
-            kw_matched = sum(1 for k in jd_keywords if normalize_skill(k) in resume_normalized)
-            skills_score = round((kw_matched / len(jd_keywords)) * 45)
-            for k in jd_keywords:
-                (matched_must if normalize_skill(k) in resume_normalized else missing_must).append(k)
-        else:
-            skills_score = 20
-    skills_score = min(45, max(0, skills_score))
-    # ── 3. Experience score (25 pts) ───────────────────────────────────────
+                must_total_weight += 10
+                must_have_details.append({"name": f"Custom: {check_text}", "weight": "high",
+                                          "status": "not_found", "match_level": level})
+    # Final score normalization
+    skills_score = round((must_matched_weight / must_total_weight) * 50) if must_total_weight else 50
+    skills_score = min(50, max(0, skills_score))
+
+    good_score = round((good_matched_weight / good_total_weight) * 10) if good_total_weight else 5
+    good_score = min(10, max(0, good_score))
+
+    # ── 3. Experience score (15 pts) ───────────────────────────────────────
     cv_exp = resume_data.get("experience", {})
     candidate_years = cv_exp.get("total_years")
     candidate_seniority = cv_exp.get("seniority_level")
@@ -681,7 +764,7 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     exp_status = "unknown"
     seniority_rank = {"intern": 0, "junior": 1, "mid": 2, "senior": 3, "lead": 4, "manager": 5}
     if jd_min_years is None:
-        exp_score = 18
+        exp_score = 15
         exp_status = "neutral"
     elif candidate_years is None:
         exp_score = 11
@@ -689,52 +772,43 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     else:
         gap = candidate_years - jd_min_years
         if gap >= 0:
-            exp_score = 25
+            exp_score = 15
             exp_status = "meets"
             # Overqualified: only reduce if far over max_years (generous window)
             if jd_max_years and gap > (jd_max_years - jd_min_years + 4):
-                exp_score = 22
+                exp_score = 13
                 exp_status = "overqualified"
         elif gap >= -1:
-            exp_score = 21
+            exp_score = 12
             exp_status = "close"
         elif gap >= -2:
-            exp_score = 16
+            exp_score = 9
             exp_status = "below"
         elif gap >= -3:
-            exp_score = 9
+            exp_score = 5
             exp_status = "significantly_below"
         else:
-            exp_score = max(0, 5 - (abs(gap) - 3))
+            exp_score = max(0, 3 - (abs(gap) - 3))
             exp_status = "significantly_below"
-    # Seniority adjustment: capped at +-3 pts — overqualified candidates are not penalised heavily
+    # Seniority adjustment: capped at +-2 pts
     if jd_seniority and candidate_seniority:
         jd_lvl = seniority_rank.get(jd_seniority, 2)
         cand_lvl = seniority_rank.get(candidate_seniority, 2)
         gap_lvl = cand_lvl - jd_lvl
         if gap_lvl == 0:
-            exp_score = min(25, exp_score + 2)
+            exp_score = min(15, exp_score + 1)
         elif gap_lvl == -1:
             pass
         elif gap_lvl == 1:
             exp_score = max(0, exp_score - 1)
         elif gap_lvl <= -2:
-            exp_score = max(0, exp_score - 3)
-        elif gap_lvl >= 2:
             exp_score = max(0, exp_score - 2)
-    exp_score = max(0, min(25, exp_score))
-    # ── 4. Good-to-have skills (10 pts) ────────────────────────────────────
-    matched_good = []
-    for skill in jd_good_to_have:
-        if not skill:
-            continue
-        norm = normalize_skill(str(skill))
-        level, _ = _skill_match_level(norm, resume_normalized, skill_evidence_map, resume_raw_text_corpus)
-        if level != "none":
-            matched_good.append(skill)
-    good_score = round((len(matched_good) / len(jd_good_to_have)) * 10) if jd_good_to_have else 5
-    # ── 5. Career quality (10 pts) ─────────────────────────────────────────
-    career_pattern = resume_data.get("career_progression", {}).get("pattern", "unknown")
+        elif gap_lvl >= 2:
+            exp_score = max(0, exp_score - 1)
+    exp_score = max(0, min(15, exp_score))
+
+    # ── 4. Career quality (15 pts) ─────────────────────────────────────────
+    career_pattern = resume_data.get("career_timeline", {}).get("progression_pattern", "unknown")
     resume_red_flags = resume_data.get("red_flags", [])
     is_early_career = candidate_seniority in ("intern", "junior") or (candidate_years is not None and candidate_years <= 2)
     career_score = 4 if is_early_career else 5
@@ -768,7 +842,7 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
             career_score -= 3
         elif sev == "medium":
             career_score -= 1
-    career_score = max(0, min(10, career_score))
+    career_score = max(0, min(15, career_score))
     # ── 6. Domain fit (10 pts) ─────────────────────────────────────────────
     domain_score = 5
     for green in (scoring_hints.get("green_flags_to_reward", []) or []):
@@ -785,22 +859,17 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     domain_kw_hits = sum(1 for s in domain_skills if s and normalize_skill(s) in jd_kw_set)
     if domain_kw_hits >= 3:
         domain_score = min(10, domain_score + 1)
-    if custom_optional_total > 0:
-        optional_ratio = len(custom_optional_hits) / custom_optional_total
-        domain_score = min(10, domain_score + round(optional_ratio * 2))
     domain_score = max(0, min(10, domain_score))
     # ── 7. Final score ─────────────────────────────────────────────────────
     total = min(100, max(0, skills_score + exp_score + good_score + career_score + domain_score))
     # ── 8. Hard rejection gates ────────────────────────────────────────────
-    # Applied ONLY for fundamental mismatches. Err on the side of keeping candidates.
+    # Criteria-based: reject only if 2+ CRITICAL criteria are "does_not_meet"
     hard_rejected = False
     rejection_reasons = []
-    # Must-have gate: only reject if >70% have ZERO evidence (transferable counts, not zero)
-    if jd_must_have:
-        truly_missing = len(missing_must)
-        if truly_missing / len(jd_must_have) > 0.70:
-            hard_rejected = True
-            rejection_reasons.append(f"Missing {truly_missing}/{len(jd_must_have)} must-have skills with no evidence")
+    critical_fails = [c for c in criteria_results if c.get("priority") == "critical" and c.get("result") == "does_not_meet"]
+    if len(critical_fails) >= 2:
+        hard_rejected = True
+        rejection_reasons.append(f"Missing critical requirements: {[c['criterion'] for c in critical_fails]}")
     if custom_required_total > 0 and len(custom_required_missing) / custom_required_total > 0.70:
         hard_rejected = True
         rejection_reasons.append(f"Missing {len(custom_required_missing)}/{custom_required_total} required custom checks")
@@ -824,25 +893,33 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
         status = "Borderline"
     else:
         status = "Rejected"
+    # Build shortlist reason from criteria results
+    top_evidence = [c["evidence"] for c in criteria_results if c["result"] == "meets" and c["evidence"]][:3]
+    gaps_to_probe = [c["criterion"] for c in criteria_results if c["result"] in ("partially_meets", "unclear")][:4]
+    total_criteria = len(jd_criteria)
+    met_criteria = len([c for c in criteria_results if c["result"] == "meets"])
     return {
         "score": total,
         "status": status,
         "breakdown": {
-            "skills_score": skills_score, "skills_max": 45,
-            "exp_score": exp_score, "exp_max": 25,
+            "skills_score": skills_score, "skills_max": 50,
+            "exp_score": exp_score, "exp_max": 15,
             "good_score": good_score, "good_max": 10,
-            "career_score": career_score, "career_max": 10,
+            "career_score": career_score, "career_max": 15,
             "domain_score": domain_score, "domain_max": 10,
         },
+        "criteria_results": criteria_results,
         "skill_matching": {
             "matched_must": matched_must,
             "missing_must": missing_must,
             "partial_must": partial_must,
             "matched_good": matched_good,
-            "total_must": len(jd_must_have),
-            "match_ratio": round((len(matched_must) + len(partial_must) * 0.5) / len(jd_must_have) * 100) if jd_must_have else 100,
+            "total_must": total_criteria,
+            "match_ratio": round((met_criteria / total_criteria) * 100) if total_criteria else 100,
             "must_have_details": must_have_details,
         },
+        "top_evidence": top_evidence,
+        "gaps_to_probe": gaps_to_probe,
         "exp_status": exp_status,
         "hard_rejected": hard_rejected,
         "rejection_reasons": rejection_reasons,
@@ -896,14 +973,14 @@ You CANNOT change the score, status, or breakdown numbers.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 LOCKED SCORING RESULTS (READ ONLY)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Candidate        : {candidate_name}
-Final Score      : {total}/100
-Status           : {status}
-Skills Score     : {breakdown["skills_score"]}/{breakdown["skills_max"]} pts
-Experience Score : {breakdown["exp_score"]}/{breakdown["exp_max"]} pts
-Good-to-have     : {breakdown["good_score"]}/{breakdown["good_max"]} pts
-Career Quality   : {breakdown["career_score"]}/{breakdown["career_max"]} pts
-Domain Fit       : {breakdown.get("domain_score", 0)}/{breakdown.get("domain_max", 10)} pts
+Candidate           : {candidate_name}
+Final Score         : {total}/100
+Status              : {status}
+Criteria Match      : {breakdown["skills_score"]}/{breakdown["skills_max"]} pts
+Experience Score    : {breakdown["exp_score"]}/{breakdown["exp_max"]} pts
+Career Quality      : {breakdown["career_score"]}/{breakdown["career_max"]} pts
+Good-to-have        : {breakdown["good_score"]}/{breakdown["good_max"]} pts
+Domain Fit          : {breakdown.get("domain_score", 0)}/{breakdown.get("domain_max", 10)} pts
 Must-have matched  : {json.dumps(matched)}
 Must-have partial  : {partial_str}
 Must-have missing  : {json.dumps(missing)}
@@ -1154,129 +1231,365 @@ def extract_data(text, type_, llm_model_override=None):
         sys.exit(1)
     prompt = ""
     if type_ == "JD":
-        prompt = f"""Extract a scoring-ready JSON object from this Job Description.
-Output feeds an automated resume scoring engine. Accuracy is non-negotiable. No hallucination.
-RULES:
-1. SKILLS: must_have = explicitly required/essential only. good_to_have = preferred/bonus only.
-   Ambiguous -> good_to_have. Soft skills (communication, teamwork, leadership) -> NEVER in must_have/good_to_have, omit entirely.
-   weight: "critical" = core to role or mentioned 2+ times | "high" = clearly required | "medium" = minor requirement.
-   Canonical names: React.js/ReactJS -> "React" | Node.js/NodeJS -> "Node.js" | PostgreSQL/Postgres -> "PostgreSQL" | AWS/Amazon Web Services -> "AWS" | JavaScript/JS -> "JavaScript" | TypeScript/TS -> "TypeScript" | GCP/Google Cloud -> "GCP" | Azure/MS Azure -> "Azure" | n8n/N8N -> "n8n". Use vendor's official name when unsure.
-2. EXPERIENCE: Numbers only. "2-4 years" -> min:2, max:4 | "5+ years" -> min:5, max:null | fresher/entry -> min:0, max:1 | not mentioned -> null. Never guess from title.
-3. SENIORITY: Infer from responsibilities and experience range, not title alone.
-   intern=0-1yr | junior=1-3yr | mid=3-5yr | senior=5+yr | lead=manages others | manager=explicit management.
-4. EDUCATION: Only extract if explicitly stated as required or preferred. null otherwise.
-5. KEYWORDS: 8-12 canonical skill/domain terms for fallback matching. No soft skills.
-6. SCORING HINTS: green_flags = signals that strongly indicate fit (specific tools, domain experience, certifications).
-   red_flags = signals that indicate poor fit (wrong domain, missing critical context).
-7. INTERVIEW QUESTIONS: Generate 4-6 sharp, role-specific interview questions based on the must-have skills and key responsibilities. Each question must target a specific competency gap or depth-check. Format: {{"question": string, "intent": string, "skill_tested": string}}.
-8. has_technical_requirements: true if role requires specific tools/languages/platforms. false for pure management/soft-skill roles.
-9. No data in JD -> null or []. Never invent.
-Return ONLY valid JSON. No markdown, no explanation.
+        prompt = f"""You are an expert ATS analyst. Your task is to convert a Job Description into a structured set of ROLE ELIGIBILITY CRITERIA that a resume screening engine will use to evaluate candidates.
+
+CRITICAL MINDSET: A JD with only 4 visible skills is NOT asking to match only 4 skills. It is describing a ROLE. Your job is to extract WHAT THE PERSON MUST BE ABLE TO DO, proven by evidence — not just what tools they list.
+
+EXTRACTION RULES:
+1. CRITERIA (6-10 items, no more): Extract criteria from ALL of these signals in the JD:
+   - Explicit skills/technologies (e.g., "React required")
+   - Responsibilities (e.g., "build dashboards", "integrate APIs", "manage campaigns")
+   - Experience requirements (e.g., "2+ years of frontend experience")
+   - Ownership expectations (e.g., "own features from development to release")
+   - Domain/context (e.g., "SaaS product experience", "fintech background")
+   - Education/certifications (ONLY if explicitly required)
+
+2. CATEGORY TYPES:
+   - "skill" = specific technology or tool (React, Python, SQL)
+   - "responsibility" = something they must DO in this role (build dashboards, integrate APIs)
+   - "experience" = years or seniority in a domain
+   - "ownership" = autonomy and leadership expected (own features, lead team)
+   - "domain" = industry or business context (SaaS, fintech, e-commerce)
+
+3. PRIORITY LEVELS:
+   - "critical" = role cannot function without this (core deliverable or explicit hard requirement)
+   - "high" = clearly required, mentioned prominently
+   - "medium" = preferred or "nice to have"
+
+4. WEIGHTS: Assign weights so all criteria weights SUM TO EXACTLY 100. Distribute based on priority:
+   - critical criteria get 15-25 points each
+   - high criteria get 10-15 points each
+   - medium criteria get 5-10 points each
+
+5. EVIDENCE REQUIRED:
+   - "work_history" = must be proven in a past job (not just listed)
+   - "project" = can be proven via project or freelance work
+   - "any" = listed skill or mention is sufficient
+
+6. CANONICAL SKILL NAMES:
+   React.js/ReactJS → "React" | Node.js/NodeJS → "Node.js" | PostgreSQL/Postgres → "PostgreSQL"
+   AWS/Amazon Web Services → "AWS" | JavaScript/JS → "JavaScript" | TypeScript/TS → "TypeScript"
+   GCP/Google Cloud → "GCP" | Azure/MS Azure → "Azure" | n8n/N8N → "n8n"
+
+7. NO INVENTION: Do not add skills or tools not mentioned in the JD. If JD says "build APIs", do NOT automatically add Node.js, Python, or Docker unless stated.
+
+8. NO SOFT SKILLS AS CRITERIA: "communication", "teamwork", "leadership" are NOT scorable criteria unless the JD gives a concrete proof signal (e.g., "manage a team of 5").
+
+9. EXPERIENCE EXTRACTION:
+   - "2-4 years" → min_years: 2, max_years: 4
+   - "5+ years" → min_years: 5, max_years: null
+   - "fresher" / "entry level" → min_years: 0, max_years: 1
+   - not mentioned → null
+
+10. SENIORITY INFERENCE (from responsibilities + experience, NOT title alone):
+    intern=0-1yr | junior=1-3yr | mid=3-5yr | senior=5+yr | lead=manages others | manager=explicit management
+
+Return ONLY valid JSON. No markdown. No explanation. No hallucination.
+
 {{
   "job_title": string,
-  "department": string | null,
-  "work_type": "Remote" | "Hybrid" | "On-site",
-  "employment_type": "Full-time" | "Part-time" | "Contract" | "Internship" | "Freelance" | null,
-  "role_summary": string,
-  "responsibilities": [string],
-  "requirements": [string],
-  "salary": {{
-    "min": number | null,
-    "max": number | null,
-    "currency": string | null,
-    "period": "yearly" | "monthly" | null
-  }},
-  "skills": {{
-    "must_have": [
-      {{"skill": string, "weight": "critical" | "high" | "medium"}}
-    ],
-    "good_to_have": [string]
-  }},
+  "role_level": "intern" | "junior" | "mid" | "senior" | "lead" | "manager",
   "experience": {{
     "min_years": number | null,
     "max_years": number | null,
     "preferred_background": string | null
   }},
-  "role_context": {{
-    "seniority": "intern" | "junior" | "mid" | "senior" | "lead" | "manager" | null
-  }},
-  "education": {{
-    "required": string | null,
-    "preferred": string | null
-  }},
-  "scoring_hints": {{
-    "green_flags_to_reward": [string],
-    "red_flags_to_watch": [string]
-  }},
-  "interview_questions": [
-    {{"question": string, "intent": string, "skill_tested": string}}
+  "criteria": [
+    {{
+      "id": string,
+      "category": "skill" | "responsibility" | "experience" | "ownership" | "domain",
+      "name": string,
+      "priority": "critical" | "high" | "medium",
+      "weight": number,
+      "evidence_required": "work_history" | "project" | "any",
+      "source_text": string
+    }}
   ],
   "has_technical_requirements": boolean,
   "keywords": [string]
 }}
+
 Job Description:
 {text}
 """
     elif type_ == "RESUME":
-        prompt = f"""Extract a precise, bias-free JSON object from this resume. Output feeds a scoring engine, AI hiring report, and interview question generator. No hallucination. Missing work_history is a fatal failure.
-RULES:
-1. NO INVENTION. null or [] if not evidenced. "mentioned in resume" = valid low-confidence evidence.
-2. SKILLS SPLIT: technical[] = languages/frameworks/libraries only (Python, React, Node.js, FastAPI). tools[] = platforms/SaaS/cloud/databases (AWS, HubSpot, PostgreSQL, n8n, Power BI). domain_skills[] = functional competencies that are neither (lead generation, SEO, GTM strategy, data analysis). Canonical names: ReactJS->"React", NodeJS->"Node.js", PostgreSQL/Postgres->"PostgreSQL", n8n/N8N->"n8n", PowerBI->"Power BI". Generic mention ("CRM tools") -> tool:null, category:"CRM", confidence:"low".
-3. EXPERIENCE: total_years = NON-OVERLAPPING sum. Merge concurrent roles, count overlap once. "Present" = April 2026. seniority: junior=0-2yr | mid=2-5yr | senior=5+yr | lead=leads others | manager=explicit management. Never assign mid+ to <2yr experience.
-4. IMPACT SIGNALS: extract only explicit numbers/percentages/scale ("40% faster", "10k users"). Never invent. Empty = low evidence signal to scorer.
-5. RED FLAGS — detect all that apply: overlapping_roles | job_hopping (2+ roles <10mo) | employment_gap (6+mo unexplained) | vague_descriptions | no_progression | generic_skills | title_inflation. severity: high=dealbreaker | medium=probe in interview | low=minor.
-6. OWNERSHIP per role: owner=led/built it | contributor=involved | unclear=no evidence of responsibility.
-7. IMPACT STRENGTH per role/project: high=metrics+ownership | medium=clear outcome, no metrics | low=vague.
-8. CORE CLAIMS: top 3-5 strongest claims the candidate makes, each with evidence and confidence.
-9. UNCERTAIN AREAS: sections that need interview probing — vague scope, missing outcomes, inconsistent dates.
-10. current_company = most recent employer with "Present"/"Current" end date, else most recent.
-11. candidate_summary: 2-3 sentences, recruiter-style. Name tools, company, domain, actual seniority. No gendered language. Do NOT copy resume objective.
-12. keywords: 10-15 canonical skill/domain terms for JD matching.
-Return ONLY valid JSON. No markdown, no explanation.
+        prompt = f"""You are an expert talent intelligence analyst and ATS resume auditor.
+
+Your task is to convert this resume into a structured, evidence-first JSON object.
+This output will feed:
+1. A deterministic role eligibility scoring engine.
+2. A candidate screening report for HR.
+3. An AI interview question generator.
+
+CORE PHILOSOPHY:
+A resume is NOT a keyword list. It is a set of evidence claims.
+Your job is to identify WHAT the candidate has PROVEN, not what they have listed.
+Every skill, tool, and responsibility must be traced back to a source in the resume.
+
+═══════════════════════════════════════════
+RULES
+═══════════════════════════════════════════
+
+RULE 1 — NO INVENTION:
+- Never add companies, dates, tools, metrics, or responsibilities not in the resume.
+- If missing, use null or [].
+- If work_history is missing or unreadable, set work_history: [] and add a HIGH severity red_flag: missing_work_history.
+
+RULE 2 — EVIDENCE LEVELS (use for evidence_items and skills):
+  5 = Work history with ownership AND metrics/outcome (e.g. "Led migration, reduced load time by 40%").
+  4 = Work history with ownership, no metric (e.g. "Built the API layer for the payments service").
+  3 = Work history mentioned as contributor (e.g. "Worked on React components for the dashboard").
+  2 = Project, freelance, academic, or portfolio evidence.
+  1 = Skill listed in skills section only. No proof of use.
+  0 = Not evidenced at all. Do NOT include these.
+
+RULE 3 — EVIDENCE ITEMS (most important section):
+- For every work role and significant project, extract 1-5 evidence_items.
+- Each evidence_item is ONE specific thing the candidate did or built.
+- The "text" field must be copied or tightly paraphrased from the resume.
+- The "proves" field must list canonical responsibility/skill tags it proves.
+  Examples: "react", "api_integration", "dashboard_building", "team_leadership",
+            "backend_api_development", "data_pipeline", "campaign_management".
+- Do NOT create evidence from assumptions.
+- "has_metric" = true only if the text contains explicit numbers, percentages, scale, or business outcomes.
+
+RULE 4 — SKILLS SPLIT:
+  technical[] = languages, frameworks, libraries ONLY.
+    Examples: Python, JavaScript, TypeScript, React, Vue, Angular, Node.js, FastAPI, Django, TensorFlow.
+  tools[] = platforms, SaaS, cloud, databases, DevOps, CRM, analytics, automation.
+    Examples: AWS, GCP, Azure, PostgreSQL, MongoDB, Docker, Kubernetes, HubSpot, Salesforce, Power BI, Tableau, n8n.
+  domain_skills[] = functional/business capabilities (NOT tools or languages).
+    Examples: lead generation, SEO, API integration, dashboard development, campaign management, data analysis.
+  Do NOT duplicate the same item across all three lists.
+
+RULE 5 — CANONICAL NAMES:
+  ReactJS / React.js → React
+  NodeJS / Node.js → Node.js
+  PostgreSQL / Postgres → PostgreSQL
+  JavaScript / JS → JavaScript
+  TypeScript / TS → TypeScript
+  PowerBI → Power BI
+  N8N / n8n.io → n8n
+  Amazon Web Services → AWS
+  Google Cloud Platform → GCP
+  Microsoft Azure → Azure
+
+RULE 6 — WORK HISTORY (extract every role):
+  - Preserve exact company, role, start_date, end_date.
+  - Dates must be YYYY-MM where possible.
+  - Use "Present" ONLY if resume says Present, Current, Till Date, or equivalent.
+  - "Present" = May 2026 for duration_months calculation.
+  - duration_months must be calculated from start_date to end_date.
+  - ownership_level:
+      owner = "led", "built", "architected", "launched", "founded", "owned", "created", "drove".
+      contributor = "worked on", "assisted", "contributed", "collaborated", "supported".
+      unclear = vague description or tools list only.
+  - impact_strength:
+      high = ownership + explicit metric/scale/revenue/users/business outcome.
+      medium = clear work output, no metric.
+      low = vague responsibility or tool list only.
+
+RULE 7 — EXPERIENCE CALCULATION:
+  - total_years = NON-OVERLAPPING sum of professional work history only.
+  - Merge concurrent roles; count overlap once.
+  - Do NOT include education duration.
+  - Do NOT include projects unless explicitly freelance/paid/client work.
+  - seniority_level:
+      intern = internship or <1 year total.
+      junior = 0-2 years.
+      mid = 2-5 years.
+      senior = 5+ years.
+      lead = explicit technical or team leadership evidence.
+      manager = explicit people management.
+  - NEVER assign mid+ if total_years < 2. Only exception: explicit founder/CTO/leadership evidence.
+  - Always explain seniority_reason in 1 line.
+
+RULE 8 — CAREER TIMELINE:
+  - Detect overlapping roles (same months at 2 companies).
+  - Detect unexplained gaps (6+ months between roles with no explanation).
+  - job_hopping_risk: "high" if 2+ roles each under 10 months.
+  - progression_pattern: growing/lateral/declining/mixed/early_career/unknown.
+
+RULE 9 — CORE CLAIMS (top 3-5):
+  - A claim is something the candidate asserts about their capability.
+  - Must be grounded in evidence_items.
+  - confidence: high = company + action + tool + outcome. medium = action + tool, no outcome. low = generic/summary only.
+
+RULE 10 — UNCERTAIN AREAS:
+  Add an uncertain_area when:
+  - role description is vague.
+  - a tool is listed but not tied to any job or project.
+  - dates are missing or inconsistent.
+  - title suggests seniority but evidence is thin.
+  - current role is unclear.
+  Each must include a probe_question for the AI interview.
+
+RULE 11 — RED FLAGS (evidence-based only):
+  Detect: overlapping_roles | job_hopping | employment_gap | vague_descriptions | no_progression | generic_skills | title_inflation | missing_work_history.
+  severity: high = affects screening reliability. medium = probe in interview. low = minor quality issue.
+  Do NOT flag name, gender, nationality, age, photo, religion, or personal background.
+
+RULE 12 — CANDIDATE SUMMARY:
+  2-3 sentences. Recruiter-style. Name tools, company, domain, actual seniority.
+  Do NOT use gendered language. Do NOT copy resume objective.
+
+RULE 13 — PARSE SAFETY:
+  - If resume text is clearly corrupted, scanned, or unreadable, set parse_confidence to "low" and add a warning.
+  - Return ONLY valid JSON. No markdown. No explanation. No extra keys.
+
+═══════════════════════════════════════════
+OUTPUT SCHEMA
+═══════════════════════════════════════════
+
 {{
-  "full_name": string,
+  "parse_confidence": "high" | "medium" | "low",
+  "full_name": string | null,
   "email": string | null,
   "phone": string | null,
-  "location": {{"city": string | null, "state": string | null, "country": string | null}},
+  "location": {{
+    "city": string | null,
+    "state": string | null,
+    "country": string | null
+  }},
   "current_company": string | null,
   "current_role": string | null,
+  "links": {{
+    "linkedin": string | null,
+    "github": string | null,
+    "portfolio": string | null
+  }},
   "experience": {{
     "total_years": number | null,
-    "seniority_level": "intern" | "junior" | "mid" | "senior" | "lead" | "manager" | null
+    "total_months": number | null,
+    "seniority_level": "intern" | "junior" | "mid" | "senior" | "lead" | "manager" | null,
+    "seniority_reason": string
   }},
   "work_history": [
     {{
+      "id": string,
       "company": string,
       "role": string,
+      "start_date": "YYYY-MM" | null,
+      "end_date": "YYYY-MM" | "Present" | null,
       "duration_months": number | null,
-      "start_date": string | null,
-      "end_date": string | null,
       "is_current": boolean,
+      "responsibilities": [string],
       "technologies_used": [string],
       "impact_signals": [string],
       "ownership_level": "owner" | "contributor" | "unclear",
-      "impact_strength": "low" | "medium" | "high"
+      "impact_strength": "high" | "medium" | "low",
+      "business_domain": string | null
+    }}
+  ],
+  "projects": [
+    {{
+      "id": string,
+      "name": string | null,
+      "type": "professional" | "academic" | "personal" | "freelance" | "open_source",
+      "description": string,
+      "technologies": [string],
+      "impact_signals": [string],
+      "ownership_level": "owner" | "contributor" | "unclear",
+      "impact_strength": "high" | "medium" | "low"
+    }}
+  ],
+  "evidence_items": [
+    {{
+      "id": string,
+      "type": "work_history" | "project" | "certification" | "listed_skill" | "summary",
+      "source_ref_id": string | null,
+      "source_company": string | null,
+      "source_role": string | null,
+      "text": string,
+      "proves": [string],
+      "evidence_level": 1 | 2 | 3 | 4 | 5,
+      "ownership": "owner" | "contributor" | "unclear",
+      "has_metric": boolean,
+      "metric": string | null,
+      "confidence": number
     }}
   ],
   "skills": {{
-    "technical": [{{"skill": string, "evidence": string, "years_of_use": number | null}}],
-    "tools": [{{"tool": string | null, "category": string | null, "evidence": string, "confidence": "high" | "medium" | "low"}}],
-    "domain_skills": [string],
-    "skill_depth": [{{"skill": string, "depth": "low" | "medium" | "high", "evidence": string}}]
+    "technical": [
+      {{
+        "skill": string,
+        "evidence": string,
+        "evidence_level": 1 | 2 | 3 | 4 | 5,
+        "years_of_use": number | null,
+        "source_strength": "work_history_outcome" | "work_history" | "project" | "listed" | "inferred"
+      }}
+    ],
+    "tools": [
+      {{
+        "tool": string | null,
+        "category": string | null,
+        "evidence": string,
+        "evidence_level": 1 | 2 | 3 | 4 | 5,
+        "source_strength": "work_history_outcome" | "work_history" | "project" | "listed" | "inferred",
+        "confidence": "high" | "medium" | "low"
+      }}
+    ],
+    "domain_skills": [string]
   }},
   "education": [
-    {{"degree": string | null, "field": string | null, "institution": string | null, "year": number | null, "type": "degree" | "diploma" | "certification" | "course" | "school"}}
+    {{
+      "degree": string | null,
+      "field": string | null,
+      "institution": string | null,
+      "year": number | null,
+      "type": "degree" | "diploma" | "certification" | "course" | "school"
+    }}
   ],
-  "projects": [
-    {{"name": string | null, "description": string, "technologies": [string], "impact": string | null, "impact_strength": "low" | "medium" | "high"}}
+  "certifications": [
+    {{
+      "name": string,
+      "issuer": string | null,
+      "date": "YYYY-MM" | null
+    }}
   ],
-  "core_claims": [{{"claim": string, "evidence": string, "confidence": "high" | "medium" | "low"}}],
-  "uncertain_areas": [{{"area": string, "reason": string, "probe_question": string}}],
-  "red_flags": [{{"flag": string, "severity": "high" | "medium" | "low", "detail": string}}],
-  "career_progression": {{"pattern": "growing" | "lateral" | "declining" | "mixed" | "early-career" | "unknown", "analysis": string}},
+  "career_timeline": {{
+    "overlaps": [
+      {{
+        "roles": [string, string],
+        "overlap_months": number,
+        "severity": "low" | "medium" | "high"
+      }}
+    ],
+    "gaps": [
+      {{
+        "after_role_id": string,
+        "gap_months": number,
+        "severity": "low" | "medium" | "high"
+      }}
+    ],
+    "job_hopping_risk": "none" | "low" | "medium" | "high",
+    "progression_pattern": "growing" | "lateral" | "declining" | "mixed" | "early_career" | "unknown"
+  }},
+  "core_claims": [
+    {{
+      "claim": string,
+      "evidence": string,
+      "confidence": "high" | "medium" | "low"
+    }}
+  ],
+  "uncertain_areas": [
+    {{
+      "area": string,
+      "reason": string,
+      "probe_question": string
+    }}
+  ],
+  "red_flags": [
+    {{
+      "flag": "overlapping_roles" | "job_hopping" | "employment_gap" | "vague_descriptions" | "no_progression" | "generic_skills" | "title_inflation" | "missing_work_history",
+      "severity": "high" | "medium" | "low",
+      "detail": string
+    }}
+  ],
   "candidate_summary": string,
   "keywords": [string]
 }}
+
 Resume:
 {text}"""
     elif type_ == "SCORE":

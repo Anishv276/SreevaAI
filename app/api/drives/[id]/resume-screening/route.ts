@@ -202,44 +202,8 @@ export async function POST(
             },
         });
 
-        // Create placeholder records for immediate table feedback
-        const placeholders = await Promise.all(
-            files.map(async (file) => {
-                const extractedName = file.name.replace(/\.[^/.]+$/, "").replace(/[_\-]+/g, " ").trim() || "Unknown";
-                const appId = generateId("app", extractedName || file.name);
-                
-                const screeningCandidate = await prisma.resumeCandidate.create({
-                    data: {
-                        driveId,
-                        bulkBatchId: batch.id,
-                        fullName: extractedName,
-                        fileName: file.name,
-                        resumeStatus: "PROCESSING",
-                        aiScore: 0,
-                    },
-                });
-
-                const app = await prisma.application.create({
-                    data: {
-                        id: appId,
-                        fullName: extractedName,
-                        email: "",
-                        phone: "",
-                        resumeUrl: `/api/drives/${driveId}/resume-screening/download?candidateId=${screeningCandidate.id}`,
-                        aiScore: 0,
-                        driveId,
-                        resumeStatus: "processing",
-                        interviewStatus: "pending",
-                        hiringStatus: "pending",
-                    },
-                });
-
-                return { file, screeningCandidateId: screeningCandidate.id, appId: app.id };
-            })
-        );
-
         // Fire-and-forget
-        processBatch(batch.id, driveId, placeholders, drive).catch((err) =>
+        processBatch(batch.id, driveId, files, drive).catch((err) =>
             console.error("[RESUME-SCREENING] Fatal:", err)
         );
 
@@ -291,7 +255,7 @@ export async function GET(
 async function processBatch(
     batchId: string,
     driveId: string,
-    items: { file: File; screeningCandidateId: string; appId: string }[],
+    files: File[],
     drive: any
 ) {
     let processedCount = 0;
@@ -305,7 +269,8 @@ async function processBatch(
 
         const parsed = parseDriveScreeningSettings(
             drive.screeningCriteria,
-            Number(drive.screeningThreshold ?? 60)
+            Number(drive.screeningThreshold ?? 60),
+            1
         );
         const threshold: number = Number(parsed.threshold ?? drive.screeningThreshold ?? 60);
         const screeningCriteria = parsed.criteria;
@@ -373,15 +338,13 @@ async function processBatch(
             );
         }
 
-        for (let i = 0; i < items.length; i += CHUNK_SIZE) {
-            const chunk = items.slice(i, i + CHUNK_SIZE);
+        for (let i = 0; i < files.length; i += CHUNK_SIZE) {
+            const chunk = files.slice(i, i + CHUNK_SIZE);
 
             const results = await Promise.allSettled(
-                chunk.map((item) =>
+                chunk.map((file) =>
                     processOneResume(
-                        item.file,
-                        item.screeningCandidateId,
-                        item.appId,
+                        file,
                         driveId,
                         batchId,
                         structuredJD,
@@ -409,7 +372,7 @@ async function processBatch(
             });
 
             console.log(
-                `[RESUME-SCREENING] chunk done — ${processedCount}/${items.length}`
+                `[RESUME-SCREENING] chunk done — ${processedCount}/${files.length}`
             );
         }
 
@@ -436,8 +399,6 @@ async function processBatch(
 
 async function processOneResume(
     file: File,
-    screeningCandidateId: string,
-    appId: string,
     driveId: string,
     batchId: string,
     structuredJD: Record<string, any>,
@@ -474,16 +435,6 @@ async function processOneResume(
                 },
             }).catch(() => {});
         }
-
-        // ── Step 1.5: Mark 50% progress ──
-        await prisma.resumeCandidate.update({
-            where: { id: screeningCandidateId },
-            data: { aiScore: 50 },
-        }).catch(() => {});
-        await prisma.application.update({
-            where: { id: appId },
-            data: { aiScore: 50 },
-        }).catch(() => {});
 
         // ── Step 2: Score against JD and screening criteria ──
         const { data: aiResult, usage: scoreUsage } = await scoreResume(
@@ -524,35 +475,39 @@ async function processOneResume(
             "Unknown";
 
         // ── Persist ──
-        await prisma.resumeCandidate.update({
-            where: { id: screeningCandidateId },
+        const screeningCandidate = await prisma.resumeCandidate.create({
             data: {
+                driveId,
+                bulkBatchId: batchId,
                 fullName: extractedName,
                 email: structuredResume?.email || null,
                 phone: structuredResume?.phone || null,
+                fileName: file.name,
                 resumeText: resumeRawText,
                 aiScore: score,
                 aiReport: JSON.stringify(aiResult),
-                resumeData: JSON.stringify(structuredResume),
                 resumeStatus,
             },
         });
 
-        await prisma.application.update({
-            where: { id: appId },
+        await prisma.application.create({
             data: {
+                id: generateId("app", extractedName || file.name),
                 fullName: extractedName,
                 email: structuredResume?.email || "",
                 phone: structuredResume?.phone || "",
+                resumeUrl: `/api/drives/${driveId}/resume-screening/download?candidateId=${screeningCandidate.id}`,
                 aiScore: score,
                 aiReport: JSON.stringify(aiResult),
-                resumeData: JSON.stringify(structuredResume),
                 resumeText: resumeRawText,
+                driveId,
                 resumeStatus: resumeStatus.toLowerCase(),
+                interviewStatus: "pending",
+                hiringStatus: "pending",
             },
         });
 
-        await appendCandidateActivity(screeningCandidateId, {
+        await appendCandidateActivity(screeningCandidate.id, {
             type: "resume_screened",
             label: resumeStatus === "SHORTLISTED" ? "Resume shortlisted" : "Resume rejected",
             details: `AI score ${score} vs threshold ${threshold}`,
@@ -563,17 +518,6 @@ async function processOneResume(
         console.log(
             `[RESUME-SCREENING] ${extractedName} — score:${score} status:${resumeStatus}`
         );
-    } catch (err) {
-        // Mark as failed if an error occurs
-        await prisma.resumeCandidate.update({
-            where: { id: screeningCandidateId },
-            data: { resumeStatus: "FAILED" },
-        }).catch(() => {});
-        await prisma.application.update({
-            where: { id: appId },
-            data: { resumeStatus: "failed" },
-        }).catch(() => {});
-        throw err;
     } finally {
         await unlink(tmpPdf).catch(() => {});
     }
