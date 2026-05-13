@@ -21,6 +21,7 @@ from collections.abc import AsyncGenerator, AsyncIterable
 from agent_utils import (
     _as_list,
     _cartesia_plugin_model,
+    _coerce_jsonish,
     _compact_optional,
     _compact_text,
     _deep_get,
@@ -35,17 +36,12 @@ from agent_utils import (
 )
 from agent_profile_context import (
     CandidateBandContext,
-    ResumeContext,
-    InterviewStageConfig,
     STAGE_CONFIGS,
     _build_context_vars_block,
     _ensure_resume_context,
     build_candidate_context_ready_message,
-    build_candidate_summary,
+    build_merged_interview_brief,
     build_resume_brief,
-    build_jd_summary,
-    build_live_prompt_context,
-    build_screening_summary,
     build_jd_resume_alignment_block,
     interview_variation_slot,
     _extract_jd_must_haves,
@@ -494,9 +490,18 @@ async def entrypoint(ctx: JobContext):
             room_meta = json.loads(ctx.room.metadata)
     except Exception as e:
         logger.error(f"Failed to parse room metadata: {e}")
-    extracted_details = room_meta.get("extractedDetails", "{}")
-    structured_resume = room_meta.get("structuredResume", "{}")
-    ai_report = room_meta.get("aiReport", "{}")
+    extracted_details = context.get("extractedDetails") or room_meta.get("extractedDetails", "{}")
+    ai_report = context.get("aiReportRaw") or room_meta.get("aiReport", "{}")
+    structured_resume = room_meta.get("structuredResume")
+    if not structured_resume:
+        parsed_ai_report = _coerce_jsonish(ai_report)
+        structured_resume = (
+            _deep_get(parsed_ai_report, "data")
+            or _deep_get(parsed_ai_report, "resume")
+            or _deep_get(parsed_ai_report, "structuredResume")
+            or {}
+        )
+    resume_text_from_db = _compact_text(str(context.get("resumeText") or ""))
     def require_db_value(key: str, default: Any = None, required: bool = True):
         value = context.get(key)
         if value is None:
@@ -516,10 +521,6 @@ async def entrypoint(ctx: JobContext):
     time_limit_mins = FIXED_INTERVIEW_DURATION_MINUTES
     # Keep follow-up loops tight so stage transitions happen reliably.
     follow_up_depth = 1
-    questions_raw = context.get("questions")
-    custom_questions: list[Any] = (
-        questions_raw if isinstance(questions_raw, list) else []
-    )
     org_id = context.get("orgId")
     session_log_context.update(
         {
@@ -621,9 +622,6 @@ async def entrypoint(ctx: JobContext):
             org_llm_model,
             org_llm_provider,
         )
-    # Keep custom question text only; we will combine it with a mandatory
-    # candidate-band checklist after parsing resume context.
-    custom_questions_list = "\n".join([f"- {q}" for q in custom_questions])
     # Language Mapping for STT and TTS
     LANGUAGE_MAPPING = {
         "English": {"stt": "en-US", "tts": "en"},
@@ -635,10 +633,15 @@ async def entrypoint(ctx: JobContext):
     logger.info(
         f"Preparing interview with {candidate_name} for {job_title} in {interview_lang}"
     )
-    resume_block = safe_parse(structured_resume, "No resume data provided.")
+    resume_block = safe_parse(
+        structured_resume if structured_resume else resume_text_from_db,
+        "No resume data provided.",
+    )
     ai_report_block = safe_parse(ai_report, "No prior screening data.")
-    resume_context = parse_resume_context(structured_resume, resume_block)
-    jd_block = build_jd_summary(extracted_details, job_details or "General professional role.")
+    resume_context = parse_resume_context(
+        structured_resume if structured_resume else {},
+        resume_text_from_db or resume_block,
+    )
     jd_must_haves = _extract_jd_must_haves(extracted_details, job_details or "")
     alignment_block = build_jd_resume_alignment_block(jd_must_haves, resume_context.skills)
     variation_slot = interview_variation_slot(app_id)
@@ -652,14 +655,17 @@ async def entrypoint(ctx: JobContext):
             "Balance breadth and depth. Two follow-ups per key topic. Probe for reasoning but stay warm."
         ),
     )
-    if custom_questions_list:
-        session_context.questions_list = custom_questions_list
-    else:
-        session_context.questions_list = ""
-
-    session_context.candidate_summary_block = build_candidate_summary(resume_context)
-    session_context.jd_summary_block = jd_block
-    session_context.screening_summary_block = build_screening_summary(ai_report, ai_report_block)
+    session_context.merged_brief_block = build_merged_interview_brief(
+        candidate_name=candidate_first_name or candidate_name,
+        job_title=job_title,
+        candidate_band=candidate_band,
+        resume_context=resume_context,
+        jd_details=extracted_details,
+        jd_text=job_details or "General professional role.",
+        ai_report=ai_report,
+        ai_report_text=ai_report_block,
+        resume_brief=resume_brief,
+    )
     refresh_candidate_band_context(session_context)
     voice_layer_prompt = build_voice_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
@@ -1788,7 +1794,6 @@ async def entrypoint(ctx: JobContext):
                     last_injection_turn = turn_count
                     lines_snap = list(transcript_lines)
                     current_turn = turn_count
-                    q_list_snap = session_context.questions_list
                     # Estimate total expected turns from time limit (avg ~2 turns/min)
                     expected_total = max(time_limit_mins * 2, 10)
                     # Compute wall-clock seconds remaining at snapshot time
@@ -1796,14 +1801,13 @@ async def entrypoint(ctx: JobContext):
                     _secs_remaining = max(0.0, time_limit_mins * 60 - _elapsed)
                     mode_snap = current_interview_mode
                     async def _inject_state(
-                        snap=lines_snap, q_list=q_list_snap, t=current_turn, exp=expected_total,
+                        snap=lines_snap, t=current_turn, exp=expected_total,
                         mode=mode_snap, secs_rem=_secs_remaining
                     ):
                         nonlocal environment_risk, integrity_risk, depth_risk, suspicion_score, current_interview_mode
                         try:
                             state = await generate_interview_state_summary(
                                 snap,
-                                q_list,
                                 candidate_name,
                                 job_title,
                                 _oai_eval_client,

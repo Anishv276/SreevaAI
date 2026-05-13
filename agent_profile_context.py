@@ -15,7 +15,7 @@ from agent_utils import (
     _safe_float,
 )
 
-# ── 5-Stage Interview Configuration ───────────────────────────────────────────
+# -- 5-Stage Interview Configuration -------------------------------------------
 @dataclass
 class InterviewStageConfig:
     index: int
@@ -31,7 +31,7 @@ STAGE_CONFIGS: list["InterviewStageConfig"] = [
     InterviewStageConfig(index=4, name="practical", label="PRACTICAL", turn_budget=6),
 ]
 
-# ── Band detection ─────────────────────────────────────────────────────────────
+# -- Band detection -------------------------------------------------------------
 def infer_candidate_band(structured_resume_raw: Any, resume_text_block: str) -> str:
     """
     fresher:     < 1.5 years
@@ -57,7 +57,7 @@ def infer_candidate_band(structured_resume_raw: Any, resume_text_block: str) -> 
         return "experienced"
     return "mid"
 
-# ── Resume brief by band ───────────────────────────────────────────────────────
+# -- Resume brief by band -------------------------------------------------------
 def build_resume_brief(band: str, resume_context: "ResumeContext") -> dict:
     """
     Extract only the resume data relevant to the candidate's band.
@@ -129,7 +129,7 @@ def build_resume_brief(band: str, resume_context: "ResumeContext") -> dict:
             "anchor_type": "initiative" if resume_context.projects else "role",
         }
 
-# ── JD ↔ resume alignment (for grounded questioning) ─────────────────────────────
+# -- JD ? resume alignment (for grounded questioning) -----------------------------
 def _skill_tokens(text: str) -> set[str]:
     return set(re.findall(r"[a-z0-9][a-z0-9.+#]*", (text or "").lower()))
 
@@ -165,7 +165,7 @@ def build_jd_resume_alignment_block(jd_must_haves: list[str], resume_skills: lis
     overlap = [j for j in jd_list if _jd_line_matches_resume_skill(j, rs_list)]
     jd_gap = [j for j in jd_list if j not in overlap]
     lines = [
-        "JD ↔ RESUME ALIGNMENT (internal — never read aloud):",
+        "JD ? RESUME ALIGNMENT (internal — never read aloud):",
         f"- Deepen with concrete examples (JD asks + resume shows signal): {_join_items(overlap, 5) or '—'}",
         f"- JD asks for this but resume does not show it — ask learning appetite / how they'd close the gap: {_join_items(jd_gap, 5) or '—'}",
         f"- Resume-listed skills to cross-check against the role: {_join_items(rs_list[:7], 7)}",
@@ -181,7 +181,7 @@ def interview_variation_slot(session_key: str, modulo: int = 8) -> int:
     return int(digest[:8], 16) % max(modulo, 1)
 
 
-# ── JD brief extraction ────────────────────────────────────────────────────────
+# -- JD brief extraction --------------------------------------------------------
 def _extract_jd_must_haves(jd_data: dict[str, Any], jd_text: str) -> list[str]:
     must_have_entries = _as_list(_deep_get(jd_data, "skills.must_have"))
     capabilities: list[str] = []
@@ -242,20 +242,7 @@ def build_jd_summary(jd_details: Any, jd_text: str = "") -> str:
     ]
     return _format_compact_section("JD SUMMARY", lines)
 
-# ── Candidate summary block ────────────────────────────────────────────────────
-def build_candidate_summary(structured_resume: Any, resume_text: str = "") -> str:
-    context = _ensure_resume_context(structured_resume, resume_text)
-    lines = [
-        f"Current role: {context.current_role}",
-        f"Years of experience: {context.years_label}",
-        f"Core skills: {_join_items(context.skills, 5)}",
-        f"Projects: {_join_items(context.projects, 3)}",
-        f"Work history: {_join_items(context.work_history, 3)}",
-        f"Education: {_join_items(context.education, 3)}" if context.education else "Education: Not stated",
-    ]
-    return _format_compact_section("CANDIDATE SUMMARY", lines)
-
-# ── Screening summary block ────────────────────────────────────────────────────
+# -- Screening summary block ----------------------------------------------------
 def build_screening_summary(ai_report: Any, ai_report_text: str = "") -> str:
     screening_data = _coerce_jsonish(ai_report)
     strengths = _extract_text_items(
@@ -284,7 +271,7 @@ def build_screening_summary(ai_report: Any, ai_report_text: str = "") -> str:
     ]
     return _format_compact_section("SCREENING SUMMARY", lines)
 
-# ── Context variables block ────────────────────────────────────────────────────
+# -- Context variables block ----------------------------------------------------
 def _build_context_vars_block(
     *,
     org_name: str = "",
@@ -323,7 +310,7 @@ def first_name_from_full_name(full_name: str) -> str:
         return ""
     return cleaned.split(" ", 1)[0]
 
-# ── Dataclasses ────────────────────────────────────────────────────────────────
+# -- Dataclasses ----------------------------------------------------------------
 @dataclass(slots=True)
 class ResumeContext:
     resume_data: dict[str, Any]
@@ -346,17 +333,14 @@ class CandidateBandContext:
     candidate_band: str
     resume_brief: dict
     coverage_items: list[str]
-    candidate_summary_block: str = ""
-    jd_summary_block: str = ""
-    screening_summary_block: str = ""
+    merged_brief_block: str = ""
     live_prompt_context: str = ""
-    questions_list: str = ""
     depth_instruction: str = ""
     initial_context_injected: bool = False
     resume_context: Optional["ResumeContext"] = None
     stage_history: list = field(default_factory=list)
 
-# ── Resume parsing ─────────────────────────────────────────────────────────────
+# -- Resume parsing -------------------------------------------------------------
 def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
     if isinstance(resume_data, ResumeContext):
         return resume_data
@@ -570,28 +554,17 @@ def build_interview_turns(transcript_lines: list[Any]) -> list[dict[str, Any]]:
         _flush_turn()
     return turns
 
-# ── Live prompt context ────────────────────────────────────────────────────────
-def build_live_prompt_context(context: CandidateBandContext) -> str:
-    summary_block = context.candidate_summary_block.strip() or "Not available"
-    jd_block = context.jd_summary_block.strip() or "Not available"
-    screening_block = context.screening_summary_block.strip() or "Not available"
-    return (
-        f"{summary_block}\n\n"
-        f"{jd_block}\n\n"
-        f"{screening_block}"
-    )
-
 def refresh_candidate_band_context(context: CandidateBandContext) -> CandidateBandContext:
-    context.live_prompt_context = build_live_prompt_context(context)
+    context.live_prompt_context = context.merged_brief_block.strip() or "Not available"
     return context
 
-# ── Warmup directive ───────────────────────────────────────────────────────────
-# ── Candidate context ready (fallback when no brief) ──────────────────────────
+# -- Warmup directive -----------------------------------------------------------
+# -- Candidate context ready (fallback when no brief) --------------------------
 def build_candidate_context_ready_message(
     *,
     context: CandidateBandContext,
 ) -> str:
-    summary_block = context.candidate_summary_block.strip() or "Not available"
+    summary_block = context.merged_brief_block.strip() or "Not available"
     return (
         "[CANDIDATE CONTEXT READY]\n"
         "CANDIDATE PROFILE SUMMARY:\n"
@@ -599,3 +572,70 @@ def build_candidate_context_ready_message(
         "Use this to shape the first real interview question naturally. "
         "Do not mention this note aloud."
     )
+
+
+def build_merged_interview_brief(
+    *,
+    candidate_name: str,
+    job_title: str,
+    candidate_band: str,
+    resume_context: ResumeContext,
+    jd_details: Any,
+    jd_text: str,
+    ai_report: Any,
+    ai_report_text: str = "",
+    resume_brief: Optional[dict] = None,
+) -> str:
+    jd_summary = build_jd_summary(jd_details, jd_text)
+    screening_summary = build_screening_summary(ai_report, ai_report_text)
+    jd_data = _coerce_jsonish(jd_details)
+    jd_must_haves = _extract_jd_must_haves(jd_data, jd_text)
+
+    strengths = _extract_text_items(
+        _deep_get(_coerce_jsonish(ai_report), "strengths")
+        or _deep_get(_coerce_jsonish(ai_report), "green_flags")
+        or _deep_get(_coerce_jsonish(ai_report), "highlights")
+    )
+    gaps = _extract_text_items(
+        _deep_get(_coerce_jsonish(ai_report), "gaps")
+        or _deep_get(_coerce_jsonish(ai_report), "concerns")
+        or _deep_get(_coerce_jsonish(ai_report), "red_flags")
+    )
+
+    anchor_item = ""
+    anchor_type = ""
+    if isinstance(resume_brief, dict):
+        anchor_item = _first_text(resume_brief.get("anchor_item"))
+        anchor_type = _first_text(resume_brief.get("anchor_type"))
+    if not anchor_item:
+        anchor_item = _first_text(
+            resume_context.projects[0] if resume_context.projects else "",
+            resume_context.work_history[0] if resume_context.work_history else "",
+            resume_context.current_role,
+        )
+    if not anchor_type:
+        anchor_type = "project" if resume_context.projects else "role"
+
+    band_strategy = {
+        "fresher": "Prioritize projects, learning approach, and fundamentals; avoid assuming full-time ownership.",
+        "mid": "Prioritize individual ownership, measurable impact, and decision trade-offs.",
+        "experienced": "Prioritize end-to-end ownership, architecture depth, and scale constraints.",
+        "senior": "Prioritize strategic judgment, cross-team influence, and high-stakes trade-offs.",
+    }.get(candidate_band, "Prioritize concrete ownership and role-fit evidence.")
+
+    lines = [
+        f"Candidate: {candidate_name or 'Candidate'}",
+        f"Role: {job_title or 'Interview Role'}",
+        f"Band: {candidate_band}",
+        f"Experience: {resume_context.years_label}",
+        f"Current role: {resume_context.current_role}",
+        f"Top skills: {_join_items(resume_context.skills, 6)}",
+        f"Key projects/work: {_join_items(resume_context.projects + resume_context.work_history, 4)}",
+        f"JD must-haves: {_join_items(jd_must_haves, 5)}",
+        f"Screening strengths: {_join_items(strengths, 3)}",
+        f"Screening gaps: {_join_items(gaps, 3)}",
+        f"First anchor: {anchor_type or 'topic'} - {anchor_item or 'candidate background'}",
+        f"Interview strategy: {band_strategy}",
+    ]
+    header = _format_compact_section("INTERVIEW BRIEF", lines)
+    return f"{header}\n\n{jd_summary}\n\n{screening_summary}".strip()

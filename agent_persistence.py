@@ -664,8 +664,8 @@ async def get_interview_context(app_id: str):
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set")
     query = """
-    SELECT a."fullName", d.title, d.role AS "role", d.description, d.skills, d."orgId" AS "orgId",
-           d.location AS "driveLocation", d."interviewLanguage", d."interviewQuestions",
+    SELECT a."fullName", a."resumeText", a."aiReport", d.title, d.role AS "role", d.description, d.skills, d."extractedDetails", d."orgId" AS "orgId",
+           d.location AS "driveLocation", d."interviewLanguage",
            COALESCE(d."ttsProvider", o."ttsProvider") AS "ttsProvider",
            COALESCE(d."cartesiaVoiceId", o."cartesiaVoiceId") AS "cartesiaVoiceId", o."cartesiaModel",
            o."sarvamModel", COALESCE(d."sarvamVoice", o."sarvamVoice") AS "sarvamVoice",
@@ -687,15 +687,11 @@ async def get_interview_context(app_id: str):
                 row = await conn.fetchrow(query, app_id)
             if not row:
                 raise RuntimeError(f"No interview context found in DB for application {app_id}")
-            questions_raw = row["interviewQuestions"]
-            questions = []
-            if questions_raw:
-                try:
-                    questions = json.loads(questions_raw) if isinstance(questions_raw, str) else questions_raw
-                except Exception:
-                    questions = []
             return {
                 "fullName": row["fullName"],
+                "resumeText": row["resumeText"],
+                "aiReportRaw": row["aiReport"],
+                "extractedDetails": row["extractedDetails"],
                 "jobTitle": row["role"] or row["title"],
                 "driveTitle": row["title"],
                 "jd": f"Description: {row['description']}\nSkills: {row['skills']}",
@@ -705,7 +701,6 @@ async def get_interview_context(app_id: str):
                 "driveLocation": row["driveLocation"],
                 "language": row["interviewLanguage"],
                 "timeLimit": FIXED_INTERVIEW_DURATION_MINUTES,
-                "questions": questions if isinstance(questions, list) else [],
                 "ttsProvider": row["ttsProvider"],
                 "cartesiaVoiceId": row["cartesiaVoiceId"],
                 "cartesiaModel": row["cartesiaModel"],
@@ -1142,7 +1137,6 @@ async def generate_interview_report(
         logger.error(f"[REPORT] Generation failed for {app_id}: {e}", exc_info=True)
 async def generate_interview_state_summary(
     transcript_lines: list,
-    questions_list: str,
     candidate_name: str,
     job_title: str,
     client,
@@ -1195,7 +1189,6 @@ async def generate_interview_state_summary(
                     {
                         "role": "user",
                         "content": (
-                            f"MANDATORY AREAS:\n{questions_list}\n\n"
                             f"CANDIDATE: {candidate_name} | ROLE: {job_title}\n"
                             f"INTERVIEW PROGRESS: ~{pct_done}% done (turn {turn_count})"
                             + f"\n\nRECENT TRANSCRIPT (last 40 lines, for coverage/pace):\n{transcript_text}\n\n"
