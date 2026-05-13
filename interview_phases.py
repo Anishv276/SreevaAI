@@ -240,6 +240,10 @@ def build_stage_2_skill_directive(
         "  5) Move to next skill after max 2 follow-ups\n\n"
     )
 
+    priorities_block = f"ROLE PRIORITIES: {', '.join(jd_must_haves)}\n\n" if jd_must_haves else ""
+    strengths_block = f"ROLE STRENGTHS TO LEVERAGE: {', '.join(jd_strengths)}\n\n" if jd_strengths else ""
+    gaps_block = f"ROLE GAPS TO TEST: {', '.join(jd_gaps)}\n\n" if jd_gaps else ""
+
     return (
         "[DO NOT SAY ALOUD - INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[STAGE 2: SKILL]\n"
@@ -248,9 +252,9 @@ def build_stage_2_skill_directive(
         f"{objective_block}"
         f"{anchors_block}"
         f"{context_block}"
-        f"{'ROLE PRIORITIES: ' + ', '.join(jd_must_haves) + '\\n\\n' if jd_must_haves else ''}"
-        f"{'ROLE STRENGTHS TO LEVERAGE: ' + ', '.join(jd_strengths) + '\\n\\n' if jd_strengths else ''}"
-        f"{'ROLE GAPS TO TEST: ' + ', '.join(jd_gaps) + '\\n\\n' if jd_gaps else ''}"
+        f"{priorities_block}"
+        f"{strengths_block}"
+        f"{gaps_block}"
         f"DIRECTION: {band_direction}\n\n"
         f"{question_plan_block}"
         "QUESTION STYLE:\n"
