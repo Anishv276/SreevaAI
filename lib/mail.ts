@@ -12,6 +12,7 @@ export async function sendApplicationStatusEmail({
     status,
     interviewLink,
     scheduledAt,
+    scheduledTimeZone,
 }: {
     email: string;
     fullName: string;
@@ -22,6 +23,7 @@ export async function sendApplicationStatusEmail({
     score?: number;
     interviewLink?: string;
     scheduledAt?: Date;
+    scheduledTimeZone?: string;
 }): Promise<MailResult> {
     const orgName = orgNameProp || "Our Team";
     console.log(`[MAIL DEBUG] Incoming status: "${status}"`);
@@ -65,7 +67,7 @@ export async function sendApplicationStatusEmail({
             <div style="background-color: #F9FAFB; border-radius: 18px; padding: 22px; margin: 24px 0; border: 1px solid #F3F4F6;">
                 <h3 style="color: #111827; font-size: 13px; font-weight: 800; margin-top: 0; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; text-align: center;">Booked Time</h3>
                 <p style="color: #111827; font-size: 18px; font-weight: 800; margin-bottom: 18px; text-align: center;">
-                    ${scheduledAt ? scheduledAt.toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }) : 'Your selected time'}
+                    ${scheduledAt ? scheduledAt.toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', ...(scheduledTimeZone ? { timeZone: scheduledTimeZone } : {}) }) : 'Your selected time'}
                 </p>
                 <div style="text-align: center; margin-bottom: 14px;">
                     <a href="${interviewLink}" style="background-color: #111827; color: white; padding: 14px 34px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 15px; display: inline-block;">Open Interview</a>

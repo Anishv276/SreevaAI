@@ -13,6 +13,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const body = await request.json();
         const startTime = new Date(body.startTime);
         const providedName = String(body.name || "").trim();
+        const candidateTimeZone = String(body.timeZone || "").trim();
 
         if (isNaN(startTime.getTime())) {
             return NextResponse.json({ error: "Invalid start time" }, { status: 400 });
@@ -129,6 +130,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             status: "CONFIRMED",
             interviewLink,
             scheduledAt: startTime,
+            scheduledTimeZone: candidateTimeZone || undefined,
         });
         if (!mailResult.success) {
             console.error("[BOOKING API] Confirmation email failed:", mailResult.error);

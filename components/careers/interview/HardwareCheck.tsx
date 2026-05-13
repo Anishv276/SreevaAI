@@ -82,20 +82,20 @@ export function HardwareCheck({
 
     // Countdown logic for future slots
     const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number>(0);
+    const [canBeginNow, setCanBeginNow] = useState(false);
 
     useEffect(() => {
         if (!bookedSlot) return;
-        
+
         const updateTimer = () => {
             const now = Date.now();
-            // Allow joining 5 minutes early
-            const canJoinAt = bookedSlot - 5 * 60 * 1000;
-            const diffSecs = Math.max(0, Math.floor((canJoinAt - now) / 1000));
-            setTimeRemainingSeconds(diffSecs);
+            const diffMs = bookedSlot - now;
+            setCanBeginNow(diffMs <= 0);
+            setTimeRemainingSeconds(Math.max(0, Math.ceil(diffMs / 1000)));
         };
-        
+
         updateTimer();
-        const interval = setInterval(updateTimer, 1000);
+        const interval = setInterval(updateTimer, 250);
         return () => clearInterval(interval);
     }, [bookedSlot]);
 
@@ -1163,17 +1163,17 @@ export function HardwareCheck({
 
                     <button
                         onClick={handleBeginInterview}
-                        disabled={!allReady || isStarting || snapshotUploading || timeRemainingSeconds > 0}
+                        disabled={!allReady || isStarting || snapshotUploading || !canBeginNow}
                         className={cn(
                             "flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all",
-                            allReady && !isStarting && !snapshotUploading && timeRemainingSeconds === 0
+                            allReady && !isStarting && !snapshotUploading && canBeginNow
                                 ? "bg-orange-500 hover:bg-orange-600 text-white shadow-sm"
                                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
                         )}
                     >
                         {isStarting || snapshotUploading ? (
                             <><Loader2 className="w-4 h-4 animate-spin" /> {snapshotUploading ? "Securing Session..." : "Starting..."}</>
-                        ) : timeRemainingSeconds > 0 ? (
+                        ) : !canBeginNow ? (
                             <div className="flex items-center gap-2">
                                 <AlertCircle className="w-4 h-4 text-orange-400" />
                                 <span className="text-gray-500">

@@ -326,6 +326,7 @@ export default function SchedulePage({ params }: { params: Promise<{ id: string 
                                                     startTime: pendingSlotTime,
                                                     name: normalizedName,
                                                     email: normalizedEmail,
+                                                    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                                                 }),
                                             });
                                             if (!res.ok) {
