@@ -49,12 +49,27 @@ def infer_candidate_band(structured_resume_raw: Any, resume_text_block: str) -> 
             return "experienced"
         return "mid"
     text = context.resume_text.lower()
-    if context.fresher_signals or any(sig in text for sig in ("fresher", "entry level", "student", "final year", "internship", "intern", "graduate")):
+    # Heuristic fallback when explicit years are missing:
+    # avoid over-classifying as fresher just because "intern" appears once.
+    has_fresher_terms = context.fresher_signals or any(
+        sig in text
+        for sig in ("fresher", "entry level", "student", "final year", "internship", "intern", "graduate")
+    )
+    has_experienced_terms = context.experienced_signals or any(
+        sig in text
+        for sig in ("senior", "lead", "manager", "head of", "director", "staff engineer", "principal")
+    )
+    has_real_work_history = bool(context.work_history)
+    has_real_projects = bool(context.projects)
+
+    if has_fresher_terms and not has_experienced_terms and not has_real_work_history:
         return "fresher"
-    if context.experienced_signals or any(sig in text for sig in ("senior", "lead", "manager", "head of", "director", "staff engineer", "principal")):
+    if has_experienced_terms:
         if any(sig in text for sig in ("senior", "staff engineer", "principal", "director", "head of")):
             return "senior"
         return "experienced"
+    if has_real_work_history or has_real_projects:
+        return "mid"
     return "mid"
 
 # -- Resume brief by band -------------------------------------------------------

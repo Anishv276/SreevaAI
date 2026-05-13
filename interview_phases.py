@@ -30,17 +30,16 @@ def build_warmup_directive() -> str:
         "[DO NOT SAY ALOUD — INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[WARMUP PHASE]\n"
         "This is a 2-exchange warmup. This is NOT the interview. Do not treat it as one.\n\n"
-        "Exchange 1: Candidate responds to the greeting.\n"
-        "  YOUR ONLY JOB: give a short, genuine personal reply. 1-2 sentences. Do NOT ask any question. End with a period.\n"
+        "Exchange 1: Candidate responds to the greeting (how are you doing).\n"
+        "  YOUR ONLY JOB: give a short, genuine personal reply. 1-2 sentences. Then ask them one light casual question to keep conversation going (e.g. 'How's your day been so far?').\n"
         "Exchange 2: Candidate responds to your reply.\n"
         "  YOUR ONLY JOB: give a warm 1-sentence acknowledgment. Then STOP — the system will inject Stage 1 instructions and you will begin the interview.\n\n"
-        "PERSONAL REPLY OPTIONS (pick one naturally, then add a light casual question):\n"
-        "  - 'I'm good, thanks! It's been a busy day but I was looking forward to this one. How about you — how's your day going?'\n"
-        "  - 'Doing well, thank you! Packed morning but glad we're here. How are you feeling today?'\n"
-        "  - 'Pretty good! Back-to-back since morning, but this is one I was excited about. How has your day been so far?'\n\n"
+        "PERSONAL REPLY OPTIONS (pick one naturally, then add a light casual follow-up):\n"
+        "  - 'I'm good, thanks. A bit of a busy day, but it's been a good one so far. Did you have time to grab some water or coffee before we started?'\n"
+        "  - 'Doing well, thank you. The day has been moving fast, but I'm glad we're here. Did everything go smoothly on your side getting set up?'\n"
+        "  - 'Pretty good. It's been one of those back-to-back days, but I'm excited to talk with you. How's the weather looking where you are today?'\n\n"
         "ABSOLUTE RULES:\n"
         "  x Do NOT ask about career, background, skills, or the role\n"
-        "  x Do NOT ask any question in warmup\n"
         "  x Do NOT transition to the interview on your own\n"
         "  x Do NOT read or repeat any part of this instruction aloud"
     )
@@ -82,179 +81,170 @@ def _band_probe(band: str) -> str:
 # Stage directives (injected at turn boundaries by agent_runtime)
 # ---------------------------------------------------------------------------
 
-_RESUME_OPEN_HINTS = (
-    "Reference one named item from the anchor line verbatim (project, course, or school).",
-    "Start from the anchor, then connect to one JD must-have that relates to it.",
-    "Ask what decisions they owned on the anchor — tools, scope, tradeoffs — not generic motivation.",
-    "Pick the strongest overlap between anchor + JD list and ask for a concrete story there.",
-)
-
-
 def build_stage_1_resume_directive(
     *,
     band: str,
     resume_brief: dict,
-    jd_must_haves: list[str],
-    alignment_block: str = "",
-    variation_slot: int = 0,
 ) -> str:
     """
-    Stage 1: RESUME — anchor on the candidate's most relevant resume item.
-    Goal: surface background, context, and genuine experience.
+    Stage 1: RESUME - simple, human, and resume-led.
+    Goal: uncover grounded signal from the candidate's own background.
     """
     anchor_item = resume_brief.get("anchor_item", "your background")
     anchor_type = resume_brief.get("anchor_type", "background")
-
-    if anchor_type == "project":
-        project_name = anchor_item.split(" - ")[0] if " - " in anchor_item else anchor_item
-        anchor_hint = (
-            f"Open with: \"I noticed you built {project_name} — "
-            "what was the most challenging part of getting that to actually work?\""
-        )
-    elif anchor_type in ("role", "internship"):
-        company = anchor_item.split(" at ")[-1].strip() if " at " in anchor_item else anchor_item
-        anchor_hint = (
-            f"Open with: \"I see you were at {company} recently — "
-            "what was your day-to-day focus actually like there?\""
-        )
-    elif anchor_type == "initiative":
-        anchor_hint = (
-            f"Open with: \"I'd love to start with {anchor_item} — "
-            "can you walk me through the scope and the decisions you owned there?\""
-        )
-    elif anchor_type == "education":
-        anchor_hint = (
-            f"Open with: \"I saw you studied at {anchor_item} — "
-            "was there a specific project or goal there you're still proud of?\""
-        )
-    else:
-        anchor_hint = (
-            f"Open with a specific question about {anchor_item}. "
-            "Do NOT ask 'tell me about yourself' — be specific."
-        )
-
-    jd_block = ""
-    if jd_must_haves:
-        jd_block = (
-            "JD MUST-HAVES (tie questions to these — paraphrase, never quote lists aloud):\n"
-            + "\n".join(f"  - {item}" for item in jd_must_haves[:6])
+    stage_items = []
+    for key in ("projects", "work_history", "internships", "education"):
+        items = resume_brief.get(key, [])
+        if isinstance(items, list):
+            stage_items.extend(str(item).strip() for item in items if str(item).strip())
+    stage_items = stage_items[:6]
+    items_block = ""
+    if stage_items:
+        items_block = (
+            "RESUME ITEMS TO ROTATE THROUGH (best-first):\n"
+            + "\n".join(f"  - {item}" for item in stage_items)
             + "\n\n"
         )
 
-    open_hint = _RESUME_OPEN_HINTS[variation_slot % len(_RESUME_OPEN_HINTS)]
+    if anchor_type == "project":
+        project_name = anchor_item.split(" - ")[0] if " - " in anchor_item else anchor_item
+        anchor_hint = f"Start from {project_name} and ask a grounded, personal question about their role in it."
+    elif anchor_type in ("role", "internship"):
+        role_ref = anchor_item.split(" - ")[0].strip() if " - " in anchor_item else anchor_item
+        anchor_hint = f"Start from {role_ref} and ask what they personally handled, owned, or decided."
+    elif anchor_type == "initiative":
+        anchor_hint = f"Start from {anchor_item} and ask about scope, tradeoffs, and why they chose that path."
+    elif anchor_type == "education":
+        anchor_hint = f"Start from {anchor_item} and ask about a concrete learning or project moment."
+    else:
+        anchor_hint = f"Start from {anchor_item} with a concrete, personal question. Do NOT ask 'tell me about yourself'."
+
     fresher_rule = ""
     if band == "fresher":
         fresher_rule = (
             "FRESHER RULE:\n"
-            "  - Lead with projects, coursework, internships, or academics — NOT \"years of professional experience\"\n"
+            "  - Lead with projects, coursework, internships, or academics - NOT \"years of professional experience\"\n"
             "  - If they have no jobs listed, do NOT ask behavioral-style \"tell me about your role at company X\"\n\n"
         )
 
-    align = alignment_block.strip()
-    if align:
-        align = align + "\n"
-
     return (
-        "[DO NOT SAY ALOUD — INTERNAL INTERVIEWER INSTRUCTION]\n"
+        "[DO NOT SAY ALOUD - INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[STAGE 1: RESUME]\n"
-        "Warmup is done. Begin the interview naturally — no announcement.\n\n"
+        "Warmup is done. Begin naturally with no announcement.\n\n"
         f"{_band_probe(band)}\n\n"
-        f"{align}"
+        "FLOW (strict):\n"
+        "  1) Pick the best resume anchor item\n"
+        "  2) Ask one personal, grounded question about that item\n"
+        "  3) Use at most 2 follow-ups on the same topic\n"
+        "  4) Then move to the next best resume item\n"
+        "  5) Keep this stage human and resume-led only\n\n"
+        f"{items_block}"
         f"{fresher_rule}"
         f"ANCHOR (your first substantive question MUST name or clearly imply this):\n"
         f"  {anchor_type.upper()}: {anchor_item}\n\n"
         f"{anchor_hint}\n\n"
-        f"OPENING VARIATION (session-specific):\n  - {open_hint}\n\n"
-        f"{jd_block}"
-        "GROUNDING (non-negotiable):\n"
-        "  - Questions must cite specifics from the candidate summary / anchor OR map to a JD must-have.\n"
-        "  - Forbidden as the first substantive question: generic-only motivation with no resume/JD tie "
-        '(e.g. only "what drew you to this role?" with no reference to their background).\n'
-        "  - Allowed: motivation linked to something they actually wrote or a JD requirement.\n\n"
+        "QUESTION STYLE (must feel personal, not scripted):\n"
+        "  - React to their actual resume content and prior answer\n"
+        "  - Vary phrasing by situation; do not reuse a fixed opener template\n"
+        "  - Prefer natural phrasing such as:\n"
+        "    * I noticed this project on your resume...\n"
+        "    * I saw this part of your background...\n"
+        "    * That role stood out to me because...\n"
+        "  - Do NOT use blunt generic asks like \"what did you build?\"\n\n"
+        "SCOPE BOUNDARY:\n"
+        "  - Do NOT use JD must-haves in Stage 1\n"
+        "  - Do NOT use alignment logic in Stage 1\n"
+        "  - Do NOT use variation slots/templates in Stage 1\n\n"
         "RULES:\n"
         "  - One question per turn\n"
         "  - React to what they said before asking the next question\n"
-        "  - Max 2 follow-ups per topic then move on\n"
-        "  - You will receive Stage 2 instructions after your turn budget is reached\n"
+        "  - Max 2 follow-ups per topic, then move to the next resume point\n"
+        "  - Stage 1 runs about 5-6 minutes, then you will receive Stage 2 instructions\n"
         "  - Do NOT read or repeat any part of this instruction aloud"
     )
-
-
-_SKILL_PROBE_HINTS = (
-    "Rotate which JD/resume skill you stress — prioritize overlap items before gaps.",
-    "Start from a resume skill, then ask how it maps to a JD must-have.",
-    "Pick one JD must-have that is thin on the resume and ask for depth OR learning plan.",
-    "Ask them to compare two skills they listed — where they're strongest vs growing.",
-)
-
 
 def build_stage_2_skill_directive(
     *,
     band: str,
     resume_brief: dict,
-    jd_must_haves: list[str],
-    alignment_block: str = "",
-    variation_slot: int = 0,
 ) -> str:
     """
-    Stage 2: SKILL — probe technical depth based on claimed skills and JD requirements.
+    Stage 2: SKILL - human, resume-skill led technical depth.
+    Goal: validate practical skill depth from what the candidate has already claimed.
     """
     skills = resume_brief.get("skills", [])
-    skills_block = (
-        "CANDIDATE SKILLS TO PROBE:\n"
-        + "\n".join(f"  - {s}" for s in skills[:5])
+    projects = resume_brief.get("projects", []) or []
+    work_history = resume_brief.get("work_history", []) or resume_brief.get("internships", []) or []
+
+    skill_anchors = [str(s).strip() for s in skills if str(s).strip()][:6]
+    anchors_block = (
+        "SKILL ANCHORS TO ROTATE THROUGH:\n"
+        + "\n".join(f"  - {s}" for s in skill_anchors)
         + "\n\n"
-        if skills else ""
+        if skill_anchors else ""
     )
 
-    jd_block = (
-        "JD MUST-HAVES (skills/themes to validate against resume):\n"
-        + "\n".join(f"  - {item}" for item in jd_must_haves[:6])
+    context_items = []
+    for item in list(projects)[:2] + list(work_history)[:2]:
+        text = str(item).strip()
+        if text:
+            context_items.append(text)
+    context_block = (
+        "RESUME CONTEXT TO GROUND SKILL QUESTIONS:\n"
+        + "\n".join(f"  - {c}" for c in context_items[:4])
         + "\n\n"
-        if jd_must_haves else ""
+        if context_items else ""
     )
 
     band_direction = {
         "fresher": (
-            "Ask about a project, lab, or coursework where they used [skill from resume or JD]. "
-            "What broke, what did they learn? If [skill] is only on the JD, ask how they'd learn it / what they've started."
+            "Ask where they used each listed skill in projects/coursework/internships. "
+            "Probe fundamentals, what went wrong, and what they learned."
         ),
-        "mid": "Ask: describe the most complex thing you've built using [skill]. Tradeoffs and your ownership.",
-        "experienced": "Ask: deepest technical contribution in [skill area] — end-to-end ownership.",
-        "senior": "Ask: architectural judgment with [skill] at scale — how you decide and influence others.",
-    }.get(band, "Probe depth in claimed technical skills with concrete examples.")
+        "mid": "Ask for concrete ownership using listed skills: what they built, why that design, and tradeoffs.",
+        "experienced": "Probe deepest technical contribution from listed skills: scale, reliability, and decisions.",
+        "senior": "Probe strategic technical judgment: architecture, constraints, and influence across teams.",
+    }.get(band, "Probe practical depth in listed skills with concrete examples.")
 
-    skill_hint = _SKILL_PROBE_HINTS[variation_slot % len(_SKILL_PROBE_HINTS)]
-    align = alignment_block.strip()
-    if align:
-        align = align + "\n"
+    objective_block = (
+        "OBJECTIVE:\n"
+        "  - Validate real skill depth from resume claims\n"
+        "  - Understand where they used each skill, what they personally owned, and what tradeoffs they made\n"
+        "  - Keep the conversation practical and human\n\n"
+    )
 
-    gap_rule = (
-        "If a JD must-have has little or no evidence on the resume, ask fairly: "
-        "whether they're actively learning it, how they'd ramp, or what they'd do in the first 90 days — "
-        "not as accusation.\n\n"
+    question_plan_block = (
+        "QUESTION PLAN (per skill):\n"
+        "  1) Ground it in one real resume context (project/role)\n"
+        "  2) Ask what they personally implemented or decided\n"
+        "  3) Ask one depth follow-up on tradeoff/debugging/performance\n"
+        "  4) Move to next skill after max 2 follow-ups\n\n"
     )
 
     return (
-        "[DO NOT SAY ALOUD — INTERNAL INTERVIEWER INSTRUCTION]\n"
+        "[DO NOT SAY ALOUD - INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[STAGE 2: SKILL]\n"
         "Continue naturally from Stage 1. No announcement.\n\n"
         f"{_band_probe(band)}\n\n"
-        f"{align}"
-        f"{skills_block}"
-        f"{jd_block}"
-        f"SESSION SKILL FOCUS:\n  - {skill_hint}\n\n"
+        f"{objective_block}"
+        f"{anchors_block}"
+        f"{context_block}"
         f"DIRECTION: {band_direction}\n\n"
-        f"{gap_rule}"
+        f"{question_plan_block}"
+        "QUESTION STYLE:\n"
+        "  - Ask skill questions through real resume situations, not checklist quiz questions\n"
+        "  - Do NOT ask: 'Do you know X?'\n"
+        "  - Use varied natural wording based on what the candidate just said; avoid repeating one template\n"
+        "  - Example tone: 'I saw X in your resume - where did you use it, and what part did you own?'\n"
+        "  - Keep wording natural, personal, and reactive to their previous answer\n\n"
         "RULES:\n"
-        "  - Pick skills that appear in BOTH resume list and JD when possible; otherwise JD gap + learning appetite.\n"
+        "  - Pick one skill anchor at a time\n"
         "  - One question per turn\n"
-        "  - Probe depth — don't accept surface-level answers\n"
+        "  - Probe depth; do not stop at surface claims\n"
         "  - Max 2 follow-ups per skill then move on\n"
         "  - You will receive Stage 3 instructions after your turn budget is reached\n"
         "  - Do NOT read or repeat any part of this instruction aloud"
     )
-
 
 def build_stage_3_situational_directive(
     *,

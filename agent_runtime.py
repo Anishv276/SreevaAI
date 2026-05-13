@@ -18,6 +18,10 @@ import re
 import traceback
 from openai import AsyncOpenAI
 from collections.abc import AsyncGenerator, AsyncIterable
+try:
+    import redis.asyncio as redis_asyncio  # type: ignore[import-untyped]
+except Exception:  # pragma: no cover - optional dependency
+    redis_asyncio = None
 from agent_utils import (
     _as_list,
     _cartesia_plugin_model,
@@ -96,6 +100,7 @@ from agent_runtime_support import (
     LLM_MODEL,
     FIXED_INTERVIEW_DURATION_MINUTES,
     PROCTORING_WEIGHTS,
+    REDIS_URL,
     STT_MODEL,
     _DB_POOL,
     _DB_POOL_INIT_TASK,
@@ -151,6 +156,7 @@ _TTS_SENTENCE_ENDINGS = {".", "?", "!"}
 _TTS_ATTACH_LEFT = {".", ",", "?", "!", ":", ";", "%", ")", "]", "}", "”", "’", '"', "'"}
 _TTS_WORD_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[’'\-][A-Za-z0-9]+)*")
 _TTS_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[’'\-][A-Za-z0-9]+)*|[^\w\s]", re.UNICODE)
+_LOCAL_STAGE_DIRECTIVE_CACHE: dict[str, dict[str, str]] = {}
 
 GREETING_FIXED_SECONDS = 60
 WARMUP_FIXED_SECONDS = 120
@@ -388,6 +394,44 @@ async def entrypoint(ctx: JobContext):
         "app_id": app_id,
         "room_name": ctx.room.name,
     }
+    redis_client = None
+    stage_cache_key = f"interview:{app_id}:stage_directives"
+
+    async def _init_redis_client() -> None:
+        nonlocal redis_client
+        if redis_client is not None:
+            return
+        if not REDIS_URL or redis_asyncio is None:
+            return
+        try:
+            redis_client = redis_asyncio.from_url(REDIS_URL, decode_responses=True)
+            await redis_client.ping()
+            logger.info("[STAGE_CACHE] Redis connected")
+        except Exception as e:
+            redis_client = None
+            logger.warning(f"[STAGE_CACHE] Redis unavailable, using in-memory cache: {e}")
+
+    async def _cache_stage_directive(stage_key: str, content: str) -> None:
+        if not content:
+            return
+        try:
+            if redis_client is not None:
+                await redis_client.hset(stage_cache_key, stage_key, content)
+                await redis_client.expire(stage_cache_key, max(900, int(time_limit_mins * 120)))
+                return
+        except Exception as e:
+            logger.warning(f"[STAGE_CACHE] Redis write failed for {stage_key}: {e}")
+        _LOCAL_STAGE_DIRECTIVE_CACHE.setdefault(app_id, {})[stage_key] = content
+
+    async def _read_stage_directive(stage_key: str) -> Optional[str]:
+        try:
+            if redis_client is not None:
+                cached = await redis_client.hget(stage_cache_key, stage_key)
+                if cached:
+                    return str(cached)
+        except Exception as e:
+            logger.warning(f"[STAGE_CACHE] Redis read failed for {stage_key}: {e}")
+        return _LOCAL_STAGE_DIRECTIVE_CACHE.get(app_id, {}).get(stage_key)
     if dispatch_metadata:
         session_log_context.update({
             "dispatch_application_id": dispatch_metadata.get("applicationId", app_id),
@@ -483,24 +527,15 @@ async def entrypoint(ctx: JobContext):
     evaluation_signal_toggles = _extract_evaluation_signal_toggles(
         context.get("proctoringSignals")
     )
-    # Read Room Metadata Context (available after connect)
-    room_meta = {}
-    try:
-        if ctx.room.metadata:
-            room_meta = json.loads(ctx.room.metadata)
-    except Exception as e:
-        logger.error(f"Failed to parse room metadata: {e}")
-    extracted_details = context.get("extractedDetails") or room_meta.get("extractedDetails", "{}")
-    ai_report = context.get("aiReportRaw") or room_meta.get("aiReport", "{}")
-    structured_resume = room_meta.get("structuredResume")
-    if not structured_resume:
-        parsed_ai_report = _coerce_jsonish(ai_report)
-        structured_resume = (
-            _deep_get(parsed_ai_report, "data")
-            or _deep_get(parsed_ai_report, "resume")
-            or _deep_get(parsed_ai_report, "structuredResume")
-            or {}
-        )
+    extracted_details = context.get("extractedDetails") or "{}"
+    ai_report = context.get("aiReportRaw") or "{}"
+    parsed_ai_report = _coerce_jsonish(ai_report)
+    structured_resume = (
+        _deep_get(parsed_ai_report, "data")
+        or _deep_get(parsed_ai_report, "resume")
+        or _deep_get(parsed_ai_report, "structuredResume")
+        or {}
+    )
     resume_text_from_db = _compact_text(str(context.get("resumeText") or ""))
     def require_db_value(key: str, default: Any = None, required: bool = True):
         value = context.get(key)
@@ -520,7 +555,7 @@ async def entrypoint(ctx: JobContext):
     interview_lang = require_db_value("language")
     time_limit_mins = FIXED_INTERVIEW_DURATION_MINUTES
     # Keep follow-up loops tight so stage transitions happen reliably.
-    follow_up_depth = 1
+    follow_up_depth = 2
     org_id = context.get("orgId")
     session_log_context.update(
         {
@@ -667,6 +702,19 @@ async def entrypoint(ctx: JobContext):
         resume_brief=resume_brief,
     )
     refresh_candidate_band_context(session_context)
+    await _init_redis_client()
+    stage1_directive_cached = build_stage_1_resume_directive(
+        band=session_context.candidate_band,
+        resume_brief=session_context.resume_brief,
+    )
+    stage2_directive_cached = build_stage_2_skill_directive(
+        band=session_context.candidate_band,
+        resume_brief=session_context.resume_brief,
+    )
+    await _cache_stage_directive("stage1", stage1_directive_cached)
+    await _cache_stage_directive("stage2", stage2_directive_cached)
+    stage1_directive_cached = await _read_stage_directive("stage1") or stage1_directive_cached
+    stage2_directive_cached = await _read_stage_directive("stage2") or stage2_directive_cached
     voice_layer_prompt = build_voice_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
@@ -951,10 +999,37 @@ async def entrypoint(ctx: JobContext):
             total_seconds_local - GREETING_FIXED_SECONDS - WARMUP_FIXED_SECONDS,
         )
         _stage_budgets_secs = {cfg.index: 0 for cfg in STAGE_CONFIGS}
+        remaining_for_stages = float(distributed_seconds)
+        resume_budget_seconds = 0
         if _resume_stage_idx is not None:
-            _stage_budgets_secs[_resume_stage_idx] = 0
+            if remaining_for_stages >= 360:
+                resume_budget_seconds = 330
+            elif remaining_for_stages >= 300:
+                resume_budget_seconds = int(remaining_for_stages)
+            else:
+                resume_budget_seconds = int(max(0.0, remaining_for_stages))
+            _stage_budgets_secs[_resume_stage_idx] = resume_budget_seconds
+            remaining_for_stages = max(0.0, remaining_for_stages - resume_budget_seconds)
+
+        skill_budget_seconds = 0
+        if _skill_stage_idx is not None:
+            if remaining_for_stages >= 360:
+                skill_budget_seconds = 330
+            elif remaining_for_stages >= 300:
+                skill_budget_seconds = int(remaining_for_stages)
+            else:
+                skill_budget_seconds = int(max(0.0, remaining_for_stages))
+            _stage_budgets_secs[_skill_stage_idx] = skill_budget_seconds
+            remaining_for_stages = max(0.0, remaining_for_stages - skill_budget_seconds)
+
+        trailing_stage_indices = [
+            idx for idx in _percent_stage_indices if idx != _skill_stage_idx
+        ]
         _stage_budgets_secs.update(
-            _allocate_stage_budgets(distributed_seconds, _percent_stage_indices)
+            _allocate_stage_budgets(
+                remaining_for_stages,
+                trailing_stage_indices,
+            )
         )
         logger.info(
             "[STAGE_TIMING] initial budgets=%s distributed_seconds=%d",
@@ -981,35 +1056,31 @@ async def entrypoint(ctx: JobContext):
             {idx: _stage_budgets_secs.get(idx, 0) for idx in sorted(_stage_budgets_secs)},
         )
     def _build_stage_directive_by_index(stage_idx: int) -> Optional[str]:
-        if stage_idx == 1:
-            return build_stage_2_skill_directive(
+        stage_directive_builders: dict[int, Any] = {
+            1: lambda: stage2_directive_cached or build_stage_2_skill_directive(
+                band=session_context.candidate_band,
+                resume_brief=session_context.resume_brief,
+            ),
+            2: lambda: build_stage_3_situational_directive(
                 band=session_context.candidate_band,
                 resume_brief=session_context.resume_brief,
                 jd_must_haves=jd_must_haves,
                 alignment_block=alignment_block,
                 variation_slot=variation_slot,
-            )
-        if stage_idx == 2:
-            return build_stage_3_situational_directive(
-                band=session_context.candidate_band,
-                resume_brief=session_context.resume_brief,
-                jd_must_haves=jd_must_haves,
-                alignment_block=alignment_block,
-                variation_slot=variation_slot,
-            )
-        if stage_idx == 3:
-            return build_stage_4_behavioral_directive(
+            ),
+            3: lambda: build_stage_4_behavioral_directive(
                 band=session_context.candidate_band,
                 resume_brief=session_context.resume_brief,
                 alignment_block=alignment_block,
                 variation_slot=variation_slot,
-            )
-        if stage_idx == 4:
-            return build_stage_5_practical_directive(
+            ),
+            4: lambda: build_stage_5_practical_directive(
                 band=session_context.candidate_band,
                 jd_must_haves=jd_must_haves,
-            )
-        return None
+            ),
+        }
+        builder = stage_directive_builders.get(stage_idx)
+        return builder() if builder else None
     def _advance_stage(reason: str, now_mono: float) -> bool:
         nonlocal _current_stage_index, _stage_start_time, _stage_bridge_pending
         if not warmup_complete or _current_stage_index >= len(STAGE_CONFIGS) - 1 or _stage_start_time <= 0:
@@ -1745,12 +1816,9 @@ async def entrypoint(ctx: JobContext):
                         warmup_complete = True
                         # Remove warmup directive, inject Stage 1 directive
                         remove_system_messages(chat_ctx, "[WARMUP PHASE]")
-                        stage1_directive = build_stage_1_resume_directive(
+                        stage1_directive = stage1_directive_cached or build_stage_1_resume_directive(
                             band=session_context.candidate_band,
                             resume_brief=session_context.resume_brief,
-                            jd_must_haves=jd_must_haves,
-                            alignment_block=alignment_block,
-                            variation_slot=variation_slot,
                         )
                         chat_ctx.add_message(role="system", content=stage1_directive)
                         _stage_start_time = time.monotonic()
