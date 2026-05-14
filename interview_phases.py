@@ -108,44 +108,79 @@ def build_stage_1_resume_directive(
     resume_brief: dict,
 ) -> str:
     """
-    Stage 1: RESUME
-    The AI receives the resume brief and must decide what to ask from it — not follow a fixed order.
-    Goal: surface real signal from the candidate's own background through natural, adaptive questioning.
+    Stage 1: RESUME - simple, human, and resume-led.
+    Goal: uncover grounded signal from the candidate's own background.
+    Owns: what items to explore, in what order, from which resume anchor.
+    Global rules (one question/turn, follow-up cap, no-aloud) live in prompt_layers.py.
     """
+    anchor_item = resume_brief.get("anchor_item", "your background")
+    anchor_type = resume_brief.get("anchor_type", "background")
+    stage_items = []
+    for key in ("projects", "work_history", "internships", "education"):
+        items = resume_brief.get(key, [])
+        if isinstance(items, list):
+            stage_items.extend(str(item).strip() for item in items if str(item).strip())
+    stage_items = stage_items[:6]
+    items_block = ""
+    if stage_items:
+        items_block = (
+            "RESUME ITEMS TO ROTATE THROUGH (best-first):\n"
+            + "\n".join(f"  - {item}" for item in stage_items)
+            + "\n\n"
+        )
+
+    if anchor_type == "project":
+        project_name = anchor_item.split(" - ")[0] if " - " in anchor_item else anchor_item
+        anchor_hint = f"Start from {project_name} and ask a grounded, personal question about their role in it."
+    elif anchor_type in ("role", "internship"):
+        role_ref = anchor_item.split(" - ")[0].strip() if " - " in anchor_item else anchor_item
+        anchor_hint = f"Start from {role_ref} and ask what they personally handled, owned, or decided."
+    elif anchor_type == "initiative":
+        anchor_hint = f"Start from {anchor_item} and ask about scope, tradeoffs, and why they chose that path."
+    elif anchor_type == "education":
+        anchor_hint = f"Start from {anchor_item} and ask about a concrete learning or project moment."
+    else:
+        anchor_hint = f"Start from {anchor_item} with a concrete, personal question. Do NOT ask 'tell me about yourself'."
+
+    fresher_rule = ""
+    if band == "fresher":
+        fresher_rule = (
+            "FRESHER RULE:\n"
+            "  - Lead with projects, coursework, internships, or academics - NOT \"years of professional experience\"\n"
+            "  - If they have no jobs listed, do NOT ask behavioral-style \"tell me about your role at company X\"\n\n"
+        )
+
     return (
         "[DO NOT SAY ALOUD - INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[STAGE 1: RESUME]\n"
-        "Warmup is done. Begin naturally - no announcement, no 'let's get started'.\n\n"
+        "Warmup is done. Begin naturally with no announcement.\n\n"
         f"{_band_probe(band)}\n\n"
-        "WHAT YOU HAVE:\n"
-        "  The resume brief above contains their actual background - projects, roles, skills, education, "
-        "work history, and an anchor item flagged as the strongest starting point.\n\n"
-        "HOW TO USE IT:\n"
-        "  1) Read the brief. Find the most interesting or telling item - the one that, "
-        "if unpacked, would tell you the most about this person.\n"
-        "     For a fresher: usually a project or something they built. "
-        "For mid/experienced: a role with real ownership. For senior: an initiative with scale.\n"
-        "  2) Ask ONE question about that item - grounded in what it actually says, not a generic opener.\n"
-        "     The question should feel like it came from someone who read their resume and got curious. "
-        "Not 'tell me about yourself.' Not 'walk me through your background.'\n"
-        "     Example of the thinking (NOT a script): if the brief shows a project involving real-time data pipelines, "
-        "you'd ask about a specific decision in that project - not 'what did you build?' but 'what made that hard?'\n"
-        "  3) After their answer, react to what they actually said. Pick one specific thing and go deeper - "
-        "at most 2 follow-ups per item before moving to the next.\n"
-        "  4) When a topic is covered, move to the next most interesting item from the brief. "
-        "Do not announce the move. Just ask.\n\n"
-        "WHAT GOOD STAGE 1 QUESTIONING LOOKS LIKE:\n"
-        "  - Every question is anchored to something real in their brief - a named project, a specific role, a claimed skill\n"
-        "  - The question reveals you actually read it - it could only be asked of this person\n"
-        "  - Follow-ups get more specific, not more generic\n"
-        "  - If they give a vague answer, you go back to something concrete in the brief and ask again from there\n\n"
-        "WHAT TO AVOID:\n"
-        "  - Generic openers that could be asked of anyone\n"
-        "  - Reading items from the brief out loud\n"
-        "  - Asking about JD fit or role alignment - that's Stage 2\n"
-        "  - Skipping over something interesting because it's not in a 'template slot'\n\n"
-        "SCOPE: Resume background only. No JD must-haves. No alignment logic. Just their actual story.\n"
-        "STAGE RUNS: ~5-6 minutes. System advances you to Stage 2 automatically."
+        "FLOW (strict):\n"
+        "  1) Pick the best resume anchor item\n"
+        "  2) Ask one personal, grounded question about that item\n"
+        "  3) Use at most 2 follow-ups on the same topic\n"
+        "  4) Then move to the next best resume item\n"
+        "  5) Keep this stage human and resume-led only\n\n"
+        f"{items_block}"
+        f"{fresher_rule}"
+        f"ANCHOR (your first substantive question MUST name or clearly imply this):\n"
+        f"  {anchor_type.upper()}: {anchor_item}\n\n"
+        f"{anchor_hint}\n\n"
+        "QUESTION STYLE (must feel personal, not scripted):\n"
+        "  - React to their actual resume content and prior answer\n"
+        "  - Vary phrasing by situation; do not reuse a fixed opener template\n"
+        "  - Prefer natural phrasing such as:\n"
+        "    * I noticed this project on your resume...\n"
+        "    * I saw this part of your background...\n"
+        "    * That role stood out to me because...\n"
+        "  - Do NOT use blunt generic asks like \"what did you build?\"\n\n"
+        "SCOPE BOUNDARY:\n"
+        "  - Do NOT use JD must-haves in Stage 1\n"
+        "  - Do NOT use alignment logic in Stage 1\n"
+        "  - Do NOT use variation slots/templates in Stage 1\n\n"
+        "RULES:\n"
+        "  - React to what they said before asking the next question\n"
+        "  - Stage 1 runs about 5-6 minutes, then you will receive Stage 2 instructions"
     )
 
 
@@ -156,41 +191,105 @@ def build_stage_2_skill_directive(
     context_brief: str = "",
 ) -> str:
     """
-    Stage 2: SKILL
-    The AI receives both the resume brief and the JD/role context.
-    Goal: validate whether claimed skills are real and role-relevant - through conversation, not a quiz.
+    Stage 2: SKILL - role-guided technical depth.
+    Goal: validate practical skill depth from what the candidate has already claimed
+    and the role signals in the launch brief, without sounding mechanical.
+    Owns: which skills to probe, grounding in resume context, role priority alignment.
+    Global rules live in prompt_layers.py.
     """
+    skills = resume_brief.get("skills", [])
+    projects = resume_brief.get("projects", []) or []
+    work_history = resume_brief.get("work_history", []) or resume_brief.get("internships", []) or []
+    brief_lines = [line.strip() for line in (context_brief or "").splitlines() if line.strip()]
+
+    def _brief_values(prefix: str) -> list[str]:
+        for line in brief_lines:
+            if line.lower().startswith(prefix.lower()):
+                rhs = line.split(":", 1)[1].strip() if ":" in line else ""
+                if rhs:
+                    return [part.strip() for part in rhs.split(",") if part.strip()]
+        return []
+
+    jd_must_haves = _brief_values("JD must-haves")
+    jd_strengths = _brief_values("Screening strengths")
+    jd_gaps = _brief_values("Screening gaps")
+    resume_context_items = _brief_values("Key projects/work")
+
+    skill_anchors = [str(s).strip() for s in skills if str(s).strip()]
+    skill_anchors.extend(jd_must_haves)
+    skill_anchors = list(dict.fromkeys(skill_anchors))[:6]
+    anchors_block = (
+        "SKILL ANCHORS TO ROTATE THROUGH:\n"
+        + "\n".join(f"  - {s}" for s in skill_anchors)
+        + "\n\n"
+        if skill_anchors else ""
+    )
+
+    context_items = []
+    for item in list(projects)[:2] + list(work_history)[:2] + resume_context_items[:2]:
+        text = str(item).strip()
+        if text:
+            context_items.append(text)
+    context_block = (
+        "RESUME CONTEXT TO GROUND SKILL QUESTIONS:\n"
+        + "\n".join(f"  - {c}" for c in context_items[:4])
+        + "\n\n"
+        if context_items else ""
+    )
+
+    band_direction = {
+        "fresher": (
+            "Ask where they used each listed skill in projects/coursework/internships, then check whether it connects to the role signals. "
+            "Probe fundamentals, what went wrong, and what they learned."
+        ),
+        "mid": "Ask for concrete ownership using listed skills and role signals: what they built, why that design, and tradeoffs.",
+        "experienced": "Probe deepest technical contribution using listed skills and role needs: scale, reliability, and decisions.",
+        "senior": "Probe strategic technical judgment against both the launch context and role priorities: architecture, constraints, and influence across teams.",
+    }.get(band, "Probe practical depth in listed skills with concrete examples.")
+
+    objective_block = (
+        "OBJECTIVE:\n"
+        "  - Validate real skill depth from the launch brief and role priorities\n"
+        "  - Understand where they used each skill, what they personally owned, what tradeoffs they made, and what the role still needs\n"
+        "  - Keep the conversation practical and human\n\n"
+    )
+
+    question_plan_block = (
+        "QUESTION PLAN (per skill):\n"
+        "  1) Ground it in one real work context (project/role)\n"
+        "  2) Tie that context to a role priority or skill gap\n"
+        "  3) Ask what they personally implemented or decided\n"
+        "  4) Ask one depth follow-up on tradeoff/debugging/performance or why that skill matters for the role\n"
+        "  5) Move to the next skill when the topic is covered\n\n"
+    )
+
+    priorities_block = f"ROLE PRIORITIES: {', '.join(jd_must_haves)}\n\n" if jd_must_haves else ""
+    strengths_block = f"ROLE STRENGTHS TO LEVERAGE: {', '.join(jd_strengths)}\n\n" if jd_strengths else ""
+    gaps_block = f"ROLE GAPS TO TEST: {', '.join(jd_gaps)}\n\n" if jd_gaps else ""
+
     return (
         "[DO NOT SAY ALOUD - INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[STAGE 2: SKILL]\n"
         "Continue naturally from Stage 1. No announcement.\n\n"
         f"{_band_probe(band)}\n\n"
-        "WHAT YOU HAVE:\n"
-        "  - The resume brief: their claimed skills, projects, and work history\n"
-        "  - The role context: JD must-haves, screening strengths, and gaps flagged against their profile\n\n"
-        "HOW TO USE IT:\n"
-        "  1) Cross-reference. Where does a claimed skill on their resume connect to something the role actually needs? "
-        "That intersection is where the most valuable question lives.\n"
-        "     Example of the thinking (NOT a script): if the brief shows they listed 'distributed systems' and the JD "
-        "flags that as a must-have, you don't ask 'do you know distributed systems?' - you find a project from their "
-        "brief where that likely came up and ask what specifically they owned in that context.\n"
-        "  2) Where the brief shows a gap - something the JD needs that the resume doesn't show - "
-        "ask about it through the lens of their closest relevant experience. "
-        "How did they approach something adjacent? What would they do if they had to close that gap?\n"
-        "  3) After each skill area, ask one depth follow-up: a tradeoff they made, something that broke, "
-        "why they chose that approach over alternatives.\n"
-        "  4) Move through skill anchors one at a time. Don't stack questions.\n\n"
-        "WHAT GOOD STAGE 2 QUESTIONING LOOKS LIKE:\n"
-        "  - Every skill question is grounded in a real situation from their brief - not a quiz about the skill in the abstract\n"
-        "  - You distinguish between 'I used this tool' and 'I understood what I was doing with it'\n"
-        "  - Gaps are explored with curiosity, not accusation - 'how would you approach X' not 'you don't have X'\n"
-        "  - Follow-ups push from claim to proof: from 'we built X' to 'what did you personally own in that'\n\n"
-        "WHAT TO AVOID:\n"
-        "  - Quiz-style questions: 'What is X?', 'Do you know Y?', 'Can you explain Z?'\n"
-        "  - Asking about skills not in the brief or JD context\n"
-        "  - Accepting surface claims - 'I've worked with Kubernetes' needs a real follow-up\n\n"
-        "SCOPE: Skill depth and role fit only. Not behavioral stories. Not situational hypotheticals.\n"
-        "STAGE RUNS: ~5-6 minutes. System advances you to Stage 3 automatically."
+        f"{objective_block}"
+        f"{anchors_block}"
+        f"{context_block}"
+        f"{priorities_block}"
+        f"{strengths_block}"
+        f"{gaps_block}"
+        f"DIRECTION: {band_direction}\n\n"
+        f"{question_plan_block}"
+        "QUESTION STYLE:\n"
+        "  - Ask skill questions through real resume situations, not checklist quiz questions\n"
+        "  - Do NOT ask: 'Do you know X?'\n"
+        "  - Use varied natural wording based on what the candidate just said; avoid repeating one template\n"
+        "  - Example tone: 'I noticed you've used X before - where did that show up in your work, and what part did you personally handle?'\n"
+        "  - Keep wording natural, personal, and reactive to their previous answer\n\n"
+        "RULES:\n"
+        "  - Pick one skill anchor at a time\n"
+        "  - Probe depth; do not stop at surface claims\n"
+        "  - You will receive Stage 3 instructions after your turn budget is reached"
     )
 
 
@@ -200,39 +299,67 @@ def build_stage_3_situational_directive(
     context_brief: str = "",
 ) -> str:
     """
-    Stage 3: SITUATIONAL
-    The AI receives the launch context summary.
-    Goal: evaluate judgment quality through realistic, constraint-heavy scenarios - built from their actual background.
+    Stage 3: SITUATIONAL - deep, context-grounded, judgment-heavy probing.
+    Goal: evaluate decision quality from the launch summary only.
+    Owns: scenario construction, judgment evaluation, constraint framing.
+    Global rules live in prompt_layers.py.
     """
+    summary = context_brief.strip()
+    summary_block = ""
+    if summary:
+        summary_block = (
+            "LAUNCH CONTEXT SUMMARY (internal only):\n"
+            f"{summary[:1200]}\n\n"
+        )
+    band_focus = {
+        "fresher": (
+            "Use the summary to find project, coursework, internship, and learning moments. "
+            "Turn them into practical what-would-you-do scenarios."
+        ),
+        "mid": (
+            "Use the summary to find ownership, impact, tradeoffs, and situations where the candidate made decisions. "
+            "Turn those into realistic pressure scenarios."
+        ),
+        "experienced": (
+            "Use the summary to find scale, reliability, architecture, and cross-team coordination. "
+            "Turn those into deep constraint-based scenarios."
+        ),
+        "senior": (
+            "Use the summary to find strategy, influence, judgment, and business impact. "
+            "Turn those into ambiguous leadership scenarios."
+        ),
+    }.get(band, "Use the summary to create a realistic, high-signal situational scenario.")
+
     return (
         "[DO NOT SAY ALOUD - INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[STAGE 3: SITUATIONAL]\n"
         "Continue naturally from Stage 2. No announcement.\n\n"
         f"{_band_probe(band)}\n\n"
-        "WHAT YOU HAVE:\n"
-        "  The launch context summary above - their background, the role, and what's been covered so far.\n\n"
-        "HOW TO USE IT:\n"
-        "  1) Find a real tension point in their background or the role context - something where judgment actually matters. "
-        "A constraint they'd face, a tradeoff they'd have to make, a situation where there's no clean answer.\n"
-        "     Example of the thinking (NOT a script): if their brief shows they've worked on high-traffic systems "
-        "and the role involves reliability engineering, the scenario isn't 'what would you do if a server goes down' - "
-        "it's something specific: a degraded system at peak load, two competing priorities, a team that disagrees on the fix. "
-        "Build it from what you know about their context.\n"
-        "  2) Pose the scenario in one or two sentences. Make it feel like a real situation, not a case study.\n"
-        "  3) Ask what they'd do first - and why. Then follow their reasoning, not a checklist.\n"
-        "  4) Follow-up on the part of their answer that has the most judgment risk: "
-        "the tradeoff they glossed over, the risk they didn't name, the fallback they didn't mention.\n\n"
-        "WHAT GOOD STAGE 3 QUESTIONING LOOKS LIKE:\n"
-        "  - Scenarios feel like they could actually happen in this role - not textbook hypotheticals\n"
-        "  - You follow their reasoning, not a fixed framework\n"
-        "  - You push on the part of their answer that matters most - not every part equally\n"
-        "  - Different candidates get different scenarios because you built from their specific context\n\n"
-        "WHAT TO AVOID:\n"
-        "  - Generic textbook scenarios: 'tell me about a time you dealt with conflict'\n"
-        "  - Scenarios that have obvious right answers\n"
-        "  - Reading from a script - every scenario should feel constructed for this person\n\n"
-        "SCOPE: Judgment, decisions, tradeoffs. Not skill validation. Not behavioral stories yet.\n"
-        "STAGE RUNS: ~5-6 minutes. System advances you to Stage 4 automatically."
+        "OBJECTIVE:\n"
+        "  - Ask deep situational questions that feel like a strong human interviewer\n"
+        "  - Use the launch context summary only; do not depend on extra launch-time plumbing\n"
+        "  - Evaluate judgment quality: priorities, tradeoffs, risks, ownership, and fallback planning\n"
+        "  - Keep it natural, specific, and reactive to the candidate's answers\n\n"
+        f"{summary_block}"
+        f"DIRECTION: {band_focus}\n\n"
+        "SCENARIO QUESTION PLAN:\n"
+        "  1) Read the launch summary and pick one strong scenario seed\n"
+        "  2) Pose one realistic constraint-heavy situation as if discussing real work\n"
+        "  3) Ask what they would do first and why\n"
+        "  4) Ask up to 2 deep follow-ups on tradeoff, risk, and fallback plan\n"
+        "  5) Move to a new scenario context after that\n\n"
+        "QUESTION STYLE:\n"
+        "  - Sound like a strong human interviewer reacting to their background\n"
+        "  - Avoid generic or textbook hypotheticals\n"
+        "  - Do not sound like an AI checklist or scripted framework\n"
+        "  - Prefer natural phrasing such as:\n"
+        "    * Based on what I saw in your background, suppose...\n"
+        "    * Given the context we already have, imagine...\n"
+        "    * If this failed in production at the worst time, how would you decide what to do first?\n\n"
+        "RULES:\n"
+        "  - Let them think; do not rush or answer for them\n"
+        "  - Follow up on their reasoning, not just the answer\n"
+        "  - Stage 3 runs about 5-6 minutes, then you will receive Stage 4 instructions"
     )
 
 
@@ -242,38 +369,59 @@ def build_stage_4_behavioral_directive(
     context_brief: str = "",
 ) -> str:
     """
-    Stage 4: BEHAVIORAL
-    The AI receives the full context.
-    Goal: surface how they actually work with people - ownership under pressure, conflict, growth.
+    Stage 4: BEHAVIORAL - deep behavioral judgment from launch context.
+    Goal: surface how they work with people, ownership pressure, and conflict.
+    Owns: behavioral signal selection, STAR question framing, ownership follow-through.
+    Global rules live in prompt_layers.py.
     """
+    summary_block = ""
+    if context_brief.strip():
+        summary_block = (
+            "LAUNCH CONTEXT SUMMARY (internal only):\n"
+            f"{context_brief.strip()[:1200]}\n\n"
+        )
+
+    band_direction = {
+        "fresher": (
+            "Ask for real examples on teamwork, feedback, mistakes, and learning from projects/coursework/internships. "
+            "Do not invent corporate senior-role framing."
+        ),
+        "mid": (
+            "Probe influence without authority, conflict handling, and accountability under delivery pressure. "
+            "Push for what they personally did and why."
+        ),
+        "experienced": (
+            "Probe mentoring, difficult stakeholder alignment, and ownership during failure or incident recovery. "
+            "Test judgment maturity and reflection quality."
+        ),
+        "senior": (
+            "Probe strategic influence, hard people decisions, and public judgment reversals. "
+            "Test values, leadership posture, and quality of reasoning under ambiguity."
+        ),
+    }.get(band, "Ask STAR-style questions on collaboration, conflict, growth, and adversity.")
+
     return (
         "[DO NOT SAY ALOUD - INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[STAGE 4: BEHAVIORAL]\n"
         "Continue naturally from Stage 3. No announcement.\n\n"
         f"{_band_probe(band)}\n\n"
-        "WHAT YOU HAVE:\n"
-        "  The full context - their background, what's been said so far, and role signals.\n\n"
-        "HOW TO USE IT:\n"
-        "  1) By now you know a lot about this person. Use it. Don't ask behavioral questions in the abstract - "
-        "anchor them in something specific they've already told you.\n"
-        "     Example of the thinking (NOT a script): if they mentioned earlier that they led a project through a "
-        "tough deadline, the behavioral question isn't 'tell me about a time you worked under pressure' - "
-        "it's 'you mentioned that project ran late - walk me through what happened with the team when that became clear.'\n"
-        "  2) Pick behavioral signals from the context that haven't been probed yet: "
-        "how they handle conflict, how they own failure, how they influence without authority, "
-        "how they give or receive hard feedback.\n"
-        "  3) Ask for a real story - a specific moment, not a general pattern.\n"
-        "  4) Follow up on ownership and reflection: what did THEY do, what would they do differently, "
-        "what did they actually learn.\n\n"
-        "WHAT GOOD STAGE 4 QUESTIONING LOOKS LIKE:\n"
-        "  - Questions feel personal - they reference something real from the conversation\n"
-        "  - Stories are specific: a named situation, a real decision, a concrete outcome\n"
-        "  - You push past the polished STAR answer into what actually happened and what they actually felt\n"
-        "  - Different candidates get different behavioral questions because you're following their story\n\n"
-        "WHAT TO AVOID:\n"
-        "  - Generic HR behavioral starters: 'tell me about a time you...'\n"
-        "  - Accepting a story with no personal ownership in it\n"
-        "  - The too-perfect story with no failure - always ask what went wrong\n\n"
-        "SCOPE: People, ownership, conflict, growth. Not technical skills. Not situational hypotheticals.\n"
-        "STAGE RUNS: Until the interview winds down naturally."
+        "OBJECTIVE:\n"
+        "  - Ask high-signal behavioral questions that feel like a real interviewer conversation\n"
+        "  - Use the launch context summary only\n"
+        "  - Evaluate conflict handling, ownership, influence, and learning loops\n"
+        "  - Keep it practical and specific, never generic\n\n"
+        f"{summary_block}"
+        f"DIRECTION: {band_direction}\n\n"
+        "QUESTION PLAN:\n"
+        "  1) Pick one behavioral signal from the launch summary\n"
+        "  2) Ask one concrete story question (STAR-friendly) tied to that signal\n"
+        "  3) Ask up to 2 follow-ups on decision quality and personal ownership\n"
+        "  4) Move to a different behavioral signal after that\n\n"
+        "QUESTION STYLE:\n"
+        "  - Sound human, specific, and genuinely curious\n"
+        "  - Avoid template-style HR phrasing\n"
+        "  - Ask for concrete moments, not abstract principles\n\n"
+        "RULES:\n"
+        "  - Push for specifics - 'what exactly did you do' not 'what did your team do'\n"
+        "  - Stage 4 runs until the interview is nearly over, then the interview winds down naturally"
     )
