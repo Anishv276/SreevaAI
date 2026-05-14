@@ -154,6 +154,7 @@ async def run_turn_evaluation(
         collapse_stage=collapse_stage,
         uncovered_topics=uncovered_topics,
         current_stage=current_stage,
+        max_follow_ups=max_follow_ups,
     )
 
     logger.info(

@@ -1,5 +1,4 @@
 from __future__ import annotations
-import hashlib
 import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -15,20 +14,6 @@ from agent_utils import (
     _safe_float,
 )
 
-# -- Stage Interview Configuration ---------------------------------------------
-@dataclass
-class InterviewStageConfig:
-    index: int
-    name: str
-    label: str
-    turn_budget: int     # max assistant turns before auto-advance
-
-STAGE_CONFIGS: list["InterviewStageConfig"] = [
-    InterviewStageConfig(index=0, name="resume", label="RESUME", turn_budget=5),
-    InterviewStageConfig(index=1, name="skill", label="SKILL", turn_budget=5),
-    InterviewStageConfig(index=2, name="situational", label="SITUATIONAL", turn_budget=5),
-    InterviewStageConfig(index=3, name="behavioral", label="BEHAVIORAL", turn_budget=5),
-]
 
 # -- Band detection -------------------------------------------------------------
 def infer_candidate_band(structured_resume_raw: Any, resume_text_block: str) -> str:
@@ -185,14 +170,6 @@ def build_jd_resume_alignment_block(jd_must_haves: list[str], resume_skills: lis
         f"- Resume-listed skills to cross-check against the role: {_join_items(rs_list[:7], 7)}",
     ]
     return "\n".join(lines) + "\n\n"
-
-
-def interview_variation_slot(session_key: str, modulo: int = 8) -> int:
-    """Stable per-session slot so question templates rotate across interviews."""
-    if not session_key:
-        return 0
-    digest = hashlib.md5(session_key.encode("utf-8")).hexdigest()
-    return int(digest[:8], 16) % max(modulo, 1)
 
 
 # -- JD brief extraction --------------------------------------------------------

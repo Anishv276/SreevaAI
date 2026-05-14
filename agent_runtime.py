@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import os
 import sys
 import asyncio
@@ -40,10 +40,8 @@ from agent_utils import (
 )
 from agent_profile_context import (
     CandidateBandContext,
-    STAGE_CONFIGS,
     _build_context_vars_block,
     _ensure_resume_context,
-    build_candidate_context_ready_message,
     build_merged_interview_brief,
     build_resume_brief,
     first_name_from_full_name,
@@ -52,6 +50,8 @@ from agent_profile_context import (
     refresh_candidate_band_context,
 )
 from interview_phases import (
+    InterviewStageConfig,
+    STAGE_CONFIGS,
     build_greeting_text,
     build_warmup_directive,
     build_stage_1_resume_directive,
@@ -751,25 +751,15 @@ async def entrypoint(ctx: JobContext):
         band=session_context.candidate_band,
         context_brief=session_context.merged_brief_block,
     )
+    # Write all 4 stages to Redis for failover. In-memory variables are the primary source —
+    # no read-back needed since we just built them.
     await _cache_stage_directive("stage1", stage1_directive_cached)
     await _cache_stage_directive("stage2", stage2_directive_cached)
     await _cache_stage_directive("stage3", stage3_directive_cached)
     await _cache_stage_directive("stage4", stage4_directive_cached)
-    stage1_directive_cached = await _read_stage_directive("stage1") or stage1_directive_cached
-    stage2_directive_cached = await _read_stage_directive("stage2") or stage2_directive_cached
-    stage3_directive_cached = await _read_stage_directive("stage3") or stage3_directive_cached
-    stage4_directive_cached = await _read_stage_directive("stage4") or stage4_directive_cached
-    if redis_client is not None:
-        try:
-            stage_fields = await redis_client.hkeys(stage_cache_key)
-            logger.info("[STAGE_CACHE] Redis stage fields key=%s fields=%s", stage_cache_key, stage_fields)
-        except Exception as e:
-            logger.warning(f"[STAGE_CACHE] Redis hkeys failed for {stage_cache_key}: {e}")
-    else:
-        logger.info(
-            "[STAGE_CACHE] Running without Redis client; local stage fields=%s",
-            list(_LOCAL_STAGE_DIRECTIVE_CACHE.get(app_id, {}).keys()),
-        )
+    logger.info(
+        "[STAGE_CACHE] All 4 stage directives written to Redis. In-memory variables are primary source."
+    )
     voice_layer_prompt = build_voice_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
@@ -785,13 +775,6 @@ async def entrypoint(ctx: JobContext):
         live_prompt_context=session_context.live_prompt_context,
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
-        time_limit_mins=time_limit_mins,
-        depth_instruction=session_context.depth_instruction,
-        candidate_band=session_context.candidate_band,
-        ai_name=_compact_optional(context.get("aiName")),
-        org_name=_compact_optional(context.get("orgName")),
-        org_location=_compact_optional(context.get("orgLocation")),
-        drive_location=_compact_optional(context.get("driveLocation")),
     )
     system_prompt = build_system_prompt(
         voice_layer_prompt=voice_layer_prompt,
@@ -801,7 +784,7 @@ async def entrypoint(ctx: JobContext):
     chat_ctx.add_message(role="system", content=system_prompt)
     warmup_directive = build_warmup_directive()
     chat_ctx.add_message(role="system", content=warmup_directive)
-    logger.info("[WARMUP] Warmup directive injected — Stage 1 fires after 2 candidate responses")
+    logger.info("[WARMUP] Warmup directive injected into chat context — Stage 1 fires after 2 candidate responses")
     ctx.proc.userdata["candidate_band_context"] = session_context
     logger.info(
         "[SESSION] band=%s anchor=%s",
@@ -950,8 +933,8 @@ async def entrypoint(ctx: JobContext):
     interview_marked_finished = False
     turn_count = 0           # counts assistant turns for state injection cadence
     last_injection_turn = 0  # tracks which turn last received a state injection
-    warmup_responses_received = 0  # counts candidate responses during 2-turn warmup
-    warmup_complete = False  # True after 2nd candidate response received
+    warmup_responses_received = 0  # counts candidate responses; warmup ends after 2
+    warmup_complete = False  # True after the 2nd candidate response
     # Stage interview tracker
     _current_stage_index: int = 0        # 0=Resume 1=Skill 2=Situational 3=Behavioral
     _stage_start_time: float = 0.0       # monotonic timestamp when current stage started
@@ -1212,14 +1195,17 @@ async def entrypoint(ctx: JobContext):
         _stage_bridge_pending = False
         if stage_directive:
             chat_ctx.add_message(role="system", content=stage_directive)
-            # Add a short mandatory bridge so stage changes are audible and natural.
-            chat_ctx.add_message(
-                role="system",
-                content=(
-                    "[STAGE_BRIDGE_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                    f"Transition to {next_stage.label} with one short bridge sentence, then ask exactly "
-                    "one concise question aligned to the new stage. Do not continue the previous topic."
-                ),
+            logger.info(
+                "[STAGE_INJECT] Stage %d (%s) directive injected from cache into chat context (reason=%s)",
+                next_stage_index + 1,
+                next_stage.label,
+                reason,
+            )
+        else:
+            logger.warning(
+                "[STAGE_INJECT] No directive found for stage %d (%s) — skipping inject",
+                next_stage_index + 1,
+                next_stage.label,
             )
         _rebalance_remaining_stage_budgets()
         logger.info(
@@ -1391,16 +1377,6 @@ async def entrypoint(ctx: JobContext):
             if greeting_delivered_at is None:
                 logger.info("[GREETING_BLOCK] Candidate spoke before greeting finished  -  ignoring until greeting delivered")
                 return
-            async def _inject_candidate_context_before_first_question() -> None:
-                if session_context.initial_context_injected:
-                    return
-                session_context.initial_context_injected = True
-                remove_system_messages(chat_ctx, "[CANDIDATE CONTEXT READY]")
-                chat_ctx.add_message(
-                    role="system",
-                    content=build_candidate_context_ready_message(context=session_context),
-                )
-                logger.info("[CONTEXT] Candidate context injected before first question")
             # --- STT text cleanup / noise suppression ---
             def _clean_stt_text(raw_text: str) -> str:
                 text = re.sub(r"\s+", " ", (raw_text or "").strip())
@@ -1476,8 +1452,6 @@ async def entrypoint(ctx: JobContext):
             # Acknowledgment: "ok/yeah/sure"  -  pure filler, discard silently.
             # Answer_start: "so basically/well/um"  -  candidate mid-thought, don't interrupt.
             if short_classification and short_classification["response_class"] in ("acknowledgment", "answer_start"):
-                if not session_context.initial_context_injected:
-                    await _inject_candidate_context_before_first_question()
                 short_directive = build_short_utterance_directive(
                     "acknowledgment",
                     short_classification["evidence"],
@@ -1506,18 +1480,14 @@ async def entrypoint(ctx: JobContext):
                     role="system",
                     content=(
                         "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                        "Candidate asked why/stage. Respond in one short sentence: "
-                        "you are mapping fit for the GTM role. Then ask exactly one concise "
+                        f"Candidate asked why/stage. Respond in one short sentence: "
+                        f"you are mapping fit for the {job_title} role. Then ask exactly one concise "
                         "question from the current stage objective. Do not keep explaining."
                     ),
                 )
             speaker = "Candidate"
             append_transcript_line(speaker, content)
             logger.info(f"[TRANSCRIPT] {speaker}: {content[:60]}...")
-            if not session_context.initial_context_injected:
-                _ctx_inject_t = time.perf_counter()
-                await _inject_candidate_context_before_first_question()
-                logger.info("[INIT] context_injection_ms=%.0f", (time.perf_counter() - _ctx_inject_t) * 1000)
             # Inject structured recent Q&A context for callbacks and contradiction detection.
             if _last_interviewer_question and turn_snapshot > 1:
                 recent_context = _build_recent_context_block(
@@ -1654,19 +1624,47 @@ async def entrypoint(ctx: JobContext):
                                     response_latency_sec=response_latency,
                                     current_stage=current_stage_name,
                                 ),
-                                timeout=6.0,
+                                timeout=3.5,
                             )
                         except asyncio.TimeoutError:
                             logger.warning(
-                                "[EVAL] run_turn_evaluation timed out (>6s) turn=%d  -  using safe fallback evaluation",
+                                "[EVAL] run_turn_evaluation timed out (>3.5s) turn=%d — using smart fallback",
                                 turn,
                             )
+                            # Smart fallback: respect the follow-up cap even when the LLM is slow.
+                            # If already at max follow-ups, force a MOVE_ON so Ishita pivots naturally.
+                            # Otherwise, issue a stage-aware PROBE so the conversation keeps flowing.
+                            _fallback_stage_label = (
+                                STAGE_CONFIGS[_current_stage_index].label
+                                if 0 <= _current_stage_index < len(STAGE_CONFIGS)
+                                else "CURRENT"
+                            )
+                            if follow_ups >= follow_up_depth:
+                                _fallback_action = "MOVE_ON"
+                                _fallback_next = (
+                                    "Follow-up cap reached. Bridge naturally to the next topic "
+                                    f"within the {_fallback_stage_label} stage. Do not announce a stage change."
+                                )
+                            else:
+                                _fallback_action = "PROBE"
+                                _fallback_next = (
+                                    f"Ask one specific follow-up question that stays strictly within "
+                                    f"the {_fallback_stage_label} stage intent. Make it personal and concrete."
+                                )
                             td = {
-                                "decision": {"action": "PROBE"},
+                                "decision": {
+                                    "action": _fallback_action,
+                                    "mode": "normal",
+                                    "next_goal": _fallback_next,
+                                },
                                 "quality": {"clarity": 5.0, "depth": 5.0, "specificity": 5.0, "grounding": 5.0},
                                 "signal_events": [],
                             }
-                            directive = "\nContinue with standard conversational depth."
+                            directive = (
+                                f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                                f"DECISION: {_fallback_action}\n"
+                                f"NEXT MOVE: {_fallback_next}"
+                            )
                         action = td["decision"]["action"]
                         signal_events = td.get("signal_events", [])
                         if warmup_complete and _stage_start_time > 0:
@@ -1913,12 +1911,12 @@ async def entrypoint(ctx: JobContext):
             if role == "user":
                 _answer_received_at = time.perf_counter()
                 _candidate_turn_since_last_assistant = True
-                # ── Phase 1 → Phase 2: warmup complete after 2 candidate responses ──────
+                # ── Phase 1 → Phase 2: warmup ends after 2 candidate responses ──────
                 if not warmup_complete:
                     warmup_responses_received += 1
+                    logger.info("[WARMUP] Candidate response %d/2 received", warmup_responses_received)
                     if warmup_responses_received >= 2:
                         warmup_complete = True
-                        # Remove warmup directive, inject Stage 1 directive
                         remove_system_messages(chat_ctx, "[WARMUP PHASE]")
                         stage1_directive = stage1_directive_cached or build_stage_1_resume_directive(
                             band=session_context.candidate_band,
@@ -1926,7 +1924,9 @@ async def entrypoint(ctx: JobContext):
                         )
                         chat_ctx.add_message(role="system", content=stage1_directive)
                         _stage_start_time = time.monotonic()
-                        logger.info("[STAGE 1] Resume directive injected after warmup")
+                        logger.info(
+                            "[STAGE_INJECT] Stage 1 (RESUME) directive injected from cache into chat context (reason=warmup_complete)"
+                        )
                 turn_snapshot = turn_count
                 spawn_background_task(
                     _process_user_conversation_item(event, content, role, turn_snapshot),
